@@ -45,6 +45,7 @@
 mod anneal;
 pub mod decoder;
 pub mod evaluate;
+mod habit;
 mod placement;
 mod solver;
 

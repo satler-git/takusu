@@ -4,7 +4,7 @@
 //! 1. greedy_initial(active_tasks) → 初期解
 //! 2. T = T₀ → ... → T_min:
 //!    各温度でN反復:
-//!      neighbor = generate (7種, 確率重み付き)
+//!      neighbor = generate (8種, 確率重み付き)
 //!      tabuチェック (aspirationあり)
 //!      ΔEで受理判定 (Metropolis)
 //!      tabu更新
@@ -13,11 +13,14 @@
 //!
 //! | prob | neighbor      |
 //! |------|---------------|
-//! | 25%  | shift         |
-//! | 25%  | swap          |
-//! | 20%  | duration ±1   |
-//! | 15%  | reorder       |
-//! | 15%  | lns (destroy+rebuild) |
+//! | 17%  | shift         |
+//! | 17%  | swap          |
+//! | 14%  | duration ±1   |
+//! | 14%  | reorder       |
+//! | 14%  | repair_depend |
+//! | 10%  | habit_anchor (グループの時刻帯を一括移動。なければ shift) |
+//! |  6%  | habit_exception (habit member 1 件を逸脱。なければ shift) |
+//! |  8%  | lns (destroy+rebuild) |
 //!
 //! ## Design rationale
 //!
@@ -47,6 +50,7 @@ use rustc_hash::FxHashSet;
 
 use super::*;
 use crate::decoder::{DecodeInput, RepairMode, decode};
+use crate::habit;
 use crate::placement::{Placement, compute_earliest, try_place};
 #[cfg(test)]
 use evaluate::evaluate;
@@ -349,6 +353,10 @@ pub(crate) enum DestroyOperator {
     Random,
     Worst,
     Related,
+    /// 1 つの habit group の全 movable member をまとめて除去する。
+    /// グループ単位の再配置が目的のため、`count` 引数は意図的に無視する。
+    /// habit がない場合は Random にフォールバックする。
+    HabitGroup,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -359,6 +367,8 @@ pub(crate) enum RepairOperator {
     Regret2,
     LowestDelta,
     Random,
+    /// habit group を希望時刻 (task.start) の anchor へ再配置する。
+    HabitAnchor,
 }
 
 struct AlnsConfig {
@@ -387,6 +397,7 @@ impl Default for AlnsConfig {
                 DestroyOperator::Random,
                 DestroyOperator::Worst,
                 DestroyOperator::Related,
+                DestroyOperator::HabitGroup,
             ],
             // 初期設定は軽量な repair のみ。Regret2/LowestDelta は decode が高コスト
             // (O(n²) per placement) のためデフォルトでは無効。
@@ -394,6 +405,7 @@ impl Default for AlnsConfig {
                 RepairOperator::Earliest,
                 RepairOperator::Deadline,
                 RepairOperator::Random,
+                RepairOperator::HabitAnchor,
             ],
         }
     }
@@ -434,6 +446,7 @@ fn sa_polish_inner(
     let mut sorted = Vec::with_capacity(n);
     let mut index = Vec::with_capacity(n);
     let mut habit_entries = Vec::with_capacity(n);
+    let habit_index = habit::build_index(planner);
 
     let total_avg: i64 = planner
         .tasks
@@ -485,9 +498,9 @@ fn sa_polish_inner(
             }
 
             let neighbor = if has_pinned {
-                generate_neighbor_partial(planner, &current, rng, pinned_ids)
+                generate_neighbor_partial(planner, &current, rng, pinned_ids, &habit_index)
             } else {
-                generate_neighbor(planner, &current, rng)
+                generate_neighbor(planner, &current, rng, &habit_index)
             };
             let Some(neighbor) = neighbor else {
                 continue;
@@ -598,6 +611,7 @@ pub(crate) fn alns_search_pinned(
     let mut r_scores = vec![0.0; r_ops.len()];
     let mut d_usages = vec![0usize; d_ops.len()];
     let mut r_usages = vec![0usize; r_ops.len()];
+    let habit_index = habit::build_index(planner);
 
     let iterations = if config.iterations == 0 {
         n.max(1) * 50
@@ -629,6 +643,7 @@ pub(crate) fn alns_search_pinned(
             rng,
             destroy_op,
             destroy_count,
+            &habit_index,
         );
 
         let removed_set: FxHashSet<usize> = removed.iter().copied().collect();
@@ -842,6 +857,7 @@ fn destroy_count(n: usize, min_frac: f64, max_frac: f64, rng: &mut impl Rng) -> 
     rng.random_range(min..=max)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn destroy_priority(
     planner: &Planner,
     priority: &[usize],
@@ -850,6 +866,7 @@ pub(crate) fn destroy_priority(
     rng: &mut impl Rng,
     op: DestroyOperator,
     count: usize,
+    habit: &habit::HabitIndex,
 ) -> Vec<usize> {
     let movable: Vec<_> = priority
         .iter()
@@ -974,6 +991,35 @@ pub(crate) fn destroy_priority(
             removed.truncate(count);
             removed
         }
+        DestroyOperator::HabitGroup => {
+            // count は意図的に無視し、選ばれたグループの全 movable member を
+            // まとめて除去する。グルーピングは静的な HabitIndex を再利用し、
+            // 毎 iteration の再構築を避ける。
+            if habit.groups.is_empty() {
+                let mut chosen = FxHashSet::default();
+                while chosen.len() < count {
+                    let idx = rng.random_range(0..movable.len());
+                    chosen.insert(movable[idx]);
+                }
+                return chosen.into_iter().collect();
+            }
+            let group = &habit.groups[rng.random_range(0..habit.groups.len())];
+            let removed: Vec<usize> = group
+                .members
+                .iter()
+                .copied()
+                .filter(|id| !planner.tasks[*id].fixed && !pinned_ids.contains(id))
+                .collect();
+            if removed.is_empty() {
+                let mut chosen = FxHashSet::default();
+                while chosen.len() < count {
+                    let idx = rng.random_range(0..movable.len());
+                    chosen.insert(movable[idx]);
+                }
+                return chosen.into_iter().collect();
+            }
+            removed
+        }
     }
 }
 
@@ -1001,6 +1047,20 @@ pub(crate) fn repair_priority(
         }
         RepairOperator::Earliest | RepairOperator::Regret2 | RepairOperator::LowestDelta => {
             removed.to_vec()
+        }
+        RepairOperator::HabitAnchor => {
+            // habit task を先に配置して anchor スロットを確保させる。
+            let mut v = removed.to_vec();
+            v.sort_by(|&a, &b| {
+                let a_habit = planner.tasks[a].habit_group.is_some();
+                let b_habit = planner.tasks[b].habit_group.is_some();
+                b_habit.cmp(&a_habit).then_with(|| {
+                    let a_s = planner.tasks[a].start.map(|p| p.0).unwrap_or(i64::MAX);
+                    let b_s = planner.tasks[b].start.map(|p| p.0).unwrap_or(i64::MAX);
+                    a_s.cmp(&b_s)
+                })
+            });
+            v
         }
     };
 
@@ -1044,6 +1104,7 @@ fn repair_mode_for(op: RepairOperator) -> RepairMode {
         RepairOperator::Deadline => RepairMode::Deadline,
         RepairOperator::Regret2 => RepairMode::Regret2,
         RepairOperator::LowestDelta => RepairMode::LowestDelta,
+        RepairOperator::HabitAnchor => RepairMode::HabitAnchor,
     }
 }
 
@@ -1082,6 +1143,7 @@ pub fn sa_lns(planner: &Planner, rng: &mut impl Rng) -> Plan {
     let mut sorted = Vec::with_capacity(task_count);
     let mut index = Vec::with_capacity(task_count);
     let mut habit_entries = Vec::with_capacity(task_count);
+    let habit_index = habit::build_index(planner);
 
     let total_avg: i64 = planner
         .tasks
@@ -1121,7 +1183,7 @@ pub fn sa_lns(planner: &Planner, rng: &mut impl Rng) -> Plan {
                 break;
             }
 
-            let Some(neighbor) = generate_neighbor(planner, &current, rng) else {
+            let Some(neighbor) = generate_neighbor(planner, &current, rng, &habit_index) else {
                 continue;
             };
             let eval_neighbor = evaluate_with_scratch(
@@ -1243,6 +1305,7 @@ pub fn sa_lns_partial(planner: &Planner, pinned: &[Placement], rng: &mut impl Rn
     let mut sorted = Vec::with_capacity(task_count);
     let mut index = Vec::with_capacity(task_count);
     let mut habit_entries = Vec::with_capacity(task_count);
+    let habit_index = habit::build_index(planner);
 
     let total_avg: i64 = planner
         .tasks
@@ -1283,7 +1346,8 @@ pub fn sa_lns_partial(planner: &Planner, pinned: &[Placement], rng: &mut impl Rn
                 break;
             }
 
-            let Some(neighbor) = generate_neighbor_partial(planner, &current, rng, &pinned_ids)
+            let Some(neighbor) =
+                generate_neighbor_partial(planner, &current, rng, &pinned_ids, &habit_index)
             else {
                 continue;
             };
@@ -1534,6 +1598,7 @@ fn generate_neighbor_partial(
     current: &Plan,
     rng: &mut impl Rng,
     pinned_ids: &FxHashSet<usize>,
+    habit: &habit::HabitIndex,
 ) -> Option<Plan> {
     let unpinned: Vec<usize> = current
         .schedules
@@ -1557,12 +1622,12 @@ fn generate_neighbor_partial(
     let r = rng.random_range(0..100u32) as i32;
 
     match r {
-        0..=19 => {
+        0..=16 => {
             let idx = rng.random_range(0..unpinned_positions.len());
             let pos = unpinned_positions[idx];
             neighbor_shift_at(planner, current, pos, rng)
         }
-        20..=39 => {
+        17..=33 => {
             if unpinned.len() < 2 {
                 return None;
             }
@@ -1575,20 +1640,84 @@ fn generate_neighbor_partial(
             let b_pos = unpinned_positions[b_idx];
             neighbor_swap_at(planner, current, a_pos, b_pos)
         }
-        40..=54 => {
+        34..=47 => {
             let idx = rng.random_range(0..unpinned_positions.len());
             let pos = unpinned_positions[idx];
             neighbor_duration_at(planner, current, pos, rng)
         }
-        55..=69 => {
+        48..=61 => {
             if unpinned.len() < 2 {
                 return None;
             }
             neighbor_reorder_partial(planner, current, &unpinned_positions, rng)
         }
-        70..=84 => neighbor_repair_depend(planner, current, rng, Some(pinned_ids)),
+        62..=75 => neighbor_repair_depend(planner, current, rng, Some(pinned_ids)),
+        76..=85 => {
+            neighbor_habit_anchor_partial(planner, current, rng, pinned_ids, habit).or_else(|| {
+                let idx = rng.random_range(0..unpinned_positions.len());
+                neighbor_shift_at(planner, current, unpinned_positions[idx], rng)
+            })
+        }
+        86..=91 => neighbor_habit_exception_partial(planner, current, rng, pinned_ids, habit)
+            .or_else(|| {
+                let idx = rng.random_range(0..unpinned_positions.len());
+                neighbor_shift_at(planner, current, unpinned_positions[idx], rng)
+            }),
         _ => neighbor_lns_partial(planner, current, rng, pinned_ids),
     }
+}
+
+fn neighbor_habit_anchor_partial(
+    planner: &Planner,
+    current: &Plan,
+    rng: &mut impl Rng,
+    pinned_ids: &FxHashSet<usize>,
+    habit: &habit::HabitIndex,
+) -> Option<Plan> {
+    if habit.groups.is_empty() {
+        return None;
+    }
+    let group = &habit.groups[rng.random_range(0..habit.groups.len())];
+    let delta = habit_anchor_delta(planner, rng);
+    if delta == 0 {
+        return None;
+    }
+    habit::apply_anchor_shift(planner, current, group, delta, pinned_ids)
+}
+
+fn neighbor_habit_exception_partial(
+    planner: &Planner,
+    current: &Plan,
+    rng: &mut impl Rng,
+    pinned_ids: &FxHashSet<usize>,
+    habit: &habit::HabitIndex,
+) -> Option<Plan> {
+    if habit.groups.is_empty() {
+        return None;
+    }
+    let group = &habit.groups[rng.random_range(0..habit.groups.len())];
+    let movable: Vec<usize> = group
+        .members
+        .iter()
+        .copied()
+        .filter(|&id| !planner.tasks()[id].fixed && !pinned_ids.contains(&id))
+        .collect();
+    if movable.is_empty() {
+        return None;
+    }
+    let member = movable[rng.random_range(0..movable.len())];
+    let dur = current
+        .schedules
+        .iter()
+        .find(|(_, _, id)| *id == member)
+        .map(|(s, e, _)| e.0 - s.0)
+        .unwrap_or(1);
+    let range = shift_range(current, dur, rng);
+    let delta = rand_range(rng, -range, range + 1);
+    if delta == 0 {
+        return None;
+    }
+    habit::apply_member_shift(planner, current, member, delta, pinned_ids)
 }
 
 fn neighbor_shift_at(
@@ -1773,17 +1902,95 @@ fn mark_tabu(tabu: &mut TabuList, current: &Plan, neighbor: &Plan) {
     }
 }
 
-fn generate_neighbor(planner: &Planner, current: &Plan, rng: &mut impl Rng) -> Option<Plan> {
+fn generate_neighbor(
+    planner: &Planner,
+    current: &Plan,
+    rng: &mut impl Rng,
+    habit: &habit::HabitIndex,
+) -> Option<Plan> {
     let r = rng.random_range(0..100u32) as i32;
 
     match r {
-        0..=19 => neighbor_shift(planner, current, rng),
-        20..=39 => neighbor_swap(planner, current, rng),
-        40..=54 => neighbor_duration(planner, current, rng),
-        55..=69 => neighbor_reorder(planner, current, rng),
-        70..=84 => neighbor_repair_depend(planner, current, rng, None),
+        0..=16 => neighbor_shift(planner, current, rng),
+        17..=33 => neighbor_swap(planner, current, rng),
+        34..=47 => neighbor_duration(planner, current, rng),
+        48..=61 => neighbor_reorder(planner, current, rng),
+        62..=75 => neighbor_repair_depend(planner, current, rng, None),
+        // habit 階層 move。habit がない fixture では shift に fallback し、
+        // iteration を無駄にしない。
+        76..=85 => neighbor_habit_anchor(planner, current, rng, habit)
+            .or_else(|| neighbor_shift(planner, current, rng)),
+        86..=91 => neighbor_habit_exception(planner, current, rng, habit)
+            .or_else(|| neighbor_shift(planner, current, rng)),
         _ => neighbor_lns(planner, current, rng),
     }
+}
+
+/// habit group 全体の anchor (時刻帯) を一律に動かす近傍。
+/// 各 occurrence は自分の日を保持したまま、グループの時刻一貫性を強制する。
+fn neighbor_habit_anchor(
+    planner: &Planner,
+    current: &Plan,
+    rng: &mut impl Rng,
+    habit: &habit::HabitIndex,
+) -> Option<Plan> {
+    if habit.groups.is_empty() {
+        return None;
+    }
+    let group = &habit.groups[rng.random_range(0..habit.groups.len())];
+    let delta = habit_anchor_delta(planner, rng);
+    if delta == 0 {
+        return None;
+    }
+    let pinned = FxHashSet::default();
+    habit::apply_anchor_shift(planner, current, group, delta, &pinned)
+}
+
+/// habit member 1 件を anchor から逸脱させる近傍 (exception 生成)。
+fn neighbor_habit_exception(
+    planner: &Planner,
+    current: &Plan,
+    rng: &mut impl Rng,
+    habit: &habit::HabitIndex,
+) -> Option<Plan> {
+    if habit.groups.is_empty() {
+        return None;
+    }
+    let group = &habit.groups[rng.random_range(0..habit.groups.len())];
+    let movable: Vec<usize> = group
+        .members
+        .iter()
+        .copied()
+        .filter(|&id| !planner.tasks()[id].fixed)
+        .collect();
+    if movable.is_empty() {
+        return None;
+    }
+    let member = movable[rng.random_range(0..movable.len())];
+    let dur = current
+        .schedules
+        .iter()
+        .find(|(_, _, id)| *id == member)
+        .map(|(s, e, _)| e.0 - s.0)
+        .unwrap_or(1);
+    let range = shift_range(current, dur, rng);
+    let delta = rand_range(rng, -range, range + 1);
+    if delta == 0 {
+        return None;
+    }
+    let pinned = FxHashSet::default();
+    habit::apply_member_shift(planner, current, member, delta, &pinned)
+}
+
+/// anchor 移動の時刻帯 delta。通常は ±1 時間程度、まれに大きく探索する。
+fn habit_anchor_delta(planner: &Planner, rng: &mut impl Rng) -> i64 {
+    let spd = (24 * 60) / planner.per() as i64;
+    let range = if rng.random_range(0..LONG_SHIFT_ONE_IN) == 0 {
+        (spd / 4).max(1)
+    } else {
+        (spd / 24).max(1)
+    };
+    rand_range(rng, -range, range + 1)
 }
 
 fn neighbor_shift(planner: &Planner, current: &Plan, rng: &mut impl Rng) -> Option<Plan> {
@@ -2093,6 +2300,170 @@ mod tests {
             previous_schedule: vec![],
             ..Planner::default()
         }
+    }
+
+    #[test]
+    fn habit_anchor_neighbor_snaps_group_to_common_tod() {
+        use rand::SeedableRng;
+        use rand::rngs::StdRng;
+
+        let spd = 288;
+        // 4 日の daily habit。task.start (最早) は day+100 で統一し、
+        // 初期配置だけ day+100+off にずらして anchor move の収束を確認する。
+        let tasks: Vec<Task> = (0..4)
+            .map(|id| {
+                let day_start = (id as i64 + 1) * spd;
+                Task {
+                    id,
+                    start: Some(Point(day_start + 100)),
+                    end: Point(day_start + 100 + 60),
+                    cost_estimate: NormalDist::new(6, 0),
+                    depends: vec![],
+                    parallelizable: false,
+                    allows_parallel: false,
+                    abandonability: 0.3,
+                    fixed: false,
+                    habit_group: Some(0),
+                }
+            })
+            .collect();
+        let planner = test_planner(tasks);
+
+        let offsets = [0i64, 4, 8, 12];
+        let current = Plan {
+            schedules: planner
+                .tasks()
+                .iter()
+                .zip(offsets.iter())
+                .map(|(t, off)| {
+                    let s = Point(t.start.unwrap().0 + off);
+                    (s, Point(s.0 + 6), t.id)
+                })
+                .collect(),
+        };
+
+        let mut saw_some = false;
+        let habit_index = habit::build_index(&planner);
+        for seed in 0..32u64 {
+            let mut rng = StdRng::seed_from_u64(seed);
+            if let Some(neighbor) =
+                neighbor_habit_anchor(&planner, &current, &mut rng, &habit_index)
+            {
+                saw_some = true;
+                let tods_after: Vec<i64> = neighbor
+                    .schedules
+                    .iter()
+                    .map(|(s, _, _)| s.0.rem_euclid(spd))
+                    .collect();
+                let first = tods_after[0];
+                assert!(
+                    tods_after.iter().all(|t| *t == first),
+                    "seed {seed}: all habit members should share one tod: {tods_after:?}"
+                );
+            }
+        }
+        assert!(
+            saw_some,
+            "anchor neighbor should succeed for at least one seed"
+        );
+    }
+
+    fn habit_task_at(id: usize, day_start: i64, tod: i64, group: usize) -> Task {
+        Task {
+            id,
+            start: Some(Point(day_start + tod)),
+            end: Point(day_start + tod + 60),
+            cost_estimate: NormalDist::new(6, 0),
+            depends: vec![],
+            parallelizable: false,
+            allows_parallel: false,
+            abandonability: 0.3,
+            fixed: false,
+            habit_group: Some(group),
+        }
+    }
+
+    #[test]
+    fn destroy_habit_group_removes_whole_group() {
+        use rand::SeedableRng;
+        use rand::rngs::StdRng;
+
+        let spd = 288;
+        let mut tasks = vec![];
+        for d in 0..3 {
+            tasks.push(habit_task_at(tasks.len(), (d as i64 + 1) * spd, 108, 0));
+        }
+        for d in 0..2 {
+            tasks.push(habit_task_at(tasks.len(), (d as i64 + 1) * spd, 200, 1));
+        }
+        let mut non_habit = habit_task_at(tasks.len(), spd, 50, 0);
+        non_habit.habit_group = None;
+        tasks.push(non_habit);
+
+        let planner = test_planner(tasks);
+        let plan = Plan {
+            schedules: planner
+                .tasks()
+                .iter()
+                .map(|t| {
+                    let s = t.start.unwrap();
+                    (s, Point(s.0 + 6), t.id)
+                })
+                .collect(),
+        };
+        let priority: Vec<usize> = (0..planner.tasks.len()).collect();
+        let pinned = FxHashSet::default();
+        let mut rng = StdRng::seed_from_u64(0);
+        let habit_index = habit::build_index(&planner);
+
+        let removed = destroy_priority(
+            &planner,
+            &priority,
+            &plan,
+            &pinned,
+            &mut rng,
+            DestroyOperator::HabitGroup,
+            2,
+            &habit_index,
+        );
+        let removed_set: FxHashSet<usize> = removed.iter().copied().collect();
+        let group0: FxHashSet<usize> = [0, 1, 2].into_iter().collect();
+        let group1: FxHashSet<usize> = [3, 4].into_iter().collect();
+        assert!(
+            removed_set == group0 || removed_set == group1,
+            "HabitGroup destroy should remove exactly one whole group, got {removed:?}"
+        );
+    }
+
+    #[test]
+    fn habit_anchor_repair_keeps_group_consistent() {
+        let spd = 288;
+        let tasks: Vec<Task> = (0..4)
+            .map(|id| habit_task_at(id, (id as i64 + 1) * spd, 108, 0))
+            .collect();
+        let planner = test_planner(tasks);
+        let priority: Vec<usize> = (0..4).collect();
+
+        let result = decode(
+            &planner,
+            DecodeInput {
+                priority: &priority,
+                duration_choices: &[],
+                pinned: &[],
+                repair_mode: RepairMode::HabitAnchor,
+            },
+        );
+        let tods: Vec<i64> = result
+            .plan
+            .schedules
+            .iter()
+            .map(|(s, _, _)| s.0.rem_euclid(spd))
+            .collect();
+        let first = tods[0];
+        assert!(
+            tods.iter().all(|t| *t == first),
+            "HabitAnchor repair should keep the group at one time-of-day: {tods:?}"
+        );
     }
 
     #[test]
@@ -2700,6 +3071,7 @@ mod tests {
                 &mut rng,
                 DestroyOperator::Random,
                 4,
+                &habit::HabitIndex::default(),
             );
             assert_eq!(removed.len(), 4);
             assert!(removed.iter().all(|id| *id < planner.tasks.len()));

@@ -21,6 +21,10 @@ pub enum RepairMode {
     Deadline,
     Habit,
     Stability,
+    /// habit task を自分の `task.start` (希望時刻) へ配置する。同じ habit の
+    /// member は同じ time-of-day を持つため、グループが一貫した anchor に揃う。
+    /// 非 habit task は Earliest 同様。
+    HabitAnchor,
 }
 
 pub struct DecodeInput<'a> {
@@ -680,6 +684,33 @@ pub fn decode(planner: &Planner, input: DecodeInput<'_>) -> DecodeResult {
                     anchor,
                 );
                 (id, s, e, err)
+            }
+            RepairMode::HabitAnchor => {
+                let mut ordered = ready;
+                ordered.sort_by(|&a, &b| {
+                    let a_habit = planner.tasks[a].habit_group.is_some();
+                    let b_habit = planner.tasks[b].habit_group.is_some();
+                    b_habit.cmp(&a_habit)
+                });
+                let id = ordered[0];
+                if planner.tasks[id].habit_group.is_some()
+                    && let Some(pref) = planner.tasks[id].start
+                {
+                    let (s, e, err) = place_task_near_anchor(
+                        planner,
+                        &schedules,
+                        &input,
+                        id,
+                        &index,
+                        &dependents,
+                        pref.0,
+                    );
+                    (id, s, e, err)
+                } else {
+                    let (s, e, err) =
+                        place_task_earliest(planner, &schedules, &input, id, &index, &dependents);
+                    (id, s, e, err)
+                }
             }
         };
 
