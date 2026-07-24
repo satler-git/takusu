@@ -121,7 +121,7 @@ pub fn evaluate(planner: &Planner, plan: &Plan, temperature: f64, t0: f64) -> f6
     let mut habit_entries = Vec::with_capacity(planner.tasks.len());
     evaluate_with_scratch(
         planner,
-        plan,
+        &plan.schedules,
         temperature,
         t0,
         &mut sorted,
@@ -134,7 +134,7 @@ pub fn evaluate(planner: &Planner, plan: &Plan, temperature: f64, t0: f64) -> f6
 /// 呼び出し側が再利用することで、ホットパス（SA ループ）での毎回の allocation を避ける。
 pub(crate) fn evaluate_with_scratch(
     planner: &Planner,
-    plan: &Plan,
+    schedules: &[Placement],
     temperature: f64,
     t0: f64,
     sorted: &mut Vec<Placement>,
@@ -142,7 +142,6 @@ pub(crate) fn evaluate_with_scratch(
     habit_entries: &mut Vec<(usize, i64)>,
 ) -> f64 {
     let mut score = 0.0;
-    let schedules = &plan.schedules;
 
     // index 構築と plan_range を同時に行う。
     let (plan_start, plan_end) = build_index_into(planner, schedules, index);
@@ -154,7 +153,7 @@ pub(crate) fn evaluate_with_scratch(
     sorted.sort_unstable_by_key(|(s, _, _)| s.0);
 
     score += task_and_depend_scores(planner, index, temperature, t0);
-    score += buffer_score(planner, index);
+    score += buffer_score(planner, index, sorted);
     score += sleep_score(planner, sorted, (plan_start, plan_end));
     score += daily_load_score(planner, sorted, (plan_start, plan_end));
     score += parallel_violation_score(planner, sorted);
@@ -260,7 +259,12 @@ fn task_and_depend_scores(
     score - (depend_penalty_slots as f64) * depend_weight
 }
 
-fn buffer_score(planner: &Planner, index: &[Option<(Point, Point)>]) -> f64 {
+/// buffer_score: sorted schedule の上位走査で、元の O(n²) (planner.tasks 二重ループ)
+/// から、スケジュール済みタスクのみの走査に削減。
+/// 条件: other_start < task.end かつ other_end > sched_end のタスクがバッファを遮る。
+/// sched_end より前に開始しても sched_end を超えて終了するタスクがバッファを遮るため、
+/// 走査は sorted[..end_pos] (start < task.end) 全体を対象とし、end > sched_end で絞る。
+fn buffer_score(planner: &Planner, index: &[Option<(Point, Point)>], sorted: &[Placement]) -> f64 {
     let mut score = 0.0;
     for task in &planner.tasks {
         let Some((_start, sched_end)) = index[task.id] else {
@@ -270,24 +274,24 @@ fn buffer_score(planner: &Planner, index: &[Option<(Point, Point)>]) -> f64 {
             continue;
         }
         let mut buffer_end = task.end;
-        for other in &planner.tasks {
-            if other.id == task.id {
+        // start < task.end の範囲を走査 (それ以降はバッファを遮らない)
+        let end_pos = sorted.partition_point(|(s, _, _)| s.0 < task.end.0);
+        for (other_start, other_end, other_id) in &sorted[..end_pos] {
+            if *other_id == task.id {
                 continue;
             }
-            let Some((other_start, other_end)) = index[other.id] else {
-                continue;
-            };
-            if other_end <= sched_end || other_start >= task.end {
+            // sched_end を超えて終了するタスクのみバッファを遮る
+            if other_end.0 <= sched_end.0 {
                 continue;
             }
-            // 延長しても合法的に並行できるタスクはバッファを遮らない
+            let other = &planner.tasks[*other_id];
             if (task.allows_parallel && other.parallelizable)
                 || (other.allows_parallel && task.parallelizable)
             {
                 continue;
             }
-            if other_start < buffer_end {
-                buffer_end = other_start;
+            if other_start.0 < buffer_end.0 {
+                buffer_end = *other_start;
             }
         }
         let actual = (buffer_end.0 - sched_end.0).max(0);

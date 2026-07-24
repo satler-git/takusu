@@ -41,6 +41,29 @@ pub(crate) fn compute_earliest(planner: &Planner, schedules: &[Placement], task:
     earliest
 }
 
+/// `compute_earliest` の index 版。依存先の終了時刻を O(1) で参照する。
+/// decode のホットパスで schedules の線形走査を避ける。
+pub(crate) fn compute_earliest_indexed(
+    planner: &Planner,
+    index: &[Option<(Point, Point)>],
+    task: &Task,
+) -> Point {
+    let mut earliest = if task.fixed && task.start.is_some() {
+        Point(i64::MIN)
+    } else {
+        planner.now
+    };
+    if let Some(start) = task.start {
+        earliest = earliest.max(start);
+    }
+    for dep_id in &task.depends {
+        if let Some(Some((_, dep_end))) = index.get(*dep_id) {
+            earliest = earliest.max(*dep_end);
+        }
+    }
+    earliest
+}
+
 /// `[start, end)` と重なる睡眠窓があれば、その窓の終端スロットを返す。
 fn sleep_window_conflict(planner: &Planner, start: i64, end: i64) -> Option<i64> {
     let sleep = &planner.sleep;
@@ -130,7 +153,7 @@ pub(crate) fn max_end_in_day(planner: &Planner, schedules: &[Placement], cursor:
     Point(max_end)
 }
 
-fn capacity_exceeded_for(
+pub(crate) fn capacity_exceeded_for(
     planner: &Planner,
     schedules: &[Placement],
     start: Point,

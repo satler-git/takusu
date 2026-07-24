@@ -49,9 +49,11 @@ use rand::{Rng, RngExt};
 use rustc_hash::FxHashSet;
 
 use super::*;
-use crate::decoder::{DecodeInput, RepairMode, decode};
+use crate::decoder::{DecodeInput, RepairMode, decode, decode_status, fallback_for};
 use crate::habit;
-use crate::placement::{Placement, compute_earliest, try_place};
+use crate::placement::{
+    Placement, capacity_exceeded_for, compute_earliest, compute_earliest_indexed, try_place,
+};
 #[cfg(test)]
 use evaluate::evaluate;
 use evaluate::evaluate_with_scratch;
@@ -280,7 +282,7 @@ pub(crate) fn priority_order_search(planner: &Planner, rng: &mut impl Rng) -> Pl
     .plan;
     let mut current_score = evaluate_with_scratch(
         planner,
-        &current,
+        &current.schedules,
         0.0,
         1.0,
         &mut sorted,
@@ -322,7 +324,7 @@ pub(crate) fn priority_order_search(planner: &Planner, rng: &mut impl Rng) -> Pl
         .plan;
         let candidate_score = evaluate_with_scratch(
             planner,
-            &candidate,
+            &candidate.schedules,
             0.0,
             1.0,
             &mut sorted,
@@ -454,8 +456,6 @@ fn sa_polish_inner(
         .filter(|t| !pinned_ids.contains(&t.id))
         .map(|t| t.cost_estimate.avg as i64)
         .sum();
-    // full SA の T₀ (= total_avg * 0.1) より低い温度から始める。
-    // 既に良い解からの改善なので、大きな跳躍は不要。
     let t0 = (total_avg as f64 * 0.02).max(1.0);
     let alpha = 0.85;
     let t_min = t0 * 1e-3;
@@ -473,10 +473,23 @@ fn sa_polish_inner(
 
     let mut current = plan;
     let mut best = current.clone();
+    let mut neighbor_scheds: Vec<Placement> = Vec::with_capacity(n);
+
+    let unpinned_positions: Vec<usize> = if has_pinned {
+        current
+            .schedules
+            .iter()
+            .enumerate()
+            .filter(|(_, (_, _, id))| !pinned_ids.contains(id))
+            .map(|(i, _)| i)
+            .collect()
+    } else {
+        Vec::new()
+    };
 
     let mut eval_current = evaluate_with_scratch(
         planner,
-        &current,
+        &current.schedules,
         0.0,
         1.0,
         &mut sorted,
@@ -486,6 +499,7 @@ fn sa_polish_inner(
     let mut eval_best = eval_current;
 
     let mut temperature = t0;
+    let span = plan_span(&current);
 
     while temperature > t_min {
         if deadline.is_some_and(|d| Instant::now() >= d) {
@@ -497,18 +511,34 @@ fn sa_polish_inner(
                 break;
             }
 
-            let neighbor = if has_pinned {
-                generate_neighbor_partial(planner, &current, rng, pinned_ids, &habit_index)
+            let ok = if has_pinned {
+                generate_neighbor_partial_into(
+                    planner,
+                    &current.schedules,
+                    &mut neighbor_scheds,
+                    rng,
+                    pinned_ids,
+                    &habit_index,
+                    &unpinned_positions,
+                    span,
+                )
             } else {
-                generate_neighbor(planner, &current, rng, &habit_index)
+                generate_neighbor_into(
+                    planner,
+                    &current.schedules,
+                    &mut neighbor_scheds,
+                    rng,
+                    &habit_index,
+                    span,
+                )
             };
-            let Some(neighbor) = neighbor else {
+            if !ok {
                 continue;
-            };
+            }
 
             let eval_neighbor = evaluate_with_scratch(
                 planner,
-                &neighbor,
+                &neighbor_scheds,
                 0.0,
                 1.0,
                 &mut sorted,
@@ -518,10 +548,10 @@ fn sa_polish_inner(
 
             let delta = eval_neighbor - eval_current;
             if delta > 0.0 || rng.random::<f64>() < (delta / temperature).exp() {
-                current = neighbor;
+                std::mem::swap(&mut current.schedules, &mut neighbor_scheds);
                 eval_current = eval_neighbor;
                 if eval_current > eval_best {
-                    best = current.clone();
+                    best.schedules.clone_from(&current.schedules);
                     eval_best = eval_current;
                 }
             }
@@ -589,7 +619,7 @@ pub(crate) fn alns_search_pinned(
     let mut current_result = decode_result(&priority, initial_mode);
     let mut current_score = evaluate_with_scratch(
         planner,
-        &current_result.plan,
+        &current_result.plan.schedules,
         0.0,
         1.0,
         &mut sorted,
@@ -612,6 +642,16 @@ pub(crate) fn alns_search_pinned(
     let mut d_usages = vec![0usize; d_ops.len()];
     let mut r_usages = vec![0usize; r_ops.len()];
     let habit_index = habit::build_index(planner);
+
+    // 後続タスクの開始時刻 upper bound 計算用に依存グラフを事前構築
+    let mut dependents: Vec<Vec<usize>> = vec![vec![]; n];
+    for task in &planner.tasks {
+        for &dep in &task.depends {
+            if dep < n {
+                dependents[dep].push(task.id);
+            }
+        }
+    }
 
     let iterations = if config.iterations == 0 {
         n.max(1) * 50
@@ -651,11 +691,23 @@ pub(crate) fn alns_search_pinned(
         partial.retain(|id| !removed_set.contains(id));
 
         let new_priority = repair_priority(planner, &partial, &removed, repair_op, rng);
-        let repair_mode = repair_mode_for(repair_op);
-        let candidate_result = decode_result(&new_priority, repair_mode);
+
+        // incremental decode: 生存タスクの配置を維持し、除去タスクのみ再配置。
+        // full decode O(n²) の代わりに O(removed × n)。
+        let removed_in_order: Vec<usize> = new_priority
+            .iter()
+            .copied()
+            .filter(|id| removed_set.contains(id))
+            .collect();
+        let candidate_scheds = incremental_decode(
+            planner,
+            &current_result.plan.schedules,
+            &removed_in_order,
+            &dependents,
+        );
         let candidate_score = evaluate_with_scratch(
             planner,
-            &candidate_result.plan,
+            &candidate_scheds,
             0.0,
             1.0,
             &mut sorted,
@@ -671,13 +723,16 @@ pub(crate) fn alns_search_pinned(
         let mut new_best = false;
 
         if delta > 0.0 || rng.random::<f64>() < (delta / temperature.max(0.01)).exp() {
-            current_result = candidate_result;
+            current_result.plan.schedules = candidate_scheds;
             current_score = candidate_score;
             priority = new_priority;
             accepted = true;
 
             if current_score > best_score {
-                best_result = current_result.clone();
+                best_result
+                    .plan
+                    .schedules
+                    .clone_from(&current_result.plan.schedules);
                 best_score = current_score;
                 new_best = true;
             }
@@ -714,6 +769,37 @@ pub(crate) fn alns_search_pinned(
         best_result.plan =
             sa_polish_inner(planner, best_result.plan, &pinned_ids, rng, deadline, 3);
     }
+
+    // 最終 plan に対して status/diagnostics を再計算。
+    // decode() を pinned として検証し、capacity は別途チェックする。
+    let mut sorted_scheds = best_result.plan.schedules.clone();
+    sorted_scheds.sort_unstable_by_key(|(s, _, _)| s.0);
+    let final_priority: Vec<usize> = sorted_scheds.iter().map(|(_, _, id)| *id).collect();
+    let final_input = DecodeInput {
+        priority: &final_priority,
+        duration_choices: &[],
+        pinned: &best_result.plan.schedules,
+        repair_mode: RepairMode::Earliest,
+    };
+    let mut final_result = decode(planner, final_input);
+    if best_result
+        .plan
+        .schedules
+        .iter()
+        .any(|(s, e, _)| capacity_exceeded_for(planner, &best_result.plan.schedules, *s, *e))
+    {
+        final_result
+            .diagnostics
+            .failures
+            .push(PlacementFailure::DailyCapacityExceeded);
+        final_result.diagnostics.relaxed.push(RelaxedPlacement {
+            reason: PlacementFailure::DailyCapacityExceeded,
+        });
+        final_result.status = decode_status(&final_result.diagnostics);
+    }
+    best_result.diagnostics = final_result.diagnostics;
+    best_result.status = final_result.status;
+
     best_result
 }
 
@@ -1098,16 +1184,6 @@ pub(crate) fn repair_priority(
     result
 }
 
-fn repair_mode_for(op: RepairOperator) -> RepairMode {
-    match op {
-        RepairOperator::Earliest | RepairOperator::Random => RepairMode::Earliest,
-        RepairOperator::Deadline => RepairMode::Deadline,
-        RepairOperator::Regret2 => RepairMode::Regret2,
-        RepairOperator::LowestDelta => RepairMode::LowestDelta,
-        RepairOperator::HabitAnchor => RepairMode::HabitAnchor,
-    }
-}
-
 /// 改善なしの温度レベルがこの回数続いたら current を best に戻す (intensification)。
 const STAGNATION_LIMIT: u32 = 3;
 
@@ -1124,26 +1200,21 @@ fn plan_span(plan: &Plan) -> i64 {
     }
 }
 
-fn shift_range(current: &Plan, dur: i64, rng: &mut impl Rng) -> i64 {
-    if rng.random_range(0..LONG_SHIFT_ONE_IN) == 0 {
-        plan_span(current)
-    } else {
-        (dur / 2).max(1)
-    }
-}
-
 pub fn sa_lns(planner: &Planner, rng: &mut impl Rng) -> Plan {
     let task_count = planner.tasks.len().max(1);
 
     let mut current = build_initial(planner);
     let mut best = current.clone();
 
-    // Reusable scratch buffers for evaluate() so the SA hot loop does not
-    // allocate on every call.
     let mut sorted = Vec::with_capacity(task_count);
     let mut index = Vec::with_capacity(task_count);
     let mut habit_entries = Vec::with_capacity(task_count);
     let habit_index = habit::build_index(planner);
+
+    // Pre-allocated buffer for neighbor generation: avoids heap allocation
+    // per SA iteration. The neighbor is generated by copying current into
+    // this buffer and modifying in place. On accept, buffers are swapped.
+    let mut neighbor_scheds: Vec<Placement> = Vec::with_capacity(task_count);
 
     let total_avg: i64 = planner
         .tasks
@@ -1160,7 +1231,7 @@ pub fn sa_lns(planner: &Planner, rng: &mut impl Rng) -> Plan {
 
     let mut eval_current = evaluate_with_scratch(
         planner,
-        &current,
+        &current.schedules,
         temperature,
         t0,
         &mut sorted,
@@ -1171,6 +1242,7 @@ pub fn sa_lns(planner: &Planner, rng: &mut impl Rng) -> Plan {
 
     let mut stagnant_levels = 0u32;
     let deadline = deadline_from(planner.time_budget);
+    let span = plan_span(&current);
 
     while temperature > t_min {
         if deadline.is_some_and(|d| Instant::now() >= d) {
@@ -1183,12 +1255,20 @@ pub fn sa_lns(planner: &Planner, rng: &mut impl Rng) -> Plan {
                 break;
             }
 
-            let Some(neighbor) = generate_neighbor(planner, &current, rng, &habit_index) else {
+            if !generate_neighbor_into(
+                planner,
+                &current.schedules,
+                &mut neighbor_scheds,
+                rng,
+                &habit_index,
+                span,
+            ) {
                 continue;
-            };
+            }
+
             let eval_neighbor = evaluate_with_scratch(
                 planner,
-                &neighbor,
+                &neighbor_scheds,
                 temperature,
                 t0,
                 &mut sorted,
@@ -1196,27 +1276,21 @@ pub fn sa_lns(planner: &Planner, rng: &mut impl Rng) -> Plan {
                 &mut habit_entries,
             );
 
-            if is_tabu(&tabu, &neighbor) && eval_neighbor <= eval_best {
+            if is_tabu_scheds(&tabu, &neighbor_scheds) && eval_neighbor <= eval_best {
                 continue;
             }
 
             let delta = eval_neighbor - eval_current;
 
             if delta > 0.0 || rng.random::<f64>() < (delta / temperature).exp() {
-                mark_tabu(&mut tabu, &current, &neighbor);
-                current = neighbor;
+                mark_tabu_scheds(&mut tabu, &current.schedules, &neighbor_scheds);
+                std::mem::swap(&mut current.schedules, &mut neighbor_scheds);
                 eval_current = eval_neighbor;
 
                 if eval_current > eval_best {
-                    // Compare at T=0 to avoid temperature-dependent score
-                    // drift: evaluate's depend_score penalty scales with
-                    // temperature, so re-evaluating eval_best at a lower
-                    // temperature could make a worse plan score higher.
-                    // The T=0 comparison ensures best tracks the plan that
-                    // is actually best at the final temperature (#282).
                     if evaluate_with_scratch(
                         planner,
-                        &current,
+                        &current.schedules,
                         0.0,
                         t0,
                         &mut sorted,
@@ -1224,25 +1298,17 @@ pub fn sa_lns(planner: &Planner, rng: &mut impl Rng) -> Plan {
                         &mut habit_entries,
                     ) > evaluate_with_scratch(
                         planner,
-                        &best,
+                        &best.schedules,
                         0.0,
                         t0,
                         &mut sorted,
                         &mut index,
                         &mut habit_entries,
                     ) {
-                        best = current.clone();
+                        best.schedules.clone_from(&current.schedules);
                         eval_best = eval_current;
                         improved = true;
                     } else {
-                        // current beat eval_best at the current temperature
-                        // but is not actually better than best at T=0. Raise
-                        // eval_best to eval_current so the outer gate does
-                        // not fire again on every subsequent accepted
-                        // neighbor in this temperature step (avoids
-                        // redundant T=0 evaluations). eval_best is
-                        // re-synced to best's score at the end of the
-                        // temperature step below.
                         eval_best = eval_current;
                     }
                 }
@@ -1254,7 +1320,7 @@ pub fn sa_lns(planner: &Planner, rng: &mut impl Rng) -> Plan {
         } else {
             stagnant_levels += 1;
             if stagnant_levels >= STAGNATION_LIMIT {
-                current = best.clone();
+                current.schedules.clone_from(&best.schedules);
                 stagnant_levels = 0;
             }
         }
@@ -1262,7 +1328,7 @@ pub fn sa_lns(planner: &Planner, rng: &mut impl Rng) -> Plan {
         temperature *= alpha;
         eval_current = evaluate_with_scratch(
             planner,
-            &current,
+            &current.schedules,
             temperature,
             t0,
             &mut sorted,
@@ -1271,7 +1337,7 @@ pub fn sa_lns(planner: &Planner, rng: &mut impl Rng) -> Plan {
         );
         eval_best = evaluate_with_scratch(
             planner,
-            &best,
+            &best.schedules,
             temperature,
             t0,
             &mut sorted,
@@ -1300,12 +1366,22 @@ pub fn sa_lns_partial(planner: &Planner, pinned: &[Placement], rng: &mut impl Rn
     let mut current = build_initial_partial(planner, pinned);
     let mut best = current.clone();
 
-    // Reusable scratch buffers for evaluate() so the SA hot loop does not
-    // allocate on every call.
     let mut sorted = Vec::with_capacity(task_count);
     let mut index = Vec::with_capacity(task_count);
     let mut habit_entries = Vec::with_capacity(task_count);
     let habit_index = habit::build_index(planner);
+
+    let mut neighbor_scheds: Vec<Placement> = Vec::with_capacity(task_count);
+
+    // Pre-compute unpinned positions once; the set of unpinned tasks does not
+    // change during the SA loop (only their positions in the schedule change).
+    let unpinned_positions: Vec<usize> = current
+        .schedules
+        .iter()
+        .enumerate()
+        .filter(|(_, (_, _, id))| !pinned_ids.contains(id))
+        .map(|(i, _)| i)
+        .collect();
 
     let total_avg: i64 = planner
         .tasks
@@ -1323,7 +1399,7 @@ pub fn sa_lns_partial(planner: &Planner, pinned: &[Placement], rng: &mut impl Rn
 
     let mut eval_current = evaluate_with_scratch(
         planner,
-        &current,
+        &current.schedules,
         temperature,
         t0,
         &mut sorted,
@@ -1334,6 +1410,7 @@ pub fn sa_lns_partial(planner: &Planner, pinned: &[Placement], rng: &mut impl Rn
 
     let mut stagnant_levels = 0u32;
     let deadline = deadline_from(planner.time_budget);
+    let span = plan_span(&current);
 
     while temperature > t_min {
         if deadline.is_some_and(|d| Instant::now() >= d) {
@@ -1346,14 +1423,22 @@ pub fn sa_lns_partial(planner: &Planner, pinned: &[Placement], rng: &mut impl Rn
                 break;
             }
 
-            let Some(neighbor) =
-                generate_neighbor_partial(planner, &current, rng, &pinned_ids, &habit_index)
-            else {
+            if !generate_neighbor_partial_into(
+                planner,
+                &current.schedules,
+                &mut neighbor_scheds,
+                rng,
+                &pinned_ids,
+                &habit_index,
+                &unpinned_positions,
+                span,
+            ) {
                 continue;
-            };
+            }
+
             let eval_neighbor = evaluate_with_scratch(
                 planner,
-                &neighbor,
+                &neighbor_scheds,
                 temperature,
                 t0,
                 &mut sorted,
@@ -1361,23 +1446,21 @@ pub fn sa_lns_partial(planner: &Planner, pinned: &[Placement], rng: &mut impl Rn
                 &mut habit_entries,
             );
 
-            if is_tabu(&tabu, &neighbor) && eval_neighbor <= eval_best {
+            if is_tabu_scheds(&tabu, &neighbor_scheds) && eval_neighbor <= eval_best {
                 continue;
             }
 
             let delta = eval_neighbor - eval_current;
 
             if delta > 0.0 || rng.random::<f64>() < (delta / temperature).exp() {
-                mark_tabu(&mut tabu, &current, &neighbor);
-                current = neighbor;
+                mark_tabu_scheds(&mut tabu, &current.schedules, &neighbor_scheds);
+                std::mem::swap(&mut current.schedules, &mut neighbor_scheds);
                 eval_current = eval_neighbor;
 
                 if eval_current > eval_best {
-                    // Compare at T=0 to avoid temperature-dependent score
-                    // drift (#282).
                     if evaluate_with_scratch(
                         planner,
-                        &current,
+                        &current.schedules,
                         0.0,
                         t0,
                         &mut sorted,
@@ -1385,19 +1468,17 @@ pub fn sa_lns_partial(planner: &Planner, pinned: &[Placement], rng: &mut impl Rn
                         &mut habit_entries,
                     ) > evaluate_with_scratch(
                         planner,
-                        &best,
+                        &best.schedules,
                         0.0,
                         t0,
                         &mut sorted,
                         &mut index,
                         &mut habit_entries,
                     ) {
-                        best = current.clone();
+                        best.schedules.clone_from(&current.schedules);
                         eval_best = eval_current;
                         improved = true;
                     } else {
-                        // See sa_lns: raise eval_best to avoid redundant
-                        // T=0 evaluations within this temperature step.
                         eval_best = eval_current;
                     }
                 }
@@ -1409,7 +1490,7 @@ pub fn sa_lns_partial(planner: &Planner, pinned: &[Placement], rng: &mut impl Rn
         } else {
             stagnant_levels += 1;
             if stagnant_levels >= STAGNATION_LIMIT {
-                current = best.clone();
+                current.schedules.clone_from(&best.schedules);
                 stagnant_levels = 0;
             }
         }
@@ -1417,7 +1498,7 @@ pub fn sa_lns_partial(planner: &Planner, pinned: &[Placement], rng: &mut impl Rn
         temperature *= alpha;
         eval_current = evaluate_with_scratch(
             planner,
-            &current,
+            &current.schedules,
             temperature,
             t0,
             &mut sorted,
@@ -1426,7 +1507,7 @@ pub fn sa_lns_partial(planner: &Planner, pinned: &[Placement], rng: &mut impl Rn
         );
         eval_best = evaluate_with_scratch(
             planner,
-            &best,
+            &best.schedules,
             temperature,
             t0,
             &mut sorted,
@@ -1512,7 +1593,7 @@ fn repair_polish(planner: &Planner, best: Plan, pinned_ids: Option<&FxHashSet<us
     let mut eval_habit = Vec::with_capacity(planner.tasks.len());
     if evaluate_with_scratch(
         planner,
-        &rebuilt,
+        &rebuilt.schedules,
         0.0,
         1.0,
         &mut eval_sorted,
@@ -1520,7 +1601,7 @@ fn repair_polish(planner: &Planner, best: Plan, pinned_ids: Option<&FxHashSet<us
         &mut eval_habit,
     ) > evaluate_with_scratch(
         planner,
-        &best,
+        &best.schedules,
         0.0,
         1.0,
         &mut eval_sorted,
@@ -1593,31 +1674,96 @@ fn build_initial_partial(planner: &Planner, pinned: &[Placement]) -> Plan {
     Plan { schedules }
 }
 
-fn generate_neighbor_partial(
+fn is_tabu_scheds(tabu: &TabuList, schedules: &[Placement]) -> bool {
+    schedules
+        .iter()
+        .any(|(s, e, id)| tabu.contains(*id, *s, e.0 - s.0))
+}
+
+/// O(n) tabu marking using a task_id → (start, end) index instead of
+/// linear search per task (was O(n²) with `.find()`).
+fn mark_tabu_scheds(tabu: &mut TabuList, current: &[Placement], neighbor: &[Placement]) {
+    // task_id をインデックスに使うため、最大 task_id + 1 のサイズが必要。
+    // スケジュール数 ≠ タスク数 (task_id がスケジュール数より大きい場合がある)。
+    let max_id = current
+        .iter()
+        .chain(neighbor.iter())
+        .map(|(_, _, id)| *id)
+        .max()
+        .unwrap_or(0);
+    let mut cur_index: Vec<Option<(i64, i64)>> = vec![None; max_id + 1];
+    for (s, e, id) in current {
+        cur_index[*id] = Some((s.0, e.0));
+    }
+    for (s, e, id) in neighbor {
+        let changed = match cur_index[*id] {
+            Some((cs, ce)) => cs != s.0 || ce != e.0,
+            None => true,
+        };
+        if changed {
+            tabu.push(*id, *s, e.0 - s.0);
+        }
+    }
+}
+
+/// In-place neighbor generation: copies `current` into `buf` and modifies
+/// `buf`. Returns true on success. Avoids heap allocation per SA iteration
+/// by reusing the pre-allocated buffer.
+fn generate_neighbor_into(
     planner: &Planner,
-    current: &Plan,
+    current: &[Placement],
+    buf: &mut Vec<Placement>,
+    rng: &mut impl Rng,
+    habit: &habit::HabitIndex,
+    span: i64,
+) -> bool {
+    buf.clear();
+    buf.extend_from_slice(current);
+
+    let r = rng.random_range(0..100u32) as i32;
+
+    match r {
+        0..=16 => neighbor_shift_into(planner, buf, rng, span),
+        17..=33 => neighbor_swap_into(planner, buf, rng),
+        34..=47 => neighbor_duration_into(planner, buf, rng),
+        48..=61 => neighbor_reorder_into(planner, buf, rng),
+        62..=75 => neighbor_repair_depend_into(planner, buf, rng, None),
+        76..=85 => {
+            if !neighbor_habit_anchor_into(planner, buf, rng, habit, &FxHashSet::default()) {
+                neighbor_shift_into(planner, buf, rng, span)
+            } else {
+                true
+            }
+        }
+        86..=91 => {
+            if !neighbor_habit_exception_into(planner, buf, rng, habit, &FxHashSet::default()) {
+                neighbor_shift_into(planner, buf, rng, span)
+            } else {
+                true
+            }
+        }
+        _ => neighbor_lns_into(planner, buf, rng),
+    }
+}
+
+/// Partial-mode in-place neighbor generation with pre-computed unpinned positions.
+#[allow(clippy::too_many_arguments)]
+fn generate_neighbor_partial_into(
+    planner: &Planner,
+    current: &[Placement],
+    buf: &mut Vec<Placement>,
     rng: &mut impl Rng,
     pinned_ids: &FxHashSet<usize>,
     habit: &habit::HabitIndex,
-) -> Option<Plan> {
-    let unpinned: Vec<usize> = current
-        .schedules
-        .iter()
-        .filter(|(_, _, id)| !pinned_ids.contains(id))
-        .map(|(_, _, id)| *id)
-        .collect();
-
-    if unpinned.is_empty() {
-        return None;
+    unpinned_positions: &[usize],
+    span: i64,
+) -> bool {
+    if unpinned_positions.is_empty() {
+        return false;
     }
 
-    let unpinned_positions: Vec<usize> = current
-        .schedules
-        .iter()
-        .enumerate()
-        .filter(|(_, (_, _, id))| !pinned_ids.contains(id))
-        .map(|(i, _)| i)
-        .collect();
+    buf.clear();
+    buf.extend_from_slice(current);
 
     let r = rng.random_range(0..100u32) as i32;
 
@@ -1625,11 +1771,11 @@ fn generate_neighbor_partial(
         0..=16 => {
             let idx = rng.random_range(0..unpinned_positions.len());
             let pos = unpinned_positions[idx];
-            neighbor_shift_at(planner, current, pos, rng)
+            neighbor_shift_at_into(planner, buf, pos, rng, span)
         }
         17..=33 => {
-            if unpinned.len() < 2 {
-                return None;
+            if unpinned_positions.len() < 2 {
+                return false;
             }
             let a_idx = rng.random_range(0..unpinned_positions.len());
             let a_pos = unpinned_positions[a_idx];
@@ -1638,164 +1784,195 @@ fn generate_neighbor_partial(
                 b_idx = (a_idx + 1) % unpinned_positions.len();
             }
             let b_pos = unpinned_positions[b_idx];
-            neighbor_swap_at(planner, current, a_pos, b_pos)
+            neighbor_swap_at_into(planner, buf, a_pos, b_pos)
         }
         34..=47 => {
             let idx = rng.random_range(0..unpinned_positions.len());
             let pos = unpinned_positions[idx];
-            neighbor_duration_at(planner, current, pos, rng)
+            neighbor_duration_at_into(planner, buf, pos, rng)
         }
         48..=61 => {
-            if unpinned.len() < 2 {
-                return None;
+            if unpinned_positions.len() < 2 {
+                return false;
             }
-            neighbor_reorder_partial(planner, current, &unpinned_positions, rng)
+            neighbor_reorder_partial_into(planner, buf, unpinned_positions, rng)
         }
-        62..=75 => neighbor_repair_depend(planner, current, rng, Some(pinned_ids)),
+        62..=75 => neighbor_repair_depend_into(planner, buf, rng, Some(pinned_ids)),
         76..=85 => {
-            neighbor_habit_anchor_partial(planner, current, rng, pinned_ids, habit).or_else(|| {
+            if !neighbor_habit_anchor_into(planner, buf, rng, habit, pinned_ids) {
                 let idx = rng.random_range(0..unpinned_positions.len());
-                neighbor_shift_at(planner, current, unpinned_positions[idx], rng)
-            })
+                neighbor_shift_at_into(planner, buf, unpinned_positions[idx], rng, span)
+            } else {
+                true
+            }
         }
-        86..=91 => neighbor_habit_exception_partial(planner, current, rng, pinned_ids, habit)
-            .or_else(|| {
+        86..=91 => {
+            if !neighbor_habit_exception_into(planner, buf, rng, habit, pinned_ids) {
                 let idx = rng.random_range(0..unpinned_positions.len());
-                neighbor_shift_at(planner, current, unpinned_positions[idx], rng)
-            }),
-        _ => neighbor_lns_partial(planner, current, rng, pinned_ids),
+                neighbor_shift_at_into(planner, buf, unpinned_positions[idx], rng, span)
+            } else {
+                true
+            }
+        }
+        _ => neighbor_lns_partial_into(planner, buf, rng, pinned_ids),
     }
 }
 
-fn neighbor_habit_anchor_partial(
+fn neighbor_shift_into(
     planner: &Planner,
-    current: &Plan,
+    scheds: &mut [Placement],
     rng: &mut impl Rng,
-    pinned_ids: &FxHashSet<usize>,
-    habit: &habit::HabitIndex,
-) -> Option<Plan> {
-    if habit.groups.is_empty() {
-        return None;
+    span: i64,
+) -> bool {
+    if scheds.is_empty() {
+        return false;
     }
-    let group = &habit.groups[rng.random_range(0..habit.groups.len())];
-    let delta = habit_anchor_delta(planner, rng);
-    if delta == 0 {
-        return None;
-    }
-    habit::apply_anchor_shift(planner, current, group, delta, pinned_ids)
-}
-
-fn neighbor_habit_exception_partial(
-    planner: &Planner,
-    current: &Plan,
-    rng: &mut impl Rng,
-    pinned_ids: &FxHashSet<usize>,
-    habit: &habit::HabitIndex,
-) -> Option<Plan> {
-    if habit.groups.is_empty() {
-        return None;
-    }
-    let group = &habit.groups[rng.random_range(0..habit.groups.len())];
-    let movable: Vec<usize> = group
-        .members
-        .iter()
-        .copied()
-        .filter(|&id| !planner.tasks()[id].fixed && !pinned_ids.contains(&id))
-        .collect();
-    if movable.is_empty() {
-        return None;
-    }
-    let member = movable[rng.random_range(0..movable.len())];
-    let dur = current
-        .schedules
-        .iter()
-        .find(|(_, _, id)| *id == member)
-        .map(|(s, e, _)| e.0 - s.0)
-        .unwrap_or(1);
-    let range = shift_range(current, dur, rng);
-    let delta = rand_range(rng, -range, range + 1);
-    if delta == 0 {
-        return None;
-    }
-    habit::apply_member_shift(planner, current, member, delta, pinned_ids)
-}
-
-fn neighbor_shift_at(
-    planner: &Planner,
-    current: &Plan,
-    idx: usize,
-    rng: &mut impl Rng,
-) -> Option<Plan> {
-    let (start, end, task_id) = current.schedules[idx];
-    // 固定タスクは移動しない
+    let idx = rng.random_range(0..scheds.len());
+    let (start, end, task_id) = scheds[idx];
     if planner.tasks[task_id].fixed {
-        return None;
+        return false;
     }
     let dur = end.0 - start.0;
-    let range = shift_range(current, dur, rng);
+    let range = shift_range_from_span(dur, rng, span);
     let k = rand_range(rng, -range, range + 1);
     let new_start_0 = (start.0 + k).max(planner.now.0);
-    let mut new_scheds = current.schedules.to_vec();
-    new_scheds[idx] = (Point(new_start_0), Point(new_start_0 + dur), task_id);
-    Some(Plan {
-        schedules: new_scheds,
-    })
+    scheds[idx] = (Point(new_start_0), Point(new_start_0 + dur), task_id);
+    true
 }
 
-fn neighbor_swap_at(planner: &Planner, current: &Plan, a: usize, b: usize) -> Option<Plan> {
-    if a == b {
-        return None;
+fn neighbor_shift_at_into(
+    planner: &Planner,
+    scheds: &mut [Placement],
+    idx: usize,
+    rng: &mut impl Rng,
+    span: i64,
+) -> bool {
+    let (start, end, task_id) = scheds[idx];
+    if planner.tasks[task_id].fixed {
+        return false;
     }
-    let (a_s, a_e, a_id) = current.schedules[a];
-    let (b_s, b_e, b_id) = current.schedules[b];
-    // 固定タスクは移動しない
+    let dur = end.0 - start.0;
+    let range = shift_range_from_span(dur, rng, span);
+    let k = rand_range(rng, -range, range + 1);
+    let new_start_0 = (start.0 + k).max(planner.now.0);
+    scheds[idx] = (Point(new_start_0), Point(new_start_0 + dur), task_id);
+    true
+}
+
+fn neighbor_swap_into(planner: &Planner, scheds: &mut [Placement], rng: &mut impl Rng) -> bool {
+    if scheds.len() < 2 {
+        return false;
+    }
+    let a = rng.random_range(0..scheds.len());
+    let mut b = rng.random_range(0..scheds.len());
+    if b == a {
+        b = (a + 1) % scheds.len();
+    }
+    let (a_s, a_e, a_id) = scheds[a];
+    let (b_s, b_e, b_id) = scheds[b];
     if planner.tasks[a_id].fixed || planner.tasks[b_id].fixed {
-        return None;
+        return false;
     }
     let a_dur = a_e.0 - a_s.0;
     let b_dur = b_e.0 - b_s.0;
-    let mut new_scheds = current.schedules.to_vec();
-    new_scheds[a] = (b_s, Point(b_s.0 + a_dur), a_id);
-    new_scheds[b] = (a_s, Point(a_s.0 + b_dur), b_id);
-    Some(Plan {
-        schedules: new_scheds,
-    })
+    scheds[a] = (b_s, Point(b_s.0 + a_dur), a_id);
+    scheds[b] = (a_s, Point(a_s.0 + b_dur), b_id);
+    true
 }
 
-fn neighbor_duration_at(
-    planner: &Planner,
-    current: &Plan,
-    idx: usize,
-    rng: &mut impl Rng,
-) -> Option<Plan> {
-    let (start, end, task_id) = current.schedules[idx];
-    // 固定タスクは移動しない
+fn neighbor_swap_at_into(planner: &Planner, scheds: &mut [Placement], a: usize, b: usize) -> bool {
+    if a == b {
+        return false;
+    }
+    let (a_s, a_e, a_id) = scheds[a];
+    let (b_s, b_e, b_id) = scheds[b];
+    if planner.tasks[a_id].fixed || planner.tasks[b_id].fixed {
+        return false;
+    }
+    let a_dur = a_e.0 - a_s.0;
+    let b_dur = b_e.0 - b_s.0;
+    scheds[a] = (b_s, Point(b_s.0 + a_dur), a_id);
+    scheds[b] = (a_s, Point(a_s.0 + b_dur), b_id);
+    true
+}
+
+fn neighbor_duration_into(planner: &Planner, scheds: &mut [Placement], rng: &mut impl Rng) -> bool {
+    if scheds.is_empty() {
+        return false;
+    }
+    let idx = rng.random_range(0..scheds.len());
+    let (start, end, task_id) = scheds[idx];
     if planner.tasks[task_id].fixed {
-        return None;
+        return false;
     }
     let dur = end.0 - start.0;
     if dur <= 1 {
-        return None;
+        return false;
     }
     let delta: i64 = if rng.random::<bool>() { 1 } else { -1 };
     let new_dur = dur + delta;
     if new_dur < 1 {
-        return None;
+        return false;
     }
-    let mut new_scheds = current.schedules.to_vec();
-    new_scheds[idx] = (start, Point(start.0 + new_dur), task_id);
-    Some(Plan {
-        schedules: new_scheds,
-    })
+    scheds[idx] = (start, Point(start.0 + new_dur), task_id);
+    true
 }
 
-fn neighbor_reorder_partial(
+fn neighbor_duration_at_into(
     planner: &Planner,
-    current: &Plan,
+    scheds: &mut [Placement],
+    idx: usize,
+    rng: &mut impl Rng,
+) -> bool {
+    let (start, end, task_id) = scheds[idx];
+    if planner.tasks[task_id].fixed {
+        return false;
+    }
+    let dur = end.0 - start.0;
+    if dur <= 1 {
+        return false;
+    }
+    let delta: i64 = if rng.random::<bool>() { 1 } else { -1 };
+    let new_dur = dur + delta;
+    if new_dur < 1 {
+        return false;
+    }
+    scheds[idx] = (start, Point(start.0 + new_dur), task_id);
+    true
+}
+
+fn neighbor_reorder_into(planner: &Planner, scheds: &mut [Placement], rng: &mut impl Rng) -> bool {
+    if scheds.len() < 2 {
+        return false;
+    }
+    let a = rng.random_range(0..scheds.len());
+    let mut b = rng.random_range(0..scheds.len());
+    if b == a {
+        b = (a + 1) % scheds.len();
+    }
+    let (a_s, _, a_id) = scheds[a];
+    let (b_s, _, b_id) = scheds[b];
+    if planner.tasks[a_id].fixed || planner.tasks[b_id].fixed {
+        return false;
+    }
+    let (first, second) = if a_s.0 <= b_s.0 { (a, b) } else { (b, a) };
+    let f_s = scheds[first].0;
+    let f_e = scheds[first].1;
+    let f_dur = f_e.0 - f_s.0;
+    let s_s = scheds[second].0;
+    let s_e = scheds[second].1;
+    let s_dur = s_e.0 - s_s.0;
+    scheds[first] = (s_s, Point(s_s.0 + f_dur), scheds[first].2);
+    scheds[second] = (f_s, Point(f_s.0 + s_dur), scheds[second].2);
+    true
+}
+
+fn neighbor_reorder_partial_into(
+    planner: &Planner,
+    scheds: &mut [Placement],
     unpinned_positions: &[usize],
     rng: &mut impl Rng,
-) -> Option<Plan> {
-    let schedules = &current.schedules;
+) -> bool {
     let a_idx = rng.random_range(0..unpinned_positions.len());
     let a = unpinned_positions[a_idx];
     let mut b_idx = rng.random_range(0..unpinned_positions.len());
@@ -1804,320 +1981,36 @@ fn neighbor_reorder_partial(
     }
     let b = unpinned_positions[b_idx];
 
-    let (_, _, a_id) = schedules[a];
-    let (_, _, b_id) = schedules[b];
+    let (_, _, a_id) = scheds[a];
+    let (_, _, b_id) = scheds[b];
     if planner.tasks[a_id].fixed || planner.tasks[b_id].fixed {
-        return None;
+        return false;
     }
 
-    let (a_s, _a_e, _a_id) = schedules[a];
-    let (b_s, _b_e, _b_id) = schedules[b];
-
+    let (a_s, _, _) = scheds[a];
+    let (b_s, _, _) = scheds[b];
     let (first, second) = if a_s.0 <= b_s.0 { (a, b) } else { (b, a) };
-    let f_s = schedules[first].0;
-    let f_e = schedules[first].1;
+    let f_s = scheds[first].0;
+    let f_e = scheds[first].1;
     let f_dur = f_e.0 - f_s.0;
-    let s_s = schedules[second].0;
-    let s_e = schedules[second].1;
+    let s_s = scheds[second].0;
+    let s_e = scheds[second].1;
     let s_dur = s_e.0 - s_s.0;
-
-    let mut new_scheds = schedules.to_vec();
-    new_scheds[first] = (s_s, Point(s_s.0 + f_dur), schedules[first].2);
-    new_scheds[second] = (f_s, Point(f_s.0 + s_dur), schedules[second].2);
-
-    Some(Plan {
-        schedules: new_scheds,
-    })
+    scheds[first] = (s_s, Point(s_s.0 + f_dur), scheds[first].2);
+    scheds[second] = (f_s, Point(f_s.0 + s_dur), scheds[second].2);
+    true
 }
 
-fn neighbor_lns_partial(
+fn neighbor_repair_depend_into(
     planner: &Planner,
-    current: &Plan,
-    rng: &mut impl Rng,
-    pinned_ids: &FxHashSet<usize>,
-) -> Option<Plan> {
-    let schedules = &current.schedules;
-    if schedules.is_empty() {
-        return None;
-    }
-
-    let unpinned: Vec<(usize, Point, Point)> = schedules
-        .iter()
-        .filter(|(_, _, id)| !pinned_ids.contains(id))
-        .map(|(s, e, id)| (*id, *s, *e))
-        .collect();
-
-    if unpinned.is_empty() {
-        return None;
-    }
-
-    let pivot_idx = rng.random_range(0..schedules.len());
-    let (pivot_start, pivot_end, _) = schedules[pivot_idx];
-
-    let window_size = ((pivot_end.0 - pivot_start.0) * 2)
-        .max(4)
-        .min(schedules.iter().map(|(s, e, _)| e.0 - s.0).sum::<i64>() / 3 + 1);
-
-    let window_start = pivot_start.0 - rand_range(rng, 0, window_size / 2 + 1);
-    let window_end = window_start + window_size;
-
-    let mut destroyed_ids = Vec::new();
-    let mut remaining = Vec::new();
-    for sched in schedules {
-        // 固定タスクと pinned タスクは破壊対象にしない
-        if planner.tasks[sched.2].fixed || pinned_ids.contains(&sched.2) {
-            remaining.push(*sched);
-        } else if sched.0.0 >= window_start && sched.0.0 < window_end {
-            destroyed_ids.push(sched.2);
-        } else {
-            remaining.push(*sched);
-        }
-    }
-
-    let rebuilt = greedy_rebuild(planner, &remaining, &destroyed_ids);
-
-    Some(Plan { schedules: rebuilt })
-}
-
-fn is_tabu(tabu: &TabuList, plan: &Plan) -> bool {
-    plan.schedules
-        .iter()
-        .any(|(s, e, id)| tabu.contains(*id, *s, e.0 - s.0))
-}
-
-fn mark_tabu(tabu: &mut TabuList, current: &Plan, neighbor: &Plan) {
-    // Only record tasks whose (start, duration) changed between current and
-    // neighbor, instead of all tasks in the plan (#281). This preserves the
-    // design intent: "同一タスクの同一配置への再訪を防ぐ" for the moved
-    // tasks only, so unrelated moves are not over-restricted.
-    for (s, e, id) in &neighbor.schedules {
-        let changed = current
-            .schedules
-            .iter()
-            .find(|(_, _, cid)| cid == id)
-            .is_none_or(|(cs, ce, _)| cs.0 != s.0 || ce.0 != e.0);
-        if changed {
-            tabu.push(*id, *s, e.0 - s.0);
-        }
-    }
-}
-
-fn generate_neighbor(
-    planner: &Planner,
-    current: &Plan,
-    rng: &mut impl Rng,
-    habit: &habit::HabitIndex,
-) -> Option<Plan> {
-    let r = rng.random_range(0..100u32) as i32;
-
-    match r {
-        0..=16 => neighbor_shift(planner, current, rng),
-        17..=33 => neighbor_swap(planner, current, rng),
-        34..=47 => neighbor_duration(planner, current, rng),
-        48..=61 => neighbor_reorder(planner, current, rng),
-        62..=75 => neighbor_repair_depend(planner, current, rng, None),
-        // habit 階層 move。habit がない fixture では shift に fallback し、
-        // iteration を無駄にしない。
-        76..=85 => neighbor_habit_anchor(planner, current, rng, habit)
-            .or_else(|| neighbor_shift(planner, current, rng)),
-        86..=91 => neighbor_habit_exception(planner, current, rng, habit)
-            .or_else(|| neighbor_shift(planner, current, rng)),
-        _ => neighbor_lns(planner, current, rng),
-    }
-}
-
-/// habit group 全体の anchor (時刻帯) を一律に動かす近傍。
-/// 各 occurrence は自分の日を保持したまま、グループの時刻一貫性を強制する。
-fn neighbor_habit_anchor(
-    planner: &Planner,
-    current: &Plan,
-    rng: &mut impl Rng,
-    habit: &habit::HabitIndex,
-) -> Option<Plan> {
-    if habit.groups.is_empty() {
-        return None;
-    }
-    let group = &habit.groups[rng.random_range(0..habit.groups.len())];
-    let delta = habit_anchor_delta(planner, rng);
-    if delta == 0 {
-        return None;
-    }
-    let pinned = FxHashSet::default();
-    habit::apply_anchor_shift(planner, current, group, delta, &pinned)
-}
-
-/// habit member 1 件を anchor から逸脱させる近傍 (exception 生成)。
-fn neighbor_habit_exception(
-    planner: &Planner,
-    current: &Plan,
-    rng: &mut impl Rng,
-    habit: &habit::HabitIndex,
-) -> Option<Plan> {
-    if habit.groups.is_empty() {
-        return None;
-    }
-    let group = &habit.groups[rng.random_range(0..habit.groups.len())];
-    let movable: Vec<usize> = group
-        .members
-        .iter()
-        .copied()
-        .filter(|&id| !planner.tasks()[id].fixed)
-        .collect();
-    if movable.is_empty() {
-        return None;
-    }
-    let member = movable[rng.random_range(0..movable.len())];
-    let dur = current
-        .schedules
-        .iter()
-        .find(|(_, _, id)| *id == member)
-        .map(|(s, e, _)| e.0 - s.0)
-        .unwrap_or(1);
-    let range = shift_range(current, dur, rng);
-    let delta = rand_range(rng, -range, range + 1);
-    if delta == 0 {
-        return None;
-    }
-    let pinned = FxHashSet::default();
-    habit::apply_member_shift(planner, current, member, delta, &pinned)
-}
-
-/// anchor 移動の時刻帯 delta。通常は ±1 時間程度、まれに大きく探索する。
-fn habit_anchor_delta(planner: &Planner, rng: &mut impl Rng) -> i64 {
-    let spd = (24 * 60) / planner.per() as i64;
-    let range = if rng.random_range(0..LONG_SHIFT_ONE_IN) == 0 {
-        (spd / 4).max(1)
-    } else {
-        (spd / 24).max(1)
-    };
-    rand_range(rng, -range, range + 1)
-}
-
-fn neighbor_shift(planner: &Planner, current: &Plan, rng: &mut impl Rng) -> Option<Plan> {
-    let schedules = &current.schedules;
-    if schedules.is_empty() {
-        return None;
-    }
-    let idx = rng.random_range(0..schedules.len());
-    let (start, end, task_id) = schedules[idx];
-    if planner.tasks[task_id].fixed {
-        return None;
-    }
-    let dur = end.0 - start.0;
-    let range = shift_range(current, dur, rng);
-    let k = rand_range(rng, -range, range + 1);
-
-    let new_start_0 = (start.0 + k).max(planner.now.0);
-    let mut new_scheds = schedules.to_vec();
-    new_scheds[idx] = (Point(new_start_0), Point(new_start_0 + dur), task_id);
-    Some(Plan {
-        schedules: new_scheds,
-    })
-}
-
-fn neighbor_swap(planner: &Planner, current: &Plan, rng: &mut impl Rng) -> Option<Plan> {
-    let schedules = &current.schedules;
-    if schedules.len() < 2 {
-        return None;
-    }
-    let a = rng.random_range(0..schedules.len());
-    let mut b = rng.random_range(0..schedules.len());
-    if b == a {
-        b = (a + 1) % schedules.len();
-    }
-
-    let (a_s, a_e, a_id) = schedules[a];
-    let (b_s, b_e, b_id) = schedules[b];
-    // 固定タスクは移動しない
-    if planner.tasks[a_id].fixed || planner.tasks[b_id].fixed {
-        return None;
-    }
-    let a_dur = a_e.0 - a_s.0;
-    let b_dur = b_e.0 - b_s.0;
-
-    let mut new_scheds = schedules.to_vec();
-    new_scheds[a] = (b_s, Point(b_s.0 + a_dur), a_id);
-    new_scheds[b] = (a_s, Point(a_s.0 + b_dur), b_id);
-    Some(Plan {
-        schedules: new_scheds,
-    })
-}
-
-fn neighbor_duration(planner: &Planner, current: &Plan, rng: &mut impl Rng) -> Option<Plan> {
-    let schedules = &current.schedules;
-    if schedules.is_empty() {
-        return None;
-    }
-    let idx = rng.random_range(0..schedules.len());
-    let (start, end, task_id) = schedules[idx];
-    // 固定タスクは移動しない
-    if planner.tasks[task_id].fixed {
-        return None;
-    }
-    let dur = end.0 - start.0;
-    if dur <= 1 {
-        return None;
-    }
-    let delta: i64 = if rng.random::<bool>() { 1 } else { -1 };
-    let new_dur = dur + delta;
-    if new_dur < 1 {
-        return None;
-    }
-
-    let mut new_scheds = schedules.to_vec();
-    new_scheds[idx] = (start, Point(start.0 + new_dur), task_id);
-    Some(Plan {
-        schedules: new_scheds,
-    })
-}
-
-fn neighbor_reorder(planner: &Planner, current: &Plan, rng: &mut impl Rng) -> Option<Plan> {
-    let schedules = &current.schedules;
-    if schedules.len() < 2 {
-        return None;
-    }
-    let a = rng.random_range(0..schedules.len());
-    let mut b = rng.random_range(0..schedules.len());
-    if b == a {
-        b = (a + 1) % schedules.len();
-    }
-
-    let (a_s, _a_e, a_id) = schedules[a];
-    let (b_s, _b_e, b_id) = schedules[b];
-    // 固定タスクは移動しない
-    if planner.tasks[a_id].fixed || planner.tasks[b_id].fixed {
-        return None;
-    }
-
-    let (first, second) = if a_s.0 <= b_s.0 { (a, b) } else { (b, a) };
-    let f_s = schedules[first].0;
-    let f_e = schedules[first].1;
-    let f_dur = f_e.0 - f_s.0;
-    let s_s = schedules[second].0;
-    let s_e = schedules[second].1;
-    let s_dur = s_e.0 - s_s.0;
-
-    let mut new_scheds = schedules.to_vec();
-    new_scheds[first] = (s_s, Point(s_s.0 + f_dur), schedules[first].2);
-    new_scheds[second] = (f_s, Point(f_s.0 + s_dur), schedules[second].2);
-
-    Some(Plan {
-        schedules: new_scheds,
-    })
-}
-
-/// 依存違反を一つ選んで修復する: 依存先の終了直後に依存元タスクを移動。
-/// `pinned_ids` が Some の場合、pinned タスクは移動しない。
-fn neighbor_repair_depend(
-    planner: &Planner,
-    current: &Plan,
+    scheds: &mut [Placement],
     rng: &mut impl Rng,
     pinned_ids: Option<&FxHashSet<usize>>,
-) -> Option<Plan> {
-    let schedules = &current.schedules;
-    let mut index: Vec<Option<(Point, Point)>> = vec![None; planner.tasks.len()];
-    for (s, e, id) in schedules {
-        if *id < index.len() {
+) -> bool {
+    let n = planner.tasks.len();
+    let mut index: Vec<Option<(Point, Point)>> = vec![None; n];
+    for (s, e, id) in scheds.iter() {
+        if *id < n {
             index[*id] = Some((*s, *e));
         }
     }
@@ -2129,7 +2022,6 @@ fn neighbor_repair_depend(
         {
             continue;
         }
-        // 固定タスクは移動しない
         if task.fixed {
             continue;
         }
@@ -2150,41 +2042,128 @@ fn neighbor_repair_depend(
     }
 
     if violations.is_empty() {
-        return None;
+        return false;
     }
 
     let (task_id, new_start) = violations[rng.random_range(0..violations.len())];
-    let pos = schedules.iter().position(|(_, _, id)| *id == task_id)?;
-    let (start, end, _) = schedules[pos];
+    let Some(pos) = scheds.iter().position(|(_, _, id)| *id == task_id) else {
+        return false;
+    };
+    let (start, end, _) = scheds[pos];
     let dur = end.0 - start.0;
-
-    let mut new_scheds = schedules.to_vec();
-    new_scheds[pos] = (new_start, Point(new_start.0 + dur), task_id);
-    Some(Plan {
-        schedules: new_scheds,
-    })
+    scheds[pos] = (new_start, Point(new_start.0 + dur), task_id);
+    true
 }
 
-fn neighbor_lns(planner: &Planner, current: &Plan, rng: &mut impl Rng) -> Option<Plan> {
-    let schedules = &current.schedules;
-    if schedules.is_empty() {
-        return None;
+/// anchor 移動の時刻帯 delta。通常は ±1 時間程度、まれに大きく探索する。
+fn habit_anchor_delta(planner: &Planner, rng: &mut impl Rng) -> i64 {
+    let spd = (24 * 60) / planner.per() as i64;
+    let range = if rng.random_range(0..LONG_SHIFT_ONE_IN) == 0 {
+        (spd / 4).max(1)
+    } else {
+        (spd / 24).max(1)
+    };
+    rand_range(rng, -range, range + 1)
+}
+
+fn neighbor_habit_anchor_into(
+    planner: &Planner,
+    scheds: &mut Vec<Placement>,
+    rng: &mut impl Rng,
+    habit: &habit::HabitIndex,
+    pinned_ids: &FxHashSet<usize>,
+) -> bool {
+    if habit.groups.is_empty() {
+        return false;
+    }
+    let group = &habit.groups[rng.random_range(0..habit.groups.len())];
+    let delta = habit_anchor_delta(planner, rng);
+    if delta == 0 {
+        return false;
+    }
+    let plan = Plan {
+        schedules: std::mem::take(scheds),
+    };
+    let result = habit::apply_anchor_shift(planner, &plan, group, delta, pinned_ids);
+    match result {
+        Some(new_plan) => {
+            *scheds = new_plan.schedules;
+            true
+        }
+        None => {
+            *scheds = plan.schedules;
+            false
+        }
+    }
+}
+
+fn neighbor_habit_exception_into(
+    planner: &Planner,
+    scheds: &mut Vec<Placement>,
+    rng: &mut impl Rng,
+    habit: &habit::HabitIndex,
+    pinned_ids: &FxHashSet<usize>,
+) -> bool {
+    if habit.groups.is_empty() {
+        return false;
+    }
+    let group = &habit.groups[rng.random_range(0..habit.groups.len())];
+    let movable: Vec<usize> = group
+        .members
+        .iter()
+        .copied()
+        .filter(|&id| !planner.tasks()[id].fixed && !pinned_ids.contains(&id))
+        .collect();
+    if movable.is_empty() {
+        return false;
+    }
+    let member = movable[rng.random_range(0..movable.len())];
+    let dur = scheds
+        .iter()
+        .find(|(_, _, id)| *id == member)
+        .map(|(s, e, _)| e.0 - s.0)
+        .unwrap_or(1);
+    let span = plan_span_scheds(scheds);
+    let range = shift_range_from_span(dur, rng, span);
+    let delta = rand_range(rng, -range, range + 1);
+    if delta == 0 {
+        return false;
+    }
+    let plan = Plan {
+        schedules: std::mem::take(scheds),
+    };
+    let result = habit::apply_member_shift(planner, &plan, member, delta, pinned_ids);
+    match result {
+        Some(new_plan) => {
+            *scheds = new_plan.schedules;
+            true
+        }
+        None => {
+            *scheds = plan.schedules;
+            false
+        }
+    }
+}
+
+fn neighbor_lns_into(planner: &Planner, scheds: &mut Vec<Placement>, rng: &mut impl Rng) -> bool {
+    if scheds.is_empty() {
+        return false;
     }
 
-    let pivot_idx = rng.random_range(0..schedules.len());
-    let (pivot_start, pivot_end, _) = schedules[pivot_idx];
+    let pivot_idx = rng.random_range(0..scheds.len());
+    let (pivot_start, pivot_end, _) = scheds[pivot_idx];
 
+    let total_dur: i64 = scheds.iter().map(|(s, e, _)| e.0 - s.0).sum();
     let window_size = ((pivot_end.0 - pivot_start.0) * 2)
         .max(4)
-        .min(schedules.iter().map(|(s, e, _)| e.0 - s.0).sum::<i64>() / 3 + 1);
+        .min(total_dur / 3 + 1);
 
     let window_start = pivot_start.0 - rand_range(rng, 0, window_size / 2 + 1);
     let window_end = window_start + window_size;
 
     let mut destroyed_ids = Vec::new();
     let mut remaining = Vec::new();
-    for sched in schedules {
-        // 固定タスクは破壊対象にしない (remaining に残す)
+    for sched in scheds.iter() {
         if planner.tasks[sched.2].fixed {
             remaining.push(*sched);
         } else if sched.0.0 >= window_start && sched.0.0 < window_end {
@@ -2195,8 +2174,159 @@ fn neighbor_lns(planner: &Planner, current: &Plan, rng: &mut impl Rng) -> Option
     }
 
     let rebuilt = greedy_rebuild(planner, &remaining, &destroyed_ids);
+    *scheds = rebuilt;
+    true
+}
 
-    Some(Plan { schedules: rebuilt })
+fn neighbor_lns_partial_into(
+    planner: &Planner,
+    scheds: &mut Vec<Placement>,
+    rng: &mut impl Rng,
+    pinned_ids: &FxHashSet<usize>,
+) -> bool {
+    if scheds.is_empty() {
+        return false;
+    }
+
+    let pivot_idx = rng.random_range(0..scheds.len());
+    let (pivot_start, pivot_end, _) = scheds[pivot_idx];
+
+    let total_dur: i64 = scheds.iter().map(|(s, e, _)| e.0 - s.0).sum();
+    let window_size = ((pivot_end.0 - pivot_start.0) * 2)
+        .max(4)
+        .min(total_dur / 3 + 1);
+
+    let window_start = pivot_start.0 - rand_range(rng, 0, window_size / 2 + 1);
+    let window_end = window_start + window_size;
+
+    let mut destroyed_ids = Vec::new();
+    let mut remaining = Vec::new();
+    for sched in scheds.iter() {
+        if planner.tasks[sched.2].fixed || pinned_ids.contains(&sched.2) {
+            remaining.push(*sched);
+        } else if sched.0.0 >= window_start && sched.0.0 < window_end {
+            destroyed_ids.push(sched.2);
+        } else {
+            remaining.push(*sched);
+        }
+    }
+
+    let rebuilt = greedy_rebuild(planner, &remaining, &destroyed_ids);
+    *scheds = rebuilt;
+    true
+}
+
+/// Cached plan_span that works on a slice.
+fn plan_span_scheds(schedules: &[Placement]) -> i64 {
+    let min_s = schedules.iter().map(|(s, _, _)| s.0).min();
+    let max_e = schedules.iter().map(|(_, e, _)| e.0).max();
+    match (min_s, max_e) {
+        (Some(a), Some(b)) => (b - a).max(1),
+        _ => 1,
+    }
+}
+
+/// shift_range using a pre-computed span to avoid re-scanning the schedule.
+fn shift_range_from_span(dur: i64, rng: &mut impl Rng, span: i64) -> i64 {
+    if rng.random_range(0..LONG_SHIFT_ONE_IN) == 0 {
+        span
+    } else {
+        (dur / 2).max(1)
+    }
+}
+
+/// Incremental decode: 生存タスクの配置を維持し、除去タスクのみ再配置する。
+/// 全タスク再配置の decode() O(n²) に対し、O(removed × n) で済む。
+/// removed は priority 順 (repair 済み) で渡される。
+///
+/// 注意: repair operator の配置戦略 (Regret2/LowestDelta/HabitAnchor 等) は
+/// 使用せず、全て Earliest 配置する。repair operator の多様性は
+/// repair_priority の priority ソート順序を通じて間接的に反映される。
+/// これは速度と探索品質のトレードオフ: full decode の配置戦略を維持すると
+/// O(n²) に戻るため、incremental decode では簡略化している。
+fn incremental_decode(
+    planner: &Planner,
+    current_schedules: &[Placement],
+    removed: &[usize],
+    dependents: &[Vec<usize>],
+) -> Vec<Placement> {
+    let n = planner.tasks.len();
+    let removed_set: FxHashSet<usize> = removed.iter().copied().collect();
+
+    // 生存タスクの配置を維持
+    let mut scheds: Vec<Placement> = current_schedules
+        .iter()
+        .filter(|(_, _, id)| !removed_set.contains(id))
+        .copied()
+        .collect();
+
+    // 生存タスクの index (latest_end 計算用)
+    let mut pos_index: Vec<Option<(Point, Point)>> = vec![None; n];
+    for (s, e, id) in &scheds {
+        if *id < n {
+            pos_index[*id] = Some((*s, *e));
+        }
+    }
+
+    let mut placed: FxHashSet<usize> = scheds.iter().map(|(_, _, id)| *id).collect();
+    let mut pending: Vec<usize> = removed.to_vec();
+
+    while !pending.is_empty() {
+        let mut next_pending = Vec::new();
+        let mut progressed = false;
+
+        for &task_id in &pending {
+            let task = &planner.tasks[task_id];
+            let deps_ready = task
+                .depends
+                .iter()
+                .all(|d| *d >= n || placed.contains(d) || !removed_set.contains(d));
+            if !deps_ready {
+                next_pending.push(task_id);
+                continue;
+            }
+
+            let dur = (task.cost_estimate.avg as i64).max(1);
+            let earliest = compute_earliest_indexed(planner, &pos_index, task);
+            let latest_end = dependents[task_id]
+                .iter()
+                .filter_map(|&d| pos_index[d].map(|(s, _)| s))
+                .min();
+            if let Ok((start, end)) =
+                try_place::<false>(planner, &scheds, task, earliest, dur, latest_end)
+            {
+                scheds.push((start, end, task_id));
+                pos_index[task_id] = Some((start, end));
+            } else {
+                let (start, end, _err) =
+                    fallback_for::<false>(planner, &scheds, earliest, dur, latest_end, task);
+                scheds.push((start, end, task_id));
+                pos_index[task_id] = Some((start, end));
+            }
+            placed.insert(task_id);
+            progressed = true;
+        }
+
+        if !progressed {
+            for &task_id in &next_pending {
+                let task = &planner.tasks[task_id];
+                let dur = (task.cost_estimate.avg as i64).max(1);
+                let earliest = compute_earliest_indexed(planner, &pos_index, task);
+                let latest_end = dependents[task_id]
+                    .iter()
+                    .filter_map(|&d| pos_index[d].map(|(s, _)| s))
+                    .min();
+                let (start, end, _err) =
+                    fallback_for::<false>(planner, &scheds, earliest, dur, latest_end, task);
+                scheds.push((start, end, task_id));
+                pos_index[task_id] = Some((start, end));
+            }
+            break;
+        }
+        pending = next_pending;
+    }
+
+    scheds
 }
 
 fn greedy_rebuild(planner: &Planner, existing: &[Placement], task_ids: &[usize]) -> Vec<Placement> {
@@ -2344,17 +2474,14 @@ mod tests {
 
         let mut saw_some = false;
         let habit_index = habit::build_index(&planner);
+        let pinned = FxHashSet::default();
         for seed in 0..32u64 {
             let mut rng = StdRng::seed_from_u64(seed);
-            if let Some(neighbor) =
-                neighbor_habit_anchor(&planner, &current, &mut rng, &habit_index)
-            {
+            let mut buf = current.schedules.clone();
+            if neighbor_habit_anchor_into(&planner, &mut buf, &mut rng, &habit_index, &pinned) {
                 saw_some = true;
-                let tods_after: Vec<i64> = neighbor
-                    .schedules
-                    .iter()
-                    .map(|(s, _, _)| s.0.rem_euclid(spd))
-                    .collect();
+                let tods_after: Vec<i64> =
+                    buf.iter().map(|(s, _, _)| s.0.rem_euclid(spd)).collect();
                 let first = tods_after[0];
                 assert!(
                     tods_after.iter().all(|t| *t == first),

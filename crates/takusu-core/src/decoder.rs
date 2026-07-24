@@ -215,7 +215,7 @@ fn validate_and_collect_fixed(
     placements
 }
 
-fn decode_status(diagnostics: &DecodeDiagnostics) -> DecodeStatus {
+pub(crate) fn decode_status(diagnostics: &DecodeDiagnostics) -> DecodeStatus {
     if !diagnostics.pinned_conflicts.is_empty() {
         return DecodeStatus::Infeasible;
     }
@@ -291,7 +291,7 @@ fn place_task_earliest(
     dependents: &[Vec<usize>],
 ) -> (Point, Point, Option<PlacementFailure>) {
     let task = &planner.tasks[task_id];
-    let earliest = compute_earliest(planner, schedules, task);
+    let earliest = compute_earliest_indexed(planner, index, task);
     let latest_end = latest_end_for(task_id, index, dependents);
     let mut first_err = None;
 
@@ -327,7 +327,7 @@ fn place_task_near_anchor(
     anchor: i64,
 ) -> (Point, Point, Option<PlacementFailure>) {
     let task = &planner.tasks[task_id];
-    let earliest = compute_earliest(planner, schedules, task);
+    let earliest = compute_earliest_indexed(planner, index, task);
     let latest_end = latest_end_for(task_id, index, dependents);
     let mut best: Option<(Point, Point, i64)> = None;
 
@@ -372,7 +372,7 @@ fn place_task_lowest_delta(
     dependents: &[Vec<usize>],
 ) -> (Point, Point, Option<PlacementFailure>) {
     let task = &planner.tasks[task_id];
-    let earliest = compute_earliest(planner, schedules, task);
+    let earliest = compute_earliest_indexed(planner, index, task);
     let latest_end = latest_end_for(task_id, index, dependents);
     let mut best: Option<(Point, Point, f64)> = None;
     let mut first_err = None;
@@ -440,7 +440,7 @@ fn place_regret2(
 
     for &task_id in ready {
         let task = &planner.tasks[task_id];
-        let earliest = compute_earliest(planner, schedules, task);
+        let earliest = compute_earliest_indexed(planner, index, task);
         let latest_end = latest_end_for(task_id, index, dependents);
         let mut scores: Vec<(Point, Point, f64)> = Vec::new();
 
@@ -506,6 +506,56 @@ fn place_regret2(
     None
 }
 
+/// 配置結果を `schedules` / `index` / `placed` / `in_degree` に反映し、
+/// エラーと `forced` フラグに応じて diagnostics を更新する。
+#[allow(clippy::too_many_arguments)]
+fn record_placement(
+    chosen_id: usize,
+    start: Point,
+    end: Point,
+    placement_err: Option<PlacementFailure>,
+    forced: bool,
+    schedules: &mut Vec<Placement>,
+    index: &mut [Option<(Point, Point)>],
+    placed: &mut [bool],
+    in_degree: &mut [usize],
+    remaining: &mut usize,
+    dependents: &[Vec<usize>],
+    diagnostics: &mut DecodeDiagnostics,
+) {
+    if let Some(err) = placement_err {
+        if forced {
+            diagnostics.failures.push(PlacementFailure::DependencyCycle);
+            if err != PlacementFailure::DependencyCycle {
+                diagnostics.failures.push(err);
+                diagnostics.relaxed.push(RelaxedPlacement { reason: err });
+            }
+            diagnostics.relaxed.push(RelaxedPlacement {
+                reason: PlacementFailure::DependencyCycle,
+            });
+        } else {
+            diagnostics.failures.push(err);
+            diagnostics.relaxed.push(RelaxedPlacement { reason: err });
+        }
+    } else if forced {
+        diagnostics.failures.push(PlacementFailure::DependencyCycle);
+        diagnostics.relaxed.push(RelaxedPlacement {
+            reason: PlacementFailure::DependencyCycle,
+        });
+    }
+
+    schedules.push((start, end, chosen_id));
+    index[chosen_id] = Some((start, end));
+    placed[chosen_id] = true;
+    *remaining -= 1;
+
+    for &dep_id in &dependents[chosen_id] {
+        if !placed[dep_id] {
+            in_degree[dep_id] -= 1;
+        }
+    }
+}
+
 pub fn decode(planner: &Planner, input: DecodeInput<'_>) -> DecodeResult {
     let n = planner.tasks.len();
     let mut schedules: Vec<Placement> = Vec::with_capacity(n);
@@ -553,192 +603,312 @@ pub fn decode(planner: &Planner, input: DecodeInput<'_>) -> DecodeResult {
         placed[*id] = true;
     }
 
+    // in-degree 管理: 未配置の依存先数。0 = ready。
+    // 毎 iteration の O(n * deps) ready スキャンを O(n) の初期化 + O(1) の判定に削減。
+    let mut in_degree: Vec<usize> = vec![0; n];
+    for task in &planner.tasks {
+        if placed[task.id] {
+            continue;
+        }
+        for dep in &task.depends {
+            if *dep < n && !placed[*dep] {
+                in_degree[task.id] += 1;
+            }
+        }
+    }
+
     // 3. priority 順に依存が解決済みのタスクを配置
     while remaining > 0 {
-        let mut ready: Vec<usize> = priority
-            .iter()
-            .copied()
-            .filter(|&id| {
-                !placed[id]
-                    && planner.tasks[id]
-                        .depends
-                        .iter()
-                        .all(|dep| *dep >= n || placed[*dep])
-            })
-            .collect();
+        // priority 順で最初の ready (in_degree == 0) タスクを探す
+        let mut task_id_opt = None;
+        for &id in priority.iter() {
+            if !placed[id] && in_degree[id] == 0 {
+                task_id_opt = Some(id);
+                break;
+            }
+        }
 
         let mut forced = false;
-        if ready.is_empty() {
-            // ready タスクがない = dependency cycle または入力不整合
-            forced = true;
-            ready = priority.iter().copied().filter(|&id| !placed[id]).collect();
-        }
-        if ready.is_empty() {
-            ready = placed
-                .iter()
-                .enumerate()
-                .filter(|(_, p)| !**p)
-                .map(|(id, _)| id)
-                .collect();
-        }
-        if ready.is_empty() {
-            break;
-        }
+        let task_id = match task_id_opt {
+            Some(id) => id,
+            None => {
+                // ready タスクがない = dependency cycle または入力不整合
+                forced = true;
+                match priority.iter().copied().find(|&id| !placed[id]) {
+                    Some(id) => id,
+                    None => break,
+                }
+            }
+        };
 
-        let (task_id, start, end, placement_err) = match input.repair_mode {
+        let (start, end, placement_err) = match input.repair_mode {
             RepairMode::Earliest => {
-                let id = ready[0];
                 let (s, e, err) =
-                    place_task_earliest(planner, &schedules, &input, id, &index, &dependents);
-                (id, s, e, err)
+                    place_task_earliest(planner, &schedules, &input, task_id, &index, &dependents);
+                (s, e, err)
             }
             RepairMode::LowestDelta => {
-                // LowestDelta は priority 順の先頭タスクに対し、
-                // 自タスク内で最もスコアの高いスロットを選ぶ。
-                // ready タスク間のグローバル比較は Regret2 が担当する。
-                let id = ready[0];
-                let (s, e, err) =
-                    place_task_lowest_delta(planner, &schedules, &input, id, &index, &dependents);
-                (id, s, e, err)
+                let (s, e, err) = place_task_lowest_delta(
+                    planner,
+                    &schedules,
+                    &input,
+                    task_id,
+                    &index,
+                    &dependents,
+                );
+                (s, e, err)
             }
             RepairMode::Regret2 => {
+                let ready: Vec<usize> = priority
+                    .iter()
+                    .copied()
+                    .filter(|&id| !placed[id] && in_degree[id] == 0)
+                    .collect();
                 if let Some((id, s, e, err)) =
                     place_regret2(planner, &schedules, &input, &ready, &index, &dependents)
                 {
-                    (id, s, e, err)
+                    record_placement(
+                        id,
+                        s,
+                        e,
+                        err,
+                        forced,
+                        &mut schedules,
+                        &mut index,
+                        &mut placed,
+                        &mut in_degree,
+                        &mut remaining,
+                        &dependents,
+                        &mut diagnostics,
+                    );
+                    continue;
                 } else {
-                    let id = ready[0];
-                    let (s, e, err) =
-                        place_task_earliest(planner, &schedules, &input, id, &index, &dependents);
-                    (id, s, e, err)
+                    let (s, e, err) = place_task_earliest(
+                        planner,
+                        &schedules,
+                        &input,
+                        task_id,
+                        &index,
+                        &dependents,
+                    );
+                    (s, e, err)
                 }
             }
             RepairMode::Deadline => {
-                let mut ordered = ready;
-                ordered.sort_by_key(|&id| planner.tasks[id].end);
-                let id = ordered[0];
+                // 締切が最も厳しい ready タスクを優先する
+                let mut best_id = task_id;
+                for &id in priority.iter() {
+                    if !placed[id]
+                        && in_degree[id] == 0
+                        && planner.tasks[id].end < planner.tasks[best_id].end
+                    {
+                        best_id = id;
+                    }
+                }
                 let (s, e, err) =
-                    place_task_earliest(planner, &schedules, &input, id, &index, &dependents);
-                (id, s, e, err)
+                    place_task_earliest(planner, &schedules, &input, best_id, &index, &dependents);
+                record_placement(
+                    best_id,
+                    s,
+                    e,
+                    err,
+                    forced,
+                    &mut schedules,
+                    &mut index,
+                    &mut placed,
+                    &mut in_degree,
+                    &mut remaining,
+                    &dependents,
+                    &mut diagnostics,
+                );
+                continue;
             }
             RepairMode::Habit => {
+                // 習慣タスク優先 → 前回 anchor 昇順で ready タスクを選択
                 let previous = planner.previous_schedule();
-                let mut ordered = ready;
-                ordered.sort_by(|&a, &b| {
-                    let a_habit = planner.tasks[a].habit_group.is_some();
-                    let b_habit = planner.tasks[b].habit_group.is_some();
-                    b_habit.cmp(&a_habit).then_with(|| {
-                        let a_anchor = previous
-                            .get(a)
-                            .and_then(|x| x.map(|(s, _)| s.0))
-                            .unwrap_or(i64::MAX);
-                        let b_anchor = previous
-                            .get(b)
-                            .and_then(|x| x.map(|(s, _)| s.0))
-                            .unwrap_or(i64::MAX);
-                        a_anchor.cmp(&b_anchor)
-                    })
-                });
-                let id = ordered[0];
+                let mut best_id = task_id;
+                let mut best_key = (
+                    planner.tasks[task_id].habit_group.is_none(),
+                    previous
+                        .get(task_id)
+                        .and_then(|x| x.map(|(s, _)| s.0))
+                        .unwrap_or(i64::MAX),
+                );
+                for &id in priority.iter() {
+                    if !placed[id] && in_degree[id] == 0 {
+                        let key = (
+                            planner.tasks[id].habit_group.is_none(),
+                            previous
+                                .get(id)
+                                .and_then(|x| x.map(|(s, _)| s.0))
+                                .unwrap_or(i64::MAX),
+                        );
+                        if key < best_key {
+                            best_key = key;
+                            best_id = id;
+                        }
+                    }
+                }
                 let anchor = previous
-                    .get(id)
+                    .get(best_id)
                     .and_then(|x| x.map(|(s, _)| s.0))
                     .unwrap_or(planner.now.0);
                 let (s, e, err) = place_task_near_anchor(
                     planner,
                     &schedules,
                     &input,
-                    id,
+                    best_id,
                     &index,
                     &dependents,
                     anchor,
                 );
-                (id, s, e, err)
+                record_placement(
+                    best_id,
+                    s,
+                    e,
+                    err,
+                    forced,
+                    &mut schedules,
+                    &mut index,
+                    &mut placed,
+                    &mut in_degree,
+                    &mut remaining,
+                    &dependents,
+                    &mut diagnostics,
+                );
+                continue;
             }
             RepairMode::Stability => {
+                // 前回 anchor 昇順で ready タスクを選択
                 let previous = planner.previous_schedule();
-                let mut ordered = ready;
-                ordered.sort_by(|&a, &b| {
-                    let a_anchor = previous
-                        .get(a)
-                        .and_then(|x| x.map(|(s, _)| s.0))
-                        .unwrap_or(i64::MAX);
-                    let b_anchor = previous
-                        .get(b)
-                        .and_then(|x| x.map(|(s, _)| s.0))
-                        .unwrap_or(i64::MAX);
-                    a_anchor.cmp(&b_anchor)
-                });
-                let id = ordered[0];
+                let mut best_id = task_id;
+                let mut best_anchor = previous
+                    .get(task_id)
+                    .and_then(|x| x.map(|(s, _)| s.0))
+                    .unwrap_or(i64::MAX);
+                for &id in priority.iter() {
+                    if !placed[id] && in_degree[id] == 0 {
+                        let anchor = previous
+                            .get(id)
+                            .and_then(|x| x.map(|(s, _)| s.0))
+                            .unwrap_or(i64::MAX);
+                        if anchor < best_anchor {
+                            best_anchor = anchor;
+                            best_id = id;
+                        }
+                    }
+                }
                 let anchor = previous
-                    .get(id)
+                    .get(best_id)
                     .and_then(|x| x.map(|(s, _)| s.0))
                     .unwrap_or(planner.now.0);
                 let (s, e, err) = place_task_near_anchor(
                     planner,
                     &schedules,
                     &input,
-                    id,
+                    best_id,
                     &index,
                     &dependents,
                     anchor,
                 );
-                (id, s, e, err)
+                record_placement(
+                    best_id,
+                    s,
+                    e,
+                    err,
+                    forced,
+                    &mut schedules,
+                    &mut index,
+                    &mut placed,
+                    &mut in_degree,
+                    &mut remaining,
+                    &dependents,
+                    &mut diagnostics,
+                );
+                continue;
             }
             RepairMode::HabitAnchor => {
-                let mut ordered = ready;
-                ordered.sort_by(|&a, &b| {
-                    let a_habit = planner.tasks[a].habit_group.is_some();
-                    let b_habit = planner.tasks[b].habit_group.is_some();
-                    b_habit.cmp(&a_habit)
-                });
-                let id = ordered[0];
-                if planner.tasks[id].habit_group.is_some()
-                    && let Some(pref) = planner.tasks[id].start
+                // 習慣タスク優先で ready タスクを選択
+                let mut best_id = task_id;
+                let mut best_is_habit = planner.tasks[task_id].habit_group.is_some();
+                for &id in priority.iter() {
+                    if !placed[id] && in_degree[id] == 0 {
+                        let is_habit = planner.tasks[id].habit_group.is_some();
+                        if is_habit && !best_is_habit {
+                            best_is_habit = true;
+                            best_id = id;
+                        }
+                    }
+                }
+                if planner.tasks[best_id].habit_group.is_some()
+                    && let Some(pref) = planner.tasks[best_id].start
                 {
                     let (s, e, err) = place_task_near_anchor(
                         planner,
                         &schedules,
                         &input,
-                        id,
+                        best_id,
                         &index,
                         &dependents,
                         pref.0,
                     );
-                    (id, s, e, err)
+                    record_placement(
+                        best_id,
+                        s,
+                        e,
+                        err,
+                        forced,
+                        &mut schedules,
+                        &mut index,
+                        &mut placed,
+                        &mut in_degree,
+                        &mut remaining,
+                        &dependents,
+                        &mut diagnostics,
+                    );
+                    continue;
                 } else {
-                    let (s, e, err) =
-                        place_task_earliest(planner, &schedules, &input, id, &index, &dependents);
-                    (id, s, e, err)
+                    let (s, e, err) = place_task_earliest(
+                        planner,
+                        &schedules,
+                        &input,
+                        best_id,
+                        &index,
+                        &dependents,
+                    );
+                    record_placement(
+                        best_id,
+                        s,
+                        e,
+                        err,
+                        forced,
+                        &mut schedules,
+                        &mut index,
+                        &mut placed,
+                        &mut in_degree,
+                        &mut remaining,
+                        &dependents,
+                        &mut diagnostics,
+                    );
+                    continue;
                 }
             }
         };
 
-        if let Some(err) = placement_err {
-            if forced {
-                diagnostics.failures.push(PlacementFailure::DependencyCycle);
-                if err != PlacementFailure::DependencyCycle {
-                    diagnostics.failures.push(err);
-                    diagnostics.relaxed.push(RelaxedPlacement { reason: err });
-                }
-                diagnostics.relaxed.push(RelaxedPlacement {
-                    reason: PlacementFailure::DependencyCycle,
-                });
-            } else {
-                diagnostics.failures.push(err);
-                diagnostics.relaxed.push(RelaxedPlacement { reason: err });
-            }
-        } else if forced {
-            diagnostics.failures.push(PlacementFailure::DependencyCycle);
-            diagnostics.relaxed.push(RelaxedPlacement {
-                reason: PlacementFailure::DependencyCycle,
-            });
-        }
-
-        schedules.push((start, end, task_id));
-        index[task_id] = Some((start, end));
-        placed[task_id] = true;
-        remaining -= 1;
+        record_placement(
+            task_id,
+            start,
+            end,
+            placement_err,
+            forced,
+            &mut schedules,
+            &mut index,
+            &mut placed,
+            &mut in_degree,
+            &mut remaining,
+            &dependents,
+            &mut diagnostics,
+        );
     }
 
     let status = decode_status(&diagnostics);
@@ -853,7 +1023,7 @@ fn evaluate_insertion(
                     habit.clear();
                     let score = evaluate_with_scratch(
                         planner,
-                        &plan,
+                        &plan.schedules,
                         0.0,
                         1.0,
                         &mut sorted,
