@@ -11,6 +11,9 @@ opencode.json
 .wrangler/
 .dev.vars
 
+# mdBook output
+docs/book/
+
 # Android build artifacts
 **/android/build/
 **/android/.cxx/

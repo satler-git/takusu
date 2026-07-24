@@ -2,6 +2,9 @@
 
 ユーザーのスケジュールを自動構築するプランナーと、LLM 音声アシスタント。
 
+📖 [ドキュメント](https://takusu-dev.github.io/takusu/)
+
+
 ## 特徴
 
 - 締め切り・見積り・依存関係・並列性・諦めやすさを考慮した自動スケジューリング
@@ -55,13 +58,6 @@ cargo bench -p takusu-core               # ベンチマーク
 cargo run --example daily                # サンプル実行
 cargo run -p takusu-cli -- --help        # CLI クライアント
 cargo run -p takusu-local                # ローカルサーバー起動
-```
-
-### 音声 CLI
-
-```sh
-cargo run -p takusu-audio-cli -- record   # マイク録音
-cargo run -p takusu-audio-cli -- transcribe --backend sherpa --features sherpa audio.wav
 ```
 
 ### モバイルアプリ

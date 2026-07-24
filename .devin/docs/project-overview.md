@@ -5,7 +5,7 @@ assistant using LLM as the UI. The design document is `doc/proposal.typ`
 (in Japanese).
 
 - **License**: MIT
-- **Repository**: https://github.com/satler-git/takusu
+- **Repository**: https://github.com/takusu-dev/takusu
 
 ## References
 

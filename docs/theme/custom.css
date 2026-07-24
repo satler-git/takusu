@@ -1,0 +1,42 @@
+/* takusu brand color: #7261A3 */
+
+:root {
+  --takusu-primary: #7261A3;
+  --takusu-primary-dark: #5a4a82;
+}
+
+/* Light theme link color */
+.light a,
+.rust a {
+  color: var(--takusu-primary);
+}
+
+.light a:hover,
+.rust a:hover {
+  color: var(--takusu-primary-dark);
+}
+
+/* Sidebar active item */
+#sidebar .chapter li a.active {
+  color: var(--takusu-primary);
+}
+
+/* Mobile menu button */
+#menu-bar {
+  border-bottom-color: var(--takusu-primary);
+}
+
+/* Chapter title color */
+#sidebar .chapter li.chapter-item strong {
+  color: var(--takusu-primary-dark);
+}
+
+/* Search highlight */
+#searchresults .teaser em {
+  background-color: rgba(114, 97, 163, 0.2);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar-thumb {
+  background: var(--takusu-primary);
+}

@@ -130,7 +130,7 @@ if [ "$NO_PUSH" -eq 0 ]; then
   jj git push --bookmark main
   git push origin "$TAG"
   echo "Pushed. The release workflow should start shortly:"
-  echo "  https://github.com/satler-git/takusu/actions/workflows/release.yaml"
+  echo "  https://github.com/takusu-dev/takusu/actions/workflows/release.yaml"
 else
   echo "(--no-push: tag and bookmark created locally only)"
 fi
