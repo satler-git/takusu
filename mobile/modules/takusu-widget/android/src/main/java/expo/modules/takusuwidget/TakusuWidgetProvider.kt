@@ -53,7 +53,11 @@ class TakusuWidgetProvider : AppWidgetProvider() {
         appWidgetIds: IntArray,
     ) {
         for (id in appWidgetIds) {
-            updateWidget(context, appWidgetManager, id)
+            try {
+                updateWidget(context, appWidgetManager, id)
+            } catch (e: Throwable) {
+                Log.e(TAG, "Failed to update widget id=$id", e)
+            }
         }
     }
 
@@ -63,21 +67,29 @@ class TakusuWidgetProvider : AppWidgetProvider() {
         appWidgetId: Int,
         newOptions: Bundle,
     ) {
-        updateWidget(context, appWidgetManager, appWidgetId, newOptions)
+        try {
+            updateWidget(context, appWidgetManager, appWidgetId, newOptions)
+        } catch (e: Throwable) {
+            Log.e(TAG, "Failed to update widget id=$appWidgetId on options changed", e)
+        }
     }
 
     override fun onEnabled(context: Context) {
         super.onEnabled(context)
         try {
             WidgetUpdateWorker.schedule(context)
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.w(TAG, "Failed to schedule widget update worker", e)
         }
     }
 
     override fun onDisabled(context: Context) {
         super.onDisabled(context)
-        WidgetUpdateWorker.cancel(context)
+        try {
+            WidgetUpdateWorker.cancel(context)
+        } catch (e: Throwable) {
+            Log.w(TAG, "Failed to cancel widget update worker", e)
+        }
     }
 
     companion object {
