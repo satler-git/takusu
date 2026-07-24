@@ -198,3 +198,43 @@ All runs use `jemalloc` default.
   - `plan realworld habits (30d)`: `438.27 ms`
   - `plan_partial realworld habits (14d, 5 pinned)`: `142.35 ms`
   - `plan_in_range realworld habits (14d, days 2-7)`: `49.176 ms`
+
+## 2026-07-25: habit 階層探索 (`tulqklsntssv`) — A/B vs parent `zvtlpmzkqtzz`
+
+habit group を anchor (共有時刻帯) 単位の上位変数として扱う階層探索を導入。
+SA 近傍 (`neighbor_habit_anchor` / `neighbor_habit_exception`) と ALNS
+(`DestroyOperator::HabitGroup` + `RepairMode::HabitAnchor`) に追加。
+公開 API は不変 (`Vec<Task>` + `habit_group` のまま、core 内部で再構築)。
+
+同じマシン・背靠背で親コミット (baseline) と比較。`cargo bench -p takusu-core --bench realworld`:
+
+| metric | parent (baseline) | naive 実装 | 最適化後 | 最適化後 / baseline |
+|--------|------------------:|-----------:|---------:|--------------------:|
+| `plan realworld habits (7d)` | `25.365 ms` | `42.643 ms` | `20.190 ms` | **0.80x** |
+| `plan realworld habits (30d)` | `404.26 ms` | `656.72 ms` | `334.94 ms` | **0.83x** |
+| `plan_partial realworld habits (14d, 5 pinned)` | `151.77 ms` | `210.00 ms` | `127.61 ms` | **0.84x** |
+| `plan_in_range realworld habits (14d, days 2-7)` | `41.129 ms` | `77.451 ms` | `47.125 ms` | 1.15x |
+
+### Notes
+
+- **naive 実装は 1.4–1.9x の regression** だった。主因は SA ホットループ内で
+  近傍生成のたびに habit グルーピングを再構築し、`FxHashMap` / `Vec` /
+  `FxHashSet` を allocate していたこと。
+- 修正: habit のグループ所属は solve 中で不変なので、`HabitIndex` として
+  **solve ごとに 1 回だけ** `habit::build_index` で事前計算し、近傍生成では
+  静的 member リストと現在配置から anchor を求めるようリファクタ。
+  ホットループ内の HashMap allocate を除去。
+- 修正後は 7d/30d/partial で baseline より高速、range のみ +15%。
+  anchor move が複数 occurrence を 1 move で一貫配置するため、個別 shift 数回分の
+  探索を 1 反復でこなせることが寄与していると考えられる。
+- 確率配分: shift 17% / swap 17% / duration 14% / reorder 14% / repair_depend 14% /
+  habit_anchor 10% / habit_exception 6% / lns 8%。habit がない fixture では
+  habit 分岐は shift へ fallback し iteration を無駄にしない。
+- 品質 benchmark (doc Phase 0) は未整備のため、habit 一貫性の定量比較は未実施。
+  既存 nextest (144 tests) / clippy / fmt は clean。
+- レビュー対応で `HabitGroup` に member 判定用 `FxHashSet` を持たせ O(1) 化、
+  anchor 計算を O(k²) の厳密 1-median から O(k) の円周平均近似
+  (`circular_mean_nearest`) へ変更、ALNS `DestroyOperator::HabitGroup` も
+  `HabitIndex` を再利用。再 bench でも上記と同程度の latency
+  (7d ~22ms / 30d ~326ms / partial ~117ms / range ~46ms)、
+  品質 (score・hard violation) も baseline と一致を確認。
