@@ -1,6 +1,6 @@
 // Top toast — auto-dismissing banner from the top of the screen.
 // Multiple toasts stack downward: new toasts slide in from the top and push
-// older ones down; swiping any toast up dismisses it.
+// older ones down; swiping any toast sideways dismisses it.
 // Implemented with react-native-reanimated and react-native-gesture-handler
 // so all animation and pan handling runs on the native thread.
 
@@ -19,6 +19,7 @@ import {
   StyleSheet,
   Text,
   View,
+  useWindowDimensions,
   type LayoutChangeEvent,
 } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -28,7 +29,6 @@ import Reanimated, {
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
-  withSpring,
   withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -185,9 +185,11 @@ function ToastItem({
   onRegisterDismiss,
   onUnregisterDismiss,
 }: ToastItemProps) {
+  const { width: screenWidth } = useWindowDimensions();
   const offsetY = useSharedValue(-ESTIMATED_HEIGHT);
   const offsetYTarget = useSharedValue(offset);
   const panY = useSharedValue(0);
+  const panX = useSharedValue(0);
   const dismissing = useSharedValue(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -221,6 +223,8 @@ function ToastItem({
     if (dismissing.value) return;
     dismissing.value = true;
     clearDismissTimer();
+    cancelAnimation(panX);
+    panX.value = 0;
     const target =
       -offsetRef.current - heightRef.current - insetsTop - OFFSCREEN_MARGIN;
     panY.value = withTiming(
@@ -231,7 +235,25 @@ function ToastItem({
         if (finished) runOnJS(onDismiss)(id);
       },
     );
-  }, [clearDismissTimer, dismissing, id, insetsTop, onDismiss, panY]);
+  }, [clearDismissTimer, dismissing, id, insetsTop, onDismiss, panX, panY]);
+
+  const dismissHorizontal = useCallback(
+    (direction: 'left' | 'right') => {
+      if (dismissing.value) return;
+      dismissing.value = true;
+      clearDismissTimer();
+      const target = direction === 'right' ? screenWidth : -screenWidth;
+      panX.value = withTiming(
+        target,
+        { duration: 250, easing: Easing.out(Easing.ease) },
+        (finished) => {
+          'worklet';
+          if (finished) runOnJS(onDismiss)(id);
+        },
+      );
+    },
+    [clearDismissTimer, dismissing, id, onDismiss, panX, screenWidth],
+  );
 
   const startDismissTimer = useCallback(() => {
     clearDismissTimer();
@@ -241,20 +263,30 @@ function ToastItem({
   }, [clearDismissTimer, dismiss, duration]);
 
   const resetPanAndRestartTimer = useCallback(() => {
-    panY.value = withSpring(0, { damping: 15, stiffness: 150 });
-    offsetY.value = withSpring(offsetYTarget.value, {
-      damping: 15,
-      stiffness: 150,
+    panX.value = withTiming(0, {
+      duration: 200,
+      easing: Easing.out(Easing.ease),
+    });
+    panY.value = withTiming(0, {
+      duration: 200,
+      easing: Easing.out(Easing.ease),
+    });
+    offsetY.value = withTiming(offsetYTarget.value, {
+      duration: 250,
+      easing: Easing.out(Easing.ease),
     });
     startDismissTimer();
-  }, [panY, offsetY, offsetYTarget, startDismissTimer]);
+  }, [panX, panY, offsetY, offsetYTarget, startDismissTimer]);
 
   // Keep the target offset in sync with the parent stack at all times.
   // Animate to it only when the toast is not already dismissing.
   useEffect(() => {
     offsetYTarget.value = offset;
     if (dismissing.value) return;
-    offsetY.value = withSpring(offset, { damping: 20, stiffness: 200 });
+    offsetY.value = withTiming(offset, {
+      duration: 250,
+      easing: Easing.out(Easing.ease),
+    });
   }, [dismissing, offset, offsetY, offsetYTarget]);
 
   // Start the auto-dismiss timer on mount; clear it on unmount.
@@ -280,24 +312,31 @@ function ToastItem({
   const gesture = useMemo(
     () =>
       Gesture.Pan()
-        .activeOffsetY([-5, 5])
-        .failOffsetX([-20, 20])
+        .activeOffsetX([-10, 10])
+        .failOffsetY([-10, 10])
         .onBegin(() => {
+          cancelAnimation(panX);
           cancelAnimation(panY);
+          panX.value = 0;
           panY.value = 0;
           dismissing.value = false;
           runOnJS(clearDismissTimer)();
         })
         .onUpdate((e) => {
-          panY.value = e.translationY;
+          panX.value = e.translationX;
         })
         .onEnd((e, success) => {
           if (!success) return;
           if (
-            e.translationY < -SWIPE_DISMISS_THRESHOLD ||
-            e.velocityY < -SWIPE_VELOCITY_THRESHOLD
+            e.translationX > SWIPE_DISMISS_THRESHOLD ||
+            e.velocityX > SWIPE_VELOCITY_THRESHOLD
           ) {
-            runOnJS(dismiss)();
+            runOnJS(dismissHorizontal)('right');
+          } else if (
+            e.translationX < -SWIPE_DISMISS_THRESHOLD ||
+            e.velocityX < -SWIPE_VELOCITY_THRESHOLD
+          ) {
+            runOnJS(dismissHorizontal)('left');
           } else {
             runOnJS(resetPanAndRestartTimer)();
           }
@@ -306,11 +345,21 @@ function ToastItem({
           if (success || dismissing.value) return;
           runOnJS(resetPanAndRestartTimer)();
         }),
-    [clearDismissTimer, dismissing, dismiss, panY, resetPanAndRestartTimer],
+    [
+      clearDismissTimer,
+      dismissing,
+      dismissHorizontal,
+      panX,
+      panY,
+      resetPanAndRestartTimer,
+    ],
   );
 
   const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: offsetY.value + panY.value }],
+    transform: [
+      { translateY: offsetY.value + panY.value },
+      { translateX: panX.value },
+    ],
   }));
 
   return (
