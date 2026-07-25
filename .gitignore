@@ -25,3 +25,5 @@ opencode.json
 
 # UniFFI generated headers (build artifact)
 crates/takusu-android/generated/
+
+*.log
