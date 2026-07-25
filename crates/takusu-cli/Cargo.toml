@@ -10,8 +10,9 @@ name = "takusu"
 path = "src/main.rs"
 
 [features]
-default = ["mcp"]
+default = ["mcp", "web"]
 mcp = ["dep:rmcp"]
+web = ["dep:takusu-web"]
 
 [dependencies]
 async-trait = { workspace = true }
@@ -28,6 +29,7 @@ takusu-util = { workspace = true }
 takusu-storage = { workspace = true }
 takusu-habit = { workspace = true }
 takusu-tui = { workspace = true }
+takusu-web = { workspace = true, optional = true, features = ["sqlite"] }
 uuid = { workspace = true }
 toml = "0.8"
 toml_edit = "0.22"

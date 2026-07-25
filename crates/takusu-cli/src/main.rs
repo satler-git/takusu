@@ -144,6 +144,14 @@ enum Commands {
 
     /// Launch the interactive TUI
     Tui,
+
+    /// Launch the web UI server (localhost)
+    #[cfg(feature = "web")]
+    Web {
+        /// Bind address (overrides config / TAKUSU_BIND), e.g. 127.0.0.1:3000
+        #[arg(long)]
+        bind: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -1009,6 +1017,17 @@ fn main() {
             }
         }
 
+        // The web subcommand runs its own server (building its own app from the
+        // shared config), so dispatch it before the CLI constructs storage.
+        #[cfg(feature = "web")]
+        if let Some(Commands::Web { bind }) = &cli.command {
+            if let Err(e) = takusu_web::run(bind.clone()).await {
+                eprintln!("Error: {e}");
+                process::exit(1);
+            }
+            return;
+        }
+
         let tz_str = cli.tz.clone().or(cfg.tz.clone()).unwrap_or_else(|| "UTC".into());
 
         // Build local config from CLI config and environment overrides
@@ -1162,6 +1181,12 @@ async fn run(
             takusu_tui::run(app, tz)
                 .await
                 .map_err(|e| AppError::Internal(e.to_string()))?;
+        }
+        #[cfg(feature = "web")]
+        Commands::Web { .. } => {
+            // Dispatched in `main` before storage is constructed; the server
+            // builds its own app from the shared config.
+            unreachable!("web subcommand is handled before run()")
         }
     }
     Ok(())

@@ -1,0 +1,31 @@
+[package]
+name = "takusu-web"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "takusu-web"
+path = "src/main.rs"
+
+[features]
+default = ["sqlite"]
+sqlite = ["takusu-local/sqlite", "takusu-local-lib/sqlite"]
+
+[dependencies]
+takusu-local = { workspace = true, default-features = false }
+takusu-local-lib = { workspace = true, default-features = false }
+takusu-storage = { workspace = true }
+axum = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+rust-embed = { workspace = true }
+mime_guess = { workspace = true }

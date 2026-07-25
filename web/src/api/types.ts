@@ -1,3 +1,2 @@
 // Re-exported from the shared @takusu/client package (ts/takusu-client).
-// This shim keeps existing `@/src/api/client` imports working unchanged.
 export * from '@takusu/client';

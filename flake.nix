@@ -153,6 +153,9 @@
                 pathStr = toString path;
                 srcPrefix = toString rootSrc + "/";
                 isInCrates = lib.hasPrefix (srcPrefix + "crates/") pathStr;
+                # rust-embed embeds web/dist at compile time, so the bundled
+                # frontend assets must be part of the crate source.
+                isInWebDist = lib.hasPrefix (srcPrefix + "web/dist/") pathStr;
                 excludedDirs = [
                   "mobile"
                   "scripts"
@@ -173,7 +176,8 @@
                       "ics"
                     ])
                   )
-                  || (lib.hasSuffix ".md" base && parent == "skills");
+                  || (lib.hasSuffix ".md" base && parent == "skills")
+                  || isInWebDist;
               in
               if type == "directory" then
                 !(lib.elem base excludedDirs)
@@ -256,6 +260,113 @@
             OPENBLAS_PATH = "${pkgs.openblas}/lib";
             BLAS_INCLUDE_DIRS = "${pkgs.openblas.dev}/include";
             SHERPA_ONNX_LIB_DIR = "${sherpaOnnxLinuxX64Shared}/lib";
+          };
+
+          # Shared @takusu/client package built in Nix (pure tsup build, no
+          # file: deps). Output is package.json + dist/ so it can be dropped
+          # into node_modules/@takusu/client for the web frontend build.
+          tsClientSrc = lib.cleanSourceWith {
+            src = ./ts/takusu-client;
+            filter =
+              path: type:
+              let
+                base = baseNameOf path;
+              in
+              base != "node_modules" && base != "dist";
+          };
+
+          takusu-client-npm = pkgs.buildNpmPackage {
+            pname = "takusu-client";
+            inherit version;
+            src = tsClientSrc;
+            npmDeps = pkgs.fetchNpmDeps {
+              name = "takusu-client-npm-deps";
+              src = tsClientSrc;
+              hash = "sha256-DoRuYiYcaYIpS09LHLPA7pMcqtUNuolWO+oacQFkphE=";
+            };
+            buildPhase = ''
+              npm run build
+            '';
+            installPhase = ''
+              mkdir -p $out
+              cp package.json $out/
+              cp -r dist $out/
+            '';
+            dontFixup = true;
+          };
+
+          # Frontend bundle for takusu-web. Builds web/ with Vite inside the
+          # Nix sandbox (npm deps prefetched via fetchNpmDeps). The resulting
+          # dist/ is embedded into the takusu-web binary by rust-embed.
+          webFrontendSrc = lib.cleanSourceWith {
+            src = ./web;
+            filter =
+              path: type:
+              let
+                base = baseNameOf path;
+              in
+              base != "node_modules" && base != "dist";
+          };
+
+          takusu-web-frontend = pkgs.buildNpmPackage {
+            pname = "takusu-web-frontend";
+            inherit version;
+            src = webFrontendSrc;
+            npmDeps = pkgs.fetchNpmDeps {
+              name = "takusu-web-npm-deps";
+              src = webFrontendSrc;
+              hash = "sha256-CE4pr6fugzBu2YOgQNhqLoR8mPyhUcVYfTAyUfecAro=";
+            };
+            # web depends on @takusu/client via `file:../ts/takusu-client`,
+            # which does not exist inside the sandbox and which `npm ci` cannot
+            # resolve. Drop the Nix-built client straight into node_modules
+            # before Vite resolves the import. (Done in buildPhase rather than a
+            # preBuild hook because buildNpmPackage does not forward preBuild.)
+            buildPhase = ''
+              mkdir -p node_modules/@takusu
+              rm -rf node_modules/@takusu/client
+              cp -r ${takusu-client-npm} node_modules/@takusu/client
+              chmod -R +w node_modules/@takusu/client
+              npm run build
+            '';
+            installPhase = ''
+              cp -r dist $out
+            '';
+            dontFixup = true;
+          };
+
+          # Web UI server. Embeds the Vite-built frontend (takusu-web-frontend)
+          # via rust-embed. The committed web/dist placeholder is swapped for
+          # the real bundle in preBuild, so `nix build .#takusu-web` produces a
+          # binary with the actual UI on a clean checkout.
+          takusu-web = craneLib.buildPackage {
+            inherit src cargoArtifacts;
+            strictDeps = true;
+            pname = "takusu-web";
+            cargoExtraArgs = "-p takusu-web";
+            preBuild = ''
+              rm -rf web/dist
+              cp -r ${takusu-web-frontend} web/dist
+              chmod -R +w web/dist
+            '';
+            nativeBuildInputs = with pkgs; [
+              pkg-config
+              cmake
+              libclang
+            ];
+            buildInputs =
+              with pkgs;
+              [
+                alsa-lib
+                libpulseaudio
+                openblas
+              ]
+              ++ [ sherpaOnnxLinuxX64Shared ];
+            LIBCLANG_PATH = "${pkgs.libclang.lib}/lib";
+            OPENBLAS_PATH = "${pkgs.openblas}/lib";
+            BLAS_INCLUDE_DIRS = "${pkgs.openblas.dev}/include";
+            SHERPA_ONNX_LIB_DIR = "${sherpaOnnxLinuxX64Shared}/lib";
+            meta.mainProgram = "takusu-web";
           };
 
           # Cross-compile takusu-android .so for a list of Android targets.
@@ -575,6 +686,7 @@
               inherit
                 takusu-cli
                 takusu-local
+                takusu-web
                 takusu-android-libs
                 takusu-android-libs-emulator
                 uniffi-bindgen

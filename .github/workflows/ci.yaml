@@ -17,6 +17,8 @@ jobs:
       rust: ${{ steps.filter.outputs.rust }}
       mobile: ${{ steps.filter.outputs.mobile }}
       kotlin: ${{ steps.filter.outputs.kotlin }}
+      web: ${{ steps.filter.outputs.web }}
+      ts-client: ${{ steps.filter.outputs.ts-client }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -35,10 +37,18 @@ jobs:
               - '.github/workflows/ci.yaml'
             mobile:
               - 'mobile/**'
+              - 'ts/takusu-client/**'
               - '.github/workflows/ci.yaml'
             kotlin:
               - 'mobile/modules/**/*.kt'
               - 'mobile/.editorconfig'
+              - '.github/workflows/ci.yaml'
+            web:
+              - 'web/**'
+              - 'ts/takusu-client/**'
+              - '.github/workflows/ci.yaml'
+            ts-client:
+              - 'ts/takusu-client/**'
               - '.github/workflows/ci.yaml'
 
   lint:
@@ -206,6 +216,82 @@ jobs:
       - name: Test
         working-directory: mobile
         run: npm run test
+
+  ts-client-check:
+    needs: changes
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      needs.changes.outputs.ts-client == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install dependencies
+        working-directory: ts/takusu-client
+        run: npm install
+
+      - name: Build
+        working-directory: ts/takusu-client
+        run: npm run build
+
+      - name: Check committed dist is up to date
+        working-directory: ts/takusu-client
+        run: git diff --exit-code dist
+
+      - name: Typecheck
+        working-directory: ts/takusu-client
+        run: npx tsc --noEmit
+
+      - name: Oxlint
+        working-directory: ts/takusu-client
+        run: npx oxlint
+
+      - name: Test
+        working-directory: ts/takusu-client
+        run: npm run test
+
+  web-check:
+    needs: changes
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install dependencies
+        working-directory: web
+        run: npm install
+
+      - name: Oxlint
+        working-directory: web
+        run: npx oxlint
+
+      - name: Oxfmt
+        working-directory: web
+        run: npx oxfmt --check
+
+      - name: Typecheck
+        working-directory: web
+        run: npx tsc --noEmit
+
+      - name: Test
+        working-directory: web
+        run: npm run test
+
+      - name: Build
+        working-directory: web
+        run: npm run build
 
   kotlin-check:
     needs: changes
