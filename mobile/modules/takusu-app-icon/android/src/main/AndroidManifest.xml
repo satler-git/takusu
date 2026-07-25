@@ -1,8 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
   <application>
     <activity-alias
-        android:name=".MainActivityLight"
-        android:targetActivity=".MainActivity"
+        android:name="${applicationId}.MainActivityLight"
+        android:targetActivity="${applicationId}.MainActivity"
         android:enabled="true"
         android:exported="true"
         android:icon="@mipmap/ic_takusu_light"
@@ -15,8 +15,8 @@
     </activity-alias>
 
     <activity-alias
-        android:name=".MainActivityDark"
-        android:targetActivity=".MainActivity"
+        android:name="${applicationId}.MainActivityDark"
+        android:targetActivity="${applicationId}.MainActivity"
         android:enabled="false"
         android:exported="true"
         android:icon="@mipmap/ic_takusu_dark"
@@ -29,8 +29,8 @@
     </activity-alias>
 
     <activity-alias
-        android:name=".MainActivityCatppuccin"
-        android:targetActivity=".MainActivity"
+        android:name="${applicationId}.MainActivityCatppuccin"
+        android:targetActivity="${applicationId}.MainActivity"
         android:enabled="false"
         android:exported="true"
         android:icon="@mipmap/ic_takusu_catppuccin"
@@ -43,8 +43,8 @@
     </activity-alias>
 
     <activity-alias
-        android:name=".MainActivityAuraSoftDark"
-        android:targetActivity=".MainActivity"
+        android:name="${applicationId}.MainActivityAuraSoftDark"
+        android:targetActivity="${applicationId}.MainActivity"
         android:enabled="false"
         android:exported="true"
         android:icon="@mipmap/ic_takusu_aura_soft_dark"

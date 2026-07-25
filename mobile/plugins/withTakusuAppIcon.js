@@ -67,16 +67,17 @@ function withTakusuAppIcon(config) {
         );
 
         if (hasMain && hasLauncher) {
-          const remaining = categories.filter(
-            (c) =>
-              c?.$?.['android:name'] !== 'android.intent.category.LAUNCHER',
-          );
-          if (remaining.length > 0) {
-            filter.category = remaining;
-          } else {
-            delete filter.category;
-          }
+          // The aliases provide the launcher entry; remove the whole
+          // MAIN/LAUNCHER filter from the real activity.
+          filter.takusuDelete = true;
         }
+      }
+
+      const remaining = filters.filter((f) => !f.takusuDelete);
+      if (remaining.length > 0) {
+        activity['intent-filter'] = remaining;
+      } else {
+        delete activity['intent-filter'];
       }
     }
 

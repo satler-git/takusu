@@ -12,11 +12,13 @@
 //
 // This keeps the stable package (`dev.satler.takusu`) intact for release CI,
 // which never sets TAKUSU_BUILD_VARIANT.
-const { withSentry } = require('@sentry/react-native/expo');
-const withTakusuAppIcon = require('./plugins/withTakusuAppIcon');
-
-const baseConfig = require('./app.json');
+// Clone app.json so mutations do not leak into Node's require cache.
+const baseConfig = JSON.parse(JSON.stringify(require('./app.json')));
 const expo = baseConfig.expo;
+
+const sentryUrl = process.env.SENTRY_URL || 'https://sentry.io/';
+const sentryProject = process.env.SENTRY_PROJECT || 'takusu';
+const sentryOrg = process.env.SENTRY_ORG || 'satler-git';
 
 const isDev = process.env.TAKUSU_BUILD_VARIANT === 'dev';
 
@@ -38,10 +40,25 @@ if (isDev) {
   }
 }
 
-module.exports = withTakusuAppIcon(
-  withSentry(baseConfig, {
-    url: process.env.SENTRY_URL || 'https://sentry.io/',
-    project: process.env.SENTRY_PROJECT || 'takusu',
-    organization: process.env.SENTRY_ORG || 'satler-git',
-  }),
+// Plugins must be listed in the plugins array to be executed by `expo prebuild`.
+// Calling them directly from app.config.js does not apply their native mods.
+expo.plugins = expo.plugins || [];
+expo.plugins.push(
+  [
+    '@sentry/react-native/expo',
+    {
+      url: sentryUrl,
+      project: sentryProject,
+      organization: sentryOrg,
+      // This value is baked into android/app/build.gradle at `expo prebuild`
+      // time, so SENTRY_AUTH_TOKEN must be set during prebuild for release
+      // source maps to upload. Set SENTRY_DISABLE_AUTO_UPLOAD=true to skip.
+      disableAutoUpload:
+        !process.env.SENTRY_AUTH_TOKEN ||
+        process.env.SENTRY_DISABLE_AUTO_UPLOAD === 'true',
+    },
+  ],
+  './plugins/withTakusuAppIcon',
 );
+
+module.exports = baseConfig;
