@@ -5,6 +5,10 @@
 The agent must follow these rules on every task. When in doubt, ask the user
 before acting.
 
+- **Create PRs for issues**: When the user provides an issue to close (e.g. an
+  issue URL or "do #N"), create a PR that closes it. Do not wait for a separate
+  "create PR" request.
+  See [`.devin/rules/pr-workflow.md`](./.devin/rules/pr-workflow.md).
 - **Version control**: Use Jujutsu (`jj`) for all mutations. Do not use `git` to
   rewrite history.
   See [`.devin/rules/pr-workflow.md`](./.devin/rules/pr-workflow.md).
