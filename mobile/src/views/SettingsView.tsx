@@ -30,6 +30,14 @@ import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import * as Clipboard from 'expo-clipboard';
 import Constants from 'expo-constants';
+import {
+  GoogleOneTapSignIn,
+  isCancelledResponse,
+  isErrorWithCode,
+  isNoSavedCredentialFoundResponse,
+  isSuccessResponse,
+  statusCodes,
+} from 'react-native-nitro-google-signin';
 import { useServer } from '@/src/api/ServerProvider';
 import type { GoogleCalSettings, SettingsRow } from '@/src/api/types';
 import { useColors, BRAND_COLOR, APP_THEMES, type AppTheme } from '@/src/theme';
@@ -329,6 +337,7 @@ export function SettingsDetailView({
   const [gcalClientSecret, setGcalClientSecret] = useState('');
   const [gcalRefreshToken, setGcalRefreshToken] = useState('');
   const [gcalLoading, setGcalLoading] = useState(false);
+  const [oauthLoading, setOauthLoading] = useState(false);
   const [syncLoading, setSyncLoading] = useState(false);
   const [deleteAllLoading, setDeleteAllLoading] = useState(false);
 
@@ -603,20 +612,78 @@ export function SettingsDetailView({
     }
   }
 
-  // Save a refresh token obtained via the CLI OAuth flow (issue #297).
-  //
-  // Mobile no longer runs OAuth directly — the Android Credential
-  // Manager / One Tap flow was fragile across devices (issues #108,
-  // #129, #248, #297).  Instead, the user runs OAuth on the CLI:
-  //
-  //   takusu sync login --client-id <ID> --client-secret <SECRET>
-  //   → starts a local callback server on 127.0.0.1 and opens the browser
-  //   → receives the authorization code and exchanges it for a refresh token
-  //
-  // The CLI exchanges the code with Google and stores the refresh
-  // token in the shared backend (local SQLite or Workers D1).  Mobile
-  // reads it from there.  This field lets the user paste a token
-  // obtained by other means as a fallback.
+  const GOOGLE_CALENDAR_EVENTS_SCOPE =
+    'https://www.googleapis.com/auth/calendar.events';
+
+  // Start the native Google sign-in flow to obtain a server auth code,
+  // then send it to the backend to exchange for a refresh token (#1057).
+  async function startGoogleOAuth() {
+    if (!client) return;
+
+    if (!gcalSettings?.client_id || !gcalSettings?.has_client_secret) {
+      void showError('Client ID / Client Secretを保存してください');
+      return;
+    }
+
+    const webClientId = gcalSettings.client_id;
+
+    setOauthLoading(true);
+    try {
+      GoogleOneTapSignIn.configure({
+        webClientId,
+        scopes: [GOOGLE_CALENDAR_EVENTS_SCOPE],
+        offlineAccess: true,
+      });
+
+      await GoogleOneTapSignIn.checkPlayServices();
+
+      let response = await GoogleOneTapSignIn.signIn();
+      if (isNoSavedCredentialFoundResponse(response)) {
+        response = await GoogleOneTapSignIn.createAccount();
+      }
+
+      if (!isSuccessResponse(response)) {
+        if (isCancelledResponse(response)) {
+          return;
+        }
+        throw new Error('Google サインインに失敗しました');
+      }
+
+      let serverAuthCode = response.data.serverAuthCode;
+      if (!serverAuthCode) {
+        const authResult = await GoogleOneTapSignIn.requestScopes([
+          GOOGLE_CALENDAR_EVENTS_SCOPE,
+        ]);
+        serverAuthCode = authResult.serverAuthCode;
+      }
+      if (!serverAuthCode) {
+        showTopToast('既に Google Calendar の権限が付与されているようです');
+        await loadGcalSettings();
+        return;
+      }
+
+      await client.oauthCallback(serverAuthCode);
+      showTopToast('Google Calendarの認証に成功しました');
+      await loadGcalSettings();
+    } catch (e) {
+      if (
+        isErrorWithCode(e) &&
+        (e.code === statusCodes.SIGN_IN_CANCELLED ||
+          e.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE)
+      ) {
+        if (e.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
+          void showError('Google Play サービスが利用できません', 'エラー');
+        }
+        return;
+      }
+      void showError(e, 'OAuthエラー');
+    } finally {
+      setOauthLoading(false);
+    }
+  }
+
+  // Save a refresh token obtained via the CLI OAuth flow or other means,
+  // as a fallback when native sign-in is unavailable (issue #297 / #1057).
   async function saveRefreshToken() {
     if (!client) return;
     if (!gcalRefreshToken.trim()) {
@@ -1685,6 +1752,25 @@ export function SettingsDetailView({
                 <Text style={styles.actionButtonText}>設定を保存</Text>
               </Pressable>
 
+              <Pressable
+                style={[styles.actionButton, { backgroundColor: BRAND_COLOR }]}
+                onPress={() => {
+                  haptic.medium();
+                  startGoogleOAuth();
+                }}
+                disabled={
+                  oauthLoading ||
+                  !gcalSettings?.client_id ||
+                  !gcalSettings?.has_client_secret
+                }
+              >
+                {oauthLoading ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.actionButtonText}>Googleでログイン</Text>
+                )}
+              </Pressable>
+
               <View style={styles.field}>
                 <Text style={[styles.label, { color: colors.gray }]}>
                   Refresh Token
@@ -1707,7 +1793,8 @@ export function SettingsDetailView({
                   autoCorrect={false}
                 />
                 <Text style={[styles.helpText, { color: colors.gray }]}>
-                  CLIで `takusu sync login --client-id 〜 --client-secret 〜`
+                  ネイティブサインインが使えない場合のフォールバックです。 CLIで
+                  `takusu sync login --client-id 〜 --client-secret 〜`
                   を実行して取得したトークンを貼り付けてください
                 </Text>
               </View>

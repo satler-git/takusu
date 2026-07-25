@@ -339,7 +339,7 @@ let schedule = client.generate_schedule(&req).await?;
 
 ## 7. Google Calendar 連携
 
-### 7.1 OAuth2 フロー (CLI専用)
+### 7.1 OAuth2 フロー
 
 ```
 takusu sync login --client-id <ID> --client-secret <SECRET>
@@ -349,10 +349,13 @@ takusu sync login --client-id <ID> --client-secret <SECRET>
    → refresh_token を DB に保存
 ```
 
-- モバイルアプリではOAuthを実行しない (Android Credential Manager / One Tap
-  フローが端末間で不安定だったため、issue #297 で削除)
-- モバイルはCLIで取得した refresh_token を共有バックエンド (local SQLite /
-  Workers D1) から読み取って同期に使用
+- モバイルアプリでも `react-native-nitro-google-signin` を使ってネイティブ
+  Google サインインから server auth code を取得し、バックエンドで
+  refresh_token に交換できる (issue #1057)
+- バックエンドの `/api/sync/oauth/callback` は `redirect_uri` なしでも
+  server auth code を交換できる
+- CLI で取得した refresh_token を共有バックエンド (local SQLite /
+  Workers D1) から読み取って同期に使用することもできる
 - モバイル設定画面に refresh_token 手動入力フィールドあり (フォールバック)
 - `takusu sync setup --refresh-token <TOKEN>` で直接トークンを設定することも可能
 

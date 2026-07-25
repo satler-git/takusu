@@ -26,6 +26,7 @@ import type {
   TokenCreateResponse,
   GoogleCalSettings,
   UpdateGoogleCalSettings,
+  OAuthCallbackResponse,
   SyncTriggerResponse,
   DeleteAllGcalResponse,
   GoogleCalEventMapping,
@@ -393,6 +394,17 @@ export class TakusuClient {
   // ── Sync / Google Calendar ──
   async getGcalSettings(): Promise<GoogleCalSettings> {
     return this.request('GET', '/api/sync/settings');
+  }
+
+  async oauthCallback(
+    code: string,
+    redirectUri?: string,
+  ): Promise<OAuthCallbackResponse> {
+    const body: { code: string; redirect_uri?: string } = { code };
+    if (redirectUri !== undefined) {
+      body.redirect_uri = redirectUri;
+    }
+    return this.request('POST', '/api/sync/oauth/callback', body);
   }
 
   async updateGcalSettings(
