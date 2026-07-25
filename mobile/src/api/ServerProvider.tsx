@@ -7,7 +7,7 @@ import {
   useMemo,
   type ReactNode,
 } from 'react';
-import { Appearance, Platform } from 'react-native';
+import { Appearance } from 'react-native';
 import Constants from 'expo-constants';
 import { TakusuClient } from './client';
 import { AgentClient, type AgentUpdateSettings } from './agentClient';
@@ -148,13 +148,6 @@ export function ServerProvider({ children }: { children: ReactNode }) {
 
   const startServer = useCallback(
     async (url: string, token: string): Promise<TakusuClient | null> => {
-      if (Platform.OS !== 'android') {
-        const baseUrl =
-          process.env.EXPO_PUBLIC_TAKUSU_URL ?? 'http://localhost:3000';
-        const tk = process.env.EXPO_PUBLIC_TAKUSU_TOKEN ?? '';
-        return new TakusuClient(baseUrl, tk);
-      }
-
       const finalUrl = url || process.env.EXPO_PUBLIC_WORKERS_URL || '';
       const finalToken = token || process.env.EXPO_PUBLIC_ROOT_TOKEN || '';
 
@@ -182,7 +175,7 @@ export function ServerProvider({ children }: { children: ReactNode }) {
           port,
         });
       } catch {
-        // widget module not available (e.g. non-Android) — ignore
+        // widget module not available during dev builds — ignore
       }
 
       return client;
@@ -198,12 +191,10 @@ export function ServerProvider({ children }: { children: ReactNode }) {
       setState((prev) => ({ ...prev, restarting: true, error: null }));
 
       try {
-        if (Platform.OS === 'android') {
-          try {
-            await TakusuServerModule.stop();
-          } catch {
-            // server may not be running, ignore
-          }
+        try {
+          await TakusuServerModule.stop();
+        } catch {
+          // server may not be running, ignore
         }
 
         const client = await startServer(newUrl, newToken);
@@ -234,9 +225,7 @@ export function ServerProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // Clearing the token also drops the client so that subsequent local API
-  // calls do not run with an empty/invalid bearer token. On non-Android
-  // platforms this removes the in-memory TakusuClient until a new token is
-  // saved and the server is (re)started.
+  // calls do not run with an empty/invalid bearer token.
   const setWorkersToken = useCallback(async (token: string) => {
     await saveWorkersToken(token);
     setState((prev) => {
@@ -252,12 +241,10 @@ export function ServerProvider({ children }: { children: ReactNode }) {
     if (!APP_THEMES.includes(newTheme)) return;
     await saveTheme(newTheme);
     setState((prev) => ({ ...prev, theme: newTheme }));
-    if (Platform.OS === 'android') {
-      try {
-        TakusuAppIconModule.setTheme(newTheme);
-      } catch {
-        // icon module may not be available during dev builds
-      }
+    try {
+      TakusuAppIconModule.setTheme(newTheme);
+    } catch {
+      // icon module may not be available during dev builds
     }
   }, []);
 
@@ -295,12 +282,10 @@ export function ServerProvider({ children }: { children: ReactNode }) {
         notifications: settings.notifications,
       }));
 
-      if (Platform.OS === 'android') {
-        try {
-          TakusuAppIconModule.setTheme(settings.theme);
-        } catch {
-          // icon module may not be available during dev builds
-        }
+      try {
+        TakusuAppIconModule.setTheme(settings.theme);
+      } catch {
+        // icon module may not be available during dev builds
       }
 
       undoRedo.setMaxHistory(settings.undoSteps);
@@ -333,27 +318,20 @@ export function ServerProvider({ children }: { children: ReactNode }) {
 
     return () => {
       cancelled = true;
-      if (Platform.OS === 'android') {
-        // stop() is a synchronous native Function; a thrown native
-        // exception (e.g. "Server not running") propagates synchronously,
-        // so use try/catch rather than Promise.resolve().catch().
-        try {
-          TakusuServerModule.stop();
-        } catch {
-          // server may not be running
-        }
+      // stop() is a synchronous native Function; a thrown native
+      // exception (e.g. "Server not running") propagates synchronously,
+      // so use try/catch rather than Promise.resolve().catch().
+      try {
+        TakusuServerModule.stop();
+      } catch {
+        // server may not be running
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const pushAgentConfig = useCallback(async () => {
-    if (
-      Platform.OS !== 'android' ||
-      !state.ready ||
-      !state.workersToken ||
-      !state.client
-    ) {
+    if (!state.ready || !state.workersToken || !state.client) {
       return;
     }
     const agentClient = new AgentClient(

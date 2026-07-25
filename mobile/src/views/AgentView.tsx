@@ -13,7 +13,6 @@ import {
   FlatList,
   Keyboard,
   KeyboardAvoidingView,
-  Platform,
   type LayoutChangeEvent,
   Pressable,
   ScrollView,
@@ -1053,10 +1052,8 @@ export function AgentView() {
   }
 
   useEffect(() => {
-    const showEvent =
-      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvent =
-      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showEvent = 'keyboardDidShow';
+    const hideEvent = 'keyboardDidHide';
     const showSub = Keyboard.addListener(showEvent, () =>
       setKeyboardVisible(true),
     );
@@ -2477,8 +2474,8 @@ export function AgentView() {
   return (
     <KeyboardAvoidingView
       style={[styles.container, { backgroundColor: colors.white }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      enabled={Platform.OS === 'ios' || keyboardVisible}
+      behavior="height"
+      enabled={keyboardVisible}
     >
       <Reanimated.View style={[styles.container, animatedStyle]}>
         <View
