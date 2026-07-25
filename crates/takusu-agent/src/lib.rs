@@ -179,16 +179,24 @@ pub enum TurnEvent {
     Done(TurnResult),
 }
 
-/// Accumulates raw `Text` event deltas from a streaming turn and flushes the
-/// accumulated text as a TTS block when the stream is interrupted by thinking,
-/// tool calls, or the end of the turn. Code fences that span multiple flushes
-/// are tracked so their contents are not read aloud.
+/// Accumulates raw `Text` event deltas from a streaming turn and emits
+/// speakable TTS blocks. Blocks are flushed at sentence boundaries while
+/// streaming, on thinking/tool-call interruptions, and at the end of the turn,
+/// so read-aloud starts as soon as the first sentence is ready. Code fences
+/// that span multiple flushes are tracked so their contents are not read aloud.
 #[derive(Debug, Default)]
 pub struct TtsQueue {
     buffer: String,
     line: String,
     code_state: CodeState,
+    buffer_visible_len: usize,
+    line_visible_len: usize,
 }
+
+/// Upper bound on visible characters to keep in a single TTS block. When a
+/// sentence has no terminator before this limit, the queue flushes anyway to
+/// avoid buffering an unbounded amount of text.
+const TTS_BLOCK_MAX_VISIBLE_LEN: usize = 240;
 
 #[derive(Debug, Default)]
 enum CodeState {
@@ -205,16 +213,30 @@ impl TtsQueue {
         Self::default()
     }
 
-    /// Append a `Text` event delta to the queue.
-    pub fn push(&mut self, delta: &str) {
+    /// Append a `Text` event delta to the queue and return any completed TTS
+    /// blocks produced while scanning the delta.
+    pub fn push(&mut self, delta: &str) -> Vec<String> {
+        let mut blocks = Vec::new();
         for ch in delta.chars() {
             if ch == '\n' {
                 let line = std::mem::take(&mut self.line);
-                self.process_line(line.trim_end_matches('\r'));
+                let visible = self.line_visible_len;
+                self.line_visible_len = 0;
+                self.process_line(line.trim_end_matches('\r'), visible);
+                if let Some(block) = self.try_flush() {
+                    blocks.push(block);
+                }
             } else {
                 self.line.push(ch);
+                if !ch.is_whitespace() {
+                    self.line_visible_len += 1;
+                }
+                if let Some(block) = self.try_flush() {
+                    blocks.push(block);
+                }
             }
         }
+        blocks
     }
 
     /// Extract accumulated text as a TTS block and clear the buffer.
@@ -224,9 +246,12 @@ impl TtsQueue {
     pub fn flush(&mut self) -> Option<String> {
         if !self.line.is_empty() {
             let line = std::mem::take(&mut self.line);
-            self.process_line(line.trim_end_matches('\r'));
+            let visible = self.line_visible_len;
+            self.line_visible_len = 0;
+            self.process_line(line.trim_end_matches('\r'), visible);
         }
         let text = std::mem::take(&mut self.buffer);
+        self.buffer_visible_len = 0;
         let speech = markdown_to_speech(&text);
         if speech.trim().is_empty() {
             None
@@ -235,7 +260,40 @@ impl TtsQueue {
         }
     }
 
-    fn process_line(&mut self, line: &str) {
+    fn try_flush(&mut self) -> Option<String> {
+        if !self.should_flush() {
+            return None;
+        }
+        if !self.line.is_empty() {
+            let line = std::mem::take(&mut self.line);
+            let visible = self.line_visible_len;
+            self.line_visible_len = 0;
+            self.process_line(line.trim_end_matches('\r'), visible);
+        }
+        let text = std::mem::take(&mut self.buffer);
+        self.buffer_visible_len = 0;
+        let speech = markdown_to_speech(&text);
+        if speech.trim().is_empty() {
+            None
+        } else {
+            Some(speech)
+        }
+    }
+
+    fn should_flush(&self) -> bool {
+        let line_trimmed = self.line.trim_end();
+        if line_trimmed.is_empty() {
+            let buf_trimmed = self.buffer.trim_end();
+            if is_sentence_boundary(buf_trimmed) {
+                return true;
+            }
+        } else if is_sentence_boundary(line_trimmed) {
+            return true;
+        }
+        self.buffer_visible_len + self.line_visible_len >= TTS_BLOCK_MAX_VISIBLE_LEN
+    }
+
+    fn process_line(&mut self, line: &str, visible: usize) {
         match self.code_state {
             CodeState::Outside => {
                 if let Some((marker, length)) = opening_fence(line) {
@@ -243,6 +301,7 @@ impl TtsQueue {
                 } else if line.trim().is_empty() {
                     self.buffer.push('\n');
                 } else {
+                    self.buffer_visible_len += visible;
                     self.buffer.push_str(line);
                     self.buffer.push('\n');
                 }
@@ -254,6 +313,51 @@ impl TtsQueue {
             }
         }
     }
+}
+
+fn is_sentence_end(ch: char) -> bool {
+    matches!(ch, '.' | '!' | '?' | '。' | '！' | '？')
+}
+
+/// Return true if the trimmed text ends at a sentence boundary.
+///
+/// Excludes trailing dots that are part of common English abbreviations or a
+/// lone numeric token, so "Mr.", "Dr.", "e.g.", and "3." do not trigger an
+/// early flush.
+fn is_sentence_boundary(s: &str) -> bool {
+    let last = match s.chars().next_back() {
+        Some(c) => c,
+        None => return false,
+    };
+    if !is_sentence_end(last) {
+        return false;
+    }
+    // Non-period terminators are unambiguous.
+    if last != '.' {
+        return true;
+    }
+    let without_last_dot = s.strip_suffix('.').unwrap_or(s);
+    let token = without_last_dot
+        .rsplit_once(char::is_whitespace)
+        .map(|(_, w)| w)
+        .unwrap_or(without_last_dot)
+        .trim_matches(|c: char| c.is_ascii_punctuation() && c != '.');
+    if token.is_empty() {
+        return true;
+    }
+    if token.chars().all(|c| c.is_ascii_digit()) {
+        return false;
+    }
+    let token = token.to_lowercase();
+    const ABBREVIATIONS: &[&str] = &[
+        "mr", "mrs", "ms", "miss", "dr", "prof", "sr", "jr", "st", "ave", "blvd", "rd",
+        "no", "vs", "etc", "eg", "e.g", "ie", "i.e", "et", "al", "co", "ltd", "inc",
+        "corp", "plc", "llc", "llp", "fig", "vol", "ed", "pp", "ph", "phd", "md", "ba",
+        "ma", "esq", "dept", "univ", "est", "jan", "feb", "mar", "apr", "jun", "jul",
+        "aug", "sep", "sept", "oct", "nov", "dec", "mon", "tue", "wed", "thu", "fri",
+        "sat", "sun", "am", "pm", "a.m", "p.m", "a", "p", "m",
+    ];
+    !ABBREVIATIONS.contains(&token.as_str())
 }
 
 fn opening_fence(line: &str) -> Option<(char, usize)> {
@@ -642,8 +746,9 @@ impl AgentSession {
     /// Runs a single agent turn and emits progress events through `emit`.
     ///
     /// User-visible text ready for text-to-speech is emitted through `tts_emit`
-    /// whenever the assistant text stream is interrupted by thinking or tool
-    /// calls, and once more when the turn completes.
+    /// at sentence boundaries while the assistant text is streaming, whenever
+    /// the stream is interrupted by thinking or tool calls, and once more when
+    /// the turn completes.
     pub async fn run_turn_stream<F, G>(
         &self,
         user_text: &str,
@@ -814,7 +919,9 @@ impl AgentSession {
                 match event {
                     llm::LlmStreamEvent::Text(delta) => {
                         text.push_str(&delta);
-                        tts_queue.push(&delta);
+                        for block in tts_queue.push(&delta) {
+                            tts_emit(block);
+                        }
                         emit(TurnEvent::Text(delta));
                     }
                     llm::LlmStreamEvent::Thinking(delta) => {
@@ -3076,6 +3183,52 @@ mod tests {
         let mut q = TtsQueue::new();
         q.push("items:\n- one\n- two\n> quoted");
         assert_eq!(q.flush(), Some("items: one two quoted".to_string()));
+    }
+
+    #[test]
+    fn tts_queue_flushes_at_sentence_boundaries() {
+        let mut q = TtsQueue::new();
+        let blocks = q.push("Hello. World! Foo");
+        assert_eq!(blocks, vec!["Hello.", "World!"]);
+        assert_eq!(q.flush(), Some("Foo".to_string()));
+    }
+
+    #[test]
+    fn tts_queue_flushes_japanese_sentence_boundaries() {
+        let mut q = TtsQueue::new();
+        let blocks = q.push("こんにちは。明日は晴れですか？はい");
+        assert_eq!(blocks, vec!["こんにちは。", "明日は晴れですか？"]);
+        assert_eq!(q.flush(), Some("はい".to_string()));
+    }
+
+    #[test]
+    fn tts_queue_ignores_abbreviation_dots() {
+        let mut q = TtsQueue::new();
+        let blocks = q.push("See Dr. Smith at 3 p.m. today. Bye!");
+        assert_eq!(blocks, vec!["See Dr. Smith at 3 p.m. today.", "Bye!"]);
+    }
+
+    #[test]
+    fn tts_queue_enforces_max_length_across_lines() {
+        let mut q = TtsQueue::new();
+        let first = "a".repeat(200);
+        let second = "b".repeat(60);
+        let blocks = q.push(&format!("{}\n{}", first, second));
+        assert_eq!(blocks.len(), 1);
+        // markdown_to_speech collapses the newline to a space, so the flushed
+        // string can be one byte longer than the visible-char budget.
+        assert!(blocks[0].len() <= TTS_BLOCK_MAX_VISIBLE_LEN + 1);
+    }
+
+    #[test]
+    fn tts_queue_flushes_at_max_length_even_without_terminator() {
+        let mut q = TtsQueue::new();
+        let long = "a".repeat(TTS_BLOCK_MAX_VISIBLE_LEN + 10);
+        let blocks = q.push(&long);
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].len(), TTS_BLOCK_MAX_VISIBLE_LEN);
+        let remaining = q.flush().unwrap_or_default();
+        assert_eq!(remaining.len(), 10);
     }
 
     #[test]

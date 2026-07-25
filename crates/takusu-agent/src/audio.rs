@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use takusu_audio::play::{AudioClip, PlayError};
+use takusu_audio::play::{PlayError, PcmFormat, StreamedAudioFormat, play_stream};
 use takusu_audio::{
     CartesiaSonic, CartesiaSonicConfig, ModelCache, RecordConfig, SherpaOnnxAsr,
     SherpaOnnxAsrConfig, SherpaOnnxModel, SpeechToText, TextToSpeech, TtsOptions, TtsRequest,
@@ -58,6 +58,7 @@ pub struct AudioAdapter {
     tts: Arc<dyn TextToSpeech>,
     tts_voice_id: String,
     tts_speed: Option<f32>,
+    tts_format: StreamedAudioFormat,
 }
 
 impl AudioAdapter {
@@ -67,7 +68,7 @@ impl AudioAdapter {
             let config = session.config.read().unwrap();
             config.audio.clone()
         };
-        let (stt, tts, voice_id, speed) = Self::build_audio(&audio).await?;
+        let (stt, tts, voice_id, speed, tts_format) = Self::build_audio(&audio).await?;
         Ok(Self {
             session,
             last_audio: audio,
@@ -75,6 +76,7 @@ impl AudioAdapter {
             tts,
             tts_voice_id: voice_id,
             tts_speed: speed,
+            tts_format,
         })
     }
 
@@ -101,6 +103,7 @@ impl AudioAdapter {
             let tts = Arc::clone(&self.tts);
             let voice_id = self.tts_voice_id.clone();
             let speed = self.tts_speed;
+            let tts_format = self.tts_format;
             let no_tts_this_turn = no_tts || self.last_audio.tts.mute;
             let tts_player = tokio::spawn(async move {
                 if no_tts_this_turn {
@@ -110,17 +113,15 @@ impl AudioAdapter {
                     if block.trim().is_empty() {
                         continue;
                     }
-                    let audio = synthesize_with_timeout(
+                    synthesize_and_play_with_timeout(
                         tts.as_ref(),
                         &block,
                         &voice_id,
                         speed,
+                        tts_format,
                         Duration::from_secs(120),
                     )
                     .await?;
-                    let clip = AudioClip::from_wav_bytes(&audio)
-                        .map_err(|e| AudioError::Play(e.to_string()))?;
-                    play_with_timeout(&clip, Duration::from_secs(120)).await?;
                 }
                 Ok(())
             });
@@ -173,11 +174,12 @@ impl AudioAdapter {
         if current == self.last_audio {
             return Ok(());
         }
-        let (stt, tts, voice_id, speed) = Self::build_audio(&current).await?;
+        let (stt, tts, voice_id, speed, tts_format) = Self::build_audio(&current).await?;
         self.stt = stt;
         self.tts = tts;
         self.tts_voice_id = voice_id;
         self.tts_speed = speed;
+        self.tts_format = tts_format;
         self.last_audio = current;
         Ok(())
     }
@@ -190,6 +192,7 @@ impl AudioAdapter {
             Arc<dyn TextToSpeech>,
             String,
             Option<f32>,
+            StreamedAudioFormat,
         ),
         AudioError,
     > {
@@ -197,8 +200,26 @@ impl AudioAdapter {
         let stt = tokio::task::spawn_blocking(move || build_stt(&stt_config))
             .await
             .map_err(|e| AudioError::Transcribe(format!("stt build task failed: {e}")))??;
-        let (tts, voice_id, speed) = build_tts(&audio.tts)?;
-        Ok((stt, tts, voice_id, speed))
+        let supported = tokio::task::spawn_blocking(|| {
+            takusu_audio::play::default_output_config()
+        })
+        .await
+        .map_err(|e| AudioError::Play(format!("output config task failed: {e}")))??;
+        let output_rate = supported.sample_rate();
+        // The Cartesia /tts/bytes endpoint returns mono PCM when no channel
+        // count is requested, so the stream format is always 1 channel.
+        let tts_api_sample_rate = if audio.tts.sample_rate == 0 {
+            output_rate
+        } else {
+            audio.tts.sample_rate
+        };
+        let (tts, voice_id, speed) = build_tts(&audio.tts, tts_api_sample_rate)?;
+        let tts_format = StreamedAudioFormat {
+            sample_rate: tts_api_sample_rate,
+            channels: 1,
+            pcm_format: PcmFormat::I16,
+        };
+        Ok((stt, tts, voice_id, speed, tts_format))
     }
 }
 
@@ -248,7 +269,7 @@ fn build_stt(config: &SttConfig) -> Result<Arc<dyn SpeechToText>, AudioError> {
 
 type TtsBuildResult = Result<(Arc<dyn TextToSpeech>, String, Option<f32>), AudioError>;
 
-fn build_tts(config: &TtsConfig) -> TtsBuildResult {
+fn build_tts(config: &TtsConfig, api_sample_rate: u32) -> TtsBuildResult {
     match config.backend.as_str() {
         "cartesia" => {
             let api_key = if config.api_key.is_empty() {
@@ -262,7 +283,7 @@ fn build_tts(config: &TtsConfig) -> TtsBuildResult {
             let mut tts_config = CartesiaSonicConfig::new(api_key);
             tts_config.voice_id = config.voice_id.clone();
             tts_config.language = Some(config.language.clone());
-            tts_config.output_format.sample_rate = config.sample_rate;
+            tts_config.output_format.sample_rate = api_sample_rate;
             tts_config.mute = config.mute;
             let voice_id = config.voice_id.clone();
             let speed = config.speed;
@@ -310,41 +331,35 @@ async fn transcribe_with_timeout(
     .map_err(|e| AudioError::Transcribe(format!("transcribe task failed: {e}")))?
 }
 
-async fn synthesize_with_timeout(
+async fn synthesize_and_play_with_timeout(
     tts: &dyn TextToSpeech,
     text: &str,
     voice_id: &str,
     speed: Option<f32>,
+    format: StreamedAudioFormat,
     timeout: Duration,
-) -> Result<Vec<u8>, AudioError> {
+) -> Result<(), AudioError> {
     let request = TtsRequest {
         text: text.to_string(),
         voice: Some(voice_id.to_string()),
         reference_audio_path: None,
         options: TtsOptions {
-            response_format: Some("wav".to_string()),
+            response_format: Some("pcm_s16le".to_string()),
             speed,
         },
     };
 
-    let audio = tokio::time::timeout(timeout, tts.synthesize(&request))
+    let stream = tokio::time::timeout(timeout, tts.synthesize_stream(&request))
         .await
         .map_err(|_| AudioError::Timeout)?
         .map_err(|e| AudioError::Tts(e.to_string()))?;
-    Ok(audio)
-}
 
-async fn play_with_timeout(clip: &AudioClip, timeout: Duration) -> Result<(), AudioError> {
-    // Playback is synchronous; run it on a blocking thread so it does not starve the runtime.
-    let clip = clip.clone();
-    tokio::time::timeout(
-        timeout,
-        tokio::task::spawn_blocking(move || takusu_audio::play::play(&clip)),
-    )
-    .await
-    .map_err(|_| AudioError::Timeout)?
-    .map_err(|e| AudioError::Play(format!("playback task failed: {e}")))?
-    .map_err(Into::into)
+    tokio::time::timeout(timeout, play_stream(stream, format))
+        .await
+        .map_err(|_| AudioError::Timeout)?
+        .map_err(|e| AudioError::Play(e.to_string()))?;
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -397,7 +412,7 @@ mod tests {
             backend: "unknown".to_string(),
             ..TtsConfig::default()
         };
-        assert!(build_tts(&config).is_err());
+        assert!(build_tts(&config, 44100).is_err());
     }
 
     #[test]
@@ -406,7 +421,7 @@ mod tests {
             backend: "android".to_string(),
             ..TtsConfig::default()
         };
-        let result = build_tts(&config);
+        let result = build_tts(&config, 44100);
         match result {
             Err(e) => assert!(e.to_string().contains("android")),
             Ok(_) => panic!("expected android backend to be rejected"),
@@ -421,7 +436,7 @@ mod tests {
             mute: true,
             ..TtsConfig::default()
         };
-        assert!(build_tts(&config).is_ok());
+        assert!(build_tts(&config, 44100).is_ok());
     }
 
     #[test]
@@ -431,6 +446,6 @@ mod tests {
             api_key_env: "NONEXISTENT_API_KEY".to_string(),
             ..TtsConfig::default()
         };
-        assert!(build_tts(&config).is_err());
+        assert!(build_tts(&config, 44100).is_err());
     }
 }
