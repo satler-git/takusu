@@ -141,17 +141,34 @@ pub(crate) fn evaluate_with_scratch(
     index: &mut Vec<Option<(Point, Point)>>,
     habit_entries: &mut Vec<(usize, i64)>,
 ) -> f64 {
-    let mut score = 0.0;
-
-    // index 構築と plan_range を同時に行う。
-    let (plan_start, plan_end) = build_index_into(planner, schedules, index);
-
-    // Sort schedules once by start so per-day/window scans can break early and
-    // parallel_violation can avoid its own copy+sort.
     sorted.clear();
     sorted.extend_from_slice(schedules);
     sorted.sort_unstable_by_key(|(s, _, _)| s.0);
+    evaluate_presorted(
+        planner,
+        schedules,
+        temperature,
+        t0,
+        sorted,
+        index,
+        habit_entries,
+    )
+}
 
+/// `evaluate_with_scratch` の sort 省略版。`sorted` が start 順にソート済みであることを
+/// 呼び出し側が保証する。SA ホットループで sorted バッファを差分更新して再利用する際に使う。
+pub(crate) fn evaluate_presorted(
+    planner: &Planner,
+    schedules: &[Placement],
+    temperature: f64,
+    t0: f64,
+    sorted: &[Placement],
+    index: &mut Vec<Option<(Point, Point)>>,
+    habit_entries: &mut Vec<(usize, i64)>,
+) -> f64 {
+    let (plan_start, plan_end) = build_index_into(planner, schedules, index);
+
+    let mut score = 0.0;
     score += task_and_depend_scores(planner, index, temperature, t0);
     score += buffer_score(planner, index, sorted);
     score += sleep_score(planner, sorted, (plan_start, plan_end));
@@ -162,6 +179,56 @@ pub(crate) fn evaluate_with_scratch(
     score += habit_consistency_score(planner, index, habit_entries);
 
     score
+}
+
+/// ソート済みバッファ `sorted` を、`old_scheds` から `new_scheds` への変化に合わせて
+/// 差分更新する。`old_scheds` と `new_scheds` は同じ長さで、異なるのは少数の位置
+/// (SA 近傍で 1-2 要素) であることを前提とする。O(n) (shift が支配的)。
+///
+/// 前提: `sorted` は `old_scheds` の start ソート済みである。
+/// 結果: `sorted` は `new_scheds` の start ソート済みになる。
+///
+/// 変更された要素の (old_entry, old_sorted_pos) を返す。`sorted_revert` で元に戻せる。
+pub(crate) fn sorted_incremental_apply(
+    sorted: &mut Vec<Placement>,
+    old_scheds: &[Placement],
+    new_scheds: &[Placement],
+) -> Vec<(Placement, usize)> {
+    debug_assert_eq!(old_scheds.len(), new_scheds.len());
+    let mut undo = Vec::new();
+
+    for i in 0..old_scheds.len() {
+        if old_scheds[i] == new_scheds[i] {
+            continue;
+        }
+        let old_entry = old_scheds[i];
+        let new_entry = new_scheds[i];
+
+        let pos = sorted.iter().position(|e| *e == old_entry);
+        debug_assert!(pos.is_some(), "old_entry {old_entry:?} not found in sorted");
+        if let Some(pos) = pos {
+            undo.push((old_entry, pos));
+            sorted.remove(pos);
+        }
+
+        let insert_pos = sorted.partition_point(|(s, _, _)| s.0 < new_entry.0.0);
+        sorted.insert(insert_pos, new_entry);
+    }
+
+    undo
+}
+
+/// `sorted_incremental_apply` の逆操作。apply 前の状態に戻す。
+pub(crate) fn sorted_revert(sorted: &mut Vec<Placement>, undo: &[(Placement, usize)]) {
+    for &(old_entry, _old_pos) in undo.iter().rev() {
+        if let Some(pos) = sorted.iter().position(|e| e.2 == old_entry.2) {
+            sorted.remove(pos);
+        }
+    }
+    for &(old_entry, _) in undo.iter().rev() {
+        let insert_pos = sorted.partition_point(|(s, _, _)| s.0 < old_entry.0.0);
+        sorted.insert(insert_pos, old_entry);
+    }
 }
 
 /// task_id → (start, end) の索引。O(n) で構築し、各スコア関数の探索を O(1) にする。
@@ -479,20 +546,19 @@ fn parallel_violation_score(planner: &Planner, sorted: &[Placement]) -> f64 {
         if a_id >= tasks.len() {
             continue;
         }
+        let task_a = &tasks[a_id];
+        let a_allows = task_a.allows_parallel;
+        let a_parallelizable = task_a.parallelizable;
         for (b_start, b_end, b_id) in &sorted[(i + 1)..n] {
             if b_start.0 >= a_end.0 {
                 break;
             }
-            if b_end.0 <= a_start.0 {
-                continue;
-            }
             if *b_id >= tasks.len() {
                 continue;
             }
-            let task_a = &tasks[a_id];
             let task_b = &tasks[*b_id];
-            if !((task_a.allows_parallel && task_b.parallelizable)
-                || (task_b.allows_parallel && task_a.parallelizable))
+            if !((a_allows && task_b.parallelizable)
+                || (task_b.allows_parallel && a_parallelizable))
             {
                 let overlap = a_end.0.min(b_end.0) - a_start.0.max(b_start.0);
                 penalty_slots += overlap;
