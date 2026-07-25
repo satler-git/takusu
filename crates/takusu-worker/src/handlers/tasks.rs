@@ -436,9 +436,7 @@ pub async fn update(mut req: Request, env: Env, id: &str) -> Result<Response, Wo
         let completed_stmt = database.prepare(
             "UPDATE tasks SET completed_at = CASE WHEN ?1 = 'completed' AND completed_at IS NULL THEN strftime('%Y-%m-%dT%H:%M:%SZ','now') WHEN ?1 != 'completed' AND completed_at IS NOT NULL THEN NULL ELSE completed_at END WHERE id = ?2",
         );
-        stmts.push(
-            completed_stmt.bind(&[JsValue::from_str(&status), JsValue::from_str(&full)])?,
-        );
+        stmts.push(completed_stmt.bind(&[JsValue::from_str(&status), JsValue::from_str(&full)])?);
 
         // #1044: moving to a terminal status should close any open work
         // session so active time is not left dangling.
@@ -447,9 +445,7 @@ pub async fn update(mut req: Request, env: Env, id: &str) -> Result<Response, Wo
             let session_stmt = database.prepare(
                 "UPDATE task_work_sessions SET ended_at = ?1 WHERE task_id = ?2 AND ended_at IS NULL",
             );
-            stmts.push(
-                session_stmt.bind(&[JsValue::from_str(&now), JsValue::from_str(&full)])?,
-            );
+            stmts.push(session_stmt.bind(&[JsValue::from_str(&now), JsValue::from_str(&full)])?);
         }
     }
 

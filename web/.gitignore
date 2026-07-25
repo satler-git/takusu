@@ -1,0 +1,8 @@
+node_modules/
+# Build output. The placeholder index.html is committed so the Rust crate
+# (rust-embed) compiles before the first `vite build`; everything else here is
+# generated.
+dist/assets/
+dist/**/*.js
+dist/**/*.css
+*.local

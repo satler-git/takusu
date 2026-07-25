@@ -45,6 +45,7 @@ takusu-storage = { path = "crates/takusu-storage" }
 takusu-habit = { path = "crates/takusu-habit" }
 takusu-local-lib = { path = "crates/takusu-local-lib", default-features = false }
 takusu-local = { path = "crates/takusu-local", default-features = false }
+takusu-web = { path = "crates/takusu-web", default-features = false }
 google-cal = { path = "crates/google-cal" }
 takusu-tui = { path = "crates/takusu-tui" }
 
@@ -52,6 +53,8 @@ futures-util = "0.3"
 petgraph = { version = "0.8", default-features = false }
 web-time = "1.1"
 toml = "0.8"
+rust-embed = "8"
+mime_guess = "2"
 
 [profile.dev.package."tikv-jemalloc-sys"]
 # Build the C jemalloc sources with optimizations even in dev/test. This avoids

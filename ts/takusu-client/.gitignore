@@ -1,0 +1,3 @@
+node_modules/
+# dist/ is committed so the file: dependents (mobile, web) resolve without a
+# pre-build step. Rebuild with `npm run build` after editing src/.
