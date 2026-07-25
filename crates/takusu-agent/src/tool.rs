@@ -1,13 +1,75 @@
 use std::collections::HashMap;
+use std::fmt;
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
+/// Structured recoverable argument error passed back to the LLM.
+///
+/// Carrying the field separately from the reason lets the agent format
+/// clearer retry guidance without exposing the entire argument object.
+#[derive(Debug)]
+pub struct InvalidArgsError {
+    /// Name of the argument or field that is invalid, if known.
+    pub field: Option<String>,
+    /// Human-readable explanation of what is wrong.
+    pub reason: String,
+}
+
+impl InvalidArgsError {
+    /// Create an error for a specific field.
+    pub fn new(field: impl Into<String>, reason: impl Into<String>) -> Self {
+        Self {
+            field: Some(field.into()),
+            reason: reason.into(),
+        }
+    }
+
+    /// Create an error without naming a specific field.
+    pub fn no_field(reason: impl Into<String>) -> Self {
+        Self {
+            field: None,
+            reason: reason.into(),
+        }
+    }
+}
+
+impl fmt::Display for InvalidArgsError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.field {
+            Some(field) => write!(f, "field '{field}': {reason}", reason = self.reason),
+            None => write!(f, "{}", self.reason),
+        }
+    }
+}
+
+impl std::error::Error for InvalidArgsError {}
+
+/// Converts a `String` into an `InvalidArgsError` without a field name.
+///
+/// Prefer `InvalidArgsError::new` when the problematic argument/field is known,
+/// because this conversion drops field information and produces a generic error.
+impl From<String> for InvalidArgsError {
+    fn from(reason: String) -> Self {
+        Self::no_field(reason)
+    }
+}
+
+/// Converts a `&str` into an `InvalidArgsError` without a field name.
+///
+/// Prefer `InvalidArgsError::new` when the problematic argument/field is known,
+/// because this conversion drops field information and produces a generic error.
+impl From<&str> for InvalidArgsError {
+    fn from(reason: &str) -> Self {
+        Self::no_field(reason)
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum ToolError {
     #[error("invalid arguments: {0}")]
-    InvalidArgs(String),
+    InvalidArgs(InvalidArgsError),
     #[error("not found: {0}")]
     NotFound(String),
     #[error("optimistic conflict: {0}")]
@@ -28,6 +90,21 @@ impl ToolError {
                 | ToolError::Conflict(_)
                 | ToolError::Cancelled
         )
+    }
+
+    /// Returns a compact, LLM-facing description of the error.
+    ///
+    /// Includes the tool name and a short retry hint while keeping the
+    /// message small so it does not dominate the context window.
+    pub fn to_llm_content(&self, tool_name: &str) -> String {
+        let hint = match self {
+            ToolError::InvalidArgs(_) => "check arguments",
+            ToolError::NotFound(_) => "verify id",
+            ToolError::Conflict(_) => "retry with latest",
+            ToolError::Cancelled => "ask user",
+            ToolError::Other(_) => "unexpected error",
+        };
+        format!("{tool_name}: {self} [{hint}]")
     }
 }
 
@@ -221,10 +298,9 @@ impl ToolRegistry {
     }
 
     pub async fn call(&self, name: &str, args: Value) -> Result<ToolOutput, ToolError> {
-        let tool = self
-            .tools
-            .get(name)
-            .ok_or_else(|| ToolError::InvalidArgs(format!("unknown tool: {name}")))?;
+        let tool = self.tools.get(name).ok_or_else(|| {
+            ToolError::InvalidArgs(InvalidArgsError::new("tool", format!("unknown: {name}")))
+        })?;
         tool.call(args).await
     }
 
@@ -234,10 +310,9 @@ impl ToolRegistry {
         call_id: &str,
         args: Value,
     ) -> Result<ToolOutput, ToolError> {
-        let tool = self
-            .tools
-            .get(name)
-            .ok_or_else(|| ToolError::InvalidArgs(format!("unknown tool: {name}")))?;
+        let tool = self.tools.get(name).ok_or_else(|| {
+            ToolError::InvalidArgs(InvalidArgsError::new("tool", format!("unknown: {name}")))
+        })?;
         tool.call_with_id(call_id, args).await
     }
 }
@@ -293,5 +368,36 @@ mod tests {
         let registry = ToolRegistry::new();
         assert_eq!(registry.definitions_estimate_tokens(), 0);
         assert!(registry.definitions().is_empty());
+    }
+
+    #[test]
+    fn invalid_args_error_display_includes_field_and_reason() {
+        let with_field = InvalidArgsError::new("message", "missing");
+        assert_eq!(with_field.to_string(), "field 'message': missing");
+
+        let no_field = InvalidArgsError::no_field("bad args");
+        assert_eq!(no_field.to_string(), "bad args");
+    }
+
+    #[test]
+    fn tool_error_to_llm_content_is_compact_and_includes_hint() {
+        let err = ToolError::InvalidArgs(InvalidArgsError::new("message", "missing"));
+        assert_eq!(
+            err.to_llm_content("echo"),
+            "echo: invalid arguments: field 'message': missing [check arguments]"
+        );
+
+        let not_found = ToolError::NotFound("task #42".into());
+        assert!(not_found.to_llm_content("get_task").contains("verify id"));
+
+        let conflict = ToolError::Conflict("task #42".into());
+        assert!(
+            conflict
+                .to_llm_content("update_task")
+                .contains("retry with latest")
+        );
+
+        let cancelled = ToolError::Cancelled;
+        assert!(cancelled.to_llm_content("create_task").contains("ask user"));
     }
 }

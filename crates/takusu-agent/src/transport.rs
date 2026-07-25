@@ -24,8 +24,8 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 
 use crate::llm::{LlmClient, OpenAIClient};
 use crate::{
-    AgentConfig, AgentError, AgentSession, ApprovalRequest, ApprovalResult, ToolError, TurnEvent,
-    TurnResult, UserInputAnswer, UserInputProvider, UserInputQuestion,
+    AgentConfig, AgentError, AgentSession, ApprovalRequest, ApprovalResult, InvalidArgsError,
+    ToolError, TurnEvent, TurnResult, UserInputAnswer, UserInputProvider, UserInputQuestion,
 };
 
 pub const API_VERSION: u8 = 1;
@@ -227,7 +227,10 @@ impl UserInputProvider for ApiUserInputProvider {
             .unwrap()
             .remove(call_id)
             .ok_or_else(|| {
-                ToolError::InvalidArgs(format!("no pending user input request for {call_id}"))
+                ToolError::InvalidArgs(InvalidArgsError::new(
+                    "call_id",
+                    format!("no pending user input request for {call_id}"),
+                ))
             })?;
         tx.send(answers).map_err(|_| ToolError::Cancelled)?;
         Ok(())
@@ -982,7 +985,9 @@ mod tests {
             _config: &AgentConfig,
             _token: Arc<RwLock<Arc<str>>>,
         ) -> Result<AgentSession, AgentError> {
-            Err(AgentError::Tool(ToolError::InvalidArgs("stub".into())))
+            Err(AgentError::Tool(ToolError::InvalidArgs(
+                InvalidArgsError::no_field("stub"),
+            )))
         }
     }
 

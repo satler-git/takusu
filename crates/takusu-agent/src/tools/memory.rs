@@ -3,12 +3,12 @@ use serde_json::{Value, json};
 use takusu_client::{Client, CreateMemory, MemoryQuery, MemoryRow, SimilarTaskQuery, UpdateMemory};
 
 use crate::tools::takusu::required_i64;
-use crate::{Tool, ToolError, ToolOutput};
+use crate::{InvalidArgsError, Tool, ToolError, ToolOutput};
 
 fn object(args: Value) -> Result<serde_json::Map<String, Value>, ToolError> {
     args.as_object()
         .cloned()
-        .ok_or_else(|| ToolError::InvalidArgs("arguments must be an object".into()))
+        .ok_or_else(|| ToolError::InvalidArgs(InvalidArgsError::new("args", "must be an object")))
 }
 
 fn required_string(args: &serde_json::Map<String, Value>, name: &str) -> Result<String, ToolError> {
@@ -17,7 +17,7 @@ fn required_string(args: &serde_json::Map<String, Value>, name: &str) -> Result<
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(ToOwned::to_owned)
-        .ok_or_else(|| ToolError::InvalidArgs(format!("missing or empty {name}")))
+        .ok_or_else(|| ToolError::InvalidArgs(InvalidArgsError::new(name, "missing or empty")))
 }
 
 fn optional_string(
@@ -31,7 +31,7 @@ fn optional_string(
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(|value| Some(value.to_owned()))
-            .ok_or_else(|| ToolError::InvalidArgs(format!("{name} must be a string"))),
+            .ok_or_else(|| ToolError::InvalidArgs(InvalidArgsError::new(name, "must be a string"))),
     }
 }
 
@@ -41,16 +41,17 @@ fn optional_i64(
 ) -> Result<Option<i64>, ToolError> {
     match args.get(name) {
         None | Some(Value::Null) => Ok(None),
-        Some(value) => value
-            .as_i64()
-            .map(Some)
-            .ok_or_else(|| ToolError::InvalidArgs(format!("{name} must be an integer"))),
+        Some(value) => value.as_i64().map(Some).ok_or_else(|| {
+            ToolError::InvalidArgs(InvalidArgsError::new(name, "must be an integer"))
+        }),
     }
 }
 
 pub fn client_error(error: takusu_client::ClientError) -> ToolError {
     match error {
-        takusu_client::ClientError::Api { status: 400, body } => ToolError::InvalidArgs(body),
+        takusu_client::ClientError::Api { status: 400, body } => {
+            ToolError::InvalidArgs(InvalidArgsError::no_field(body))
+        }
         takusu_client::ClientError::Api { status: 404, body } => ToolError::NotFound(body),
         takusu_client::ClientError::Api { status: 409, body } => ToolError::Conflict(body),
         takusu_client::ClientError::Api {
@@ -255,9 +256,10 @@ impl Tool for MemorySave {
         let args = object(args)?;
         let kind = required_string(&args, "kind")?;
         if !matches!(kind.as_str(), "proper_noun" | "fact" | "task_note") {
-            return Err(ToolError::InvalidArgs(
-                "kind must be 'proper_noun', 'fact', or 'task_note'".into(),
-            ));
+            return Err(ToolError::InvalidArgs(InvalidArgsError::new(
+                "kind",
+                "must be 'proper_noun', 'fact', or 'task_note'",
+            )));
         }
         let key = required_string(&args, "key")?;
 
@@ -265,14 +267,16 @@ impl Tool for MemorySave {
         let subject_id = optional_string(&args, "subject_id")?;
         if kind == "task_note" {
             if subject_type.as_deref() != Some("task") {
-                return Err(ToolError::InvalidArgs(
-                    "task_note requires subject_type='task'".into(),
-                ));
+                return Err(ToolError::InvalidArgs(InvalidArgsError::new(
+                    "subject_type",
+                    "task_note requires subject_type='task'",
+                )));
             }
             if subject_id.is_none() {
-                return Err(ToolError::InvalidArgs(
-                    "task_note requires subject_id".into(),
-                ));
+                return Err(ToolError::InvalidArgs(InvalidArgsError::new(
+                    "subject_id",
+                    "task_note requires subject_id",
+                )));
             }
         }
 
@@ -312,7 +316,12 @@ impl Tool for MemorySave {
             .cloned()
             .unwrap_or_else(|| json!([]));
         let inferred_fields = serde_json::from_value::<Vec<crate::InferredField>>(inferred_fields)
-            .map_err(|e| ToolError::InvalidArgs(format!("invalid inferred_fields: {e}")))?;
+            .map_err(|e| {
+                ToolError::InvalidArgs(InvalidArgsError::new(
+                    "inferred_fields",
+                    format!("invalid: {e}"),
+                ))
+            })?;
 
         let after = json!({
             "id": Value::Null,
@@ -411,7 +420,12 @@ impl Tool for MemoryUpdate {
             .cloned()
             .unwrap_or_else(|| json!([]));
         let inferred_fields = serde_json::from_value::<Vec<crate::InferredField>>(inferred_fields)
-            .map_err(|e| ToolError::InvalidArgs(format!("invalid inferred_fields: {e}")))?;
+            .map_err(|e| {
+                ToolError::InvalidArgs(InvalidArgsError::new(
+                    "inferred_fields",
+                    format!("invalid: {e}"),
+                ))
+            })?;
 
         let mut after = memory_json(&current);
         if let Value::Object(ref mut map) = after {
@@ -499,7 +513,12 @@ impl Tool for MemoryDelete {
             .cloned()
             .unwrap_or_else(|| json!([]));
         let inferred_fields = serde_json::from_value::<Vec<crate::InferredField>>(inferred_fields)
-            .map_err(|e| ToolError::InvalidArgs(format!("invalid inferred_fields: {e}")))?;
+            .map_err(|e| {
+                ToolError::InvalidArgs(InvalidArgsError::new(
+                    "inferred_fields",
+                    format!("invalid: {e}"),
+                ))
+            })?;
 
         Ok(make_proposal(
             "delete",

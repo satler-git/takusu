@@ -3,7 +3,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use takusu_client::Client;
 
-use crate::{InferredField, ProposedChange, Tool, ToolError, ToolOutput, ToolRegistry};
+use crate::{
+    InferredField, InvalidArgsError, ProposedChange, Tool, ToolError, ToolOutput, ToolRegistry,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Skill {
@@ -109,7 +111,7 @@ pub fn register_tools(registry: &mut ToolRegistry, client: Client) {
 fn object(args: Value) -> Result<serde_json::Map<String, Value>, ToolError> {
     args.as_object()
         .cloned()
-        .ok_or_else(|| ToolError::InvalidArgs("arguments must be an object".into()))
+        .ok_or_else(|| ToolError::InvalidArgs(InvalidArgsError::new("args", "must be an object")))
 }
 
 fn required_string(args: &serde_json::Map<String, Value>, name: &str) -> Result<String, ToolError> {
@@ -118,7 +120,7 @@ fn required_string(args: &serde_json::Map<String, Value>, name: &str) -> Result<
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(ToOwned::to_owned)
-        .ok_or_else(|| ToolError::InvalidArgs(format!("missing or empty {name}")))
+        .ok_or_else(|| ToolError::InvalidArgs(InvalidArgsError::new(name, "missing or empty")))
 }
 
 fn optional_string(
@@ -132,7 +134,7 @@ fn optional_string(
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(|value| Some(value.to_owned()))
-            .ok_or_else(|| ToolError::InvalidArgs(format!("{name} must be a string"))),
+            .ok_or_else(|| ToolError::InvalidArgs(InvalidArgsError::new(name, "must be a string"))),
     }
 }
 
@@ -145,7 +147,7 @@ fn client_error(error: takusu_client::ClientError) -> ToolError {
             if body.contains("not found") || body.contains("Not found") {
                 ToolError::NotFound(body)
             } else {
-                ToolError::InvalidArgs(body)
+                ToolError::InvalidArgs(InvalidArgsError::no_field(body))
             }
         }
         error => ToolError::Other(Box::new(error)),
@@ -154,22 +156,25 @@ fn client_error(error: takusu_client::ClientError) -> ToolError {
 
 fn validate_slug(slug: &str) -> Result<(), ToolError> {
     if slug.is_empty() || slug.len() > 64 {
-        return Err(ToolError::InvalidArgs(
-            "slug must be 1..64 characters".into(),
-        ));
+        return Err(ToolError::InvalidArgs(InvalidArgsError::new(
+            "slug",
+            "must be 1..64 characters",
+        )));
     }
     if slug.starts_with('.') || slug.contains('/') || slug.contains("..") {
-        return Err(ToolError::InvalidArgs(
-            "slug must not contain path components".into(),
-        ));
+        return Err(ToolError::InvalidArgs(InvalidArgsError::new(
+            "slug",
+            "must not contain path components",
+        )));
     }
     if !slug
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
     {
-        return Err(ToolError::InvalidArgs(
-            "slug must contain only ASCII letters, digits, '-', '_'".into(),
-        ));
+        return Err(ToolError::InvalidArgs(InvalidArgsError::new(
+            "slug",
+            "must contain only ASCII letters, digits, '-', '_'",
+        )));
     }
     Ok(())
 }
@@ -184,28 +189,35 @@ fn validate_skill_input(
     validate_slug(slug)?;
     if let Some(name) = name {
         if name.is_empty() || name.len() > 100 {
-            return Err(ToolError::InvalidArgs(
-                "name must be 1..100 characters".into(),
-            ));
+            return Err(ToolError::InvalidArgs(InvalidArgsError::new(
+                "name",
+                "must be 1..100 characters",
+            )));
         }
     } else if is_create {
-        return Err(ToolError::InvalidArgs("missing name".into()));
+        return Err(ToolError::InvalidArgs(InvalidArgsError::new(
+            "name", "missing",
+        )));
     }
     if let Some(description) = description
         && description.len() > 500
     {
-        return Err(ToolError::InvalidArgs(
-            "description must be at most 500 characters".into(),
-        ));
+        return Err(ToolError::InvalidArgs(InvalidArgsError::new(
+            "description",
+            "must be at most 500 characters",
+        )));
     }
     if let Some(body) = body {
         if body.is_empty() || body.len() > 64 * 1024 {
-            return Err(ToolError::InvalidArgs(
-                "body must be 1..65536 characters".into(),
-            ));
+            return Err(ToolError::InvalidArgs(InvalidArgsError::new(
+                "body",
+                "must be 1..65536 characters",
+            )));
         }
     } else if is_create {
-        return Err(ToolError::InvalidArgs("missing body".into()));
+        return Err(ToolError::InvalidArgs(InvalidArgsError::new(
+            "body", "missing",
+        )));
     }
     Ok(())
 }
@@ -321,8 +333,9 @@ impl Tool for SkillsProposeAdd {
         match self.client.get_skill(&slug).await {
             Err(takusu_client::ClientError::Api { status: 404, .. }) => {}
             Ok(_) => {
-                return Err(ToolError::InvalidArgs(format!(
-                    "skill {slug} already exists"
+                return Err(ToolError::InvalidArgs(InvalidArgsError::new(
+                    "slug",
+                    format!("skill {slug} already exists"),
                 )));
             }
             Err(e) => return Err(ToolError::Other(Box::new(e))),
@@ -345,8 +358,13 @@ impl Tool for SkillsProposeAdd {
             .get("inferred_fields")
             .cloned()
             .unwrap_or_else(|| json!([]));
-        let inferred_fields: Vec<InferredField> = serde_json::from_value(inferred)
-            .map_err(|error| ToolError::InvalidArgs(format!("invalid inferred_fields: {error}")))?;
+        let inferred_fields: Vec<InferredField> =
+            serde_json::from_value(inferred).map_err(|error| {
+                ToolError::InvalidArgs(InvalidArgsError::new(
+                    "inferred_fields",
+                    format!("invalid: {error}"),
+                ))
+            })?;
 
         let after = json!({
             "slug": slug,
@@ -422,8 +440,9 @@ impl Tool for SkillsProposeEdit {
 
         let existing = self.client.get_skill(&slug).await.map_err(client_error)?;
         if existing.built_in {
-            return Err(ToolError::InvalidArgs(format!(
-                "built-in skill {slug} cannot be edited"
+            return Err(ToolError::InvalidArgs(InvalidArgsError::new(
+                "slug",
+                format!("built-in skill {slug} cannot be edited"),
             )));
         }
 
@@ -431,9 +450,9 @@ impl Tool for SkillsProposeEdit {
         let description = optional_string(&args, "description")?;
         let body = optional_string(&args, "body")?;
         if name.is_none() && description.is_none() && body.is_none() {
-            return Err(ToolError::InvalidArgs(
-                "at least one of name, description, or body is required".into(),
-            ));
+            return Err(ToolError::InvalidArgs(InvalidArgsError::no_field(
+                "at least one of name, description, or body is required",
+            )));
         }
         validate_skill_input(
             &slug,
@@ -479,8 +498,13 @@ impl Tool for SkillsProposeEdit {
             .get("inferred_fields")
             .cloned()
             .unwrap_or_else(|| json!([]));
-        let inferred_fields: Vec<InferredField> = serde_json::from_value(inferred)
-            .map_err(|error| ToolError::InvalidArgs(format!("invalid inferred_fields: {error}")))?;
+        let inferred_fields: Vec<InferredField> =
+            serde_json::from_value(inferred).map_err(|error| {
+                ToolError::InvalidArgs(InvalidArgsError::new(
+                    "inferred_fields",
+                    format!("invalid: {error}"),
+                ))
+            })?;
 
         let proposal = ProposedChange {
             operation: "update".to_owned(),

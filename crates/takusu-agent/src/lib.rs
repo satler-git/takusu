@@ -15,8 +15,8 @@ pub use permissions::Permissions;
 
 pub use crate::llm::CompactionSettings;
 pub use tool::{
-    ChangeReceipt, InferredField, ProposedChange, Tool, ToolError, ToolOutput, ToolRegistry,
-    inferred_field_schema, inferred_fields_schema,
+    ChangeReceipt, InferredField, InvalidArgsError, ProposedChange, Tool, ToolError, ToolOutput,
+    ToolRegistry, inferred_field_schema, inferred_fields_schema,
 };
 pub use user_input::{
     StubUserInputProvider, UserInputAnswer, UserInputProvider, UserInputQuestion,
@@ -560,8 +560,9 @@ impl AgentSession {
             .nth(turn_index)
             .map(|(i, _)| i)
             .ok_or_else(|| {
-                AgentError::Tool(ToolError::InvalidArgs(format!(
-                    "turn index {turn_index} out of range"
+                AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
+                    "turn_index",
+                    format!("out of range: {turn_index}"),
                 )))
             })?;
         local[user_position] = llm::Message::User(user_text.to_string());
@@ -595,8 +596,9 @@ impl AgentSession {
             .map(|(i, _)| i)
             .collect();
         let &user_position = user_positions.get(turn_index).ok_or_else(|| {
-            AgentError::Tool(ToolError::InvalidArgs(format!(
-                "turn index {turn_index} out of range"
+            AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
+                "turn_index",
+                format!("out of range: {turn_index}"),
             )))
         })?;
 
@@ -844,7 +846,7 @@ impl AgentSession {
                     }
                     Err(e) if e.is_recoverable() => {
                         tracing::warn!(session_id = %self.session_id, tool = %call.name, error = %e, "tool call recoverable error");
-                        let content = e.to_string();
+                        let content = e.to_llm_content(&call.name);
                         emit(TurnEvent::ToolResult {
                             call_id: tool_call_id,
                             name: call.name.clone(),
@@ -896,11 +898,14 @@ impl AgentSession {
         let request = {
             let mut pending = self.pending_approval.lock().unwrap();
             let current = pending.as_ref().ok_or_else(|| {
-                AgentError::Tool(ToolError::InvalidArgs("approval not found".into()))
+                AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
+                    "approval_id",
+                    "not found",
+                )))
             })?;
             if current.id != id {
                 return Err(AgentError::Tool(ToolError::InvalidArgs(
-                    "approval id mismatch".into(),
+                    InvalidArgsError::new("approval_id", "mismatch"),
                 )));
             }
             pending.take().expect("approval was present")
@@ -1053,316 +1058,368 @@ impl AgentSession {
                 "target changed after proposal".into(),
             )));
         }
-        let (result, before, after, target_revision) = match (
-            change.target_label.split_whitespace().next(),
-            change.operation.as_str(),
-        ) {
-            (Some("task"), "create") => {
-                let id = self
-                    .client
-                    .create_task(
-                        &serde_json::from_value::<CreateTask>(Value::Object(args))
-                            .map_err(|e| AgentError::Tool(ToolError::InvalidArgs(e.to_string())))?,
-                    )
-                    .await
-                    .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?
-                    .id;
-                (id, None, None, None)
-            }
-            (Some("task"), "update") => {
-                let id = self
-                    .client
-                    .update_task(
-                        &target_id,
-                        &serde_json::from_value::<UpdateTask>(Value::Object(args))
-                            .map_err(|e| AgentError::Tool(ToolError::InvalidArgs(e.to_string())))?,
-                    )
-                    .await
-                    .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?
-                    .id;
-                (id, None, None, None)
-            }
-            (Some("task"), "delete") => {
-                self.client
-                    .delete_task(&target_id)
-                    .await
-                    .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
-                (target_id.clone(), None, None, None)
-            }
-            (Some("habit"), "create") => {
-                let id = self
-                    .client
-                    .create_habit(
-                        &serde_json::from_value::<CreateHabit>(Value::Object(args))
-                            .map_err(|e| AgentError::Tool(ToolError::InvalidArgs(e.to_string())))?,
-                    )
-                    .await
-                    .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?
-                    .id;
-                (id, None, None, None)
-            }
-            (Some("habit"), "update") => {
-                let id = self
-                    .client
-                    .update_habit(
-                        &target_id,
-                        &serde_json::from_value::<UpdateHabit>(Value::Object(args))
-                            .map_err(|e| AgentError::Tool(ToolError::InvalidArgs(e.to_string())))?,
-                    )
-                    .await
-                    .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?
-                    .id;
-                (id, None, None, None)
-            }
-            (Some("habit"), "delete") => {
-                self.client
-                    .delete_habit(&target_id)
-                    .await
-                    .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
-                (target_id.clone(), None, None, None)
-            }
-            (Some("skill"), "create") => {
-                let slug = self
-                    .client
-                    .create_skill(
-                        &serde_json::from_value::<CreateSkill>(Value::Object(args))
-                            .map_err(|e| AgentError::Tool(ToolError::InvalidArgs(e.to_string())))?,
-                    )
-                    .await
-                    .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?
-                    .slug;
-                (slug, None, None, None)
-            }
-            (Some("skill"), "update") => {
-                let slug = self
-                    .client
-                    .update_skill(
-                        &target_id,
-                        &serde_json::from_value::<UpdateSkill>(Value::Object(args))
-                            .map_err(|e| AgentError::Tool(ToolError::InvalidArgs(e.to_string())))?,
-                    )
-                    .await
-                    .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?
-                    .slug;
-                (slug, None, None, None)
-            }
-            (Some("memory"), "create") => {
-                let row = self
-                    .client
-                    .create_memory(
-                        &serde_json::from_value::<CreateMemory>(Value::Object(args))
-                            .map_err(|e| AgentError::Tool(ToolError::InvalidArgs(e.to_string())))?,
-                        operation_id,
-                    )
-                    .await
-                    .map_err(|e| AgentError::Tool(client_error(e)))?;
-                let after = serde_json::to_value(&row)
-                    .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
-                (row.id, None, Some(after), Some(row.revision))
-            }
-            (Some("memory"), "update") => {
-                let observed_revision = args
-                    .get("observed_revision")
-                    .and_then(Value::as_i64)
-                    .ok_or_else(|| {
-                        AgentError::Tool(ToolError::InvalidArgs("missing observed_revision".into()))
-                    })?;
-                let content = args
-                    .get("content")
-                    .and_then(Value::as_str)
-                    .map(|s| s.to_owned());
-                let row = self
-                    .client
-                    .update_memory(
-                        &target_id,
-                        &UpdateMemory {
-                            observed_revision,
-                            content,
-                        },
-                        operation_id,
-                    )
-                    .await
-                    .map_err(|e| AgentError::Tool(client_error(e)))?;
-                let after = serde_json::to_value(&row)
-                    .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
-                (
-                    row.id,
-                    change.before.clone(),
-                    Some(after),
-                    Some(row.revision),
-                )
-            }
-            (Some("memory"), "delete") => {
-                let observed_revision = args
-                    .get("observed_revision")
-                    .and_then(Value::as_i64)
-                    .ok_or_else(|| {
-                        AgentError::Tool(ToolError::InvalidArgs("missing observed_revision".into()))
-                    })?;
-                self.client
-                    .delete_memory(&target_id, observed_revision, operation_id)
-                    .await
-                    .map_err(|e| AgentError::Tool(client_error(e)))?;
-                (target_id.clone(), change.before.clone(), None, None)
-            }
-            (Some("task"), "move") => {
-                let start_at = args
-                    .get("start_at")
-                    .and_then(Value::as_str)
-                    .ok_or_else(|| {
-                        AgentError::Tool(ToolError::InvalidArgs("missing start_at".into()))
-                    })?
-                    .to_owned();
-                let force = args.get("force").and_then(Value::as_bool).unwrap_or(false);
-                let fixed = args.get("fixed").and_then(Value::as_bool).unwrap_or(true);
-                let move_result = self
-                    .client
-                    .move_entry(&target_id, &MoveEntry { start_at, force })
-                    .await
-                    .map_err(|error| match error {
-                        takusu_client::ClientError::Api { status: 409, body } => {
-                            AgentError::Tool(ToolError::Conflict(body))
-                        }
-                        _ => AgentError::Tool(ToolError::Other(Box::new(error))),
-                    })?;
-                if fixed {
+        let (result, before, after, target_revision) =
+            match (
+                change.target_label.split_whitespace().next(),
+                change.operation.as_str(),
+            ) {
+                (Some("task"), "create") => {
+                    let id =
+                        self.client
+                            .create_task(
+                                &serde_json::from_value::<CreateTask>(Value::Object(args))
+                                    .map_err(|e| {
+                                        AgentError::Tool(ToolError::InvalidArgs(
+                                            InvalidArgsError::no_field(e.to_string()),
+                                        ))
+                                    })?,
+                            )
+                            .await
+                            .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?
+                            .id;
+                    (id, None, None, None)
+                }
+                (Some("task"), "update") => {
+                    let id =
+                        self.client
+                            .update_task(
+                                &target_id,
+                                &serde_json::from_value::<UpdateTask>(Value::Object(args))
+                                    .map_err(|e| {
+                                        AgentError::Tool(ToolError::InvalidArgs(
+                                            InvalidArgsError::no_field(e.to_string()),
+                                        ))
+                                    })?,
+                            )
+                            .await
+                            .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?
+                            .id;
+                    (id, None, None, None)
+                }
+                (Some("task"), "delete") => {
                     self.client
-                        .update_task(
-                            &target_id,
-                            &UpdateTask {
-                                fixed: Some(true),
-                                ..Default::default()
-                            },
-                        )
+                        .delete_task(&target_id)
                         .await
                         .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
+                    (target_id.clone(), None, None, None)
                 }
-                let after = serde_json::to_value(&move_result)
-                    .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
-                (target_id.clone(), change.before.clone(), Some(after), None)
-            }
-            (Some("task"), "start") => {
-                let task = self
-                    .client
-                    .start_task_work(&target_id, operation_id)
-                    .await
-                    .map_err(|e| AgentError::Tool(tools::takusu::client_error(e)))?;
-                let after = serde_json::to_value(&task)
-                    .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
-                (target_id.clone(), change.before.clone(), Some(after), None)
-            }
-            (Some("task"), "pause") => {
-                let task = self
-                    .client
-                    .pause_task_work(&target_id, operation_id)
-                    .await
-                    .map_err(|e| AgentError::Tool(tools::takusu::client_error(e)))?;
-                let after = serde_json::to_value(&task)
-                    .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
-                (target_id.clone(), change.before.clone(), Some(after), None)
-            }
-            (Some("task"), "progress") => {
-                let quantity_done = args
-                    .get("quantity_done")
-                    .and_then(Value::as_i64)
-                    .ok_or_else(|| {
-                        AgentError::Tool(ToolError::InvalidArgs("missing quantity_done".into()))
+                (Some("habit"), "create") => {
+                    let id =
+                        self.client
+                            .create_habit(
+                                &serde_json::from_value::<CreateHabit>(Value::Object(args))
+                                    .map_err(|e| {
+                                        AgentError::Tool(ToolError::InvalidArgs(
+                                            InvalidArgsError::no_field(e.to_string()),
+                                        ))
+                                    })?,
+                            )
+                            .await
+                            .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?
+                            .id;
+                    (id, None, None, None)
+                }
+                (Some("habit"), "update") => {
+                    let id =
+                        self.client
+                            .update_habit(
+                                &target_id,
+                                &serde_json::from_value::<UpdateHabit>(Value::Object(args))
+                                    .map_err(|e| {
+                                        AgentError::Tool(ToolError::InvalidArgs(
+                                            InvalidArgsError::no_field(e.to_string()),
+                                        ))
+                                    })?,
+                            )
+                            .await
+                            .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?
+                            .id;
+                    (id, None, None, None)
+                }
+                (Some("habit"), "delete") => {
+                    self.client
+                        .delete_habit(&target_id)
+                        .await
+                        .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
+                    (target_id.clone(), None, None, None)
+                }
+                (Some("skill"), "create") => {
+                    let slug =
+                        self.client
+                            .create_skill(
+                                &serde_json::from_value::<CreateSkill>(Value::Object(args))
+                                    .map_err(|e| {
+                                        AgentError::Tool(ToolError::InvalidArgs(
+                                            InvalidArgsError::no_field(e.to_string()),
+                                        ))
+                                    })?,
+                            )
+                            .await
+                            .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?
+                            .slug;
+                    (slug, None, None, None)
+                }
+                (Some("skill"), "update") => {
+                    let slug =
+                        self.client
+                            .update_skill(
+                                &target_id,
+                                &serde_json::from_value::<UpdateSkill>(Value::Object(args))
+                                    .map_err(|e| {
+                                        AgentError::Tool(ToolError::InvalidArgs(
+                                            InvalidArgsError::no_field(e.to_string()),
+                                        ))
+                                    })?,
+                            )
+                            .await
+                            .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?
+                            .slug;
+                    (slug, None, None, None)
+                }
+                (Some("memory"), "create") => {
+                    let row =
+                        self.client
+                            .create_memory(
+                                &serde_json::from_value::<CreateMemory>(Value::Object(args))
+                                    .map_err(|e| {
+                                        AgentError::Tool(ToolError::InvalidArgs(
+                                            InvalidArgsError::no_field(e.to_string()),
+                                        ))
+                                    })?,
+                                operation_id,
+                            )
+                            .await
+                            .map_err(|e| AgentError::Tool(client_error(e)))?;
+                    let after = serde_json::to_value(&row)
+                        .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
+                    (row.id, None, Some(after), Some(row.revision))
+                }
+                (Some("memory"), "update") => {
+                    let observed_revision = args
+                        .get("observed_revision")
+                        .and_then(Value::as_i64)
+                        .ok_or_else(|| {
+                        AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
+                            "observed_revision",
+                            "missing",
+                        )))
                     })?;
-                let note = args
-                    .get("note")
-                    .and_then(Value::as_str)
-                    .map(|s| s.to_owned());
-                let record = RecordProgress {
-                    quantity_done,
-                    note,
-                };
-                let result = self
-                    .client
-                    .record_progress(&target_id, &record, operation_id)
-                    .await
-                    .map_err(|e| AgentError::Tool(tools::takusu::client_error(e)))?;
-                let after = serde_json::to_value(&result)
-                    .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
-                (target_id.clone(), change.before.clone(), Some(after), None)
-            }
-            (Some("task"), "complete") => {
-                let task = self
-                    .client
-                    .complete_task_work(&target_id, operation_id)
-                    .await
-                    .map_err(|e| AgentError::Tool(tools::takusu::client_error(e)))?;
-                let after = serde_json::to_value(&task)
-                    .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
-                (target_id.clone(), change.before.clone(), Some(after), None)
-            }
-            (Some("task"), "split") => {
-                let retained_quantity = args
-                    .get("retained_quantity")
-                    .and_then(Value::as_i64)
-                    .ok_or_else(|| {
-                        AgentError::Tool(ToolError::InvalidArgs("missing retained_quantity".into()))
+                    let content = args
+                        .get("content")
+                        .and_then(Value::as_str)
+                        .map(|s| s.to_owned());
+                    let row = self
+                        .client
+                        .update_memory(
+                            &target_id,
+                            &UpdateMemory {
+                                observed_revision,
+                                content,
+                            },
+                            operation_id,
+                        )
+                        .await
+                        .map_err(|e| AgentError::Tool(client_error(e)))?;
+                    let after = serde_json::to_value(&row)
+                        .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
+                    (
+                        row.id,
+                        change.before.clone(),
+                        Some(after),
+                        Some(row.revision),
+                    )
+                }
+                (Some("memory"), "delete") => {
+                    let observed_revision = args
+                        .get("observed_revision")
+                        .and_then(Value::as_i64)
+                        .ok_or_else(|| {
+                        AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
+                            "observed_revision",
+                            "missing",
+                        )))
                     })?;
-                let set_dependency = args.get("set_dependency").and_then(Value::as_bool);
-                let title = args
-                    .get("title")
-                    .and_then(Value::as_str)
-                    .map(|s| s.to_owned());
-                let description = args
-                    .get("description")
-                    .and_then(Value::as_str)
-                    .map(|s| s.to_owned());
-                let end_at = args
-                    .get("end_at")
-                    .and_then(Value::as_str)
-                    .map(|s| s.to_owned());
-                let split = SplitTask {
-                    retained_quantity,
-                    set_dependency,
-                    title,
-                    description,
-                    end_at,
-                };
-                let result = self
-                    .client
-                    .split_task(&target_id, &split, operation_id)
-                    .await
-                    .map_err(|e| AgentError::Tool(tools::takusu::client_error(e)))?;
-                let after = serde_json::to_value(&result)
-                    .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
-                (target_id.clone(), change.before.clone(), Some(after), None)
-            }
-            (_, "generate") | (_, "reschedule") => {
-                let entries = args.get("_preview_entries").cloned().ok_or_else(|| {
-                    AgentError::Tool(ToolError::InvalidArgs("schedule preview is missing".into()))
-                })?;
-                let request = SaveScheduleRequest {
-                    entries: serde_json::from_value::<Vec<ScheduleEntry>>(entries.clone())
-                        .map_err(|e| AgentError::Tool(ToolError::InvalidArgs(e.to_string())))?,
-                    mark_scheduled_task_ids: entries
-                        .as_array()
-                        .map(|entries| {
-                            entries
-                                .iter()
-                                .filter_map(|entry| entry.get("task_id").and_then(Value::as_str))
-                                .map(ToOwned::to_owned)
-                                .collect()
-                        })
-                        .unwrap_or_default(),
-                };
-                let id = self
-                    .client
-                    .replace_schedule(&request)
-                    .await
-                    .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?
-                    .id;
-                (id, None, None, None)
-            }
-            _ => {
-                return Err(AgentError::Tool(ToolError::InvalidArgs(
-                    "unsupported proposal".into(),
-                )));
-            }
-        };
+                    self.client
+                        .delete_memory(&target_id, observed_revision, operation_id)
+                        .await
+                        .map_err(|e| AgentError::Tool(client_error(e)))?;
+                    (target_id.clone(), change.before.clone(), None, None)
+                }
+                (Some("task"), "move") => {
+                    let start_at = args
+                        .get("start_at")
+                        .and_then(Value::as_str)
+                        .ok_or_else(|| {
+                            AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
+                                "start_at", "missing",
+                            )))
+                        })?
+                        .to_owned();
+                    let force = args.get("force").and_then(Value::as_bool).unwrap_or(false);
+                    let fixed = args.get("fixed").and_then(Value::as_bool).unwrap_or(true);
+                    let move_result = self
+                        .client
+                        .move_entry(&target_id, &MoveEntry { start_at, force })
+                        .await
+                        .map_err(|error| match error {
+                            takusu_client::ClientError::Api { status: 409, body } => {
+                                AgentError::Tool(ToolError::Conflict(body))
+                            }
+                            _ => AgentError::Tool(ToolError::Other(Box::new(error))),
+                        })?;
+                    if fixed {
+                        self.client
+                            .update_task(
+                                &target_id,
+                                &UpdateTask {
+                                    fixed: Some(true),
+                                    ..Default::default()
+                                },
+                            )
+                            .await
+                            .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
+                    }
+                    let after = serde_json::to_value(&move_result)
+                        .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
+                    (target_id.clone(), change.before.clone(), Some(after), None)
+                }
+                (Some("task"), "start") => {
+                    let task = self
+                        .client
+                        .start_task_work(&target_id, operation_id)
+                        .await
+                        .map_err(|e| AgentError::Tool(tools::takusu::client_error(e)))?;
+                    let after = serde_json::to_value(&task)
+                        .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
+                    (target_id.clone(), change.before.clone(), Some(after), None)
+                }
+                (Some("task"), "pause") => {
+                    let task = self
+                        .client
+                        .pause_task_work(&target_id, operation_id)
+                        .await
+                        .map_err(|e| AgentError::Tool(tools::takusu::client_error(e)))?;
+                    let after = serde_json::to_value(&task)
+                        .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
+                    (target_id.clone(), change.before.clone(), Some(after), None)
+                }
+                (Some("task"), "progress") => {
+                    let quantity_done = args
+                        .get("quantity_done")
+                        .and_then(Value::as_i64)
+                        .ok_or_else(|| {
+                            AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
+                                "quantity_done",
+                                "missing",
+                            )))
+                        })?;
+                    let note = args
+                        .get("note")
+                        .and_then(Value::as_str)
+                        .map(|s| s.to_owned());
+                    let record = RecordProgress {
+                        quantity_done,
+                        note,
+                    };
+                    let result = self
+                        .client
+                        .record_progress(&target_id, &record, operation_id)
+                        .await
+                        .map_err(|e| AgentError::Tool(tools::takusu::client_error(e)))?;
+                    let after = serde_json::to_value(&result)
+                        .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
+                    (target_id.clone(), change.before.clone(), Some(after), None)
+                }
+                (Some("task"), "complete") => {
+                    let task = self
+                        .client
+                        .complete_task_work(&target_id, operation_id)
+                        .await
+                        .map_err(|e| AgentError::Tool(tools::takusu::client_error(e)))?;
+                    let after = serde_json::to_value(&task)
+                        .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
+                    (target_id.clone(), change.before.clone(), Some(after), None)
+                }
+                (Some("task"), "split") => {
+                    let retained_quantity = args
+                        .get("retained_quantity")
+                        .and_then(Value::as_i64)
+                        .ok_or_else(|| {
+                        AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
+                            "retained_quantity",
+                            "missing",
+                        )))
+                    })?;
+                    let set_dependency = args.get("set_dependency").and_then(Value::as_bool);
+                    let title = args
+                        .get("title")
+                        .and_then(Value::as_str)
+                        .map(|s| s.to_owned());
+                    let description = args
+                        .get("description")
+                        .and_then(Value::as_str)
+                        .map(|s| s.to_owned());
+                    let end_at = args
+                        .get("end_at")
+                        .and_then(Value::as_str)
+                        .map(|s| s.to_owned());
+                    let split = SplitTask {
+                        retained_quantity,
+                        set_dependency,
+                        title,
+                        description,
+                        end_at,
+                    };
+                    let result = self
+                        .client
+                        .split_task(&target_id, &split, operation_id)
+                        .await
+                        .map_err(|e| AgentError::Tool(tools::takusu::client_error(e)))?;
+                    let after = serde_json::to_value(&result)
+                        .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
+                    (target_id.clone(), change.before.clone(), Some(after), None)
+                }
+                (_, "generate") | (_, "reschedule") => {
+                    let entries = args.get("_preview_entries").cloned().ok_or_else(|| {
+                        AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
+                            "_preview_entries",
+                            "schedule preview is missing",
+                        )))
+                    })?;
+                    let request = SaveScheduleRequest {
+                        entries: serde_json::from_value::<Vec<ScheduleEntry>>(entries.clone())
+                            .map_err(|e| {
+                                AgentError::Tool(ToolError::InvalidArgs(
+                                    InvalidArgsError::no_field(e.to_string()),
+                                ))
+                            })?,
+                        mark_scheduled_task_ids: entries
+                            .as_array()
+                            .map(|entries| {
+                                entries
+                                    .iter()
+                                    .filter_map(|entry| {
+                                        entry.get("task_id").and_then(Value::as_str)
+                                    })
+                                    .map(ToOwned::to_owned)
+                                    .collect()
+                            })
+                            .unwrap_or_default(),
+                    };
+                    let id = self
+                        .client
+                        .replace_schedule(&request)
+                        .await
+                        .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?
+                        .id;
+                    (id, None, None, None)
+                }
+                _ => {
+                    return Err(AgentError::Tool(ToolError::InvalidArgs(
+                        InvalidArgsError::no_field("unsupported proposal"),
+                    )));
+                }
+            };
         if change.target_label.starts_with("skill") {
             self.clear_skills_index();
         }
@@ -1762,7 +1819,9 @@ mod tests {
             let msg = args
                 .get("message")
                 .and_then(|v| v.as_str())
-                .ok_or_else(|| ToolError::InvalidArgs("missing message".to_string()))?;
+                .ok_or_else(|| {
+                    ToolError::InvalidArgs(InvalidArgsError::new("message", "missing"))
+                })?;
             *self.calls.lock().unwrap() += 1;
             Ok(ToolOutput {
                 content: msg.to_string(),
@@ -1792,7 +1851,9 @@ mod tests {
         }
 
         async fn call(&self, _args: Value) -> Result<ToolOutput, ToolError> {
-            Err(ToolError::InvalidArgs("bad args".into()))
+            Err(ToolError::InvalidArgs(InvalidArgsError::no_field(
+                "bad args",
+            )))
         }
     }
 
@@ -1822,7 +1883,7 @@ mod tests {
             let title = args
                 .get("title")
                 .and_then(Value::as_str)
-                .ok_or_else(|| ToolError::InvalidArgs("missing title".to_string()))?;
+                .ok_or_else(|| ToolError::InvalidArgs(InvalidArgsError::new("title", "missing")))?;
             Ok(ToolOutput {
                 content: r#"{"approval_required":true}"#.to_string(),
                 why: Some(format!("propose creating {title}")),

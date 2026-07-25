@@ -16,7 +16,7 @@ use takusu_habit::{
 
 use crate::tools::other_error;
 use crate::tools::takusu::TimeZoneCache;
-use crate::{Tool, ToolError, ToolOutput, ToolRegistry};
+use crate::{InvalidArgsError, Tool, ToolError, ToolOutput, ToolRegistry};
 
 pub fn register_tools(registry: &mut ToolRegistry, tz_cache: TimeZoneCache) {
     registry.register(Box::new(ExpandRRule { tz_cache }));
@@ -60,22 +60,27 @@ impl Tool for ExpandRRule {
     }
 
     async fn call(&self, args: Value) -> Result<ToolOutput, ToolError> {
-        let args = args
-            .as_object()
-            .ok_or_else(|| ToolError::InvalidArgs("arguments must be an object".into()))?;
+        let args = args.as_object().ok_or_else(|| {
+            ToolError::InvalidArgs(InvalidArgsError::new("args", "must be an object"))
+        })?;
 
         let rrule_str = args
             .get("rrule")
             .and_then(Value::as_str)
             .filter(|s| !s.is_empty())
-            .ok_or_else(|| ToolError::InvalidArgs("missing or empty rrule".into()))?;
+            .ok_or_else(|| {
+                ToolError::InvalidArgs(InvalidArgsError::new("rrule", "missing or empty"))
+            })?;
 
         let count = args
             .get("count")
             .and_then(Value::as_u64)
             .and_then(|n| (1..=1000).contains(&n).then_some(n as usize))
             .ok_or_else(|| {
-                ToolError::InvalidArgs("count must be an integer between 1 and 1000".into())
+                ToolError::InvalidArgs(InvalidArgsError::new(
+                    "count",
+                    "must be an integer between 1 and 1000",
+                ))
             })?;
 
         let tz = self.tz_cache.get_with_fallback().await;
@@ -86,7 +91,7 @@ impl Tool for ExpandRRule {
             .map_err(|e| ToolError::Other(Box::new(e)))?;
 
         let parsed = parse_rrule(rrule_str, &default_start)
-            .map_err(|e| ToolError::InvalidArgs(e.to_string()))?;
+            .map_err(|e| ToolError::InvalidArgs(InvalidArgsError::no_field(e.to_string())))?;
 
         let dates = expand_dates(&parsed, count)?;
 
@@ -111,12 +116,13 @@ fn expand_dates(parsed: &ParsedRule, count: usize) -> Result<Vec<String>, ToolEr
     let hour = parsed.start.hour();
     let minute = parsed.start.minute();
     if !(0..=23).contains(&hour) || !(0..=59).contains(&minute) {
-        return Err(ToolError::InvalidArgs(format!(
-            "invalid start time: {hour}:{minute}"
+        return Err(ToolError::InvalidArgs(InvalidArgsError::new(
+            "start_time",
+            format!("invalid: {hour}:{minute}"),
         )));
     }
     let start_time = TimeOfDay::new(hour as u8, minute as u8)
-        .ok_or_else(|| ToolError::InvalidArgs(format!("invalid start time: {hour}:{minute}")))?;
+        .ok_or_else(|| ToolError::InvalidArgs(InvalidArgsError::new("start_time", "invalid")))?;
     let start_point = date_time_to_point(parsed.start.date(), &start_time, &tz)
         .ok_or_else(|| other_error("failed to convert DTSTART to an internal time point"))?;
 
