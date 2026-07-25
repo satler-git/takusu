@@ -6,7 +6,7 @@ use crate::tools::takusu::{
     TaskContext, TimeZoneCache, client_error, object, optional_bool, optional_string, required_i64,
     server_timezone, strip_leading_hash, task_json,
 };
-use crate::{ProposedChange, Tool, ToolError, ToolOutput, ToolRegistry};
+use crate::{InvalidArgsError, ProposedChange, Tool, ToolError, ToolOutput, ToolRegistry};
 
 /// Register the active-session progress tools.
 pub fn register_tools(registry: &mut ToolRegistry, client: Client, tz_cache: TimeZoneCache) {
@@ -259,9 +259,9 @@ impl Tool for TaskStart {
         };
         let display_ref = ctx.reference(&task);
         if task.status == "completed" || task.status == "skipped" {
-            return Err(ToolError::InvalidArgs(format!(
-                "cannot start work on a {} task",
-                task.status
+            return Err(ToolError::InvalidArgs(InvalidArgsError::new(
+                "task_ref",
+                format!("cannot start work on a {} task", task.status),
             )));
         }
 
@@ -345,9 +345,9 @@ impl Tool for TaskPause {
         };
         let display_ref = ctx.reference(&task);
         if task.status == "completed" || task.status == "skipped" {
-            return Err(ToolError::InvalidArgs(format!(
-                "cannot pause work on a {} task",
-                task.status
+            return Err(ToolError::InvalidArgs(InvalidArgsError::new(
+                "task_ref",
+                format!("cannot pause work on a {} task", task.status),
             )));
         }
 
@@ -414,9 +414,10 @@ impl Tool for TaskProgress {
         let note = optional_string(&args, "note")?;
 
         if quantity_done < 0 {
-            return Err(ToolError::InvalidArgs(
-                "quantity_done cannot be negative".into(),
-            ));
+            return Err(ToolError::InvalidArgs(InvalidArgsError::new(
+                "quantity_done",
+                "cannot be negative",
+            )));
         }
 
         let tz = server_timezone(&self.tz_cache).await;
@@ -439,17 +440,20 @@ impl Tool for TaskProgress {
         let display_ref = ctx.reference(&task);
 
         if task.status == "completed" || task.status == "skipped" {
-            return Err(ToolError::InvalidArgs(format!(
-                "cannot record progress on a {} task",
-                task.status
+            return Err(ToolError::InvalidArgs(InvalidArgsError::new(
+                "task_ref",
+                format!("cannot record progress on a {} task", task.status),
             )));
         }
         if let Some(total) = task.quantity_total
             && quantity_done > total
         {
-            return Err(ToolError::InvalidArgs(format!(
-                "quantity_done cannot exceed quantity_total ({} > {})",
-                quantity_done, total
+            return Err(ToolError::InvalidArgs(InvalidArgsError::new(
+                "quantity_done",
+                format!(
+                    "cannot exceed quantity_total ({} > {})",
+                    quantity_done, total
+                ),
             )));
         }
 
@@ -609,9 +613,9 @@ impl Tool for TaskComplete {
         };
         let display_ref = ctx.reference(&task);
         if task.status == "completed" || task.status == "skipped" {
-            return Err(ToolError::InvalidArgs(format!(
-                "cannot complete a {} task",
-                task.status
+            return Err(ToolError::InvalidArgs(InvalidArgsError::new(
+                "task_ref",
+                format!("cannot complete a {} task", task.status),
             )));
         }
 
@@ -752,28 +756,34 @@ impl Tool for TaskSplit {
         let display_ref = ctx.reference(&task);
 
         if task.status == "completed" || task.status == "skipped" {
-            return Err(ToolError::InvalidArgs(format!(
-                "cannot split a {} task",
-                task.status
+            return Err(ToolError::InvalidArgs(InvalidArgsError::new(
+                "task_ref",
+                format!("cannot split a {} task", task.status),
             )));
         }
         let total = task.quantity_total.ok_or_else(|| {
-            ToolError::InvalidArgs("cannot split a task with no quantity_total".into())
+            ToolError::InvalidArgs(InvalidArgsError::new(
+                "quantity_total",
+                "missing: cannot split a task with no quantity_total",
+            ))
         })?;
         if retained_quantity <= 0 {
-            return Err(ToolError::InvalidArgs(
-                "retained_quantity must be greater than 0".into(),
-            ));
+            return Err(ToolError::InvalidArgs(InvalidArgsError::new(
+                "retained_quantity",
+                "must be greater than 0",
+            )));
         }
         if retained_quantity >= total {
-            return Err(ToolError::InvalidArgs(
-                "retained_quantity must be less than quantity_total".into(),
-            ));
+            return Err(ToolError::InvalidArgs(InvalidArgsError::new(
+                "retained_quantity",
+                "must be less than quantity_total",
+            )));
         }
         if retained_quantity < task.quantity_done {
-            return Err(ToolError::InvalidArgs(
-                "retained_quantity cannot be less than quantity_done".into(),
-            ));
+            return Err(ToolError::InvalidArgs(InvalidArgsError::new(
+                "retained_quantity",
+                "cannot be less than quantity_done",
+            )));
         }
 
         let before = task_json(&task, &ctx, Some(&tz));
@@ -806,8 +816,9 @@ impl Tool for TaskSplit {
             execution_args.insert("description".to_string(), Value::String(v.clone()));
         }
         let end_at_normalized = if let Some(v) = &end_at {
-            let normalized = takusu_util::parse_datetime_tz(v, &tz)
-                .map_err(|e| ToolError::InvalidArgs(format!("invalid end_at: {e}")))?;
+            let normalized = takusu_util::parse_datetime_tz(v, &tz).map_err(|e| {
+                ToolError::InvalidArgs(InvalidArgsError::new("end_at", format!("invalid: {e}")))
+            })?;
             execution_args.insert("end_at".to_string(), Value::String(normalized.clone()));
             Some(normalized)
         } else {

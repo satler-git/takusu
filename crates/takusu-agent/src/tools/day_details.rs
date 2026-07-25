@@ -17,7 +17,7 @@ use takusu_util::{parse_date_expression, parse_datetime_to_timestamp};
 use crate::tools::other_error;
 use crate::tools::takusu::TimeZoneCache;
 use crate::tools::takusu::client_error;
-use crate::{Tool, ToolError, ToolOutput, ToolRegistry};
+use crate::{InvalidArgsError, Tool, ToolError, ToolOutput, ToolRegistry};
 
 pub fn register_tools(registry: &mut ToolRegistry, client: Client, tz_cache: TimeZoneCache) {
     registry.register(Box::new(DayDetails { client, tz_cache }));
@@ -65,7 +65,9 @@ impl Tool for DayDetails {
             .get("dates")
             .and_then(Value::as_array)
             .filter(|a| !a.is_empty())
-            .ok_or_else(|| ToolError::InvalidArgs("dates must be a non-empty array".into()))?;
+            .ok_or_else(|| {
+                ToolError::InvalidArgs(InvalidArgsError::new("dates", "must be a non-empty array"))
+            })?;
         let include_schedule = args
             .get("include_schedule")
             .and_then(Value::as_bool)
@@ -74,12 +76,19 @@ impl Tool for DayDetails {
         let tz = self.tz_cache.get_with_fallback().await;
 
         let mut parsed_dates = Vec::with_capacity(dates.len());
-        for v in dates {
-            let s = v
-                .as_str()
-                .ok_or_else(|| ToolError::InvalidArgs("each date must be a string".into()))?;
-            let ts = parse_date_expression(s, &tz, false)
-                .map_err(|e| ToolError::InvalidArgs(format!("invalid date '{s}': {e}")))?;
+        for (idx, v) in dates.iter().enumerate() {
+            let s = v.as_str().ok_or_else(|| {
+                ToolError::InvalidArgs(InvalidArgsError::new(
+                    "dates",
+                    format!("item {idx} must be a string"),
+                ))
+            })?;
+            let ts = parse_date_expression(s, &tz, false).map_err(|e| {
+                ToolError::InvalidArgs(InvalidArgsError::new(
+                    "dates",
+                    format!("invalid date '{s}': {e}"),
+                ))
+            })?;
             parsed_dates.push(ts.to_zoned(tz.clone()).date());
         }
         parsed_dates.sort();

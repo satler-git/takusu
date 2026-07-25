@@ -3,7 +3,10 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use std::sync::Arc;
 
-use crate::{Tool, ToolError, ToolOutput, ToolRegistry, UserInputProvider, UserInputQuestion};
+use crate::{
+    InvalidArgsError, Tool, ToolError, ToolOutput, ToolRegistry, UserInputProvider,
+    UserInputQuestion,
+};
 
 /// Ask the user to correct ambiguous ASR text.
 ///
@@ -59,17 +62,25 @@ impl Tool for CorrectAsr {
     }
 
     async fn call(&self, _args: Value) -> Result<ToolOutput, ToolError> {
-        Err(ToolError::InvalidArgs(
-            "correct_asr requires a tool-call id; use call_with_id".into(),
-        ))
+        Err(ToolError::InvalidArgs(InvalidArgsError::new(
+            "call_id",
+            "correct_asr requires a tool-call id; use call_with_id",
+        )))
     }
 
     async fn call_with_id(&self, call_id: &str, args: Value) -> Result<ToolOutput, ToolError> {
-        let args: CorrectAsrArgs = serde_json::from_value(args)
-            .map_err(|e| ToolError::InvalidArgs(format!("invalid correct_asr arguments: {e}")))?;
+        let args: CorrectAsrArgs = serde_json::from_value(args).map_err(|e| {
+            ToolError::InvalidArgs(InvalidArgsError::new(
+                "questions",
+                format!("invalid correct_asr arguments: {e}"),
+            ))
+        })?;
 
         if args.questions.is_empty() {
-            return Err(ToolError::InvalidArgs("questions must not be empty".into()));
+            return Err(ToolError::InvalidArgs(InvalidArgsError::new(
+                "questions",
+                "must not be empty",
+            )));
         }
 
         let answers = self.provider.request(call_id, args.questions).await?;

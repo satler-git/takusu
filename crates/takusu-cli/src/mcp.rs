@@ -12,7 +12,7 @@ use rmcp::{
     transport::stdio,
 };
 use serde_json::{Value, json};
-use takusu_agent::{AgentConfig, AgentError, AgentSession};
+use takusu_agent::{AgentConfig, AgentError, AgentSession, InvalidArgsError};
 use takusu_client::Client;
 use takusu_local_lib::app::TakusuApp;
 use takusu_local_lib::error::AppError;
@@ -114,8 +114,9 @@ impl McpServer {
 
     async fn get_session(&self, id: &str) -> Result<Arc<AgentSession>, AgentError> {
         self.sessions.lock().await.get(id).ok_or_else(|| {
-            AgentError::Tool(takusu_agent::ToolError::InvalidArgs(format!(
-                "session not found: {id}"
+            AgentError::Tool(takusu_agent::ToolError::InvalidArgs(InvalidArgsError::new(
+                "session_id",
+                format!("not found: {id}"),
             )))
         })
     }
@@ -385,7 +386,9 @@ mod tests {
 
     #[test]
     fn map_agent_error_classifies_recoverable_tool_error() {
-        let e = AgentError::Tool(takusu_agent::ToolError::InvalidArgs("bad".into()));
+        let e = AgentError::Tool(takusu_agent::ToolError::InvalidArgs(
+            takusu_agent::InvalidArgsError::no_field("bad"),
+        ));
         let err = map_agent_error(e);
         assert_eq!(err.code, rmcp::model::ErrorCode::INVALID_PARAMS);
     }

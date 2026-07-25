@@ -9,7 +9,7 @@ use takusu_client::{
 };
 use takusu_util::{parse_date_expression, parse_datetime_to_timestamp, parse_datetime_tz};
 
-use crate::{Tool, ToolError, ToolOutput, ToolRegistry, UserInputProvider};
+use crate::{InvalidArgsError, Tool, ToolError, ToolOutput, ToolRegistry, UserInputProvider};
 
 /// Registers planner read tools, approval-only mutation proposals, and the ASR
 /// correction tool.
@@ -63,7 +63,7 @@ pub fn register_read_tools(registry: &mut ToolRegistry, client: Client, tz_cache
 pub(crate) fn object(args: Value) -> Result<serde_json::Map<String, Value>, ToolError> {
     args.as_object()
         .cloned()
-        .ok_or_else(|| ToolError::InvalidArgs("arguments must be an object".into()))
+        .ok_or_else(|| ToolError::InvalidArgs(InvalidArgsError::new("args", "must be an object")))
 }
 
 pub(crate) fn required_string(
@@ -75,7 +75,7 @@ pub(crate) fn required_string(
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(ToOwned::to_owned)
-        .ok_or_else(|| ToolError::InvalidArgs(format!("missing or empty {name}")))
+        .ok_or_else(|| ToolError::InvalidArgs(InvalidArgsError::new(name, "missing or empty")))
 }
 
 pub(crate) fn required_i64(
@@ -84,7 +84,7 @@ pub(crate) fn required_i64(
 ) -> Result<i64, ToolError> {
     args.get(name)
         .and_then(Value::as_i64)
-        .ok_or_else(|| ToolError::InvalidArgs(format!("missing or invalid {name}")))
+        .ok_or_else(|| ToolError::InvalidArgs(InvalidArgsError::new(name, "missing or invalid")))
 }
 
 pub(crate) fn optional_string(
@@ -98,7 +98,7 @@ pub(crate) fn optional_string(
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(|value| Some(value.to_owned()))
-            .ok_or_else(|| ToolError::InvalidArgs(format!("{name} must be a string"))),
+            .ok_or_else(|| ToolError::InvalidArgs(InvalidArgsError::new(name, "must be a string"))),
     }
 }
 
@@ -108,10 +108,9 @@ pub(crate) fn optional_bool(
 ) -> Result<Option<bool>, ToolError> {
     match args.get(name) {
         None | Some(Value::Null) => Ok(None),
-        Some(value) => value
-            .as_bool()
-            .map(Some)
-            .ok_or_else(|| ToolError::InvalidArgs(format!("{name} must be a boolean"))),
+        Some(value) => value.as_bool().map(Some).ok_or_else(|| {
+            ToolError::InvalidArgs(InvalidArgsError::new(name, "must be a boolean"))
+        }),
     }
 }
 
@@ -121,10 +120,9 @@ pub(crate) fn optional_i64(
 ) -> Result<Option<i64>, ToolError> {
     match args.get(name) {
         None | Some(Value::Null) => Ok(None),
-        Some(value) => value
-            .as_i64()
-            .map(Some)
-            .ok_or_else(|| ToolError::InvalidArgs(format!("{name} must be an integer"))),
+        Some(value) => value.as_i64().map(Some).ok_or_else(|| {
+            ToolError::InvalidArgs(InvalidArgsError::new(name, "must be an integer"))
+        }),
     }
 }
 
@@ -145,12 +143,16 @@ fn refs_from_args(
     fn non_empty_ref(key: &str, raw: &str) -> Result<String, ToolError> {
         let raw = raw.trim();
         if raw.is_empty() {
-            return Err(ToolError::InvalidArgs(format!("{key} must not be empty")));
+            return Err(ToolError::InvalidArgs(InvalidArgsError::new(
+                key,
+                "must not be empty",
+            )));
         }
         let r = strip_leading_hash(raw);
         if r.is_empty() {
-            return Err(ToolError::InvalidArgs(format!(
-                "{key} must not be just '#'"
+            return Err(ToolError::InvalidArgs(InvalidArgsError::new(
+                key,
+                "must not be just '#'",
             )));
         }
         Ok(r.to_string())
@@ -162,7 +164,7 @@ fn refs_from_args(
             let mut refs = Vec::with_capacity(arr.len());
             for value in arr {
                 let s = value.as_str().ok_or_else(|| {
-                    ToolError::InvalidArgs(format!("{key} must contain only strings"))
+                    ToolError::InvalidArgs(InvalidArgsError::new(key, "must contain only strings"))
                 })?;
                 refs.push(non_empty_ref(key, s)?);
             }
@@ -170,8 +172,9 @@ fn refs_from_args(
             refs.retain(|r| seen.insert(r.clone()));
             Ok(refs)
         }
-        _ => Err(ToolError::InvalidArgs(format!(
-            "{key} must be a string or an array of strings"
+        _ => Err(ToolError::InvalidArgs(InvalidArgsError::new(
+            key,
+            "must be a string or an array of strings",
         ))),
     }
 }
@@ -185,7 +188,7 @@ pub(crate) fn client_error(error: takusu_client::ClientError) -> ToolError {
             if body.contains("not found") || body.contains("Not found") {
                 ToolError::NotFound(body)
             } else {
-                ToolError::InvalidArgs(body)
+                ToolError::InvalidArgs(InvalidArgsError::no_field(body))
             }
         }
         error => ToolError::Other(Box::new(error)),
@@ -260,9 +263,9 @@ fn normalize_datetime(
     name: &str,
 ) -> Result<Option<String>, ToolError> {
     let Some(value) = value else { return Ok(None) };
-    parse_datetime_tz(&value, tz)
-        .map(Some)
-        .map_err(|error| ToolError::InvalidArgs(format!("invalid {name}: {error}")))
+    parse_datetime_tz(&value, tz).map(Some).map_err(|error| {
+        ToolError::InvalidArgs(InvalidArgsError::new(name, format!("invalid: {error}")))
+    })
 }
 
 /// Format a stored datetime string for display in the configured timezone.
@@ -465,8 +468,9 @@ fn normalize_reference_array(
                     *value = Value::String(strip_leading_hash(reference.trim()).to_string());
                 }
                 None => {
-                    return Err(ToolError::InvalidArgs(format!(
-                        "{key} must contain only strings"
+                    return Err(ToolError::InvalidArgs(InvalidArgsError::new(
+                        key,
+                        "must contain only strings",
                     )));
                 }
             }
@@ -1037,18 +1041,23 @@ impl Tool for GetSchedule {
         let from_ts = from
             .map(|s| parse_date_expression(&s, &tz, false))
             .transpose()
-            .map_err(|e| ToolError::InvalidArgs(format!("invalid from: {e}")))?;
+            .map_err(|e| {
+                ToolError::InvalidArgs(InvalidArgsError::new("from", format!("invalid: {e}")))
+            })?;
         let to_ts = to
             .map(|s| parse_date_expression(&s, &tz, true))
             .transpose()
-            .map_err(|e| ToolError::InvalidArgs(format!("invalid to: {e}")))?;
+            .map_err(|e| {
+                ToolError::InvalidArgs(InvalidArgsError::new("to", format!("invalid: {e}")))
+            })?;
 
         if let (Some(from), Some(to)) = (from_ts, to_ts)
             && from > to
         {
-            return Err(ToolError::InvalidArgs(
-                "from must not be later than to".into(),
-            ));
+            return Err(ToolError::InvalidArgs(InvalidArgsError::new(
+                "from",
+                "must not be later than to",
+            )));
         }
 
         let default_query = TaskQuery::default();
@@ -1190,8 +1199,10 @@ impl Tool for PreviewScheduleTool {
         normalize_reference_array(&mut args, "task_ids")?;
         normalize_reference_array(&mut args, "pinned")?;
 
-        let request: SchedulePreviewRequest = serde_json::from_value(Value::Object(args))
-            .map_err(|error| ToolError::InvalidArgs(error.to_string()))?;
+        let request: SchedulePreviewRequest =
+            serde_json::from_value(Value::Object(args)).map_err(|error| {
+                ToolError::InvalidArgs(InvalidArgsError::no_field(error.to_string()))
+            })?;
 
         let default_query = TaskQuery::default();
         let c1 = self.client.clone();
@@ -1551,8 +1562,9 @@ impl Tool for MutationTool {
                 preview_args.insert("mode".into(), Value::String("full".into()));
             }
             let request: SchedulePreviewRequest =
-                serde_json::from_value(Value::Object(preview_args))
-                    .map_err(|error| ToolError::InvalidArgs(error.to_string()))?;
+                serde_json::from_value(Value::Object(preview_args)).map_err(|error| {
+                    ToolError::InvalidArgs(InvalidArgsError::no_field(error.to_string()))
+                })?;
 
             let default_query = TaskQuery::default();
             let c1 = self.client.clone();
@@ -1568,7 +1580,9 @@ impl Tool for MutationTool {
 
             let ctx = TaskContext::new(&all_tasks, &habits);
             let entries = preview.get("entries").cloned().ok_or_else(|| {
-                ToolError::InvalidArgs("schedule preview did not return entries".into())
+                ToolError::InvalidArgs(InvalidArgsError::no_field(
+                    "schedule preview did not return entries",
+                ))
             })?;
             execution_args.insert("_preview_entries".into(), entries);
             args.insert(
@@ -1583,7 +1597,12 @@ impl Tool for MutationTool {
             .cloned()
             .unwrap_or_else(|| json!([]));
         let inferred_fields = serde_json::from_value::<Vec<crate::InferredField>>(inferred_fields)
-            .map_err(|error| ToolError::InvalidArgs(format!("invalid inferred_fields: {error}")))?;
+            .map_err(|error| {
+                ToolError::InvalidArgs(InvalidArgsError::new(
+                    "inferred_fields",
+                    format!("invalid: {error}"),
+                ))
+            })?;
         let why = optional_string(&args, "why")?;
         let warnings = args
             .get("warnings")
@@ -1709,17 +1728,27 @@ impl Tool for MoveTaskTool {
             .unwrap_or(Value::Null);
         before["schedule_end_at"] = current_entry.get("end_at").cloned().unwrap_or(Value::Null);
 
-        let start_ts = jiff::Timestamp::from_str(&start_at)
-            .map_err(|error| ToolError::InvalidArgs(format!("invalid start_at: {error}")))?;
+        let start_ts = jiff::Timestamp::from_str(&start_at).map_err(|error| {
+            ToolError::InvalidArgs(InvalidArgsError::new(
+                "start_at",
+                format!("invalid: {error}"),
+            ))
+        })?;
         let duration_minutes = if let (Some(old_start_str), Some(old_end_str)) = (
             current_entry.get("start_at").and_then(Value::as_str),
             current_entry.get("end_at").and_then(Value::as_str),
         ) {
             let old_start = jiff::Timestamp::from_str(old_start_str).map_err(|error| {
-                ToolError::InvalidArgs(format!("invalid schedule start_at: {error}"))
+                ToolError::InvalidArgs(InvalidArgsError::new(
+                    "schedule_start_at",
+                    format!("invalid: {error}"),
+                ))
             })?;
             let old_end = jiff::Timestamp::from_str(old_end_str).map_err(|error| {
-                ToolError::InvalidArgs(format!("invalid schedule end_at: {error}"))
+                ToolError::InvalidArgs(InvalidArgsError::new(
+                    "schedule_end_at",
+                    format!("invalid: {error}"),
+                ))
             })?;
             let duration = old_end - old_start;
             duration
@@ -1743,7 +1772,12 @@ impl Tool for MoveTaskTool {
             .cloned()
             .unwrap_or_else(|| json!([]));
         let inferred_fields = serde_json::from_value::<Vec<crate::InferredField>>(inferred_fields)
-            .map_err(|error| ToolError::InvalidArgs(format!("invalid inferred_fields: {error}")))?;
+            .map_err(|error| {
+                ToolError::InvalidArgs(InvalidArgsError::new(
+                    "inferred_fields",
+                    format!("invalid: {error}"),
+                ))
+            })?;
 
         let why = optional_string(&args, "why")?;
         let warnings = args
@@ -1796,8 +1830,9 @@ fn normalize_mutation_field(
     tz: &jiff::tz::TimeZone,
 ) -> Result<(), ToolError> {
     if let Some(value) = optional_string(args, name)? {
-        let normalized = parse_datetime_tz(&value, tz)
-            .map_err(|error| ToolError::InvalidArgs(format!("invalid {name}: {error}")))?;
+        let normalized = parse_datetime_tz(&value, tz).map_err(|error| {
+            ToolError::InvalidArgs(InvalidArgsError::new(name, format!("invalid: {error}")))
+        })?;
         args.insert(name.into(), Value::String(normalized));
     }
     Ok(())
