@@ -280,37 +280,43 @@ interface ToolNameChipProps {
 
 function ToolNameChip({ call, colors, onPress }: ToolNameChipProps) {
   const rejected = call.isRejected ?? false;
-  return (
-    <Pressable
-      style={[
-        styles.toolChip,
-        {
-          backgroundColor: colors.surface,
-          borderColor: colors.separator,
-        },
-      ]}
-      onPress={(event) => {
-        event.stopPropagation();
-        onPress?.(call);
-      }}
-    >
-      <View
-        style={[
-          styles.toolChipDot,
-          {
-            backgroundColor:
-              call.result === undefined
-                ? colors.gray
-                : call.isError || rejected
-                  ? colors.red
-                  : colors.green,
-          },
-        ]}
-      />
+  const chipStyle = [
+    styles.toolChip,
+    {
+      backgroundColor: colors.surface,
+      borderColor: colors.separator,
+    },
+  ];
+  const dotColor =
+    call.result === undefined
+      ? colors.gray
+      : call.isError || rejected
+        ? colors.red
+        : colors.green;
+  const children = (
+    <>
+      <View style={[styles.toolChipDot, { backgroundColor: dotColor }]} />
       <Text style={[styles.toolChipText, { color: colors.black }]}>
         {call.name}
       </Text>
       {rejected && <Ionicons name="close" size={10} color={colors.red} />}
+    </>
+  );
+  if (!onPress) {
+    return <View style={chipStyle}>{children}</View>;
+  }
+  return (
+    <Pressable
+      style={chipStyle}
+      accessibilityRole="button"
+      accessibilityLabel={call.name}
+      accessibilityHint="ツールの詳細を開く"
+      onPress={(event) => {
+        event.stopPropagation();
+        onPress(call);
+      }}
+    >
+      {children}
     </Pressable>
   );
 }
@@ -318,15 +324,21 @@ function ToolNameChip({ call, colors, onPress }: ToolNameChipProps) {
 interface ToolCallCardProps {
   call: ToolCallItem;
   colors: ColorSet;
+  isLatest: boolean;
 }
 
-function ToolCallCard({ call, colors }: ToolCallCardProps) {
+function ToolCallCard({ call, colors, isLatest }: ToolCallCardProps) {
   const isAsr = call.name === 'correct_asr';
   const rejected = call.isRejected ?? false;
   const asrCount = isAsr
     ? ((call.arguments as { questions?: unknown[] } | undefined)?.questions
         ?.length ?? 0)
     : 0;
+  const [expanded, setExpanded] = useState(isLatest);
+  useEffect(() => {
+    setExpanded(isLatest);
+  }, [isLatest]);
+  const toggleExpanded = useCallback(() => setExpanded((value) => !value), []);
   return (
     <View
       style={[
@@ -337,47 +349,69 @@ function ToolCallCard({ call, colors }: ToolCallCardProps) {
         },
       ]}
     >
-      <View style={styles.toolCallHeader}>
-        <View
-          style={[
-            styles.toolStatus,
-            {
-              backgroundColor:
-                call.isError || rejected ? colors.red : colors.green,
-            },
-          ]}
+      <Pressable
+        style={styles.toolCallHeader}
+        onPress={toggleExpanded}
+        accessibilityRole="button"
+        accessibilityState={{ expanded }}
+        accessibilityLabel={isAsr ? 'ASR訂正' : call.name}
+        accessibilityHint={
+          expanded ? 'raw JSON を折りたたむ' : 'raw JSON を展開する'
+        }
+      >
+        <View style={styles.toolCallHeaderLeft}>
+          <View
+            style={[
+              styles.toolStatus,
+              {
+                backgroundColor:
+                  call.isError || rejected ? colors.red : colors.green,
+              },
+            ]}
+          />
+          <Text style={{ color: colors.black, fontWeight: '700' }}>
+            {isAsr ? 'ASR訂正' : call.name}
+          </Text>
+          {rejected && (
+            <View
+              style={[styles.rejectedBadge, { backgroundColor: colors.red }]}
+            >
+              <Text style={styles.rejectedBadgeText}>拒否</Text>
+            </View>
+          )}
+        </View>
+        <Ionicons
+          name={expanded ? 'chevron-up' : 'chevron-down'}
+          size={14}
+          color={colors.gray}
         />
-        <Text style={{ color: colors.black, fontWeight: '700' }}>
-          {isAsr ? 'ASR訂正' : call.name}
-        </Text>
-        {rejected && (
-          <View style={[styles.rejectedBadge, { backgroundColor: colors.red }]}>
-            <Text style={styles.rejectedBadgeText}>拒否</Text>
-          </View>
-        )}
-      </View>
-      {!isAsr && call.arguments !== undefined && (
-        <Text style={[styles.toolArgs, { color: colors.gray }]}>
-          {formatJson(call.arguments)}
-        </Text>
-      )}
-      {isAsr && call.arguments !== undefined && (
-        <Text style={[styles.toolArgs, { color: colors.gray }]}>
-          {asrCount} 件の認識テキストを確認
-        </Text>
-      )}
-      {call.result !== undefined && (
-        <Text
-          style={{
-            color: call.isError || rejected ? colors.red : colors.green,
-          }}
-        >
-          {isAsr
-            ? call.result
-            : call.isError
-              ? `エラー: ${formatJson(call.result)}`
-              : formatJson(call.result)}
-        </Text>
+      </Pressable>
+      {expanded && (
+        <>
+          {!isAsr && call.arguments !== undefined && (
+            <Text style={[styles.toolArgs, { color: colors.gray }]}>
+              {formatJson(call.arguments)}
+            </Text>
+          )}
+          {isAsr && call.arguments !== undefined && (
+            <Text style={[styles.toolArgs, { color: colors.gray }]}>
+              {asrCount} 件の認識テキストを確認
+            </Text>
+          )}
+          {call.result !== undefined && (
+            <Text
+              style={{
+                color: call.isError || rejected ? colors.red : colors.green,
+              }}
+            >
+              {isAsr
+                ? call.result
+                : call.isError
+                  ? `エラー: ${formatJson(call.result)}`
+                  : formatJson(call.result)}
+            </Text>
+          )}
+        </>
       )}
     </View>
   );
@@ -568,6 +602,11 @@ function ContextGroup({
     (s): s is { type: 'toolCall'; callIndex: number } => s.type === 'toolCall',
   );
 
+  const maxToolChips = 3 - (hasThinking ? 1 : 0);
+  const visibleToolChips = Math.min(maxToolChips, toolStages.length);
+  const overflowCount = toolStages.length - visibleToolChips;
+  const startToolIndex = toolStages.length - visibleToolChips;
+
   const chips: ReactElement[] = [];
   if (hasThinking) {
     chips.push(
@@ -578,8 +617,24 @@ function ContextGroup({
       />,
     );
   }
-  const maxToolChips = 3 - chips.length;
-  const startToolIndex = Math.max(0, toolStages.length - maxToolChips);
+  if (overflowCount > 0) {
+    chips.push(
+      <View
+        key="overflow"
+        style={[
+          styles.toolChip,
+          {
+            backgroundColor: colors.surface,
+            borderColor: colors.separator,
+          },
+        ]}
+      >
+        <Text style={[styles.toolChipText, { color: colors.gray }]}>
+          {overflowCount}+
+        </Text>
+      </View>,
+    );
+  }
   for (let i = startToolIndex; i < toolStages.length; i++) {
     const call = message.toolCalls?.[toolStages[i].callIndex];
     if (call) {
@@ -593,14 +648,6 @@ function ContextGroup({
       );
     }
   }
-  const totalChips = (hasThinking ? 1 : 0) + toolStages.length;
-  const overflowCount = totalChips - chips.length;
-  const more =
-    overflowCount > 0 ? (
-      <Text style={[styles.toolChipText, { color: colors.gray }]}>
-        {overflowCount}+
-      </Text>
-    ) : null;
 
   const updateTall = useCallback(() => {
     if (availableHeight <= 0) return;
@@ -616,6 +663,8 @@ function ContextGroup({
     updateTall();
   };
 
+  const latestCallIndex = (message.toolCalls?.length ?? 0) - 1;
+
   return (
     <View
       style={[
@@ -626,17 +675,22 @@ function ContextGroup({
         },
       ]}
     >
-      <Pressable onPress={onToggle}>
+      <Pressable
+        onPress={onToggle}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: !collapsed }}
+        accessibilityLabel="コンテキスト"
+        accessibilityHint={
+          collapsed ? 'コンテキストを展開する' : 'コンテキストを折りたたむ'
+        }
+      >
         <View style={styles.contextHeaderInner}>
           <Ionicons
             name={collapsed ? 'chevron-forward' : 'chevron-down'}
             size={14}
             color={colors.gray}
           />
-          <View style={styles.toolChips}>
-            {chips}
-            {more}
-          </View>
+          <View style={styles.toolChips}>{chips}</View>
         </View>
       </Pressable>
       {!collapsed && (
@@ -654,7 +708,12 @@ function ContextGroup({
             }
             const call = message.toolCalls?.[stage.callIndex];
             return call ? (
-              <ToolCallCard key={`s-${idx}`} call={call} colors={colors} />
+              <ToolCallCard
+                key={`s-${idx}`}
+                call={call}
+                colors={colors}
+                isLatest={stage.callIndex === latestCallIndex}
+              />
             ) : null;
           })}
           {isTall && (
@@ -2828,15 +2887,19 @@ const styles = StyleSheet.create({
   toolCallHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    justifyContent: 'space-between',
     marginBottom: 4,
+  },
+  toolCallHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   toolStatus: { width: 8, height: 8, borderRadius: 4 },
   rejectedBadge: {
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 8,
-    marginLeft: 'auto',
   },
   rejectedBadgeText: {
     color: COLORS.white,
