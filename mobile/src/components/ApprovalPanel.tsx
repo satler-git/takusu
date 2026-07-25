@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
+  ScrollView,
   StyleSheet,
   Switch,
   Text,
@@ -1175,55 +1176,65 @@ export function ApprovalPanel({
         { backgroundColor: colors.surface, borderColor: colors.separator },
       ]}
     >
-      <View>
-        <Text style={[styles.title, { color: colors.black }]}>
-          以下の変更を承認しますか？
-        </Text>
-        {approval.why.length > 0 && (
-          <Text style={[styles.why, { color: colors.gray }]}>
-            {approval.why}
+      <View style={styles.panelHeader}>
+        <View>
+          <Text style={[styles.title, { color: colors.black }]}>
+            以下の変更を承認しますか？
           </Text>
-        )}
-      </View>
-
-      <Text
-        style={[
-          styles.summary,
-          { color: colors.gray, backgroundColor: colors.surfaceTint },
-        ]}
-      >
-        {approval.changes.length} 件の変更
-      </Text>
-
-      <View style={styles.changeList}>
-        {approval.changes.map((change, index) => (
-          <ChangeCard
-            key={`${change.operation}-${index}`}
-            change={change}
-            client={client}
-            colors={colors}
-          />
-        ))}
-      </View>
-
-      <PermissionSection
-        approvalId={approval.id}
-        changes={approval.changes}
-        colors={colors}
-        onChange={setPermissionValue}
-        permissions={permissions}
-        value={permissionValue}
-      />
-
-      {approval.warnings.length > 0 && (
-        <View style={[styles.warningBox, { borderColor: '#A65B00' }]}>
-          {approval.warnings.map((warning) => (
-            <Text key={warning} style={{ color: '#A65B00' }}>
-              注意: {warning}
+          {approval.why.length > 0 && (
+            <Text style={[styles.why, { color: colors.gray }]}>
+              {approval.why}
             </Text>
-          ))}
+          )}
         </View>
-      )}
+
+        <Text
+          style={[
+            styles.summary,
+            { color: colors.gray, backgroundColor: colors.surfaceTint },
+          ]}
+        >
+          {approval.changes.length} 件の変更
+        </Text>
+      </View>
+
+      <ScrollView
+        style={styles.panelBody}
+        contentContainerStyle={styles.panelBodyContent}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={styles.panelBodyInner}>
+          <View style={styles.changeList}>
+            {approval.changes.map((change, index) => (
+              <ChangeCard
+                key={`${change.operation}-${index}`}
+                change={change}
+                client={client}
+                colors={colors}
+              />
+            ))}
+          </View>
+
+          <PermissionSection
+            approvalId={approval.id}
+            changes={approval.changes}
+            colors={colors}
+            onChange={setPermissionValue}
+            permissions={permissions}
+            value={permissionValue}
+          />
+
+          {approval.warnings.length > 0 && (
+            <View style={[styles.warningBox, { borderColor: '#A65B00' }]}>
+              {approval.warnings.map((warning) => (
+                <Text key={warning} style={{ color: '#A65B00' }}>
+                  注意: {warning}
+                </Text>
+              ))}
+            </View>
+          )}
+        </View>
+      </ScrollView>
 
       <View style={styles.actions}>
         <Pressable
@@ -1254,11 +1265,22 @@ export function ApprovalPanel({
 const styles = StyleSheet.create({
   panel: {
     margin: 12,
-    padding: 12,
     borderWidth: 1,
     borderRadius: 12,
+    maxHeight: '70%',
+    overflow: 'hidden',
+    padding: 12,
     gap: 12,
   },
+  panelHeader: { gap: 12 },
+  panelBody: {
+    flexGrow: 0,
+    flexShrink: 1,
+  },
+  panelBodyContent: {
+    flexGrow: 0,
+  },
+  panelBodyInner: { gap: 12 },
   title: { fontWeight: '700', fontSize: 16 },
   why: { fontSize: 13, lineHeight: 18, marginTop: 4 },
   summary: {
@@ -1380,7 +1402,7 @@ const styles = StyleSheet.create({
     padding: 10,
     gap: 4,
   },
-  actions: { flexDirection: 'row', gap: 8, marginTop: 4 },
+  actions: { flexDirection: 'row', gap: 8 },
   deny: {
     flex: 1,
     padding: 12,
