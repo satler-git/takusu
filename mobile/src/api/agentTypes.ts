@@ -70,3 +70,7 @@ export type TurnEvent =
     }
   | { type: 'Error'; data: string }
   | { type: 'Done'; data: AgentTurnResult };
+
+export type TtsBlockEvent = { type: 'TtsBlock'; data: string };
+
+export type AgentStreamEvent = TurnEvent | TtsBlockEvent;

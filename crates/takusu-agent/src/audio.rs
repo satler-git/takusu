@@ -55,7 +55,7 @@ pub struct AudioAdapter {
     session: AgentSession,
     last_audio: AudioConfig,
     stt: Arc<dyn SpeechToText>,
-    tts: Box<dyn TextToSpeech>,
+    tts: Arc<dyn TextToSpeech>,
     tts_voice_id: String,
     tts_speed: Option<f32>,
 }
@@ -97,7 +97,60 @@ impl AudioAdapter {
 
             eprintln!("> {text}");
 
-            let result = self.session.run_turn(&text).await?;
+            let (tts_tx, mut tts_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+            let tts = Arc::clone(&self.tts);
+            let voice_id = self.tts_voice_id.clone();
+            let speed = self.tts_speed;
+            let no_tts_this_turn = no_tts || self.last_audio.tts.mute;
+            let tts_player = tokio::spawn(async move {
+                if no_tts_this_turn {
+                    return Result::<(), AudioError>::Ok(());
+                }
+                while let Some(block) = tts_rx.recv().await {
+                    if block.trim().is_empty() {
+                        continue;
+                    }
+                    let audio = synthesize_with_timeout(
+                        tts.as_ref(),
+                        &block,
+                        &voice_id,
+                        speed,
+                        Duration::from_secs(120),
+                    )
+                    .await?;
+                    let clip = AudioClip::from_wav_bytes(&audio)
+                        .map_err(|e| AudioError::Play(e.to_string()))?;
+                    play_with_timeout(&clip, Duration::from_secs(120)).await?;
+                }
+                Ok(())
+            });
+
+            let result = match self
+                .session
+                .run_turn_stream(
+                    &text,
+                    |_event| {},
+                    |block| {
+                        if !no_tts_this_turn {
+                            let _ = tts_tx.send(block);
+                        }
+                    },
+                )
+                .await
+            {
+                Ok(result) => result,
+                Err(e) => {
+                    drop(tts_tx);
+                    tts_player.abort();
+                    return Err(e.into());
+                }
+            };
+
+            // Drop the sender so the player task exits after processing all blocks.
+            drop(tts_tx);
+            tts_player
+                .await
+                .map_err(|e| AudioError::Play(format!("tts player task panicked: {e}")))??;
 
             println!("{}", result.text);
             if !result.changes.is_empty() {
@@ -109,23 +162,6 @@ impl AudioAdapter {
             if result.schedule_dirty {
                 eprintln!("schedule dirty: true");
             }
-
-            if no_tts || self.last_audio.tts.mute || result.text.trim().is_empty() {
-                continue;
-            }
-
-            let audio = synthesize_with_timeout(
-                self.tts.as_ref(),
-                &result.text,
-                &self.tts_voice_id,
-                self.tts_speed,
-                Duration::from_secs(120),
-            )
-            .await?;
-
-            let clip =
-                AudioClip::from_wav_bytes(&audio).map_err(|e| AudioError::Play(e.to_string()))?;
-            play_with_timeout(&clip, Duration::from_secs(120)).await?;
         }
     }
 
@@ -151,7 +187,7 @@ impl AudioAdapter {
     ) -> Result<
         (
             Arc<dyn SpeechToText>,
-            Box<dyn TextToSpeech>,
+            Arc<dyn TextToSpeech>,
             String,
             Option<f32>,
         ),
@@ -210,7 +246,7 @@ fn build_stt(config: &SttConfig) -> Result<Arc<dyn SpeechToText>, AudioError> {
     }
 }
 
-type TtsBuildResult = Result<(Box<dyn TextToSpeech>, String, Option<f32>), AudioError>;
+type TtsBuildResult = Result<(Arc<dyn TextToSpeech>, String, Option<f32>), AudioError>;
 
 fn build_tts(config: &TtsConfig) -> TtsBuildResult {
     match config.backend.as_str() {
@@ -230,7 +266,7 @@ fn build_tts(config: &TtsConfig) -> TtsBuildResult {
             tts_config.mute = config.mute;
             let voice_id = config.voice_id.clone();
             let speed = config.speed;
-            Ok((Box::new(CartesiaSonic::new(tts_config)), voice_id, speed))
+            Ok((Arc::new(CartesiaSonic::new(tts_config)), voice_id, speed))
         }
         // Android TTS is handled by the native mobile module, not by the
         // generic tokio-based AudioAdapter used on desktop.

@@ -179,6 +179,142 @@ pub enum TurnEvent {
     Done(TurnResult),
 }
 
+/// Accumulates raw `Text` event deltas from a streaming turn and flushes the
+/// accumulated text as a TTS block when the stream is interrupted by thinking,
+/// tool calls, or the end of the turn. Code fences that span multiple flushes
+/// are tracked so their contents are not read aloud.
+#[derive(Debug, Default)]
+pub struct TtsQueue {
+    buffer: String,
+    line: String,
+    code_state: CodeState,
+}
+
+#[derive(Debug, Default)]
+enum CodeState {
+    #[default]
+    Outside,
+    InCodeFence {
+        marker: char,
+        length: usize,
+    },
+}
+
+impl TtsQueue {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Append a `Text` event delta to the queue.
+    pub fn push(&mut self, delta: &str) {
+        for ch in delta.chars() {
+            if ch == '\n' {
+                let line = std::mem::take(&mut self.line);
+                self.process_line(line.trim_end_matches('\r'));
+            } else {
+                self.line.push(ch);
+            }
+        }
+    }
+
+    /// Extract accumulated text as a TTS block and clear the buffer.
+    ///
+    /// Returns `None` if the buffer is empty or the filtered text contains
+    /// only whitespace.
+    pub fn flush(&mut self) -> Option<String> {
+        if !self.line.is_empty() {
+            let line = std::mem::take(&mut self.line);
+            self.process_line(line.trim_end_matches('\r'));
+        }
+        let text = std::mem::take(&mut self.buffer);
+        let speech = markdown_to_speech(&text);
+        if speech.trim().is_empty() {
+            None
+        } else {
+            Some(speech)
+        }
+    }
+
+    fn process_line(&mut self, line: &str) {
+        match self.code_state {
+            CodeState::Outside => {
+                if let Some((marker, length)) = opening_fence(line) {
+                    self.code_state = CodeState::InCodeFence { marker, length };
+                } else if line.trim().is_empty() {
+                    self.buffer.push('\n');
+                } else {
+                    self.buffer.push_str(line);
+                    self.buffer.push('\n');
+                }
+            }
+            CodeState::InCodeFence { marker, length } => {
+                if is_code_fence(line, marker, length) {
+                    self.code_state = CodeState::Outside;
+                }
+            }
+        }
+    }
+}
+
+fn opening_fence(line: &str) -> Option<(char, usize)> {
+    let spaces = line.bytes().take_while(|&b| b == b' ').count();
+    if spaces > 3 {
+        return None;
+    }
+    let rest = &line[spaces..];
+    let first = rest.chars().next()?;
+    if first != '`' && first != '~' {
+        return None;
+    }
+    let run = rest.chars().take_while(|&c| c == first).count();
+    if run < 3 {
+        return None;
+    }
+    let after = &rest[run..];
+    if after.contains(first) {
+        return None;
+    }
+    Some((first, run))
+}
+
+fn is_code_fence(line: &str, marker: char, min_len: usize) -> bool {
+    let spaces = line.bytes().take_while(|&b| b == b' ').count();
+    if spaces > 3 {
+        return false;
+    }
+    let rest = &line[spaces..];
+    let run = rest.chars().take_while(|&c| c == marker).count();
+    if run < min_len {
+        return false;
+    }
+    let after = &rest[run..];
+    after.chars().all(|c| c == ' ')
+}
+
+/// Strip markdown markup that should not be read aloud (code blocks, HTML,
+/// thematic breaks, images, etc.) while keeping inline text and inline code.
+fn markdown_to_speech(text: &str) -> String {
+    use pulldown_cmark::{Event, Parser, Tag, TagEnd};
+
+    let parser = Parser::new(text);
+    let mut parts = Vec::new();
+    let mut in_code_block = false;
+    for event in parser {
+        match event {
+            Event::Start(Tag::CodeBlock(_)) => in_code_block = true,
+            Event::End(TagEnd::CodeBlock) => in_code_block = false,
+            Event::Text(s) if !in_code_block => parts.push(s.to_string()),
+            Event::Code(s) => parts.push(s.to_string()),
+            _ => {}
+        }
+    }
+    parts
+        .join(" ")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// Serialized work turn result. Holds the assistant response text, any change receipts produced
 /// by tool calls, and whether the schedule needs recomputation.
 pub struct AgentSession {
@@ -504,13 +640,19 @@ impl AgentSession {
     }
 
     /// Runs a single agent turn and emits progress events through `emit`.
-    pub async fn run_turn_stream<F>(
+    ///
+    /// User-visible text ready for text-to-speech is emitted through `tts_emit`
+    /// whenever the assistant text stream is interrupted by thinking or tool
+    /// calls, and once more when the turn completes.
+    pub async fn run_turn_stream<F, G>(
         &self,
         user_text: &str,
         emit: F,
+        tts_emit: G,
     ) -> Result<TurnResult, AgentError>
     where
         F: FnMut(TurnEvent),
+        G: FnMut(String),
     {
         let _guard = self.turn_lock.lock().await;
         self.maybe_compact().await?;
@@ -524,7 +666,7 @@ impl AgentSession {
         let mut local = self.history.lock().unwrap().clone();
         local.push(llm::Message::User(user_text.to_string()));
 
-        self.run_from_local_stream(system, system_estimate, tools, local, emit)
+        self.run_from_local_stream(system, system_estimate, tools, local, emit, tts_emit)
             .await
     }
 
@@ -535,14 +677,16 @@ impl AgentSession {
     /// `turn_index` is resolved against the current history. Compaction would
     /// shift the indices and could edit the wrong turn. Context will be
     /// compacted on the next normal turn.
-    pub async fn edit_turn_stream<F>(
+    pub async fn edit_turn_stream<F, G>(
         &self,
         turn_index: usize,
         user_text: &str,
         emit: F,
+        tts_emit: G,
     ) -> Result<TurnResult, AgentError>
     where
         F: FnMut(TurnEvent),
+        G: FnMut(String),
     {
         let _guard = self.turn_lock.lock().await;
         tracing::info!(session_id = %self.session_id, turn_index, text_len = user_text.len(), "agent edit turn stream started");
@@ -574,7 +718,7 @@ impl AgentSession {
         *self.schedule_dirty.lock().unwrap() = false;
         *self.last_prompt_tokens.lock().unwrap() = None;
 
-        self.run_from_local_stream(system, system_estimate, tools, local, emit)
+        self.run_from_local_stream(system, system_estimate, tools, local, emit, tts_emit)
             .await
     }
 
@@ -616,16 +760,18 @@ impl AgentSession {
         Ok(())
     }
 
-    async fn run_from_local_stream<F>(
+    async fn run_from_local_stream<F, G>(
         &self,
         system: llm::Message,
         system_estimate: usize,
         tools: Vec<Value>,
         mut local: Vec<llm::Message>,
         mut emit: F,
+        mut tts_emit: G,
     ) -> Result<TurnResult, AgentError>
     where
         F: FnMut(TurnEvent),
+        G: FnMut(String),
     {
         let mut changes = Vec::new();
         let mut proposed_changes: Vec<ProposedChange> = Vec::new();
@@ -634,6 +780,7 @@ impl AgentSession {
         let mut approval_warnings = Vec::new();
         let mut schedule_dirty = *self.schedule_dirty.lock().unwrap();
         let mut tool_call_count = 0;
+        let mut tts_queue = TtsQueue::new();
 
         loop {
             if tool_call_count >= self.config.read().unwrap().llm.max_tool_calls {
@@ -655,18 +802,33 @@ impl AgentSession {
             let mut current_calls = Vec::new();
 
             while let Some(event) = stream.next().await {
-                let event = event.map_err(AgentError::Llm)?;
+                let event = match event {
+                    Ok(event) => event,
+                    Err(error) => {
+                        if let Some(block) = tts_queue.flush() {
+                            tts_emit(block);
+                        }
+                        return Err(AgentError::Llm(error));
+                    }
+                };
                 match event {
                     llm::LlmStreamEvent::Text(delta) => {
                         text.push_str(&delta);
+                        tts_queue.push(&delta);
                         emit(TurnEvent::Text(delta));
                     }
                     llm::LlmStreamEvent::Thinking(delta) => {
+                        if let Some(block) = tts_queue.flush() {
+                            tts_emit(block);
+                        }
                         emit(TurnEvent::Thinking(delta));
                     }
                     llm::LlmStreamEvent::ToolCall(call) => {
                         tool_call_count += 1;
                         if tool_call_count > self.config.read().unwrap().llm.max_tool_calls {
+                            if let Some(block) = tts_queue.flush() {
+                                tts_emit(block);
+                            }
                             self.replace_history(local, None, system_estimate);
                             return Err(AgentError::TooManyToolCalls);
                         }
@@ -678,9 +840,14 @@ impl AgentSession {
                     } => {
                         *self.last_prompt_tokens.lock().unwrap() = prompt_tokens;
 
+                        let final_text = text;
+
                         if current_calls.is_empty() {
+                            if let Some(block) = tts_queue.flush() {
+                                tts_emit(block);
+                            }
                             local.push(llm::Message::Assistant(llm::AssistantContent::Text(
-                                text.clone(),
+                                final_text.clone(),
                             )));
                             self.replace_history(local, prompt_tokens, system_estimate);
                             let all_allowed = !proposed_changes.is_empty()
@@ -697,7 +864,7 @@ impl AgentSession {
                                 let mut final_changes = changes;
                                 final_changes.extend(result.changes);
                                 return Ok(TurnResult {
-                                    text,
+                                    text: final_text,
                                     changes: final_changes,
                                     schedule_dirty: result.schedule_dirty,
                                     approval_request: None,
@@ -705,11 +872,21 @@ impl AgentSession {
                             }
                             *self.schedule_dirty.lock().unwrap() = schedule_dirty;
                             return Ok(TurnResult {
-                                text,
+                                text: final_text,
                                 changes,
                                 schedule_dirty,
                                 approval_request,
                             });
+                        }
+
+                        if let Some(block) = tts_queue.flush() {
+                            tts_emit(block);
+                        }
+
+                        if !final_text.is_empty() {
+                            local.push(llm::Message::Assistant(llm::AssistantContent::Text(
+                                final_text.clone(),
+                            )));
                         }
 
                         local.push(llm::Message::Assistant(llm::AssistantContent::ToolCalls(
@@ -2017,7 +2194,7 @@ mod tests {
         let agent = AgentSession::new(AgentConfig::default(), registry, mock);
         let mut emitted = Vec::new();
         let result = agent
-            .run_turn_stream("schedule today", |event| emitted.push(event))
+            .run_turn_stream("schedule today", |event| emitted.push(event), |_block| {})
             .await
             .unwrap();
 
@@ -2061,7 +2238,7 @@ mod tests {
         let agent = AgentSession::new(AgentConfig::default(), registry, mock);
         let mut emitted = Vec::new();
         let result = agent
-            .run_turn_stream("call echo", |event| emitted.push(event))
+            .run_turn_stream("call echo", |event| emitted.push(event), |_block| {})
             .await
             .unwrap();
 
@@ -2119,7 +2296,9 @@ mod tests {
         };
 
         let agent = AgentSession::new(cfg, registry, mock);
-        let result = agent.run_turn_stream("call echo twice", |_| {}).await;
+        let result = agent
+            .run_turn_stream("call echo twice", |_| {}, |_| {})
+            .await;
         assert!(matches!(result, Err(AgentError::TooManyToolCalls)));
     }
 
@@ -2147,10 +2326,16 @@ mod tests {
         };
 
         let agent = AgentSession::new(AgentConfig::default(), registry, mock);
-        let first = agent.run_turn_stream("hello", |_| {}).await.unwrap();
+        let first = agent
+            .run_turn_stream("hello", |_| {}, |_| {})
+            .await
+            .unwrap();
         assert_eq!(first.text, "first");
 
-        let second = agent.edit_turn_stream(0, "goodbye", |_| {}).await.unwrap();
+        let second = agent
+            .edit_turn_stream(0, "goodbye", |_| {}, |_| {})
+            .await
+            .unwrap();
         assert_eq!(second.text, "edited");
 
         let history = agent.history.lock().unwrap();
@@ -2173,7 +2358,7 @@ mod tests {
         };
 
         let agent = AgentSession::new(AgentConfig::default(), registry, mock);
-        let result = agent.edit_turn_stream(0, "x", |_| {}).await;
+        let result = agent.edit_turn_stream(0, "x", |_| {}, |_| {}).await;
         assert!(matches!(
             result,
             Err(AgentError::Tool(ToolError::InvalidArgs(_)))
@@ -2204,8 +2389,14 @@ mod tests {
         };
 
         let agent = AgentSession::new(AgentConfig::default(), registry, mock);
-        agent.run_turn_stream("hello", |_| {}).await.unwrap();
-        agent.run_turn_stream("world", |_| {}).await.unwrap();
+        agent
+            .run_turn_stream("hello", |_| {}, |_| {})
+            .await
+            .unwrap();
+        agent
+            .run_turn_stream("world", |_| {}, |_| {})
+            .await
+            .unwrap();
 
         agent.truncate_history(0, false).await.unwrap();
 
@@ -2232,7 +2423,10 @@ mod tests {
         };
 
         let agent = AgentSession::new(AgentConfig::default(), registry, mock);
-        agent.run_turn_stream("hello", |_| {}).await.unwrap();
+        agent
+            .run_turn_stream("hello", |_| {}, |_| {})
+            .await
+            .unwrap();
 
         agent.truncate_history(0, true).await.unwrap();
 
@@ -2836,5 +3030,97 @@ mod tests {
 
         let summary = agent.compaction_summary.lock().unwrap();
         assert_eq!(summary.as_deref(), Some("要約"));
+    }
+
+    #[test]
+    fn tts_queue_accumulates_and_flushes_text() {
+        let mut q = TtsQueue::new();
+        q.push("hello ");
+        q.push("world");
+        assert_eq!(q.flush(), Some("hello world".to_string()));
+        assert_eq!(q.flush(), None);
+    }
+
+    #[test]
+    fn tts_queue_filters_code_blocks_for_speech() {
+        let mut q = TtsQueue::new();
+        q.push("hello \n```\nsecret\n```\n world");
+        assert_eq!(q.flush(), Some("hello world".to_string()));
+    }
+
+    #[test]
+    fn tts_queue_tracks_code_fence_across_flushes() {
+        let mut q = TtsQueue::new();
+        q.push("hello \n```\ncode");
+        assert_eq!(q.flush(), Some("hello".to_string()));
+        q.push("more\n```\nworld");
+        assert_eq!(q.flush(), Some("world".to_string()));
+    }
+
+    #[test]
+    fn tts_queue_keeps_inline_text_and_code() {
+        let mut q = TtsQueue::new();
+        q.push("use `foo` for *bar* and **baz**");
+        assert_eq!(q.flush(), Some("use foo for bar and baz".to_string()));
+    }
+
+    #[test]
+    fn tts_queue_handles_crlf_newlines() {
+        let mut q = TtsQueue::new();
+        q.push("hello \r\nworld");
+        assert_eq!(q.flush(), Some("hello world".to_string()));
+    }
+
+    #[test]
+    fn tts_queue_strips_list_and_quote_markers() {
+        let mut q = TtsQueue::new();
+        q.push("items:\n- one\n- two\n> quoted");
+        assert_eq!(q.flush(), Some("items: one two quoted".to_string()));
+    }
+
+    #[test]
+    fn markdown_to_speech_strips_code_blocks_and_html() {
+        assert_eq!(
+            markdown_to_speech("hello \n```\nsecret\n```\n world"),
+            "hello world",
+        );
+        assert_eq!(markdown_to_speech("text <br> more"), "text more",);
+    }
+
+    #[test]
+    fn markdown_to_speech_strips_heading_list_and_quote_markers() {
+        assert_eq!(markdown_to_speech("# heading\ntext"), "heading text");
+        assert_eq!(
+            markdown_to_speech("- item one\n- item two"),
+            "item one item two"
+        );
+        assert_eq!(markdown_to_speech("> quoted"), "quoted");
+    }
+
+    #[tokio::test]
+    async fn run_turn_stream_emits_tts_blocks_between_thinking_and_text() {
+        let registry = ToolRegistry::new();
+        let mock = MockStreamingLlm {
+            calls: Mutex::new(Vec::new()),
+            events: Mutex::new(vec![vec![
+                llm::LlmStreamEvent::Text("hello ".into()),
+                llm::LlmStreamEvent::Thinking("thinking".into()),
+                llm::LlmStreamEvent::Text("world".into()),
+                llm::LlmStreamEvent::Done {
+                    finish_reason: Some(llm::FinishReason::Stop),
+                    prompt_tokens: Some(10),
+                },
+            ]]),
+        };
+
+        let agent = AgentSession::new(AgentConfig::default(), registry, mock);
+        let mut tts_blocks = Vec::new();
+        let result = agent
+            .run_turn_stream("greet", |_event| {}, |block| tts_blocks.push(block))
+            .await
+            .unwrap();
+
+        assert_eq!(tts_blocks, vec!["hello".to_string(), "world".to_string()]);
+        assert_eq!(result.text, "hello world");
     }
 }
