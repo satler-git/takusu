@@ -48,6 +48,24 @@ class TakusuAudioModule : Module() {
     private var ttsProvider: String = "cartesia"
     private var muted: Boolean = false
 
+    private val audioAttributes: AudioAttributes by lazy {
+        AudioAttributes
+            .Builder()
+            .setUsage(AudioAttributes.USAGE_MEDIA)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+            .build()
+    }
+
+    private fun releasePlayer() {
+        try {
+            player?.release()
+        } catch (_: Exception) {
+            // Ignore release failures; the player may already be released or
+            // in an invalid state.
+        }
+        player = null
+    }
+
     override fun definition() =
         ModuleDefinition {
             Name("TakusuAudio")
@@ -57,11 +75,9 @@ class TakusuAudioModule : Module() {
                     appContext.reactContext
                         ?: throw CodedException("ERR_AUDIO_CONFIG", "React context is not available", null)
 
-                // Stop any active playback and release the previous backend
-                // resources before switching.
-                player?.stop()
-                player?.release()
-                player = null
+                // Release any active player and previous backend resources
+                // before switching.
+                releasePlayer()
                 try {
                     audio?.shutdown()
                 } catch (_: Exception) {
@@ -172,21 +188,30 @@ class TakusuAudioModule : Module() {
                             ?: throw CodedException("ERR_AUDIO_CONFIG", "React context is not available", null)
                     val file = File(cacheDir, "takusu-agent-response.mp3")
                     file.writeBytes(mp3)
-                    player?.release()
-                    player =
-                        MediaPlayer().also { mediaPlayer ->
-                            mediaPlayer.setAudioAttributes(
-                                AudioAttributes
-                                    .Builder()
-                                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                                    .build(),
-                            )
-                            mediaPlayer.setDataSource(file.absolutePath)
-                            mediaPlayer.setOnCompletionListener { it.release() }
-                            mediaPlayer.prepare()
-                            mediaPlayer.start()
+
+                    // Do not release the player in an OnCompletionListener;
+                    // releasing it as soon as completion fires can tear down the
+                    // AudioTrack while it still has buffered frames, cutting off
+                    // the end of mp3 playback. Release it on the next utterance,
+                    // stopPlayback, configure, or OnDestroy instead.
+                    releasePlayer()
+                    val mediaPlayer =
+                        MediaPlayer().apply {
+                            setAudioAttributes(audioAttributes)
+                            setDataSource(file.absolutePath)
                         }
+                    try {
+                        mediaPlayer.prepare()
+                        mediaPlayer.start()
+                    } catch (error: Exception) {
+                        mediaPlayer.release()
+                        throw CodedException(
+                            "ERR_TTS_PLAYBACK",
+                            "Failed to play TTS audio: ${error.message}",
+                            error,
+                        )
+                    }
+                    player = mediaPlayer
                     true
                 }
             }
@@ -195,9 +220,7 @@ class TakusuAudioModule : Module() {
                 if (ttsProvider == "android") {
                     textToSpeech?.stop()
                 } else {
-                    player?.stop()
-                    player?.release()
-                    player = null
+                    releasePlayer()
                 }
                 true
             }
@@ -233,6 +256,22 @@ class TakusuAudioModule : Module() {
                         }
                     }
                 voices
+            }
+
+            OnDestroy {
+                releasePlayer()
+                try {
+                    audio?.shutdown()
+                } catch (_: Exception) {
+                    // ignore shutdown failures
+                }
+                audio = null
+                try {
+                    textToSpeech?.shutdown()
+                } catch (_: Exception) {
+                    // ignore shutdown failures
+                }
+                textToSpeech = null
             }
         }
 
