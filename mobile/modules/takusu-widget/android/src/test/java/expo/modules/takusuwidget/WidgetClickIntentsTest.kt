@@ -47,6 +47,7 @@ class WidgetClickIntentsTest {
         assertNotNull(savedIntent)
         assertEquals(Intent.ACTION_VIEW, savedIntent.action)
         assertEquals(component, savedIntent.component)
+        assertEquals(context.packageName, savedIntent.`package`)
         assertTrue((shadow.flags and PendingIntent.FLAG_MUTABLE) != 0)
         assertTrue((shadow.flags and PendingIntent.FLAG_UPDATE_CURRENT) != 0)
         assertTrue((savedIntent.flags and Intent.FLAG_ACTIVITY_NEW_TASK) != 0)

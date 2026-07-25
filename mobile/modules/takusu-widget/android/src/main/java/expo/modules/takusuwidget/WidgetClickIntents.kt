@@ -16,13 +16,15 @@ internal object WidgetClickIntents {
         context: Context,
         launchIntent: Intent,
     ): PendingIntent {
-        requireNotNull(launchIntent.component) {
-            "launchIntent must have an explicit component for the list PendingIntent"
-        }
+        val comp =
+            requireNotNull(launchIntent.component) {
+                "launchIntent must have an explicit component for the list PendingIntent"
+            }
         val listTemplateIntent =
             Intent(Intent.ACTION_VIEW).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-                component = launchIntent.component
+                component = comp
+                setPackage(comp.packageName)
             }
         return PendingIntent.getActivity(
             context,
