@@ -22,14 +22,21 @@ jest.mock('@/src/notifications/settings', () => ({
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import { loadNotificationSettings } from '@/src/notifications/settings';
-import { loadSettings, parseTtsProviders } from '@/src/api/settingsStore';
+import {
+  loadSettings,
+  loadWelcomeShownAt,
+  parseTtsProviders,
+  saveWelcomeShownAt,
+} from '@/src/api/settingsStore';
 
 const asyncStorageGetItem = AsyncStorage.getItem as jest.Mock;
+const asyncStorageSetItem = AsyncStorage.setItem as jest.Mock;
 const secureStoreGetItemAsync = SecureStore.getItemAsync as jest.Mock;
 const loadNotificationSettingsMock = loadNotificationSettings as jest.Mock;
 
 beforeEach(() => {
   asyncStorageGetItem.mockReset();
+  asyncStorageSetItem.mockReset();
   secureStoreGetItemAsync.mockReset();
   loadNotificationSettingsMock.mockReset();
   loadNotificationSettingsMock.mockResolvedValue({});
@@ -276,5 +283,37 @@ describe('parseTtsProviders', () => {
       { provider: 'android', voiceId: '', language: 'ja', sampleRate: 44100 },
     ]);
     expect(parseTtsProviders(input)).toEqual([]);
+  });
+});
+
+describe('loadWelcomeShownAt', () => {
+  it('returns null when no value is stored', async () => {
+    asyncStorageGetItem.mockResolvedValue(null);
+    expect(await loadWelcomeShownAt()).toBeNull();
+  });
+
+  it('returns the stored timestamp', async () => {
+    asyncStorageGetItem.mockResolvedValue('1234567890');
+    expect(await loadWelcomeShownAt()).toBe(1234567890);
+  });
+
+  it('returns null for malformed numeric strings', async () => {
+    asyncStorageGetItem.mockResolvedValue('123abc');
+    expect(await loadWelcomeShownAt()).toBeNull();
+  });
+
+  it('returns null for non-finite values', async () => {
+    asyncStorageGetItem.mockResolvedValue('Infinity');
+    expect(await loadWelcomeShownAt()).toBeNull();
+  });
+});
+
+describe('saveWelcomeShownAt', () => {
+  it('saves the timestamp as a string', async () => {
+    await saveWelcomeShownAt(1234567890);
+    expect(asyncStorageSetItem).toHaveBeenCalledWith(
+      'takusu.welcomeShownAt',
+      '1234567890',
+    );
   });
 });

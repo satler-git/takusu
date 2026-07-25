@@ -35,6 +35,7 @@ import { undoRedo, DEFAULT_MAX_HISTORY } from './undoRedo';
 
 interface ServerState {
   ready: boolean;
+  settingsLoaded: boolean;
   error: string | null;
   client: TakusuClient | null;
   workersUrl: string;
@@ -57,6 +58,7 @@ interface ServerContextValue extends ServerState {
 
 const ServerContext = createContext<ServerContextValue>({
   ready: false,
+  settingsLoaded: false,
   error: null,
   client: null,
   workersUrl: '',
@@ -133,6 +135,7 @@ function systemInitialTheme(): AppTheme {
 export function ServerProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<ServerState>({
     ready: false,
+    settingsLoaded: false,
     error: null,
     client: null,
     workersUrl: '',
@@ -284,6 +287,7 @@ export function ServerProvider({ children }: { children: ReactNode }) {
 
       setState((prev) => ({
         ...prev,
+        settingsLoaded: true,
         workersUrl: settings.workersUrl,
         workersToken: settings.workersToken,
         theme: settings.theme,
@@ -317,6 +321,7 @@ export function ServerProvider({ children }: { children: ReactNode }) {
         if (cancelled) return;
         setState((prev) => ({
           ...prev,
+          settingsLoaded: true,
           ready: false,
           error: e instanceof Error ? e.message : String(e),
           client: null,

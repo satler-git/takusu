@@ -29,6 +29,7 @@ const KEYS = {
   ttsProviders: 'takusu.agent.ttsProviders',
   activeTtsProvider: 'takusu.agent.activeTtsProvider',
   ttsMuted: 'takusu.agent.ttsMuted',
+  welcomeShownAt: 'takusu.welcomeShownAt',
 } as const;
 
 export type PermissionsMap = Record<string, boolean>;
@@ -402,6 +403,17 @@ export async function loadTtsMuted(): Promise<boolean> {
 
 export async function saveTtsMuted(muted: boolean): Promise<void> {
   await AsyncStorage.setItem(KEYS.ttsMuted, muted ? 'true' : 'false');
+}
+
+export async function loadWelcomeShownAt(): Promise<number | null> {
+  const value = await AsyncStorage.getItem(KEYS.welcomeShownAt);
+  if (!value) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+export async function saveWelcomeShownAt(at: number): Promise<void> {
+  await AsyncStorage.setItem(KEYS.welcomeShownAt, String(at));
 }
 
 export { saveNotificationSettings, DEFAULT_NOTIFICATION_SETTINGS };
