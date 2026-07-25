@@ -2,8 +2,7 @@
 // Left: start/end time, Center: title, Right-bottom: cost (avg, sigma)
 // Background color based on abandonability
 // Slide right cycles: start → complete → revert (#312)
-// Slide left reveals a delete button (two-step delete #393)
-// Slide actions show a background preview with icon
+// Slide left past the threshold reveals skip + delete action buttons (#1044)
 // Done tasks: strikethrough + gray
 
 import { memo, useCallback, useMemo, useState } from 'react';
@@ -18,6 +17,7 @@ import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import Reanimated, {
   useSharedValue,
   useAnimatedStyle,
+  useAnimatedReaction,
   runOnJS,
   withSpring,
 } from 'react-native-reanimated';
@@ -34,6 +34,7 @@ interface TaskCardProps {
   isDone: boolean;
   onPress: (task: TaskRow) => void;
   onDone?: (task: TaskRow) => void | Promise<void>;
+  onSkip?: (task: TaskRow) => void | Promise<void>;
   onDelete?: (task: TaskRow) => void | Promise<void>;
   onLongPress?: (task: TaskRow) => void;
   selected?: boolean;
@@ -79,6 +80,7 @@ function TaskCardImpl({
   isDone,
   onPress,
   onDone,
+  onSkip,
   onDelete,
   onLongPress,
   selected,
@@ -91,17 +93,32 @@ function TaskCardImpl({
   // so reversing swipe direction mid-gesture re-fires the haptic (#313).
   const hapticFiredDir = useSharedValue(0);
   const { theme, colors } = useTheme();
-  // #393: two-step delete — swipe left reveals a delete button instead of
-  // deleting immediately. When revealed, tapping the card snaps it back.
+  // #1044/#393: swipe left reveals an action panel with skip + delete buttons.
   // Use a SharedValue for the UI-thread worklet logic (avoids stale React
   // state in gesture callbacks) and mirror to React state for rendering.
-  const deleteRevealedSV = useSharedValue(false);
-  const [deleteRevealed, setDeleteRevealed] = useState(false);
+  const actionsRevealedSV = useSharedValue(false);
+  const [actionsRevealed, setActionsRevealed] = useState(false);
 
-  // Width of the revealed delete button (used to keep the card offset).
-  const DELETE_REVEAL_WIDTH = 72;
+  // Keep React state in sync with the UI-thread shared value so
+  // pointerEvents updates as soon as the panel is revealed or hidden.
+  useAnimatedReaction(
+    () => actionsRevealedSV.value,
+    (current, prev) => {
+      if (current !== prev) {
+        runOnJS(setActionsRevealed)(current);
+      }
+    },
+    [],
+  );
 
-  // Single pan gesture handles both swipe-right (done) and swipe-left (delete).
+  // Width of each action button and the full revealed panel.
+  const ACTION_BUTTON_WIDTH = 72;
+  const ACTION_PANEL_WIDTH =
+    (onDelete ? ACTION_BUTTON_WIDTH : 0) +
+    (onSkip && !isDone ? ACTION_BUTTON_WIDTH : 0);
+  const REVEAL_THRESHOLD = 80;
+
+  // Single pan gesture handles swipe-right (done) and swipe-left (actions).
   // Using Gesture.Race with two separate pans was unreliable for left swipe
   // (#230): Race resolution between gestures with activeOffsetX in opposite
   // directions can fail to activate. A single gesture with bidirectional
@@ -111,48 +128,46 @@ function TaskCardImpl({
     .failOffsetY([-10, 10])
     .onUpdate((e) => {
       // If already revealed, start from the revealed position.
-      const base = deleteRevealedSV.value ? -DELETE_REVEAL_WIDTH : 0;
+      const base = actionsRevealedSV.value ? -ACTION_PANEL_WIDTH : 0;
       translateX.value = base + e.translationX;
       // Fire haptic when crossing the action threshold mid-slide (#313).
-      // Suppress haptics when delete is revealed — no action will fire
-      // regardless of swipe direction (#393).
+      // Suppress haptics when actions are revealed — no action will fire
+      // regardless of swipe direction.
       if (
-        e.translationX > 80 &&
+        e.translationX > REVEAL_THRESHOLD &&
         onDone &&
         hapticFiredDir.value !== 1 &&
-        !deleteRevealedSV.value
+        !actionsRevealedSV.value
       ) {
         hapticFiredDir.value = 1;
         runOnJS(haptic.light)();
       } else if (
-        e.translationX < -80 &&
-        onDelete &&
+        e.translationX < -REVEAL_THRESHOLD &&
+        ACTION_PANEL_WIDTH > 0 &&
         hapticFiredDir.value !== -1 &&
-        !deleteRevealedSV.value
+        !actionsRevealedSV.value
       ) {
         hapticFiredDir.value = -1;
         runOnJS(haptic.medium)();
       }
     })
     .onEnd((e) => {
-      if (deleteRevealedSV.value) {
-        // When delete is revealed, any right swipe just hides it (#393).
+      if (actionsRevealedSV.value) {
+        // When actions are revealed, swipe back toward the right to hide.
         // Don't trigger onDone even if the swipe passes the threshold.
         if (e.translationX > -20) {
-          deleteRevealedSV.value = false;
-          runOnJS(setDeleteRevealed)(false);
+          actionsRevealedSV.value = false;
           translateX.value = withSpring(0);
         } else {
-          translateX.value = withSpring(-DELETE_REVEAL_WIDTH);
+          translateX.value = withSpring(-ACTION_PANEL_WIDTH);
         }
-      } else if (e.translationX > 80 && onDone) {
+      } else if (e.translationX > REVEAL_THRESHOLD && onDone) {
         runOnJS(onDone)(task);
         translateX.value = withSpring(0);
-      } else if (e.translationX < -80 && onDelete) {
-        // #393: reveal the delete button instead of deleting immediately.
-        deleteRevealedSV.value = true;
-        runOnJS(setDeleteRevealed)(true);
-        translateX.value = withSpring(-DELETE_REVEAL_WIDTH);
+      } else if (e.translationX < -REVEAL_THRESHOLD && ACTION_PANEL_WIDTH > 0) {
+        // Reveal the skip/delete action panel.
+        actionsRevealedSV.value = true;
+        translateX.value = withSpring(-ACTION_PANEL_WIDTH);
       } else {
         translateX.value = withSpring(0);
       }
@@ -161,12 +176,12 @@ function TaskCardImpl({
     // hapticFiredDir is always reset even if the gesture is interrupted.
     // Only snap to resting position when the gesture was cancelled (not
     // when it ended normally — onEnd already handles that) to avoid
-    // restarting the spring animation (#393).
+    // restarting the spring animation.
     .onFinalize((_e, success) => {
       hapticFiredDir.value = 0;
       if (!success) {
         translateX.value = withSpring(
-          deleteRevealedSV.value ? -DELETE_REVEAL_WIDTH : 0,
+          actionsRevealedSV.value ? -ACTION_PANEL_WIDTH : 0,
         );
       }
     });
@@ -175,12 +190,9 @@ function TaskCardImpl({
     transform: [{ translateX: translateX.value }],
   }));
 
-  // Background preview opacity for slide actions (#170)
+  // Background preview opacity for slide-right done action (#170).
   const doneBgStyle = useAnimatedStyle(() => ({
-    opacity: Math.min(1, Math.max(0, translateX.value / 80)),
-  }));
-  const deleteBgStyle = useAnimatedStyle(() => ({
-    opacity: Math.min(1, Math.max(0, -translateX.value / 80)),
+    opacity: Math.min(1, Math.max(0, translateX.value / REVEAL_THRESHOLD)),
   }));
 
   const bgColor = taskCardColor(
@@ -214,11 +226,11 @@ function TaskCardImpl({
         : BRAND_COLOR;
 
   const handlePress = () => {
-    if (deleteRevealed) {
-      // Tapping the card when delete is revealed snaps it back (#393).
+    if (actionsRevealed) {
+      // Tapping the card when actions are revealed snaps it back.
       haptic.light();
-      deleteRevealedSV.value = false;
-      setDeleteRevealed(false);
+      actionsRevealedSV.value = false;
+      setActionsRevealed(false);
       translateX.value = withSpring(0);
       return;
     }
@@ -227,10 +239,10 @@ function TaskCardImpl({
   };
   const handleLongPress = onLongPress
     ? () => {
-        if (deleteRevealed) {
+        if (actionsRevealed) {
           haptic.light();
-          deleteRevealedSV.value = false;
-          setDeleteRevealed(false);
+          actionsRevealedSV.value = false;
+          setActionsRevealed(false);
           translateX.value = withSpring(0);
           return;
         }
@@ -241,37 +253,52 @@ function TaskCardImpl({
 
   return (
     <View style={[styles.container, containerStyle]}>
-      {/* Slide action preview backgrounds (#170) */}
+      {/* Slide-right done preview background (#170) */}
       <Reanimated.View
         style={[styles.doneBg, { backgroundColor: doneColor }, doneBgStyle]}
         pointerEvents="none"
       >
         <Ionicons name={doneIcon} size={28} color={COLORS.white} />
       </Reanimated.View>
-      <Reanimated.View
-        style={[
-          styles.deleteBg,
-          { backgroundColor: COLORS.red },
-          deleteBgStyle,
-        ]}
-        pointerEvents="none"
-      >
-        <Ionicons name="trash" size={28} color={COLORS.white} />
-      </Reanimated.View>
-      {/* #393: revealed delete button — tap to confirm deletion */}
-      {deleteRevealed && onDelete && (
-        <Pressable
-          style={styles.deleteButton}
-          onPress={() => {
-            haptic.medium();
-            deleteRevealedSV.value = false;
-            setDeleteRevealed(false);
-            translateX.value = withSpring(0);
-            onDelete(task);
-          }}
+      {/* #1044: revealed skip/delete action panel */}
+      {ACTION_PANEL_WIDTH > 0 && (
+        <View
+          style={[styles.actionPanel, { width: ACTION_PANEL_WIDTH }]}
+          pointerEvents={actionsRevealed ? 'auto' : 'none'}
         >
-          <Ionicons name="trash" size={24} color={COLORS.white} />
-        </Pressable>
+          {onSkip && !isDone && (
+            <Pressable
+              style={[styles.actionButton, { backgroundColor: COLORS.gray }]}
+              onPress={() => {
+                haptic.warning();
+                actionsRevealedSV.value = false;
+                setActionsRevealed(false);
+                translateX.value = withSpring(0);
+                onSkip(task);
+              }}
+            >
+              <Ionicons
+                name="play-skip-forward-outline"
+                size={24}
+                color={COLORS.white}
+              />
+            </Pressable>
+          )}
+          {onDelete && (
+            <Pressable
+              style={[styles.actionButton, { backgroundColor: COLORS.red }]}
+              onPress={() => {
+                haptic.medium();
+                actionsRevealedSV.value = false;
+                setActionsRevealed(false);
+                translateX.value = withSpring(0);
+                onDelete(task);
+              }}
+            >
+              <Ionicons name="trash" size={24} color={COLORS.white} />
+            </Pressable>
+          )}
+        </View>
       )}
       <GestureDetector gesture={pan}>
         <Reanimated.View
@@ -365,6 +392,8 @@ const styles = StyleSheet.create({
     marginHorizontal: 12,
     marginVertical: 4,
     position: 'relative',
+    overflow: 'hidden',
+    borderRadius: 12,
   },
   card: {
     borderRadius: 12,
@@ -383,7 +412,7 @@ const styles = StyleSheet.create({
   cardSelected: {
     borderColor: BRAND_COLOR,
   },
-  // Slide action preview backgrounds (#170)
+  // Slide-right done preview background (#170)
   doneBg: {
     position: 'absolute',
     top: 0,
@@ -395,26 +424,19 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     paddingLeft: 20,
   },
-  deleteBg: {
+  // #1044: revealed skip/delete action panel behind the card
+  actionPanel: {
     position: 'absolute',
-    top: 0,
-    left: 0,
     right: 0,
+    top: 0,
     bottom: 0,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'flex-end',
-    paddingRight: 20,
+    flexDirection: 'row',
+    borderTopRightRadius: 12,
+    borderBottomRightRadius: 12,
+    overflow: 'hidden',
   },
-  // #393: revealed delete button positioned on the right edge
-  deleteButton: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    bottom: 0,
-    width: 72,
-    backgroundColor: COLORS.red,
-    borderRadius: 12,
+  actionButton: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -487,6 +509,7 @@ interface ParallelGroupCardProps {
   onGuestPress: (guest: TaskRow) => void;
   onToggle: (allIds: string[]) => void;
   onDone?: (task: TaskRow) => void | Promise<void>;
+  onSkip?: (task: TaskRow) => void | Promise<void>;
   onDelete?: (task: TaskRow) => void | Promise<void>;
   // habit_id → display_id map for habit-based coloring (#309).
   habitDisplayIdMap?: Map<string, number>;
@@ -506,6 +529,7 @@ function ParallelGroupCardImpl({
   onGuestPress,
   onToggle,
   onDone,
+  onSkip,
   onDelete,
   habitDisplayIdMap,
   dependentCountMap,
@@ -552,6 +576,7 @@ function ParallelGroupCardImpl({
           isDone={host.status === 'completed' || host.status === 'skipped'}
           onPress={onHostPress}
           onDone={onDone}
+          onSkip={onSkip}
           onDelete={onDelete}
           onLongPress={handleGroupLongPress}
           habitDisplayId={hostHabitDisplayId}
@@ -572,7 +597,8 @@ function ParallelGroupCardImpl({
                 guest.status === 'completed' || guest.status === 'skipped'
               }
               onPress={onGuestPress}
-              onDone={onDelete}
+              onDone={onDone}
+              onSkip={onSkip}
               onDelete={onDelete}
               onLongPress={handleGroupLongPress}
               habitDisplayId={guestHabitDisplayId}

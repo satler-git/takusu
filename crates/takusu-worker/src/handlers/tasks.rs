@@ -357,10 +357,10 @@ pub async fn update(mut req: Request, env: Env, id: &str) -> Result<Response, Wo
         takusu_util::memory::normalize_text(t, Some(takusu_util::memory::MAX_CONTENT_SCALARS)).ok()
     });
 
-    let stmt = database.prepare(
+    let main_stmt = database.prepare(
         "UPDATE tasks SET title=COALESCE(?1,title), description=COALESCE(?2,description), start_at=COALESCE(?3,start_at), end_at=COALESCE(?4,end_at), avg_minutes=COALESCE(?5,avg_minutes), sigma_minutes=COALESCE(?6,sigma_minutes), depends=COALESCE(?7,depends), parallelizable=COALESCE(?8,parallelizable), allows_parallel=COALESCE(?9,allows_parallel), abandonability=COALESCE(?10,abandonability), status=?11, habit_id=COALESCE(?13,habit_id), user_edited=COALESCE(?14,user_edited), fixed=COALESCE(?15,fixed), habit_step_id=COALESCE(?16,habit_step_id), quantity_total=COALESCE(?17,quantity_total), quantity_done=COALESCE(?18,quantity_done), quantity_unit=COALESCE(?19,quantity_unit), original_quantity_total=COALESCE(?20,original_quantity_total), normalized_title=COALESCE(?21,normalized_title), updated_at=strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?12"
     );
-    stmt.bind(&[
+    let main_stmt = main_stmt.bind(&[
         body.title
             .as_deref()
             .map(JsValue::from_str)
@@ -427,23 +427,33 @@ pub async fn update(mut req: Request, env: Env, id: &str) -> Result<Response, Wo
             .as_deref()
             .map(JsValue::from_str)
             .unwrap_or(JsValue::NULL),
-    ])?
-    .run()
-    .await
-    .map_err(WorkerError::Worker)?;
+    ])?;
 
     // completed_at must follow explicit status transitions: set on
     // completion, clear when leaving completed.
+    let mut stmts = vec![main_stmt];
     if body.status.is_some() {
         let completed_stmt = database.prepare(
             "UPDATE tasks SET completed_at = CASE WHEN ?1 = 'completed' AND completed_at IS NULL THEN strftime('%Y-%m-%dT%H:%M:%SZ','now') WHEN ?1 != 'completed' AND completed_at IS NOT NULL THEN NULL ELSE completed_at END WHERE id = ?2",
         );
-        completed_stmt
-            .bind(&[JsValue::from_str(&status), JsValue::from_str(&full)])?
-            .run()
-            .await
-            .map_err(WorkerError::Worker)?;
+        stmts.push(
+            completed_stmt.bind(&[JsValue::from_str(&status), JsValue::from_str(&full)])?,
+        );
+
+        // #1044: moving to a terminal status should close any open work
+        // session so active time is not left dangling.
+        if status == "skipped" || status == "completed" {
+            let now = takusu_util::now_rfc3339();
+            let session_stmt = database.prepare(
+                "UPDATE task_work_sessions SET ended_at = ?1 WHERE task_id = ?2 AND ended_at IS NULL",
+            );
+            stmts.push(
+                session_stmt.bind(&[JsValue::from_str(&now), JsValue::from_str(&full)])?,
+            );
+        }
     }
+
+    database.batch(stmts).await.map_err(WorkerError::Worker)?;
 
     let row = select_one(&database, &full).await?;
     json_ok(&row)

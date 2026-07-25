@@ -950,6 +950,69 @@ async fn task_update_status() {
 }
 
 #[tokio::test]
+async fn update_task_to_terminal_status_closes_open_work_session() {
+    let (state, pool) = setup().await;
+    let app = build_router(state);
+
+    async fn create_task(app: &axum::Router, title: &str) -> String {
+        let req = auth_req_body(
+            Method::POST,
+            "/api/tasks",
+            json!({
+                "title": title,
+                "end_at": "2026-06-05T18:00:00+09:00",
+                "avg_minutes": 30,
+            }),
+        );
+        let res = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(res.status(), StatusCode::CREATED);
+        let body: serde_json::Value =
+            serde_json::from_str(&body_str(res.into_body()).await).unwrap();
+        body["id"].as_str().unwrap().to_string()
+    }
+
+    async fn start_work(app: &axum::Router, id: &str) {
+        let req = auth_req(Method::POST, &format!("/api/tasks/{id}/work/start"));
+        let res = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+    }
+
+    async fn open_session_count(pool: &SqlitePool, id: &str) -> i64 {
+        sqlx::query_scalar(
+            "SELECT COUNT(*) FROM task_work_sessions WHERE task_id = ? AND ended_at IS NULL",
+        )
+        .bind(id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+    }
+
+    async fn update_status(app: &axum::Router, id: &str, status: &str) {
+        let req = auth_req_body(
+            Method::PATCH,
+            &format!("/api/tasks/{id}"),
+            json!({ "status": status }),
+        );
+        let res = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+    }
+
+    // Skipped closes the open session.
+    let skipped_id = create_task(&app, "skip-me").await;
+    start_work(&app, &skipped_id).await;
+    assert_eq!(open_session_count(&pool, &skipped_id).await, 1);
+    update_status(&app, &skipped_id, "skipped").await;
+    assert_eq!(open_session_count(&pool, &skipped_id).await, 0);
+
+    // Completed also closes the open session.
+    let completed_id = create_task(&app, "complete-me").await;
+    start_work(&app, &completed_id).await;
+    assert_eq!(open_session_count(&pool, &completed_id).await, 1);
+    update_status(&app, &completed_id, "completed").await;
+    assert_eq!(open_session_count(&pool, &completed_id).await, 0);
+}
+
+#[tokio::test]
 async fn task_complete_query_limits() {
     let (state, _) = setup().await;
     let app = build_router(state);
