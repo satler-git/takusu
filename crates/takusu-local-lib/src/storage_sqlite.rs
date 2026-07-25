@@ -650,10 +650,18 @@ impl Storage for SqliteStorage {
     }
 
     async fn update_task(&self, id: &str, body: &UpdateTask) -> StorageResult<TaskRow> {
-        let full = resolve_task_id(&self.pool, id).await?;
+        let depends_json = if let Some(ref deps) = body.depends {
+            let resolved = resolve_depends(&self.pool, Some(deps)).await?;
+            Some(serde_json::to_string(&resolved).unwrap_or_else(|_| "[]".into()))
+        } else {
+            None
+        };
+
+        let mut tx = self.pool.begin().await.map_err(map_err)?;
+        let full = resolve_task_id(&mut *tx, id).await?;
         let existing = sqlx::query_as::<_, TaskRow>(SELECT_TASK_BY_ID)
             .bind(&full)
-            .fetch_one(&self.pool)
+            .fetch_one(&mut *tx)
             .await
             .map_err(|e| match e {
                 sqlx::Error::RowNotFound => StorageError::NotFound(format!("task {id} not found")),
@@ -670,12 +678,6 @@ impl Storage for SqliteStorage {
             original_quantity_total,
         )?;
 
-        let depends_json = if let Some(ref deps) = body.depends {
-            let resolved = resolve_depends(&self.pool, Some(deps)).await?;
-            Some(serde_json::to_string(&resolved).unwrap_or_else(|_| "[]".into()))
-        } else {
-            None
-        };
         let status = body.status.as_ref().unwrap_or(&existing.status);
         let validated = [
             "pending",
@@ -748,7 +750,7 @@ impl Storage for SqliteStorage {
         .bind(body.quantity_unit.as_ref())
         .bind(original_quantity_total)
         .bind(&full)
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await
         .map_err(map_err)?;
 
@@ -768,16 +770,32 @@ impl Storage for SqliteStorage {
             sqlx::query("UPDATE tasks SET completed_at = ? WHERE id = ?")
                 .bind(&completed_at)
                 .bind(&full)
-                .execute(&self.pool)
+                .execute(&mut *tx)
                 .await
                 .map_err(map_err)?;
+
+            // #1044: moving to a terminal status should close any open work
+            // session so active time is not left dangling.
+            if status == "skipped" || status == "completed" {
+                let now = takusu_util::now_rfc3339();
+                sqlx::query(
+                    "UPDATE task_work_sessions SET ended_at = ? WHERE task_id = ? AND ended_at IS NULL",
+                )
+                .bind(&now)
+                .bind(&full)
+                .execute(&mut *tx)
+                .await
+                .map_err(map_err)?;
+            }
         }
 
-        sqlx::query_as::<_, TaskRow>(SELECT_TASK_BY_ID)
+        let task: TaskRow = sqlx::query_as::<_, TaskRow>(SELECT_TASK_BY_ID)
             .bind(&full)
-            .fetch_one(&self.pool)
+            .fetch_one(&mut *tx)
             .await
-            .map_err(map_err)
+            .map_err(map_err)?;
+        tx.commit().await.map_err(map_err)?;
+        Ok(task)
     }
 
     async fn replace_task(&self, id: &str, body: &CreateTask) -> StorageResult<TaskRow> {

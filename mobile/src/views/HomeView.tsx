@@ -938,6 +938,44 @@ export function HomeView() {
     await refreshRef.current();
   }, []);
 
+  const markSkipped = useCallback(async (task: TaskRow) => {
+    const currentClient = clientRef.current;
+    if (!currentClient) return;
+    if (task.status === 'skipped' || task.status === 'completed') return;
+    const prevStatus = task.status;
+    try {
+      await currentClient.updateTask(task.id, { status: 'skipped' });
+    } catch (e) {
+      showError(e, 'タスクのスキップに失敗');
+      return;
+    }
+    dismissTaskNotifications(task.id).catch((e) => logError('通知の消去', e));
+    cancelScheduledTaskNotifications(task.id).catch((e) =>
+      logError('通知のキャンセル', e),
+    );
+    if (prevStatus === 'in_progress') {
+      dismissInProgressNotification(task.id).catch((e) =>
+        logError('通知の消去', e),
+      );
+    }
+    undoRedo.push({
+      description: `skip: ${task.title}`,
+      undo: async () => {
+        const undoClient = clientRef.current;
+        if (!undoClient) return;
+        await undoClient.updateTask(task.id, { status: prevStatus });
+        await refreshRef.current();
+      },
+      redo: async () => {
+        const redoClient = clientRef.current;
+        if (!redoClient) return;
+        await redoClient.updateTask(task.id, { status: 'skipped' });
+        await refreshRef.current();
+      },
+    });
+    await refreshRef.current();
+  }, []);
+
   const inProgressTask = useMemo(
     () => tasks.find((t) => t.status === 'in_progress') || null,
     [tasks],
@@ -1584,6 +1622,7 @@ export function HomeView() {
             onGuestPress={handleGuestPress}
             onToggle={handleGroupToggle}
             onDone={markDone}
+            onSkip={markSkipped}
             onDelete={deleteTask}
           />
         );
@@ -1605,6 +1644,7 @@ export function HomeView() {
           onPress={handleTaskPress}
           onLongPress={handleTaskLongPress}
           onDone={markDone}
+          onSkip={markSkipped}
           onDelete={deleteTask}
         />
       );
@@ -1616,6 +1656,7 @@ export function HomeView() {
       handleGuestPress,
       handleGroupToggle,
       markDone,
+      markSkipped,
       deleteTask,
     ],
   );
