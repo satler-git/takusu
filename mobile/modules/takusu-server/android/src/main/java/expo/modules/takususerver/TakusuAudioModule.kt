@@ -3,6 +3,7 @@ package expo.modules.takususerver
 import android.content.Context
 import android.media.AudioAttributes
 import android.media.MediaPlayer
+import android.os.Bundle
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.speech.tts.Voice
@@ -61,7 +62,13 @@ class TakusuAudioModule : Module() {
     @Volatile
     private var pendingTtsCompletion: CompletableDeferred<Unit>? = null
 
+    @Volatile
+    private var stopTtsRequested: Boolean = false
+
     private val pendingTtsCompletions = ConcurrentHashMap<String, CompletableDeferred<Boolean>>()
+
+    private val cacheDir: File?
+        get() = appContext.reactContext?.cacheDir
 
     private val audioAttributes: AudioAttributes by lazy {
         AudioAttributes
@@ -209,6 +216,8 @@ class TakusuAudioModule : Module() {
                     return@Coroutine true
                 }
 
+                stopTtsRequested = false
+
                 if (ttsProvider == "android") {
                     val tts =
                         textToSpeech
@@ -235,76 +244,127 @@ class TakusuAudioModule : Module() {
                     val instance =
                         audio
                             ?: throw CodedException("ERR_AUDIO_CONFIG", "Audio is not configured", null)
-                    val mp3 = instance.synthesize(text)
-                    val cacheDir =
-                        appContext.reactContext?.cacheDir
-                            ?: throw CodedException("ERR_AUDIO_CONFIG", "React context is not available", null)
-                    val file = File(cacheDir, "takusu-agent-response.mp3")
+                    val mp3 =
+                        withContext(Dispatchers.IO) {
+                            instance.synthesize(text)
+                        }
+                    val dir =
+                        cacheDir ?: throw CodedException("ERR_AUDIO_CONFIG", "React context is not available", null)
+                    val file = File(dir, "takusu-agent-response.mp3")
                     file.writeBytes(mp3)
+                    playMp3File(file, deleteOnComplete = false)
+                    true
+                }
+            }
 
-                    // Do not release the player in an OnCompletionListener;
-                    // releasing it as soon as completion fires can tear down the
-                    // AudioTrack while it still has buffered frames, cutting off
-                    // the end of mp3 playback. Release it on the next utterance,
-                    // stopPlayback, configure, or OnDestroy instead.
-                    releasePlayer()
-                    val completion = CompletableDeferred<Unit>()
-                    val mediaPlayer =
-                        MediaPlayer().apply {
-                            setAudioAttributes(audioAttributes)
-                            setDataSource(file.absolutePath)
-                        }
-                    mediaPlayer.setOnPreparedListener {
-                        synchronized(this@TakusuAudioModule) {
-                            if (player === it) {
-                                it.start()
-                            }
-                        }
-                    }
-                    mediaPlayer.setOnCompletionListener {
-                        synchronized(this@TakusuAudioModule) {
-                            pendingTtsCompletion?.complete(Unit)
-                            pendingTtsCompletion = null
-                        }
-                    }
-                    mediaPlayer.setOnErrorListener { _, what, extra ->
-                        synchronized(this@TakusuAudioModule) {
-                            pendingTtsCompletion?.completeExceptionally(
-                                CodedException(
-                                    "ERR_TTS_PLAYBACK",
-                                    "MediaPlayer error during TTS playback: $what $extra",
-                                    null,
-                                ),
-                            )
-                            pendingTtsCompletion = null
-                        }
-                        true
-                    }
-                    synchronized(this@TakusuAudioModule) {
-                        player = mediaPlayer
-                        pendingTtsCompletion = completion
+            AsyncFunction("synthesizeToFile") Coroutine { text: String ->
+                if (text.trim().isEmpty()) {
+                    throw CodedException("ERR_TTS_EMPTY", "TTS text was empty", null)
+                }
+
+                if (ttsProvider.isEmpty()) {
+                    throw CodedException(
+                        "ERR_AUDIO_CONFIG",
+                        "TTS provider is not configured",
+                        null,
+                    )
+                }
+
+                if (this@TakusuAudioModule.muted) {
+                    return@Coroutine ""
+                }
+
+                if (stopTtsRequested) {
+                    throw CodedException(
+                        "ERR_TTS_INTERRUPTED",
+                        "TTS synthesis was interrupted",
+                        null,
+                    )
+                }
+
+                val dir = cacheDir ?: throw CodedException("ERR_AUDIO_CONFIG", "React context is not available", null)
+
+                if (ttsProvider == "android") {
+                    val tts =
+                        textToSpeech
+                            ?: throw CodedException("ERR_AUDIO_CONFIG", "Android TTS is not configured", null)
+                    val file = File.createTempFile("takusu-tts-", ".wav", dir)
+                    val completion = CompletableDeferred<Boolean>()
+                    val utteranceId = UUID.randomUUID().toString()
+                    pendingTtsCompletions[utteranceId] = completion
+                    val result = tts.synthesizeToFile(text, Bundle(), file, utteranceId)
+                    if (result == TextToSpeech.ERROR) {
+                        pendingTtsCompletions.remove(utteranceId)
+                        file.delete()
+                        throw CodedException("ERR_TTS_FAILED", "Android TTS synthesizeToFile failed", null)
                     }
                     try {
-                        mediaPlayer.prepareAsync()
-                    } catch (error: Exception) {
-                        releasePlayer()
+                        if (!completion.await()) {
+                            file.delete()
+                            throw CodedException("ERR_TTS_STOPPED", "TTS was interrupted or failed", null)
+                        }
+                    } finally {
+                        pendingTtsCompletions.remove(utteranceId)
+                    }
+                    file.absolutePath
+                } else {
+                    val instance =
+                        audio
+                            ?: throw CodedException("ERR_AUDIO_CONFIG", "Audio is not configured", null)
+                    val file = File.createTempFile("takusu-tts-", ".mp3", dir)
+                    try {
+                        val mp3 =
+                            withContext(Dispatchers.IO) {
+                                instance.synthesize(text)
+                            }
+                        if (stopTtsRequested) {
+                            file.delete()
+                            throw CodedException(
+                                "ERR_TTS_INTERRUPTED",
+                                "TTS synthesis was interrupted",
+                                null,
+                            )
+                        }
+                        file.writeBytes(mp3)
+                        if (stopTtsRequested) {
+                            file.delete()
+                            throw CodedException(
+                                "ERR_TTS_INTERRUPTED",
+                                "TTS synthesis was interrupted",
+                                null,
+                            )
+                        }
+                        file.absolutePath
+                    } catch (e: CodedException) {
+                        file.delete()
+                        throw e
+                    } catch (e: Throwable) {
+                        file.delete()
                         throw CodedException(
-                            "ERR_TTS_PLAYBACK",
-                            "Failed to play TTS audio: ${error.message}",
-                            error,
+                            "ERR_TTS_FAILED",
+                            "TTS synthesis failed: ${e.message}",
+                            e,
                         )
                     }
-                    try {
-                        completion.await()
-                        true
-                    } finally {
-                        synchronized(this@TakusuAudioModule) {
-                            if (pendingTtsCompletion === completion) {
-                                pendingTtsCompletion = null
-                            }
-                        }
-                    }
                 }
+            }
+
+            AsyncFunction("playFile") Coroutine { path: String ->
+                val file = File(path)
+                if (!file.exists()) {
+                    throw CodedException("ERR_TTS_PLAYBACK", "Audio file not found: $path", null)
+                }
+                playMp3File(file, deleteOnComplete = true)
+                true
+            }
+
+            AsyncFunction("deleteFile") { path: String ->
+                val file = File(path)
+                val dir = cacheDir
+                if (dir != null && file.parent == dir.absolutePath && file.exists()) {
+                    file.delete()
+                }
+                true
             }
 
             Function("stopPlayback") {
@@ -312,8 +372,14 @@ class TakusuAudioModule : Module() {
                     textToSpeech?.stop()
                     completeAllPendingTtsCompletions(false)
                 } else {
+                    stopTtsRequested = true
                     releasePlayer()
                 }
+                true
+            }
+
+            Function("clearTtsStop") {
+                stopTtsRequested = false
                 true
             }
 
@@ -372,6 +438,81 @@ class TakusuAudioModule : Module() {
                 textToSpeech = null
             }
         }
+
+    private suspend fun playMp3File(
+        file: File,
+        deleteOnComplete: Boolean,
+    ) {
+        try {
+            if (stopTtsRequested) {
+                throw CodedException(
+                    "ERR_TTS_INTERRUPTED",
+                    "TTS playback was interrupted",
+                    null,
+                )
+            }
+            releasePlayer()
+            val completion = CompletableDeferred<Unit>()
+            val mediaPlayer =
+                MediaPlayer().apply {
+                    setAudioAttributes(audioAttributes)
+                    setDataSource(file.absolutePath)
+                }
+            mediaPlayer.setOnPreparedListener {
+                synchronized(this@TakusuAudioModule) {
+                    if (player === it) {
+                        it.start()
+                    }
+                }
+            }
+            mediaPlayer.setOnCompletionListener {
+                synchronized(this@TakusuAudioModule) {
+                    pendingTtsCompletion?.complete(Unit)
+                    pendingTtsCompletion = null
+                }
+            }
+            mediaPlayer.setOnErrorListener { _, what, extra ->
+                synchronized(this@TakusuAudioModule) {
+                    pendingTtsCompletion?.completeExceptionally(
+                        CodedException(
+                            "ERR_TTS_PLAYBACK",
+                            "MediaPlayer error during TTS playback: $what $extra",
+                            null,
+                        ),
+                    )
+                    pendingTtsCompletion = null
+                }
+                true
+            }
+            synchronized(this@TakusuAudioModule) {
+                player = mediaPlayer
+                pendingTtsCompletion = completion
+            }
+            try {
+                mediaPlayer.prepareAsync()
+            } catch (error: Exception) {
+                releasePlayer()
+                throw CodedException(
+                    "ERR_TTS_PLAYBACK",
+                    "Failed to play TTS audio: ${error.message}",
+                    error,
+                )
+            }
+            try {
+                completion.await()
+            } finally {
+                synchronized(this@TakusuAudioModule) {
+                    if (pendingTtsCompletion === completion) {
+                        pendingTtsCompletion = null
+                    }
+                }
+            }
+        } finally {
+            if (deleteOnComplete) {
+                file.delete()
+            }
+        }
+    }
 
     private suspend fun initTextToSpeech(context: Context): TextToSpeech =
         withContext(Dispatchers.Main) {

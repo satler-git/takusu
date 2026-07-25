@@ -26,7 +26,11 @@ interface TakusuAudioModuleType extends NativeModule {
   startRecording(): boolean;
   stopAndTranscribe(): Promise<string>;
   synthesizeAndPlay(text: string): Promise<boolean>;
+  synthesizeToFile(text: string): Promise<string>;
+  playFile(path: string): Promise<boolean>;
+  deleteFile(path: string): Promise<boolean>;
   stopPlayback(): boolean;
+  clearTtsStop(): boolean;
   getAvailableVoices(): Promise<TtsVoiceInfo[]>;
 }
 

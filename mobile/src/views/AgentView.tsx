@@ -1785,34 +1785,60 @@ export function AgentView() {
     };
 
     const processTtsQueue = async () => {
-      while (ttsQueueRef.current.length > 0) {
-        const block = ttsQueueRef.current.shift();
-        if (!block) continue;
-        if (!block.trim()) continue;
-        try {
-          await TakusuAudioModule.synthesizeAndPlay(block);
-        } catch (ttsError: unknown) {
-          const ttsMessage =
-            ttsError instanceof Error ? ttsError.message : String(ttsError);
-          const ttsCode =
-            ttsError instanceof Error
-              ? (ttsError as Error & { code?: string }).code
-              : undefined;
-          ttsQueueRef.current = [];
-          if (
-            ttsCode === 'ERR_TTS_INTERRUPTED' ||
-            ttsCode === 'ERR_TTS_STOPPED'
-          ) {
-            console.log('TTS stopped:', ttsMessage);
+      TakusuAudioModule.clearTtsStop();
+      let nextFilePromise: Promise<string> | null = null;
+      let nextBlock: string | undefined = ttsQueueRef.current.shift();
+      try {
+        while (nextBlock || nextFilePromise) {
+          if (!nextFilePromise && nextBlock) {
+            nextFilePromise = TakusuAudioModule.synthesizeToFile(nextBlock);
+          }
+          const currentFilePromise = nextFilePromise;
+          nextFilePromise = null;
+          nextBlock = ttsQueueRef.current.shift();
+          if (nextBlock) {
+            nextFilePromise = TakusuAudioModule.synthesizeToFile(nextBlock);
+          }
+          try {
+            const path = await currentFilePromise;
+            if (!path) continue;
+            await TakusuAudioModule.playFile(path);
+          } catch (ttsError: unknown) {
+            const ttsMessage =
+              ttsError instanceof Error ? ttsError.message : String(ttsError);
+            const ttsCode =
+              ttsError instanceof Error
+                ? (ttsError as Error & { code?: string }).code
+                : undefined;
+            ttsQueueRef.current = [];
+            if (
+              ttsCode === 'ERR_TTS_INTERRUPTED' ||
+              ttsCode === 'ERR_TTS_STOPPED'
+            ) {
+              console.log('TTS stopped:', ttsMessage);
+              break;
+            }
+            console.error('TTS failed:', ttsMessage);
+            void showError(ttsMessage, '音声読み上げに失敗');
             break;
           }
-          console.error('TTS failed:', ttsMessage);
-          void showError(ttsMessage, '音声読み上げに失敗');
-          break;
+        }
+      } finally {
+        // Stop speaking immediately; any pre-fetched synthesis that resolves
+        // to a path we will not play is deleted in the background.
+        TakusuAudioModule.clearTtsStop();
+        ttsProcessingRef.current = false;
+        setIsSpeaking(false);
+        if (nextFilePromise) {
+          nextFilePromise
+            .then((path) => {
+              if (path) {
+                TakusuAudioModule.deleteFile(path).catch(() => {});
+              }
+            })
+            .catch(() => {});
         }
       }
-      ttsProcessingRef.current = false;
-      setIsSpeaking(false);
     };
 
     const handleResult = async (result: AgentTurnResult) => {
