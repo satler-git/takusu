@@ -13,9 +13,14 @@ import { BRAND_COLOR, COLORS, useColors, type ColorSet } from '@/src/theme';
 import { haptic } from '@/src/components/haptics';
 import { formatJson } from '@/src/utils/formatJson';
 import type { ToolCallItem } from '@/src/api/agentSessionStore';
+import Markdown, {
+  type ASTNode,
+  type RenderRules,
+} from 'react-native-markdown-renderer';
 import {
   asString,
   asNumber,
+  asBoolean,
   asArray,
   formatDuration,
   parseDateTime,
@@ -703,6 +708,170 @@ function ScheduleResultView({ name, data, colors }: ScheduleResultViewProps) {
   return null;
 }
 
+interface MemoryResultViewProps {
+  data: Record<string, unknown>;
+  colors: ColorSet;
+}
+
+function MemoryResultView({ data, colors }: MemoryResultViewProps) {
+  const results = asArray<Record<string, unknown>>(data.results, isRecord);
+
+  return (
+    <View style={{ gap: 12 }}>
+      {results && results.length > 0 ? (
+        results.map((item, index) => (
+          <MemoryCard
+            key={asString(item.id) ?? index}
+            item={item}
+            colors={colors}
+          />
+        ))
+      ) : (
+        <Text style={[styles.emptyText, { color: colors.gray }]}>
+          該当する記憶が見つかりませんでした。
+        </Text>
+      )}
+    </View>
+  );
+}
+
+interface MemoryCardProps {
+  item: Record<string, unknown>;
+  colors: ColorSet;
+}
+
+function MemoryCard({ item, colors }: MemoryCardProps) {
+  const kind = asString(item.kind) ?? '';
+  const source = asString(item.source) ?? '';
+  const key = asString(item.key) ?? '';
+  const content = asString(item.content) ?? '';
+  const subjectType = asString(item.subject_type);
+  const subjectId = asString(item.subject_id);
+  const subject = [subjectType, subjectId].filter(Boolean).join(' ');
+  const updatedAt = asString(item.updated_at);
+  const revision = asNumber(item.revision);
+  const id = asString(item.id) ?? '';
+
+  return (
+    <View
+      style={[
+        styles.changeCard,
+        { backgroundColor: colors.surfaceTint, borderColor: colors.separator },
+      ]}
+    >
+      <View style={styles.changeHeader}>
+        {kind ? (
+          <View style={[styles.changeBadge, { backgroundColor: colors.brand }]}>
+            <Text style={styles.changeBadgeText}>{kind}</Text>
+          </View>
+        ) : null}
+        {source ? (
+          <View style={[styles.changeBadge, { backgroundColor: colors.gray }]}>
+            <Text style={styles.changeBadgeText}>{source}</Text>
+          </View>
+        ) : null}
+      </View>
+      {key ? <DetailRow label="キー" value={key} colors={colors} /> : null}
+      {content ? (
+        <DetailRow label="内容" value={content} colors={colors} />
+      ) : null}
+      {subject ? (
+        <DetailRow label="対象" value={subject} colors={colors} />
+      ) : null}
+      {updatedAt ? (
+        <DetailRow
+          label="更新"
+          value={formatInstant(updatedAt)}
+          colors={colors}
+        />
+      ) : null}
+      {id || revision !== undefined ? (
+        <Text style={[styles.memoryMeta, { color: colors.gray }]}>
+          {id ? `id: ${id}` : ''}
+          {id && revision !== undefined ? ' / ' : ''}
+          {revision !== undefined ? `revision: ${revision}` : ''}
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
+interface SkillResultViewProps {
+  data: Record<string, unknown>;
+  colors: ColorSet;
+}
+
+function SkillResultView({ data, colors }: SkillResultViewProps) {
+  const name = asString(data.name) ?? '';
+  const slug = asString(data.slug) ?? '';
+  const description = asString(data.description) ?? '';
+  const body = asString(data.body) ?? '';
+  const builtIn = asBoolean(data.built_in);
+
+  const markdownStyles = useMemo<Record<string, unknown>>(
+    () => ({
+      body: { color: colors.black, fontSize: 13 },
+      paragraph: { marginTop: 0, marginBottom: 8 },
+    }),
+    [colors.black],
+  );
+  const markdownRules = useMemo<RenderRules>(
+    () => ({
+      image: (node: ASTNode) => (
+        <Text key={node.key} style={{ color: colors.gray }}>
+          {node.content}
+        </Text>
+      ),
+    }),
+    [colors.gray],
+  );
+
+  return (
+    <View style={{ gap: 12 }}>
+      <View
+        style={[
+          styles.changeCard,
+          {
+            backgroundColor: colors.surfaceTint,
+            borderColor: colors.separator,
+          },
+        ]}
+      >
+        <View style={styles.changeHeader}>
+          <Text style={[styles.skillName, { color: colors.black }]}>
+            {name}
+          </Text>
+          {builtIn ? (
+            <View
+              style={[styles.changeBadge, { backgroundColor: colors.gray }]}
+            >
+              <Text style={styles.changeBadgeText}>built-in</Text>
+            </View>
+          ) : null}
+        </View>
+        {slug ? (
+          <Text style={[styles.skillSlug, { color: colors.gray }]}>{slug}</Text>
+        ) : null}
+        {description ? (
+          <DetailRow label="説明" value={description} colors={colors} />
+        ) : null}
+      </View>
+      {body ? (
+        <View
+          style={[
+            styles.sectionBox,
+            { backgroundColor: colors.surface, borderColor: colors.separator },
+          ]}
+        >
+          <Markdown style={markdownStyles} rules={markdownRules}>
+            {body}
+          </Markdown>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 function ResultContent({
   name,
   result,
@@ -719,6 +888,12 @@ function ResultContent({
     parsed = JSON.parse(result);
   } catch {
     parsed = result;
+  }
+  if (!isRejected && isRecord(parsed) && name === 'memory_search') {
+    return <MemoryResultView data={parsed} colors={colors} />;
+  }
+  if (!isRejected && isRecord(parsed) && name === 'skills_read') {
+    return <SkillResultView data={parsed} colors={colors} />;
   }
   if (
     !isRejected &&
@@ -876,4 +1051,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   closeText: { color: COLORS.white, fontWeight: '700' },
+  emptyText: { fontSize: 13, textAlign: 'center' },
+  memoryMeta: { fontSize: 11, fontFamily: 'monospace', marginTop: 4 },
+  skillName: { fontSize: 16, fontWeight: '700' },
+  skillSlug: { fontSize: 12, marginTop: 2 },
 });
