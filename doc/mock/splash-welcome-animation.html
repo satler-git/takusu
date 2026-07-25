@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>takusu Splash / Welcome Animation Mock</title>
+  <style>
+    :root {
+      /* Animation timing — tweak these to adjust the feel.
+         Current sequence: 0.2s fade-in, 0.2s hold, 0.2s fade-out. */
+      --fade-in: 0.2s;
+      --hold: 0.2s;
+      --fade-out: 0.2s;
+      --start-delay: 0.2s;
+      --welcome-duration: calc(var(--fade-in) + var(--hold) + var(--fade-out));
+
+      /* Default theme (light) */
+      --bg: #ffffff;
+      --text: #1c1824;
+      --brand: #7261a3;
+      --brand-light: #9b8bc4;
+    }
+
+    /* Theme overrides */
+    [data-theme="dark"] {
+      --bg: #15131c;
+      --text: #f0ecf5;
+      --brand: #9b8bc4;
+      --brand-light: #b8b0d6;
+    }
+
+    [data-theme="catppuccin"] {
+      --bg: #24273a;
+      --text: #cad3f5;
+      --brand: #9b8bc4;
+      --brand-light: #b8b0d6;
+    }
+
+    [data-theme="aura-soft-dark"] {
+      --bg: #141414;
+      --text: #bdbdbd;
+      --brand: #a48bd6;
+      --brand-light: #b8a6e0;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 24px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f5f5f7;
+      color: #1c1824;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+    }
+
+    h1 { margin: 0 0 8px; font-size: 1.4rem; }
+    p.sub { margin: 0 0 20px; color: #666; font-size: 0.9rem; }
+
+    .controls {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .controls button {
+      border: 1px solid #ccc;
+      background: #fff;
+      color: #1c1824;
+      padding: 8px 16px;
+      border-radius: 999px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      transition: transform 0.1s, box-shadow 0.2s;
+    }
+
+    .controls button.active {
+      background: #7261a3;
+      color: #fff;
+      border-color: #7261a3;
+    }
+
+    .phone {
+      width: 360px;
+      height: 760px;
+      border-radius: 40px;
+      background: var(--bg);
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.12);
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .status-bar {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 24px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--text);
+      opacity: 0.8;
+      z-index: 10;
+    }
+
+    /* The splash / welcome content animates as a single unit. */
+    .splash {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 32px;
+      opacity: 0;
+      animation: welcomeInOut var(--welcome-duration) ease-in-out var(--start-delay) forwards;
+    }
+
+    @keyframes welcomeInOut {
+      0% { opacity: 0; }
+      /* fade-in ends at fade-in / total = 0.2 / 0.6 */
+      33.3% { opacity: 1; }
+      /* hold ends at (fade-in + hold) / total = 0.4 / 0.6 */
+      66.7% { opacity: 1; }
+      /* fade-out ends */
+      100% { opacity: 0; }
+    }
+
+    .logo {
+      width: 140px;
+      height: 140px;
+      color: var(--brand);
+    }
+
+    .welcome {
+      font-size: 2.4rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      color: var(--text);
+    }
+
+    .tagline {
+      font-size: 0.85rem;
+      color: var(--brand);
+      font-weight: 500;
+      text-align: center;
+      padding: 0 32px;
+      line-height: 1.5;
+    }
+
+    .notes {
+      margin-top: 24px;
+      max-width: 560px;
+      font-size: 0.85rem;
+      line-height: 1.6;
+      color: #555;
+    }
+
+    .notes code {
+      background: #e9e9e9;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.8rem;
+    }
+
+    .timing {
+      display: inline-block;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      background: #e9e9e9;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body data-theme="light">
+  <h1>takusu Splash / Welcome Animation Mock</h1>
+  <p class="sub">
+    fade-in <span class="timing">0.2s</span> → hold <span class="timing">0.2s</span> → fade-out <span class="timing">0.2s</span>
+  </p>
+
+  <div class="controls" id="theme-controls">
+    <button data-theme="light" class="active">Light</button>
+    <button data-theme="dark">Dark</button>
+    <button data-theme="catppuccin">Catppuccin</button>
+    <button data-theme="aura-soft-dark">Aura Soft Dark</button>
+    <button id="replay">Replay</button>
+  </div>
+
+  <div class="phone">
+    <div class="status-bar">
+      <span>9:41</span>
+      <span>●●●●●</span>
+    </div>
+
+    <div class="splash" id="splash">
+      <svg class="logo" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="50" cy="50" r="42" />
+        <path d="M25 38h25" />
+        <path d="M50 38v24" />
+        <path d="M75 62H50" />
+      </svg>
+      <div class="welcome">Welcome</div>
+      <div class="tagline">Herness for humans, controlled by LLMs</div>
+    </div>
+  </div>
+
+  <div class="notes">
+    <strong>ポイント</strong>
+    <ul>
+      <li>ネイティブ splash はロゴのみ。JS 起動後、この Welcome オーバーレイが 0.2s / 0.2s / 0.2s でフェードイン・アウトする。</li>
+      <li>全体が一塊でフェードする（文字逐个やパルスはなし）。</li>
+      <li>4 theme 切り替え可能。配色は <code>mobile/modules/takusu-app-icon</code> と合わせて調整済み。</li>
+      <li>調整したい場合は CSS 上部の <code>--fade-in</code> / <code>--hold</code> / <code>--fade-out</code> を変更してください。</li>
+    </ul>
+  </div>
+
+  <script>
+    const themes = {
+      light: { bg: '#ffffff', text: '#1c1824', brand: '#7261a3' },
+      dark: { bg: '#15131c', text: '#f0ecf5', brand: '#9b8bc4' },
+      catppuccin: { bg: '#24273a', text: '#cad3f5', brand: '#9b8bc4' },
+      'aura-soft-dark': { bg: '#141414', text: '#bdbdbd', brand: '#a48bd6' },
+    };
+
+    const body = document.body;
+    let splash = document.getElementById('splash');
+
+    function setTheme(name) {
+      const t = themes[name];
+      body.setAttribute('data-theme', name);
+      document.querySelectorAll('.controls button[data-theme]').forEach((b) => {
+        b.classList.toggle('active', b.dataset.theme === name);
+      });
+    }
+
+    function replay() {
+      const clone = splash.cloneNode(true);
+      splash.replaceWith(clone);
+      splash = clone;
+    }
+
+    document.getElementById('theme-controls').addEventListener('click', (e) => {
+      const btn = e.target.closest('button');
+      if (!btn) return;
+      if (btn.id === 'replay') {
+        replay();
+        return;
+      }
+      setTheme(btn.dataset.theme);
+      replay();
+    });
+
+    setTheme('light');
+  </script>
+</body>
+</html>

@@ -4,7 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { PaperProvider, MD3DarkTheme, MD3LightTheme } from 'react-native-paper';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import * as Notifications from 'expo-notifications';
 import { router } from 'expo-router';
 import * as Sentry from '@sentry/react-native';
@@ -19,9 +19,15 @@ import {
   DARK_COLORS,
   CATPPUCCIN_COLORS,
   AURA_SOFT_DARK_COLORS,
+  type AppTheme,
 } from '@/src/theme';
 import { UndoRedoToast } from '@/src/components/UndoRedoToast';
+import { WelcomeScreen } from '@/src/components/WelcomeScreen';
 import { haptic } from '@/src/components/haptics';
+import {
+  loadWelcomeShownAt,
+  saveWelcomeShownAt,
+} from '@/src/api/settingsStore';
 import { TopToastProvider } from '@/src/components/TopToast';
 import {
   setupNotificationCategories,
@@ -76,9 +82,25 @@ if (process.env.EXPO_PUBLIC_SENTRY_DSN) {
   });
 }
 
+function backgroundColorForTheme(theme: AppTheme): string {
+  return theme === 'catppuccin'
+    ? CATPPUCCIN_COLORS.white
+    : theme === 'aura-soft-dark'
+      ? AURA_SOFT_DARK_COLORS.white
+      : theme === 'dark'
+        ? DARK_COLORS.white
+        : COLORS.white;
+}
+
 function ThemedApp() {
-  const { theme, client, notifications } = useServer();
+  const { theme, settingsLoaded, client, notifications } = useServer();
   const MAX_PROCESSED_RESPONSE_IDS = 50;
+
+  const [showWelcome, setShowWelcome] = useState(false);
+  const [welcomeTheme, setWelcomeTheme] = useState<AppTheme | null>(null);
+  const [welcomeBackgroundColor, setWelcomeBackgroundColor] = useState<
+    string | null
+  >(null);
 
   // Queue of notification action responses that arrived before `client` was
   // ready (server still starting on cold launch). Drained once `client` is set.
@@ -106,6 +128,37 @@ function ThemedApp() {
         // ignore cleanup errors
       });
     };
+  }, []);
+
+  // Show the welcome overlay once per hour on cold start.
+  // Wait for settings to load so the theme is finalized before capturing it.
+  const hasCheckedWelcome = useRef(false);
+  useEffect(() => {
+    if (!settingsLoaded || hasCheckedWelcome.current) return;
+    hasCheckedWelcome.current = true;
+
+    async function checkWelcome() {
+      const WELCOME_COOLDOWN_MS = 60 * 60 * 1000; // 1 hour
+      const lastShown = await loadWelcomeShownAt();
+      const now = Date.now();
+      const shouldShow =
+        lastShown === null || now - lastShown > WELCOME_COOLDOWN_MS;
+      if (shouldShow) {
+        setWelcomeTheme(theme);
+        setWelcomeBackgroundColor(backgroundColorForTheme(theme));
+      }
+      setShowWelcome(shouldShow);
+    }
+    checkWelcome().catch(() => {
+      setShowWelcome(false);
+    });
+  }, [settingsLoaded, theme]);
+
+  const handleWelcomeFinished = useCallback(() => {
+    setShowWelcome(false);
+    saveWelcomeShownAt(Date.now()).catch(() => {
+      // ignore storage errors
+    });
   }, []);
 
   const processResponse = useCallback(
@@ -189,14 +242,7 @@ function ThemedApp() {
   }, [lastNotificationResponse, processResponse]);
 
   const isDark = theme !== 'light';
-  const stackBg =
-    theme === 'catppuccin'
-      ? CATPPUCCIN_COLORS.white
-      : theme === 'aura-soft-dark'
-        ? AURA_SOFT_DARK_COLORS.white
-        : isDark
-          ? DARK_COLORS.white
-          : COLORS.white;
+  const stackBg = backgroundColorForTheme(theme);
 
   const paperTheme =
     theme === 'catppuccin'
@@ -300,6 +346,13 @@ function ThemedApp() {
           </Stack>
           <UndoRedoToast />
           <FloatingVoiceButton />
+          {showWelcome && welcomeTheme !== null && (
+            <WelcomeScreen
+              theme={welcomeTheme}
+              backgroundColor={welcomeBackgroundColor ?? stackBg}
+              onFinished={handleWelcomeFinished}
+            />
+          )}
         </TopToastProvider>
       </PaperProvider>
     </ThemeProvider>
