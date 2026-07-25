@@ -70,8 +70,8 @@ import {
   type AgentTurnResult,
 } from '@/src/api/agentClient';
 import type {
+  AgentStreamEvent,
   ApprovalRequest,
-  TurnEvent,
   UserInputQuestion,
   UserInputAnswer,
 } from '@/src/api/agentTypes';
@@ -989,6 +989,10 @@ export function AgentView() {
   const lastPendingSessionIdRef = useRef<string | null>(null);
   const sessionPermissionsRef = useRef<PermissionsMap>({});
   const isMutedRef = useRef(false);
+  const ttsQueueRef = useRef<string[]>([]);
+  const ttsProcessingRef = useRef(false);
+  const ttsBlockReceivedRef = useRef(false);
+  const ttsPromiseRef = useRef<Promise<void>>(Promise.resolve());
   const viewOffset = useSharedValue(0);
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: viewOffset.value }],
@@ -1650,7 +1654,7 @@ export function AgentView() {
     assistantId: string,
     apiCall: (
       sessionId: string,
-      onEvent: (event: TurnEvent) => void,
+      onEvent: (event: AgentStreamEvent) => void,
       signal: AbortSignal,
       attempt: number,
     ) => Promise<AgentTurnResult>,
@@ -1658,15 +1662,30 @@ export function AgentView() {
   ) {
     setBusy(true);
     let currentSessionId = initialSessionId;
+    ttsQueueRef.current = [];
+    ttsProcessingRef.current = false;
+    ttsBlockReceivedRef.current = false;
+    ttsPromiseRef.current = Promise.resolve();
 
-    const finish = () => {
+    const finish = async () => {
+      await ttsPromiseRef.current;
       streamAbortRef.current = null;
       setUserInput(null);
       setBusy(false);
       setIsSpeaking(false);
+      ttsQueueRef.current = [];
+      ttsProcessingRef.current = false;
+      ttsBlockReceivedRef.current = false;
+      ttsPromiseRef.current = Promise.resolve();
     };
 
-    const handleEvent = (event: TurnEvent) => {
+    const handleStreamEvent = (event: AgentStreamEvent) => {
+      if (event.type === 'TtsBlock') {
+        // TtsBlock values are already filtered by the Rust TtsQueue.
+        handleTtsBlock(event.data, false);
+        return;
+      }
+
       setMessages((current) => {
         const index = current.findIndex((m) => m.id === assistantId);
         if (index === -1) return current;
@@ -1753,20 +1772,61 @@ export function AgentView() {
       });
     };
 
-    const handleResult = async (result: AgentTurnResult) => {
-      setApproval(result.approval_request);
-      const ttsText = markdownToSpeech(result.text);
-      if (audioReady && ttsText.trim() && !isMutedRef.current) {
+    const handleTtsBlock = (block: string, raw = false) => {
+      if (!audioReady || !block.trim() || isMutedRef.current) {
+        return;
+      }
+      const ttsText = raw ? markdownToSpeech(block) : block;
+      if (!ttsText.trim()) return;
+      ttsBlockReceivedRef.current = true;
+      ttsQueueRef.current.push(ttsText);
+      if (!ttsProcessingRef.current) {
+        ttsProcessingRef.current = true;
         setIsSpeaking(true);
+        ttsPromiseRef.current = processTtsQueue();
+      }
+    };
+
+    const processTtsQueue = async () => {
+      while (ttsQueueRef.current.length > 0) {
+        const block = ttsQueueRef.current.shift();
+        if (!block) continue;
+        if (!block.trim()) continue;
         try {
-          await TakusuAudioModule.synthesizeAndPlay(ttsText);
+          await TakusuAudioModule.synthesizeAndPlay(block);
         } catch (ttsError: unknown) {
           const ttsMessage =
             ttsError instanceof Error ? ttsError.message : String(ttsError);
+          const ttsCode =
+            ttsError instanceof Error
+              ? (ttsError as Error & { code?: string }).code
+              : undefined;
+          ttsQueueRef.current = [];
+          if (
+            ttsCode === 'ERR_TTS_INTERRUPTED' ||
+            ttsCode === 'ERR_TTS_STOPPED'
+          ) {
+            console.log('TTS stopped:', ttsMessage);
+            break;
+          }
           console.error('TTS failed:', ttsMessage);
           void showError(ttsMessage, '音声読み上げに失敗');
+          break;
         }
       }
+      ttsProcessingRef.current = false;
+      setIsSpeaking(false);
+    };
+
+    const handleResult = async (result: AgentTurnResult) => {
+      setApproval(result.approval_request);
+      // If the server did not emit any TtsBlock events (e.g. an older agent
+      // version), fall back to synthesizing the full final text once.
+      // The final text from an older server is raw, so filter it here.
+      if (!ttsBlockReceivedRef.current) {
+        handleTtsBlock(result.text, true);
+      }
+      await ttsPromiseRef.current;
     };
 
     const handleError = (e: unknown) => {
@@ -1786,18 +1846,24 @@ export function AgentView() {
     };
 
     for (let attempt = 0; attempt < 2; attempt++) {
+      // Reset any TTS state from a previous attempt so retries (e.g. 404)
+      // do not carry over queued blocks or the ttsBlockReceived flag.
+      ttsQueueRef.current = [];
+      ttsProcessingRef.current = false;
+      ttsBlockReceivedRef.current = false;
+      ttsPromiseRef.current = Promise.resolve();
       const abortController = new AbortController();
       streamAbortRef.current = abortController;
       setUserInput(null);
       try {
         const result = await apiCall(
           currentSessionId,
-          handleEvent,
+          handleStreamEvent,
           abortController.signal,
           attempt,
         );
         await handleResult(result);
-        finish();
+        await finish();
         return;
       } catch (e: unknown) {
         const isAbort = backgroundAbortedRef.current || e instanceof AbortError;
@@ -1817,7 +1883,7 @@ export function AgentView() {
                 : m;
             }),
           );
-          finish();
+          await finish();
           return;
         }
         if (e instanceof AgentApiError && e.status === 404 && attempt === 0) {
@@ -1848,12 +1914,12 @@ export function AgentView() {
           } catch {
             sessionIdRef.current = null;
             handleError(e);
-            finish();
+            await finish();
             return;
           }
         } else {
           handleError(e);
-          finish();
+          await finish();
           return;
         }
       }

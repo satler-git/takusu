@@ -1,4 +1,5 @@
 import type {
+  AgentStreamEvent,
   AgentTurnResult,
   ApprovalRequest,
   ApprovalResult,
@@ -134,7 +135,7 @@ export class AgentClient {
     sessionId: string,
     text: string,
     idempotencyKey: string,
-    onEvent: (event: TurnEvent) => void,
+    onEvent: (event: AgentStreamEvent) => void,
     signal?: AbortSignal,
   ): Promise<AgentTurnResult> {
     const url = `${this.baseUrl}/api/agent/v1/sessions/${encodeURIComponent(sessionId)}/turns/stream`;
@@ -151,7 +152,7 @@ export class AgentClient {
     turnIndex: number,
     text: string,
     idempotencyKey: string,
-    onEvent: (event: TurnEvent) => void,
+    onEvent: (event: AgentStreamEvent) => void,
     signal?: AbortSignal,
   ): Promise<AgentTurnResult> {
     const url = `${this.baseUrl}/api/agent/v1/sessions/${encodeURIComponent(sessionId)}/turns/${turnIndex}/edit/stream`;
@@ -178,7 +179,7 @@ export class AgentClient {
   private streamRequest(
     url: string,
     body: unknown,
-    onEvent: (event: TurnEvent) => void,
+    onEvent: (event: AgentStreamEvent) => void,
     signal?: AbortSignal,
   ): Promise<AgentTurnResult> {
     return new Promise((resolve, reject) => {
@@ -231,15 +232,20 @@ export class AgentClient {
           return;
         }
         try {
-          const event = JSON.parse(payload) as TurnEvent;
+          const parsed = JSON.parse(payload) as { type: string };
           if (done) {
             return;
           }
-          onEvent(event);
-          if (event.type === 'Done') {
-            done = true;
-            cleanupSignal();
-            resolve(event.data);
+          if (parsed.type === 'TtsBlock') {
+            onEvent(parsed as AgentStreamEvent);
+          } else {
+            const event = parsed as TurnEvent;
+            onEvent(event);
+            if (event.type === 'Done') {
+              done = true;
+              cleanupSignal();
+              resolve(event.data);
+            }
           }
         } catch {
           // Ignore malformed SSE data.

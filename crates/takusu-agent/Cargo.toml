@@ -37,6 +37,7 @@ takusu-client = { workspace = true }
 takusu-core = { workspace = true }
 takusu-habit = { workspace = true }
 takusu-util = { workspace = true }
+pulldown-cmark = "0.13.4"
 
 [dev-dependencies]
 axum = { workspace = true }

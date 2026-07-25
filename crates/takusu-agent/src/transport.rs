@@ -582,6 +582,31 @@ async fn run_turn(
     .into_response()
 }
 
+/// A server-sent event exchanged with streaming clients.
+///
+/// Turn events are serialized in their original shape so that existing clients
+/// continue to parse them directly. TTS blocks are emitted as a separate
+/// `{ "type": "TtsBlock", "data": "..." }` payload that is distinguished by
+/// its top-level `type` field.
+#[derive(Debug, Clone)]
+enum StreamEvent {
+    Turn(TurnEvent),
+    TtsBlock(String),
+}
+
+impl StreamEvent {
+    fn to_json(&self) -> String {
+        match self {
+            StreamEvent::Turn(event) => {
+                serde_json::to_string(event).expect("TurnEvent should always serialize to JSON")
+            }
+            StreamEvent::TtsBlock(text) => {
+                serde_json::json!({ "type": "TtsBlock", "data": text }).to_string()
+            }
+        }
+    }
+}
+
 async fn run_turn_stream(
     State(state): State<Arc<AgentApiState>>,
     Path(id): Path<String>,
@@ -609,8 +634,8 @@ async fn run_turn_stream(
             schedule_dirty: result.schedule_dirty,
             approval_request: result.approval_request.clone(),
         };
-        let event = TurnEvent::Done(cached);
-        let json = serde_json::to_string(&event).unwrap();
+        let event = StreamEvent::Turn(TurnEvent::Done(cached));
+        let json = event.to_json();
         let stream = futures_util::stream::once(std::future::ready(Ok::<_, Infallible>(
             Event::default().data(json),
         )));
@@ -619,7 +644,7 @@ async fn run_turn_stream(
             .into_response();
     }
     let text = body.value.text.clone();
-    let (tx, rx) = unbounded_channel::<TurnEvent>();
+    let (tx, rx) = unbounded_channel::<StreamEvent>();
     let tx_closed = tx.clone();
     let session2 = session.clone();
     let id2 = id.clone();
@@ -629,12 +654,14 @@ async fn run_turn_stream(
         tokio::select! {
             _ = tx_closed.closed() => {}
             result = session2.run_turn_stream(&text, |event| {
-                let _ = tx.send(event);
+                let _ = tx.send(StreamEvent::Turn(event));
+            }, |block| {
+                let _ = tx.send(StreamEvent::TtsBlock(block));
             }) => {
                 match result {
                     Ok(result) => {
                         tracing::info!(session_id = %id2, text_len = result.text.len(), changes = result.changes.len(), schedule_dirty = result.schedule_dirty, "agent turn stream completed");
-                        let _ = tx.send(TurnEvent::Done(result.clone()));
+                        let _ = tx.send(StreamEvent::Turn(TurnEvent::Done(result.clone())));
                         if let Some(key) = key2
                             && let Ok(mut results) = state2.turn_results.lock()
                         {
@@ -643,14 +670,14 @@ async fn run_turn_stream(
                     }
                     Err(error) => {
                         tracing::error!(session_id = %id2, error = %error, "agent turn stream failed");
-                        let _ = tx.send(TurnEvent::Error(error.to_string()));
+                        let _ = tx.send(StreamEvent::Turn(TurnEvent::Error(error.to_string())));
                     }
                 }
             }
         }
     });
     let stream = UnboundedReceiverStream::new(rx).map(|event| {
-        let json = serde_json::to_string(&event).unwrap();
+        let json = event.to_json();
         Ok::<_, Infallible>(Event::default().data(json))
     });
     Sse::new(stream)
@@ -685,8 +712,8 @@ async fn edit_turn_stream(
             schedule_dirty: result.schedule_dirty,
             approval_request: result.approval_request.clone(),
         };
-        let event = TurnEvent::Done(cached);
-        let json = serde_json::to_string(&event).unwrap();
+        let event = StreamEvent::Turn(TurnEvent::Done(cached));
+        let json = event.to_json();
         let stream = futures_util::stream::once(std::future::ready(Ok::<_, Infallible>(
             Event::default().data(json),
         )));
@@ -695,7 +722,7 @@ async fn edit_turn_stream(
             .into_response();
     }
     let text = body.value.text.clone();
-    let (tx, rx) = unbounded_channel::<TurnEvent>();
+    let (tx, rx) = unbounded_channel::<StreamEvent>();
     let tx_closed = tx.clone();
     let session2 = session.clone();
     let id2 = id.clone();
@@ -705,12 +732,14 @@ async fn edit_turn_stream(
         tokio::select! {
             _ = tx_closed.closed() => {}
             result = session2.edit_turn_stream(turn_index, &text, |event| {
-                let _ = tx.send(event);
+                let _ = tx.send(StreamEvent::Turn(event));
+            }, |block| {
+                let _ = tx.send(StreamEvent::TtsBlock(block));
             }) => {
                 match result {
                     Ok(result) => {
                         tracing::info!(session_id = %id2, turn_index, text_len = result.text.len(), changes = result.changes.len(), schedule_dirty = result.schedule_dirty, "agent edit turn stream completed");
-                        let _ = tx.send(TurnEvent::Done(result.clone()));
+                        let _ = tx.send(StreamEvent::Turn(TurnEvent::Done(result.clone())));
                         if let Some(key) = key2
                             && let Ok(mut results) = state2.turn_results.lock()
                         {
@@ -719,14 +748,14 @@ async fn edit_turn_stream(
                     }
                     Err(error) => {
                         tracing::error!(session_id = %id2, turn_index, error = %error, "agent edit turn stream failed");
-                        let _ = tx.send(TurnEvent::Error(error.to_string()));
+                        let _ = tx.send(StreamEvent::Turn(TurnEvent::Error(error.to_string())));
                     }
                 }
             }
         }
     });
     let stream = UnboundedReceiverStream::new(rx).map(|event| {
-        let json = serde_json::to_string(&event).unwrap();
+        let json = event.to_json();
         Ok::<_, Infallible>(Event::default().data(json))
     });
     Sse::new(stream)
