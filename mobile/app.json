@@ -2,7 +2,7 @@
   "expo": {
     "name": "takusu",
     "slug": "takusu",
-    "version": "0.20260725.1",
+    "version": "0.20260725.2",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
