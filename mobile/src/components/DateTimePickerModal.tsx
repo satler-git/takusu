@@ -1,5 +1,5 @@
 // DateTimePickerModal — modal wrapper around @react-native-community/datetimepicker
-// Allows picking a date and time (or date-only) via native Android/iOS pickers.
+// Allows picking a date and time (or date-only) via the native Android picker.
 // On Android, the native picker shows as a dialog; we wrap it in a Modal for
 // consistent UX and provide a "clear" button for optional fields.
 

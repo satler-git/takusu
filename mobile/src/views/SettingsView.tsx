@@ -13,7 +13,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -1885,15 +1884,13 @@ export function SettingsDetailView({
                   haptic.light();
                   exportLogs();
                 }}
-                disabled={logExportLoading || Platform.OS !== 'android'}
+                disabled={logExportLoading}
               >
                 {logExportLoading ? (
                   <ActivityIndicator color="#FFFFFF" />
                 ) : (
                   <Text style={styles.actionButtonText}>
-                    {Platform.OS === 'android'
-                      ? 'ログをエクスポート'
-                      : 'ログ (Androidのみ)'}
+                    ログをエクスポート
                   </Text>
                 )}
               </Pressable>
@@ -1907,11 +1904,7 @@ export function SettingsDetailView({
                   haptic.light();
                   copyLogs();
                 }}
-                disabled={
-                  logCopyLoading ||
-                  logExportLoading ||
-                  Platform.OS !== 'android'
-                }
+                disabled={logCopyLoading || logExportLoading}
               >
                 {logCopyLoading ? (
                   <ActivityIndicator color={colors.black} />
@@ -1933,7 +1926,6 @@ export function SettingsDetailView({
                   haptic.medium();
                   clearLogs();
                 }}
-                disabled={Platform.OS !== 'android'}
               >
                 <Text
                   style={[styles.actionButtonText, { color: colors.black }]}

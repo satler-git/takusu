@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -56,7 +55,7 @@ export function TtsProviderEditor({
   const isAndroid = provider.provider === 'android';
 
   useEffect(() => {
-    if (!isAndroid || Platform.OS !== 'android') {
+    if (!isAndroid) {
       setVoices([]);
       return;
     }

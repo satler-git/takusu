@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Modal,
-  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -41,10 +40,7 @@ export function EditMessageModal({
       animationType="fade"
       onRequestClose={onClose}
     >
-      <KeyboardAvoidingView
-        style={styles.overlay}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
+      <KeyboardAvoidingView style={styles.overlay}>
         <Pressable style={styles.overlay} onPress={onClose}>
           <View
             style={[styles.card, { backgroundColor: colors.white }]}

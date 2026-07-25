@@ -7,7 +7,7 @@
 // buffer (via TakusuServerModule.pushLog) so client-side errors appear in
 // the same export as server logs.
 
-import { Alert, Platform } from 'react-native';
+import { Alert } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { ApiError } from './client';
 
@@ -48,12 +48,10 @@ function formatErrorForLog(e: unknown): string {
 }
 
 /**
- * Forward a log line to the native ring buffer (Android only).
- * Silently no-ops on non-Android platforms or if the native module is
- * unavailable.
+ * Forward a log line to the native ring buffer.
+ * Silently no-ops if the native module is unavailable.
  */
 function pushClientLog(level: string, context: string, message: string): void {
-  if (Platform.OS !== 'android') return;
   const line = `[client][${level}] ${context}: ${message}`;
   // pushLog is a synchronous native Function; a thrown native exception
   // propagates synchronously, so use try/catch rather than

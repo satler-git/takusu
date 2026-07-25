@@ -9,12 +9,7 @@ import {
   useMemo,
   useState,
 } from 'react';
-import {
-  Platform,
-  type LayoutChangeEvent,
-  StyleSheet,
-  View,
-} from 'react-native';
+import { type LayoutChangeEvent, StyleSheet, View } from 'react-native';
 import {
   Canvas,
   Circle,
@@ -875,16 +870,13 @@ function truncate(s: string, maxLen: number): string {
 // Label is drawn below the node (#294) with a white background pill so
 // it stays readable even when zoomed out. The background and text are
 // rendered in separate passes so edges can be drawn between them (#589).
-const NODE_LABEL_FONTS = Platform.select<string[]>({
-  ios: ['Helvetica', 'Hiragino Sans', 'NotoSansCJK'],
-  default: [
-    'sans-serif',
-    'NotoSansCJK',
-    'NotoSansJP',
-    'Noto Sans CJK JP',
-    'DroidSansJapanese',
-  ],
-})!;
+const NODE_LABEL_FONTS: string[] = [
+  'sans-serif',
+  'NotoSansCJK',
+  'NotoSansJP',
+  'Noto Sans CJK JP',
+  'DroidSansJapanese',
+];
 
 function NodeLabelBackground({
   x,

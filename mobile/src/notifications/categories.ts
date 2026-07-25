@@ -14,9 +14,9 @@ export const ACTION_CANCEL = 'action_cancel';
 export const ACTION_START = 'action_start';
 
 export async function setupNotificationCategories(): Promise<void> {
-  // Action buttons should not open the app. On iOS the response listener fires
-  // in the background. On Android (SDK 56+) the registered background task
-  // runs for action taps when the app is not in the foreground (#788).
+  // Action buttons should not open the app. On Android (SDK 56+) the
+  // registered background task runs for action taps when the app is not in the
+  // foreground (#788).
   const opensAppToForeground = false;
 
   await Notifications.setNotificationCategoryAsync(CATEGORY_TASK_IN_PROGRESS, [

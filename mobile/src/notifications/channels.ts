@@ -1,6 +1,5 @@
 // Android notification channels.
 
-import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { BRAND_COLOR } from '@/src/theme';
 
@@ -13,8 +12,6 @@ export const CHANNELS = {
 } as const;
 
 export async function setupNotificationChannels(): Promise<void> {
-  if (Platform.OS !== 'android') return;
-
   await Promise.all([
     Notifications.setNotificationChannelAsync(CHANNELS.taskReminders, {
       name: 'タスクリマインダー',

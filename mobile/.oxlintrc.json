@@ -26,7 +26,6 @@
   "ignorePatterns": [
     "node_modules/",
     "android/",
-    "ios/",
     ".expo/",
     "dist/",
     "expo-env.d.ts",

@@ -1,4 +1,4 @@
-import { Platform, PermissionsAndroid } from 'react-native';
+import { PermissionsAndroid } from 'react-native';
 import {
   loadSettings,
   loadAgentApiKey,
@@ -86,15 +86,13 @@ export async function startRecording(): Promise<void> {
   isRecording = true;
   notifyRecordingChanged(true);
   try {
-    if (Platform.OS === 'android') {
-      const permission = await PermissionsAndroid.request(
-        PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
-      );
-      if (permission !== PermissionsAndroid.RESULTS.GRANTED) {
-        isRecording = false;
-        notifyRecordingChanged(false);
-        throw new Error('マイク権限が許可されていません');
-      }
+    const permission = await PermissionsAndroid.request(
+      PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+    );
+    if (permission !== PermissionsAndroid.RESULTS.GRANTED) {
+      isRecording = false;
+      notifyRecordingChanged(false);
+      throw new Error('マイク権限が許可されていません');
     }
     // Another stopAndTranscribe may have cancelled this start while permission was pending.
     if (!isRecording) {

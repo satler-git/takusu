@@ -116,7 +116,7 @@ beforeEach(() => {
 
 afterEach(() => {
   Object.defineProperty(Platform, 'OS', {
-    value: 'ios',
+    value: 'android',
     configurable: true,
   });
 });

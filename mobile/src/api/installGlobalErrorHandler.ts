@@ -5,13 +5,11 @@
 // Call `installGlobalErrorHandler()` once at app startup (e.g. from the
 // root layout). It is idempotent.
 
-import { Platform } from 'react-native';
 import TakusuServerModule from '../../modules/takusu-server/src/TakusuServerModule';
 
 let installed = false;
 
 function pushClientLog(line: string): void {
-  if (Platform.OS !== 'android') return;
   // pushLog is a synchronous native Function; a thrown native exception
   // propagates synchronously, so use try/catch rather than
   // Promise.resolve().catch().
