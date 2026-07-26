@@ -14,6 +14,20 @@ on:
         description: Apply D1 migrations before deploy (only if deploy_worker)
         type: boolean
         default: true
+  workflow_call:
+    # Callers must grant `actions: write` and `contents: write` when calling this
+    # workflow from a tag reference, because the `prerelease` job needs to create
+    # a GitHub release. The `staging-release` workflow calls it from a branch
+    # reference, so it uses `contents: read` because the `prerelease` job is skipped.
+    inputs:
+      deploy_worker:
+        description: Deploy worker to Cloudflare after build
+        type: boolean
+        default: false
+      apply_migrations:
+        description: Apply D1 migrations before deploy (only if deploy_worker)
+        type: boolean
+        default: false
 
 # Required secrets:
 #   CLOUDFLARE_API_TOKEN  - Cloudflare API token (needs Workers & D1 write)
@@ -80,7 +94,7 @@ jobs:
       # manually in two phases: deploy backward-compatible code first, then
       # migrate.
       - name: Apply D1 migrations
-        if: github.event_name == 'push' || (inputs.deploy_worker && inputs.apply_migrations)
+        if: startsWith(github.ref, 'refs/tags/') || (inputs.deploy_worker && inputs.apply_migrations)
         run: |
           nix develop .#worker --command bash -c "cd $WORKER_DIR && wrangler d1 migrations apply takusu --remote"
         env:
@@ -88,7 +102,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
       - name: Deploy to Cloudflare Workers
-        if: github.event_name == 'push' || inputs.deploy_worker
+        if: startsWith(github.ref, 'refs/tags/') || inputs.deploy_worker
         run: |
           nix develop .#worker --command bash -c "cd $WORKER_DIR && wrangler deploy"
         env:

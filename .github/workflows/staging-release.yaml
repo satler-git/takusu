@@ -1,0 +1,170 @@
+name: Staging release
+
+on:
+  push:
+    branches:
+      - 'staging-v*'
+
+concurrency:
+  group: staging-release-${{ github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    if: github.actor == 'satler-git'
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      version: ${{ steps.meta.outputs.version }}
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout staging branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Parse staging branch
+        id: meta
+        env:
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          if [[ "$BRANCH" =~ ^staging-(v.+)$ ]]; then
+            tag="${BASH_REMATCH[1]}"
+            version="${tag#v}"
+            echo "tag=$tag" >> "$GITHUB_OUTPUT"
+            echo "version=$version" >> "$GITHUB_OUTPUT"
+          else
+            echo "invalid branch name: $BRANCH" >&2
+            exit 1
+          fi
+
+      - name: Verify Cargo.toml version
+        env:
+          EXPECTED_VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          actual=$(grep '^version' Cargo.toml | head -1 | cut -d'"' -f2)
+          if [ "$actual" != "$EXPECTED_VERSION" ]; then
+            echo "Cargo.toml version ($actual) does not match branch version ($EXPECTED_VERSION)" >&2
+            exit 1
+          fi
+
+      - name: Check tag does not exist
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
+            echo "tag ${TAG} already exists" >&2
+            exit 1
+          fi
+
+  create-pr:
+    needs: validate
+    runs-on: ubuntu-latest
+    if: github.actor == 'satler-git'
+    outputs:
+      pr_number: ${{ steps.pr.outputs.pr_number }}
+    permissions:
+      pull-requests: write
+      contents: read
+    steps:
+      - name: Checkout staging branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Find or create release PR
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ github.ref_name }}
+          TAG: ${{ needs.validate.outputs.tag }}
+        run: |
+          number=$(gh pr list --head "$BRANCH" --base main --json number --jq '.[0].number')
+          if [ -z "$number" ]; then
+            url=$(gh pr create \
+              --base main \
+              --head "$BRANCH" \
+              --title "release ${TAG}" \
+              --body "staging release ${TAG}" \
+              --no-maintainer-edit)
+            number=$(basename "$url")
+          fi
+          echo "pr_number=$number" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: create-pr
+    if: github.actor == 'satler-git'
+    uses: ./.github/workflows/release.yaml
+    with:
+      deploy_worker: false
+      apply_migrations: false
+    secrets: inherit
+    permissions:
+      actions: write
+      contents: read
+
+  merge-and-tag:
+    needs: [validate, create-pr, build]
+    runs-on: ubuntu-latest
+    if: github.actor == 'satler-git'
+    permissions:
+      pull-requests: write
+      contents: write
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Merge PR and push release tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ needs.create-pr.outputs.pr_number }}
+          TAG: ${{ needs.validate.outputs.tag }}
+        run: |
+          if ! gh pr merge "$PR_NUMBER" --merge --subject "release ${TAG}" --delete-branch; then
+            echo "standard merge failed, retrying with admin override"
+            gh pr merge "$PR_NUMBER" --merge --admin --subject "release ${TAG}" --delete-branch
+          fi
+          git fetch origin main
+          git checkout -B main origin/main
+          git tag "$TAG"
+          git push origin "$TAG"
+
+  cleanup:
+    needs: [validate, create-pr, build, merge-and-tag]
+    if: |
+      github.actor == 'satler-git' &&
+      failure() &&
+      (needs.validate.result == 'failure' ||
+       needs.create-pr.result == 'failure' ||
+       needs.build.result == 'failure' ||
+       needs.merge-and-tag.result == 'failure')
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Close PR and delete staging branch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          number=$(gh pr list --head "$BRANCH" --base main --json number --jq '.[0].number')
+          if [ -n "$number" ]; then
+            gh pr close "$number" --delete-branch || true
+          else
+            git push origin --delete "$BRANCH" || true
+          fi

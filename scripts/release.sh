@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Cut a release: bump versions everywhere, commit, tag, and push.
+# Start a staging release: bump versions, create a staging-v* branch, and push.
 #
 # Usage:
 #   ./scripts/release.sh              # auto: v0.YYYYMMDD.n (next n for today)
@@ -12,7 +12,7 @@
 #   mobile/app.json         (expo.version)
 #   mobile/package.json     (version)
 #
-# The git tag (with "v" prefix) is what triggers .github/workflows/release.yaml.
+# The staging branch name (staging-v*) is what triggers .github/workflows/staging-release.yaml.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -39,8 +39,7 @@ if [ -n "$EXPLICIT" ]; then
 else
   TODAY="$(date +%Y%m%d)"
   # Find the highest n used today (v0.YYYYMMDD.n) and increment.
-  # Use jj tag list (not git tag) so the view matches what jj tag set will
-  # see — git and jj can diverge after partial fetches.
+  # Use jj tag list (not git tag) so the view matches what jj sees.
   LAST_N=$(jj tag list "v0.${TODAY}.*" 2>/dev/null \
             | sed 's/:.*//' \
             | sed "s/^v0\.${TODAY}\.//" \
@@ -53,15 +52,23 @@ else
 fi
 
 TAG="v${VERSION}"
+STAGING_BRANCH="staging-${TAG}"
 
 echo "── Release: ${TAG} ──"
 echo ""
 
-# ── Sanity: refuse if tag already exists ───────────────────────────────────
-# Use jj tag list for consistency with the version computation above and
-# jj tag set below.
-if jj tag list "$TAG" 2>/dev/null | grep -q .; then
-  echo "Error: tag ${TAG} already exists" >&2
+# ── Sanity: refuse if the staging branch or tag already exists ─────────────
+if git ls-remote --exit-code --heads origin "refs/heads/${STAGING_BRANCH}" >/dev/null 2>&1; then
+  echo "Error: branch ${STAGING_BRANCH} already exists on origin" >&2
+  exit 1
+fi
+if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
+  echo "Error: tag ${TAG} already exists on origin" >&2
+  exit 1
+fi
+
+if jj bookmark list "${STAGING_BRANCH}" 2>/dev/null | grep -q .; then
+  echo "Error: bookmark ${STAGING_BRANCH} already exists" >&2
   exit 1
 fi
 
@@ -74,11 +81,11 @@ echo "  mobile/package.json     (version)"
 echo ""
 echo "This will:"
 echo "  1. Create a new change with these version bumps"
-echo "  2. Create git tag ${TAG}"
+echo "  2. Create the staging branch ${STAGING_BRANCH}"
 if [ "$NO_PUSH" -eq 1 ]; then
   echo "  3. (skip push — --no-push)"
 else
-  echo "  3. Push the tag to origin (triggers release workflow)"
+  echo "  3. Push ${STAGING_BRANCH} to origin (triggers staging-release workflow)"
 fi
 echo ""
 read -r -p "Proceed? [y/N] " ans
@@ -87,7 +94,7 @@ case "$ans" in
   *) echo "Aborted."; exit 1 ;;
 esac
 
-# ── Apply version bumps, describe, tag ──────────────────────────────────────
+# ── Apply version bumps, describe, create staging branch ────────────────────
 # If the current change is empty (no description, no edits), reuse it instead
 # of creating a redundant empty change on top.
 IS_EMPTY=$(jj log -r @ --no-graph --no-pager -T 'if(empty && !description, "yes", "no")')
@@ -114,23 +121,22 @@ cargo check --workspace --quiet
 
 jj describe -m "release ${TAG}"
 
-# Move the main bookmark to the release commit so that main carries the
-# version bump. Without this, main would keep the pre-release version
-# forever (the bump commit would only live on the tag object).
-jj bookmark set main -r @ --allow-backwards
-
-# Tag the current working-copy commit (@) — jj tag set manages tags in jj.
-jj tag set "$TAG"
+# Create the staging branch. If the current change also carries the main
+# bookmark, move main back to its parent so the version bump lives only on
+# the staging branch and gets merged by the staging-release workflow.
+jj bookmark create "${STAGING_BRANCH}"
+if jj log -r @ --no-graph --no-pager -T 'bookmarks' | grep -qw "main"; then
+  jj bookmark set main -r @- --allow-backwards
+fi
 
 echo ""
-echo "Created tag ${TAG} on @ (main bookmark moved to @)"
+echo "Created staging branch ${STAGING_BRANCH} on @"
 
 if [ "$NO_PUSH" -eq 0 ]; then
-  echo "Pushing main and tag to origin..."
-  jj git push --bookmark main
-  git push origin "$TAG"
-  echo "Pushed. The release workflow should start shortly:"
-  echo "  https://github.com/satler-git/takusu/actions/workflows/release.yaml"
+  echo "Pushing ${STAGING_BRANCH} to origin..."
+  jj git push --bookmark "${STAGING_BRANCH}"
+  echo "Pushed. The staging-release workflow should start shortly:"
+  echo "  https://github.com/satler-git/takusu/actions/workflows/staging-release.yaml"
 else
-  echo "(--no-push: tag and bookmark created locally only)"
+  echo "(--no-push: staging branch created locally only)"
 fi
