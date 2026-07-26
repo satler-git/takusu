@@ -1867,10 +1867,25 @@ export function SettingsDetailView({
                 <Text style={[styles.label, { color: colors.gray }]}>
                   ライセンス
                 </Text>
-                <Text style={[styles.value, { color: colors.black }]}>
-                  MIT{'\n'}
-                  Copyright (c) 2025 satler
-                </Text>
+                <Pressable
+                  style={[
+                    styles.categoryRow,
+                    { borderBottomColor: colors.separator },
+                  ]}
+                  onPress={() => {
+                    haptic.select();
+                    router.push('/settings/licenses');
+                  }}
+                >
+                  <Text style={[styles.categoryLabel, { color: colors.black }]}>
+                    ライセンス一覧
+                  </Text>
+                  <Ionicons
+                    name="chevron-forward"
+                    size={20}
+                    color={colors.gray}
+                  />
+                </Pressable>
               </View>
 
               {/* Log export */}

@@ -3,6 +3,7 @@ mod config;
 mod display_rich;
 mod display_simple;
 mod editor;
+mod licenses;
 #[cfg(feature = "mcp")]
 mod mcp;
 mod server;
@@ -156,6 +157,9 @@ enum Commands {
         #[arg(long)]
         bind: Option<String>,
     },
+
+    /// Show third-party licenses
+    License,
 }
 
 #[derive(Subcommand)]
@@ -941,6 +945,11 @@ fn main() {
             return;
         }
 
+        if matches!(cli.command, Some(Commands::License)) {
+            licenses::print_licenses();
+            return;
+        }
+
         // Handle config commands before building the app so storage/worker_url
         // changes are reflected immediately.
         if let Some(Commands::Config { command }) = &cli.command {
@@ -1182,6 +1191,7 @@ async fn run(
         Commands::Mcp => mcp::run(app).await?,
         Commands::GenRootToken => unreachable!(),
         Commands::Completion { .. } => unreachable!(),
+        Commands::License => unreachable!(),
         Commands::Config { command } => run_config(command, app.as_ref(), cfg).await?,
         Commands::Tui => {
             takusu_tui::run(app, tz)

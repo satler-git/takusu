@@ -6,6 +6,7 @@ pub mod play;
 pub mod record;
 pub mod stt;
 pub mod tts;
+pub mod tts_normalize;
 
 #[cfg(feature = "hush")]
 pub mod hush;
@@ -29,3 +30,4 @@ pub use models::{
 pub use record::{RecordConfig, RecorderError, record};
 pub use stt::{SpeechToText, SttError};
 pub use tts::{TextToSpeech, TtsBackend, TtsConfig, TtsError, TtsOptions, TtsRequest, TtsStream};
+pub use tts_normalize::normalize_for_tts;

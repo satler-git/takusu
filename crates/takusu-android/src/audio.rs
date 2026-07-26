@@ -8,7 +8,7 @@ use std::sync::{
 use takusu_audio::{
     CartesiaOutputFormat, CartesiaSonic, CartesiaSonicConfig, Hush, SherpaOnnxAsr,
     SherpaOnnxAsrConfig, SherpaOnnxModel, SpeechToText, SttError, TextToSpeech, TtsOptions,
-    TtsRequest,
+    TtsRequest, normalize_for_tts,
 };
 use tokio::runtime::{Builder, Runtime};
 
@@ -217,6 +217,17 @@ impl MobileAudio {
         let tts = self.tts.as_ref().ok_or(TakusuError::Audio {
             detail: "TTS backend is not configured".to_string(),
         })?;
+        // Lindera dictionary initialization can block on first use, so run
+        // the normalization off the runtime worker threads.
+        let runtime = self.ensure_runtime()?;
+        let language = self.language.clone();
+        let text = runtime
+            .block_on(tokio::task::spawn_blocking(move || {
+                normalize_for_tts(&text, &language).into_owned()
+            }))
+            .map_err(|error| TakusuError::Audio {
+                detail: format!("TTS normalization failed: {error}"),
+            })?;
         let request = TtsRequest {
             text,
             voice: Some(self.voice_id.clone()),
@@ -226,7 +237,6 @@ impl MobileAudio {
                 speed: self.speed,
             },
         };
-        let runtime = self.ensure_runtime()?;
         runtime
             .block_on(tts.synthesize(&request))
             .map_err(|error| TakusuError::Audio {
