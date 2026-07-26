@@ -2,7 +2,7 @@
 // Fields: title, start_at (optional), end_at (required), avg_minutes, sigma_minutes, abandonability, description
 // Can add dependency targets (select from existing tasks)
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import {
   Pressable,
   ScrollView,
@@ -19,7 +19,7 @@ import { useServer } from '@/src/api/ServerProvider';
 import { undoRedo } from '@/src/api/undoRedo';
 import { showError } from '@/src/api/errors';
 import type { TaskRow } from '@/src/api/types';
-import { BRAND_COLOR, useColors } from '@/src/theme';
+import { useColors, type ColorSet } from '@/src/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DateTimePickerModal } from '@/src/components/DateTimePickerModal';
 import { haptic } from '@/src/components/haptics';
@@ -39,6 +39,222 @@ interface TaskAddViewProps {
   embedded?: boolean;
 }
 
+const makeStyles = (colors: ColorSet) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+    },
+    topBar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 8,
+      paddingBottom: 8,
+    },
+    backButton: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    title: {
+      fontSize: 18,
+      fontWeight: '600',
+      marginLeft: 8,
+    },
+    saveButton: {
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+      backgroundColor: colors.brand,
+      borderRadius: 8,
+    },
+    saveButtonText: {
+      fontSize: 14,
+      fontWeight: '600',
+    },
+    content: {
+      padding: 16,
+      gap: 16,
+    },
+    field: {
+      gap: 4,
+    },
+    row: {
+      flexDirection: 'row',
+      gap: 12,
+    },
+    rowWithButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    inputWithButton: {
+      flex: 1,
+    },
+    maximizeButton: {
+      width: 36,
+      height: 36,
+      borderRadius: 8,
+      borderWidth: 1.5,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    maximizeButtonDisabled: {
+      borderColor: colors.grayLight,
+      opacity: 0.4,
+    },
+    label: {
+      fontSize: 13,
+      fontWeight: '500',
+    },
+    hint: {
+      fontSize: 11,
+      marginTop: 2,
+    },
+    input: {
+      borderWidth: 1,
+      borderRadius: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      fontSize: 16,
+    },
+    dateField: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      borderWidth: 1,
+      borderRadius: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 12,
+      gap: 8,
+    },
+    dateText: {
+      flex: 1,
+      fontSize: 16,
+    },
+    clearIcon: {
+      padding: 4,
+    },
+    multiline: {
+      minHeight: 80,
+    },
+    icalInput: {
+      minHeight: 120,
+      fontFamily: 'monospace',
+      fontSize: 12,
+    },
+    icalHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      paddingVertical: 4,
+    },
+    icalImportButton: {
+      paddingHorizontal: 16,
+      paddingVertical: 10,
+      backgroundColor: colors.brand,
+      borderRadius: 8,
+      alignItems: 'center',
+      marginTop: 8,
+    },
+    toggleRow: {
+      flexDirection: 'row',
+      gap: 24,
+    },
+    toggleItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    toggleLabel: {
+      fontSize: 14,
+    },
+    depHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+    },
+    addDepButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 12,
+      paddingVertical: 4,
+      backgroundColor: colors.brand,
+      borderRadius: 6,
+      gap: 4,
+    },
+    addDepButtonText: {
+      fontSize: 13,
+    },
+    depItem: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingVertical: 8,
+      paddingHorizontal: 12,
+      borderRadius: 8,
+      marginTop: 4,
+    },
+    depItemText: {
+      fontSize: 14,
+    },
+    depPicker: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      zIndex: 100,
+    },
+    depPickerHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      padding: 16,
+      borderBottomWidth: 1,
+    },
+    depPickerTitle: {
+      fontSize: 18,
+      fontWeight: '600',
+    },
+    depPickerClose: {
+      fontSize: 14,
+      color: colors.brand,
+    },
+    depPickerList: {
+      flex: 1,
+    },
+    depPickerItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      paddingVertical: 16,
+      paddingHorizontal: 16,
+      borderBottomWidth: 1,
+    },
+    depPickerItemId: {
+      fontSize: 13,
+      fontWeight: '500',
+      fontVariant: ['tabular-nums'],
+    },
+    depPickerItemText: {
+      fontSize: 16,
+      flex: 1,
+    },
+    depSearchContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 16,
+      paddingVertical: 10,
+      gap: 8,
+      borderBottomWidth: 1,
+    },
+    depSearchInput: {
+      flex: 1,
+      fontSize: 16,
+      paddingVertical: 4,
+    },
+  });
+
 export function TaskAddView({
   onClose,
   initialDeps: propDeps,
@@ -47,6 +263,7 @@ export function TaskAddView({
   const { client } = useServer();
   const router = useRouter();
   const colors = useColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const insets = useSafeAreaInsets();
   const { showTopToast } = useTopToast();
   const { deps } = useLocalSearchParams<{ deps?: string }>();
@@ -176,7 +393,7 @@ export function TaskAddView({
             close();
           }}
         >
-          <Ionicons name="chevron-back" size={28} color={BRAND_COLOR} />
+          <Ionicons name="chevron-back" size={28} color={colors.brand} />
         </Pressable>
         <Text style={[styles.title, { color: colors.black }]}>新規タスク</Text>
         <View style={{ flex: 1 }} />
@@ -230,7 +447,7 @@ export function TaskAddView({
               setPickerField('start');
             }}
           >
-            <Ionicons name="calendar-outline" size={20} color={BRAND_COLOR} />
+            <Ionicons name="calendar-outline" size={20} color={colors.brand} />
             <Text
               style={[
                 styles.dateText,
@@ -271,7 +488,7 @@ export function TaskAddView({
               setPickerField('end');
             }}
           >
-            <Ionicons name="calendar-outline" size={20} color={BRAND_COLOR} />
+            <Ionicons name="calendar-outline" size={20} color={colors.brand} />
             <Text
               style={[
                 styles.dateText,
@@ -303,7 +520,7 @@ export function TaskAddView({
               <Pressable
                 style={[
                   styles.maximizeButton,
-                  { borderColor: BRAND_COLOR },
+                  { borderColor: colors.brand },
                   (!startAt || !endAt) && styles.maximizeButtonDisabled,
                 ]}
                 disabled={!startAt || !endAt}
@@ -317,7 +534,7 @@ export function TaskAddView({
                   setAvgMinutes(String(diffMin));
                 }}
               >
-                <Ionicons name="expand" size={16} color={BRAND_COLOR} />
+                <Ionicons name="expand" size={16} color={colors.brand} />
               </Pressable>
             </View>
             {startAt &&
@@ -403,7 +620,7 @@ export function TaskAddView({
             minimumValue={0}
             maximumValue={1}
             step={0.25}
-            minimumTrackTintColor={BRAND_COLOR}
+            minimumTrackTintColor={colors.brand}
           />
         </View>
 
@@ -420,7 +637,7 @@ export function TaskAddView({
               <Checkbox
                 status={parallelizable ? 'checked' : 'unchecked'}
                 onPress={() => setParallelizable(!parallelizable)}
-                color={BRAND_COLOR}
+                color={colors.brand}
               />
             </Pressable>
             <Pressable
@@ -433,7 +650,7 @@ export function TaskAddView({
               <Checkbox
                 status={allowsParallel ? 'checked' : 'unchecked'}
                 onPress={() => setAllowsParallel(!allowsParallel)}
-                color={BRAND_COLOR}
+                color={colors.brand}
               />
             </Pressable>
           </View>
@@ -447,7 +664,7 @@ export function TaskAddView({
             <Checkbox
               status={fixed ? 'checked' : 'unchecked'}
               onPress={() => setFixed(!fixed)}
-              color={BRAND_COLOR}
+              color={colors.brand}
             />
           </View>
           <Text style={[styles.hint, { color: colors.grayLight }]}>
@@ -734,218 +951,3 @@ export function TaskAddView({
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingBottom: 8,
-  },
-  backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginLeft: 8,
-  },
-  saveButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: BRAND_COLOR,
-    borderRadius: 8,
-  },
-  saveButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  content: {
-    padding: 16,
-    gap: 16,
-  },
-  field: {
-    gap: 4,
-  },
-  row: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  rowWithButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  inputWithButton: {
-    flex: 1,
-  },
-  maximizeButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 8,
-    borderWidth: 1.5,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  maximizeButtonDisabled: {
-    borderColor: '#CCC',
-    opacity: 0.4,
-  },
-  label: {
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  hint: {
-    fontSize: 11,
-    marginTop: 2,
-  },
-  input: {
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    fontSize: 16,
-  },
-  dateField: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    gap: 8,
-  },
-  dateText: {
-    flex: 1,
-    fontSize: 16,
-  },
-  clearIcon: {
-    padding: 4,
-  },
-  multiline: {
-    minHeight: 80,
-  },
-  icalInput: {
-    minHeight: 120,
-    fontFamily: 'monospace',
-    fontSize: 12,
-  },
-  icalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingVertical: 4,
-  },
-  icalImportButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    backgroundColor: BRAND_COLOR,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  toggleRow: {
-    flexDirection: 'row',
-    gap: 24,
-  },
-  toggleItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  toggleLabel: {
-    fontSize: 14,
-  },
-  depHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  addDepButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    backgroundColor: BRAND_COLOR,
-    borderRadius: 6,
-    gap: 4,
-  },
-  addDepButtonText: {
-    fontSize: 13,
-  },
-  depItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    marginTop: 4,
-  },
-  depItemText: {
-    fontSize: 14,
-  },
-  depPicker: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    zIndex: 100,
-  },
-  depPickerHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 16,
-    borderBottomWidth: 1,
-  },
-  depPickerTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  depPickerClose: {
-    fontSize: 14,
-    color: BRAND_COLOR,
-  },
-  depPickerList: {
-    flex: 1,
-  },
-  depPickerItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingVertical: 16,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-  },
-  depPickerItemId: {
-    fontSize: 13,
-    fontWeight: '500',
-    fontVariant: ['tabular-nums'],
-  },
-  depPickerItemText: {
-    fontSize: 16,
-    flex: 1,
-  },
-  depSearchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    gap: 8,
-    borderBottomWidth: 1,
-  },
-  depSearchInput: {
-    flex: 1,
-    fontSize: 16,
-    paddingVertical: 4,
-  },
-});

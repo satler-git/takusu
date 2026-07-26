@@ -50,9 +50,7 @@ export function DeleteConfirmMenuItem({
       title={armed ? 'もう一度タップして削除' : '削除'}
       leadingIcon={armed ? 'trash-can' : 'trash-can-outline'}
       titleStyle={armed ? { color: colors.red } : undefined}
-      style={
-        armed ? { backgroundColor: 'rgba(224, 112, 112, 0.15)' } : undefined
-      }
+      style={armed ? { backgroundColor: colors.destructiveBg } : undefined}
     />
   );
 }

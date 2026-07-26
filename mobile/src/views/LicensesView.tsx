@@ -15,7 +15,7 @@ import {
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useColors, BRAND_COLOR } from '@/src/theme';
+import { useColors } from '@/src/theme';
 import { haptic } from '@/src/components/haptics';
 
 type LicenseEntry = {
@@ -103,7 +103,9 @@ export function LicensesView() {
             router.back();
           }}
         >
-          <Text style={[styles.backButtonText, { color: BRAND_COLOR }]}>‹</Text>
+          <Text style={[styles.backButtonText, { color: colors.brand }]}>
+            ‹
+          </Text>
         </Pressable>
         <Text style={[styles.title, { color: colors.black }]}>ライセンス</Text>
       </View>

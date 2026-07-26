@@ -31,7 +31,7 @@ import type {
   TaskStatus,
   RedundantDependency,
 } from '@/src/api/types';
-import { BRAND_COLOR, useColors } from '@/src/theme';
+import { useColors, type ColorSet } from '@/src/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DateTimePickerModal } from '@/src/components/DateTimePickerModal';
 import { haptic } from '@/src/components/haptics';
@@ -85,10 +85,240 @@ function formatTime(iso?: string): string {
     .padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
 }
 
+const makeStyles = (colors: ColorSet) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+    },
+    topBar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 4,
+      paddingBottom: 4,
+    },
+    content: {
+      flex: 1,
+    },
+    contentContainer: {
+      padding: 16,
+      gap: 16,
+    },
+    loading: {
+      textAlign: 'center',
+      marginTop: 40,
+    },
+    title: {
+      fontSize: 24,
+      fontWeight: '600',
+    },
+    titleInput: {
+      fontSize: 20,
+    },
+    statusRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      borderWidth: 1,
+      borderRadius: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+    },
+    statusText: {
+      flex: 1,
+      fontSize: 15,
+      fontWeight: '500',
+    },
+    timeText: {
+      fontSize: 14,
+    },
+    section: {
+      gap: 4,
+    },
+    sectionLabel: {
+      fontSize: 13,
+      fontWeight: '500',
+    },
+    hint: {
+      fontSize: 11,
+      marginTop: 2,
+      flex: 1,
+    },
+    sectionValue: {
+      fontSize: 16,
+    },
+    sliderContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+    },
+    slider: {
+      flex: 1,
+    },
+    sliderValue: {
+      fontSize: 14,
+      fontVariant: ['tabular-nums'],
+    },
+    habitLink: {
+      fontSize: 16,
+      color: colors.brand,
+    },
+    descriptionInput: {
+      minHeight: 80,
+    },
+    depLink: {
+      fontSize: 14,
+      color: colors.brand,
+      paddingVertical: 4,
+    },
+    depRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    timeEditContainer: {
+      gap: 8,
+    },
+    dateField: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      borderWidth: 1,
+      borderRadius: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      gap: 8,
+    },
+    dateText: {
+      flex: 1,
+      fontSize: 15,
+    },
+    costEditContainer: {
+      flexDirection: 'row',
+      gap: 12,
+    },
+    avgInputContainer: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    costInput: {
+      flex: 1,
+    },
+    costHint: {
+      fontSize: 11,
+      marginTop: 2,
+      marginLeft: 4,
+    },
+    toggleRow: {
+      flexDirection: 'row',
+      gap: 24,
+    },
+    toggleItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    toggleLabel: {
+      fontSize: 14,
+    },
+    miniGraph: {
+      marginTop: 12,
+      paddingTop: 12,
+      borderTopWidth: 1,
+      gap: 4,
+    },
+    miniGraphLabel: {
+      fontSize: 12,
+      marginBottom: 4,
+    },
+    depHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+    },
+    depModal: {
+      margin: 24,
+      borderRadius: 12,
+      padding: 16,
+      maxHeight: '70%',
+    },
+    depModalTitle: {
+      fontSize: 18,
+      fontWeight: '600',
+      marginBottom: 8,
+    },
+    depModalSearch: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      borderBottomWidth: 1,
+      paddingBottom: 8,
+      marginBottom: 8,
+    },
+    depModalSearchInput: {
+      flex: 1,
+      fontSize: 15,
+    },
+    depModalList: {
+      maxHeight: 400,
+    },
+    depModalEmpty: {
+      textAlign: 'center',
+      paddingVertical: 24,
+    },
+    depModalClose: {
+      marginTop: 8,
+    },
+    saveBar: {
+      paddingHorizontal: 16,
+      paddingTop: 8,
+      borderTopWidth: 1,
+      borderTopColor: colors.separator,
+    },
+    saveBarButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      paddingVertical: 14,
+      borderRadius: 12,
+    },
+    saveBarText: {
+      fontSize: 18,
+      fontWeight: '700',
+    },
+    progressHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 8,
+    },
+    progressActionsRow: {
+      flexDirection: 'row',
+      gap: 8,
+      marginBottom: 8,
+    },
+    progressButton: {
+      flex: 1,
+      height: 48,
+      borderRadius: 10,
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexDirection: 'row',
+      borderWidth: 1,
+      borderColor: 'transparent',
+    },
+    progressButtonFlex: {
+      flex: 1,
+    },
+    progressButtonFull: {
+      marginBottom: 8,
+    },
+  });
+
 export function TaskDetailView() {
   const { client, notifications } = useServer();
   const router = useRouter();
   const colors = useColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
   const [task, setTask] = useState<TaskRow | null>(null);
@@ -763,7 +993,7 @@ export function TaskDetailView() {
       nodes.push({
         id: t.id,
         label: t.title,
-        color: isDone ? '#aaa' : BRAND_COLOR,
+        color: isDone ? colors.done : colors.brand,
         x: 0,
         y: 0,
         vx: 0,
@@ -772,7 +1002,7 @@ export function TaskDetailView() {
     }
 
     return { detailGraphNodes: nodes, detailGraphEdges: edges };
-  }, [allTasks, task]);
+  }, [allTasks, colors, task]);
 
   if (!task) {
     return (
@@ -814,7 +1044,7 @@ export function TaskDetailView() {
       <View style={[styles.topBar, { paddingTop: 4 + insets.top }]}>
         <IconButton
           icon="chevron-left"
-          iconColor={BRAND_COLOR}
+          iconColor={colors.brand}
           size={28}
           onPress={() => {
             haptic.light();
@@ -827,7 +1057,7 @@ export function TaskDetailView() {
             <IconButton
               icon="check"
               iconColor={colors.white}
-              containerColor={BRAND_COLOR}
+              containerColor={colors.brand}
               size={22}
               onPress={() => {
                 haptic.medium();
@@ -846,7 +1076,7 @@ export function TaskDetailView() {
         ) : (
           <IconButton
             icon="pencil-outline"
-            iconColor={BRAND_COLOR}
+            iconColor={colors.brand}
             size={22}
             onPress={() => {
               haptic.light();
@@ -860,7 +1090,7 @@ export function TaskDetailView() {
           anchor={
             <IconButton
               icon="dots-vertical"
-              iconColor={BRAND_COLOR}
+              iconColor={colors.brand}
               size={24}
               onPress={() => setMenuVisible(true)}
             />
@@ -892,7 +1122,7 @@ export function TaskDetailView() {
             onChangeText={setTitle}
             label="タイトル"
             outlineColor={colors.separator}
-            activeOutlineColor={BRAND_COLOR}
+            activeOutlineColor={colors.brand}
             style={styles.titleInput}
             contentStyle={{ fontSize: 20, fontWeight: '600' }}
           />
@@ -920,7 +1150,7 @@ export function TaskDetailView() {
                 <Ionicons
                   name={STATUS_ICONS[editing ? status : task.status]}
                   size={20}
-                  color={BRAND_COLOR}
+                  color={colors.brand}
                 />
                 <Text style={[styles.statusText, { color: colors.black }]}>
                   {STATUS_LABELS[editing ? status : task.status]}
@@ -1027,7 +1257,7 @@ export function TaskDetailView() {
                     styles.progressButton,
                     styles.progressButtonFlex,
                     {
-                      backgroundColor: BRAND_COLOR,
+                      backgroundColor: colors.brand,
                       opacity: pressed ? 0.8 : 1,
                     },
                   ]}
@@ -1074,7 +1304,7 @@ export function TaskDetailView() {
                   <Ionicons
                     name="calendar-outline"
                     size={18}
-                    color={BRAND_COLOR}
+                    color={colors.brand}
                   />
                   <Text
                     style={[
@@ -1109,7 +1339,7 @@ export function TaskDetailView() {
                   <Ionicons
                     name="calendar-outline"
                     size={18}
-                    color={BRAND_COLOR}
+                    color={colors.brand}
                   />
                   <Text
                     style={[
@@ -1172,14 +1402,14 @@ export function TaskDetailView() {
                   autoCapitalize="none"
                   autoCorrect={false}
                   outlineColor={colors.separator}
-                  activeOutlineColor={BRAND_COLOR}
+                  activeOutlineColor={colors.brand}
                   style={styles.costInput}
                   dense
                 />
                 <IconButton
                   icon="arrow-expand"
                   size={18}
-                  iconColor={BRAND_COLOR}
+                  iconColor={colors.brand}
                   disabled={!startAt || !endAt}
                   onPress={() => {
                     if (!startAt || !endAt) return;
@@ -1201,7 +1431,7 @@ export function TaskDetailView() {
                   autoCapitalize="none"
                   autoCorrect={false}
                   outlineColor={colors.separator}
-                  activeOutlineColor={BRAND_COLOR}
+                  activeOutlineColor={colors.brand}
                   dense
                 />
                 {sigmaMinutes === '' && (
@@ -1249,7 +1479,7 @@ export function TaskDetailView() {
                   }
                   keyboardType="number-pad"
                   outlineColor={colors.separator}
-                  activeOutlineColor={BRAND_COLOR}
+                  activeOutlineColor={colors.brand}
                   dense
                 />
               </View>
@@ -1260,7 +1490,7 @@ export function TaskDetailView() {
                   value={quantityUnit}
                   onChangeText={setQuantityUnit}
                   outlineColor={colors.separator}
-                  activeOutlineColor={BRAND_COLOR}
+                  activeOutlineColor={colors.brand}
                   dense
                 />
               </View>
@@ -1289,10 +1519,10 @@ export function TaskDetailView() {
                 minimumValue={0}
                 maximumValue={1}
                 step={0.25}
-                minimumTrackTintColor={BRAND_COLOR}
+                minimumTrackTintColor={colors.brand}
                 style={styles.slider}
               />
-              <Text style={[styles.sliderValue, { color: BRAND_COLOR }]}>
+              <Text style={[styles.sliderValue, { color: colors.brand }]}>
                 {abandonability.toFixed(2)}
               </Text>
             </View>
@@ -1345,7 +1575,7 @@ export function TaskDetailView() {
               multiline
               numberOfLines={4}
               outlineColor={colors.separator}
-              activeOutlineColor={BRAND_COLOR}
+              activeOutlineColor={colors.brand}
               style={styles.descriptionInput}
             />
           ) : (
@@ -1380,7 +1610,7 @@ export function TaskDetailView() {
                     haptic.select();
                     setParallelizable(!parallelizable);
                   }}
-                  color={BRAND_COLOR}
+                  color={colors.brand}
                 />
               </Pressable>
               <Pressable
@@ -1399,7 +1629,7 @@ export function TaskDetailView() {
                     haptic.select();
                     setAllowsParallel(!allowsParallel);
                   }}
-                  color={BRAND_COLOR}
+                  color={colors.brand}
                 />
               </Pressable>
             </View>
@@ -1415,7 +1645,7 @@ export function TaskDetailView() {
                 <Checkbox
                   status={task.parallelizable ? 'checked' : 'unchecked'}
                   disabled
-                  color={BRAND_COLOR}
+                  color={colors.brand}
                 />
               </View>
               <View style={styles.toggleItem}>
@@ -1425,7 +1655,7 @@ export function TaskDetailView() {
                 <Checkbox
                   status={task.allows_parallel ? 'checked' : 'unchecked'}
                   disabled
-                  color={BRAND_COLOR}
+                  color={colors.brand}
                 />
               </View>
             </Pressable>
@@ -1445,7 +1675,7 @@ export function TaskDetailView() {
                   haptic.select();
                   setFixed(!fixed);
                 }}
-                color={BRAND_COLOR}
+                color={colors.brand}
               />
               <Text style={[styles.hint, { color: colors.grayLight }]}>
                 開始時刻を固定し、スケジューラの移動を許可しない
@@ -1459,7 +1689,7 @@ export function TaskDetailView() {
               <Checkbox
                 status={task.fixed ? 'checked' : 'unchecked'}
                 disabled
-                color={BRAND_COLOR}
+                color={colors.brand}
               />
             </Pressable>
           )}
@@ -1480,7 +1710,7 @@ export function TaskDetailView() {
                   setDepSearch('');
                   setDepModalVisible(true);
                 }}
-                textColor={BRAND_COLOR}
+                textColor={colors.brand}
               >
                 + 追加
               </Button>
@@ -1576,7 +1806,7 @@ export function TaskDetailView() {
           ]}
         >
           <Pressable
-            style={[styles.saveBarButton, { backgroundColor: BRAND_COLOR }]}
+            style={[styles.saveBarButton, { backgroundColor: colors.brand }]}
             onPress={() => {
               haptic.medium();
               save();
@@ -1708,7 +1938,7 @@ export function TaskDetailView() {
               placeholder="タイトルで検索"
               placeholderTextColor={colors.grayLight}
               outlineColor={colors.separator}
-              activeOutlineColor={BRAND_COLOR}
+              activeOutlineColor={colors.brand}
               style={styles.depModalSearchInput}
               dense
               autoFocus
@@ -1753,7 +1983,7 @@ export function TaskDetailView() {
                     left={() => (
                       <List.Icon
                         icon={STATUS_ICONS[t.status] as string}
-                        color={BRAND_COLOR}
+                        color={colors.brand}
                       />
                     )}
                   />
@@ -1767,7 +1997,7 @@ export function TaskDetailView() {
               haptic.light();
               setDepModalVisible(false);
             }}
-            textColor={BRAND_COLOR}
+            textColor={colors.brand}
             style={styles.depModalClose}
           >
             閉じる
@@ -1777,231 +2007,3 @@ export function TaskDetailView() {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 4,
-    paddingBottom: 4,
-  },
-  content: {
-    flex: 1,
-  },
-  contentContainer: {
-    padding: 16,
-    gap: 16,
-  },
-  loading: {
-    textAlign: 'center',
-    marginTop: 40,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: '600',
-  },
-  titleInput: {
-    fontSize: 20,
-  },
-  statusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  statusText: {
-    flex: 1,
-    fontSize: 15,
-    fontWeight: '500',
-  },
-  timeText: {
-    fontSize: 14,
-  },
-  section: {
-    gap: 4,
-  },
-  sectionLabel: {
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  hint: {
-    fontSize: 11,
-    marginTop: 2,
-    flex: 1,
-  },
-  sectionValue: {
-    fontSize: 16,
-  },
-  sliderContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  slider: {
-    flex: 1,
-  },
-  sliderValue: {
-    fontSize: 14,
-    fontVariant: ['tabular-nums'],
-  },
-  habitLink: {
-    fontSize: 16,
-    color: BRAND_COLOR,
-  },
-  descriptionInput: {
-    minHeight: 80,
-  },
-  depLink: {
-    fontSize: 14,
-    color: BRAND_COLOR,
-    paddingVertical: 4,
-  },
-  depRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  timeEditContainer: {
-    gap: 8,
-  },
-  dateField: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    gap: 8,
-  },
-  dateText: {
-    flex: 1,
-    fontSize: 15,
-  },
-  costEditContainer: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  avgInputContainer: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  costInput: {
-    flex: 1,
-  },
-  costHint: {
-    fontSize: 11,
-    marginTop: 2,
-    marginLeft: 4,
-  },
-  toggleRow: {
-    flexDirection: 'row',
-    gap: 24,
-  },
-  toggleItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  toggleLabel: {
-    fontSize: 14,
-  },
-  miniGraph: {
-    marginTop: 12,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    gap: 4,
-  },
-  miniGraphLabel: {
-    fontSize: 12,
-    marginBottom: 4,
-  },
-  depHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  depModal: {
-    margin: 24,
-    borderRadius: 12,
-    padding: 16,
-    maxHeight: '70%',
-  },
-  depModalTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 8,
-  },
-  depModalSearch: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    borderBottomWidth: 1,
-    paddingBottom: 8,
-    marginBottom: 8,
-  },
-  depModalSearchInput: {
-    flex: 1,
-    fontSize: 15,
-  },
-  depModalList: {
-    maxHeight: 400,
-  },
-  depModalEmpty: {
-    textAlign: 'center',
-    paddingVertical: 24,
-  },
-  depModalClose: {
-    marginTop: 8,
-  },
-  saveBar: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#eee',
-  },
-  saveBarButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 14,
-    borderRadius: 12,
-  },
-  saveBarText: {
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  progressHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  progressActionsRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 8,
-  },
-  progressButton: {
-    flex: 1,
-    height: 48,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    borderWidth: 1,
-    borderColor: 'transparent',
-  },
-  progressButtonFlex: {
-    flex: 1,
-  },
-  progressButtonFull: {
-    marginBottom: 8,
-  },
-});

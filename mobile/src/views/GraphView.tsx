@@ -13,7 +13,7 @@ import type { TakusuClient } from '@/src/api/client';
 import { showError } from '@/src/api/errors';
 import type { TaskRow, HabitRow, RedundantDependency } from '@/src/api/types';
 import { parseDepends } from '@/src/api/types';
-import { BRAND_COLOR, useTheme, habitColorFor } from '@/src/theme';
+import { useTheme, habitColorFor } from '@/src/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { haptic } from '@/src/components/haptics';
 import {
@@ -95,10 +95,10 @@ export function GraphView({
         ? habitDisplayIdMap.get(task.habit_id)
         : undefined;
       const color = isDone
-        ? '#aaa'
+        ? colors.done
         : habitDisplayId !== undefined
           ? habitColorFor(habitDisplayId, theme)
-          : BRAND_COLOR;
+          : colors.brand;
       nodes.push({
         id: task.id,
         label: task.title,
@@ -124,7 +124,7 @@ export function GraphView({
 
     setGraphNodes(nodes);
     setGraphEdges(edges);
-  }, [client, theme]);
+  }, [client, colors, theme]);
 
   // Refresh when focused and the client is ready. This covers both the
   // initial mount and returning from TaskDetailView after editing edges (#386).
@@ -206,7 +206,7 @@ export function GraphView({
         <View style={styles.topBarLeft}>
           <IconButton
             icon="chevron-left"
-            iconColor={BRAND_COLOR}
+            iconColor={colors.brand}
             size={28}
             onPress={() => {
               haptic.light();
@@ -218,8 +218,8 @@ export function GraphView({
           <Button
             mode={editMode ? 'contained' : 'outlined'}
             onPress={toggleEditMode}
-            textColor={editMode ? colors.white : BRAND_COLOR}
-            buttonColor={editMode ? BRAND_COLOR : undefined}
+            textColor={editMode ? colors.white : colors.brand}
+            buttonColor={editMode ? colors.brand : undefined}
             style={styles.editButton}
             labelStyle={styles.editButtonLabel}
             contentStyle={styles.editButtonContent}

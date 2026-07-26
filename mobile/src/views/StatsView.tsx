@@ -28,7 +28,7 @@ import { logError, showError } from '@/src/api/errors';
 import { parseSchedule } from '@/src/api/types';
 import type { HabitRow, ScheduleEntry, TaskRow } from '@/src/api/types';
 import { formatDuration } from '@/src/utils/duration';
-import { useTheme, BRAND_COLOR, habitColorFor } from '@/src/theme';
+import { useTheme, habitColorFor, type ColorSet } from '@/src/theme';
 import { haptic } from '@/src/components/haptics';
 import { dateKey, todayDateKey } from '@/src/utils/dateKey';
 
@@ -320,9 +320,10 @@ function StatCard({
   color?: string;
 }) {
   const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <View style={[styles.card, { backgroundColor: colors.surface }]}>
-      <Text style={[styles.cardValue, { color: color ?? BRAND_COLOR }]}>
+      <Text style={[styles.cardValue, { color: color ?? colors.brand }]}>
         {value}
       </Text>
       <Text style={[styles.cardLabel, { color: colors.gray }]}>{label}</Text>
@@ -340,6 +341,7 @@ function Heatmap({
   maxCount: number;
 }) {
   const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const weeks = useMemo(() => buildWeeks(dayKeys), [dayKeys]);
 
   return (
@@ -376,7 +378,7 @@ function Heatmap({
                       styles.cell,
                       {
                         backgroundColor:
-                          count > 0 ? BRAND_COLOR : colors.grayLight,
+                          count > 0 ? colors.brand : colors.grayLight,
                         opacity,
                       },
                     ]}
@@ -401,6 +403,7 @@ function DailyStackedBars({
   maxTotal: number;
 }) {
   const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const scale = maxTotal > 0 ? BAR_HEIGHT / maxTotal : 0;
 
   return (
@@ -427,7 +430,7 @@ function DailyStackedBars({
                   <View
                     style={{
                       height: remainingH,
-                      backgroundColor: BRAND_COLOR,
+                      backgroundColor: colors.brand,
                     }}
                   />
                 )}
@@ -468,6 +471,7 @@ function FutureForecast({
   todayKey: string;
 }) {
   const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
 
   return (
     <View style={styles.forecastContainer}>
@@ -486,7 +490,7 @@ function FutureForecast({
             <Text
               style={[
                 styles.forecastDate,
-                { color: isToday ? BRAND_COLOR : colors.black },
+                { color: isToday ? colors.brand : colors.black },
               ]}
             >
               {label}
@@ -502,7 +506,7 @@ function FutureForecast({
                   styles.forecastBar,
                   {
                     width: `${(count / maxCount) * 100}%`,
-                    backgroundColor: isToday ? BRAND_COLOR : colors.brandLight,
+                    backgroundColor: isToday ? colors.brand : colors.brandLight,
                   },
                 ]}
               />
@@ -517,10 +521,203 @@ function FutureForecast({
   );
 }
 
+const makeStyles = (colors: ColorSet) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+    },
+    topBar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 4,
+      paddingBottom: 4,
+    },
+    topBarCenter: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    topBarRight: {
+      width: 48,
+    },
+    title: {
+      fontSize: 18,
+      fontWeight: '600',
+    },
+    scroll: {
+      flex: 1,
+    },
+    section: {
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+    },
+    todaySection: {
+      paddingBottom: 4,
+    },
+    loader: {
+      marginTop: 40,
+    },
+    cards: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 8,
+      paddingHorizontal: 16,
+      paddingTop: 8,
+    },
+    card: {
+      flex: 1,
+      minWidth: 72,
+      borderRadius: 12,
+      paddingVertical: 12,
+      paddingHorizontal: 8,
+      alignItems: 'center',
+      shadowColor: colors.shadow,
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.1,
+      shadowRadius: 2,
+      elevation: 2,
+    },
+    cardValue: {
+      fontSize: 22,
+      fontWeight: '700',
+    },
+    cardLabel: {
+      fontSize: 12,
+      marginTop: 4,
+    },
+    summaryText: {
+      fontSize: 13,
+      paddingHorizontal: 16,
+      paddingTop: 8,
+      lineHeight: 20,
+    },
+    sectionTitle: {
+      fontSize: 15,
+      fontWeight: '600',
+      marginBottom: 8,
+    },
+    heatmapContainer: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+    },
+    weekdayLabels: {
+      marginRight: 4,
+    },
+    weekdayLabel: {
+      fontSize: 10,
+      height: 16,
+      lineHeight: 16,
+    },
+    heatmapScroll: {
+      flexDirection: 'row',
+    },
+    heatmapGrid: {
+      flexDirection: 'row',
+    },
+    weekColumn: {
+      flexDirection: 'column',
+      marginRight: 2,
+    },
+    cell: {
+      width: 14,
+      height: 14,
+      borderRadius: 2,
+      marginBottom: 2,
+    },
+    legend: {
+      flexDirection: 'row',
+      gap: 16,
+      marginBottom: 8,
+    },
+    legendItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+    legendDot: {
+      width: 10,
+      height: 10,
+      borderRadius: 5,
+    },
+    legendText: {
+      fontSize: 12,
+    },
+    barScroll: {
+      flexDirection: 'row',
+    },
+    barChart: {
+      flexDirection: 'row',
+      alignItems: 'flex-end',
+    },
+    barColumn: {
+      width: 24,
+      marginRight: 4,
+      alignItems: 'center',
+    },
+    barStack: {
+      width: 18,
+      borderRadius: 2,
+      overflow: 'hidden',
+    },
+    barDate: {
+      fontSize: 9,
+      marginTop: 2,
+    },
+    forecastContainer: {
+      gap: 8,
+    },
+    forecastRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    forecastDate: {
+      width: 80,
+      fontSize: 12,
+    },
+    forecastTrack: {
+      flex: 1,
+      height: 10,
+      borderRadius: 5,
+      marginHorizontal: 8,
+      overflow: 'hidden',
+    },
+    forecastBar: {
+      height: '100%',
+      borderRadius: 5,
+    },
+    forecastCount: {
+      width: 28,
+      fontSize: 13,
+      fontWeight: '600',
+      textAlign: 'right',
+    },
+    habitRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 10,
+      borderBottomWidth: 1,
+    },
+    habitDot: {
+      width: 10,
+      height: 10,
+      borderRadius: 5,
+      marginRight: 10,
+    },
+    habitTitle: {
+      flex: 1,
+      fontSize: 15,
+    },
+    habitCount: {
+      fontSize: 15,
+      fontWeight: '600',
+    },
+  });
+
 export function StatsView() {
   const { client } = useServer();
   const router = useRouter();
   const { theme, colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const insets = useSafeAreaInsets();
 
   const [tasks, setTasks] = useState<TaskRow[]>([]);
@@ -601,7 +798,7 @@ export function StatsView() {
       <View style={[styles.topBar, { paddingTop: 8 + insets.top }]}>
         <IconButton
           icon="chevron-left"
-          iconColor={BRAND_COLOR}
+          iconColor={colors.brand}
           size={28}
           onPress={handleBack}
         />
@@ -620,14 +817,14 @@ export function StatsView() {
             value={period}
             onValueChange={handlePeriodChange}
             buttons={PERIOD_BUTTONS}
-            theme={{ colors: { primary: BRAND_COLOR } }}
+            theme={{ colors: { primary: colors.brand } }}
           />
         </View>
 
         {loading ? (
           <ActivityIndicator
             size="large"
-            color={BRAND_COLOR}
+            color={colors.brand}
             style={styles.loader}
           />
         ) : (
@@ -741,7 +938,10 @@ export function StatsView() {
                 </View>
                 <View style={styles.legendItem}>
                   <View
-                    style={[styles.legendDot, { backgroundColor: BRAND_COLOR }]}
+                    style={[
+                      styles.legendDot,
+                      { backgroundColor: colors.brand },
+                    ]}
                   />
                   <Text style={[styles.legendText, { color: colors.gray }]}>
                     残り
@@ -777,7 +977,7 @@ export function StatsView() {
                   const habitColor =
                     displayId !== undefined
                       ? habitColorFor(displayId, theme)
-                      : BRAND_COLOR;
+                      : colors.brand;
                   return (
                     <View
                       key={e.habit.id}
@@ -811,194 +1011,3 @@ export function StatsView() {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 4,
-    paddingBottom: 4,
-  },
-  topBarCenter: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  topBarRight: {
-    width: 48,
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  scroll: {
-    flex: 1,
-  },
-  section: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  todaySection: {
-    paddingBottom: 4,
-  },
-  loader: {
-    marginTop: 40,
-  },
-  cards: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    paddingHorizontal: 16,
-    paddingTop: 8,
-  },
-  card: {
-    flex: 1,
-    minWidth: 72,
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 8,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  cardValue: {
-    fontSize: 22,
-    fontWeight: '700',
-  },
-  cardLabel: {
-    fontSize: 12,
-    marginTop: 4,
-  },
-  summaryText: {
-    fontSize: 13,
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    lineHeight: 20,
-  },
-  sectionTitle: {
-    fontSize: 15,
-    fontWeight: '600',
-    marginBottom: 8,
-  },
-  heatmapContainer: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-  },
-  weekdayLabels: {
-    marginRight: 4,
-  },
-  weekdayLabel: {
-    fontSize: 10,
-    height: 16,
-    lineHeight: 16,
-  },
-  heatmapScroll: {
-    flexDirection: 'row',
-  },
-  heatmapGrid: {
-    flexDirection: 'row',
-  },
-  weekColumn: {
-    flexDirection: 'column',
-    marginRight: 2,
-  },
-  cell: {
-    width: 14,
-    height: 14,
-    borderRadius: 2,
-    marginBottom: 2,
-  },
-  legend: {
-    flexDirection: 'row',
-    gap: 16,
-    marginBottom: 8,
-  },
-  legendItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  legendDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-  },
-  legendText: {
-    fontSize: 12,
-  },
-  barScroll: {
-    flexDirection: 'row',
-  },
-  barChart: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-  },
-  barColumn: {
-    width: 24,
-    marginRight: 4,
-    alignItems: 'center',
-  },
-  barStack: {
-    width: 18,
-    borderRadius: 2,
-    overflow: 'hidden',
-  },
-  barDate: {
-    fontSize: 9,
-    marginTop: 2,
-  },
-  forecastContainer: {
-    gap: 8,
-  },
-  forecastRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  forecastDate: {
-    width: 80,
-    fontSize: 12,
-  },
-  forecastTrack: {
-    flex: 1,
-    height: 10,
-    borderRadius: 5,
-    marginHorizontal: 8,
-    overflow: 'hidden',
-  },
-  forecastBar: {
-    height: '100%',
-    borderRadius: 5,
-  },
-  forecastCount: {
-    width: 28,
-    fontSize: 13,
-    fontWeight: '600',
-    textAlign: 'right',
-  },
-  habitRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-  },
-  habitDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    marginRight: 10,
-  },
-  habitTitle: {
-    flex: 1,
-    fontSize: 15,
-  },
-  habitCount: {
-    fontSize: 15,
-    fontWeight: '600',
-  },
-});

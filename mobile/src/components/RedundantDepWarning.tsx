@@ -10,7 +10,7 @@
 // The parent owns the actual deletion (calling updateTask / replaceHabitSteps)
 // via `onResolve(fromId, toId)` — removing `toId` from `fromId`'s depends list.
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import {
   Modal,
   Pressable,
@@ -20,7 +20,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { BRAND_COLOR, useColors } from '@/src/theme';
+import { useColors, type ColorSet } from '@/src/theme';
 import { haptic } from '@/src/components/haptics';
 import type { RedundantDependency } from '@/src/api/types';
 
@@ -34,12 +34,89 @@ interface RedundantDepWarningProps {
   nodeLabel: (id: string, title: string) => string;
 }
 
+const makeStyles = (colors: ColorSet) =>
+  StyleSheet.create({
+    banner: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      borderWidth: 1,
+      borderRadius: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      marginTop: 4,
+    },
+    bannerText: {
+      flex: 1,
+      fontSize: 13,
+      fontWeight: '500',
+    },
+    overlay: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      backgroundColor: colors.overlay,
+      padding: 20,
+    },
+    sheet: {
+      width: '100%',
+      maxWidth: 380,
+      maxHeight: '80%',
+      borderRadius: 14,
+      padding: 16,
+    },
+    sheetHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: 12,
+    },
+    sheetTitle: {
+      fontSize: 17,
+      fontWeight: '700',
+    },
+    sheetBody: {
+      gap: 12,
+    },
+    edgeCard: {
+      borderWidth: 1,
+      borderRadius: 10,
+      padding: 12,
+      gap: 8,
+    },
+    edgePath: {
+      fontSize: 14,
+      fontWeight: '600',
+    },
+    edgeDesc: {
+      fontSize: 12,
+    },
+    optionButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      borderWidth: 1,
+      borderRadius: 8,
+      paddingHorizontal: 10,
+      paddingVertical: 8,
+    },
+    optionText: {
+      fontSize: 13,
+      fontWeight: '500',
+    },
+    optionHint: {
+      fontSize: 11,
+      marginTop: 4,
+    },
+  });
+
 export function RedundantDepWarning({
   edges,
   onResolve,
   nodeLabel,
 }: RedundantDepWarningProps) {
   const colors = useColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [visible, setVisible] = useState(false);
   const [resolving, setResolving] = useState(false);
 
@@ -64,7 +141,7 @@ export function RedundantDepWarning({
       <Pressable
         style={[
           styles.banner,
-          { backgroundColor: '#F5E5D5', borderColor: colors.red },
+          { backgroundColor: colors.warningBg, borderColor: colors.red },
         ]}
         onPress={() => {
           haptic.light();
@@ -163,7 +240,7 @@ export function RedundantDepWarning({
                         key={`${pe.from}-${pe.to}-${j}`}
                         style={[
                           styles.optionButton,
-                          { borderColor: BRAND_COLOR },
+                          { borderColor: colors.brand },
                           resolving && { opacity: 0.5 },
                         ]}
                         disabled={resolving}
@@ -172,10 +249,10 @@ export function RedundantDepWarning({
                         <Ionicons
                           name="remove-circle-outline"
                           size={16}
-                          color={BRAND_COLOR}
+                          color={colors.brand}
                         />
                         <Text
-                          style={[styles.optionText, { color: BRAND_COLOR }]}
+                          style={[styles.optionText, { color: colors.brand }]}
                         >
                           {nodeLabel(pe.from, edge.via[j]!.title)}
                           {' → '}
@@ -193,78 +270,3 @@ export function RedundantDepWarning({
     </>
   );
 }
-
-const styles = StyleSheet.create({
-  banner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    marginTop: 4,
-  },
-  bannerText: {
-    flex: 1,
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  overlay: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    padding: 20,
-  },
-  sheet: {
-    width: '100%',
-    maxWidth: 380,
-    maxHeight: '80%',
-    borderRadius: 14,
-    padding: 16,
-  },
-  sheetHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  sheetTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-  },
-  sheetBody: {
-    gap: 12,
-  },
-  edgeCard: {
-    borderWidth: 1,
-    borderRadius: 10,
-    padding: 12,
-    gap: 8,
-  },
-  edgePath: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  edgeDesc: {
-    fontSize: 12,
-  },
-  optionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
-  optionText: {
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  optionHint: {
-    fontSize: 11,
-    marginTop: 4,
-  },
-});

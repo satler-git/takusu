@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { TaskRow } from '@/src/api/types';
-import { useTheme, BRAND_COLOR } from '@/src/theme';
+import { useTheme, type ColorSet } from '@/src/theme';
 import { haptic } from '@/src/components/haptics';
 import { type ProgressPayload } from '@/src/utils/progress';
 
@@ -31,6 +31,62 @@ interface TaskProgressSheetProps {
   onRecord?: (payload: ProgressPayload) => void | Promise<void>;
 }
 
+const makeStyles = (colors: ColorSet) =>
+  StyleSheet.create({
+    overlay: {
+      flex: 1,
+      justifyContent: 'flex-end',
+      backgroundColor: colors.overlay,
+    },
+    sheet: {
+      borderTopLeftRadius: 20,
+      borderTopRightRadius: 20,
+      padding: 20,
+      gap: 12,
+    },
+    title: {
+      fontSize: 16,
+      fontWeight: '700',
+      marginBottom: 4,
+    },
+    row: {
+      flexDirection: 'row',
+      gap: 8,
+    },
+    input: {
+      borderWidth: 1,
+      borderRadius: 10,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      fontSize: 15,
+    },
+    inputFlex: {
+      flex: 1,
+    },
+    note: {
+      marginTop: 4,
+    },
+    actions: {
+      flexDirection: 'row',
+      gap: 8,
+      marginTop: 8,
+    },
+    button: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 12,
+      borderRadius: 10,
+    },
+    secondary: {
+      borderWidth: 1,
+    },
+    primaryText: {
+      color: colors.onBrand,
+      fontWeight: '600',
+    },
+  });
+
 export function TaskProgressSheet({
   visible,
   task,
@@ -40,6 +96,7 @@ export function TaskProgressSheet({
   onRecord,
 }: TaskProgressSheetProps) {
   const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const insets = useSafeAreaInsets();
   const currentDone = useMemo(() => task.quantity_done ?? 0, [task]);
   const currentTotal = useMemo(() => task.quantity_total, [task]);
@@ -256,7 +313,7 @@ export function TaskProgressSheet({
               style={[
                 styles.button,
                 {
-                  backgroundColor: BRAND_COLOR,
+                  backgroundColor: colors.brand,
                   opacity: isSubmitting ? 0.6 : 1,
                 },
               ]}
@@ -278,58 +335,3 @@ export function TaskProgressSheet({
     </Modal>
   );
 }
-
-const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0,0,0,0.35)',
-  },
-  sheet: {
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 20,
-    gap: 12,
-  },
-  title: {
-    fontSize: 16,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  row: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  input: {
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 15,
-  },
-  inputFlex: {
-    flex: 1,
-  },
-  note: {
-    marginTop: 4,
-  },
-  actions: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 8,
-  },
-  button: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    borderRadius: 10,
-  },
-  secondary: {
-    borderWidth: 1,
-  },
-  primaryText: {
-    color: '#FFFFFF',
-    fontWeight: '600',
-  },
-});

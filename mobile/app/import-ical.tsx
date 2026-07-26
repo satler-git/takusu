@@ -12,7 +12,7 @@ import {
 } from 'expo-sharing';
 import { useServer } from '@/src/api/ServerProvider';
 import { showError } from '@/src/api/errors';
-import { BRAND_COLOR, useColors } from '@/src/theme';
+import { useColors } from '@/src/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { haptic } from '@/src/components/haptics';
 
@@ -88,7 +88,7 @@ export default function ImportIcalRoute() {
             close();
           }}
         >
-          <Ionicons name="chevron-back" size={28} color={BRAND_COLOR} />
+          <Ionicons name="chevron-back" size={28} color={colors.brand} />
         </Pressable>
         <Text style={[styles.title, { color: colors.black }]}>
           iCalインポート
@@ -111,12 +111,12 @@ export default function ImportIcalRoute() {
         )}
         {status === 'done' && (
           <View style={styles.centerContent}>
-            <Ionicons name="checkmark-circle" size={64} color={BRAND_COLOR} />
+            <Ionicons name="checkmark-circle" size={64} color={colors.brand} />
             <Text style={[styles.statusText, { color: colors.black }]}>
               {imported}件のタスクをインポートしました
             </Text>
             <Pressable
-              style={[styles.doneButton, { backgroundColor: BRAND_COLOR }]}
+              style={[styles.doneButton, { backgroundColor: colors.brand }]}
               onPress={() => {
                 haptic.light();
                 close();
@@ -135,7 +135,7 @@ export default function ImportIcalRoute() {
               インポートに失敗しました
             </Text>
             <Pressable
-              style={[styles.doneButton, { backgroundColor: BRAND_COLOR }]}
+              style={[styles.doneButton, { backgroundColor: colors.brand }]}
               onPress={() => {
                 haptic.light();
                 close();

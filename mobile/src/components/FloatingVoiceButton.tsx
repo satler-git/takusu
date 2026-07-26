@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
@@ -12,15 +12,52 @@ import { usePathname, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useServer } from '@/src/api/ServerProvider';
 import { useVoice } from '@/src/api/VoiceContext';
-import { BRAND_COLOR, useColors } from '@/src/theme';
+import { useColors, type ColorSet } from '@/src/theme';
 import { haptic } from '@/src/components/haptics';
 
 const TASKADD_SLIDE_THRESHOLD = 60;
 
 type ButtonState = 'idle' | 'pending' | 'gesture';
 
+const makeStyles = (colors: ColorSet) =>
+  StyleSheet.create({
+    container: {
+      position: 'absolute',
+      left: '50%',
+      width: 56,
+      zIndex: 100,
+      transform: [{ translateX: -28 }],
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    button: {
+      width: 56,
+      height: 56,
+      borderRadius: 28,
+      backgroundColor: colors.brand,
+      alignItems: 'center',
+      justifyContent: 'center',
+      shadowColor: colors.shadow,
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.3,
+      shadowRadius: 4,
+      elevation: 4,
+    },
+    hint: {
+      position: 'absolute',
+      bottom: 76,
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: 12,
+      borderRadius: 32,
+      backgroundColor: colors.surfaceTranslucent,
+      opacity: 0,
+    },
+  });
+
 export function FloatingVoiceButton() {
   const colors = useColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const pathname = usePathname();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -174,7 +211,7 @@ export function FloatingVoiceButton() {
       pointerEvents="box-none"
     >
       <Reanimated.View style={[styles.hint, hintStyle]}>
-        <Ionicons name="arrow-up" size={28} color={BRAND_COLOR} />
+        <Ionicons name="arrow-up" size={28} color={colors.brand} />
       </Reanimated.View>
       <GestureDetector gesture={panGesture}>
         <Reanimated.View style={[styles.button, buttonStyle]}>
@@ -184,38 +221,3 @@ export function FloatingVoiceButton() {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    position: 'absolute',
-    left: '50%',
-    width: 56,
-    zIndex: 100,
-    transform: [{ translateX: -28 }],
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  button: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: BRAND_COLOR,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-  hint: {
-    position: 'absolute',
-    bottom: 76,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 12,
-    borderRadius: 32,
-    backgroundColor: 'rgba(255,255,255,0.9)',
-    opacity: 0,
-  },
-});

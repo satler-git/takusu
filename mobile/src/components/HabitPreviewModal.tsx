@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import {
   asBoolean,
   asNumber,
@@ -19,7 +19,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BRAND_COLOR, useColors, type ColorSet } from '@/src/theme';
+import { useColors, type ColorSet } from '@/src/theme';
 import { haptic } from '@/src/components/haptics';
 import { AgentClient } from '@/src/api/agentClient';
 import { showError } from '@/src/api/errors';
@@ -33,6 +33,73 @@ interface HabitPreviewModalProps {
   title?: string;
 }
 
+const makeStyles = (colors: ColorSet) =>
+  StyleSheet.create({
+    overlay: {
+      flex: 1,
+      backgroundColor: colors.overlay,
+      justifyContent: 'center',
+      paddingHorizontal: 16,
+    },
+    container: {
+      borderRadius: 16,
+      borderWidth: 1,
+      maxHeight: '80%',
+      overflow: 'hidden',
+    },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      borderBottomWidth: 1,
+    },
+    headerTitle: {
+      fontSize: 16,
+      fontWeight: '700',
+    },
+    closeButton: {
+      padding: 4,
+    },
+    list: {
+      padding: 12,
+      gap: 8,
+    },
+    loader: {
+      padding: 24,
+    },
+    empty: {
+      textAlign: 'center',
+      padding: 24,
+      fontSize: 14,
+    },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      borderRadius: 8,
+      borderWidth: 1,
+      padding: 8,
+    },
+    index: {
+      fontSize: 14,
+      fontWeight: '700',
+      minWidth: 20,
+    },
+    rowBody: {
+      flex: 1,
+      gap: 0,
+    },
+    title: {
+      fontSize: 13,
+      fontWeight: '600',
+    },
+    time: {
+      fontSize: 11,
+    },
+  });
+
 export function HabitPreviewModal({
   visible,
   onClose,
@@ -41,6 +108,7 @@ export function HabitPreviewModal({
   title,
 }: HabitPreviewModalProps) {
   const colors = useColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const insets = useSafeAreaInsets();
   const { tasks, loading } = usePreviewTasks(visible, client, habit, title);
 
@@ -196,6 +264,7 @@ interface TaskRowProps {
 }
 
 function TaskRow({ task, index, colors }: TaskRowProps) {
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const start = parseIso(task.start_at);
   const end = parseIso(task.end_at);
   const durationMin =
@@ -212,7 +281,7 @@ function TaskRow({ task, index, colors }: TaskRowProps) {
         },
       ]}
     >
-      <Text style={[styles.index, { color: BRAND_COLOR }]}>{index + 1}</Text>
+      <Text style={[styles.index, { color: colors.brand }]}>{index + 1}</Text>
       <View style={styles.rowBody}>
         <Text style={[styles.title, { color: colors.black }]} numberOfLines={1}>
           {task.title}
@@ -248,69 +317,3 @@ function formatTimeOnly(d: Date): string {
   const m = String(d.getMinutes()).padStart(2, '0');
   return `${h}:${m}`;
 }
-
-const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'center',
-    paddingHorizontal: 16,
-  },
-  container: {
-    borderRadius: 16,
-    borderWidth: 1,
-    maxHeight: '80%',
-    overflow: 'hidden',
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-  },
-  headerTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  closeButton: {
-    padding: 4,
-  },
-  list: {
-    padding: 12,
-    gap: 8,
-  },
-  loader: {
-    padding: 24,
-  },
-  empty: {
-    textAlign: 'center',
-    padding: 24,
-    fontSize: 14,
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    borderRadius: 8,
-    borderWidth: 1,
-    padding: 8,
-  },
-  index: {
-    fontSize: 14,
-    fontWeight: '700',
-    minWidth: 20,
-  },
-  rowBody: {
-    flex: 1,
-    gap: 0,
-  },
-  title: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  time: {
-    fontSize: 11,
-  },
-});

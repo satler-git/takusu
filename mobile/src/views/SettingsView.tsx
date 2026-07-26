@@ -9,7 +9,7 @@
 // detail screen. The horizontal tab bar overflowed on small screens, making
 // some categories (notably "情報") unreachable.
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -39,7 +39,12 @@ import {
 } from 'react-native-nitro-google-signin';
 import { useServer } from '@/src/api/ServerProvider';
 import type { GoogleCalSettings, SettingsRow } from '@/src/api/types';
-import { useColors, BRAND_COLOR, APP_THEMES, type AppTheme } from '@/src/theme';
+import {
+  useColors,
+  APP_THEMES,
+  type AppTheme,
+  type ColorSet,
+} from '@/src/theme';
 import {
   formatTime,
   minutesToTime,
@@ -134,9 +139,150 @@ function themeLabel(t: AppTheme): string {
 
 // ── Category list screen ──
 // Replaces the horizontal tab bar that overflowed on small screens (issue #127).
+const makeStyles = (colors: ColorSet) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+    },
+    topBar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 8,
+      paddingBottom: 8,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+    },
+    backButton: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    backButtonText: {
+      fontSize: 28,
+    },
+    title: {
+      fontSize: 18,
+      fontWeight: '600',
+      marginLeft: 8,
+    },
+    body: {
+      flex: 1,
+    },
+    content: {
+      padding: 16,
+      gap: 16,
+    },
+    categoryRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingVertical: 16,
+      paddingHorizontal: 4,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+    },
+    categoryLabel: {
+      fontSize: 16,
+    },
+    groupLabel: {
+      fontSize: 13,
+      fontWeight: '600',
+      marginBottom: 4,
+      paddingHorizontal: 4,
+    },
+    settingRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingVertical: 8,
+    },
+    settingLabel: {
+      fontSize: 16,
+    },
+    field: {
+      gap: 4,
+    },
+    label: {
+      fontSize: 13,
+      fontWeight: '500',
+    },
+    value: {
+      fontSize: 16,
+    },
+    input: {
+      borderWidth: 1,
+      borderRadius: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      fontSize: 16,
+    },
+    helpText: {
+      fontSize: 12,
+      marginTop: 2,
+    },
+    warning: {
+      fontSize: 13,
+      fontWeight: '500',
+    },
+    loader: {
+      paddingVertical: 16,
+    },
+    actionButton: {
+      paddingHorizontal: 16,
+      paddingVertical: 10,
+      borderRadius: 8,
+      alignItems: 'center',
+    },
+    actionButtonText: {
+      color: colors.onBrand,
+      fontSize: 14,
+      fontWeight: '600',
+    },
+    notifGroup: {
+      gap: 8,
+    },
+    timeField: {
+      borderWidth: 1,
+      borderRadius: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      alignItems: 'flex-end',
+    },
+    timeText: {
+      fontSize: 16,
+      fontWeight: '500',
+      fontVariant: ['tabular-nums'],
+    },
+    healthResult: {
+      fontSize: 13,
+      fontFamily: 'monospace',
+      paddingHorizontal: 4,
+    },
+    healthResultRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+    themeDropdown: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderRadius: 8,
+      borderWidth: 1,
+      minWidth: 140,
+    },
+    themeDropdownText: {
+      fontSize: 15,
+      fontWeight: '500',
+    },
+  });
+
 export function SettingsCategoryView() {
   const router = useRouter();
   const colors = useColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const insets = useSafeAreaInsets();
   const {
     restartServer,
@@ -169,7 +315,9 @@ export function SettingsCategoryView() {
             router.back();
           }}
         >
-          <Text style={[styles.backButtonText, { color: BRAND_COLOR }]}>‹</Text>
+          <Text style={[styles.backButtonText, { color: colors.brand }]}>
+            ‹
+          </Text>
         </Pressable>
         <Text style={[styles.title, { color: colors.black }]}>設定</Text>
       </View>
@@ -213,7 +361,7 @@ export function SettingsCategoryView() {
         <View style={styles.field}>
           <Text style={[styles.label, { color: colors.gray }]}>サーバー</Text>
           <Pressable
-            style={[styles.actionButton, { backgroundColor: BRAND_COLOR }]}
+            style={[styles.actionButton, { backgroundColor: colors.brand }]}
             onPress={() => {
               haptic.medium();
               restartServer();
@@ -221,7 +369,7 @@ export function SettingsCategoryView() {
             disabled={restarting || !workersUrl.trim() || !workersToken.trim()}
           >
             {restarting ? (
-              <ActivityIndicator color="#FFFFFF" />
+              <ActivityIndicator color={colors.onBrand} />
             ) : (
               <Text style={styles.actionButtonText}>サーバーを再起動</Text>
             )}
@@ -258,6 +406,7 @@ export function SettingsDetailView({
     setNotifications,
   } = useServer();
   const colors = useColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const insets = useSafeAreaInsets();
   const { showTopToast } = useTopToast();
   const [notifPickerField, setNotifPickerField] = useState<
@@ -861,7 +1010,9 @@ export function SettingsDetailView({
             router.back();
           }}
         >
-          <Text style={[styles.backButtonText, { color: BRAND_COLOR }]}>‹</Text>
+          <Text style={[styles.backButtonText, { color: colors.brand }]}>
+            ‹
+          </Text>
         </Pressable>
         <Text style={[styles.title, { color: colors.black }]}>
           {CATEGORY_LABELS[category]}
@@ -948,7 +1099,7 @@ export function SettingsDetailView({
               </View>
 
               {sleepLoading ? (
-                <ActivityIndicator color={BRAND_COLOR} style={styles.loader} />
+                <ActivityIndicator color={colors.brand} style={styles.loader} />
               ) : (
                 <>
                   <View style={styles.field}>
@@ -998,7 +1149,7 @@ export function SettingsDetailView({
                   <Pressable
                     style={[
                       styles.actionButton,
-                      { backgroundColor: BRAND_COLOR },
+                      { backgroundColor: colors.brand },
                     ]}
                     onPress={() => {
                       haptic.medium();
@@ -1007,7 +1158,7 @@ export function SettingsDetailView({
                     disabled={sleepSaving || !client}
                   >
                     {sleepSaving ? (
-                      <ActivityIndicator color="#FFFFFF" />
+                      <ActivityIndicator color={colors.onBrand} />
                     ) : (
                       <Text style={styles.actionButtonText}>設定を保存</Text>
                     )}
@@ -1020,7 +1171,7 @@ export function SettingsDetailView({
           {category === 'sleep' && (
             <>
               {sleepLoading ? (
-                <ActivityIndicator color={BRAND_COLOR} style={styles.loader} />
+                <ActivityIndicator color={colors.brand} style={styles.loader} />
               ) : (
                 <>
                   <View style={styles.notifGroup}>
@@ -1066,7 +1217,7 @@ export function SettingsDetailView({
                   <Pressable
                     style={[
                       styles.actionButton,
-                      { backgroundColor: BRAND_COLOR },
+                      { backgroundColor: colors.brand },
                     ]}
                     onPress={() => {
                       haptic.medium();
@@ -1075,7 +1226,7 @@ export function SettingsDetailView({
                     disabled={sleepSaving || !client}
                   >
                     {sleepSaving ? (
-                      <ActivityIndicator color="#FFFFFF" />
+                      <ActivityIndicator color={colors.onBrand} />
                     ) : (
                       <Text style={styles.actionButtonText}>設定を保存</Text>
                     )}
@@ -1088,7 +1239,7 @@ export function SettingsDetailView({
           {category === 'workload' && (
             <>
               {workloadLoading ? (
-                <ActivityIndicator color={BRAND_COLOR} style={styles.loader} />
+                <ActivityIndicator color={colors.brand} style={styles.loader} />
               ) : (
                 <>
                   <View style={styles.field}>
@@ -1128,7 +1279,7 @@ export function SettingsDetailView({
                   <Pressable
                     style={[
                       styles.actionButton,
-                      { backgroundColor: BRAND_COLOR },
+                      { backgroundColor: colors.brand },
                     ]}
                     onPress={() => {
                       haptic.medium();
@@ -1137,7 +1288,7 @@ export function SettingsDetailView({
                     disabled={workloadSaving || !client}
                   >
                     {workloadSaving ? (
-                      <ActivityIndicator color="#FFFFFF" />
+                      <ActivityIndicator color={colors.onBrand} />
                     ) : (
                       <Text style={styles.actionButtonText}>設定を保存</Text>
                     )}
@@ -1150,7 +1301,7 @@ export function SettingsDetailView({
           {category === 'solver' && (
             <>
               {solverLoading ? (
-                <ActivityIndicator color={BRAND_COLOR} style={styles.loader} />
+                <ActivityIndicator color={colors.brand} style={styles.loader} />
               ) : (
                 <>
                   <View style={styles.settingRow}>
@@ -1250,14 +1401,14 @@ export function SettingsDetailView({
                         haptic.select();
                         setWarmStartValue(v);
                       }}
-                      trackColor={{ true: BRAND_COLOR }}
+                      trackColor={{ true: colors.brand }}
                     />
                   </View>
 
                   <Pressable
                     style={[
                       styles.actionButton,
-                      { backgroundColor: BRAND_COLOR },
+                      { backgroundColor: colors.brand },
                     ]}
                     onPress={() => {
                       haptic.medium();
@@ -1266,7 +1417,7 @@ export function SettingsDetailView({
                     disabled={solverSaving || !client || !solverDirty}
                   >
                     {solverSaving ? (
-                      <ActivityIndicator color="#FFFFFF" />
+                      <ActivityIndicator color={colors.onBrand} />
                     ) : (
                       <Text style={styles.actionButtonText}>設定を保存</Text>
                     )}
@@ -1289,7 +1440,7 @@ export function SettingsDetailView({
                     haptic.select();
                     setNotifications({ ...notifications, enabled: v });
                   }}
-                  trackColor={{ true: BRAND_COLOR }}
+                  trackColor={{ true: colors.brand }}
                 />
               </View>
 
@@ -1312,7 +1463,7 @@ export function SettingsDetailView({
                             morningBriefing: v,
                           });
                         }}
-                        trackColor={{ true: BRAND_COLOR }}
+                        trackColor={{ true: colors.brand }}
                       />
                     </View>
                     {notifications.morningBriefing && (
@@ -1352,7 +1503,7 @@ export function SettingsDetailView({
                             preStartReminder: v,
                           });
                         }}
-                        trackColor={{ true: BRAND_COLOR }}
+                        trackColor={{ true: colors.brand }}
                       />
                     </View>
                     {notifications.preStartReminder && (
@@ -1393,7 +1544,7 @@ export function SettingsDetailView({
                         haptic.select();
                         setNotifications({ ...notifications, startOverdue: v });
                       }}
-                      trackColor={{ true: BRAND_COLOR }}
+                      trackColor={{ true: colors.brand }}
                     />
                   </View>
 
@@ -1410,7 +1561,7 @@ export function SettingsDetailView({
                         haptic.select();
                         setNotifications({ ...notifications, endTime: v });
                       }}
-                      trackColor={{ true: BRAND_COLOR }}
+                      trackColor={{ true: colors.brand }}
                     />
                   </View>
 
@@ -1431,7 +1582,7 @@ export function SettingsDetailView({
                             unscheduledIdle: v,
                           });
                         }}
-                        trackColor={{ true: BRAND_COLOR }}
+                        trackColor={{ true: colors.brand }}
                       />
                     </View>
                     {notifications.unscheduledIdle && (
@@ -1472,7 +1623,7 @@ export function SettingsDetailView({
                         haptic.select();
                         setNotifications({ ...notifications, inProgress: v });
                       }}
-                      trackColor={{ true: BRAND_COLOR }}
+                      trackColor={{ true: colors.brand }}
                     />
                   </View>
                 </>
@@ -1531,7 +1682,7 @@ export function SettingsDetailView({
               )}
 
               <Pressable
-                style={[styles.actionButton, { backgroundColor: BRAND_COLOR }]}
+                style={[styles.actionButton, { backgroundColor: colors.brand }]}
                 onPress={() => {
                   haptic.medium();
                   saveWorkerSettings();
@@ -1549,7 +1700,7 @@ export function SettingsDetailView({
               </View>
 
               <Pressable
-                style={[styles.actionButton, { backgroundColor: BRAND_COLOR }]}
+                style={[styles.actionButton, { backgroundColor: colors.brand }]}
                 onPress={() => {
                   haptic.light();
                   checkLocalHealth();
@@ -1557,7 +1708,7 @@ export function SettingsDetailView({
                 disabled={localHealthLoading || !client}
               >
                 {localHealthLoading ? (
-                  <ActivityIndicator color="#FFFFFF" />
+                  <ActivityIndicator color={colors.onBrand} />
                 ) : (
                   <Text style={styles.actionButtonText}>ローカルサーバー</Text>
                 )}
@@ -1583,7 +1734,7 @@ export function SettingsDetailView({
               )}
 
               <Pressable
-                style={[styles.actionButton, { backgroundColor: BRAND_COLOR }]}
+                style={[styles.actionButton, { backgroundColor: colors.brand }]}
                 onPress={() => {
                   haptic.light();
                   checkWorkerHealth();
@@ -1591,7 +1742,7 @@ export function SettingsDetailView({
                 disabled={workerHealthLoading || !client}
               >
                 {workerHealthLoading ? (
-                  <ActivityIndicator color="#FFFFFF" />
+                  <ActivityIndicator color={colors.onBrand} />
                 ) : (
                   <Text style={styles.actionButtonText}>Worker</Text>
                 )}
@@ -1623,7 +1774,7 @@ export function SettingsDetailView({
           {category === 'google' && (
             <>
               {gcalLoading && (
-                <ActivityIndicator color={BRAND_COLOR} style={styles.loader} />
+                <ActivityIndicator color={colors.brand} style={styles.loader} />
               )}
 
               <View style={styles.settingRow}>
@@ -1636,7 +1787,7 @@ export function SettingsDetailView({
                     haptic.select();
                     setGcalEnabled(v);
                   }}
-                  trackColor={{ true: BRAND_COLOR }}
+                  trackColor={{ true: colors.brand }}
                 />
               </View>
 
@@ -1700,7 +1851,7 @@ export function SettingsDetailView({
               </View>
 
               <Pressable
-                style={[styles.actionButton, { backgroundColor: BRAND_COLOR }]}
+                style={[styles.actionButton, { backgroundColor: colors.brand }]}
                 onPress={() => {
                   haptic.medium();
                   saveGcalSettings();
@@ -1710,7 +1861,7 @@ export function SettingsDetailView({
               </Pressable>
 
               <Pressable
-                style={[styles.actionButton, { backgroundColor: BRAND_COLOR }]}
+                style={[styles.actionButton, { backgroundColor: colors.brand }]}
                 onPress={() => {
                   haptic.medium();
                   startGoogleOAuth();
@@ -1722,7 +1873,7 @@ export function SettingsDetailView({
                 }
               >
                 {oauthLoading ? (
-                  <ActivityIndicator color="#FFFFFF" />
+                  <ActivityIndicator color={colors.onBrand} />
                 ) : (
                   <Text style={styles.actionButtonText}>Googleでログイン</Text>
                 )}
@@ -1757,7 +1908,7 @@ export function SettingsDetailView({
               </View>
 
               <Pressable
-                style={[styles.actionButton, { backgroundColor: BRAND_COLOR }]}
+                style={[styles.actionButton, { backgroundColor: colors.brand }]}
                 onPress={() => {
                   haptic.medium();
                   saveRefreshToken();
@@ -1768,7 +1919,7 @@ export function SettingsDetailView({
               </Pressable>
 
               <Pressable
-                style={[styles.actionButton, { backgroundColor: BRAND_COLOR }]}
+                style={[styles.actionButton, { backgroundColor: colors.brand }]}
                 onPress={() => {
                   haptic.medium();
                   triggerSync();
@@ -1776,14 +1927,17 @@ export function SettingsDetailView({
                 disabled={syncLoading || !gcalSettings?.has_refresh_token}
               >
                 {syncLoading ? (
-                  <ActivityIndicator color="#FFFFFF" />
+                  <ActivityIndicator color={colors.onBrand} />
                 ) : (
                   <Text style={styles.actionButtonText}>手動同期</Text>
                 )}
               </Pressable>
 
               <Pressable
-                style={[styles.actionButton, { backgroundColor: '#D32F2F' }]}
+                style={[
+                  styles.actionButton,
+                  { backgroundColor: colors.destructive },
+                ]}
                 onPress={() => {
                   haptic.medium();
                   deleteAllGcalEvents();
@@ -1795,7 +1949,7 @@ export function SettingsDetailView({
                 }
               >
                 {deleteAllLoading ? (
-                  <ActivityIndicator color="#FFFFFF" />
+                  <ActivityIndicator color={colors.onBrand} />
                 ) : (
                   <Text style={styles.actionButtonText}>
                     Google Calendarイベントを全削除
@@ -1852,7 +2006,7 @@ export function SettingsDetailView({
               </View>
 
               <Pressable
-                style={[styles.actionButton, { backgroundColor: BRAND_COLOR }]}
+                style={[styles.actionButton, { backgroundColor: colors.brand }]}
                 onPress={() => {
                   haptic.light();
                   exportLogs();
@@ -1860,7 +2014,7 @@ export function SettingsDetailView({
                 disabled={logExportLoading}
               >
                 {logExportLoading ? (
-                  <ActivityIndicator color="#FFFFFF" />
+                  <ActivityIndicator color={colors.onBrand} />
                 ) : (
                   <Text style={styles.actionButtonText}>
                     ログをエクスポート
@@ -1976,142 +2130,3 @@ export function SettingsDetailView({
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingBottom: 8,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  backButtonText: {
-    fontSize: 28,
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginLeft: 8,
-  },
-  body: {
-    flex: 1,
-  },
-  content: {
-    padding: 16,
-    gap: 16,
-  },
-  categoryRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 16,
-    paddingHorizontal: 4,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  categoryLabel: {
-    fontSize: 16,
-  },
-  groupLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    marginBottom: 4,
-    paddingHorizontal: 4,
-  },
-  settingRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 8,
-  },
-  settingLabel: {
-    fontSize: 16,
-  },
-  field: {
-    gap: 4,
-  },
-  label: {
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  value: {
-    fontSize: 16,
-  },
-  input: {
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    fontSize: 16,
-  },
-  helpText: {
-    fontSize: 12,
-    marginTop: 2,
-  },
-  warning: {
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  loader: {
-    paddingVertical: 16,
-  },
-  actionButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  actionButtonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  notifGroup: {
-    gap: 8,
-  },
-  timeField: {
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    alignItems: 'flex-end',
-  },
-  timeText: {
-    fontSize: 16,
-    fontWeight: '500',
-    fontVariant: ['tabular-nums'],
-  },
-  healthResult: {
-    fontSize: 13,
-    fontFamily: 'monospace',
-    paddingHorizontal: 4,
-  },
-  healthResultRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  themeDropdown: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    borderWidth: 1,
-    minWidth: 140,
-  },
-  themeDropdownText: {
-    fontSize: 15,
-    fontWeight: '500',
-  },
-});

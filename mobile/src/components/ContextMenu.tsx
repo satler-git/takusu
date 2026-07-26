@@ -5,10 +5,10 @@
 //   Reschedule others, Create dependent task) are only shown when their
 //   handlers are provided.
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { BRAND_COLOR, useColors } from '@/src/theme';
+import { useColors, type ColorSet } from '@/src/theme';
 import { undoRedo } from '@/src/api/undoRedo';
 import { haptic } from '@/src/components/haptics';
 import type { TaskStatus } from '@/src/api/types';
@@ -38,6 +38,67 @@ type MenuItem = {
   danger?: boolean;
 };
 
+const makeStyles = (colors: ColorSet) =>
+  StyleSheet.create({
+    button: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    buttonPressed: {
+      backgroundColor: colors.brandPressed,
+    },
+    overlay: {
+      flex: 1,
+      backgroundColor: colors.overlay,
+    },
+    menu: {
+      position: 'absolute',
+      top: 60,
+      left: 12,
+      borderRadius: 12,
+      paddingVertical: 4,
+      minWidth: 240,
+      shadowColor: colors.shadow,
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.3,
+      shadowRadius: 8,
+      elevation: 8,
+    },
+    submenuHeader: {
+      fontSize: 13,
+      fontWeight: '600',
+      paddingVertical: 8,
+      paddingHorizontal: 16,
+    },
+    menuItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      paddingVertical: 12,
+      paddingHorizontal: 16,
+    },
+    menuItemPressed: {
+      backgroundColor: colors.brandPressed,
+    },
+    menuItemDisabled: {
+      opacity: 0.4,
+    },
+    menuItemText: {
+      fontSize: 15,
+    },
+    menuItemTextDisabled: {
+      opacity: 0.5,
+    },
+    separator: {
+      height: 1,
+      marginVertical: 4,
+      marginHorizontal: 12,
+    },
+  });
+
 export function ContextMenu({
   hasSelection,
   onSettings,
@@ -54,6 +115,7 @@ export function ContextMenu({
   operationBusy,
 }: ContextMenuProps) {
   const colors = useColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [open, setOpen] = useState(false);
   const [statusSubmenu, setStatusSubmenu] = useState(false);
 
@@ -168,7 +230,11 @@ export function ContextMenu({
           name={item.icon}
           size={20}
           color={
-            item.danger ? colors.red : item.disabled ? colors.gray : BRAND_COLOR
+            item.danger
+              ? colors.red
+              : item.disabled
+                ? colors.gray
+                : colors.brand
           }
         />
         <Text
@@ -204,7 +270,7 @@ export function ContextMenu({
           setOpen(true);
         }}
       >
-        <Ionicons name="menu" size={24} color={BRAND_COLOR} />
+        <Ionicons name="menu" size={24} color={colors.brand} />
       </Pressable>
 
       <Modal
@@ -260,7 +326,7 @@ export function ContextMenu({
                 <Ionicons
                   name="radio-button-off"
                   size={20}
-                  color={BRAND_COLOR}
+                  color={colors.brand}
                 />
                 <Text style={[styles.menuItemText, { color: colors.black }]}>
                   {item.label}
@@ -273,63 +339,3 @@ export function ContextMenu({
     </>
   );
 }
-
-const styles = StyleSheet.create({
-  button: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  buttonPressed: {
-    backgroundColor: 'rgba(114,97,163,0.1)',
-  },
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.2)',
-  },
-  menu: {
-    position: 'absolute',
-    top: 60,
-    left: 12,
-    borderRadius: 12,
-    paddingVertical: 4,
-    minWidth: 240,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  submenuHeader: {
-    fontSize: 13,
-    fontWeight: '600',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-  },
-  menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-  },
-  menuItemPressed: {
-    backgroundColor: 'rgba(114,97,163,0.1)',
-  },
-  menuItemDisabled: {
-    opacity: 0.4,
-  },
-  menuItemText: {
-    fontSize: 15,
-  },
-  menuItemTextDisabled: {
-    opacity: 0.5,
-  },
-  separator: {
-    height: 1,
-    marginVertical: 4,
-    marginHorizontal: 12,
-  },
-});

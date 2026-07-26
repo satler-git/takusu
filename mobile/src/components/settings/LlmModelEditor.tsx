@@ -9,7 +9,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useColors, BRAND_COLOR } from '@/src/theme';
+import { useColors, type ColorSet } from '@/src/theme';
 import {
   type LlmModelSettings,
   type LlmProvider,
@@ -62,6 +62,92 @@ function parsePrice(value: string | number | undefined): number | undefined {
   return n;
 }
 
+const makeStyles = (colors: ColorSet) =>
+  StyleSheet.create({
+    editor: {
+      padding: 12,
+      borderWidth: 1,
+      borderRadius: 12,
+      gap: 10,
+      marginTop: 8,
+    },
+    input: {
+      minHeight: 44,
+      borderWidth: 1,
+      borderRadius: 8,
+      paddingHorizontal: 12,
+    },
+    readOnly: {
+      fontSize: 13,
+      paddingHorizontal: 4,
+    },
+    secondary: {
+      minHeight: 44,
+      borderWidth: 1,
+      borderColor: colors.brand,
+      borderRadius: 8,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    modelListHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      padding: 10,
+      borderWidth: 1,
+      borderRadius: 8,
+    },
+    modelListHeaderText: { fontSize: 15, fontWeight: '700' },
+    modelListExpanded: { gap: 10 },
+    modelListContent: { gap: 10 },
+    modelListFooter: {
+      minHeight: 44,
+      flexDirection: 'row',
+      borderWidth: 1,
+      borderRadius: 8,
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 4,
+    },
+    modelRow: { padding: 10, borderWidth: 1, borderRadius: 8 },
+    modelRowContent: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    modelName: { flex: 1 },
+    actions: { flexDirection: 'row', gap: 8, marginTop: 4 },
+    save: {
+      flex: 1,
+      minHeight: 44,
+      borderRadius: 8,
+      backgroundColor: colors.brand,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    saveText: { fontWeight: '700' },
+    cancel: {
+      minHeight: 44,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: colors.disabled,
+      paddingHorizontal: 16,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    remove: {
+      minHeight: 44,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: colors.destructive,
+      paddingHorizontal: 16,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    removeText: { color: colors.destructive },
+    sectionTitle: { fontSize: 15, fontWeight: '700', marginTop: 4 },
+  });
+
 export function formatCost(
   pricing: ModelPricing | undefined,
 ): string | undefined {
@@ -91,6 +177,7 @@ export function LlmModelEditor({
   saving,
 }: Props) {
   const colors = useColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const { height: windowHeight } = useWindowDimensions();
   const [modelsLoading, setModelsLoading] = useState(false);
   const [modelFilter, setModelFilter] = useState('');
@@ -236,7 +323,7 @@ export function LlmModelEditor({
                     }
                     size={20}
                     color={
-                      model.providerId === p.id ? BRAND_COLOR : colors.black
+                      model.providerId === p.id ? colors.brand : colors.black
                     }
                   />
                   <Text style={{ color: colors.black }}>
@@ -318,7 +405,7 @@ export function LlmModelEditor({
                     }
                     size={20}
                     color={
-                      model.selectedModel === m ? BRAND_COLOR : colors.black
+                      model.selectedModel === m ? colors.brand : colors.black
                     }
                   />
                   <Text
@@ -395,88 +482,3 @@ export function LlmModelEditor({
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  editor: {
-    padding: 12,
-    borderWidth: 1,
-    borderRadius: 12,
-    gap: 10,
-    marginTop: 8,
-  },
-  input: {
-    minHeight: 44,
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-  },
-  readOnly: {
-    fontSize: 13,
-    paddingHorizontal: 4,
-  },
-  secondary: {
-    minHeight: 44,
-    borderWidth: 1,
-    borderColor: BRAND_COLOR,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  modelListHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 10,
-    borderWidth: 1,
-    borderRadius: 8,
-  },
-  modelListHeaderText: { fontSize: 15, fontWeight: '700' },
-  modelListExpanded: { gap: 10 },
-  modelListContent: { gap: 10 },
-  modelListFooter: {
-    minHeight: 44,
-    flexDirection: 'row',
-    borderWidth: 1,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-  },
-  modelRow: { padding: 10, borderWidth: 1, borderRadius: 8 },
-  modelRowContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  modelName: { flex: 1 },
-  actions: { flexDirection: 'row', gap: 8, marginTop: 4 },
-  save: {
-    flex: 1,
-    minHeight: 44,
-    borderRadius: 8,
-    backgroundColor: BRAND_COLOR,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  saveText: { fontWeight: '700' },
-  cancel: {
-    minHeight: 44,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#999',
-    paddingHorizontal: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  remove: {
-    minHeight: 44,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#B33A3A',
-    paddingHorizontal: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  removeText: { color: '#B33A3A' },
-  sectionTitle: { fontSize: 15, fontWeight: '700', marginTop: 4 },
-});

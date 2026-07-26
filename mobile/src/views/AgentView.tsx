@@ -95,7 +95,7 @@ import { MessageContextMenu } from '@/src/components/MessageContextMenu';
 import { SessionPermissionsModal } from '@/src/components/SessionPermissionsModal';
 import { ToolCallDetailModal } from '@/src/components/ToolCallDetailModal';
 import { haptic } from '@/src/components/haptics';
-import { BRAND_COLOR, useColors, type ColorSet } from '@/src/theme';
+import { useColors, type ColorSet } from '@/src/theme';
 import type { PermissionsMap } from '@/src/api/settingsStore';
 
 function newId(prefix: string): string {
@@ -278,6 +278,7 @@ interface ToolNameChipProps {
 }
 
 function ToolNameChip({ call, colors, onPress }: ToolNameChipProps) {
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const rejected = call.isRejected ?? false;
   const chipStyle = [
     styles.toolChip,
@@ -333,6 +334,7 @@ function ToolCallCard({
   isLatest,
   onToolPress,
 }: ToolCallCardProps) {
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const isAsr = call.name === 'correct_asr';
   const rejected = call.isRejected ?? false;
   const asrCount = isAsr
@@ -539,6 +541,7 @@ interface ThinkingChipProps {
 }
 
 function ThinkingChip({ active, colors }: ThinkingChipProps) {
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <View
       style={[
@@ -573,6 +576,7 @@ interface ThinkingCardProps {
 }
 
 function ThinkingCard({ text, active, colors }: ThinkingCardProps) {
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <View
       style={[
@@ -616,6 +620,7 @@ function ContextGroup({
   onToggle,
   onToolPress,
 }: ContextGroupProps) {
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const collapsed = getCollapsed(message, context.groupIndex);
   const [isTall, setIsTall] = useState(false);
   const bodyHeightRef = useRef(0);
@@ -791,6 +796,7 @@ const AssistantMessage = memo(function AssistantMessageImpl({
   onLongPress,
   onToolCallPress,
 }: AssistantMessageProps) {
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const items = useMemo(
     () => buildAssistantItems(item, isLatest),
     [item, isLatest],
@@ -847,7 +853,7 @@ const AssistantMessage = memo(function AssistantMessageImpl({
         item.text.length === 0 &&
         items.length === 0 && (
           <View style={styles.loadingIndicator}>
-            <ActivityIndicator color={BRAND_COLOR} />
+            <ActivityIndicator color={colors.brand} />
           </View>
         )}
     </Pressable>
@@ -864,6 +870,7 @@ const UserMessage = memo(function UserMessageImpl({
   onLongPress,
 }: UserMessageProps) {
   const colors = useColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const handleLongPress = (event: {
     nativeEvent: { pageX?: number; pageY?: number };
   }) => {
@@ -878,7 +885,7 @@ const UserMessage = memo(function UserMessageImpl({
       style={[
         styles.bubble,
         styles.userBubble,
-        { backgroundColor: BRAND_COLOR },
+        { backgroundColor: colors.brand },
       ]}
       onLongPress={handleLongPress}
     >
@@ -890,13 +897,219 @@ const UserMessage = memo(function UserMessageImpl({
 const SWIPE_THRESHOLD = 40;
 const SCROLL_THRESHOLD = 40;
 
+const makeStyles = (colors: ColorSet) =>
+  StyleSheet.create({
+    container: { flex: 1 },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      borderBottomWidth: 1,
+      paddingBottom: 10,
+    },
+    back: { width: 56, alignItems: 'center' },
+    backText: { fontSize: 40, lineHeight: 40 },
+    title: { flex: 1, fontSize: 20, fontWeight: '700' },
+    muteButton: {
+      width: 44,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    permissionsButton: {
+      width: 44,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    deleteSession: {
+      width: 44,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    newSession: { width: 56, alignItems: 'center', justifyContent: 'center' },
+    messages: { flex: 1 },
+    messageContent: {
+      padding: 16,
+      gap: 10,
+      flexGrow: 1,
+      justifyContent: 'flex-end',
+    },
+    empty: { textAlign: 'center', marginBottom: 20 },
+    bubble: { maxWidth: '85%', padding: 12, borderRadius: 14 },
+    userBubble: { alignSelf: 'flex-end' },
+    assistantBubble: { alignSelf: 'flex-start' },
+    contextHeader: {
+      borderRadius: 10,
+      borderWidth: 1,
+      overflow: 'hidden',
+    },
+    contextHeaderInner: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      padding: 8,
+    },
+    toolChips: {
+      flexGrow: 1,
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      alignItems: 'center',
+      gap: 6,
+    },
+    toolChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      borderRadius: 12,
+      borderWidth: 1,
+    },
+    toolChipDot: { width: 6, height: 6, borderRadius: 3 },
+    toolChipText: { fontSize: 11 },
+    contextBody: { gap: 6 },
+    loadingIndicator: { alignItems: 'center', minWidth: 120 },
+    thinkingCard: {
+      borderRadius: 8,
+      padding: 10,
+      borderWidth: 1,
+      gap: 4,
+    },
+    thinkingHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+    thinkingLabel: { fontSize: 11, fontWeight: '700' },
+    thinkingText: { fontSize: 12, fontStyle: 'italic' },
+    contextFooter: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 4,
+      paddingTop: 8,
+      marginTop: 8,
+      borderTopWidth: 1,
+    },
+    contextFooterText: { fontSize: 11 },
+    toolCall: {
+      borderRadius: 10,
+      padding: 10,
+      borderWidth: 1,
+      gap: 4,
+    },
+    toolCallHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: 4,
+    },
+    toolCallHeaderLeft: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    toolStatus: { width: 8, height: 8, borderRadius: 4 },
+    rejectedBadge: {
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      borderRadius: 8,
+    },
+    rejectedBadgeText: {
+      fontSize: 10,
+      fontWeight: '700',
+    },
+    toolArgs: { fontSize: 11, fontFamily: 'monospace' },
+    userInputSheet: {
+      margin: 12,
+      padding: 12,
+      borderWidth: 1,
+      borderRadius: 16,
+      gap: 10,
+      maxHeight: '60%',
+    },
+    userInputTitle: { fontWeight: '700', fontSize: 16 },
+    userInputSubtitle: { fontSize: 12 },
+    userInputScroll: { maxHeight: 320 },
+    userInputCard: {
+      borderWidth: 1,
+      borderRadius: 10,
+      padding: 10,
+      marginBottom: 10,
+      gap: 4,
+    },
+    userInputLabel: { fontSize: 11, fontWeight: '600' },
+    userInputOriginal: { fontSize: 15, fontWeight: '700' },
+    userInputPurpose: { fontSize: 13, marginBottom: 6 },
+    userInputField: {
+      borderWidth: 1,
+      borderRadius: 8,
+      paddingHorizontal: 10,
+      paddingVertical: 8,
+      fontSize: 14,
+    },
+    userInputActions: { flexDirection: 'row', gap: 8, marginTop: 4 },
+    userInputButton: {
+      flex: 1,
+      padding: 12,
+      borderRadius: 8,
+      alignItems: 'center',
+    },
+    userInputSecondary: { borderWidth: 1, borderColor: colors.destructive },
+    userInputSecondaryText: { color: colors.destructive, fontWeight: '700' },
+    userInputPrimary: { backgroundColor: colors.brand },
+    userInputPrimaryText: { fontWeight: '700' },
+    error: {
+      color: colors.destructive,
+      paddingHorizontal: 16,
+      paddingBottom: 8,
+    },
+    switcher: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: 12,
+      paddingTop: 8,
+      borderTopWidth: 1,
+    },
+    switcherButton: {
+      width: 56,
+      height: 32,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    dots: { flexDirection: 'row', gap: 8, alignItems: 'center' },
+    dot: { width: 8, height: 8, borderRadius: 4 },
+    composer: {
+      flexDirection: 'row',
+      gap: 8,
+      paddingHorizontal: 12,
+      paddingTop: 12,
+      borderTopWidth: 1,
+    },
+    input: {
+      flex: 1,
+      minHeight: 44,
+      borderWidth: 1,
+      borderRadius: 10,
+      paddingHorizontal: 12,
+    },
+    send: {
+      minWidth: 64,
+      borderRadius: 10,
+      backgroundColor: colors.brand,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    sendText: { fontWeight: '700' },
+  });
+
 export function AgentView() {
   const router = useRouter();
   const colors = useColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const markdownStyles = useMemo<Partial<MarkdownStyles>>(
     () => ({
       text: { color: colors.black },
-      link: { color: BRAND_COLOR },
+      link: { color: colors.brand },
       codeBlock: {
         backgroundColor: colors.separator,
         padding: 8,
@@ -929,18 +1142,18 @@ export function AgentView() {
           {node.content}
         </Text>
       ),
-      list_item: (node, children, parent, styles) => {
+      list_item: (node, children, parent, mdStyles) => {
         if (parent.some((p) => p.type === 'bullet_list')) {
           return (
-            <View key={node.key} style={styles.listUnorderedItem as any}>
-              <Text style={styles.listUnorderedItemIcon as any}>
+            <View key={node.key} style={mdStyles.listUnorderedItem as any}>
+              <Text style={mdStyles.listUnorderedItemIcon as any}>
                 {'\u2022'}
               </Text>
-              <View style={styles.listItem as any}>{children}</View>
+              <View style={mdStyles.listItem as any}>{children}</View>
             </View>
           );
         }
-        return renderRules.list_item(node, children, parent, styles);
+        return renderRules.list_item(node, children, parent, mdStyles);
       },
     }),
     [colors.gray],
@@ -2172,7 +2385,7 @@ export function AgentView() {
         何を予定しますか？
       </Text>
     ),
-    [colors.gray],
+    [colors.gray, styles],
   );
 
   async function resolve(
@@ -2551,7 +2764,7 @@ export function AgentView() {
           ]}
         >
           <Pressable onPress={() => router.back()} style={styles.back}>
-            <Text style={[styles.backText, { color: BRAND_COLOR }]}>‹</Text>
+            <Text style={[styles.backText, { color: colors.brand }]}>‹</Text>
           </Pressable>
           <Text style={[styles.title, { color: colors.black }]}>Agent</Text>
           <Pressable
@@ -2567,7 +2780,7 @@ export function AgentView() {
                   ? colors.gray
                   : isMuted
                     ? colors.gray
-                    : BRAND_COLOR
+                    : colors.brand
               }
             />
           </Pressable>
@@ -2587,7 +2800,7 @@ export function AgentView() {
                 busy || isSwitching || !historyReady
                   ? colors.gray
                   : Object.values(sessionPermissions).some(Boolean)
-                    ? BRAND_COLOR
+                    ? colors.brand
                     : colors.gray
               }
             />
@@ -2609,7 +2822,9 @@ export function AgentView() {
               name="add"
               size={28}
               color={
-                busy || isSwitching || !historyReady ? colors.gray : BRAND_COLOR
+                busy || isSwitching || !historyReady
+                  ? colors.gray
+                  : colors.brand
               }
             />
           </Pressable>
@@ -2785,7 +3000,7 @@ export function AgentView() {
                       styles.dot,
                       {
                         backgroundColor:
-                          i === activeIndex ? BRAND_COLOR : colors.grayLight,
+                          i === activeIndex ? colors.brand : colors.grayLight,
                       },
                     ]}
                   />
@@ -2917,205 +3132,5 @@ export function AgentView() {
     </KeyboardAvoidingView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1 },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderBottomWidth: 1,
-    paddingBottom: 10,
-  },
-  back: { width: 56, alignItems: 'center' },
-  backText: { fontSize: 40, lineHeight: 40 },
-  title: { flex: 1, fontSize: 20, fontWeight: '700' },
-  muteButton: {
-    width: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  permissionsButton: {
-    width: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  deleteSession: {
-    width: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  newSession: { width: 56, alignItems: 'center', justifyContent: 'center' },
-  messages: { flex: 1 },
-  messageContent: {
-    padding: 16,
-    gap: 10,
-    flexGrow: 1,
-    justifyContent: 'flex-end',
-  },
-  empty: { textAlign: 'center', marginBottom: 20 },
-  bubble: { maxWidth: '85%', padding: 12, borderRadius: 14 },
-  userBubble: { alignSelf: 'flex-end' },
-  assistantBubble: { alignSelf: 'flex-start' },
-  contextHeader: {
-    borderRadius: 10,
-    borderWidth: 1,
-    overflow: 'hidden',
-  },
-  contextHeaderInner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    padding: 8,
-  },
-  toolChips: {
-    flexGrow: 1,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'center',
-    gap: 6,
-  },
-  toolChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 12,
-    borderWidth: 1,
-  },
-  toolChipDot: { width: 6, height: 6, borderRadius: 3 },
-  toolChipText: { fontSize: 11 },
-  contextBody: { gap: 6 },
-  loadingIndicator: { alignItems: 'center', minWidth: 120 },
-  thinkingCard: {
-    borderRadius: 8,
-    padding: 10,
-    borderWidth: 1,
-    gap: 4,
-  },
-  thinkingHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  thinkingLabel: { fontSize: 11, fontWeight: '700' },
-  thinkingText: { fontSize: 12, fontStyle: 'italic' },
-  contextFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-    paddingTop: 8,
-    marginTop: 8,
-    borderTopWidth: 1,
-  },
-  contextFooterText: { fontSize: 11 },
-  toolCall: {
-    borderRadius: 10,
-    padding: 10,
-    borderWidth: 1,
-    gap: 4,
-  },
-  toolCallHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 4,
-  },
-  toolCallHeaderLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  toolStatus: { width: 8, height: 8, borderRadius: 4 },
-  rejectedBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 8,
-  },
-  rejectedBadgeText: {
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  toolArgs: { fontSize: 11, fontFamily: 'monospace' },
-  userInputSheet: {
-    margin: 12,
-    padding: 12,
-    borderWidth: 1,
-    borderRadius: 16,
-    gap: 10,
-    maxHeight: '60%',
-  },
-  userInputTitle: { fontWeight: '700', fontSize: 16 },
-  userInputSubtitle: { fontSize: 12 },
-  userInputScroll: { maxHeight: 320 },
-  userInputCard: {
-    borderWidth: 1,
-    borderRadius: 10,
-    padding: 10,
-    marginBottom: 10,
-    gap: 4,
-  },
-  userInputLabel: { fontSize: 11, fontWeight: '600' },
-  userInputOriginal: { fontSize: 15, fontWeight: '700' },
-  userInputPurpose: { fontSize: 13, marginBottom: 6 },
-  userInputField: {
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    fontSize: 14,
-  },
-  userInputActions: { flexDirection: 'row', gap: 8, marginTop: 4 },
-  userInputButton: {
-    flex: 1,
-    padding: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  userInputSecondary: { borderWidth: 1, borderColor: '#B33A3A' },
-  userInputSecondaryText: { color: '#B33A3A', fontWeight: '700' },
-  userInputPrimary: { backgroundColor: BRAND_COLOR },
-  userInputPrimaryText: { fontWeight: '700' },
-  error: { color: '#B33A3A', paddingHorizontal: 16, paddingBottom: 8 },
-  switcher: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 12,
-    paddingTop: 8,
-    borderTopWidth: 1,
-  },
-  switcherButton: {
-    width: 56,
-    height: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  dots: { flexDirection: 'row', gap: 8, alignItems: 'center' },
-  dot: { width: 8, height: 8, borderRadius: 4 },
-  composer: {
-    flexDirection: 'row',
-    gap: 8,
-    paddingHorizontal: 12,
-    paddingTop: 12,
-    borderTopWidth: 1,
-  },
-  input: {
-    flex: 1,
-    minHeight: 44,
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-  },
-  send: {
-    minWidth: 64,
-    borderRadius: 10,
-    backgroundColor: BRAND_COLOR,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sendText: { fontWeight: '700' },
-});
 
 export default AgentView;

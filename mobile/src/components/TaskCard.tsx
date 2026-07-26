@@ -24,7 +24,7 @@ import Reanimated, {
 import { Ionicons } from '@expo/vector-icons';
 import type { TaskRow } from '@/src/api/types';
 import { parseDepends } from '@/src/api/types';
-import { taskCardColor, BRAND_COLOR, useTheme } from '@/src/theme';
+import { taskCardColor, useTheme, type ColorSet, useColors } from '@/src/theme';
 import { haptic } from '@/src/components/haptics';
 
 interface TaskCardProps {
@@ -73,6 +73,104 @@ function deadlineHint(task: TaskRow, scheduleStart?: string): string {
   return `〜${end.getMonth() + 1}/${end.getDate()}`;
 }
 
+const makeStyles = (colors: ColorSet) =>
+  StyleSheet.create({
+    container: {
+      marginHorizontal: 12,
+      marginVertical: 4,
+      position: 'relative',
+      overflow: 'hidden',
+      borderRadius: 12,
+    },
+    card: {
+      borderRadius: 12,
+      minHeight: 72,
+    },
+    cardInner: {
+      flexDirection: 'row',
+      padding: 12,
+      borderRadius: 12,
+      minHeight: 72,
+      alignItems: 'center',
+      gap: 12,
+      borderWidth: 2,
+      borderColor: 'transparent',
+    },
+    cardSelected: {
+      borderColor: colors.brand,
+    },
+    // Slide-right done preview background (#170)
+    doneBg: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      borderRadius: 12,
+      justifyContent: 'center',
+      alignItems: 'flex-start',
+      paddingLeft: 20,
+    },
+    // #1044: revealed skip/delete action panel behind the card
+    actionPanel: {
+      position: 'absolute',
+      right: 0,
+      top: 0,
+      bottom: 0,
+      flexDirection: 'row',
+      borderTopRightRadius: 12,
+      borderBottomRightRadius: 12,
+      overflow: 'hidden',
+    },
+    actionButton: {
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    pressed: {
+      opacity: 0.8,
+    },
+    times: {
+      width: 48,
+      alignItems: 'center',
+      gap: 4,
+    },
+    timeText: {
+      fontSize: 12,
+      fontVariant: ['tabular-nums'],
+    },
+    titleContainer: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    title: {
+      fontSize: 16,
+      fontWeight: '500',
+      flex: 1,
+    },
+    taskId: {
+      fontSize: 11,
+      fontVariant: ['tabular-nums'],
+    },
+    meta: {
+      alignSelf: 'stretch',
+      justifyContent: 'center',
+      alignItems: 'flex-end',
+      gap: 1,
+    },
+    metaText: {
+      fontSize: 11,
+      fontVariant: ['tabular-nums'],
+    },
+    deadlineHint: {
+      fontSize: 10,
+      fontVariant: ['tabular-nums'],
+      textAlign: 'right',
+      marginTop: 1,
+    },
+  });
+
 function TaskCardImpl({
   task,
   scheduleStart,
@@ -93,6 +191,7 @@ function TaskCardImpl({
   // so reversing swipe direction mid-gesture re-fires the haptic (#313).
   const hapticFiredDir = useSharedValue(0);
   const { theme, colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   // #1044/#393: swipe left reveals an action panel with skip + delete buttons.
   // Use a SharedValue for the UI-thread worklet logic (avoids stale React
   // state in gesture callbacks) and mirror to React state for rendering.
@@ -236,7 +335,7 @@ function TaskCardImpl({
       ? colors.green
       : isInProgress
         ? colors.green
-        : BRAND_COLOR;
+        : colors.brand;
 
   const handlePress = () => {
     if (actionsRevealed) {
@@ -331,7 +430,7 @@ function TaskCardImpl({
               pressed && styles.pressed,
               selected && styles.cardSelected,
               isInProgress && {
-                borderLeftColor: BRAND_COLOR,
+                borderLeftColor: colors.brand,
                 borderLeftWidth: 4,
               },
             ]}
@@ -408,103 +507,6 @@ function TaskCardImpl({
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    marginHorizontal: 12,
-    marginVertical: 4,
-    position: 'relative',
-    overflow: 'hidden',
-    borderRadius: 12,
-  },
-  card: {
-    borderRadius: 12,
-    minHeight: 72,
-  },
-  cardInner: {
-    flexDirection: 'row',
-    padding: 12,
-    borderRadius: 12,
-    minHeight: 72,
-    alignItems: 'center',
-    gap: 12,
-    borderWidth: 2,
-    borderColor: 'transparent',
-  },
-  cardSelected: {
-    borderColor: BRAND_COLOR,
-  },
-  // Slide-right done preview background (#170)
-  doneBg: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'flex-start',
-    paddingLeft: 20,
-  },
-  // #1044: revealed skip/delete action panel behind the card
-  actionPanel: {
-    position: 'absolute',
-    right: 0,
-    top: 0,
-    bottom: 0,
-    flexDirection: 'row',
-    borderTopRightRadius: 12,
-    borderBottomRightRadius: 12,
-    overflow: 'hidden',
-  },
-  actionButton: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  pressed: {
-    opacity: 0.8,
-  },
-  times: {
-    width: 48,
-    alignItems: 'center',
-    gap: 4,
-  },
-  timeText: {
-    fontSize: 12,
-    fontVariant: ['tabular-nums'],
-  },
-  titleContainer: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  title: {
-    fontSize: 16,
-    fontWeight: '500',
-    flex: 1,
-  },
-  taskId: {
-    fontSize: 11,
-    fontVariant: ['tabular-nums'],
-  },
-  meta: {
-    alignSelf: 'stretch',
-    justifyContent: 'center',
-    alignItems: 'flex-end',
-    gap: 1,
-  },
-  metaText: {
-    fontSize: 11,
-    fontVariant: ['tabular-nums'],
-  },
-  deadlineHint: {
-    fontSize: 10,
-    fontVariant: ['tabular-nums'],
-    textAlign: 'right',
-    marginTop: 1,
-  },
-});
-
 export const TaskCard = memo(TaskCardImpl);
 
 // ── ParallelGroupCard ──
@@ -554,7 +556,8 @@ function ParallelGroupCardImpl({
   habitDisplayIdMap,
   dependentCountMap,
 }: ParallelGroupCardProps) {
-  const { theme, dark } = useTheme();
+  const colors = useColors();
+  const { theme } = useTheme();
   const hostHabitDisplayId = host.habit_id
     ? habitDisplayIdMap?.get(host.habit_id)
     : undefined;
@@ -564,7 +567,7 @@ function ParallelGroupCardImpl({
     hostHabitDisplayId,
     theme,
   );
-  const outlineColor = dark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.08)';
+  const outlineColor = colors.cardOutline;
 
   const allIds = useMemo(
     () => [host.id, ...guests.map((g) => g.id)],
@@ -580,7 +583,7 @@ function ParallelGroupCardImpl({
 
   return (
     <View
-      style={[groupStyles.container, selected && { borderColor: BRAND_COLOR }]}
+      style={[groupStyles.container, selected && { borderColor: colors.brand }]}
     >
       <View
         style={[

@@ -1,6 +1,6 @@
 // HabitDetailView — view and edit a habit + recent generated tasks
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import {
   Pressable,
   Modal,
@@ -32,7 +32,7 @@ import type {
   HabitStepInput,
 } from '@/src/api/types';
 import { WINDOW_MODE_DAY, WINDOW_MODE_PERIOD } from '@/src/api/types';
-import { BRAND_COLOR, useColors } from '@/src/theme';
+import { useColors, type ColorSet } from '@/src/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RruleBuilderModal } from '@/src/components/RruleBuilderModal';
 import { DateTimePickerModal } from '@/src/components/DateTimePickerModal';
@@ -52,10 +52,307 @@ import {
 } from '@/src/utils/habitSteps';
 import { dateKey, todayDateKey } from '@/src/utils/dateKey';
 
+const makeStyles = (colors: ColorSet) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+    },
+    topBar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 4,
+      paddingBottom: 4,
+    },
+    content: {
+      padding: 16,
+      gap: 16,
+    },
+    loading: {
+      textAlign: 'center',
+      marginTop: 40,
+    },
+    title: {
+      fontSize: 24,
+      fontWeight: '600',
+    },
+    titleInput: {
+      fontSize: 20,
+    },
+    section: {
+      gap: 4,
+    },
+    foldToggle: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+    label: {
+      fontSize: 13,
+      fontWeight: '500',
+    },
+    hint: {
+      fontSize: 11,
+      marginTop: 2,
+    },
+    value: {
+      fontSize: 16,
+    },
+    estimateButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      alignSelf: 'flex-start',
+      marginTop: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderRadius: 10,
+    },
+    estimateButtonText: {
+      fontSize: 13,
+      fontWeight: '600',
+    },
+    descriptionInput: {
+      minHeight: 80,
+    },
+    rruleHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+    },
+    helpButton: {
+      padding: 2,
+    },
+    dateField: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      borderWidth: 1,
+      borderRadius: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 12,
+      gap: 8,
+    },
+    dateText: {
+      flex: 1,
+      fontSize: 16,
+    },
+    row: {
+      flexDirection: 'row',
+      gap: 12,
+    },
+    timeField: {
+      flex: 1,
+      borderWidth: 1,
+      borderRadius: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      gap: 2,
+    },
+    timeFieldLabel: {
+      fontSize: 12,
+      fontWeight: '500',
+    },
+    timeFieldValue: {
+      fontSize: 16,
+    },
+    costInput: {},
+    costHint: {
+      fontSize: 11,
+      marginTop: 2,
+      marginLeft: 4,
+    },
+    sliderContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+    },
+    slider: {
+      flex: 1,
+    },
+    sliderValue: {
+      fontSize: 14,
+      fontVariant: ['tabular-nums'],
+    },
+    toggleRow: {
+      flexDirection: 'row',
+      gap: 24,
+    },
+    toggleItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    toggleLabel: {
+      fontSize: 14,
+    },
+    taskItem: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      paddingVertical: 12,
+      paddingHorizontal: 12,
+      borderRadius: 8,
+      marginTop: 4,
+    },
+    taskItemTitle: {
+      fontSize: 14,
+      flex: 1,
+    },
+    taskItemStatus: {
+      fontSize: 12,
+    },
+    saveBar: {
+      paddingHorizontal: 16,
+      paddingTop: 8,
+      borderTopWidth: 1,
+      borderTopColor: colors.separator,
+    },
+    saveBarButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      paddingVertical: 14,
+      borderRadius: 12,
+    },
+    saveBarText: {
+      fontSize: 18,
+      fontWeight: '700',
+    },
+    sectionDimmed: {
+      opacity: 0.45,
+    },
+    spanRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      borderWidth: 1,
+      borderRadius: 8,
+      paddingHorizontal: 10,
+      paddingVertical: 10,
+      marginTop: 4,
+    },
+    spanText: {
+      flex: 1,
+      fontSize: 14,
+    },
+    addSpanButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+      borderWidth: 1,
+      borderStyle: 'dashed',
+      borderRadius: 8,
+      paddingVertical: 8,
+      marginTop: 6,
+    },
+    addSpanText: {
+      color: colors.brand,
+      fontSize: 13,
+      fontWeight: '500',
+    },
+    stepList: {
+      gap: 6,
+      marginTop: 4,
+    },
+    stepViewCard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      borderRadius: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+    },
+    stepViewIdx: {
+      fontSize: 16,
+      fontWeight: '700',
+      minWidth: 20,
+    },
+    stepViewBody: {
+      flex: 1,
+      gap: 2,
+    },
+    stepViewTitle: {
+      fontSize: 15,
+      fontWeight: '500',
+    },
+    stepViewMeta: {
+      fontSize: 12,
+    },
+  });
+
+const makeSpanStyles = (colors: ColorSet) =>
+  StyleSheet.create({
+    overlay: {
+      flex: 1,
+      backgroundColor: colors.overlay,
+      justifyContent: 'flex-end',
+    },
+    sheet: {
+      borderTopLeftRadius: 20,
+      borderTopRightRadius: 20,
+      padding: 20,
+    },
+    header: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 16,
+    },
+    title: {
+      fontSize: 18,
+      fontWeight: '600',
+    },
+    fieldRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      borderWidth: 1,
+      borderRadius: 10,
+      paddingHorizontal: 12,
+      paddingVertical: 14,
+      marginBottom: 8,
+    },
+    fieldLabel: {
+      flex: 1,
+      fontSize: 15,
+    },
+    fieldValue: {
+      fontSize: 15,
+      fontWeight: '500',
+    },
+    actionRow: {
+      flexDirection: 'row',
+      gap: 12,
+      marginTop: 16,
+    },
+    cancelButton: {
+      flex: 1,
+      paddingVertical: 12,
+      borderRadius: 10,
+      borderWidth: 1,
+      alignItems: 'center',
+    },
+    cancelText: {
+      fontSize: 15,
+    },
+    confirmButton: {
+      flex: 1,
+      paddingVertical: 12,
+      borderRadius: 10,
+      alignItems: 'center',
+    },
+    confirmText: {
+      fontSize: 15,
+      fontWeight: '600',
+    },
+  });
+
 export function HabitDetailView() {
   const { client } = useServer();
   const router = useRouter();
   const colors = useColors();
+  const spanStyles = useMemo(() => makeSpanStyles(colors), [colors]);
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const insets = useSafeAreaInsets();
   const showUndoToast = useUndoableToast();
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -693,14 +990,14 @@ export function HabitDetailView() {
   const spanIcon = habit.active
     ? 'pause-circle-outline'
     : 'play-circle-outline';
-  const spanActiveColor = habit.active ? colors.red : BRAND_COLOR;
+  const spanActiveColor = habit.active ? colors.red : colors.brand;
 
   return (
     <View style={[styles.container, { backgroundColor: colors.white }]}>
       <View style={[styles.topBar, { paddingTop: 4 + insets.top }]}>
         <IconButton
           icon="chevron-left"
-          iconColor={BRAND_COLOR}
+          iconColor={colors.brand}
           size={28}
           onPress={() => {
             haptic.light();
@@ -713,7 +1010,7 @@ export function HabitDetailView() {
             <IconButton
               icon="check"
               iconColor={colors.white}
-              containerColor={BRAND_COLOR}
+              containerColor={colors.brand}
               size={22}
               onPress={() => {
                 haptic.medium();
@@ -736,7 +1033,7 @@ export function HabitDetailView() {
           anchor={
             <IconButton
               icon="dots-vertical"
-              iconColor={BRAND_COLOR}
+              iconColor={colors.brand}
               size={24}
               onPress={() => setMenuVisible(true)}
             />
@@ -809,7 +1106,7 @@ export function HabitDetailView() {
             onChangeText={setTitle}
             label="タイトル"
             outlineColor={colors.separator}
-            activeOutlineColor={BRAND_COLOR}
+            activeOutlineColor={colors.brand}
             style={styles.titleInput}
             contentStyle={{ fontSize: 20, fontWeight: '600' }}
           />
@@ -830,7 +1127,7 @@ export function HabitDetailView() {
               multiline
               numberOfLines={4}
               outlineColor={colors.separator}
-              activeOutlineColor={BRAND_COLOR}
+              activeOutlineColor={colors.brand}
               style={styles.descriptionInput}
             />
           ) : (
@@ -882,10 +1179,10 @@ export function HabitDetailView() {
             ))
           )}
           <Pressable
-            style={[styles.addSpanButton, { borderColor: BRAND_COLOR }]}
+            style={[styles.addSpanButton, { borderColor: colors.brand }]}
             onPress={openSpanModal}
           >
-            <Ionicons name="add" size={18} color={BRAND_COLOR} />
+            <Ionicons name="add" size={18} color={colors.brand} />
             <Text style={styles.addSpanText}>{spanAddLabel}を追加</Text>
           </Pressable>
         </View>
@@ -905,7 +1202,7 @@ export function HabitDetailView() {
                 <Ionicons
                   name="help-circle-outline"
                   size={18}
-                  color={BRAND_COLOR}
+                  color={colors.brand}
                 />
               </Pressable>
             )}
@@ -921,7 +1218,7 @@ export function HabitDetailView() {
               ]}
               onPress={() => setShowRruleBuilder(true)}
             >
-              <Ionicons name="repeat" size={20} color={BRAND_COLOR} />
+              <Ionicons name="repeat" size={20} color={colors.brand} />
               <Text
                 style={[styles.dateText, { color: colors.black }]}
                 numberOfLines={2}
@@ -961,7 +1258,7 @@ export function HabitDetailView() {
                     label: '期間内どこでも',
                   },
                 ]}
-                theme={{ colors: { primary: BRAND_COLOR } }}
+                theme={{ colors: { primary: colors.brand } }}
               />
               {windowMode === WINDOW_MODE_PERIOD && (
                 <Text style={[styles.hint, { color: colors.grayLight }]}>
@@ -991,9 +1288,9 @@ export function HabitDetailView() {
               <Ionicons
                 name={simpleInfoExpanded ? 'chevron-down' : 'chevron-forward'}
                 size={16}
-                color={BRAND_COLOR}
+                color={colors.brand}
               />
-              <Text style={[styles.label, { color: BRAND_COLOR }]}>
+              <Text style={[styles.label, { color: colors.brand }]}>
                 Habit 本体の設定（ステップが有効なため無視）
               </Text>
             </Pressable>
@@ -1095,7 +1392,7 @@ export function HabitDetailView() {
                     autoCapitalize="none"
                     autoCorrect={false}
                     outlineColor={colors.separator}
-                    activeOutlineColor={BRAND_COLOR}
+                    activeOutlineColor={colors.brand}
                     style={[styles.costInput, { flex: 1 }]}
                     dense
                   />
@@ -1108,7 +1405,7 @@ export function HabitDetailView() {
                       autoCapitalize="none"
                       autoCorrect={false}
                       outlineColor={colors.separator}
-                      activeOutlineColor={BRAND_COLOR}
+                      activeOutlineColor={colors.brand}
                       dense
                     />
                     {sigmaMinutes === '' && (
@@ -1144,12 +1441,12 @@ export function HabitDetailView() {
                       <Ionicons
                         name="calculator-outline"
                         size={16}
-                        color={BRAND_COLOR}
+                        color={colors.brand}
                       />
                       <Text
                         style={[
                           styles.estimateButtonText,
-                          { color: BRAND_COLOR },
+                          { color: colors.brand },
                         ]}
                       >
                         実績から見積もり
@@ -1179,10 +1476,10 @@ export function HabitDetailView() {
                     minimumValue={0}
                     maximumValue={1}
                     step={0.25}
-                    minimumTrackTintColor={BRAND_COLOR}
+                    minimumTrackTintColor={colors.brand}
                     style={styles.slider}
                   />
-                  <Text style={[styles.sliderValue, { color: BRAND_COLOR }]}>
+                  <Text style={[styles.sliderValue, { color: colors.brand }]}>
                     {abandonability.toFixed(2)}
                   </Text>
                 </View>
@@ -1216,7 +1513,7 @@ export function HabitDetailView() {
                     <Checkbox
                       status={parallelizable ? 'checked' : 'unchecked'}
                       onPress={() => setParallelizable(!parallelizable)}
-                      color={BRAND_COLOR}
+                      color={colors.brand}
                     />
                   </Pressable>
                   <Pressable
@@ -1229,7 +1526,7 @@ export function HabitDetailView() {
                     <Checkbox
                       status={allowsParallel ? 'checked' : 'unchecked'}
                       onPress={() => setAllowsParallel(!allowsParallel)}
-                      color={BRAND_COLOR}
+                      color={colors.brand}
                     />
                   </Pressable>
                 </View>
@@ -1242,7 +1539,7 @@ export function HabitDetailView() {
                     <Checkbox
                       status={habit.parallelizable ? 'checked' : 'unchecked'}
                       disabled
-                      color={BRAND_COLOR}
+                      color={colors.brand}
                     />
                   </View>
                   <View style={styles.toggleItem}>
@@ -1252,7 +1549,7 @@ export function HabitDetailView() {
                     <Checkbox
                       status={habit.allows_parallel ? 'checked' : 'unchecked'}
                       disabled
-                      color={BRAND_COLOR}
+                      color={colors.brand}
                     />
                   </View>
                 </View>
@@ -1275,7 +1572,7 @@ export function HabitDetailView() {
                   <Checkbox
                     status={fixed ? 'checked' : 'unchecked'}
                     onPress={() => setFixed(!fixed)}
-                    color={BRAND_COLOR}
+                    color={colors.brand}
                   />
                   <Text style={[styles.hint, { color: colors.grayLight }]}>
                     開始時刻を固定し、スケジューラの移動を許可しない
@@ -1285,7 +1582,7 @@ export function HabitDetailView() {
                 <Checkbox
                   status={habit.fixed ? 'checked' : 'unchecked'}
                   disabled
-                  color={BRAND_COLOR}
+                  color={colors.brand}
                 />
               )}
             </View>
@@ -1299,13 +1596,13 @@ export function HabitDetailView() {
             <Checkbox
               status={active ? 'checked' : 'unchecked'}
               onPress={() => setActive(!active)}
-              color={BRAND_COLOR}
+              color={colors.brand}
             />
           ) : (
             <Checkbox
               status={habit.active ? 'checked' : 'unchecked'}
               disabled
-              color={BRAND_COLOR}
+              color={colors.brand}
             />
           )}
         </View>
@@ -1356,7 +1653,7 @@ export function HabitDetailView() {
                       { backgroundColor: colors.surface },
                     ]}
                   >
-                    <Text style={[styles.stepViewIdx, { color: BRAND_COLOR }]}>
+                    <Text style={[styles.stepViewIdx, { color: colors.brand }]}>
                       {i + 1}
                     </Text>
                     <View style={styles.stepViewBody}>
@@ -1424,7 +1721,7 @@ export function HabitDetailView() {
           ]}
         >
           <Pressable
-            style={[styles.saveBarButton, { backgroundColor: BRAND_COLOR }]}
+            style={[styles.saveBarButton, { backgroundColor: colors.brand }]}
             onPress={() => {
               haptic.medium();
               save();
@@ -1513,7 +1810,11 @@ export function HabitDetailView() {
                 setSpanPicker('from');
               }}
             >
-              <Ionicons name="calendar-outline" size={20} color={BRAND_COLOR} />
+              <Ionicons
+                name="calendar-outline"
+                size={20}
+                color={colors.brand}
+              />
               <Text style={[spanStyles.fieldLabel, { color: colors.gray }]}>
                 開始日
               </Text>
@@ -1529,7 +1830,11 @@ export function HabitDetailView() {
                 setSpanPicker('to');
               }}
             >
-              <Ionicons name="calendar-outline" size={20} color={BRAND_COLOR} />
+              <Ionicons
+                name="calendar-outline"
+                size={20}
+                color={colors.brand}
+              />
               <Text style={[spanStyles.fieldLabel, { color: colors.gray }]}>
                 終了日
               </Text>
@@ -1544,7 +1849,7 @@ export function HabitDetailView() {
               value={spanReason}
               onChangeText={setSpanReason}
               outlineColor={colors.separator}
-              activeOutlineColor={BRAND_COLOR}
+              activeOutlineColor={colors.brand}
               style={{ marginTop: 8 }}
             />
 
@@ -1565,7 +1870,7 @@ export function HabitDetailView() {
               <Pressable
                 style={[
                   spanStyles.confirmButton,
-                  { backgroundColor: BRAND_COLOR },
+                  { backgroundColor: colors.brand },
                   (!spanFrom || !spanTo) && { opacity: 0.4 },
                 ]}
                 disabled={!spanFrom || !spanTo}
@@ -1605,296 +1910,3 @@ export function HabitDetailView() {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 4,
-    paddingBottom: 4,
-  },
-  content: {
-    padding: 16,
-    gap: 16,
-  },
-  loading: {
-    textAlign: 'center',
-    marginTop: 40,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: '600',
-  },
-  titleInput: {
-    fontSize: 20,
-  },
-  section: {
-    gap: 4,
-  },
-  foldToggle: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  label: {
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  hint: {
-    fontSize: 11,
-    marginTop: 2,
-  },
-  value: {
-    fontSize: 16,
-  },
-  estimateButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    alignSelf: 'flex-start',
-    marginTop: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
-  },
-  estimateButtonText: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  descriptionInput: {
-    minHeight: 80,
-  },
-  rruleHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  helpButton: {
-    padding: 2,
-  },
-  dateField: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    gap: 8,
-  },
-  dateText: {
-    flex: 1,
-    fontSize: 16,
-  },
-  row: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  timeField: {
-    flex: 1,
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    gap: 2,
-  },
-  timeFieldLabel: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  timeFieldValue: {
-    fontSize: 16,
-  },
-  costInput: {},
-  costHint: {
-    fontSize: 11,
-    marginTop: 2,
-    marginLeft: 4,
-  },
-  sliderContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  slider: {
-    flex: 1,
-  },
-  sliderValue: {
-    fontSize: 14,
-    fontVariant: ['tabular-nums'],
-  },
-  toggleRow: {
-    flexDirection: 'row',
-    gap: 24,
-  },
-  toggleItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  toggleLabel: {
-    fontSize: 14,
-  },
-  taskItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    marginTop: 4,
-  },
-  taskItemTitle: {
-    fontSize: 14,
-    flex: 1,
-  },
-  taskItemStatus: {
-    fontSize: 12,
-  },
-  saveBar: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#eee',
-  },
-  saveBarButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 14,
-    borderRadius: 12,
-  },
-  saveBarText: {
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  sectionDimmed: {
-    opacity: 0.45,
-  },
-  spanRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 10,
-    marginTop: 4,
-  },
-  spanText: {
-    flex: 1,
-    fontSize: 14,
-  },
-  addSpanButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    borderWidth: 1,
-    borderStyle: 'dashed',
-    borderRadius: 8,
-    paddingVertical: 8,
-    marginTop: 6,
-  },
-  addSpanText: {
-    color: BRAND_COLOR,
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  stepList: {
-    gap: 6,
-    marginTop: 4,
-  },
-  stepViewCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  stepViewIdx: {
-    fontSize: 16,
-    fontWeight: '700',
-    minWidth: 20,
-  },
-  stepViewBody: {
-    flex: 1,
-    gap: 2,
-  },
-  stepViewTitle: {
-    fontSize: 15,
-    fontWeight: '500',
-  },
-  stepViewMeta: {
-    fontSize: 12,
-  },
-});
-
-const spanStyles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'flex-end',
-  },
-  sheet: {
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 20,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  fieldRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 14,
-    marginBottom: 8,
-  },
-  fieldLabel: {
-    flex: 1,
-    fontSize: 15,
-  },
-  fieldValue: {
-    fontSize: 15,
-    fontWeight: '500',
-  },
-  actionRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 16,
-  },
-  cancelButton: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    alignItems: 'center',
-  },
-  cancelText: {
-    fontSize: 15,
-  },
-  confirmButton: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 10,
-    alignItems: 'center',
-  },
-  confirmText: {
-    fontSize: 15,
-    fontWeight: '600',
-  },
-});
