@@ -12,6 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import type { ApprovalRequest, ProposedChange } from '@/src/api/agentTypes';
 import { AgentClient } from '@/src/api/agentClient';
 import type { PermissionsMap } from '@/src/api/settingsStore';
+import type { TaskStatus, WindowMode } from '@/src/api/types';
 import type { ColorSet } from '@/src/theme';
 import {
   getPermissionTitle,
@@ -144,6 +145,16 @@ function getOperationBadge(operation: string): {
       return { label: '再調整', color: 'muted' };
     case 'move':
       return { label: '移動', color: 'brand' };
+    case 'start':
+      return { label: '開始', color: 'brand' };
+    case 'pause':
+      return { label: '一時停止', color: 'muted' };
+    case 'progress':
+      return { label: '進捗', color: 'brand' };
+    case 'complete':
+      return { label: '完了', color: 'success' };
+    case 'split':
+      return { label: '分割', color: 'brand' };
     default:
       return { label: operation, color: 'muted' };
   }
@@ -234,6 +245,406 @@ function parseDependsOn(value: unknown): (string | number)[] {
   return [];
 }
 
+function parseStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.map((v) => asString(v)).filter((s): s is string => s !== null);
+  }
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) {
+        return parsed
+          .map((v: unknown) => asString(v))
+          .filter((s: string | null): s is string => s !== null);
+      }
+    } catch {
+      // fall through
+    }
+  }
+  return [];
+}
+
+function diffStringArrays(
+  before: string[],
+  after: string[],
+): { added: string[]; removed: string[] } {
+  const added = after.filter((v) => !before.includes(v));
+  const removed = before.filter((v) => !after.includes(v));
+  return { added, removed };
+}
+
+function boolText(value: boolean, trueText: string, falseText: string): string {
+  return value ? trueText : falseText;
+}
+
+function quantityText(
+  done: number | undefined,
+  total: number | undefined,
+  unit: string | undefined,
+): string {
+  if (total !== undefined) {
+    return `${done ?? 0}/${total}${unit ? ` ${unit}` : ''}`;
+  }
+  if (done !== undefined) {
+    return `${done}${unit ? ` ${unit}` : ''}`;
+  }
+  if (unit) {
+    return unit;
+  }
+  return '';
+}
+
+const STATUS_LABELS: Record<TaskStatus, string> = {
+  pending: '未スケジュール',
+  scheduled: 'スケジュール済',
+  in_progress: '進行中',
+  completed: '完了',
+  skipped: 'スキップ',
+};
+
+const WINDOW_MODE_LABELS: Record<WindowMode, string> = {
+  day: '当日',
+  period: '期間内どこでも',
+};
+
+interface DependsDiffRowProps {
+  label: string;
+  before: string[];
+  after: string[];
+  colors: ColorSet;
+}
+
+function DependsDiffRow({ label, before, after, colors }: DependsDiffRowProps) {
+  const { added, removed } = diffStringArrays(before, after);
+  if (added.length === 0 && removed.length === 0) return null;
+  return (
+    <View style={styles.whenRow}>
+      <Text style={[styles.whenLabel, { color: colors.gray }]}>{label}</Text>
+      <Text style={[styles.whenValue, { color: colors.black }]}>
+        {added.length > 0 && `追加: ${added.join('、 ')}`}
+        {added.length > 0 && removed.length > 0 && ' / '}
+        {removed.length > 0 && (
+          <Text style={[styles.strikethrough, { color: colors.gray }]}>
+            削除: {removed.join('、 ')}
+          </Text>
+        )}
+      </Text>
+    </View>
+  );
+}
+
+function pushTextDiffRow(
+  rows: React.ReactNode[],
+  before: Record<string, unknown>,
+  after: Record<string, unknown>,
+  key: string,
+  label: string,
+  colors: ColorSet,
+  transform: (v: string) => string = (v) => v,
+): void {
+  if (!(key in after)) return;
+  const afterRaw = asString(after[key]);
+  const beforeRaw = asString(before[key]);
+  const afterStr = transform(afterRaw ?? '');
+  const beforeStr = beforeRaw !== null ? transform(beforeRaw) : undefined;
+  if (afterStr === '' && (beforeStr === undefined || beforeStr === '')) return;
+  if (beforeStr !== undefined && afterStr === beforeStr) return;
+  if (beforeStr !== undefined) {
+    rows.push(
+      <WhenRow
+        key={key}
+        label={label}
+        before={beforeStr}
+        after={afterStr}
+        colors={colors}
+      />,
+    );
+  } else {
+    rows.push(
+      <WhenRow key={key} label={label} value={afterStr} colors={colors} />,
+    );
+  }
+}
+
+function pushBoolDiffRow(
+  rows: React.ReactNode[],
+  before: Record<string, unknown>,
+  after: Record<string, unknown>,
+  key: string,
+  label: string,
+  trueText: string,
+  falseText: string,
+  colors: ColorSet,
+): void {
+  if (!(key in after)) return;
+  const afterVal = asBoolean(after[key]);
+  if (afterVal === undefined) return;
+  const beforeVal = asBoolean(before[key]);
+  const afterStr = boolText(afterVal, trueText, falseText);
+  const beforeStr =
+    beforeVal !== undefined
+      ? boolText(beforeVal, trueText, falseText)
+      : undefined;
+  if (beforeStr !== undefined && afterStr === beforeStr) return;
+  if (beforeStr !== undefined) {
+    rows.push(
+      <WhenRow
+        key={key}
+        label={label}
+        before={beforeStr}
+        after={afterStr}
+        colors={colors}
+      />,
+    );
+  } else {
+    rows.push(
+      <WhenRow key={key} label={label} value={afterStr} colors={colors} />,
+    );
+  }
+}
+
+function pushNumberDiffRow(
+  rows: React.ReactNode[],
+  before: Record<string, unknown>,
+  after: Record<string, unknown>,
+  key: string,
+  label: string,
+  colors: ColorSet,
+  format: (v: number) => string = (v) => String(v),
+): void {
+  if (!(key in after)) return;
+  const afterVal = asNumber(after[key]);
+  if (afterVal === undefined) return;
+  const beforeVal = asNumber(before[key]);
+  const afterStr = format(afterVal);
+  const beforeStr = beforeVal !== undefined ? format(beforeVal) : undefined;
+  if (beforeStr !== undefined && afterStr === beforeStr) return;
+  if (beforeStr !== undefined) {
+    rows.push(
+      <WhenRow
+        key={key}
+        label={label}
+        before={beforeStr}
+        after={afterStr}
+        colors={colors}
+      />,
+    );
+  } else {
+    rows.push(
+      <WhenRow key={key} label={label} value={afterStr} colors={colors} />,
+    );
+  }
+}
+
+function pushTaskExtraRows(
+  rows: React.ReactNode[],
+  before: Record<string, unknown>,
+  after: Record<string, unknown>,
+  colors: ColorSet,
+): void {
+  if ('title' in before) {
+    pushTextDiffRow(rows, before, after, 'title', 'タイトル', colors);
+  }
+  pushTextDiffRow(rows, before, after, 'description', '説明', colors);
+  pushTextDiffRow(
+    rows,
+    before,
+    after,
+    'status',
+    'ステータス',
+    colors,
+    (v) => STATUS_LABELS[v as TaskStatus] ?? v,
+  );
+
+  const beforeDeps = parseStringArray(before.depends);
+  const afterDeps = parseStringArray(after.depends);
+  const { added, removed } = diffStringArrays(beforeDeps, afterDeps);
+  if (added.length > 0 || removed.length > 0) {
+    rows.push(
+      <DependsDiffRow
+        key="depends"
+        label="依存タスク"
+        before={beforeDeps}
+        after={afterDeps}
+        colors={colors}
+      />,
+    );
+  }
+
+  pushBoolDiffRow(
+    rows,
+    before,
+    after,
+    'parallelizable',
+    '並列実行可能',
+    '可',
+    '不可',
+    colors,
+  );
+  pushBoolDiffRow(
+    rows,
+    before,
+    after,
+    'allows_parallel',
+    '並列受け入れ',
+    '可',
+    '不可',
+    colors,
+  );
+  pushBoolDiffRow(
+    rows,
+    before,
+    after,
+    'fixed',
+    '時間固定',
+    '固定',
+    '解除',
+    colors,
+  );
+
+  pushNumberDiffRow(
+    rows,
+    before,
+    after,
+    'abandonability',
+    '諦めやすさ',
+    colors,
+    (v) => v.toFixed(2),
+  );
+  pushNumberDiffRow(
+    rows,
+    before,
+    after,
+    'sigma_minutes',
+    '標準偏差',
+    colors,
+    (v) => `±${formatDuration(v)}`,
+  );
+
+  if (
+    'quantity_total' in after ||
+    'quantity_done' in after ||
+    'quantity_unit' in after
+  ) {
+    const beforeDone = asNumber(before.quantity_done);
+    const beforeTotal = asNumber(before.quantity_total);
+    const beforeUnit = asString(before.quantity_unit) ?? undefined;
+    const afterDone = asNumber(
+      'quantity_done' in after ? after.quantity_done : before.quantity_done,
+    );
+    const afterTotal = asNumber(
+      'quantity_total' in after ? after.quantity_total : before.quantity_total,
+    );
+    const afterUnit =
+      asString(
+        'quantity_unit' in after ? after.quantity_unit : before.quantity_unit,
+      ) ?? undefined;
+    const beforeStr = quantityText(beforeDone, beforeTotal, beforeUnit);
+    const afterStr = quantityText(afterDone, afterTotal, afterUnit);
+    if (beforeStr !== afterStr) {
+      if (beforeStr) {
+        rows.push(
+          <WhenRow
+            key="quantity"
+            label="数量"
+            before={beforeStr}
+            after={afterStr}
+            colors={colors}
+          />,
+        );
+      } else {
+        rows.push(
+          <WhenRow
+            key="quantity"
+            label="数量"
+            value={afterStr}
+            colors={colors}
+          />,
+        );
+      }
+    }
+  }
+}
+
+function pushHabitExtraRows(
+  rows: React.ReactNode[],
+  before: Record<string, unknown>,
+  after: Record<string, unknown>,
+  colors: ColorSet,
+): void {
+  if ('title' in before) {
+    pushTextDiffRow(rows, before, after, 'title', 'タイトル', colors);
+  }
+  pushTextDiffRow(rows, before, after, 'description', '説明', colors);
+  pushBoolDiffRow(
+    rows,
+    before,
+    after,
+    'parallelizable',
+    '並列実行可能',
+    '可',
+    '不可',
+    colors,
+  );
+  pushBoolDiffRow(
+    rows,
+    before,
+    after,
+    'allows_parallel',
+    '並列受け入れ',
+    '可',
+    '不可',
+    colors,
+  );
+  pushBoolDiffRow(
+    rows,
+    before,
+    after,
+    'fixed',
+    '時間固定',
+    '固定',
+    '解除',
+    colors,
+  );
+  pushBoolDiffRow(
+    rows,
+    before,
+    after,
+    'active',
+    '有効',
+    '有効',
+    '無効',
+    colors,
+  );
+  pushTextDiffRow(
+    rows,
+    before,
+    after,
+    'window_mode',
+    'スケジュール枠',
+    colors,
+    (v) => WINDOW_MODE_LABELS[v as WindowMode] ?? v,
+  );
+  pushNumberDiffRow(
+    rows,
+    before,
+    after,
+    'abandonability',
+    '諦めやすさ',
+    colors,
+    (v) => v.toFixed(2),
+  );
+  pushNumberDiffRow(
+    rows,
+    before,
+    after,
+    'sigma_minutes',
+    '標準偏差',
+    colors,
+    (v) => `±${formatDuration(v)}`,
+  );
+}
+
 function resolveStepRef(
   ref: string | number,
   steps: Record<string, unknown>[],
@@ -280,13 +691,18 @@ function StepList({ steps, colors }: StepListProps) {
         const start = asString(step.start_time);
         const end = asString(step.end_time);
         const avg = asNumber(step.avg_minutes);
+        const sigma = asNumber(step.sigma_minutes);
         const fixed = asBoolean(step.fixed) ?? false;
-        const time =
+        const description = asString(step.description) ?? '';
+        let time =
           start && end
             ? formatTimeRange(start, end)
             : avg !== undefined
               ? formatDuration(avg)
               : '';
+        if (time.length > 0 && sigma !== undefined && sigma > 0) {
+          time += ` · ±${formatDuration(sigma)}`;
+        }
         const deps = parseDependsOn(step.depends_on);
         const depTexts = deps
           .map((ref) => resolveStepRef(ref, stepRecords))
@@ -324,9 +740,14 @@ function StepList({ steps, colors }: StepListProps) {
                   {time}
                 </Text>
               )}
+              {description.length > 0 && (
+                <Text style={[styles.stepMeta, { color: colors.gray }]}>
+                  {description}
+                </Text>
+              )}
               {depTexts.length > 0 && (
                 <Text style={[styles.stepDeps, { color: colors.gray }]}>
-                  依存: {depTexts.join('、 ')}
+                  前提タスク: {depTexts.join('、 ')}
                 </Text>
               )}
             </View>
@@ -400,6 +821,8 @@ function TaskChangeRows({
         />,
       );
     }
+
+    pushTaskExtraRows(rows, before, after, colors);
   } else {
     const afterEnd = asString(after.end_at);
     const beforeEnd = asString(before.end_at);
@@ -521,6 +944,8 @@ function TaskChangeRows({
         />,
       );
     }
+
+    pushTaskExtraRows(rows, before, after, colors);
   }
 
   return rows;
@@ -630,6 +1055,8 @@ function HabitChangeRows({
         />,
       );
     }
+
+    pushHabitExtraRows(rows, before, after, colors);
   } else {
     const afterStart = asString(after.start_time);
     const beforeStart = asString(before.start_time);
@@ -765,6 +1192,8 @@ function HabitChangeRows({
         />,
       );
     }
+
+    pushHabitExtraRows(rows, before, after, colors);
   }
 
   return rows;
