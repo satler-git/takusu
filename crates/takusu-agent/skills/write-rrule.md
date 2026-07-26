@@ -100,15 +100,7 @@ EXDATE:20260729
 3. **間隔を適用**。「2 日に 1 回」なら `INTERVAL=2`。
 4. **終了条件を決める**。ユーザーが回数を指定したら `COUNT`、日付を指定したら `UNTIL`、無期限なら省略。
 5. **除外日があれば `EXDATE` で追加**。
-6. **`expand_rrule` ツールで検証**してから応答する。
 
-## 検証
-
-`expand_rrule` ツールを呼び出し、意図した日時が最初の数件から生成されるか確認する。
-
-```text
-rrule: "DTSTART;TZID=Asia/Tokyo:20260727T090000\nRRULE:FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR"
-count: 10
-```
+## よくある間違い
 
 生成結果がユーザー意図と異なる場合は、特に `BYDAY`、`BYMONTHDAY`、`INTERVAL`、`DTSTART` の timezone を見直すこと。

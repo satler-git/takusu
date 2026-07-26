@@ -4,7 +4,8 @@ use serde_json::{Value, json};
 use takusu_client::Client;
 
 use crate::{
-    InferredField, InvalidArgsError, ProposedChange, Tool, ToolError, ToolOutput, ToolRegistry,
+    InferredField, InvalidArgsError, ProposedChange, Tool, ToolError, ToolExposure, ToolOutput,
+    ToolRegistry,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -247,6 +248,10 @@ impl Tool for SkillsList {
         "List all available skills (built-in and user-defined)."
     }
 
+    fn exposure(&self) -> ToolExposure {
+        ToolExposure::Deferred
+    }
+
     fn parameters_schema(&self) -> Value {
         json!({"type":"object","properties":{},"additionalProperties":false})
     }
@@ -276,6 +281,10 @@ impl Tool for SkillsRead {
         "Read a skill by slug, including its full body."
     }
 
+    fn exposure(&self) -> ToolExposure {
+        ToolExposure::Deferred
+    }
+
     fn parameters_schema(&self) -> Value {
         json!({"type":"object","properties":{"slug":{"type":"string"}},"required":["slug"],"additionalProperties":false})
     }
@@ -303,6 +312,10 @@ impl Tool for SkillsProposeAdd {
 
     fn description(&self) -> &'static str {
         "Propose adding a new skill. Requires user approval before it is written."
+    }
+
+    fn exposure(&self) -> ToolExposure {
+        ToolExposure::Deferred
     }
 
     fn parameters_schema(&self) -> Value {
@@ -414,6 +427,10 @@ impl Tool for SkillsProposeEdit {
 
     fn description(&self) -> &'static str {
         "Propose editing an existing skill. Requires user approval before it is written."
+    }
+
+    fn exposure(&self) -> ToolExposure {
+        ToolExposure::Deferred
     }
 
     fn parameters_schema(&self) -> Value {

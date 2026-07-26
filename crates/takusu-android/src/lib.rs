@@ -167,13 +167,17 @@ impl TakusuServer {
                 let planner_client =
                     takusu_client::Client::new_with_token(&config.server.url, token);
                 let tz_cache = TimeZoneCache::new(planner_client.clone());
-                let mut registry = ToolRegistry::new();
-                register_tools(
-                    &mut registry,
-                    planner_client.clone(),
-                    tz_cache.clone(),
-                    user_input_provider.clone(),
-                );
+                let registry = Arc::new_cyclic(|weak| {
+                    let mut registry = ToolRegistry::new();
+                    register_tools(
+                        &mut registry,
+                        planner_client.clone(),
+                        tz_cache.clone(),
+                        user_input_provider.clone(),
+                        weak.clone(),
+                    );
+                    registry
+                });
                 Ok(AgentSession::new_with_client_and_cache(
                     config.clone(),
                     planner_client,

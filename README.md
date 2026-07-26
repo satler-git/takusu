@@ -191,7 +191,9 @@ wrangler deploy
 
 ## References
 
-The agent loop and tool-calling abstractions are informed by the reference implementation in [pi](https://github.com/earendil-works/pi) (`packages/agent`), by Mario Zechner, used under the MIT License.
+- The agent loop and tool-calling abstractions are informed by the reference implementation in [pi](https://github.com/earendil-works/pi) (`packages/agent`), by Mario Zechner, used under the MIT License.
+- Tool design and context management are informed by the [OpenAI function calling](https://developers.openai.com/api/docs/guides/function-calling), [tool search](https://developers.openai.com/api/docs/guides/tools-tool-search), and [programmatic tool calling](https://developers.openai.com/api/docs/guides/tools-programmatic-tool-calling) guides, and by the [Anthropic Claude tool use documentation](https://platform.claude.com/docs/en/agents-and-tools/tool-use/manage-tool-context) and [writing tools for agents](https://www.anthropic.com/engineering/writing-tools-for-agents) guide.
+- The deferred-tool exposure pattern is informed by the [OpenAI Codex](https://github.com/openai/codex) reference implementation (`codex-rs/tools/src/tool_executor.rs`, `codex-rs/core/src/tools/spec_plan.rs`), used under the Apache License 2.0.
 
 ## License
 

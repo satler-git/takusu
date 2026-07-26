@@ -6,7 +6,7 @@ use crate::tools::takusu::{
     TaskContext, TimeZoneCache, client_error, object, optional_bool, optional_string, required_i64,
     server_timezone, strip_leading_hash, task_json,
 };
-use crate::{InvalidArgsError, ProposedChange, Tool, ToolError, ToolOutput, ToolRegistry};
+use crate::{InvalidArgsError, ProposedChange, Tool, ToolError, ToolExposure, ToolOutput, ToolRegistry};
 
 /// Register the active-session progress tools.
 pub fn register_tools(registry: &mut ToolRegistry, client: Client, tz_cache: TimeZoneCache) {
@@ -85,6 +85,7 @@ fn clarification_output(message: &str) -> ToolOutput {
         proposed_changes: Vec::new(),
         inferred_fields: Vec::new(),
         changes: Vec::new(),
+        discovered_tools: Vec::new(),
         schedule_dirty: false,
         is_error: false,
     }
@@ -205,6 +206,7 @@ fn progress_output(
         }],
         inferred_fields: Vec::new(),
         changes: Vec::new(),
+        discovered_tools: Vec::new(),
         schedule_dirty,
         is_error: false,
     }
@@ -223,6 +225,10 @@ impl Tool for TaskStart {
 
     fn description(&self) -> &'static str {
         "Propose starting work on a task. Creates an open work session and sets the task status to in_progress. If task_ref is omitted, asks for clarification. Requires approval before writing."
+    }
+
+    fn exposure(&self) -> ToolExposure {
+        ToolExposure::Deferred
     }
 
     fn parameters_schema(&self) -> Value {
@@ -311,6 +317,10 @@ impl Tool for TaskPause {
         "Propose pausing work on a task. Closes the open work session and records active minutes. If task_ref is omitted, asks for clarification. Requires approval before writing."
     }
 
+    fn exposure(&self) -> ToolExposure {
+        ToolExposure::Deferred
+    }
+
     fn parameters_schema(&self) -> Value {
         json!({
             "type": "object",
@@ -392,6 +402,10 @@ impl Tool for TaskProgress {
 
     fn description(&self) -> &'static str {
         "Propose recording cumulative progress on a task. Updates quantity_done and may update the estimate. A lower quantity is treated as a correction, not a speed observation. Does not implicitly close the work session; use task_complete to finish. If task_ref is omitted, asks for clarification. Requires approval before writing."
+    }
+
+    fn exposure(&self) -> ToolExposure {
+        ToolExposure::Deferred
     }
 
     fn parameters_schema(&self) -> Value {
@@ -584,6 +598,10 @@ impl Tool for TaskComplete {
         "Propose completing a task. Closes the open work session and records the total active time. If task_ref is omitted, asks for clarification. Requires approval before writing."
     }
 
+    fn exposure(&self) -> ToolExposure {
+        ToolExposure::Deferred
+    }
+
     fn parameters_schema(&self) -> Value {
         json!({
             "type": "object",
@@ -705,6 +723,10 @@ impl Tool for TaskSplit {
 
     fn description(&self) -> &'static str {
         "Propose splitting a task into an original (retained quantity) and a new remainder task. Preserves history and optionally sets a dependency. If task_ref is omitted, asks for clarification. Requires approval before writing."
+    }
+
+    fn exposure(&self) -> ToolExposure {
+        ToolExposure::Deferred
     }
 
     fn parameters_schema(&self) -> Value {

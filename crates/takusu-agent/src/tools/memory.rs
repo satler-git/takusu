@@ -3,7 +3,7 @@ use serde_json::{Value, json};
 use takusu_client::{Client, CreateMemory, MemoryQuery, MemoryRow, SimilarTaskQuery, UpdateMemory};
 
 use crate::tools::takusu::required_i64;
-use crate::{InvalidArgsError, Tool, ToolError, ToolOutput};
+use crate::{InvalidArgsError, Tool, ToolError, ToolExposure, ToolOutput};
 
 fn object(args: Value) -> Result<serde_json::Map<String, Value>, ToolError> {
     args.as_object()
@@ -115,6 +115,7 @@ fn make_proposal(
         proposed_changes: vec![proposal],
         inferred_fields,
         changes: Vec::new(),
+        discovered_tools: Vec::new(),
         schedule_dirty: false,
         is_error: false,
     }
@@ -146,6 +147,9 @@ impl Tool for MemorySearch {
     }
     fn description(&self) -> &'static str {
         "Search saved memory by key or content. Returns a list of matching memory entries."
+    }
+    fn exposure(&self) -> ToolExposure {
+        ToolExposure::Deferred
     }
     fn parameters_schema(&self) -> Value {
         json!({
@@ -196,6 +200,9 @@ impl Tool for SimilarTasks {
     fn description(&self) -> &'static str {
         "Find completed tasks with titles similar to the given title. Useful for estimating durations before creating a task."
     }
+    fn exposure(&self) -> ToolExposure {
+        ToolExposure::Deferred
+    }
     fn parameters_schema(&self) -> Value {
         json!({
             "type": "object",
@@ -234,6 +241,9 @@ impl Tool for MemorySave {
     }
     fn description(&self) -> &'static str {
         "Propose saving a memory (proper noun, fact, or task note). Generates an approval request; does not write immediately."
+    }
+    fn exposure(&self) -> ToolExposure {
+        ToolExposure::Deferred
     }
     fn parameters_schema(&self) -> Value {
         json!({
@@ -365,6 +375,9 @@ impl Tool for MemoryUpdate {
     fn description(&self) -> &'static str {
         "Propose updating a memory's content. Generates an approval request; does not write immediately."
     }
+    fn exposure(&self) -> ToolExposure {
+        ToolExposure::Deferred
+    }
     fn parameters_schema(&self) -> Value {
         json!({
             "type": "object",
@@ -466,6 +479,9 @@ impl Tool for MemoryDelete {
     }
     fn description(&self) -> &'static str {
         "Propose deleting a memory. Generates an approval request; does not write immediately."
+    }
+    fn exposure(&self) -> ToolExposure {
+        ToolExposure::Deferred
     }
     fn parameters_schema(&self) -> Value {
         json!({

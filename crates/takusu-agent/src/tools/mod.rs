@@ -4,6 +4,7 @@ pub mod progress;
 pub mod rrule;
 pub mod skills;
 pub mod takusu;
+pub mod tool_search;
 pub mod user_input;
 
 use crate::ToolError;
