@@ -220,16 +220,16 @@ function ToastItem({
   const accentColor = useMemo(() => {
     switch (type) {
       case 'success':
-        return '#2E7D32';
+        return colors.success;
       case 'error':
-        return '#C62828';
+        return colors.error;
       case 'loading':
         return colors.gray;
       case 'info':
       default:
         return colors.brand;
     }
-  }, [colors.brand, colors.gray, type]);
+  }, [colors.brand, colors.error, colors.gray, colors.success, type]);
 
   const clearDismissTimer = useCallback(() => {
     if (timerRef.current) {
@@ -396,7 +396,7 @@ function ToastItem({
             {
               backgroundColor: colors.surfaceTint,
               borderTopColor: accentColor,
-              shadowColor: '#000000',
+              shadowColor: colors.shadow,
             },
           ]}
         >

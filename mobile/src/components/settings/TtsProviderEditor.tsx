@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -8,7 +8,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useColors, BRAND_COLOR } from '@/src/theme';
+import { useColors, type ColorSet } from '@/src/theme';
 import {
   TTS_PROVIDER_LABELS,
   type TtsProvider,
@@ -32,6 +32,78 @@ interface Props {
   saving?: boolean;
 }
 
+const makeStyles = (colors: ColorSet) =>
+  StyleSheet.create({
+    editor: {
+      padding: 12,
+      borderWidth: 1,
+      borderRadius: 12,
+      gap: 10,
+      marginTop: 8,
+    },
+    input: {
+      minHeight: 44,
+      borderWidth: 1,
+      borderRadius: 8,
+      paddingHorizontal: 12,
+    },
+    dropdown: {
+      minHeight: 44,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      borderWidth: 1,
+      borderRadius: 8,
+      paddingHorizontal: 12,
+    },
+    dropdownList: {
+      marginTop: 4,
+      borderWidth: 1,
+      borderRadius: 8,
+      overflow: 'hidden',
+    },
+    dropdownItem: {
+      minHeight: 44,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      paddingHorizontal: 12,
+    },
+    row: { flexDirection: 'row', gap: 8 },
+    language: { flex: 1 },
+    sampleRate: { flex: 1.5 },
+    speed: { flex: 1 },
+    actions: { flexDirection: 'row', gap: 8, marginTop: 4 },
+    save: {
+      flex: 1,
+      minHeight: 44,
+      borderRadius: 8,
+      backgroundColor: colors.brand,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    saveText: { fontWeight: '700' },
+    cancel: {
+      minHeight: 44,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: colors.disabled,
+      paddingHorizontal: 16,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    remove: {
+      minHeight: 44,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: colors.destructive,
+      paddingHorizontal: 16,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    removeText: { color: colors.destructive },
+  });
+
 export function TtsProviderEditor({
   provider,
   apiKey,
@@ -43,6 +115,7 @@ export function TtsProviderEditor({
   saving,
 }: Props) {
   const colors = useColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [isExpanded, setIsExpanded] = useState(false);
   const [sampleRate, setSampleRate] = useState(String(provider.sampleRate));
   const [speed, setSpeed] = useState(
@@ -206,7 +279,7 @@ export function TtsProviderEditor({
                   }
                   size={20}
                   color={
-                    provider.provider === type ? BRAND_COLOR : colors.black
+                    provider.provider === type ? colors.brand : colors.black
                   }
                 />
                 <Text style={{ color: colors.black }}>
@@ -268,7 +341,7 @@ export function TtsProviderEditor({
                   }
                   size={20}
                   color={
-                    provider.voiceId.trim() === '' ? BRAND_COLOR : colors.black
+                    provider.voiceId.trim() === '' ? colors.brand : colors.black
                   }
                 />
                 <Text style={{ color: colors.black }}>自動（最初の声）</Text>
@@ -293,7 +366,7 @@ export function TtsProviderEditor({
                     size={20}
                     color={
                       provider.voiceId === voice.name
-                        ? BRAND_COLOR
+                        ? colors.brand
                         : colors.black
                     }
                   />
@@ -412,74 +485,3 @@ export function TtsProviderEditor({
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  editor: {
-    padding: 12,
-    borderWidth: 1,
-    borderRadius: 12,
-    gap: 10,
-    marginTop: 8,
-  },
-  input: {
-    minHeight: 44,
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-  },
-  dropdown: {
-    minHeight: 44,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-  },
-  dropdownList: {
-    marginTop: 4,
-    borderWidth: 1,
-    borderRadius: 8,
-    overflow: 'hidden',
-  },
-  dropdownItem: {
-    minHeight: 44,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 12,
-  },
-  row: { flexDirection: 'row', gap: 8 },
-  language: { flex: 1 },
-  sampleRate: { flex: 1.5 },
-  speed: { flex: 1 },
-  actions: { flexDirection: 'row', gap: 8, marginTop: 4 },
-  save: {
-    flex: 1,
-    minHeight: 44,
-    borderRadius: 8,
-    backgroundColor: BRAND_COLOR,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  saveText: { fontWeight: '700' },
-  cancel: {
-    minHeight: 44,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#999',
-    paddingHorizontal: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  remove: {
-    minHeight: 44,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#B33A3A',
-    paddingHorizontal: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  removeText: { color: '#B33A3A' },
-});

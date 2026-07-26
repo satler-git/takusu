@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import {
   Modal,
   Pressable,
@@ -6,7 +7,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { BRAND_COLOR, useColors } from '@/src/theme';
+import { useColors, type ColorSet } from '@/src/theme';
 import type { PermissionsMap } from '@/src/api/settingsStore';
 import { PermissionsEditor } from '@/src/components/PermissionsEditor';
 
@@ -17,6 +18,43 @@ interface Props {
   onClose: () => void;
 }
 
+const makeStyles = (colors: ColorSet) =>
+  StyleSheet.create({
+    overlay: {
+      flex: 1,
+      backgroundColor: colors.overlay,
+      justifyContent: 'center',
+      alignItems: 'center',
+      padding: 20,
+    },
+    backdrop: {
+      position: 'absolute',
+      left: 0,
+      right: 0,
+      top: 0,
+      bottom: 0,
+      backgroundColor: 'transparent',
+    },
+    card: {
+      width: '100%',
+      height: '80%',
+      borderRadius: 16,
+      padding: 16,
+      gap: 8,
+    },
+    editorScroll: { flex: 1 },
+    title: { fontSize: 18, fontWeight: '700' },
+    hint: { fontSize: 12, marginBottom: 4 },
+    close: {
+      marginTop: 8,
+      minHeight: 44,
+      borderRadius: 8,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    closeText: { fontWeight: '700' },
+  });
+
 export function SessionPermissionsModal({
   visible,
   permissions,
@@ -24,6 +62,7 @@ export function SessionPermissionsModal({
   onClose,
 }: Props) {
   const colors = useColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
 
   return (
     <Modal
@@ -46,7 +85,7 @@ export function SessionPermissionsModal({
           </ScrollView>
           <Pressable
             onPress={onClose}
-            style={[styles.close, { backgroundColor: BRAND_COLOR }]}
+            style={[styles.close, { backgroundColor: colors.brand }]}
           >
             <Text style={[styles.closeText, { color: colors.white }]}>
               閉じる
@@ -57,39 +96,3 @@ export function SessionPermissionsModal({
     </Modal>
   );
 }
-
-const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  backdrop: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: 0,
-    bottom: 0,
-    backgroundColor: 'transparent',
-  },
-  card: {
-    width: '100%',
-    height: '80%',
-    borderRadius: 16,
-    padding: 16,
-    gap: 8,
-  },
-  editorScroll: { flex: 1 },
-  title: { fontSize: 18, fontWeight: '700' },
-  hint: { fontSize: 12, marginBottom: 4 },
-  close: {
-    marginTop: 8,
-    minHeight: 44,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  closeText: { fontWeight: '700' },
-});

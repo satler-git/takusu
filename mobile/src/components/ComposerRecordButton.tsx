@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useMemo } from 'react';
 import { StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -10,7 +10,7 @@ import Reanimated, {
 } from 'react-native-reanimated';
 import { startRecording, stopAndTranscribe } from '@/src/utils/voice';
 import { useVoice } from '@/src/api/VoiceContext';
-import { BRAND_COLOR, useColors } from '@/src/theme';
+import { useColors, type ColorSet } from '@/src/theme';
 import { haptic } from '@/src/components/haptics';
 
 const LONG_PRESS_MS = 350;
@@ -25,6 +25,39 @@ interface ComposerRecordButtonProps {
   onAppend: (transcript: string) => void;
 }
 
+const makeStyles = (colors: ColorSet) =>
+  StyleSheet.create({
+    button: {
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      borderWidth: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: 'transparent',
+    },
+    hint: {
+      position: 'absolute',
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      backgroundColor: colors.surfaceTranslucent,
+      alignItems: 'center',
+      justifyContent: 'center',
+      opacity: 0,
+    },
+    lockHint: {
+      top: -44,
+      borderColor: colors.brand,
+      borderWidth: 1,
+    },
+    cancelHint: {
+      left: -44,
+      borderColor: colors.destructive,
+      borderWidth: 1,
+    },
+  });
+
 export function ComposerRecordButton({
   audioReady,
   historyReady,
@@ -32,6 +65,8 @@ export function ComposerRecordButton({
   onAppend,
 }: ComposerRecordButtonProps) {
   const colors = useColors();
+  const { brand, destructive, white } = colors;
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const { isRecording } = useVoice();
 
   const recordingRef = useRef(false);
@@ -276,14 +311,14 @@ export function ComposerRecordButton({
         { translateX: translateX.value },
         { translateY: translateY.value },
       ],
-      backgroundColor: isRecording ? '#B33A3A' : 'transparent',
+      backgroundColor: isRecording ? destructive : 'transparent',
       borderColor: willCancelShared.value
-        ? '#B33A3A'
+        ? destructive
         : isRecording
-          ? '#B33A3A'
-          : BRAND_COLOR,
+          ? destructive
+          : brand,
     }),
-    [isRecording],
+    [isRecording, brand, destructive],
   );
 
   const lockHintStyle = useAnimatedStyle(() => ({
@@ -309,49 +344,17 @@ export function ComposerRecordButton({
         <Ionicons
           name={isRecording ? 'close' : 'mic'}
           size={24}
-          color={isRecording ? colors.white : BRAND_COLOR}
+          color={isRecording ? white : brand}
         />
         <Reanimated.View style={[styles.hint, styles.lockHint, lockHintStyle]}>
-          <Ionicons name="lock-closed" size={16} color="#7c3aed" />
+          <Ionicons name="lock-closed" size={16} color={brand} />
         </Reanimated.View>
         <Reanimated.View
           style={[styles.hint, styles.cancelHint, cancelHintStyle]}
         >
-          <Ionicons name="trash" size={16} color="#B33A3A" />
+          <Ionicons name="trash" size={16} color={destructive} />
         </Reanimated.View>
       </Reanimated.View>
     </GestureDetector>
   );
 }
-
-const styles = StyleSheet.create({
-  button: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'transparent',
-  },
-  hint: {
-    position: 'absolute',
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.95)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    opacity: 0,
-  },
-  lockHint: {
-    top: -44,
-    borderColor: '#7c3aed',
-    borderWidth: 1,
-  },
-  cancelHint: {
-    left: -44,
-    borderColor: '#B33A3A',
-    borderWidth: 1,
-  },
-});

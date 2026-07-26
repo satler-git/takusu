@@ -1,6 +1,6 @@
 // SplitTaskModal — bottom sheet for splitting a task into retained + remainder
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import {
   Modal,
   Pressable,
@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { TaskRow } from '@/src/api/types';
-import { useTheme, BRAND_COLOR } from '@/src/theme';
+import { useTheme, type ColorSet } from '@/src/theme';
 import { haptic } from '@/src/components/haptics';
 import { DateTimePickerModal } from '@/src/components/DateTimePickerModal';
 import { Checkbox } from 'react-native-paper';
@@ -31,6 +31,67 @@ interface SplitTaskModalProps {
   onCancel: () => void;
 }
 
+const makeStyles = (colors: ColorSet) =>
+  StyleSheet.create({
+    overlay: {
+      flex: 1,
+      justifyContent: 'flex-end',
+      backgroundColor: colors.overlay,
+    },
+    sheet: {
+      borderTopLeftRadius: 20,
+      borderTopRightRadius: 20,
+      padding: 20,
+      gap: 12,
+    },
+    title: {
+      fontSize: 16,
+      fontWeight: '700',
+      marginBottom: 4,
+    },
+    field: {
+      gap: 4,
+    },
+    label: {
+      fontSize: 12,
+    },
+    input: {
+      borderWidth: 1,
+      borderRadius: 10,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      fontSize: 15,
+    },
+    hint: {
+      fontSize: 12,
+      marginTop: 2,
+    },
+    checkboxRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 4,
+    },
+    actions: {
+      flexDirection: 'row',
+      gap: 8,
+      marginTop: 8,
+    },
+    button: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 12,
+      borderRadius: 10,
+    },
+    secondary: {
+      borderWidth: 1,
+    },
+    primaryText: {
+      color: colors.onBrand,
+      fontWeight: '600',
+    },
+  });
+
 export function SplitTaskModal({
   visible,
   task,
@@ -38,6 +99,7 @@ export function SplitTaskModal({
   onCancel,
 }: SplitTaskModalProps) {
   const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const insets = useSafeAreaInsets();
   const total = task.quantity_total ?? 0;
 
@@ -147,7 +209,7 @@ export function SplitTaskModal({
             <Checkbox
               status={setDependency ? 'checked' : 'unchecked'}
               onPress={() => setSetDependency((v) => !v)}
-              color={BRAND_COLOR}
+              color={colors.brand}
             />
             <Text style={{ color: colors.black, marginLeft: 8 }}>
               残りを元タスクに依存させる
@@ -232,7 +294,7 @@ export function SplitTaskModal({
               style={[
                 styles.button,
                 {
-                  backgroundColor: canConfirm ? BRAND_COLOR : colors.grayLight,
+                  backgroundColor: canConfirm ? colors.brand : colors.grayLight,
                 },
               ]}
               onPress={handleConfirm}
@@ -259,63 +321,3 @@ export function SplitTaskModal({
     </Modal>
   );
 }
-
-const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0,0,0,0.35)',
-  },
-  sheet: {
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 20,
-    gap: 12,
-  },
-  title: {
-    fontSize: 16,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  field: {
-    gap: 4,
-  },
-  label: {
-    fontSize: 12,
-  },
-  input: {
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 15,
-  },
-  hint: {
-    fontSize: 12,
-    marginTop: 2,
-  },
-  checkboxRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 4,
-  },
-  actions: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 8,
-  },
-  button: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    borderRadius: 10,
-  },
-  secondary: {
-    borderWidth: 1,
-  },
-  primaryText: {
-    color: '#FFFFFF',
-    fontWeight: '600',
-  },
-});

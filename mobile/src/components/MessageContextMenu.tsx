@@ -14,7 +14,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { BRAND_COLOR, useColors } from '@/src/theme';
+import { useColors, type ColorSet } from '@/src/theme';
 import { haptic } from '@/src/components/haptics';
 
 type MenuPosition = { x: number; y: number };
@@ -41,6 +41,41 @@ const MENU_WIDTH = 160;
 const MENU_ITEM_HEIGHT = 48;
 const MENU_VERTICAL_PADDING = 8;
 
+const makeStyles = (colors: ColorSet) =>
+  StyleSheet.create({
+    overlay: {
+      flex: 1,
+      backgroundColor: colors.overlay,
+    },
+    menu: {
+      position: 'absolute',
+      width: MENU_WIDTH,
+      borderRadius: 12,
+      paddingVertical: MENU_VERTICAL_PADDING,
+      shadowColor: colors.shadow,
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.3,
+      shadowRadius: 8,
+      elevation: 8,
+    },
+    menuItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      paddingHorizontal: 16,
+      height: MENU_ITEM_HEIGHT,
+    },
+    menuItemPressed: {
+      backgroundColor: colors.brandPressed,
+    },
+    menuItemDisabled: {
+      opacity: 0.5,
+    },
+    menuItemText: {
+      fontSize: 15,
+    },
+  });
+
 export function MessageContextMenu({
   visible,
   position,
@@ -52,6 +87,7 @@ export function MessageContextMenu({
   onRevert,
 }: MessageContextMenuProps) {
   const colors = useColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
 
   const menuHeight = MENU_VERTICAL_PADDING * 2 + MENU_ITEM_HEIGHT * 3;
@@ -121,7 +157,7 @@ export function MessageContextMenu({
               <Ionicons
                 name={item.icon}
                 size={18}
-                color={item.disabled ? colors.gray : BRAND_COLOR}
+                color={item.disabled ? colors.gray : colors.brand}
               />
               <Text
                 style={[
@@ -138,37 +174,3 @@ export function MessageContextMenu({
     </Modal>
   );
 }
-
-const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.2)',
-  },
-  menu: {
-    position: 'absolute',
-    width: MENU_WIDTH,
-    borderRadius: 12,
-    paddingVertical: MENU_VERTICAL_PADDING,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 16,
-    height: MENU_ITEM_HEIGHT,
-  },
-  menuItemPressed: {
-    backgroundColor: 'rgba(114,97,163,0.1)',
-  },
-  menuItemDisabled: {
-    opacity: 0.5,
-  },
-  menuItemText: {
-    fontSize: 15,
-  },
-});

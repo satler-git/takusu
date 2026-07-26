@@ -9,12 +9,12 @@
 // via `saveHabitSteps`. Depends references use `tempId` so new (unsaved)
 // steps can be referenced before the server assigns real ids.
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Checkbox, TextInput as PaperTextInput } from 'react-native-paper';
 import { Slider } from '@expo/ui/community/slider';
-import { BRAND_COLOR, useColors } from '@/src/theme';
+import { useColors, type ColorSet } from '@/src/theme';
 import { haptic } from '@/src/components/haptics';
 import { DeleteConfirmButton } from '@/src/components/DeleteConfirmButton';
 import { DateTimePickerModal } from '@/src/components/DateTimePickerModal';
@@ -30,8 +30,157 @@ interface HabitStepEditorProps {
   stepsActive: boolean;
 }
 
+const makeStyles = (colors: ColorSet) =>
+  StyleSheet.create({
+    container: {
+      gap: 8,
+    },
+    stepCard: {
+      borderRadius: 10,
+      borderWidth: 1,
+      padding: 10,
+    },
+    stepHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    foldButton: {
+      padding: 2,
+    },
+    stepHeaderTap: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    stepIndex: {
+      fontSize: 16,
+      fontWeight: '700',
+      minWidth: 20,
+    },
+    stepTitle: {
+      flex: 1,
+      fontSize: 15,
+      fontWeight: '500',
+    },
+    stepTime: {
+      fontSize: 12,
+      fontVariant: ['tabular-nums'],
+    },
+    stepHeaderActions: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+    stepBody: {
+      marginTop: 8,
+      gap: 10,
+    },
+    row: {
+      flexDirection: 'row',
+      gap: 10,
+    },
+    rowWithButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    inputWithButton: {
+      flex: 1,
+    },
+    maximizeButton: {
+      width: 36,
+      height: 36,
+      borderRadius: 8,
+      borderWidth: 1.5,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    maximizeButtonDisabled: {
+      borderColor: colors.grayLight,
+      opacity: 0.4,
+    },
+    timeField: {
+      flex: 1,
+      borderWidth: 1,
+      borderRadius: 8,
+      paddingHorizontal: 10,
+      paddingVertical: 8,
+      gap: 2,
+    },
+    timeFieldLabel: {
+      fontSize: 11,
+      fontWeight: '500',
+    },
+    timeFieldValue: {
+      fontSize: 15,
+    },
+    hint: {
+      fontSize: 11,
+      marginTop: 2,
+    },
+    label: {
+      fontSize: 13,
+      fontWeight: '500',
+    },
+    sliderRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+    },
+    slider: {
+      flex: 1,
+    },
+    sliderValue: {
+      fontSize: 13,
+      fontVariant: ['tabular-nums'],
+    },
+    toggleRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 16,
+    },
+    toggleItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+    toggleLabel: {
+      fontSize: 13,
+    },
+    depSection: {
+      gap: 4,
+    },
+    depItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      paddingVertical: 2,
+    },
+    depLabel: {
+      fontSize: 14,
+    },
+    addButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+      borderWidth: 1,
+      borderStyle: 'dashed',
+      borderRadius: 10,
+      paddingVertical: 10,
+    },
+    addButtonText: {
+      color: colors.brand,
+      fontSize: 14,
+      fontWeight: '500',
+    },
+  });
+
 export function HabitStepEditor({ drafts, onChange }: HabitStepEditorProps) {
   const colors = useColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [pickerField, setPickerField] = useState<{
     tempId: string;
@@ -172,7 +321,7 @@ export function HabitStepEditor({ drafts, onChange }: HabitStepEditorProps) {
                 style={styles.stepHeaderTap}
                 onPress={() => toggle(d.tempId)}
               >
-                <Text style={[styles.stepIndex, { color: BRAND_COLOR }]}>
+                <Text style={[styles.stepIndex, { color: colors.brand }]}>
                   {idx + 1}
                 </Text>
                 <Text
@@ -194,7 +343,7 @@ export function HabitStepEditor({ drafts, onChange }: HabitStepEditorProps) {
                   <Ionicons
                     name="chevron-up"
                     size={20}
-                    color={idx === 0 ? colors.grayLight : BRAND_COLOR}
+                    color={idx === 0 ? colors.grayLight : colors.brand}
                   />
                 </Pressable>
                 <Pressable
@@ -206,7 +355,9 @@ export function HabitStepEditor({ drafts, onChange }: HabitStepEditorProps) {
                     name="chevron-down"
                     size={20}
                     color={
-                      idx === drafts.length - 1 ? colors.grayLight : BRAND_COLOR
+                      idx === drafts.length - 1
+                        ? colors.grayLight
+                        : colors.brand
                     }
                   />
                 </Pressable>
@@ -228,7 +379,7 @@ export function HabitStepEditor({ drafts, onChange }: HabitStepEditorProps) {
                   onChangeText={(v) => update(d.tempId, { title: v })}
                   label="タイトル"
                   outlineColor={colors.separator}
-                  activeOutlineColor={BRAND_COLOR}
+                  activeOutlineColor={colors.brand}
                   dense
                 />
 
@@ -294,14 +445,14 @@ export function HabitStepEditor({ drafts, onChange }: HabitStepEditorProps) {
                             update(d.tempId, { avg_minutes: 0 });
                         }}
                         outlineColor={colors.separator}
-                        activeOutlineColor={BRAND_COLOR}
+                        activeOutlineColor={colors.brand}
                         style={styles.inputWithButton}
                         dense
                       />
                       <Pressable
                         style={[
                           styles.maximizeButton,
-                          { borderColor: BRAND_COLOR },
+                          { borderColor: colors.brand },
                           !canMaximize && styles.maximizeButtonDisabled,
                         ]}
                         onPress={() => {
@@ -311,7 +462,11 @@ export function HabitStepEditor({ drafts, onChange }: HabitStepEditorProps) {
                         }}
                         disabled={!canMaximize}
                       >
-                        <Ionicons name="expand" size={16} color={BRAND_COLOR} />
+                        <Ionicons
+                          name="expand"
+                          size={16}
+                          color={colors.brand}
+                        />
                       </Pressable>
                     </View>
                     {canMaximize && (
@@ -331,7 +486,7 @@ export function HabitStepEditor({ drafts, onChange }: HabitStepEditorProps) {
                       });
                     }}
                     outlineColor={colors.separator}
-                    activeOutlineColor={BRAND_COLOR}
+                    activeOutlineColor={colors.brand}
                     style={{ flex: 1 }}
                     dense
                   />
@@ -355,10 +510,10 @@ export function HabitStepEditor({ drafts, onChange }: HabitStepEditorProps) {
                     minimumValue={0}
                     maximumValue={1}
                     step={0.25}
-                    minimumTrackTintColor={BRAND_COLOR}
+                    minimumTrackTintColor={colors.brand}
                     style={styles.slider}
                   />
-                  <Text style={[styles.sliderValue, { color: BRAND_COLOR }]}>
+                  <Text style={[styles.sliderValue, { color: colors.brand }]}>
                     {d.abandonability.toFixed(2)}
                   </Text>
                 </View>
@@ -379,7 +534,7 @@ export function HabitStepEditor({ drafts, onChange }: HabitStepEditorProps) {
                       onPress={() =>
                         update(d.tempId, { parallelizable: !d.parallelizable })
                       }
-                      color={BRAND_COLOR}
+                      color={colors.brand}
                     />
                   </Pressable>
                   <Pressable
@@ -398,7 +553,7 @@ export function HabitStepEditor({ drafts, onChange }: HabitStepEditorProps) {
                           allows_parallel: !d.allows_parallel,
                         })
                       }
-                      color={BRAND_COLOR}
+                      color={colors.brand}
                     />
                   </Pressable>
                   <Pressable
@@ -411,7 +566,7 @@ export function HabitStepEditor({ drafts, onChange }: HabitStepEditorProps) {
                     <Checkbox
                       status={d.fixed ? 'checked' : 'unchecked'}
                       onPress={() => update(d.tempId, { fixed: !d.fixed })}
-                      color={BRAND_COLOR}
+                      color={colors.brand}
                     />
                   </Pressable>
                 </View>
@@ -455,7 +610,7 @@ export function HabitStepEditor({ drafts, onChange }: HabitStepEditorProps) {
                           <Checkbox
                             status={checked ? 'checked' : 'unchecked'}
                             disabled={wouldCycle}
-                            color={BRAND_COLOR}
+                            color={colors.brand}
                           />
                           <Text
                             style={[styles.depLabel, { color: colors.black }]}
@@ -479,10 +634,10 @@ export function HabitStepEditor({ drafts, onChange }: HabitStepEditorProps) {
       })}
 
       <Pressable
-        style={[styles.addButton, { borderColor: BRAND_COLOR }]}
+        style={[styles.addButton, { borderColor: colors.brand }]}
         onPress={addStep}
       >
-        <Ionicons name="add" size={20} color={BRAND_COLOR} />
+        <Ionicons name="add" size={20} color={colors.brand} />
         <Text style={styles.addButtonText}>ステップを追加</Text>
       </Pressable>
 
@@ -517,153 +672,6 @@ export function HabitStepEditor({ drafts, onChange }: HabitStepEditorProps) {
 function stepLabel(idx: number, d: StepDraft): string {
   return `${idx + 1}. ${d.title || '(無題)'}`;
 }
-
-const styles = StyleSheet.create({
-  container: {
-    gap: 8,
-  },
-  stepCard: {
-    borderRadius: 10,
-    borderWidth: 1,
-    padding: 10,
-  },
-  stepHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  foldButton: {
-    padding: 2,
-  },
-  stepHeaderTap: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  stepIndex: {
-    fontSize: 16,
-    fontWeight: '700',
-    minWidth: 20,
-  },
-  stepTitle: {
-    flex: 1,
-    fontSize: 15,
-    fontWeight: '500',
-  },
-  stepTime: {
-    fontSize: 12,
-    fontVariant: ['tabular-nums'],
-  },
-  stepHeaderActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  stepBody: {
-    marginTop: 8,
-    gap: 10,
-  },
-  row: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  rowWithButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  inputWithButton: {
-    flex: 1,
-  },
-  maximizeButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 8,
-    borderWidth: 1.5,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  maximizeButtonDisabled: {
-    borderColor: '#CCC',
-    opacity: 0.4,
-  },
-  timeField: {
-    flex: 1,
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    gap: 2,
-  },
-  timeFieldLabel: {
-    fontSize: 11,
-    fontWeight: '500',
-  },
-  timeFieldValue: {
-    fontSize: 15,
-  },
-  hint: {
-    fontSize: 11,
-    marginTop: 2,
-  },
-  label: {
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  sliderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  slider: {
-    flex: 1,
-  },
-  sliderValue: {
-    fontSize: 13,
-    fontVariant: ['tabular-nums'],
-  },
-  toggleRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 16,
-  },
-  toggleItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  toggleLabel: {
-    fontSize: 13,
-  },
-  depSection: {
-    gap: 4,
-  },
-  depItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingVertical: 2,
-  },
-  depLabel: {
-    fontSize: 14,
-  },
-  addButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    borderWidth: 1,
-    borderStyle: 'dashed',
-    borderRadius: 10,
-    paddingVertical: 10,
-  },
-  addButtonText: {
-    color: BRAND_COLOR,
-    fontSize: 14,
-    fontWeight: '500',
-  },
-});
 
 // Re-export for callers that need to format a step's cost.
 export { formatDuration };

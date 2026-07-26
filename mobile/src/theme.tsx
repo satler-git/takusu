@@ -179,6 +179,22 @@ export const COLORS = {
   onBrand: '#FBFAFD',
   shadow: '#1C1824',
   scrim: '#1C1824',
+  destructive: '#B33A3A',
+  destructiveBg: 'rgba(179,58,58,0.15)',
+  error: '#C62828',
+  errorContainer: '#4D2A32',
+  success: '#2E7D32',
+  warning: '#A65B00',
+  warningIcon: '#B07A00',
+  warningBorder: '#E0B040',
+  warningBg: '#FFF6E6',
+  overlay: 'rgba(0,0,0,0.4)',
+  pressed: 'rgba(0,0,0,0.05)',
+  brandPressed: 'rgba(114,97,163,0.1)',
+  cardOutline: 'rgba(0,0,0,0.08)',
+  surfaceTranslucent: 'rgba(255,255,255,0.95)',
+  redundantEdge: '#e85d04',
+  disabled: '#999999',
 } as const;
 
 // Dark theme colors (retuned purple palette).
@@ -200,6 +216,22 @@ export const DARK_COLORS = {
   onBrand: '#F0ECF5',
   shadow: '#0D0B12',
   scrim: '#0D0B12',
+  destructive: '#D67A7A',
+  destructiveBg: 'rgba(214,122,122,0.15)',
+  error: '#D67A7A',
+  errorContainer: '#4D2A32',
+  success: '#6AA67E',
+  warning: '#F5E5D5',
+  warningIcon: '#F5E5D5',
+  warningBorder: '#6B645D',
+  warningBg: '#423A32',
+  overlay: 'rgba(0,0,0,0.5)',
+  pressed: 'rgba(255,255,255,0.05)',
+  brandPressed: 'rgba(155,139,196,0.15)',
+  cardOutline: 'rgba(255,255,255,0.10)',
+  surfaceTranslucent: 'rgba(30,27,39,0.95)',
+  redundantEdge: '#e85d04',
+  disabled: '#A9A3B4',
 } as const;
 
 // Catppuccin Macchiato theme colors (issue #388).
@@ -222,6 +254,22 @@ export const CATPPUCCIN_COLORS = {
   onBrand: '#CAD3F5',
   shadow: '#181A28',
   scrim: '#181A28',
+  destructive: '#ED8796',
+  destructiveBg: 'rgba(237,135,150,0.15)',
+  error: '#ED8796',
+  errorContainer: '#6A495A',
+  success: '#A6DA95',
+  warning: '#F5A97F',
+  warningIcon: '#F5A97F',
+  warningBorder: '#EED49F',
+  warningBg: '#6B645D',
+  overlay: 'rgba(24,25,38,0.5)',
+  pressed: 'rgba(255,255,255,0.05)',
+  brandPressed: 'rgba(155,139,196,0.15)',
+  cardOutline: 'rgba(255,255,255,0.10)',
+  surfaceTranslucent: 'rgba(54,58,79,0.95)',
+  redundantEdge: '#e85d04',
+  disabled: '#8087A2',
 } as const;
 
 // Aura Soft Dark theme colors (issue #729).
@@ -244,6 +292,22 @@ export const AURA_SOFT_DARK_COLORS = {
   onBrand: '#bdbdbd',
   shadow: '#0A0A0A',
   scrim: '#0A0A0A',
+  destructive: '#c55858',
+  destructiveBg: 'rgba(197,88,88,0.15)',
+  error: '#c55858',
+  errorContainer: '#462e2e',
+  success: '#54c59f',
+  warning: '#ffca85',
+  warningIcon: '#ffca85',
+  warningBorder: '#ffe9aa',
+  warningBg: '#463a32',
+  overlay: 'rgba(20,20,30,0.5)',
+  pressed: 'rgba(255,255,255,0.05)',
+  brandPressed: 'rgba(132,100,198,0.15)',
+  cardOutline: 'rgba(255,255,255,0.10)',
+  surfaceTranslucent: 'rgba(33,32,46,0.95)',
+  redundantEdge: '#e85d04',
+  disabled: '#b4b4b4',
 } as const;
 
 export type ColorSet = {
@@ -264,6 +328,22 @@ export type ColorSet = {
   onBrand: string;
   shadow: string;
   scrim: string;
+  destructive: string;
+  destructiveBg: string;
+  error: string;
+  errorContainer: string;
+  success: string;
+  warning: string;
+  warningIcon: string;
+  warningBorder: string;
+  warningBg: string;
+  overlay: string;
+  pressed: string;
+  brandPressed: string;
+  cardOutline: string;
+  surfaceTranslucent: string;
+  redundantEdge: string;
+  disabled: string;
 };
 
 function colorsForTheme(theme: AppTheme): ColorSet {

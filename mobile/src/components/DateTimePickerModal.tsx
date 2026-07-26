@@ -3,7 +3,7 @@
 // On Android, the native picker shows as a dialog; we wrap it in a Modal for
 // consistent UX and provide a "clear" button for optional fields.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import {
   Modal,
   Pressable,
@@ -17,7 +17,7 @@ import DateTimePicker, {
 } from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BRAND_COLOR, useTheme } from '@/src/theme';
+import { useTheme, type ColorSet } from '@/src/theme';
 import { haptic } from '@/src/components/haptics';
 
 interface DateTimePickerModalProps {
@@ -38,6 +38,101 @@ interface DateTimePickerModalProps {
   }>;
 }
 
+const makeStyles = (colors: ColorSet) =>
+  StyleSheet.create({
+    overlay: {
+      flex: 1,
+      backgroundColor: colors.overlay,
+      justifyContent: 'flex-end',
+    },
+    sheet: {
+      borderTopLeftRadius: 20,
+      borderTopRightRadius: 20,
+      padding: 20,
+      paddingBottom: 32,
+    },
+    header: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 16,
+    },
+    title: {
+      fontSize: 18,
+      fontWeight: '600',
+    },
+    shortcutsRow: {
+      marginBottom: 12,
+    },
+    shortcutsContent: {
+      gap: 8,
+      paddingRight: 4,
+    },
+    shortcutChip: {
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 14,
+      borderWidth: 1,
+    },
+    shortcutText: {
+      fontSize: 13,
+      fontWeight: '500',
+    },
+    fieldRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 14,
+      paddingHorizontal: 12,
+      borderRadius: 10,
+      marginBottom: 8,
+      gap: 8,
+    },
+    fieldLabel: {
+      fontSize: 15,
+      flex: 1,
+    },
+    fieldValue: {
+      fontSize: 15,
+      fontWeight: '500',
+    },
+    clearButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      paddingVertical: 10,
+      alignSelf: 'flex-start',
+    },
+    clearText: {
+      fontSize: 14,
+    },
+    actionRow: {
+      flexDirection: 'row',
+      gap: 12,
+      marginTop: 16,
+    },
+    cancelButton: {
+      flex: 1,
+      paddingVertical: 12,
+      borderRadius: 10,
+      borderWidth: 1,
+      alignItems: 'center',
+    },
+    cancelText: {
+      fontSize: 15,
+    },
+    confirmButton: {
+      flex: 1,
+      paddingVertical: 12,
+      borderRadius: 10,
+      backgroundColor: colors.brand,
+      alignItems: 'center',
+    },
+    confirmText: {
+      fontSize: 15,
+      fontWeight: '600',
+    },
+  });
+
 export function DateTimePickerModal({
   visible,
   value,
@@ -56,6 +151,7 @@ export function DateTimePickerModal({
   const [showPicker, setShowPicker] = useState(false);
   const insets = useSafeAreaInsets();
   const { dark, colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
 
   // Sync tempDate with value prop when modal opens
   useEffect(() => {
@@ -169,7 +265,7 @@ export function DateTimePickerModal({
                       style={[
                         styles.shortcutText,
                         {
-                          color: wouldViolate ? colors.grayLight : BRAND_COLOR,
+                          color: wouldViolate ? colors.grayLight : colors.brand,
                         },
                       ]}
                     >
@@ -186,7 +282,7 @@ export function DateTimePickerModal({
               style={[styles.fieldRow, { backgroundColor: colors.surfaceTint }]}
               onPress={() => openPicker('time')}
             >
-              <Ionicons name="time-outline" size={20} color={BRAND_COLOR} />
+              <Ionicons name="time-outline" size={20} color={colors.brand} />
               <Text style={[styles.fieldLabel, { color: colors.grayDark }]}>
                 時刻
               </Text>
@@ -211,7 +307,7 @@ export function DateTimePickerModal({
                 <Ionicons
                   name="calendar-outline"
                   size={20}
-                  color={BRAND_COLOR}
+                  color={colors.brand}
                 />
                 <Text style={[styles.fieldLabel, { color: colors.grayDark }]}>
                   日付
@@ -238,7 +334,7 @@ export function DateTimePickerModal({
                   <Ionicons
                     name="time-outline"
                     size={20}
-                    color={tempDate ? BRAND_COLOR : colors.grayLight}
+                    color={tempDate ? colors.brand : colors.grayLight}
                   />
                   <Text
                     style={[
@@ -318,97 +414,3 @@ export function DateTimePickerModal({
     </Modal>
   );
 }
-
-const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'flex-end',
-  },
-  sheet: {
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 20,
-    paddingBottom: 32,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  shortcutsRow: {
-    marginBottom: 12,
-  },
-  shortcutsContent: {
-    gap: 8,
-    paddingRight: 4,
-  },
-  shortcutChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 14,
-    borderWidth: 1,
-  },
-  shortcutText: {
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  fieldRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    marginBottom: 8,
-    gap: 8,
-  },
-  fieldLabel: {
-    fontSize: 15,
-    flex: 1,
-  },
-  fieldValue: {
-    fontSize: 15,
-    fontWeight: '500',
-  },
-  clearButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingVertical: 10,
-    alignSelf: 'flex-start',
-  },
-  clearText: {
-    fontSize: 14,
-  },
-  actionRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 16,
-  },
-  cancelButton: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    alignItems: 'center',
-  },
-  cancelText: {
-    fontSize: 15,
-  },
-  confirmButton: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 10,
-    backgroundColor: BRAND_COLOR,
-    alignItems: 'center',
-  },
-  confirmText: {
-    fontSize: 15,
-    fontWeight: '600',
-  },
-});

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -10,7 +10,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useColors, BRAND_COLOR } from '@/src/theme';
+import { useColors, type ColorSet } from '@/src/theme';
 import { useServer } from '@/src/api/ServerProvider';
 import { useTopToast } from '@/src/components/TopToast';
 import { haptic } from '@/src/components/haptics';
@@ -86,8 +86,95 @@ function newTtsProvider(): TtsProviderSettings {
   };
 }
 
+const makeStyles = (colors: ColorSet) =>
+  StyleSheet.create({
+    loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+    content: { padding: 16, gap: 10 },
+    heading: { fontSize: 18, fontWeight: '700', marginTop: 12 },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      borderWidth: 1,
+      borderRadius: 8,
+      gap: 8,
+    },
+    rowMain: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      padding: 10,
+      gap: 8,
+    },
+    rowMainPressed: { backgroundColor: colors.pressed },
+    rowText: { flex: 1 },
+    editButton: {
+      paddingVertical: 6,
+      paddingHorizontal: 12,
+      marginRight: 10,
+      borderWidth: 1,
+      borderRadius: 8,
+    },
+    addButton: {
+      minHeight: 44,
+      borderWidth: 1,
+      borderRadius: 8,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    editor: {
+      padding: 12,
+      borderWidth: 1,
+      borderRadius: 12,
+      gap: 10,
+      marginTop: 8,
+    },
+    input: {
+      minHeight: 44,
+      borderWidth: 1,
+      borderRadius: 8,
+      paddingHorizontal: 12,
+    },
+    secondary: {
+      minHeight: 44,
+      borderWidth: 1,
+      borderColor: colors.brand,
+      borderRadius: 8,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    actions: { flexDirection: 'row', gap: 8, marginTop: 4 },
+    save: {
+      flex: 1,
+      minHeight: 44,
+      borderRadius: 8,
+      backgroundColor: colors.brand,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    saveText: { color: colors.onBrand, fontWeight: '700' },
+    cancel: {
+      minHeight: 44,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: colors.disabled,
+      paddingHorizontal: 16,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    remove: { alignItems: 'center', padding: 12, marginTop: 8 },
+    removeText: { color: colors.destructive },
+    countInput: {
+      width: 48,
+      height: 36,
+      borderWidth: 1,
+      borderRadius: 8,
+      textAlign: 'center',
+    },
+  });
+
 export function AgentSettingsView() {
   const colors = useColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const { client, pushAgentConfig } = useServer();
   const { showTopToast } = useTopToast();
 
@@ -573,9 +660,9 @@ export function AgentSettingsView() {
       ))}
       <Pressable
         onPress={() => setEditingLlmProvider(newLlmProvider())}
-        style={[styles.addButton, { borderColor: BRAND_COLOR }]}
+        style={[styles.addButton, { borderColor: colors.brand }]}
       >
-        <Text style={{ color: BRAND_COLOR }}>+ LLM Providerを追加</Text>
+        <Text style={{ color: colors.brand }}>+ LLM Providerを追加</Text>
       </Pressable>
       {editingLlmProvider && (
         <View style={[styles.editor, { borderColor: colors.separator }]}>
@@ -622,7 +709,7 @@ export function AgentSettingsView() {
               disabled={saving}
             >
               {saving ? (
-                <ActivityIndicator color="#fff" />
+                <ActivityIndicator color={colors.onBrand} />
               ) : (
                 <Text style={styles.saveText}>保存</Text>
               )}
@@ -669,7 +756,7 @@ export function AgentSettingsView() {
                   : 'ellipse-outline'
               }
               size={22}
-              color={activeLlmModel === model.id ? BRAND_COLOR : colors.black}
+              color={activeLlmModel === model.id ? colors.brand : colors.black}
             />
             <View style={styles.rowText}>
               <Text style={{ color: colors.black, fontWeight: '600' }}>
@@ -705,9 +792,9 @@ export function AgentSettingsView() {
           }
           setEditingLlmModel(newLlmModel(providerId));
         }}
-        style={[styles.addButton, { borderColor: BRAND_COLOR }]}
+        style={[styles.addButton, { borderColor: colors.brand }]}
       >
-        <Text style={{ color: BRAND_COLOR }}>+ LLM Modelを追加</Text>
+        <Text style={{ color: colors.brand }}>+ LLM Modelを追加</Text>
       </Pressable>
       {editingLlmModel && editingLlmModelProvider && (
         <LlmModelEditor
@@ -786,7 +873,7 @@ export function AgentSettingsView() {
                   : 'ellipse-outline'
               }
               size={22}
-              color={activeTts === provider.id ? BRAND_COLOR : colors.black}
+              color={activeTts === provider.id ? colors.brand : colors.black}
             />
             <View style={styles.rowText}>
               <Text style={{ color: colors.black, fontWeight: '600' }}>
@@ -807,9 +894,9 @@ export function AgentSettingsView() {
       ))}
       <Pressable
         onPress={() => setEditingTts(newTtsProvider())}
-        style={[styles.addButton, { borderColor: BRAND_COLOR }]}
+        style={[styles.addButton, { borderColor: colors.brand }]}
       >
-        <Text style={{ color: BRAND_COLOR }}>+ TTS Providerを追加</Text>
+        <Text style={{ color: colors.brand }}>+ TTS Providerを追加</Text>
       </Pressable>
       {editingTts && (
         <TtsProviderEditor
@@ -883,88 +970,3 @@ export function AgentSettingsView() {
     </ScrollView>
   );
 }
-
-const styles = StyleSheet.create({
-  loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  content: { padding: 16, gap: 10 },
-  heading: { fontSize: 18, fontWeight: '700', marginTop: 12 },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderRadius: 8,
-    gap: 8,
-  },
-  rowMain: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 10,
-    gap: 8,
-  },
-  rowMainPressed: { backgroundColor: 'rgba(0,0,0,0.05)' },
-  rowText: { flex: 1 },
-  editButton: {
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    marginRight: 10,
-    borderWidth: 1,
-    borderRadius: 8,
-  },
-  addButton: {
-    minHeight: 44,
-    borderWidth: 1,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  editor: {
-    padding: 12,
-    borderWidth: 1,
-    borderRadius: 12,
-    gap: 10,
-    marginTop: 8,
-  },
-  input: {
-    minHeight: 44,
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-  },
-  secondary: {
-    minHeight: 44,
-    borderWidth: 1,
-    borderColor: BRAND_COLOR,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  actions: { flexDirection: 'row', gap: 8, marginTop: 4 },
-  save: {
-    flex: 1,
-    minHeight: 44,
-    borderRadius: 8,
-    backgroundColor: BRAND_COLOR,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  saveText: { color: '#fff', fontWeight: '700' },
-  cancel: {
-    minHeight: 44,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#999',
-    paddingHorizontal: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  remove: { alignItems: 'center', padding: 12, marginTop: 8 },
-  removeText: { color: '#B33A3A' },
-  countInput: {
-    width: 48,
-    height: 36,
-    borderWidth: 1,
-    borderRadius: 8,
-    textAlign: 'center',
-  },
-});

@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { Ionicons } from '@expo/vector-icons';
-import { BRAND_COLOR, useColors, type ColorSet } from '@/src/theme';
+import { useColors, type ColorSet } from '@/src/theme';
 import { haptic } from '@/src/components/haptics';
 import { formatJson } from '@/src/utils/formatJson';
 import type { ToolCallItem } from '@/src/api/agentSessionStore';
@@ -49,7 +49,14 @@ function getTime(iso: string): number | null {
   );
 }
 
-function renderValue(value: unknown, colors: ColorSet, depth = 0): ReactNode {
+interface ValueViewProps {
+  value: unknown;
+  colors: ColorSet;
+  depth?: number;
+}
+
+function ValueView({ value, colors, depth = 0 }: ValueViewProps) {
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   if (value === undefined || value === null) {
     return <Text style={[styles.valueText, { color: colors.gray }]}>-</Text>;
   }
@@ -86,6 +93,7 @@ interface ValueRowProps {
 }
 
 function ValueRow({ label, value, colors }: ValueRowProps) {
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <View style={styles.row}>
       <Text style={[styles.rowLabel, { color: colors.gray }]}>{label}</Text>
@@ -101,6 +109,7 @@ interface ObjectRowsProps {
 }
 
 function ObjectRows({ object, colors, depth = 0 }: ObjectRowsProps) {
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const isNested = depth > 0;
   return (
     <View
@@ -118,7 +127,7 @@ function ObjectRows({ object, colors, depth = 0 }: ObjectRowsProps) {
         <ValueRow
           key={key}
           label={key}
-          value={renderValue(value, colors, depth + 1)}
+          value={<ValueView value={value} colors={colors} depth={depth + 1} />}
           colors={colors}
         />
       ))}
@@ -133,6 +142,7 @@ interface ArrayRowsProps {
 }
 
 function ArrayRows({ array, colors, depth = 0 }: ArrayRowsProps) {
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const isNested = depth > 0;
   return (
     <View
@@ -150,7 +160,7 @@ function ArrayRows({ array, colors, depth = 0 }: ArrayRowsProps) {
         <ValueRow
           key={index}
           label={String(index)}
-          value={renderValue(item, colors, depth + 1)}
+          value={<ValueView value={item} colors={colors} depth={depth + 1} />}
           colors={colors}
         />
       ))}
@@ -164,6 +174,7 @@ interface AsrArgumentListProps {
 }
 
 function AsrArgumentList({ questions, colors }: AsrArgumentListProps) {
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const records = questions.filter(isRecord);
   return (
     <View
@@ -195,12 +206,148 @@ interface ToolCallDetailModalProps {
   onClose: () => void;
 }
 
+const makeStyles = (colors: ColorSet) =>
+  StyleSheet.create({
+    overlay: {
+      flex: 1,
+      backgroundColor: colors.overlay,
+      justifyContent: 'center',
+      alignItems: 'center',
+      padding: 20,
+    },
+    backdrop: {
+      position: 'absolute',
+      left: 0,
+      right: 0,
+      top: 0,
+      bottom: 0,
+    },
+    card: {
+      width: '100%',
+      height: '80%',
+      borderRadius: 16,
+      padding: 16,
+      gap: 12,
+    },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+    },
+    statusDot: { width: 10, height: 10, borderRadius: 5 },
+    title: { flex: 1, fontSize: 18, fontWeight: '700' },
+    badge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 12 },
+    badgeText: { fontSize: 11, fontWeight: '700' },
+    body: { flex: 1 },
+    bodyContent: { gap: 14 },
+    section: { gap: 6 },
+    sectionTitle: { fontSize: 12, fontWeight: '600' },
+    sectionBox: {
+      borderWidth: 1,
+      borderRadius: 10,
+      padding: 10,
+      gap: 8,
+    },
+    changeCard: {
+      borderWidth: 1,
+      borderRadius: 10,
+      padding: 10,
+      gap: 8,
+    },
+    changeHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      flexWrap: 'wrap',
+    },
+    changeBadge: {
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      borderRadius: 12,
+    },
+    changeBadgeText: {
+      color: colors.onBrand,
+      fontSize: 11,
+      fontWeight: '700',
+    },
+    changeTarget: {
+      fontWeight: '700',
+      fontSize: 14,
+      flexShrink: 1,
+    },
+    whenBlock: {
+      borderWidth: 1,
+      borderRadius: 8,
+      padding: 8,
+      paddingHorizontal: 10,
+      gap: 4,
+    },
+    detailRow: {
+      flexDirection: 'row',
+      alignItems: 'baseline',
+      gap: 8,
+    },
+    detailLabel: {
+      minWidth: 56,
+      fontSize: 13,
+    },
+    detailValue: { fontSize: 13, fontWeight: '600' },
+    strikethrough: { textDecorationLine: 'line-through' },
+    warningBox: {
+      borderWidth: 1,
+      borderRadius: 8,
+      padding: 10,
+      gap: 4,
+    },
+    nestedSectionBox: {
+      borderRadius: 8,
+      padding: 8,
+      gap: 6,
+    },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 8,
+    },
+    rowLabel: {
+      minWidth: 80,
+      fontSize: 13,
+      fontWeight: '600',
+    },
+    rowValue: { flex: 1 },
+    valueText: { fontSize: 13 },
+    monoText: { fontSize: 11, fontFamily: 'monospace' },
+    asrItem: { gap: 2 },
+    asrOriginal: { fontSize: 13, fontWeight: '600' },
+    asrPurpose: { fontSize: 12 },
+    footer: { gap: 10 },
+    copyButton: {
+      padding: 10,
+      borderRadius: 8,
+      alignItems: 'center',
+      borderWidth: 1,
+    },
+    copyText: { fontSize: 13, fontWeight: '600' },
+    closeButton: {
+      padding: 12,
+      borderRadius: 8,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    closeText: { fontWeight: '700' },
+    emptyText: { fontSize: 13, textAlign: 'center' },
+    memoryMeta: { fontSize: 11, fontFamily: 'monospace', marginTop: 4 },
+    skillName: { fontSize: 16, fontWeight: '700' },
+    skillSlug: { fontSize: 12, marginTop: 2 },
+  });
+
 export function ToolCallDetailModal({
   visible,
   call,
   onClose,
 }: ToolCallDetailModalProps) {
   const colors = useColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const { title, status, statusColor, isAsr, args } = useMemo<{
     title: string;
@@ -346,7 +493,7 @@ export function ToolCallDetailModal({
             </Pressable>
             <Pressable
               onPress={onClose}
-              style={[styles.closeButton, { backgroundColor: BRAND_COLOR }]}
+              style={[styles.closeButton, { backgroundColor: colors.brand }]}
             >
               <Text style={[styles.closeText, { color: colors.white }]}>
                 閉じる
@@ -376,6 +523,7 @@ function DetailRow({
   valueColor,
   colors,
 }: DetailRowProps) {
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const hasDiff = before !== undefined && after !== undefined;
   return (
     <View style={styles.detailRow}>
@@ -462,6 +610,7 @@ interface ScheduleDayCardProps {
 }
 
 function ScheduleDayCard({ date, entries, colors }: ScheduleDayCardProps) {
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <View
       style={[
@@ -521,6 +670,7 @@ interface OverdueCardProps {
 }
 
 function OverdueCard({ item, colors }: OverdueCardProps) {
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const title = asString(item.title);
   const ref = asString(item.reference) ?? String(item.display_id ?? '');
   const end = asString(item.end_at);
@@ -564,6 +714,7 @@ interface ReferenceCardProps {
 }
 
 function ReferenceCard({ title, items, colors }: ReferenceCardProps) {
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const isMove = title === '移動対象';
   return (
     <View
@@ -601,6 +752,7 @@ interface SleepImpactProps {
 }
 
 function SleepCard({ before, after, colors }: SleepImpactProps) {
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const beforeStr = before !== undefined ? formatDuration(before) : '-';
   const afterStr = after !== undefined ? formatDuration(after) : '-';
   const reduced = before !== undefined && after !== undefined && after < before;
@@ -639,10 +791,12 @@ interface WarningListProps {
 }
 
 function WarningBox({ warnings }: WarningListProps) {
+  const colors = useColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
-    <View style={[styles.warningBox, { borderColor: '#A65B00' }]}>
+    <View style={[styles.warningBox, { borderColor: colors.warning }]}>
       {warnings.map((warning, index) => (
-        <Text key={index} style={{ color: '#A65B00', fontSize: 13 }}>
+        <Text key={index} style={{ color: colors.warning, fontSize: 13 }}>
           注意: {warning}
         </Text>
       ))}
@@ -716,6 +870,7 @@ interface MemoryResultViewProps {
 }
 
 function MemoryResultView({ data, colors }: MemoryResultViewProps) {
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const results = asArray<Record<string, unknown>>(data.results, isRecord);
 
   return (
@@ -743,6 +898,7 @@ interface MemoryCardProps {
 }
 
 function MemoryCard({ item, colors }: MemoryCardProps) {
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const kind = asString(item.kind) ?? '';
   const source = asString(item.source) ?? '';
   const key = asString(item.key) ?? '';
@@ -804,6 +960,7 @@ interface SkillResultViewProps {
 }
 
 function SkillResultView({ data, colors }: SkillResultViewProps) {
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const name = asString(data.name) ?? '';
   const slug = asString(data.slug) ?? '';
   const description = asString(data.description) ?? '';
@@ -885,6 +1042,7 @@ function ResultContent({
   isRejected: boolean;
   colors: ColorSet;
 }) {
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   let parsed: unknown = result;
   try {
     parsed = JSON.parse(result);
@@ -920,141 +1078,7 @@ function ResultContent({
         },
       ]}
     >
-      {renderValue(parsed, colors, 0)}
+      <ValueView value={parsed} colors={colors} depth={0} />
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  backdrop: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: 0,
-    bottom: 0,
-  },
-  card: {
-    width: '100%',
-    height: '80%',
-    borderRadius: 16,
-    padding: 16,
-    gap: 12,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  statusDot: { width: 10, height: 10, borderRadius: 5 },
-  title: { flex: 1, fontSize: 18, fontWeight: '700' },
-  badge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 12 },
-  badgeText: { fontSize: 11, fontWeight: '700' },
-  body: { flex: 1 },
-  bodyContent: { gap: 14 },
-  section: { gap: 6 },
-  sectionTitle: { fontSize: 12, fontWeight: '600' },
-  sectionBox: {
-    borderWidth: 1,
-    borderRadius: 10,
-    padding: 10,
-    gap: 8,
-  },
-  changeCard: {
-    borderWidth: 1,
-    borderRadius: 10,
-    padding: 10,
-    gap: 8,
-  },
-  changeHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    flexWrap: 'wrap',
-  },
-  changeBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 12,
-  },
-  changeBadgeText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  changeTarget: {
-    fontWeight: '700',
-    fontSize: 14,
-    flexShrink: 1,
-  },
-  whenBlock: {
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 8,
-    paddingHorizontal: 10,
-    gap: 4,
-  },
-  detailRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: 8,
-  },
-  detailLabel: {
-    minWidth: 56,
-    fontSize: 13,
-  },
-  detailValue: { fontSize: 13, fontWeight: '600' },
-  strikethrough: { textDecorationLine: 'line-through' },
-  warningBox: {
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 10,
-    gap: 4,
-  },
-  nestedSectionBox: {
-    borderRadius: 8,
-    padding: 8,
-    gap: 6,
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 8,
-  },
-  rowLabel: {
-    minWidth: 80,
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  rowValue: { flex: 1 },
-  valueText: { fontSize: 13 },
-  monoText: { fontSize: 11, fontFamily: 'monospace' },
-  asrItem: { gap: 2 },
-  asrOriginal: { fontSize: 13, fontWeight: '600' },
-  asrPurpose: { fontSize: 12 },
-  footer: { gap: 10 },
-  copyButton: {
-    padding: 10,
-    borderRadius: 8,
-    alignItems: 'center',
-    borderWidth: 1,
-  },
-  copyText: { fontSize: 13, fontWeight: '600' },
-  closeButton: {
-    padding: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  closeText: { fontWeight: '700' },
-  emptyText: { fontSize: 13, textAlign: 'center' },
-  memoryMeta: { fontSize: 11, fontFamily: 'monospace', marginTop: 4 },
-  skillName: { fontSize: 16, fontWeight: '700' },
-  skillSlug: { fontSize: 12, marginTop: 2 },
-});

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useMemo } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -14,7 +14,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
 import { useServer } from '@/src/api/ServerProvider';
 import { showError } from '@/src/api/errors';
-import { useColors, BRAND_COLOR } from '@/src/theme';
+import { useColors, type ColorSet } from '@/src/theme';
 import { haptic } from '@/src/components/haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -25,10 +25,94 @@ function utf8ByteLength(text: string): number {
   return encodeURIComponent(text).replace(/%[0-9A-Fa-f]{2}/g, 'X').length;
 }
 
+const makeStyles = (colors: ColorSet) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+    },
+    topBar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 8,
+      paddingBottom: 8,
+    },
+    backButton: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    title: {
+      fontSize: 18,
+      fontWeight: '600',
+      marginLeft: 8,
+    },
+    saveButton: {
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+      backgroundColor: colors.brand,
+      borderRadius: 8,
+    },
+    saveButtonText: {
+      color: colors.onBrand,
+      fontSize: 14,
+      fontWeight: '600',
+    },
+    loading: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    content: {
+      padding: 16,
+      gap: 16,
+    },
+    field: {
+      gap: 4,
+    },
+    label: {
+      fontSize: 13,
+      fontWeight: '500',
+    },
+    input: {
+      borderWidth: 1,
+      borderRadius: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      fontSize: 16,
+    },
+    bodyInput: {
+      minHeight: 160,
+      fontFamily: 'monospace',
+      fontSize: 12,
+    },
+    fileButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      alignSelf: 'flex-start',
+      gap: 8,
+      marginTop: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderWidth: 1,
+      borderRadius: 8,
+    },
+    fileButtonText: {
+      fontSize: 14,
+      fontWeight: '600',
+    },
+    fileName: {
+      fontSize: 12,
+      marginTop: 4,
+    },
+  });
+
 export function SkillEditView() {
   const { client } = useServer();
   const router = useRouter();
   const colors = useColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ slug?: string | string[] }>();
   const slugParam = Array.isArray(params.slug) ? params.slug[0] : params.slug;
@@ -188,7 +272,7 @@ export function SkillEditView() {
     <View style={[styles.container, { backgroundColor: colors.white }]}>
       <View style={[styles.topBar, { paddingTop: 8 + insets.top }]}>
         <Pressable style={styles.backButton} onPress={close}>
-          <Ionicons name="chevron-back" size={28} color={BRAND_COLOR} />
+          <Ionicons name="chevron-back" size={28} color={colors.brand} />
         </Pressable>
         <Text style={[styles.title, { color: colors.black }]}>
           {editing ? 'スキルを編集' : '新しいスキル'}
@@ -210,7 +294,7 @@ export function SkillEditView() {
 
       {loading ? (
         <View style={styles.loading}>
-          <ActivityIndicator color={BRAND_COLOR} />
+          <ActivityIndicator color={colors.brand} />
         </View>
       ) : (
         <ScrollView
@@ -283,11 +367,15 @@ export function SkillEditView() {
               textAlignVertical="top"
             />
             <Pressable
-              style={[styles.fileButton, { borderColor: BRAND_COLOR }]}
+              style={[styles.fileButton, { borderColor: colors.brand }]}
               onPress={pickFile}
             >
-              <Ionicons name="document-outline" size={18} color={BRAND_COLOR} />
-              <Text style={[styles.fileButtonText, { color: BRAND_COLOR }]}>
+              <Ionicons
+                name="document-outline"
+                size={18}
+                color={colors.brand}
+              />
+              <Text style={[styles.fileButtonText, { color: colors.brand }]}>
                 ファイルから読み込む
               </Text>
             </Pressable>
@@ -302,85 +390,3 @@ export function SkillEditView() {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingBottom: 8,
-  },
-  backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginLeft: 8,
-  },
-  saveButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: BRAND_COLOR,
-    borderRadius: 8,
-  },
-  saveButtonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  loading: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  content: {
-    padding: 16,
-    gap: 16,
-  },
-  field: {
-    gap: 4,
-  },
-  label: {
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  input: {
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
-  },
-  bodyInput: {
-    minHeight: 160,
-    fontFamily: 'monospace',
-    fontSize: 12,
-  },
-  fileButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    gap: 8,
-    marginTop: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderWidth: 1,
-    borderRadius: 8,
-  },
-  fileButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  fileName: {
-    fontSize: 12,
-    marginTop: 4,
-  },
-});

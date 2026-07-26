@@ -28,7 +28,7 @@ import Reanimated, {
   useDerivedValue,
 } from 'react-native-reanimated';
 import * as d3 from 'd3-force';
-import { BRAND_COLOR, useColors } from '@/src/theme';
+import { useColors } from '@/src/theme';
 
 // Paragraph object type from react-native-skia.
 type SkParagraph = NonNullable<ComponentProps<typeof Paragraph>['paragraph']>;
@@ -82,9 +82,6 @@ const MAX_LABEL_CHARS = 40;
 const LABEL_WIDTH = 140;
 const LABEL_PAD_X = 6;
 const LABEL_PAD_Y = 3;
-/** Redundant edges (direct dep already implied by a transitive path) — #387 */
-const REDUNDANT_EDGE_COLOR = '#e85d04';
-
 // ── Helpers ──
 
 /** Check if two line segments intersect (#382: cut line vs edges) */
@@ -237,8 +234,8 @@ export function DependencyGraph({
     const paragraphs: Record<string, SkParagraph> = {};
     for (const node of inputNodes) {
       const text = truncate(node.label, MAX_LABEL_CHARS);
-      const isDone = node.color === '#aaa';
-      const color = isDone ? '#999' : '#333';
+      const isDone = node.color === colors.done;
+      const color = isDone ? colors.disabled : colors.black;
       const builder = Skia.ParagraphBuilder.Make({
         textAlign: TextAlign.Center,
       });
@@ -256,7 +253,7 @@ export function DependencyGraph({
       paragraphs[node.id] = p;
     }
     return { labelHeights: heights, labelParagraphs: paragraphs };
-  }, [inputNodes, fontSize]);
+  }, [inputNodes, fontSize, colors]);
 
   // ── Force simulation ──
 
@@ -736,8 +733,8 @@ export function DependencyGraph({
   // normal → gray
   function edgeColor(key: string, redundant: boolean): string {
     if (crossingEdges.has(key)) return colors.red;
-    if (redundant) return REDUNDANT_EDGE_COLOR;
-    return colors.grayLight ?? '#aaa';
+    if (redundant) return colors.redundantEdge;
+    return colors.grayLight ?? colors.done;
   }
 
   return (
@@ -791,7 +788,7 @@ export function DependencyGraph({
             {/* Drag line — always rendered, hidden via opacity when inactive (#219) */}
             <Path
               path={dragPath}
-              color={BRAND_COLOR}
+              color={colors.brand}
               style="stroke"
               strokeWidth={2}
               opacity={dragActive}
@@ -815,13 +812,13 @@ export function DependencyGraph({
               // Look up current visual properties from inputNodes (may have
               // changed without triggering a re-simulation).
               const inputNode = inputNodeMap.get(node.id);
-              const isDone = inputNode?.color === '#aaa';
+              const isDone = inputNode?.color === colors.done;
               const isHighlight = node.id === highlightTaskId;
               const bgColor = isDone
-                ? '#ccc'
+                ? colors.grayLight
                 : isHighlight
                   ? colors.red
-                  : (inputNode?.color ?? BRAND_COLOR);
+                  : (inputNode?.color ?? colors.brand);
 
               return (
                 <Group key={node.id} zIndex={2}>
@@ -887,6 +884,7 @@ function NodeLabelBackground({
   y: number;
   height: number;
 }) {
+  const colors = useColors();
   const bgPath = useMemo(() => {
     const bgRect = Skia.XYWHRect(
       x - LABEL_WIDTH / 2 - LABEL_PAD_X,
@@ -899,7 +897,9 @@ function NodeLabelBackground({
     return p;
   }, [x, y, height]);
 
-  return <Path path={bgPath} color="#ffffff" style="fill" opacity={0.85} />;
+  return (
+    <Path path={bgPath} color={colors.onBrand} style="fill" opacity={0.85} />
+  );
 }
 
 function NodeLabelText({

@@ -1,7 +1,7 @@
 // HabitAddView — create a new habit
 // Fields: title, recurrence (RRULE), cost (avg, sigma), abandonability
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import {
   Pressable,
   ScrollView,
@@ -17,7 +17,7 @@ import { Slider } from '@expo/ui/community/slider';
 import { useServer } from '@/src/api/ServerProvider';
 import { undoRedo } from '@/src/api/undoRedo';
 import { showError } from '@/src/api/errors';
-import { BRAND_COLOR, useColors } from '@/src/theme';
+import { useColors, type ColorSet } from '@/src/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RruleBuilderModal } from '@/src/components/RruleBuilderModal';
 import { DateTimePickerModal } from '@/src/components/DateTimePickerModal';
@@ -34,10 +34,121 @@ import {
 import type { WindowMode } from '@/src/api/types';
 import { WINDOW_MODE_DAY, WINDOW_MODE_PERIOD } from '@/src/api/types';
 
+const makeStyles = (colors: ColorSet) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+    },
+    topBar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 8,
+      paddingBottom: 8,
+    },
+    backButton: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    title: {
+      fontSize: 18,
+      fontWeight: '600',
+      marginLeft: 8,
+    },
+    saveButton: {
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+      backgroundColor: colors.brand,
+      borderRadius: 8,
+    },
+    saveButtonText: {
+      fontSize: 14,
+      fontWeight: '600',
+    },
+    content: {
+      padding: 16,
+      gap: 16,
+    },
+    field: {
+      gap: 4,
+    },
+    row: {
+      flexDirection: 'row',
+      gap: 12,
+    },
+    rowWithButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    inputWithButton: {
+      flex: 1,
+    },
+    maximizeButton: {
+      width: 36,
+      height: 36,
+      borderRadius: 8,
+      borderWidth: 1.5,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    rruleHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+    },
+    helpButton: {
+      padding: 2,
+    },
+    dateField: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      borderWidth: 1,
+      borderRadius: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 12,
+      gap: 8,
+    },
+    dateText: {
+      flex: 1,
+      fontSize: 16,
+    },
+    label: {
+      fontSize: 13,
+      fontWeight: '500',
+    },
+    hint: {
+      fontSize: 11,
+      marginTop: 2,
+    },
+    input: {
+      borderWidth: 1,
+      borderRadius: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      fontSize: 16,
+    },
+    toggleRow: {
+      flexDirection: 'row',
+      gap: 24,
+    },
+    toggleItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    toggleLabel: {
+      fontSize: 14,
+    },
+  });
+
 export function HabitAddView() {
   const { client } = useServer();
   const router = useRouter();
   const colors = useColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const insets = useSafeAreaInsets();
 
   const [title, setTitle] = useState('');
@@ -147,7 +258,7 @@ export function HabitAddView() {
             router.back();
           }}
         >
-          <Ionicons name="chevron-back" size={28} color={BRAND_COLOR} />
+          <Ionicons name="chevron-back" size={28} color={colors.brand} />
         </Pressable>
         <Text style={[styles.title, { color: colors.black }]}>New Habit</Text>
         <View style={{ flex: 1 }} />
@@ -201,7 +312,7 @@ export function HabitAddView() {
               <Ionicons
                 name="help-circle-outline"
                 size={18}
-                color={BRAND_COLOR}
+                color={colors.brand}
               />
             </Pressable>
           </View>
@@ -215,7 +326,7 @@ export function HabitAddView() {
               setShowRruleBuilder(true);
             }}
           >
-            <Ionicons name="repeat" size={20} color={BRAND_COLOR} />
+            <Ionicons name="repeat" size={20} color={colors.brand} />
             <Text
               style={[styles.dateText, { color: colors.black }]}
               numberOfLines={2}
@@ -242,7 +353,7 @@ export function HabitAddView() {
               { value: WINDOW_MODE_DAY, label: '当日' },
               { value: WINDOW_MODE_PERIOD, label: '期間内どこでも' },
             ]}
-            theme={{ colors: { primary: BRAND_COLOR } }}
+            theme={{ colors: { primary: colors.brand } }}
           />
           {windowMode === WINDOW_MODE_PERIOD && (
             <Text style={[styles.hint, { color: colors.grayLight }]}>
@@ -268,7 +379,7 @@ export function HabitAddView() {
                 setPickerField('start');
               }}
             >
-              <Ionicons name="time-outline" size={20} color={BRAND_COLOR} />
+              <Ionicons name="time-outline" size={20} color={colors.brand} />
               <Text style={[styles.dateText, { color: colors.black }]}>
                 {startTime}
               </Text>
@@ -291,7 +402,7 @@ export function HabitAddView() {
                 setPickerField('end');
               }}
             >
-              <Ionicons name="time-outline" size={20} color={BRAND_COLOR} />
+              <Ionicons name="time-outline" size={20} color={colors.brand} />
               <Text style={[styles.dateText, { color: colors.black }]}>
                 {endTime}
               </Text>
@@ -317,7 +428,7 @@ export function HabitAddView() {
                 autoCorrect={false}
               />
               <Pressable
-                style={[styles.maximizeButton, { borderColor: BRAND_COLOR }]}
+                style={[styles.maximizeButton, { borderColor: colors.brand }]}
                 onPress={() => {
                   const [sh, sm] = startTime
                     .split(':')
@@ -332,7 +443,7 @@ export function HabitAddView() {
                   setAvgMinutes(String(Math.max(1, diffMin)));
                 }}
               >
-                <Ionicons name="expand" size={16} color={BRAND_COLOR} />
+                <Ionicons name="expand" size={16} color={colors.brand} />
               </Pressable>
             </View>
             {(() => {
@@ -385,7 +496,7 @@ export function HabitAddView() {
             minimumValue={0}
             maximumValue={1}
             step={0.25}
-            minimumTrackTintColor={BRAND_COLOR}
+            minimumTrackTintColor={colors.brand}
           />
         </View>
 
@@ -402,7 +513,7 @@ export function HabitAddView() {
               <Checkbox
                 status={parallelizable ? 'checked' : 'unchecked'}
                 onPress={() => setParallelizable(!parallelizable)}
-                color={BRAND_COLOR}
+                color={colors.brand}
               />
             </Pressable>
             <Pressable
@@ -415,7 +526,7 @@ export function HabitAddView() {
               <Checkbox
                 status={allowsParallel ? 'checked' : 'unchecked'}
                 onPress={() => setAllowsParallel(!allowsParallel)}
-                color={BRAND_COLOR}
+                color={colors.brand}
               />
             </Pressable>
           </View>
@@ -429,7 +540,7 @@ export function HabitAddView() {
             <Checkbox
               status={fixed ? 'checked' : 'unchecked'}
               onPress={() => setFixed(!fixed)}
-              color={BRAND_COLOR}
+              color={colors.brand}
             />
           </View>
           <Text style={[styles.hint, { color: colors.grayLight }]}>
@@ -481,112 +592,3 @@ export function HabitAddView() {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingBottom: 8,
-  },
-  backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginLeft: 8,
-  },
-  saveButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: BRAND_COLOR,
-    borderRadius: 8,
-  },
-  saveButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  content: {
-    padding: 16,
-    gap: 16,
-  },
-  field: {
-    gap: 4,
-  },
-  row: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  rowWithButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  inputWithButton: {
-    flex: 1,
-  },
-  maximizeButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 8,
-    borderWidth: 1.5,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  rruleHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  helpButton: {
-    padding: 2,
-  },
-  dateField: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    gap: 8,
-  },
-  dateText: {
-    flex: 1,
-    fontSize: 16,
-  },
-  label: {
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  hint: {
-    fontSize: 11,
-    marginTop: 2,
-  },
-  input: {
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    fontSize: 16,
-  },
-  toggleRow: {
-    flexDirection: 'row',
-    gap: 24,
-  },
-  toggleItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  toggleLabel: {
-    fontSize: 14,
-  },
-});

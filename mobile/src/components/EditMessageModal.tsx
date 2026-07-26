@@ -1,6 +1,6 @@
 // Modal for editing a chat message in place.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import {
   KeyboardAvoidingView,
   Modal,
@@ -10,7 +10,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { BRAND_COLOR, useColors } from '@/src/theme';
+import { useColors, type ColorSet } from '@/src/theme';
 import { haptic } from '@/src/components/haptics';
 
 interface EditMessageModalProps {
@@ -20,6 +20,66 @@ interface EditMessageModalProps {
   onSave: (text: string) => void;
 }
 
+const makeStyles = (colors: ColorSet) =>
+  StyleSheet.create({
+    overlay: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      backgroundColor: colors.overlay,
+      padding: 24,
+    },
+    card: {
+      width: '100%',
+      maxWidth: 400,
+      borderRadius: 16,
+      padding: 20,
+      gap: 16,
+      shadowColor: colors.shadow,
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.3,
+      shadowRadius: 8,
+      elevation: 8,
+    },
+    title: {
+      fontSize: 18,
+      fontWeight: '700',
+    },
+    inputContainer: {
+      width: '100%',
+      borderWidth: 1,
+      borderRadius: 12,
+      overflow: 'hidden',
+    },
+    input: {
+      width: '100%',
+      height: 120,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      fontSize: 15,
+      textAlignVertical: 'top',
+      backgroundColor: 'transparent',
+    },
+    actions: {
+      flexDirection: 'row',
+      gap: 12,
+    },
+    secondaryButton: {
+      flex: 1,
+      paddingVertical: 12,
+      borderRadius: 10,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    primaryButton: {
+      flex: 1,
+      paddingVertical: 12,
+      borderRadius: 10,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+  });
+
 export function EditMessageModal({
   visible,
   text,
@@ -27,6 +87,7 @@ export function EditMessageModal({
   onSave,
 }: EditMessageModalProps) {
   const colors = useColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [value, setValue] = useState(text);
   const canSave = value.trim().length > 0;
 
@@ -71,7 +132,7 @@ export function EditMessageModal({
                 multiline
                 autoFocus
                 textAlignVertical="top"
-                selectionColor={BRAND_COLOR}
+                selectionColor={colors.brand}
                 underlineColorAndroid="transparent"
               />
             </View>
@@ -90,7 +151,7 @@ export function EditMessageModal({
               <Pressable
                 style={[
                   styles.primaryButton,
-                  { backgroundColor: canSave ? BRAND_COLOR : colors.grayDark },
+                  { backgroundColor: canSave ? colors.brand : colors.grayDark },
                 ]}
                 disabled={!canSave}
                 onPress={() => {
@@ -109,62 +170,3 @@ export function EditMessageModal({
     </Modal>
   );
 }
-
-const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    padding: 24,
-  },
-  card: {
-    width: '100%',
-    maxWidth: 400,
-    borderRadius: 16,
-    padding: 20,
-    gap: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  inputContainer: {
-    width: '100%',
-    borderWidth: 1,
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  input: {
-    width: '100%',
-    height: 120,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 15,
-    textAlignVertical: 'top',
-    backgroundColor: 'transparent',
-  },
-  actions: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  secondaryButton: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  primaryButton: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});

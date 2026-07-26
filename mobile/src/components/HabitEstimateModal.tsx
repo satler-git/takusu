@@ -2,7 +2,7 @@
 // completed task actuals, with automatic outlier detection and per-step
 // estimates (#919).
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useMemo } from 'react';
 import {
   Modal,
   Pressable,
@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BRAND_COLOR, useTheme } from '@/src/theme';
+import { useTheme, type ColorSet } from '@/src/theme';
 import { haptic } from '@/src/components/haptics';
 import { TakusuClient } from '@/src/api/client';
 import type { HabitEstimateResult, HabitEstimateStep } from '@/src/api/types';
@@ -29,6 +29,121 @@ interface HabitEstimateModalProps {
   onApplied: () => Promise<void>;
 }
 
+const makeStyles = (colors: ColorSet) =>
+  StyleSheet.create({
+    overlay: {
+      flex: 1,
+      backgroundColor: colors.overlay,
+      justifyContent: 'flex-end',
+    },
+    sheet: {
+      borderTopLeftRadius: 20,
+      borderTopRightRadius: 20,
+      padding: 20,
+      paddingBottom: 32,
+      maxHeight: '80%',
+    },
+    header: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 16,
+    },
+    title: {
+      fontSize: 18,
+      fontWeight: '600',
+    },
+    summary: {
+      borderRadius: 12,
+      padding: 16,
+      marginBottom: 12,
+      alignItems: 'center',
+    },
+    summaryLabel: {
+      fontSize: 12,
+      marginBottom: 4,
+    },
+    summaryValue: {
+      fontSize: 22,
+      fontWeight: '700',
+      marginBottom: 4,
+    },
+    summaryMeta: {
+      fontSize: 12,
+    },
+    toggleRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      borderRadius: 12,
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      marginBottom: 12,
+    },
+    toggleLabel: {
+      fontSize: 15,
+      fontWeight: '500',
+    },
+    message: {
+      textAlign: 'center',
+      marginVertical: 24,
+      fontSize: 14,
+    },
+    list: {
+      maxHeight: 240,
+      marginBottom: 16,
+    },
+    noSteps: {
+      textAlign: 'center',
+      marginVertical: 24,
+      fontSize: 14,
+    },
+    stepRow: {
+      borderRadius: 12,
+      padding: 14,
+      marginBottom: 8,
+    },
+    stepTitle: {
+      fontSize: 15,
+      fontWeight: '600',
+      marginBottom: 4,
+    },
+    stepValue: {
+      fontSize: 18,
+      fontWeight: '700',
+      marginBottom: 2,
+    },
+    stepMeta: {
+      fontSize: 12,
+    },
+    actionRow: {
+      flexDirection: 'row',
+      gap: 12,
+    },
+    cancelButton: {
+      flex: 1,
+      padding: 14,
+      borderRadius: 12,
+      borderWidth: 1,
+      alignItems: 'center',
+    },
+    cancelText: {
+      fontSize: 15,
+      fontWeight: '600',
+    },
+    confirmButton: {
+      flex: 1,
+      padding: 14,
+      borderRadius: 12,
+      backgroundColor: colors.brand,
+      alignItems: 'center',
+    },
+    confirmText: {
+      fontSize: 15,
+      fontWeight: '600',
+    },
+  });
+
 export function HabitEstimateModal({
   visible,
   habitId,
@@ -37,6 +152,7 @@ export function HabitEstimateModal({
   onApplied,
 }: HabitEstimateModalProps) {
   const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(false);
   const [applying, setApplying] = useState(false);
@@ -164,7 +280,7 @@ export function HabitEstimateModal({
                   value={detectOutliers}
                   onValueChange={toggleOutliers}
                   disabled={loading || applying}
-                  trackColor={{ false: colors.grayLight, true: BRAND_COLOR }}
+                  trackColor={{ false: colors.grayLight, true: colors.brand }}
                   thumbColor={colors.white}
                 />
               </View>
@@ -222,6 +338,7 @@ export function HabitEstimateModal({
 
 function StepEstimateRow({ step }: { step: HabitEstimateStep }) {
   const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <View style={[styles.stepRow, { backgroundColor: colors.surfaceTint }]}>
       <Text style={[styles.stepTitle, { color: colors.black }]}>
@@ -236,117 +353,3 @@ function StepEstimateRow({ step }: { step: HabitEstimateStep }) {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'flex-end',
-  },
-  sheet: {
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 20,
-    paddingBottom: 32,
-    maxHeight: '80%',
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  summary: {
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    alignItems: 'center',
-  },
-  summaryLabel: {
-    fontSize: 12,
-    marginBottom: 4,
-  },
-  summaryValue: {
-    fontSize: 22,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  summaryMeta: {
-    fontSize: 12,
-  },
-  toggleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    marginBottom: 12,
-  },
-  toggleLabel: {
-    fontSize: 15,
-    fontWeight: '500',
-  },
-  message: {
-    textAlign: 'center',
-    marginVertical: 24,
-    fontSize: 14,
-  },
-  list: {
-    maxHeight: 240,
-    marginBottom: 16,
-  },
-  noSteps: {
-    textAlign: 'center',
-    marginVertical: 24,
-    fontSize: 14,
-  },
-  stepRow: {
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 8,
-  },
-  stepTitle: {
-    fontSize: 15,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  stepValue: {
-    fontSize: 18,
-    fontWeight: '700',
-    marginBottom: 2,
-  },
-  stepMeta: {
-    fontSize: 12,
-  },
-  actionRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  cancelButton: {
-    flex: 1,
-    padding: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    alignItems: 'center',
-  },
-  cancelText: {
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  confirmButton: {
-    flex: 1,
-    padding: 14,
-    borderRadius: 12,
-    backgroundColor: BRAND_COLOR,
-    alignItems: 'center',
-  },
-  confirmText: {
-    fontSize: 15,
-    fontWeight: '600',
-  },
-});

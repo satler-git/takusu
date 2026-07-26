@@ -20,6 +20,7 @@ import {
   CATPPUCCIN_COLORS,
   AURA_SOFT_DARK_COLORS,
   type AppTheme,
+  type ColorSet,
 } from '@/src/theme';
 import { UndoRedoToast } from '@/src/components/UndoRedoToast';
 import { WelcomeScreen } from '@/src/components/WelcomeScreen';
@@ -38,6 +39,45 @@ import {
   registerNotificationBackgroundTask,
   unregisterNotificationBackgroundTask,
 } from '@/src/notifications/backgroundTask';
+
+function buildPaperTheme(base: typeof MD3LightTheme, colors: ColorSet) {
+  return {
+    ...base,
+    colors: {
+      ...base.colors,
+      primary: colors.brand,
+      onPrimary: colors.onBrand,
+      primaryContainer: colors.surfaceTint,
+      onPrimaryContainer: colors.black,
+      secondary: colors.gray,
+      onSecondary: colors.black,
+      secondaryContainer: colors.surface,
+      onSecondaryContainer: colors.black,
+      tertiary: colors.brandLight,
+      onTertiary: colors.black,
+      tertiaryContainer: colors.surfaceTint,
+      onTertiaryContainer: colors.black,
+      surface: colors.surface,
+      onSurface: colors.black,
+      surfaceVariant: colors.surfaceTint,
+      onSurfaceVariant: colors.grayLight,
+      background: colors.white,
+      onBackground: colors.black,
+      outline: colors.separator,
+      outlineVariant: colors.grayDark,
+      error: colors.red,
+      onError: colors.onBrand,
+      errorContainer: colors.errorContainer,
+      onErrorContainer: colors.black,
+      inverseSurface: colors.black,
+      inverseOnSurface: colors.white,
+      inversePrimary: colors.brandLight,
+      shadow: colors.shadow,
+      scrim: colors.scrim,
+      backdrop: colors.overlay,
+    },
+  };
+}
 
 // Foreground notification handler — show notifications while app is open
 Notifications.setNotificationHandler({
@@ -246,82 +286,12 @@ function ThemedApp() {
 
   const paperTheme =
     theme === 'catppuccin'
-      ? {
-          ...MD3DarkTheme,
-          colors: {
-            ...MD3DarkTheme.colors,
-            primary: CATPPUCCIN_COLORS.brand,
-            onPrimary: CATPPUCCIN_COLORS.onBrand,
-            primaryContainer: CATPPUCCIN_COLORS.surfaceTint,
-            onPrimaryContainer: CATPPUCCIN_COLORS.black,
-            secondary: CATPPUCCIN_COLORS.gray,
-            onSecondary: CATPPUCCIN_COLORS.black,
-            secondaryContainer: CATPPUCCIN_COLORS.surface,
-            onSecondaryContainer: CATPPUCCIN_COLORS.black,
-            tertiary: CATPPUCCIN_COLORS.brandLight,
-            onTertiary: CATPPUCCIN_COLORS.black,
-            tertiaryContainer: CATPPUCCIN_COLORS.surfaceTint,
-            onTertiaryContainer: CATPPUCCIN_COLORS.black,
-            surface: CATPPUCCIN_COLORS.surface,
-            onSurface: CATPPUCCIN_COLORS.black,
-            surfaceVariant: CATPPUCCIN_COLORS.surfaceTint,
-            onSurfaceVariant: CATPPUCCIN_COLORS.grayLight,
-            background: CATPPUCCIN_COLORS.white,
-            onBackground: CATPPUCCIN_COLORS.black,
-            outline: CATPPUCCIN_COLORS.separator,
-            outlineVariant: CATPPUCCIN_COLORS.grayDark,
-            error: CATPPUCCIN_COLORS.red,
-            onError: CATPPUCCIN_COLORS.onBrand,
-            errorContainer: '#4D2A32',
-            onErrorContainer: CATPPUCCIN_COLORS.black,
-            inverseSurface: CATPPUCCIN_COLORS.black,
-            inverseOnSurface: CATPPUCCIN_COLORS.white,
-            inversePrimary: CATPPUCCIN_COLORS.brandLight,
-            shadow: CATPPUCCIN_COLORS.shadow,
-            scrim: CATPPUCCIN_COLORS.scrim,
-            backdrop: 'rgba(24,25,38,0.5)',
-          },
-        }
+      ? buildPaperTheme(MD3DarkTheme, CATPPUCCIN_COLORS)
       : theme === 'aura-soft-dark'
-        ? {
-            ...MD3DarkTheme,
-            colors: {
-              ...MD3DarkTheme.colors,
-              primary: AURA_SOFT_DARK_COLORS.brand,
-              onPrimary: AURA_SOFT_DARK_COLORS.onBrand,
-              primaryContainer: AURA_SOFT_DARK_COLORS.surfaceTint,
-              onPrimaryContainer: AURA_SOFT_DARK_COLORS.black,
-              secondary: AURA_SOFT_DARK_COLORS.gray,
-              onSecondary: AURA_SOFT_DARK_COLORS.black,
-              secondaryContainer: AURA_SOFT_DARK_COLORS.surface,
-              onSecondaryContainer: AURA_SOFT_DARK_COLORS.black,
-              tertiary: AURA_SOFT_DARK_COLORS.brandLight,
-              onTertiary: AURA_SOFT_DARK_COLORS.black,
-              tertiaryContainer: AURA_SOFT_DARK_COLORS.surfaceTint,
-              onTertiaryContainer: AURA_SOFT_DARK_COLORS.black,
-              surface: AURA_SOFT_DARK_COLORS.surface,
-              onSurface: AURA_SOFT_DARK_COLORS.black,
-              surfaceVariant: AURA_SOFT_DARK_COLORS.surfaceTint,
-              onSurfaceVariant: AURA_SOFT_DARK_COLORS.grayLight,
-              background: AURA_SOFT_DARK_COLORS.white,
-              onBackground: AURA_SOFT_DARK_COLORS.black,
-              outline: AURA_SOFT_DARK_COLORS.separator,
-              outlineVariant: AURA_SOFT_DARK_COLORS.grayDark,
-              error: AURA_SOFT_DARK_COLORS.red,
-              onError: AURA_SOFT_DARK_COLORS.onBrand,
-              errorContainer: '#4D2A32',
-              onErrorContainer: AURA_SOFT_DARK_COLORS.black,
-              inverseSurface: AURA_SOFT_DARK_COLORS.black,
-              inverseOnSurface: AURA_SOFT_DARK_COLORS.white,
-              inversePrimary: AURA_SOFT_DARK_COLORS.brandLight,
-              shadow: AURA_SOFT_DARK_COLORS.shadow,
-              scrim: AURA_SOFT_DARK_COLORS.scrim,
-              backdrop: 'rgba(20,20,30,0.5)',
-            },
-          }
+        ? buildPaperTheme(MD3DarkTheme, AURA_SOFT_DARK_COLORS)
         : isDark
-          ? MD3DarkTheme
-          : MD3LightTheme;
+          ? buildPaperTheme(MD3DarkTheme, DARK_COLORS)
+          : buildPaperTheme(MD3LightTheme, COLORS);
 
   return (
     <ThemeProvider theme={theme}>

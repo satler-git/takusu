@@ -23,7 +23,7 @@ import type {
   TaskRow,
 } from '@/src/api/types';
 import { WINDOW_MODE_PERIOD } from '@/src/api/types';
-import { BRAND_COLOR, useColors } from '@/src/theme';
+import { useColors, type ColorSet } from '@/src/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ContextMenu } from '@/src/components/ContextMenu';
 import { haptic } from '@/src/components/haptics';
@@ -38,9 +38,98 @@ interface HabitViewProps {
   refreshKey?: number | null;
 }
 
+const makeStyles = (colors: ColorSet) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+    },
+    topBar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 8,
+      paddingBottom: 8,
+      gap: 4,
+    },
+    topBarCenter: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    title: {
+      fontSize: 18,
+      fontWeight: '600',
+    },
+    addButton: {
+      width: 40,
+      height: 40,
+      margin: 0,
+    },
+    listContent: {
+      padding: 12,
+      gap: 8,
+    },
+    habitCard: {
+      borderRadius: 12,
+      padding: 16,
+      gap: 4,
+      borderWidth: 2,
+    },
+    habitCardSelected: {
+      borderColor: colors.brand,
+    },
+    habitHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      gap: 8,
+    },
+    habitTitle: {
+      fontSize: 16,
+      fontWeight: '600',
+      flex: 1,
+    },
+    badgeRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 4,
+      alignItems: 'center',
+    },
+    chip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 3,
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      borderRadius: 10,
+    },
+    chipText: {
+      fontSize: 10,
+      fontWeight: '500',
+    },
+    habitCardPaused: {
+      opacity: 0.6,
+    },
+    habitRecurrence: {
+      fontSize: 13,
+    },
+    habitTime: {
+      fontSize: 13,
+    },
+    habitCost: {
+      fontSize: 13,
+    },
+    habitParallel: {
+      fontSize: 13,
+    },
+    habitAbandon: {
+      fontSize: 13,
+    },
+  });
+
 export function HabitView({ client, refreshKey }: HabitViewProps) {
   const router = useRouter();
   const colors = useColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const insets = useSafeAreaInsets();
   const showUndoToast = useUndoableToast();
   const [habits, setHabits] = useState<HabitRow[]>([]);
@@ -339,7 +428,7 @@ export function HabitView({ client, refreshKey }: HabitViewProps) {
 
   const contentContainerStyle = useMemo(
     () => [styles.listContent, { paddingBottom: 100 + insets.bottom }],
-    [insets.bottom],
+    [insets.bottom, styles],
   );
 
   const renderItem = useCallback(
@@ -400,7 +489,7 @@ export function HabitView({ client, refreshKey }: HabitViewProps) {
           icon="plus"
           iconColor={colors.white}
           size={24}
-          containerColor={BRAND_COLOR}
+          containerColor={colors.brand}
           onPress={() => {
             haptic.light();
             router.push('/habit/add');
@@ -449,6 +538,7 @@ const HabitCard = memo(function HabitCardImpl({
   onPress,
   onLongPress,
 }: HabitCardProps) {
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <Pressable
       style={[
@@ -483,9 +573,9 @@ const HabitCard = memo(function HabitCardImpl({
               <Ionicons
                 name="calendar-number-outline"
                 size={11}
-                color={BRAND_COLOR}
+                color={colors.brand}
               />
-              <Text style={[styles.chipText, { color: BRAND_COLOR }]}>
+              <Text style={[styles.chipText, { color: colors.brand }]}>
                 自由枠
               </Text>
             </View>
@@ -494,8 +584,8 @@ const HabitCard = memo(function HabitCardImpl({
             <View
               style={[styles.chip, { backgroundColor: colors.surfaceTint }]}
             >
-              <Ionicons name="layers-outline" size={11} color={BRAND_COLOR} />
-              <Text style={[styles.chipText, { color: BRAND_COLOR }]}>
+              <Ionicons name="layers-outline" size={11} color={colors.brand} />
+              <Text style={[styles.chipText, { color: colors.brand }]}>
                 {stepCount} steps
               </Text>
             </View>
@@ -513,8 +603,8 @@ const HabitCard = memo(function HabitCardImpl({
                 </>
               ) : (
                 <>
-                  <Ionicons name="play-circle" size={11} color={BRAND_COLOR} />
-                  <Text style={[styles.chipText, { color: BRAND_COLOR }]}>
+                  <Ionicons name="play-circle" size={11} color={colors.brand} />
+                  <Text style={[styles.chipText, { color: colors.brand }]}>
                     {span
                       ? `scheduled 〜${formatSpanShort(span.end_date)}`
                       : 'scheduled'}
@@ -570,90 +660,3 @@ function formatSpanShort(s: string): string {
   const [, m, d] = s.split('-').map((n) => parseInt(n, 10));
   return `${m}/${d}`;
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingBottom: 8,
-    gap: 4,
-  },
-  topBarCenter: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  addButton: {
-    width: 40,
-    height: 40,
-    margin: 0,
-  },
-  listContent: {
-    padding: 12,
-    gap: 8,
-  },
-  habitCard: {
-    borderRadius: 12,
-    padding: 16,
-    gap: 4,
-    borderWidth: 2,
-  },
-  habitCardSelected: {
-    borderColor: BRAND_COLOR,
-  },
-  habitHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: 8,
-  },
-  habitTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    flex: 1,
-  },
-  badgeRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 4,
-    alignItems: 'center',
-  },
-  chip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 10,
-  },
-  chipText: {
-    fontSize: 10,
-    fontWeight: '500',
-  },
-  habitCardPaused: {
-    opacity: 0.6,
-  },
-  habitRecurrence: {
-    fontSize: 13,
-  },
-  habitTime: {
-    fontSize: 13,
-  },
-  habitCost: {
-    fontSize: 13,
-  },
-  habitParallel: {
-    fontSize: 13,
-  },
-  habitAbandon: {
-    fontSize: 13,
-  },
-});

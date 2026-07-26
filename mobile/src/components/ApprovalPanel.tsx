@@ -23,6 +23,233 @@ import { haptic } from '@/src/components/haptics';
 
 const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土'];
 
+const makeStyles = (colors: ColorSet) =>
+  StyleSheet.create({
+    panel: {
+      margin: 12,
+      borderWidth: 1,
+      borderRadius: 12,
+      maxHeight: '70%',
+      overflow: 'hidden',
+      padding: 12,
+      gap: 12,
+    },
+    panelHeader: { gap: 12 },
+    panelBody: {
+      flex: 1,
+    },
+    panelBodyContent: {
+      flexGrow: 0,
+    },
+    panelBodyInner: { gap: 12 },
+    title: { fontWeight: '700', fontSize: 16 },
+    why: { fontSize: 13, lineHeight: 18, marginTop: 4 },
+    summary: {
+      fontSize: 12,
+      borderRadius: 8,
+      padding: 6,
+      paddingHorizontal: 10,
+    },
+    changeList: { gap: 10 },
+    changeCard: {
+      borderWidth: 1,
+      borderRadius: 10,
+      padding: 10,
+      gap: 8,
+    },
+    changeRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      flexWrap: 'wrap',
+    },
+    badge: {
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      borderRadius: 12,
+    },
+    badgeText: {
+      color: colors.onBrand,
+      fontSize: 11,
+      fontWeight: '700',
+    },
+    fixedBadge: {
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      borderRadius: 12,
+      marginLeft: 'auto',
+    },
+    changeTarget: {
+      fontWeight: '700',
+      fontSize: 14,
+      flexShrink: 1,
+    },
+    whenBlock: {
+      borderWidth: 1,
+      borderRadius: 8,
+      padding: 8,
+      paddingHorizontal: 10,
+      gap: 4,
+    },
+    whenRow: {
+      flexDirection: 'row',
+      alignItems: 'baseline',
+      gap: 8,
+    },
+    whenLabel: {
+      minWidth: 56,
+      fontSize: 13,
+    },
+    whenValue: { fontSize: 13, fontWeight: '600' },
+    strikethrough: { textDecorationLine: 'line-through' },
+    stepList: {
+      borderWidth: 1,
+      borderRadius: 8,
+      padding: 8,
+      paddingHorizontal: 10,
+      gap: 6,
+    },
+    stepItem: {
+      gap: 4,
+    },
+    stepMain: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      flexWrap: 'wrap',
+      gap: 8,
+    },
+    stepDetails: {
+      paddingLeft: 28,
+      gap: 2,
+    },
+    stepNumber: {
+      width: 20,
+      height: 20,
+      borderRadius: 10,
+      textAlign: 'center',
+      fontSize: 11,
+      fontWeight: '700',
+      lineHeight: 20,
+    },
+    stepTitle: { fontSize: 13, fontWeight: '600', flex: 1 },
+    stepFixedBadge: {
+      paddingHorizontal: 5,
+      paddingVertical: 1,
+      borderRadius: 8,
+    },
+    stepFixedText: {
+      color: colors.onBrand,
+      fontSize: 10,
+      fontWeight: '700',
+    },
+    stepMeta: { fontSize: 12 },
+    stepDeps: { fontSize: 11 },
+    changeDesc: { fontSize: 13 },
+    previewButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+      borderWidth: 1,
+      borderRadius: 8,
+      paddingVertical: 8,
+      paddingHorizontal: 12,
+      alignSelf: 'flex-start',
+    },
+    previewButtonText: { fontSize: 13, fontWeight: '600' },
+    warningBox: {
+      borderWidth: 1,
+      borderRadius: 8,
+      padding: 10,
+      gap: 4,
+    },
+    actions: { flexDirection: 'row', gap: 8 },
+    deny: {
+      flex: 1,
+      padding: 12,
+      borderRadius: 8,
+      borderWidth: 1,
+      alignItems: 'center',
+    },
+    denyText: { fontWeight: '700' },
+    approve: {
+      flex: 1,
+      padding: 12,
+      borderRadius: 8,
+      alignItems: 'center',
+    },
+    approveText: { fontWeight: '700' },
+    permissionSectionFolded: {
+      backgroundColor: 'transparent',
+      borderColor: 'transparent',
+    },
+    permissionSectionExpanded: {
+      padding: 10,
+      borderWidth: 1,
+      borderRadius: 12,
+      gap: 8,
+    },
+    permissionHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      padding: 8,
+      paddingHorizontal: 10,
+      borderWidth: 1,
+      borderRadius: 10,
+      minHeight: 34,
+    },
+    permissionHeaderMain: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      flex: 1,
+    },
+    permissionHeaderTitle: {
+      fontWeight: '700',
+      fontSize: 14,
+    },
+    permissionMaster: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      padding: 8,
+      paddingHorizontal: 10,
+      borderWidth: 1,
+      borderRadius: 10,
+      minHeight: 40,
+    },
+    permissionMasterTitle: {
+      fontWeight: '700',
+      fontSize: 14,
+    },
+    permissionList: { gap: 6 },
+    permissionRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      padding: 6,
+      paddingHorizontal: 8,
+      borderWidth: 1,
+      borderRadius: 8,
+      minHeight: 32,
+    },
+    permissionRowTitle: {
+      fontWeight: '600',
+      fontSize: 13,
+      flex: 1,
+    },
+    permissionPersist: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      padding: 4,
+    },
+    permissionPersistText: {
+      fontSize: 12,
+    },
+  });
+
 export function asString(value: unknown): string | null {
   if (typeof value === 'string') return value;
   return null;
@@ -186,6 +413,7 @@ interface DateTimeDiffProps {
 }
 
 function DateTimeDiff({ before, after, colors }: DateTimeDiffProps) {
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const b = parseDateTime(before);
   const a = parseDateTime(after);
   if (b && a && b.date === a.date) {
@@ -218,6 +446,7 @@ interface WhenRowProps {
 }
 
 function WhenRow({ label, before, after, value, colors }: WhenRowProps) {
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <View style={styles.whenRow}>
       <Text style={[styles.whenLabel, { color: colors.gray }]}>{label}</Text>
@@ -315,6 +544,7 @@ interface DependsDiffRowProps {
 }
 
 function DependsDiffRow({ label, before, after, colors }: DependsDiffRowProps) {
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const { added, removed } = diffStringArrays(before, after);
   if (added.length === 0 && removed.length === 0) return null;
   return (
@@ -678,6 +908,7 @@ interface StepListProps {
 }
 
 function StepList({ steps, colors }: StepListProps) {
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const stepRecords = steps.map((s) => (s ?? {}) as Record<string, unknown>);
   return (
     <View
@@ -1242,6 +1473,7 @@ interface ChangeCardProps {
 }
 
 function ChangeCard({ change, client, colors }: ChangeCardProps) {
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [previewVisible, setPreviewVisible] = useState(false);
   const targetType = getTargetType(change);
   const targetName = getTargetName(change);
@@ -1381,6 +1613,7 @@ function PermissionSection({
   permissions,
   value,
 }: PermissionSectionProps) {
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
@@ -1584,6 +1817,7 @@ export function ApprovalPanel({
   onDeny,
   permissions,
 }: ApprovalPanelProps) {
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [permissionValue, setPermissionValue] =
     useState<PermissionSectionValue>({
       granted: {},
@@ -1654,9 +1888,9 @@ export function ApprovalPanel({
           />
 
           {approval.warnings.length > 0 && (
-            <View style={[styles.warningBox, { borderColor: '#A65B00' }]}>
+            <View style={[styles.warningBox, { borderColor: colors.warning }]}>
               {approval.warnings.map((warning) => (
-                <Text key={warning} style={{ color: '#A65B00' }}>
+                <Text key={warning} style={{ color: colors.warning }}>
                   注意: {warning}
                 </Text>
               ))}
@@ -1690,229 +1924,3 @@ export function ApprovalPanel({
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  panel: {
-    margin: 12,
-    borderWidth: 1,
-    borderRadius: 12,
-    maxHeight: '70%',
-    overflow: 'hidden',
-    padding: 12,
-    gap: 12,
-  },
-  panelHeader: { gap: 12 },
-  panelBody: {
-    flex: 1,
-  },
-  panelBodyContent: {
-    flexGrow: 0,
-  },
-  panelBodyInner: { gap: 12 },
-  title: { fontWeight: '700', fontSize: 16 },
-  why: { fontSize: 13, lineHeight: 18, marginTop: 4 },
-  summary: {
-    fontSize: 12,
-    borderRadius: 8,
-    padding: 6,
-    paddingHorizontal: 10,
-  },
-  changeList: { gap: 10 },
-  changeCard: {
-    borderWidth: 1,
-    borderRadius: 10,
-    padding: 10,
-    gap: 8,
-  },
-  changeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    flexWrap: 'wrap',
-  },
-  badge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 12,
-  },
-  badgeText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  fixedBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 12,
-    marginLeft: 'auto',
-  },
-  changeTarget: {
-    fontWeight: '700',
-    fontSize: 14,
-    flexShrink: 1,
-  },
-  whenBlock: {
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 8,
-    paddingHorizontal: 10,
-    gap: 4,
-  },
-  whenRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: 8,
-  },
-  whenLabel: {
-    minWidth: 56,
-    fontSize: 13,
-  },
-  whenValue: { fontSize: 13, fontWeight: '600' },
-  strikethrough: { textDecorationLine: 'line-through' },
-  stepList: {
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 8,
-    paddingHorizontal: 10,
-    gap: 6,
-  },
-  stepItem: {
-    gap: 4,
-  },
-  stepMain: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  stepDetails: {
-    paddingLeft: 28,
-    gap: 2,
-  },
-  stepNumber: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    textAlign: 'center',
-    fontSize: 11,
-    fontWeight: '700',
-    lineHeight: 20,
-  },
-  stepTitle: { fontSize: 13, fontWeight: '600', flex: 1 },
-  stepFixedBadge: {
-    paddingHorizontal: 5,
-    paddingVertical: 1,
-    borderRadius: 8,
-  },
-  stepFixedText: {
-    color: '#FFFFFF',
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  stepMeta: { fontSize: 12 },
-  stepDeps: { fontSize: 11 },
-  changeDesc: { fontSize: 13 },
-  previewButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    alignSelf: 'flex-start',
-  },
-  previewButtonText: { fontSize: 13, fontWeight: '600' },
-  warningBox: {
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 10,
-    gap: 4,
-  },
-  actions: { flexDirection: 'row', gap: 8 },
-  deny: {
-    flex: 1,
-    padding: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    alignItems: 'center',
-  },
-  denyText: { fontWeight: '700' },
-  approve: {
-    flex: 1,
-    padding: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  approveText: { fontWeight: '700' },
-  permissionSectionFolded: {
-    backgroundColor: 'transparent',
-    borderColor: 'transparent',
-  },
-  permissionSectionExpanded: {
-    padding: 10,
-    borderWidth: 1,
-    borderRadius: 12,
-    gap: 8,
-  },
-  permissionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 8,
-    paddingHorizontal: 10,
-    borderWidth: 1,
-    borderRadius: 10,
-    minHeight: 34,
-  },
-  permissionHeaderMain: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    flex: 1,
-  },
-  permissionHeaderTitle: {
-    fontWeight: '700',
-    fontSize: 14,
-  },
-  permissionMaster: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 8,
-    paddingHorizontal: 10,
-    borderWidth: 1,
-    borderRadius: 10,
-    minHeight: 40,
-  },
-  permissionMasterTitle: {
-    fontWeight: '700',
-    fontSize: 14,
-  },
-  permissionList: { gap: 6 },
-  permissionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 6,
-    paddingHorizontal: 8,
-    borderWidth: 1,
-    borderRadius: 8,
-    minHeight: 32,
-  },
-  permissionRowTitle: {
-    fontWeight: '600',
-    fontSize: 13,
-    flex: 1,
-  },
-  permissionPersist: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    padding: 4,
-  },
-  permissionPersistText: {
-    fontSize: 12,
-  },
-});

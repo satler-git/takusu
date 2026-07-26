@@ -14,7 +14,6 @@ import {
   Text,
   View,
   RefreshControl,
-  type ViewStyle,
   type NativeSyntheticEvent,
   type NativeScrollEvent,
   type LayoutChangeEvent,
@@ -41,7 +40,7 @@ import Reanimated, {
   withSpring,
   runOnJS,
 } from 'react-native-reanimated';
-import { useColors, BRAND_COLOR } from '@/src/theme';
+import { useColors, type ColorSet } from '@/src/theme';
 import { haptic } from '@/src/components/haptics';
 import { useTopToast } from '@/src/components/TopToast';
 import { useUndoableToast } from '@/src/hooks/useUndoableToast';
@@ -147,10 +146,115 @@ const VIEWABILITY_CONFIG = {
   minimumViewTime: 0,
   viewAreaCoveragePercentThreshold: 0,
 } as const;
+const makeStyles = (colors: ColorSet) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+    },
+    pastToggle: {
+      flexDirection: 'row',
+      paddingVertical: 10,
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+    },
+    pastToggleText: {
+      fontSize: 13,
+      color: colors.brand,
+      fontWeight: '500',
+    },
+    topBar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 8,
+      paddingBottom: 8,
+      gap: 4,
+    },
+    topButton: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    topButtonPressed: {
+      backgroundColor: colors.brandPressed,
+    },
+    topButtonDisabled: {
+      opacity: 0.4,
+    },
+    topButtonText: {
+      fontSize: 20,
+    },
+    listContent: {
+      paddingBottom: 100,
+    },
+    separator: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+      gap: 8,
+    },
+    separatorBar: {
+      flex: 1,
+      height: 1,
+    },
+    separatorText: {
+      fontSize: 12,
+      fontWeight: '500',
+    },
+    bottomBar: {
+      position: 'absolute',
+      bottom: 0,
+      left: 0,
+      right: 0,
+      flexDirection: 'row',
+      justifyContent: 'center',
+      alignItems: 'center',
+      paddingVertical: 16,
+      paddingHorizontal: 24,
+      gap: 16,
+    },
+    startDoneButton: {
+      position: 'absolute',
+      right: 24,
+      bottom: 16,
+      width: 48,
+      height: 48,
+      borderRadius: 24,
+      alignItems: 'center',
+      justifyContent: 'center',
+      shadowColor: colors.shadow,
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.3,
+      shadowRadius: 4,
+      elevation: 4,
+    },
+    startDoneText: {
+      fontSize: 20,
+    },
+    startDoneHint: {
+      position: 'absolute',
+      width: 56,
+      height: 56,
+      borderRadius: 28,
+      backgroundColor: colors.surfaceTranslucent,
+      alignItems: 'center',
+      justifyContent: 'center',
+      shadowColor: colors.shadow,
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.2,
+      shadowRadius: 3,
+      elevation: 3,
+    },
+  });
+
 export function HomeView() {
   const { client, notifications, workersUrl, workersToken } = useServer();
   const router = useRouter();
   const colors = useColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const insets = useSafeAreaInsets();
 
   const [tasks, setTasks] = useState<TaskRow[]>([]);
@@ -1581,7 +1685,7 @@ export function HomeView() {
                   { backgroundColor: colors.separator },
                 ]}
               />
-              <Text style={[styles.separatorText, { color: BRAND_COLOR }]}>
+              <Text style={[styles.separatorText, { color: colors.brand }]}>
                 {item.label}
               </Text>
               <View
@@ -1669,6 +1773,7 @@ export function HomeView() {
       markSkipped,
       deleteTask,
       colors,
+      styles,
     ],
   );
 
@@ -1688,14 +1793,14 @@ export function HomeView() {
       !searching && hasPast ? (
         <Pressable style={styles.pastToggle} onPress={togglePast}>
           <Reanimated.View style={chevronStyle}>
-            <Ionicons name="chevron-down" size={16} color={BRAND_COLOR} />
+            <Ionicons name="chevron-down" size={16} color={colors.brand} />
           </Reanimated.View>
           <Text style={styles.pastToggleText}>
             {showPast ? '過去を隠す' : '過去を表示'}
           </Text>
         </Pressable>
       ) : null,
-    [hasPast, showPast, chevronStyle, togglePast, searching],
+    [hasPast, showPast, chevronStyle, togglePast, searching, styles, colors],
   );
 
   const handleScroll = useCallback(
@@ -1728,7 +1833,7 @@ export function HomeView() {
 
   const contentContainerStyle = useMemo(
     () => [styles.listContent, { paddingBottom: 100 + insets.bottom }],
-    [insets.bottom],
+    [insets.bottom, styles],
   );
 
   if (view === 'graph') {
@@ -1812,7 +1917,7 @@ export function HomeView() {
             startScheduleOperation('generate', {}, 'タスクをスケジュール中');
           }}
         >
-          <Ionicons name="refresh" size={22} color={BRAND_COLOR} />
+          <Ionicons name="refresh" size={22} color={colors.brand} />
         </Pressable>
       </View>
 
@@ -1994,106 +2099,3 @@ function HabitWrapper({
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  pastToggle: {
-    flexDirection: 'row',
-    paddingVertical: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-  },
-  pastToggleText: {
-    fontSize: 13,
-    color: BRAND_COLOR,
-    fontWeight: '500',
-  },
-  topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingBottom: 8,
-    gap: 4,
-  },
-  topButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  topButtonPressed: {
-    backgroundColor: 'rgba(114,97,163,0.1)',
-  },
-  topButtonDisabled: {
-    opacity: 0.4,
-  },
-  topButtonText: {
-    fontSize: 20,
-  },
-  listContent: {
-    paddingBottom: 100,
-  },
-  separator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    gap: 8,
-  },
-  separatorBar: {
-    flex: 1,
-    height: 1,
-  },
-  separatorText: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  bottomBar: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 16,
-    paddingHorizontal: 24,
-    gap: 16,
-  },
-  startDoneButton: {
-    position: 'absolute',
-    right: 24,
-    bottom: 16,
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-  startDoneText: {
-    fontSize: 20,
-  },
-  startDoneHint: {
-    position: 'absolute',
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: 'rgba(255,255,255,0.95)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 3,
-    elevation: 3,
-  },
-} as Record<string, ViewStyle>);

@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useState, useMemo } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -12,12 +12,34 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import { useServer } from '@/src/api/ServerProvider';
 import { showError } from '@/src/api/errors';
 import type { SkillRow } from '@/src/api/types';
-import { useColors, BRAND_COLOR } from '@/src/theme';
+import { useColors, type ColorSet } from '@/src/theme';
 import { haptic } from '@/src/components/haptics';
+
+const makeStyles = (colors: ColorSet) =>
+  StyleSheet.create({
+    container: { flex: 1 },
+    createButton: { padding: 16 },
+    createButtonText: { fontSize: 16, fontWeight: '700' },
+    list: { padding: 16, gap: 12 },
+    card: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      borderBottomWidth: 1,
+      paddingVertical: 12,
+    },
+    row: { flex: 1, flexDirection: 'row' },
+    text: { flex: 1, gap: 2 },
+    name: { fontSize: 16, fontWeight: '700' },
+    slug: { fontSize: 12 },
+    desc: { fontSize: 13 },
+    delete: { padding: 8 },
+    deleteText: { color: colors.destructive, fontWeight: '700' },
+  });
 
 export function SkillsSettingsView() {
   const { client } = useServer();
   const colors = useColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const router = useRouter();
   const [skills, setSkills] = useState<SkillRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -84,12 +106,12 @@ export function SkillsSettingsView() {
   return (
     <View style={styles.container}>
       <Pressable onPress={openCreate} style={styles.createButton}>
-        <Text style={[styles.createButtonText, { color: BRAND_COLOR }]}>
+        <Text style={[styles.createButtonText, { color: colors.brand }]}>
           + 新しいスキル
         </Text>
       </Pressable>
       {loading ? (
-        <ActivityIndicator color={BRAND_COLOR} />
+        <ActivityIndicator color={colors.brand} />
       ) : (
         <ScrollView contentContainerStyle={styles.list}>
           {skills.map((skill) => (
@@ -127,23 +149,3 @@ export function SkillsSettingsView() {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1 },
-  createButton: { padding: 16 },
-  createButtonText: { fontSize: 16, fontWeight: '700' },
-  list: { padding: 16, gap: 12 },
-  card: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderBottomWidth: 1,
-    paddingVertical: 12,
-  },
-  row: { flex: 1, flexDirection: 'row' },
-  text: { flex: 1, gap: 2 },
-  name: { fontSize: 16, fontWeight: '700' },
-  slug: { fontSize: 12 },
-  desc: { fontSize: 13 },
-  delete: { padding: 8 },
-  deleteText: { color: '#B33A3A', fontWeight: '700' },
-});

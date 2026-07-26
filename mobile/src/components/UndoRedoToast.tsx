@@ -5,10 +5,12 @@
 import { useEffect, useState } from 'react';
 import { Snackbar } from 'react-native-paper';
 import { undoRedo } from '@/src/api/undoRedo';
-import { BRAND_COLOR } from '@/src/theme';
+
+import { useColors } from '@/src/theme';
 import { haptic } from '@/src/components/haptics';
 
 export function UndoRedoToast() {
+  const colors = useColors();
   const [visible, setVisible] = useState(false);
   const [message, setMessage] = useState('');
 
@@ -36,8 +38,8 @@ export function UndoRedoToast() {
       visible={visible}
       onDismiss={() => setVisible(false)}
       duration={2000}
-      style={{ backgroundColor: BRAND_COLOR }}
-      theme={{ colors: { onSurface: '#fff' } }}
+      style={{ backgroundColor: colors.brand }}
+      theme={{ colors: { onSurface: colors.onBrand } }}
     >
       {message}
     </Snackbar>

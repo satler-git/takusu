@@ -12,7 +12,7 @@
 //
 // Emits a JSON-serialized RecurrenceRule string (see src/api/rrule.ts).
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import {
   Modal,
   Pressable,
@@ -24,7 +24,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BRAND_COLOR, useColors } from '@/src/theme';
+import { useColors, type ColorSet } from '@/src/theme';
 import { haptic } from '@/src/components/haptics';
 import { DateTimePickerModal } from '@/src/components/DateTimePickerModal';
 import {
@@ -89,6 +89,338 @@ interface RruleBuilderModalProps {
   onCancel: () => void;
 }
 
+const makeStyles = (colors: ColorSet) =>
+  StyleSheet.create({
+    overlay: {
+      flex: 1,
+      backgroundColor: colors.overlay,
+      justifyContent: 'flex-end',
+    },
+    sheet: {
+      borderTopLeftRadius: 20,
+      borderTopRightRadius: 20,
+      padding: 20,
+      maxHeight: '90%',
+    },
+    header: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 12,
+    },
+    headerLeft: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+    },
+    headerRight: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    title: {
+      fontSize: 18,
+      fontWeight: '600',
+    },
+    iconButton: {
+      padding: 2,
+    },
+    helpBox: {
+      borderRadius: 10,
+      padding: 12,
+      marginBottom: 12,
+    },
+    helpText: {
+      fontSize: 13,
+      lineHeight: 20,
+    },
+    body: {
+      flexGrow: 0,
+      flexShrink: 1,
+    },
+    section: {
+      marginTop: 12,
+    },
+    sectionLabel: {
+      fontSize: 13,
+      fontWeight: '500',
+      marginBottom: 8,
+    },
+    segmented: {
+      flexDirection: 'row',
+      gap: 8,
+    },
+    segment: {
+      flex: 1,
+      paddingVertical: 10,
+      borderRadius: 10,
+      borderWidth: 1,
+      alignItems: 'center',
+    },
+    segmentText: {
+      fontSize: 14,
+      fontWeight: '500',
+    },
+    hiddenNotice: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      borderWidth: 1,
+      borderRadius: 8,
+      paddingHorizontal: 10,
+      paddingVertical: 8,
+      marginTop: 10,
+    },
+    hiddenNoticeText: {
+      flex: 1,
+      fontSize: 12,
+    },
+    hiddenNoticeClear: {
+      paddingVertical: 2,
+      paddingHorizontal: 6,
+    },
+    hiddenNoticeClearText: {
+      fontSize: 12,
+      fontWeight: '600',
+    },
+    stepper: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 16,
+    },
+    stepBtn: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      borderWidth: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    stepValue: {
+      fontSize: 20,
+      fontWeight: '600',
+      minWidth: 40,
+      textAlign: 'center',
+      fontVariant: ['tabular-nums'],
+    },
+    // Weekday chips: 7 across, evenly spaced
+    weekdayChips: {
+      flexDirection: 'row',
+      gap: 6,
+    },
+    weekdayChip: {
+      flex: 1,
+      paddingVertical: 8,
+      borderRadius: 8,
+      borderWidth: 1,
+      alignItems: 'center',
+      gap: 2,
+    },
+    chipSubText: {
+      fontSize: 9,
+      fontWeight: '600',
+    },
+    // nth picker
+    nthPicker: {
+      borderWidth: 1,
+      borderRadius: 10,
+      padding: 10,
+      marginTop: 8,
+    },
+    nthPickerLabel: {
+      fontSize: 12,
+      marginBottom: 8,
+    },
+    nthOptions: {
+      flexDirection: 'row',
+      gap: 6,
+    },
+    nthChip: {
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderRadius: 8,
+      borderWidth: 1,
+      alignItems: 'center',
+    },
+    nthActions: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginTop: 8,
+    },
+    nthClose: {
+      alignSelf: 'flex-start',
+    },
+    nthCloseText: {
+      fontSize: 13,
+    },
+    nthRemove: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+    },
+    nthRemoveText: {
+      fontSize: 13,
+    },
+    // Generic chips
+    chips: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 8,
+    },
+    // Month chips: 6 per row
+    monthRow: {
+      flexDirection: 'row',
+      gap: 6,
+      marginBottom: 6,
+    },
+    monthChip: {
+      flex: 1,
+      paddingVertical: 8,
+      borderRadius: 8,
+      borderWidth: 1,
+      alignItems: 'center',
+    },
+    chip: {
+      paddingHorizontal: 14,
+      paddingVertical: 8,
+      borderRadius: 8,
+      borderWidth: 1,
+      alignItems: 'center',
+    },
+    chipText: {
+      fontSize: 14,
+      fontWeight: '500',
+    },
+    // Month-day chips: 7 per row
+    dayRow: {
+      flexDirection: 'row',
+      gap: 6,
+      marginBottom: 6,
+    },
+    dayChip: {
+      flex: 1,
+      paddingVertical: 8,
+      borderRadius: 8,
+      borderWidth: 1,
+      alignItems: 'center',
+    },
+    dayChipPlaceholder: {
+      flex: 1,
+    },
+    // Exdates
+    exdateHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 8,
+    },
+    addExdateBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      borderWidth: 1,
+      borderRadius: 8,
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+      gap: 4,
+    },
+    addExdateBtnText: {
+      fontSize: 13,
+      fontWeight: '500',
+    },
+    exdateRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      borderRadius: 8,
+      paddingHorizontal: 10,
+      paddingVertical: 8,
+      marginBottom: 6,
+      gap: 8,
+    },
+    exdateText: {
+      flex: 1,
+      fontSize: 14,
+    },
+    emptyNote: {
+      fontSize: 13,
+      fontStyle: 'italic',
+    },
+    // Advanced toggle (collapsible month filter)
+    advancedToggle: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+    },
+    advancedToggleText: {
+      fontSize: 13,
+    },
+    // Count input
+    input: {
+      borderWidth: 1,
+      borderRadius: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      fontSize: 16,
+    },
+    // Manual JSON input
+    manualInput: {
+      borderWidth: 1,
+      borderRadius: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      fontSize: 13,
+      minHeight: 140,
+      fontFamily: 'monospace',
+      textAlignVertical: 'top',
+    },
+    errorText: {
+      fontSize: 12,
+      marginTop: 4,
+    },
+    // Summary bar
+    summary: {
+      borderRadius: 10,
+      padding: 12,
+      marginTop: 16,
+    },
+    summaryLabel: {
+      fontSize: 12,
+      fontWeight: '500',
+      marginBottom: 4,
+    },
+    summaryText: {
+      fontSize: 15,
+      fontWeight: '600',
+    },
+    // Action row
+    actionRow: {
+      flexDirection: 'row',
+      gap: 12,
+      marginTop: 16,
+    },
+    cancelButton: {
+      flex: 1,
+      paddingVertical: 12,
+      borderRadius: 10,
+      borderWidth: 1,
+      alignItems: 'center',
+    },
+    cancelText: {
+      fontSize: 15,
+    },
+    confirmButton: {
+      flex: 1,
+      paddingVertical: 12,
+      borderRadius: 10,
+      backgroundColor: colors.brand,
+      alignItems: 'center',
+    },
+    confirmText: {
+      fontSize: 15,
+      fontWeight: '600',
+    },
+  });
+
 export function RruleBuilderModal({
   visible,
   value,
@@ -96,6 +428,7 @@ export function RruleBuilderModal({
   onCancel,
 }: RruleBuilderModalProps) {
   const colors = useColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const insets = useSafeAreaInsets();
 
   // ---- state ----
@@ -217,9 +550,9 @@ export function RruleBuilderModal({
               style={[
                 styles.monthChip,
                 {
-                  borderColor: on ? BRAND_COLOR : colors.separator,
+                  borderColor: on ? colors.brand : colors.separator,
                 },
-                on && { backgroundColor: BRAND_COLOR },
+                on && { backgroundColor: colors.brand },
               ]}
               onPress={() => toggleMonth(m)}
             >
@@ -384,7 +717,7 @@ export function RruleBuilderModal({
                   <Ionicons
                     name={showHelp ? 'help-circle' : 'help-circle-outline'}
                     size={20}
-                    color={BRAND_COLOR}
+                    color={colors.brand}
                   />
                 </Pressable>
               </View>
@@ -399,7 +732,7 @@ export function RruleBuilderModal({
                       manualMode ? 'construct-outline' : 'code-slash-outline'
                     }
                     size={20}
-                    color={BRAND_COLOR}
+                    color={colors.brand}
                   />
                 </Pressable>
                 <Pressable
@@ -479,12 +812,12 @@ export function RruleBuilderModal({
                     <Ionicons
                       name="construct-outline"
                       size={14}
-                      color={BRAND_COLOR}
+                      color={colors.brand}
                     />
                     <Text
                       style={[
                         styles.advancedToggleText,
-                        { color: BRAND_COLOR },
+                        { color: colors.brand },
                       ]}
                     >
                       ビルダーに戻る (バリデーション後)
@@ -506,9 +839,9 @@ export function RruleBuilderModal({
                           styles.segment,
                           {
                             borderColor:
-                              rule.freq === f ? BRAND_COLOR : colors.separator,
+                              rule.freq === f ? colors.brand : colors.separator,
                           },
-                          rule.freq === f && { backgroundColor: BRAND_COLOR },
+                          rule.freq === f && { backgroundColor: colors.brand },
                         ]}
                         onPress={() => {
                           if (rule.freq !== f) haptic.select();
@@ -537,13 +870,16 @@ export function RruleBuilderModal({
                     <View
                       style={[
                         styles.hiddenNotice,
-                        { backgroundColor: '#FFF6E6', borderColor: '#E0B040' },
+                        {
+                          backgroundColor: colors.warningBg,
+                          borderColor: colors.warningBorder,
+                        },
                       ]}
                     >
                       <Ionicons
                         name="information-circle-outline"
                         size={14}
-                        color="#B07A00"
+                        color={colors.warningIcon}
                       />
                       <Text
                         style={[
@@ -567,7 +903,7 @@ export function RruleBuilderModal({
                         <Text
                           style={[
                             styles.hiddenNoticeClearText,
-                            { color: BRAND_COLOR },
+                            { color: colors.brand },
                           ]}
                         >
                           クリア
@@ -596,7 +932,7 @@ export function RruleBuilderModal({
                         update({ interval: Math.max(1, rule.interval - 1) });
                       }}
                     >
-                      <Ionicons name="remove" size={20} color={BRAND_COLOR} />
+                      <Ionicons name="remove" size={20} color={colors.brand} />
                     </Pressable>
                     <Text style={[styles.stepValue, { color: colors.black }]}>
                       {rule.interval}
@@ -611,7 +947,7 @@ export function RruleBuilderModal({
                         update({ interval: rule.interval + 1 });
                       }}
                     >
-                      <Ionicons name="add" size={20} color={BRAND_COLOR} />
+                      <Ionicons name="add" size={20} color={colors.brand} />
                     </Pressable>
                   </View>
 
@@ -635,10 +971,10 @@ export function RruleBuilderModal({
                               styles.weekdayChip,
                               {
                                 borderColor: on
-                                  ? BRAND_COLOR
+                                  ? colors.brand
                                   : colors.separator,
                               },
-                              on && { backgroundColor: BRAND_COLOR },
+                              on && { backgroundColor: colors.brand },
                             ]}
                             onPress={() => {
                               // For monthly/yearly: tapping a selected weekday opens the nth editor.
@@ -718,11 +1054,11 @@ export function RruleBuilderModal({
                                       styles.nthChip,
                                       {
                                         borderColor: selected
-                                          ? BRAND_COLOR
+                                          ? colors.brand
                                           : colors.separator,
                                       },
                                       selected && {
-                                        backgroundColor: BRAND_COLOR,
+                                        backgroundColor: colors.brand,
                                       },
                                     ]}
                                     onPress={() => setNth(editingNthWeekday, n)}
@@ -755,7 +1091,7 @@ export function RruleBuilderModal({
                               <Text
                                 style={[
                                   styles.nthCloseText,
-                                  { color: BRAND_COLOR },
+                                  { color: colors.brand },
                                 ]}
                               >
                                 閉じる
@@ -818,12 +1154,12 @@ export function RruleBuilderModal({
                             showAdvanced ? 'chevron-down' : 'chevron-forward'
                           }
                           size={14}
-                          color={BRAND_COLOR}
+                          color={colors.brand}
                         />
                         <Text
                           style={[
                             styles.advancedToggleText,
-                            { color: BRAND_COLOR },
+                            { color: colors.brand },
                           ]}
                         >
                           月フィルタ (詳細)
@@ -861,10 +1197,10 @@ export function RruleBuilderModal({
                                   styles.dayChip,
                                   {
                                     borderColor: on
-                                      ? BRAND_COLOR
+                                      ? colors.brand
                                       : colors.separator,
                                   },
-                                  on && { backgroundColor: BRAND_COLOR },
+                                  on && { backgroundColor: colors.brand },
                                 ]}
                                 onPress={() =>
                                   isLastDay
@@ -932,18 +1268,18 @@ export function RruleBuilderModal({
                       <Pressable
                         style={[
                           styles.addExdateBtn,
-                          { borderColor: BRAND_COLOR },
+                          { borderColor: colors.brand },
                         ]}
                         onPress={() => {
                           haptic.light();
                           setShowExdatePicker(true);
                         }}
                       >
-                        <Ionicons name="add" size={16} color={BRAND_COLOR} />
+                        <Ionicons name="add" size={16} color={colors.brand} />
                         <Text
                           style={[
                             styles.addExdateBtnText,
-                            { color: BRAND_COLOR },
+                            { color: colors.brand },
                           ]}
                         >
                           追加
@@ -968,7 +1304,7 @@ export function RruleBuilderModal({
                           <Ionicons
                             name="calendar-clear-outline"
                             size={16}
-                            color={BRAND_COLOR}
+                            color={colors.brand}
                           />
                           <Text
                             style={[styles.exdateText, { color: colors.black }]}
@@ -1055,334 +1391,3 @@ export function RruleBuilderModal({
     </>
   );
 }
-
-const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'flex-end',
-  },
-  sheet: {
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 20,
-    maxHeight: '90%',
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  headerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  headerRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  iconButton: {
-    padding: 2,
-  },
-  helpBox: {
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 12,
-  },
-  helpText: {
-    fontSize: 13,
-    lineHeight: 20,
-  },
-  body: {
-    flexGrow: 0,
-    flexShrink: 1,
-  },
-  section: {
-    marginTop: 12,
-  },
-  sectionLabel: {
-    fontSize: 13,
-    fontWeight: '500',
-    marginBottom: 8,
-  },
-  segmented: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  segment: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-    alignItems: 'center',
-  },
-  segmentText: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  hiddenNotice: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    marginTop: 10,
-  },
-  hiddenNoticeText: {
-    flex: 1,
-    fontSize: 12,
-  },
-  hiddenNoticeClear: {
-    paddingVertical: 2,
-    paddingHorizontal: 6,
-  },
-  hiddenNoticeClearText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  stepper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-  },
-  stepBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  stepValue: {
-    fontSize: 20,
-    fontWeight: '600',
-    minWidth: 40,
-    textAlign: 'center',
-    fontVariant: ['tabular-nums'],
-  },
-  // Weekday chips: 7 across, evenly spaced
-  weekdayChips: {
-    flexDirection: 'row',
-    gap: 6,
-  },
-  weekdayChip: {
-    flex: 1,
-    paddingVertical: 8,
-    borderRadius: 8,
-    borderWidth: 1,
-    alignItems: 'center',
-    gap: 2,
-  },
-  chipSubText: {
-    fontSize: 9,
-    fontWeight: '600',
-  },
-  // nth picker
-  nthPicker: {
-    borderWidth: 1,
-    borderRadius: 10,
-    padding: 10,
-    marginTop: 8,
-  },
-  nthPickerLabel: {
-    fontSize: 12,
-    marginBottom: 8,
-  },
-  nthOptions: {
-    flexDirection: 'row',
-    gap: 6,
-  },
-  nthChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    borderWidth: 1,
-    alignItems: 'center',
-  },
-  nthActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  nthClose: {
-    alignSelf: 'flex-start',
-  },
-  nthCloseText: {
-    fontSize: 13,
-  },
-  nthRemove: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  nthRemoveText: {
-    fontSize: 13,
-  },
-  // Generic chips
-  chips: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  // Month chips: 6 per row
-  monthRow: {
-    flexDirection: 'row',
-    gap: 6,
-    marginBottom: 6,
-  },
-  monthChip: {
-    flex: 1,
-    paddingVertical: 8,
-    borderRadius: 8,
-    borderWidth: 1,
-    alignItems: 'center',
-  },
-  chip: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 8,
-    borderWidth: 1,
-    alignItems: 'center',
-  },
-  chipText: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  // Month-day chips: 7 per row
-  dayRow: {
-    flexDirection: 'row',
-    gap: 6,
-    marginBottom: 6,
-  },
-  dayChip: {
-    flex: 1,
-    paddingVertical: 8,
-    borderRadius: 8,
-    borderWidth: 1,
-    alignItems: 'center',
-  },
-  dayChipPlaceholder: {
-    flex: 1,
-  },
-  // Exdates
-  exdateHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  addExdateBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    gap: 4,
-  },
-  addExdateBtnText: {
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  exdateRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    marginBottom: 6,
-    gap: 8,
-  },
-  exdateText: {
-    flex: 1,
-    fontSize: 14,
-  },
-  emptyNote: {
-    fontSize: 13,
-    fontStyle: 'italic',
-  },
-  // Advanced toggle (collapsible month filter)
-  advancedToggle: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  advancedToggleText: {
-    fontSize: 13,
-  },
-  // Count input
-  input: {
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    fontSize: 16,
-  },
-  // Manual JSON input
-  manualInput: {
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 13,
-    minHeight: 140,
-    fontFamily: 'monospace',
-    textAlignVertical: 'top',
-  },
-  errorText: {
-    fontSize: 12,
-    marginTop: 4,
-  },
-  // Summary bar
-  summary: {
-    borderRadius: 10,
-    padding: 12,
-    marginTop: 16,
-  },
-  summaryLabel: {
-    fontSize: 12,
-    fontWeight: '500',
-    marginBottom: 4,
-  },
-  summaryText: {
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  // Action row
-  actionRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 16,
-  },
-  cancelButton: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    alignItems: 'center',
-  },
-  cancelText: {
-    fontSize: 15,
-  },
-  confirmButton: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 10,
-    backgroundColor: BRAND_COLOR,
-    alignItems: 'center',
-  },
-  confirmText: {
-    fontSize: 15,
-    fontWeight: '600',
-  },
-});
