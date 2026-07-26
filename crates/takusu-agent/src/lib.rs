@@ -29,9 +29,9 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use takusu_client::{
-    ClientError, CreateHabit, CreateMemory, CreateSkill, CreateTask, HabitStepInput, MoveEntry,
-    RecordProgress, SaveScheduleRequest, ScheduleEntry, SplitTask, UpdateHabit, UpdateMemory,
-    UpdateSkill, UpdateTask,
+    ClientError, CreateHabit, CreateHabitScheduledSpan, CreateMemory, CreateSkill, CreateTask,
+    HabitStepInput, MoveEntry, RecordProgress, SaveScheduleRequest, ScheduleEntry, SplitTask,
+    UpdateHabit, UpdateMemory, UpdateSkill, UpdateTask,
 };
 use tools::memory::client_error;
 use uuid::Uuid;
@@ -1332,10 +1332,9 @@ impl AgentSession {
 
         let position = require_i64(field("position")?, "position")?;
         if position < 1 {
-            return Err(AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
-                "steps",
-                "position must be >= 1",
-            ))));
+            return Err(AgentError::Tool(ToolError::InvalidArgs(
+                InvalidArgsError::new("steps", "position must be >= 1"),
+            )));
         }
         let title = field("title")?
             .as_str()
@@ -1391,12 +1390,16 @@ impl AgentSession {
 
         let description = match obj.get("description") {
             None | Some(Value::Null) => None,
-            Some(v) => Some(v.as_str().ok_or_else(|| {
-                AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
-                    "steps",
-                    "description must be a string",
-                )))
-            })?.to_owned()),
+            Some(v) => Some(
+                v.as_str()
+                    .ok_or_else(|| {
+                        AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
+                            "steps",
+                            "description must be a string",
+                        )))
+                    })?
+                    .to_owned(),
+            ),
         };
         let sigma_minutes = match obj.get("sigma_minutes") {
             None | Some(Value::Null) => None,
@@ -1428,7 +1431,7 @@ impl AgentSession {
             Some(_) => {
                 return Err(AgentError::Tool(ToolError::InvalidArgs(
                     InvalidArgsError::new("steps", "depends_on must be an array"),
-                )))
+                )));
             }
         };
 
@@ -1451,10 +1454,7 @@ impl AgentSession {
         for key in obj.keys() {
             if !KNOWN_KEYS.contains(&key.as_str()) {
                 return Err(AgentError::Tool(ToolError::InvalidArgs(
-                    InvalidArgsError::new(
-                        "steps",
-                        format!("unknown step field '{key}'"),
-                    ),
+                    InvalidArgsError::new("steps", format!("unknown step field '{key}'")),
                 )));
             }
         }
@@ -1615,10 +1615,7 @@ impl AgentSession {
         for s in &pending {
             if !seen_positions.insert(s.position) {
                 return Err(AgentError::Tool(ToolError::InvalidArgs(
-                    InvalidArgsError::new(
-                        "steps",
-                        format!("duplicate position {}", s.position),
-                    ),
+                    InvalidArgsError::new("steps", format!("duplicate position {}", s.position)),
                 )));
             }
         }
@@ -1639,9 +1636,7 @@ impl AgentSession {
                     return Err(AgentError::Tool(ToolError::InvalidArgs(
                         InvalidArgsError::new(
                             "steps",
-                            format!(
-                                "depends_on position {dep_pos} not found in submitted steps"
-                            ),
+                            format!("depends_on position {dep_pos} not found in submitted steps"),
                         ),
                     )));
                 }
@@ -1675,11 +1670,9 @@ impl AgentSession {
             .await
             .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
 
-        if let Some(phase2) = Self::phase2_inputs_for_response(
-            &pending,
-            &phase1_position_to_id,
-            &result,
-        ) {
+        if let Some(phase2) =
+            Self::phase2_inputs_for_response(&pending, &phase1_position_to_id, &result)
+        {
             let phase2 = phase2?;
             self.client
                 .replace_habit_steps(habit_id, &phase2)
@@ -1811,8 +1804,7 @@ impl AgentSession {
                             .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?
                             .id;
                     if let Some(steps) = steps_value {
-                        self.replace_habit_steps_from_input(&id, steps, &[])
-                            .await?;
+                        self.replace_habit_steps_from_input(&id, steps, &[]).await?;
                     }
                     (id, None, None, None)
                 }
@@ -1844,6 +1836,69 @@ impl AgentSession {
                         .await
                         .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
                     (target_id.clone(), None, None, None)
+                }
+                (Some("habit"), "create_scheduled_span") => {
+                    let start_date = args
+                        .get("start_date")
+                        .and_then(Value::as_str)
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .ok_or_else(|| {
+                            AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
+                                "start_date",
+                                "missing",
+                            )))
+                        })?
+                        .to_owned();
+                    let end_date = args
+                        .get("end_date")
+                        .and_then(Value::as_str)
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .ok_or_else(|| {
+                            AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
+                                "end_date", "missing",
+                            )))
+                        })?
+                        .to_owned();
+                    let reason = args
+                        .get("reason")
+                        .and_then(Value::as_str)
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .map(|s| s.to_owned());
+                    let row = self
+                        .client
+                        .create_habit_scheduled_span(
+                            &target_id,
+                            &CreateHabitScheduledSpan {
+                                start_date,
+                                end_date,
+                                reason,
+                            },
+                        )
+                        .await
+                        .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
+                    let after = serde_json::to_value(&row)
+                        .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
+                    (target_id.clone(), None, Some(after), None)
+                }
+                (Some("habit"), "delete_scheduled_span") => {
+                    let span_id = args
+                        .get("span_id")
+                        .and_then(Value::as_str)
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .ok_or_else(|| {
+                            AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
+                                "span_id", "missing",
+                            )))
+                        })?;
+                    self.client
+                        .delete_habit_scheduled_span(&target_id, span_id)
+                        .await
+                        .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
+                    (target_id.clone(), change.before.clone(), None, None)
                 }
                 (Some("skill"), "create") => {
                     let slug =
@@ -2186,6 +2241,7 @@ impl AgentSession {
             - get_task: 指定した1つまたは複数タスクの詳細を取得。依存タスクも再帰的に含まれ、見つからない依存は missing_dependencies に含まれる
             - list_habits: 習慣一覧を取得
             - get_habit: 指定した1つまたは複数の習慣の詳細を取得
+            - habit_scheduled_spans: 習慣の scheduled span（active フラグで休止期間／アクティブ期間の意味が反転）を action=list で参照
             - get_schedule: 現在のスケジュールを取得（from/to で期間指定可能。7d、2026-07-20、today、now などを受け付ける。overdue タスクもデフォルトで含まれる。no_overdue で省略）
             - get_settings: タイムゾーン・就寝・勤務時間設定を取得
             - skills_list: スキル一覧を取得
@@ -2214,6 +2270,7 @@ impl AgentSession {
             - create_habit: 習慣作成の提案を生成
             - update_habit: 習慣更新の提案を生成
             - delete_habit: 習慣削除の提案を生成
+            - habit_scheduled_spans: action=create / action=delete で scheduled span の追加・削除の提案を生成
             - generate_schedule: スケジュール生成の提案を生成
             - reschedule: 部分的なスケジュール変更の提案を生成
             - preview_schedule: スケジュール変更の影響を試算
@@ -2224,7 +2281,7 @@ impl AgentSession {
             - memory_delete: 既存の記憶を削除する提案を生成
 
             ## Proposal / 承認フロー（最重要）
-            - `create_task` / `update_task` / `delete_task` / `move_task` / `task_start` / `task_pause` / `task_progress` / `task_complete` / `task_split` / `create_habit` / `update_habit` / `delete_habit` / `generate_schedule` / `reschedule` / `skills_propose_add` / `skills_propose_edit` / `memory_save` / `memory_update` / `memory_delete` を呼ぶと、システムは自動的に承認要求（Proposal）を生成します。
+            - `create_task` / `update_task` / `delete_task` / `move_task` / `task_start` / `task_pause` / `task_progress` / `task_complete` / `task_split` / `create_habit` / `update_habit` / `delete_habit` / `habit_scheduled_spans`（`action=create` / `action=delete`） / `generate_schedule` / `reschedule` / `skills_propose_add` / `skills_propose_edit` / `memory_save` / `memory_update` / `memory_delete` を呼ぶと、システムは自動的に承認要求（Proposal）を生成します。
             - これらのツールを呼ぶこと自体が「変更を提案する」行為です。ツールを呼ぶ前に「～してもよいですか？」と口頭でユーザーに確認を挟まないでください。
             - 情報が揃っていれば躊躇せずツールを呼び出し、最後に変更内容とその理由を提示してください。ユーザーは Proposal を承認または否認できます。否認なら何も書き換わりません。
 
@@ -3767,11 +3824,7 @@ mod tests {
 
         // Simulate phase 2: real ids are known for both positions, returned in
         // an order that differs from input order (as the server may do).
-        let phase2_map: HashMap<i64, String> = [
-            (1, "real-1".into()),
-            (2, "real-2".into()),
-        ]
-        .into();
+        let phase2_map: HashMap<i64, String> = [(1, "real-1".into()), (2, "real-2".into())].into();
         let phase2 = AgentSession::build_habit_step_inputs(&steps, &phase2_map);
         assert_eq!(phase2[0].id, Some("real-2".into()));
         assert_eq!(phase2[0].depends_on, vec!["real-1".to_string()]);
@@ -3866,6 +3919,28 @@ mod tests {
         }
     }
 
+    fn habit_row(id: &str, display_id: i64, title: &str) -> takusu_client::HabitRow {
+        takusu_client::HabitRow {
+            id: id.into(),
+            display_id,
+            title: title.into(),
+            description: None,
+            recurrence: "FREQ=DAILY".into(),
+            start_time: "08:00".into(),
+            end_time: "09:00".into(),
+            avg_minutes: 60,
+            sigma_minutes: 10,
+            parallelizable: false,
+            allows_parallel: false,
+            abandonability: 0.5,
+            active: true,
+            fixed: false,
+            window_mode: "day".into(),
+            created_at: "2026-01-01T00:00:00Z".into(),
+            updated_at: "2026-01-01T00:00:00Z".into(),
+        }
+    }
+
     #[test]
     fn phase2_inputs_for_response_returns_none_when_all_deps_are_existing() {
         let steps = vec![PendingHabitStep {
@@ -3920,10 +3995,7 @@ mod tests {
             },
         ];
         let phase1_map: HashMap<i64, String> = HashMap::new();
-        let response = vec![
-            habit_step_row("real-1", 0),
-            habit_step_row("real-2", 1),
-        ];
+        let response = vec![habit_step_row("real-1", 0), habit_step_row("real-2", 1)];
         let phase2 = AgentSession::phase2_inputs_for_response(&steps, &phase1_map, &response)
             .unwrap()
             .unwrap();
@@ -3968,5 +4040,107 @@ mod tests {
         let response = vec![habit_step_row("real-1", 0)];
         let result = AgentSession::phase2_inputs_for_response(&steps, &phase1_map, &response);
         assert!(result.unwrap().is_err());
+    }
+
+    #[tokio::test]
+    async fn execute_proposed_change_creates_and_deletes_habit_scheduled_span() {
+        use axum::http::StatusCode;
+        use axum::{Json, Router, routing::delete, routing::get, routing::post};
+        use takusu_client::{HabitDetail, HabitScheduledSpanRow};
+
+        let habit = habit_row("habit-uuid", 1, "朝のランニング");
+        let habit_detail = HabitDetail {
+            habit: habit.clone(),
+            steps: vec![],
+        };
+        let created = HabitScheduledSpanRow {
+            id: "span-uuid".into(),
+            habit_id: "habit-uuid".into(),
+            start_date: "2025-09-01".into(),
+            end_date: "2025-09-07".into(),
+            reason: None,
+            created_at: "2025-06-01T00:00:00Z".into(),
+        };
+
+        let app = Router::new()
+            .route(
+                "/api/habits/{id}",
+                get(move || async move { Json(habit_detail.clone()) }),
+            )
+            .route(
+                "/api/habits/{id}/scheduled-spans",
+                post(move || async move { Json(created.clone()) }),
+            )
+            .route(
+                "/api/habits/{id}/scheduled-spans/{span_id}",
+                delete(|| async { StatusCode::NO_CONTENT }),
+            );
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+        let mut cfg = AgentConfig::default();
+        cfg.server.url = format!("http://{addr}");
+        let registry = ToolRegistry::new();
+        let mock = MockLlm {
+            calls: Mutex::new(Vec::new()),
+            responses: Mutex::new(Vec::new()),
+        };
+        let session = AgentSession::new(cfg, registry, mock);
+
+        let create_change = ProposedChange {
+            operation: "create_scheduled_span".to_string(),
+            target_label: "habit h1".to_string(),
+            description: "h1にscheduled span 2025-09-01〜2025-09-07を追加".to_string(),
+            before: None,
+            after: Some(json!({
+                "habit_ref": "h1",
+                "start_date": "2025-09-01",
+                "end_date": "2025-09-07",
+            })),
+            arguments: Some(json!({
+                "habit_ref": "h1",
+                "start_date": "2025-09-01",
+                "end_date": "2025-09-07",
+            })),
+            observed_updated_at: None,
+        };
+        let receipt = session
+            .execute_proposed_change(
+                &create_change,
+                create_change.arguments.clone().unwrap(),
+                Some("op-1"),
+            )
+            .await
+            .unwrap();
+        assert_eq!(receipt.target_type, "habit");
+        assert_eq!(receipt.target_id, "habit-uuid");
+        assert!(receipt.after.is_some());
+
+        let delete_change = ProposedChange {
+            operation: "delete_scheduled_span".to_string(),
+            target_label: "habit h1".to_string(),
+            description: "h1のscheduled span 2025-08-01〜2025-08-07を削除".to_string(),
+            before: Some(json!({
+                "id": "span-uuid",
+                "start_date": "2025-08-01",
+                "end_date": "2025-08-07",
+            })),
+            after: None,
+            arguments: Some(json!({"habit_ref": "h1", "span_id": "span-uuid"})),
+            observed_updated_at: None,
+        };
+        let receipt = session
+            .execute_proposed_change(
+                &delete_change,
+                delete_change.arguments.clone().unwrap(),
+                Some("op-2"),
+            )
+            .await
+            .unwrap();
+        assert_eq!(receipt.target_type, "habit");
+        assert_eq!(receipt.target_id, "habit-uuid");
+        assert!(receipt.before.is_some());
     }
 }

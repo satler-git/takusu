@@ -1,11 +1,13 @@
 use async_trait::async_trait;
 use futures_util::future::try_join_all;
+use jiff::civil::Date;
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::str::FromStr;
 use std::sync::Arc;
 use takusu_client::{
-    Client, HabitDetail, HabitRow, HabitStepRow, SchedulePreviewRequest, TaskQuery, TaskRow,
+    Client, HabitDetail, HabitRow, HabitScheduledSpanRow, HabitStepRow, SchedulePreviewRequest,
+    TaskQuery, TaskRow,
 };
 use takusu_util::{parse_date_expression, parse_datetime_to_timestamp, parse_datetime_tz};
 
@@ -665,7 +667,10 @@ fn habit_json(habit: &HabitDetail) -> Value {
     let has_steps = !habit.steps.is_empty();
     let mut value = serde_json::Map::new();
     value.insert("display_id".into(), json!(habit.habit.display_id));
-    value.insert("reference".into(), json!(format!("h{}", habit.habit.display_id)));
+    value.insert(
+        "reference".into(),
+        json!(format!("h{}", habit.habit.display_id)),
+    );
     value.insert("title".into(), json!(habit.habit.title));
     value.insert("description".into(), json!(habit.habit.description));
     value.insert("recurrence".into(), json!(habit.habit.recurrence));
@@ -686,7 +691,13 @@ fn habit_json(habit: &HabitDetail) -> Value {
     value.insert("window_mode".into(), json!(habit.habit.window_mode));
     value.insert(
         "steps".into(),
-        json!(habit.steps.iter().map(|s| step_json(s, &id_to_display_position)).collect::<Vec<_>>()),
+        json!(
+            habit
+                .steps
+                .iter()
+                .map(|s| step_json(s, &id_to_display_position))
+                .collect::<Vec<_>>()
+        ),
     );
     Value::Object(value)
 }
@@ -1141,6 +1152,278 @@ impl Tool for GetSchedule {
     }
 }
 
+struct HabitScheduledSpans {
+    client: Client,
+    tz_cache: TimeZoneCache,
+}
+
+#[async_trait]
+impl Tool for HabitScheduledSpans {
+    fn name(&self) -> &'static str {
+        "habit_scheduled_spans"
+    }
+
+    fn description(&self) -> &'static str {
+        "List, create, or delete scheduled spans for a habit. The effect of a span depends on the habit's active flag: for active habits it is a pause period, for disabled habits it is an activation window. action=list returns existing spans; action=create and action=delete generate approval proposals."
+    }
+
+    fn parameters_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "habit_ref": {"type": "string", "description": "Habit reference such as h1."},
+                "action": {"type": "string", "enum": ["list", "create", "delete"], "description": "Operation to perform."},
+                "start_date": {"type": "string", "description": "Start date (YYYY-MM-DD) for action=create."},
+                "end_date": {"type": "string", "description": "End date (YYYY-MM-DD) for action=create."},
+                "reason": {"type": "string", "description": "Optional reason for action=create."},
+                "span_id": {"type": "string", "description": "Span id to delete for action=delete. Use the id returned by action=list."},
+                "why": {"type": "string", "description": "Short user-facing reason for the proposed change."},
+                "warnings": {"type": "array", "items": {"type": "string"}},
+                "inferred_fields": crate::inferred_fields_schema("List of fields that were inferred from ambiguous user input and should be highlighted. Do not include obvious conversions (e.g. '1 hour' -> 60 minutes) or values filled from the current date/time."),
+            },
+            "required": ["habit_ref", "action"],
+            "additionalProperties": false,
+        })
+    }
+
+    async fn call(&self, args: Value) -> Result<ToolOutput, ToolError> {
+        let mut args = object(args)?;
+        let habit_ref = required_string(&args, "habit_ref")?;
+        let habit_ref = strip_leading_hash(&habit_ref).to_string();
+        args.insert("habit_ref".to_string(), Value::String(habit_ref.clone()));
+        let action = required_string(&args, "action")?.to_lowercase();
+        args.remove("action");
+
+        let habit = self
+            .client
+            .get_habit(&habit_ref)
+            .await
+            .map_err(client_error)?;
+
+        let tz = server_timezone(&self.tz_cache).await;
+
+        match action.as_str() {
+            "list" => self.list(&habit, &tz).await,
+            "create" => self.propose_create(&mut args, &habit).await,
+            "delete" => self.propose_delete(&mut args, &habit, &tz).await,
+            _ => Err(ToolError::InvalidArgs(InvalidArgsError::new(
+                "action",
+                format!("must be 'list', 'create', or 'delete', got {action}"),
+            ))),
+        }
+    }
+}
+
+impl HabitScheduledSpans {
+    async fn list(
+        &self,
+        habit: &HabitDetail,
+        tz: &jiff::tz::TimeZone,
+    ) -> Result<ToolOutput, ToolError> {
+        let spans = self
+            .client
+            .list_habit_scheduled_spans(&habit.habit.id)
+            .await
+            .map_err(client_error)?;
+        let content = json!({
+            "habit_ref": format!("h{}", habit.habit.display_id),
+            "active": habit.habit.active,
+            "kind": if habit.habit.active { "pause" } else { "active" },
+            "spans": spans.iter().map(|span| span_json(span, tz)).collect::<Vec<_>>(),
+        });
+        Ok(ToolOutput {
+            content: serde_json::to_string(&content).unwrap(),
+            ..Default::default()
+        })
+    }
+
+    async fn propose_create(
+        &self,
+        args: &mut serde_json::Map<String, Value>,
+        habit: &HabitDetail,
+    ) -> Result<ToolOutput, ToolError> {
+        let start_date = required_string(args, "start_date")?;
+        args.insert("start_date".to_string(), Value::String(start_date.clone()));
+        let end_date = required_string(args, "end_date")?;
+        args.insert("end_date".to_string(), Value::String(end_date.clone()));
+
+        if let Some(reason) = optional_string(args, "reason")? {
+            args.insert("reason".to_string(), Value::String(reason));
+        } else {
+            args.remove("reason");
+        }
+
+        validate_scheduled_span_dates(&start_date, &end_date)?;
+
+        self.proposal_output(args, habit, "create_scheduled_span", None)
+            .await
+    }
+
+    async fn propose_delete(
+        &self,
+        args: &mut serde_json::Map<String, Value>,
+        habit: &HabitDetail,
+        tz: &jiff::tz::TimeZone,
+    ) -> Result<ToolOutput, ToolError> {
+        let span_id = required_string(args, "span_id")?;
+        args.insert("span_id".to_string(), Value::String(span_id.clone()));
+        let spans = self
+            .client
+            .list_habit_scheduled_spans(&habit.habit.id)
+            .await
+            .map_err(client_error)?;
+        let span = spans
+            .into_iter()
+            .find(|span| span.id == span_id)
+            .ok_or_else(|| {
+                ToolError::NotFound(format!(
+                    "scheduled span {span_id} not found for habit h{}",
+                    habit.habit.display_id
+                ))
+            })?;
+        let before = span_json(&span, tz);
+        self.proposal_output(args, habit, "delete_scheduled_span", Some(before))
+            .await
+    }
+
+    async fn proposal_output(
+        &self,
+        args: &mut serde_json::Map<String, Value>,
+        habit: &HabitDetail,
+        operation: &str,
+        before: Option<Value>,
+    ) -> Result<ToolOutput, ToolError> {
+        let mut start_date = optional_string(args, "start_date")?.unwrap_or_default();
+        let mut end_date = optional_string(args, "end_date")?.unwrap_or_default();
+
+        // For delete, prefer the actual span dates from `before`.
+        if let Some(before_obj) = before.as_ref().and_then(Value::as_object) {
+            if let Some(s) = before_obj.get("start_date").and_then(Value::as_str) {
+                start_date = s.to_owned();
+            }
+            if let Some(s) = before_obj.get("end_date").and_then(Value::as_str) {
+                end_date = s.to_owned();
+            }
+        }
+
+        let description = match operation {
+            "create_scheduled_span" => {
+                format!(
+                    "h{}にscheduled span {start_date}〜{end_date}を追加",
+                    habit.habit.display_id
+                )
+            }
+            "delete_scheduled_span" => {
+                format!(
+                    "h{}のscheduled span {start_date}〜{end_date}を削除",
+                    habit.habit.display_id
+                )
+            }
+            _ => format!("h{}のscheduled spanを{operation}", habit.habit.display_id),
+        };
+
+        let why = optional_string(args, "why")?.unwrap_or_default();
+        if why.is_empty() {
+            args.remove("why");
+        } else {
+            args.insert("why".to_string(), Value::String(why.clone()));
+        }
+        let warnings = args
+            .get("warnings")
+            .and_then(Value::as_array)
+            .map(|values| {
+                values
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(ToOwned::to_owned)
+                    .collect()
+            })
+            .unwrap_or_default();
+        let inferred_fields = parse_inferred_fields(args)?;
+
+        args.remove("action");
+        let mut display_args = args.clone();
+        format_display_datetime_args(&mut display_args, &server_timezone(&self.tz_cache).await);
+        let execution_args = args.clone();
+
+        let proposal = crate::ProposedChange {
+            operation: operation.to_owned(),
+            target_label: format!("habit h{}", habit.habit.display_id),
+            description,
+            before,
+            after: Some(Value::Object(display_args)),
+            arguments: Some(Value::Object(execution_args)),
+            observed_updated_at: None,
+        };
+
+        let content = json!({
+            "approval_required": true,
+            "operation": proposal.operation,
+            "target": proposal.target_label,
+            "inferred_fields": inferred_fields,
+            "why": why,
+            "warnings": warnings,
+        });
+
+        Ok(ToolOutput {
+            content: serde_json::to_string(&content).unwrap(),
+            why: Some(why),
+            warnings,
+            proposed_changes: vec![proposal],
+            inferred_fields,
+            schedule_dirty: false,
+            ..Default::default()
+        })
+    }
+}
+
+fn span_json(span: &HabitScheduledSpanRow, tz: &jiff::tz::TimeZone) -> Value {
+    json!({
+        "id": span.id,
+        "start_date": span.start_date,
+        "end_date": span.end_date,
+        "reason": span.reason,
+        "created_at": format_datetime_for_display(&span.created_at, tz),
+    })
+}
+
+fn parse_inferred_fields(
+    args: &serde_json::Map<String, Value>,
+) -> Result<Vec<crate::InferredField>, ToolError> {
+    let inferred_fields = args
+        .get("inferred_fields")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    serde_json::from_value::<Vec<crate::InferredField>>(inferred_fields).map_err(|error| {
+        ToolError::InvalidArgs(InvalidArgsError::new(
+            "inferred_fields",
+            format!("invalid: {error}"),
+        ))
+    })
+}
+
+fn validate_scheduled_span_dates(start: &str, end: &str) -> Result<(), ToolError> {
+    let start = Date::strptime("%Y-%m-%d", start).map_err(|error| {
+        ToolError::InvalidArgs(InvalidArgsError::new(
+            "start_date",
+            format!("invalid date: {error}"),
+        ))
+    })?;
+    let end = Date::strptime("%Y-%m-%d", end).map_err(|error| {
+        ToolError::InvalidArgs(InvalidArgsError::new(
+            "end_date",
+            format!("invalid date: {error}"),
+        ))
+    })?;
+    if start > end {
+        return Err(ToolError::InvalidArgs(InvalidArgsError::new(
+            "end_date",
+            "must be on or after start_date",
+        )));
+    }
+    Ok(())
+}
+
 struct GetSettings {
     client: Client,
 }
@@ -1233,7 +1516,8 @@ impl Tool for PreviewScheduleTool {
     }
 }
 
-/// Registers planner mutation tools. Calls only produce approval proposals; they never write.
+/// Registers planner mutation tools and the hybrid habit_scheduled_spans tool.
+/// Calls produce approval proposals or read data; they never write directly.
 pub fn register_mutation_tools(
     registry: &mut ToolRegistry,
     client: Client,
@@ -1255,6 +1539,7 @@ pub fn register_mutation_tools(
             kind,
         }));
     }
+    registry.register(Box::new(HabitScheduledSpans { client, tz_cache }));
 }
 
 /// JSON schema for a single habit step input used in create/update habit.
@@ -1984,7 +2269,7 @@ fn validate_mutation(
 mod tests {
     use super::*;
     use axum::{Json, Router, routing::get};
-    use takusu_client::{ScheduleRow, SettingsResponse};
+    use takusu_client::{HabitDetail, HabitScheduledSpanRow, ScheduleRow, SettingsResponse};
 
     fn task_row(
         id: &str,
@@ -2815,5 +3100,109 @@ mod tests {
 
         let execution = change.arguments.as_ref().unwrap().as_object().unwrap();
         assert_eq!(execution["task_ref"], "42");
+    }
+
+    #[tokio::test]
+    async fn habit_scheduled_spans_tool_lists_and_proposes() {
+        let habit = habit_row("habit-uuid", 1, "朝のランニング");
+        let habit_detail = HabitDetail {
+            habit: habit.clone(),
+            steps: vec![],
+        };
+        let span = HabitScheduledSpanRow {
+            id: "span-uuid".into(),
+            habit_id: "habit-uuid".into(),
+            start_date: "2025-08-01".into(),
+            end_date: "2025-08-07".into(),
+            reason: Some("旅行".into()),
+            created_at: "2025-06-01T00:00:00Z".into(),
+        };
+        let spans_for_list = vec![span.clone()];
+
+        let app = Router::new()
+            .route(
+                "/api/habits/{id}",
+                get(move || async move { Json(habit_detail.clone()) }),
+            )
+            .route(
+                "/api/habits/{id}/scheduled-spans",
+                get(move || async move { Json(spans_for_list.clone()) }),
+            )
+            .route(
+                "/api/settings",
+                get(|| async {
+                    Json(SettingsResponse {
+                        tz: "Asia/Tokyo".into(),
+                        sleep_start: "23:00".into(),
+                        sleep_end: "07:00".into(),
+                        comfortable_minutes: None,
+                        maximum_minutes: None,
+                        solver: "auto".into(),
+                        time_budget_ms: None,
+                        seed: None,
+                        warm_start: false,
+                    })
+                }),
+            );
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+        let client = Client::new(&format!("http://{addr}"), "");
+        let tz_cache = TimeZoneCache::new(client.clone());
+        let tool = HabitScheduledSpans { client, tz_cache };
+
+        // list
+        let output = tool
+            .call(json!({"habit_ref": "h1", "action": "list"}))
+            .await
+            .unwrap();
+        assert!(output.proposed_changes.is_empty());
+        let content: Value = serde_json::from_str(&output.content).unwrap();
+        assert_eq!(content["habit_ref"], "h1");
+        assert_eq!(content["active"], true);
+        assert_eq!(content["kind"], "pause");
+        assert_eq!(content["spans"].as_array().unwrap().len(), 1);
+
+        // create proposal
+        let output = tool
+            .call(json!({
+                "habit_ref": "h1",
+                "action": "create",
+                "start_date": "2025-09-01",
+                "end_date": "2025-09-07",
+                "reason": "出張"
+            }))
+            .await
+            .unwrap();
+        assert_eq!(output.proposed_changes.len(), 1);
+        let change = &output.proposed_changes[0];
+        assert_eq!(change.operation, "create_scheduled_span");
+        assert_eq!(change.target_label, "habit h1");
+        assert!(change.before.is_none());
+        let args = change.arguments.as_ref().unwrap().as_object().unwrap();
+        assert_eq!(args["start_date"], "2025-09-01");
+        assert_eq!(args["end_date"], "2025-09-07");
+        assert_eq!(args["habit_ref"], "h1");
+
+        // delete proposal
+        let output = tool
+            .call(json!({
+                "habit_ref": "h1",
+                "action": "delete",
+                "span_id": "span-uuid"
+            }))
+            .await
+            .unwrap();
+        assert_eq!(output.proposed_changes.len(), 1);
+        let change = &output.proposed_changes[0];
+        assert_eq!(change.operation, "delete_scheduled_span");
+        assert_eq!(change.target_label, "habit h1");
+        let before = change.before.as_ref().unwrap();
+        assert_eq!(before["start_date"], "2025-08-01");
+        let args = change.arguments.as_ref().unwrap().as_object().unwrap();
+        assert_eq!(args["span_id"], "span-uuid");
+        assert_eq!(args["habit_ref"], "h1");
     }
 }
