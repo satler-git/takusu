@@ -493,7 +493,6 @@ export function SettingsDetailView({
         await client.updateWorkersConfig({ url, token });
         setWorkerDirty(false);
         haptic.success();
-        showTopToast('Worker設定を保存しました');
       } catch (e) {
         void showError(
           `Worker設定は保存されましたが、サーバーへの反映に失敗しました。再起動してください。 (${
@@ -505,7 +504,6 @@ export function SettingsDetailView({
     } else {
       setWorkerDirty(false);
       haptic.success();
-      showTopToast('Worker設定を保存しました');
     }
   }
 
@@ -530,7 +528,6 @@ export function SettingsDetailView({
       setSleepStart(s.sleep_start);
       setSleepEnd(s.sleep_end);
       haptic.success();
-      showTopToast('睡眠設定を保存しました');
     } catch (e) {
       void showError(e, 'エラー');
     } finally {
@@ -555,7 +552,6 @@ export function SettingsDetailView({
       setSleepSettings(s);
       setSleepTz(s.tz);
       haptic.success();
-      showTopToast('タイムゾーンを保存しました');
     } catch (e) {
       void showError(e, 'エラー');
     } finally {
@@ -588,7 +584,6 @@ export function SettingsDetailView({
       setWorkloadComfortable(formatMinutesToHours(s.comfortable_minutes));
       setWorkloadMaximum(formatMinutesToHours(s.maximum_minutes));
       haptic.success();
-      showTopToast('作業負荷設定を保存しました');
     } catch (e) {
       void showError(e, 'エラー');
     } finally {
@@ -607,7 +602,7 @@ export function SettingsDetailView({
       });
       setGcalSettings(s);
       setGcalClientSecret('');
-      showTopToast('Google Calendar設定を保存しました');
+      haptic.success();
     } catch (e) {
       void showError(e, 'エラー');
     }
@@ -664,8 +659,8 @@ export function SettingsDetailView({
       }
 
       await client.oauthCallback(serverAuthCode);
-      showTopToast('Google Calendarの認証に成功しました');
       await loadGcalSettings();
+      haptic.success();
     } catch (e) {
       if (
         isErrorWithCode(e) &&
@@ -697,7 +692,7 @@ export function SettingsDetailView({
       });
       setGcalSettings(s);
       setGcalRefreshToken('');
-      showTopToast('Refresh Tokenを保存しました');
+      haptic.success();
     } catch (e) {
       void showError(e, 'エラー');
     }
@@ -708,7 +703,7 @@ export function SettingsDetailView({
     setSyncLoading(true);
     try {
       await client.triggerSync();
-      showTopToast('Google Calendarへ同期しました');
+      haptic.success();
     } catch (e) {
       void showError(e, 'エラー');
     } finally {
@@ -810,7 +805,7 @@ export function SettingsDetailView({
           dialogTitle: 'ログをエクスポート',
         });
       } else {
-        showTopToast('ログを保存しました');
+        haptic.success();
       }
     } catch (e) {
       void showError(e, 'エラー');
@@ -822,7 +817,7 @@ export function SettingsDetailView({
   async function clearLogs() {
     try {
       await TakusuServerModule.clearLogs();
-      showTopToast('ログバッファをクリアしました');
+      haptic.success();
     } catch (e) {
       void showError(e, 'エラー');
     }
@@ -839,7 +834,6 @@ export function SettingsDetailView({
       const content = lines.join('\n');
       await Clipboard.setStringAsync(content);
       haptic.success();
-      showTopToast(`${lines.length} 行のログをクリップボードにコピーしました`);
     } catch (e) {
       void showError(e, 'エラー');
     } finally {

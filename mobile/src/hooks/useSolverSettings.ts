@@ -3,7 +3,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { TakusuClient } from '@/src/api/client';
 import { SettingsRow } from '@/src/api/types';
 import { haptic } from '@/src/components/haptics';
-import { useTopToast } from '@/src/components/TopToast';
+
 import { showError } from '@/src/api/errors';
 import {
   parseOptionalNonNegativeInt,
@@ -33,7 +33,6 @@ export interface UseSolverSettingsResult {
 export function useSolverSettings(
   client: TakusuClient | null,
 ): UseSolverSettingsResult {
-  const { showTopToast } = useTopToast();
   const [solverSettings, setSolverSettings] = useState<SettingsRow | null>(
     null,
   );
@@ -101,7 +100,6 @@ export function useSolverSettings(
       setSeedInput(s.seed != null ? String(s.seed) : '');
       setWarmStartValue(s.warm_start);
       haptic.success();
-      showTopToast('Solver 設定を保存しました');
     } catch (e) {
       void showError(e, 'エラー');
     } finally {
@@ -114,7 +112,6 @@ export function useSolverSettings(
     timeBudgetInput,
     seedInput,
     warmStartValue,
-    showTopToast,
   ]);
 
   const dirty = useMemo(() => {
