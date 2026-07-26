@@ -118,6 +118,19 @@ function TaskCardImpl({
     (onSkip && !isDone ? ACTION_BUTTON_WIDTH : 0);
   const REVEAL_THRESHOLD = 80;
 
+  // The task card's rounded right corners expose a small concave notch next
+  // to the leftmost swipe action while the card is slid open. Widen the
+  // action panel and extend the leftmost button 12dp under the card so its
+  // background fills that notch (issue #1097).
+  const CARD_BORDER_RADIUS = 12;
+  const PANEL_WIDTH = ACTION_PANEL_WIDTH + CARD_BORDER_RADIUS;
+  const skipVisible = onSkip && !isDone;
+  const leftActionStyle = {
+    width: ACTION_BUTTON_WIDTH + CARD_BORDER_RADIUS,
+    paddingLeft: CARD_BORDER_RADIUS,
+  };
+  const rightActionStyle = { width: ACTION_BUTTON_WIDTH };
+
   // Single pan gesture handles swipe-right (done) and swipe-left (actions).
   // Using Gesture.Race with two separate pans was unreliable for left swipe
   // (#230): Race resolution between gestures with activeOffsetX in opposite
@@ -263,12 +276,16 @@ function TaskCardImpl({
       {/* #1044: revealed skip/delete action panel */}
       {ACTION_PANEL_WIDTH > 0 && (
         <View
-          style={[styles.actionPanel, { width: ACTION_PANEL_WIDTH }]}
+          style={[styles.actionPanel, { width: PANEL_WIDTH }]}
           pointerEvents={actionsRevealed ? 'auto' : 'none'}
         >
-          {onSkip && !isDone && (
+          {skipVisible && (
             <Pressable
-              style={[styles.actionButton, { backgroundColor: colors.gray }]}
+              style={[
+                styles.actionButton,
+                leftActionStyle,
+                { backgroundColor: colors.gray },
+              ]}
               onPress={() => {
                 haptic.warning();
                 actionsRevealedSV.value = false;
@@ -286,7 +303,11 @@ function TaskCardImpl({
           )}
           {onDelete && (
             <Pressable
-              style={[styles.actionButton, { backgroundColor: colors.red }]}
+              style={[
+                styles.actionButton,
+                skipVisible ? rightActionStyle : leftActionStyle,
+                { backgroundColor: colors.red },
+              ]}
               onPress={() => {
                 haptic.medium();
                 actionsRevealedSV.value = false;
@@ -436,7 +457,6 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   actionButton: {
-    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
