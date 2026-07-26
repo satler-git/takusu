@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useColors, BRAND_COLOR } from '@/src/theme';
 import { useServer } from '@/src/api/ServerProvider';
 import { useTopToast } from '@/src/components/TopToast';
+import { haptic } from '@/src/components/haptics';
 import { showError } from '@/src/api/errors';
 import TakusuServerModule from '../../modules/takusu-server/src/TakusuServerModule';
 import {
@@ -282,7 +283,7 @@ export function AgentSettingsView() {
       setEditingLlmProvider(null);
       setEditingLlmProviderKey('');
       await pushAgentConfig();
-      showTopToast('LLM Providerを保存しました');
+      haptic.success();
     } catch (e) {
       void showError(e, '保存失敗');
     } finally {
@@ -316,7 +317,7 @@ export function AgentSettingsView() {
       setEditingLlmModel(null);
       setEditingLlmModelKey('');
       await pushAgentConfig();
-      showTopToast('LLM Modelを保存しました');
+      haptic.success();
     } catch (e) {
       void showError(e, '保存失敗');
     } finally {
@@ -345,7 +346,7 @@ export function AgentSettingsView() {
       setEditingTts(null);
       setEditingTtsKey('');
       await pushAgentConfig();
-      showTopToast('TTS Providerを保存しました');
+      haptic.success();
     } catch (e) {
       void showError(e, '保存失敗');
     } finally {
@@ -490,7 +491,7 @@ export function AgentSettingsView() {
             setEditingTts(null);
             setEditingTtsKey('');
             await pushAgentConfig();
-            showTopToast('Provider設定を削除しました');
+            haptic.success();
           } catch (e) {
             void showError(e, '削除失敗');
           } finally {
