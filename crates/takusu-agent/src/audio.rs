@@ -12,7 +12,7 @@ use takusu_audio::play::{PcmFormat, PlayError, StreamedAudioFormat, play_stream}
 use takusu_audio::{
     CartesiaSonic, CartesiaSonicConfig, ModelCache, RecordConfig, SherpaOnnxAsr,
     SherpaOnnxAsrConfig, SherpaOnnxModel, SpeechToText, TextToSpeech, TtsOptions, TtsRequest,
-    record,
+    normalize_for_tts, record,
 };
 use thiserror::Error;
 
@@ -104,6 +104,7 @@ impl AudioAdapter {
             let voice_id = self.tts_voice_id.clone();
             let speed = self.tts_speed;
             let tts_format = self.tts_format;
+            let tts_language = self.last_audio.tts.language.clone();
             let no_tts_this_turn = no_tts || self.last_audio.tts.mute;
             let tts_player = tokio::spawn(async move {
                 if no_tts_this_turn {
@@ -117,6 +118,7 @@ impl AudioAdapter {
                         tts.as_ref(),
                         &block,
                         &voice_id,
+                        &tts_language,
                         speed,
                         tts_format,
                         Duration::from_secs(120),
@@ -333,12 +335,21 @@ async fn synthesize_and_play_with_timeout(
     tts: &dyn TextToSpeech,
     text: &str,
     voice_id: &str,
+    language: &str,
     speed: Option<f32>,
     format: StreamedAudioFormat,
     timeout: Duration,
 ) -> Result<(), AudioError> {
+    // Lindera dictionary initialization can block on first use, so run the
+    // normalization off the async runtime worker threads.
+    let text = text.to_string();
+    let language = language.to_string();
+    let text =
+        tokio::task::spawn_blocking(move || normalize_for_tts(&text, &language).into_owned())
+            .await
+            .map_err(|e| AudioError::Play(format!("tts normalization panicked: {e}")))?;
     let request = TtsRequest {
-        text: text.to_string(),
+        text,
         voice: Some(voice_id.to_string()),
         reference_audio_path: None,
         options: TtsOptions {

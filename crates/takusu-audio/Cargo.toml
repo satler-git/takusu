@@ -35,6 +35,10 @@ futures-util = { workspace = true }
 
 hound = "3.5"
 
+lindera = { version = "=4.0.0", features = ["embed-ipadic"] }
+regex = "1.12"
+tracing = { workspace = true }
+
 # ONNX pipeline for hush denoiser (Android-ready)
 ort = { version = "=2.0.0-rc.11", default-features = false, features = ["std", "ndarray", "load-dynamic"], optional = true }
 realfft = { version = "3.5", optional = true }
