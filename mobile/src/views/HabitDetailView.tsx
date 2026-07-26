@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Pressable,
-  Alert,
   Modal,
   ScrollView,
   StyleSheet,
@@ -42,6 +41,7 @@ import { HabitStepEditor } from '@/src/components/HabitStepEditor';
 import { RedundantDepWarning } from '@/src/components/RedundantDepWarning';
 import { parseRule, summarizeRule } from '@/src/api/rrule';
 import { haptic } from '@/src/components/haptics';
+import { useUndoableToast } from '@/src/hooks/useUndoableToast';
 import { CancelConfirmButton } from '@/src/components/CancelConfirmButton';
 import { DeleteConfirmButton } from '@/src/components/DeleteConfirmButton';
 import { parseDuration } from '@/src/utils/duration';
@@ -57,6 +57,7 @@ export function HabitDetailView() {
   const router = useRouter();
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const showUndoToast = useUndoableToast();
   const { id } = useLocalSearchParams<{ id: string }>();
   const [habit, setHabit] = useState<HabitDetail | null>(null);
   const [tasks, setTasks] = useState<TaskRow[]>([]);
@@ -116,83 +117,87 @@ export function HabitDetailView() {
     return dateKey(d.toISOString(), serverTz);
   }
 
-  const refresh = useCallback(async () => {
-    if (!client || !id) return;
-    try {
-      const settings = await client.getSettings().catch((e) => {
-        logError('設定取得', e);
-        return null;
-      });
-      setServerTz(settings?.tz ?? undefined);
-    } catch {
-      // settings are optional for viewing; keep serverTz as undefined
-    }
-    try {
-      const h = await client.getHabit(id);
-      setHabit(h);
-      // Don't clobber the user's in-progress edits.
-      if (!editingRef.current) {
-        setTitle(h.title);
-        setDescription(h.description ?? '');
-        setRecurrence(h.recurrence);
-        setStartTime(h.start_time);
-        setEndTime(h.end_time);
-        setAvgMinutes(String(h.avg_minutes));
-        setSigmaMinutes(h.sigma_minutes > 0 ? String(h.sigma_minutes) : '');
-        setAbandonability(h.abandonability);
-        setParallelizable(h.parallelizable);
-        setAllowsParallel(h.allows_parallel);
-        setActive(h.active);
-        setFixed(h.fixed);
-        setWindowMode(
-          (h.window_mode === WINDOW_MODE_PERIOD
-            ? WINDOW_MODE_PERIOD
-            : WINDOW_MODE_DAY) as WindowMode,
-        );
-        setStepDrafts(h.steps.map(stepRowToDraft));
+  const refresh = useCallback(
+    async (targetId = id) => {
+      if (!client || !targetId) return;
+      try {
+        const settings = await client.getSettings().catch((e) => {
+          logError('設定取得', e);
+          return null;
+        });
+        setServerTz(settings?.tz ?? undefined);
+      } catch {
+        // settings are optional for viewing; keep serverTz as undefined
       }
-      // Fetch step dependency analysis (#355) — only meaningful for saved
-      // steps, but we fetch always so the warning is available in view mode.
-      if (h.steps.length > 0) {
-        try {
-          const analysis = await client.analyzeHabitStepDependencies(id);
-          setStepRedundantEdges(analysis.redundant);
-        } catch (e) {
-          logError('ステップ依存分析の取得', e);
+      try {
+        const h = await client.getHabit(targetId);
+        setHabit(h);
+        // Don't clobber the user's in-progress edits.
+        if (!editingRef.current) {
+          setTitle(h.title);
+          setDescription(h.description ?? '');
+          setRecurrence(h.recurrence);
+          setStartTime(h.start_time);
+          setEndTime(h.end_time);
+          setAvgMinutes(String(h.avg_minutes));
+          setSigmaMinutes(h.sigma_minutes > 0 ? String(h.sigma_minutes) : '');
+          setAbandonability(h.abandonability);
+          setParallelizable(h.parallelizable);
+          setAllowsParallel(h.allows_parallel);
+          setActive(h.active);
+          setFixed(h.fixed);
+          setWindowMode(
+            (h.window_mode === WINDOW_MODE_PERIOD
+              ? WINDOW_MODE_PERIOD
+              : WINDOW_MODE_DAY) as WindowMode,
+          );
+          setStepDrafts(h.steps.map(stepRowToDraft));
+        }
+        // Fetch step dependency analysis (#355) — only meaningful for saved
+        // steps, but we fetch always so the warning is available in view mode.
+        if (h.steps.length > 0) {
+          try {
+            const analysis =
+              await client.analyzeHabitStepDependencies(targetId);
+            setStepRedundantEdges(analysis.redundant);
+          } catch (e) {
+            logError('ステップ依存分析の取得', e);
+            setStepRedundantEdges([]);
+          }
+        } else {
           setStepRedundantEdges([]);
         }
-      } else {
-        setStepRedundantEdges([]);
+      } catch (e) {
+        showError(e, 'Habitの取得に失敗');
+        return;
       }
-    } catch (e) {
-      showError(e, 'Habitの取得に失敗');
-      return;
-    }
-    // Fetch scheduled spans (always, even while editing — span add/delete are
-    // immediate actions outside the edit save flow).
-    try {
-      setSpans(await client.listHabitScheduledSpans(id));
-    } catch (e) {
-      logError('スケジュール済み期間の取得', e);
-      setSpans([]);
-    }
-    try {
-      const allTasks = await client.listTasks({ habit_id: id });
-      // Show upcoming tasks in chronological order.
-      // Server returns tasks ordered by created_at DESC (generation order),
-      // not by date. Sort by start_at ascending so the user sees the earliest
-      // upcoming task first. Exclude completed/skipped tasks so past finished
-      // habit occurrences don't push upcoming ones out of the top 10.
-      const sorted = [...allTasks]
-        .filter((t) => t.status !== 'completed' && t.status !== 'skipped')
-        .sort((a, b) => (a.start_at ?? '').localeCompare(b.start_at ?? ''))
-        .slice(0, 10);
-      setTasks(sorted);
-    } catch (e) {
-      logError('ハビットのタスク取得', e);
-      setTasks([]);
-    }
-  }, [client, id]);
+      // Fetch scheduled spans (always, even while editing — span add/delete are
+      // immediate actions outside the edit save flow).
+      try {
+        setSpans(await client.listHabitScheduledSpans(targetId));
+      } catch (e) {
+        logError('スケジュール済み期間の取得', e);
+        setSpans([]);
+      }
+      try {
+        const allTasks = await client.listTasks({ habit_id: targetId });
+        // Show upcoming tasks in chronological order.
+        // Server returns tasks ordered by created_at DESC (generation order),
+        // not by date. Sort by start_at ascending so the user sees the earliest
+        // upcoming task first. Exclude completed/skipped tasks so past finished
+        // habit occurrences don't push upcoming ones out of the top 10.
+        const sorted = [...allTasks]
+          .filter((t) => t.status !== 'completed' && t.status !== 'skipped')
+          .sort((a, b) => (a.start_at ?? '').localeCompare(b.start_at ?? ''))
+          .slice(0, 10);
+        setTasks(sorted);
+      } catch (e) {
+        logError('ハビットのタスク取得', e);
+        setTasks([]);
+      }
+    },
+    [client, id],
+  );
 
   useEffect(() => {
     refresh();
@@ -361,30 +366,6 @@ export function HabitDetailView() {
       return;
     }
     const taskCount = deletedTasks.length;
-    const message =
-      taskCount > 0
-        ? `このハビットと関連する${taskCount}件のタスクも削除されます。よろしいですか？`
-        : 'このハビットを削除しますか？';
-    const confirmed = await new Promise<boolean>((resolve) => {
-      Alert.alert(
-        'ハビットを削除',
-        message,
-        [
-          {
-            text: 'キャンセル',
-            style: 'cancel',
-            onPress: () => resolve(false),
-          },
-          {
-            text: '削除',
-            style: 'destructive',
-            onPress: () => resolve(true),
-          },
-        ],
-        { cancelable: true, onDismiss: () => resolve(false) },
-      );
-    });
-    if (!confirmed) return;
     const prev = { ...habit };
     // Track the current habit id: undo recreates the habit with a new id,
     // and redo must delete that new id (not the stale original).
@@ -395,6 +376,13 @@ export function HabitDetailView() {
       showError(e, 'ハビットの削除に失敗');
       return;
     }
+
+    const message =
+      taskCount > 0
+        ? `「${habit.title}」と関連する${taskCount}件のタスクを削除しました`
+        : `「${habit.title}」を削除しました`;
+    showUndoToast(message);
+
     // Track recreated task ids so redo deletes them, and so a retry
     // after partial failure doesn't create duplicates.
     const currentTaskIds: string[] = [...deletedTasks.map((t) => t.id)];
@@ -491,6 +479,7 @@ export function HabitDetailView() {
           const remapped = origDeps.map((d) => oldToNew.get(d) ?? d);
           await client.updateTask(newId, { depends: remapped });
         }
+        await refresh(currentId);
       },
       redo: async () => {
         habitCreated = false;
