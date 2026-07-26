@@ -1,5 +1,4 @@
 // Query-aware task search bar with server-driven completion and token chips.
-// Mirrors the design in doc/mock/task-search-ui-mock.html.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {

@@ -62,7 +62,7 @@ takusu-agent (library + CLI binary)
 └── src/bin/agent.rs  # text mode and push-to-talk CLI
 
 takusu server/storage/client extensions
-├── backend-specific memory migration (see plan-memory.md)
+├── backend-specific memory migration
 ├── migrations/015_progress.sql
 ├── /api/schedule/preview
 ├── /api/memory/* and /api/tasks/similar
@@ -468,10 +468,9 @@ size limits, confirmation, backup/rollback, and prompt-index refresh.
 
 ### WI-7: Memory server
 
-**Files**: the dedicated design and implementation described in [`plan-memory.md`](plan-memory.md):
-backend migrations, storage trait/models and both backends, app/routes, and `takusu-client`.
+**Files**: backend migrations, storage trait/models and both backends, app/routes, and `takusu-client`.
 
-`plan-memory.md` is the normative contract for the schema, canonical non-null subject keys, unique
+The memory subsystem is the normative contract for the schema, canonical non-null subject keys, unique
 logical index, `revision` optimistic concurrency, mutation idempotency, source enum, normalization,
 deterministic search, and WI-8 Agent integration. In particular:
 
@@ -485,15 +484,14 @@ The current repository is a single-workspace data model. If multi-user ownership
 all memory, task, progress, schedule, and agent-session queries must be scoped together; adding only a
 `user_id` to memory would not be sufficient.
 
-**Verify**: run the focused storage/API and Agent approval tests in `plan-memory.md`, including unique
+**Verify**: run the focused storage/API and Agent approval tests, including unique
 concurrency, idempotency replay, revision conflicts, Japanese normalization/ranking, subject lookup,
 similar completed tasks, limits, and local/Worker parity.
 
 ### WI-8: Memory tools and inference flow
 
 **Files**: `crates/takusu-agent/src/tools/memory.rs`, `AgentSession::execute_proposed_change`,
-`takusu-client`, and system-context rules. The detailed contract is in
-[`plan-memory.md`](plan-memory.md).
+`takusu-client`, and system-context rules.
 
 Implement `memory_save`, `memory_update`, `memory_search`, `memory_delete`, and `similar_tasks`,
 and add the corresponding memory create/update/delete dispatch to the approval executor. Memory
