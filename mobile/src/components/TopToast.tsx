@@ -1,6 +1,7 @@
 // Top toast — auto-dismissing banner from the top of the screen.
-// Multiple toasts stack downward: new toasts slide in from the top and push
-// older ones down; swiping any toast sideways dismisses it.
+// Multiple toasts stack downward from a fixed top corner: new toasts append
+// to the bottom of the stack and slide up into their slot, while earlier
+// toasts keep their positions. Swiping any toast sideways dismisses it.
 // Implemented with react-native-reanimated and react-native-gesture-handler
 // so all animation and pan handling runs on the native thread.
 
@@ -109,7 +110,7 @@ export function TopToastProvider({ children }: { children: ReactNode }) {
           type: opts.type ?? 'info',
           duration: opts.duration ?? DEFAULT_DURATION,
         };
-        setToasts((prev) => [next, ...prev]);
+        setToasts((prev) => [...prev, next]);
         return id;
       },
     [],
@@ -186,7 +187,7 @@ function ToastItem({
   onUnregisterDismiss,
 }: ToastItemProps) {
   const { width: screenWidth } = useWindowDimensions();
-  const offsetY = useSharedValue(-ESTIMATED_HEIGHT);
+  const offsetY = useSharedValue(offset + ESTIMATED_HEIGHT);
   const offsetYTarget = useSharedValue(offset);
   const panY = useSharedValue(0);
   const panX = useSharedValue(0);

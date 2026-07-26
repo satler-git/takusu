@@ -165,7 +165,7 @@ export const COLORS = {
   brand: BRAND_COLOR,
   brandLight: BRAND_COLOR_LIGHT,
   brandDark: BRAND_COLOR_DARK,
-  white: '#FFFFFF',
+  white: '#FBFAFD',
   black: '#1C1824',
   gray: '#6C6578',
   grayLight: '#C9C3D5',
@@ -174,8 +174,11 @@ export const COLORS = {
   done: '#A29CA8',
   red: '#C06B6B',
   green: '#5A8F6E',
-  surface: '#FFFFFF',
+  surface: '#FBFAFD',
   surfaceTint: '#F3EEF7', // brand-tinted surface (dep items, etc.)
+  onBrand: '#FBFAFD',
+  shadow: '#1C1824',
+  scrim: '#1C1824',
 } as const;
 
 // Dark theme colors (retuned purple palette).
@@ -194,6 +197,9 @@ export const DARK_COLORS = {
   green: '#6AA67E',
   surface: '#1E1B27', // elevated surface (buttons, cards) — lighter than bg
   surfaceTint: '#272236', // brand-tinted dark surface
+  onBrand: '#F0ECF5',
+  shadow: '#0D0B12',
+  scrim: '#0D0B12',
 } as const;
 
 // Catppuccin Macchiato theme colors (issue #388).
@@ -213,6 +219,9 @@ export const CATPPUCCIN_COLORS = {
   green: '#A6DA95',
   surface: '#363A4F', // elevated surface
   surfaceTint: '#494D64',
+  onBrand: '#CAD3F5',
+  shadow: '#181A28',
+  scrim: '#181A28',
 } as const;
 
 // Aura Soft Dark theme colors (issue #729).
@@ -232,6 +241,9 @@ export const AURA_SOFT_DARK_COLORS = {
   green: '#54c59f',
   surface: '#21202e', // elevated surface (accent12)
   surfaceTint: '#3d375e', // brand-tinted surface (accent20)
+  onBrand: '#bdbdbd',
+  shadow: '#0A0A0A',
+  scrim: '#0A0A0A',
 } as const;
 
 export type ColorSet = {
@@ -249,6 +261,9 @@ export type ColorSet = {
   green: string;
   surface: string;
   surfaceTint: string;
+  onBrand: string;
+  shadow: string;
+  scrim: string;
 };
 
 function colorsForTheme(theme: AppTheme): ColorSet {

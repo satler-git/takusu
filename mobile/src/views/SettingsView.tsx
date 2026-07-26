@@ -342,13 +342,15 @@ export function SettingsDetailView({
 
   // Health check state (info tab)
   const [localHealthLoading, setLocalHealthLoading] = useState(false);
-  const [localHealthResult, setLocalHealthResult] = useState<string | null>(
-    null,
-  );
+  const [localHealthResult, setLocalHealthResult] = useState<{
+    ok: boolean;
+    message: string;
+  } | null>(null);
   const [workerHealthLoading, setWorkerHealthLoading] = useState(false);
-  const [workerHealthResult, setWorkerHealthResult] = useState<string | null>(
-    null,
-  );
+  const [workerHealthResult, setWorkerHealthResult] = useState<{
+    ok: boolean;
+    message: string;
+  } | null>(null);
   const [logExportLoading, setLogExportLoading] = useState(false);
   const [logCopyLoading, setLogCopyLoading] = useState(false);
 
@@ -756,9 +758,12 @@ export function SettingsDetailView({
     setLocalHealthResult(null);
     try {
       const text = await client.health();
-      setLocalHealthResult(`✓ ${text}`);
+      setLocalHealthResult({ ok: true, message: text });
     } catch (e) {
-      setLocalHealthResult(`✗ ${e instanceof Error ? e.message : String(e)}`);
+      setLocalHealthResult({
+        ok: false,
+        message: e instanceof Error ? e.message : String(e),
+      });
     } finally {
       setLocalHealthLoading(false);
     }
@@ -770,9 +775,12 @@ export function SettingsDetailView({
     setWorkerHealthResult(null);
     try {
       const { status } = await client.workerHealthCheck();
-      setWorkerHealthResult(`✓ ${status}`);
+      setWorkerHealthResult({ ok: true, message: status });
     } catch (e) {
-      setWorkerHealthResult(`✗ ${e instanceof Error ? e.message : String(e)}`);
+      setWorkerHealthResult({
+        ok: false,
+        message: e instanceof Error ? e.message : String(e),
+      });
     } finally {
       setWorkerHealthLoading(false);
     }
@@ -1595,18 +1603,23 @@ export function SettingsDetailView({
                 )}
               </Pressable>
               {localHealthResult && (
-                <Text
-                  style={[
-                    styles.healthResult,
-                    {
-                      color: localHealthResult.startsWith('✓')
-                        ? colors.black
-                        : colors.red,
-                    },
-                  ]}
-                >
-                  {localHealthResult}
-                </Text>
+                <View style={styles.healthResultRow}>
+                  <Ionicons
+                    name={localHealthResult.ok ? 'checkmark' : 'close'}
+                    size={16}
+                    color={localHealthResult.ok ? colors.black : colors.red}
+                  />
+                  <Text
+                    style={[
+                      styles.healthResult,
+                      {
+                        color: localHealthResult.ok ? colors.black : colors.red,
+                      },
+                    ]}
+                  >
+                    {localHealthResult.message}
+                  </Text>
+                </View>
               )}
 
               <Pressable
@@ -1624,18 +1637,25 @@ export function SettingsDetailView({
                 )}
               </Pressable>
               {workerHealthResult && (
-                <Text
-                  style={[
-                    styles.healthResult,
-                    {
-                      color: workerHealthResult.startsWith('✓')
-                        ? colors.black
-                        : colors.red,
-                    },
-                  ]}
-                >
-                  {workerHealthResult}
-                </Text>
+                <View style={styles.healthResultRow}>
+                  <Ionicons
+                    name={workerHealthResult.ok ? 'checkmark' : 'close'}
+                    size={16}
+                    color={workerHealthResult.ok ? colors.black : colors.red}
+                  />
+                  <Text
+                    style={[
+                      styles.healthResult,
+                      {
+                        color: workerHealthResult.ok
+                          ? colors.black
+                          : colors.red,
+                      },
+                    ]}
+                  >
+                    {workerHealthResult.message}
+                  </Text>
+                </View>
               )}
             </>
           )}
@@ -2141,6 +2161,11 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontFamily: 'monospace',
     paddingHorizontal: 4,
+  },
+  healthResultRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   themeDropdown: {
     flexDirection: 'row',
