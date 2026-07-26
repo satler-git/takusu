@@ -44,6 +44,7 @@ import Reanimated, {
 import { useColors, BRAND_COLOR } from '@/src/theme';
 import { haptic } from '@/src/components/haptics';
 import { useTopToast } from '@/src/components/TopToast';
+import { useUndoableToast } from '@/src/hooks/useUndoableToast';
 import { TaskProgressSheet } from '@/src/components/TaskProgressSheet';
 import { dateKey, todayDateKey } from '@/src/utils/dateKey';
 import TakusuWidgetModule from '../../modules/takusu-widget/src/TakusuWidgetModule';
@@ -406,6 +407,7 @@ export function HomeView() {
   refreshRef.current = refresh;
 
   const { showTopToast, hideTopToast } = useTopToast();
+  const showUndoToast = useUndoableToast();
   const { startScheduleOperation, scheduleOperation, lastCompletedAt } =
     useScheduleOperation({
       client,
@@ -1311,27 +1313,6 @@ export function HomeView() {
     if (!client) return;
     const toDelete = tasks.filter((t) => selected.has(t.id));
     if (toDelete.length === 0) return;
-    // #242: confirm before batch-deleting tasks.
-    const confirmed = await new Promise<boolean>((resolve) => {
-      Alert.alert(
-        'タスクを削除',
-        `${toDelete.length}件のタスクを削除しますか？`,
-        [
-          {
-            text: 'キャンセル',
-            style: 'cancel',
-            onPress: () => resolve(false),
-          },
-          {
-            text: '削除',
-            style: 'destructive',
-            onPress: () => resolve(true),
-          },
-        ],
-        { cancelable: true, onDismiss: () => resolve(false) },
-      );
-    });
-    if (!confirmed) return;
     const deleted: TaskRow[] = [];
     let failed = 0;
     for (const task of toDelete) {
@@ -1347,6 +1328,13 @@ export function HomeView() {
       showError(`${failed}件の削除に失敗しました`, 'タスクの削除');
     }
     if (deleted.length === 0) return;
+
+    const message =
+      deleted.length === 1
+        ? `「${deleted[0].title}」を削除しました`
+        : `${deleted.length}件のタスクを削除しました`;
+    showUndoToast(message);
+
     // Track the ids assigned by the server when undo recreates the tasks,
     // so redo deletes the recreated (not the stale original) ids.
     // Push a single grouped undo entry so one undo restores all tasks.

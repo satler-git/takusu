@@ -17,6 +17,7 @@ import {
 } from 'react';
 import {
   ActivityIndicator,
+  Pressable,
   StyleSheet,
   Text,
   View,
@@ -44,9 +45,16 @@ const GAP = 8;
 
 export type ToastType = 'info' | 'success' | 'error' | 'loading';
 
+export interface ToastAction {
+  label: string;
+  onPress: () => void;
+}
+
 export interface ToastOptions {
   type?: ToastType;
   duration?: number;
+  action?: ToastAction;
+  swipeable?: boolean;
 }
 
 interface Toast {
@@ -54,6 +62,8 @@ interface Toast {
   message: string;
   type: ToastType;
   duration: number;
+  action?: ToastAction;
+  swipeable: boolean;
 }
 
 export interface TopToastContextValue {
@@ -109,6 +119,8 @@ export function TopToastProvider({ children }: { children: ReactNode }) {
           message,
           type: opts.type ?? 'info',
           duration: opts.duration ?? DEFAULT_DURATION,
+          action: opts.action,
+          swipeable: opts.swipeable ?? true,
         };
         setToasts((prev) => [...prev, next]);
         return id;
@@ -145,6 +157,8 @@ export function TopToastProvider({ children }: { children: ReactNode }) {
           insetsTop={insets.top + 8}
           zIndex={toasts.length - index}
           colors={colors}
+          action={toast.action}
+          swipeable={toast.swipeable}
           onLayout={handleLayout}
           onDismiss={handleDismiss}
           onRegisterDismiss={registerDismiss}
@@ -165,6 +179,8 @@ interface ToastItemProps {
   insetsTop: number;
   zIndex: number;
   colors: ReturnType<typeof useColors>;
+  action?: ToastAction;
+  swipeable: boolean;
   onLayout: (id: string, height: number) => void;
   onDismiss: (id: string) => void;
   onRegisterDismiss: (id: string, fn: () => void) => void;
@@ -181,6 +197,8 @@ function ToastItem({
   insetsTop,
   zIndex,
   colors,
+  action,
+  swipeable,
   onLayout,
   onDismiss,
   onRegisterDismiss,
@@ -313,6 +331,7 @@ function ToastItem({
   const gesture = useMemo(
     () =>
       Gesture.Pan()
+        .enabled(swipeable)
         .activeOffsetX([-10, 10])
         .failOffsetY([-10, 10])
         .onBegin(() => {
@@ -353,6 +372,7 @@ function ToastItem({
       panX,
       panY,
       resetPanAndRestartTimer,
+      swipeable,
     ],
   );
 
@@ -388,6 +408,19 @@ function ToastItem({
               {message}
             </Text>
           </View>
+          {action && (
+            <Pressable
+              onPress={action.onPress}
+              style={styles.action}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel={action.label}
+            >
+              <Text style={[styles.actionText, { color: colors.brand }]}>
+                {action.label}
+              </Text>
+            </Pressable>
+          )}
         </View>
       </Reanimated.View>
     </GestureDetector>
@@ -415,11 +448,14 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.15,
     shadowRadius: 8,
   },
   content: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
@@ -428,5 +464,15 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
     flexShrink: 1,
+  },
+  action: {
+    paddingHorizontal: 4,
+    paddingVertical: 4,
+    marginLeft: 12,
+  },
+  actionText: {
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: '600',
   },
 });

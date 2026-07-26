@@ -71,7 +71,7 @@ class UndoRedoManager {
     this.notify();
   }
 
-  async undo(): Promise<void> {
+  async undo(opts?: { silent?: boolean }): Promise<void> {
     const action = this.undoStack.pop();
     if (!action) return;
     // Push to redoStack before executing so a throw doesn't lose the action.
@@ -84,11 +84,13 @@ class UndoRedoManager {
       this.undoStack.push(action);
       throw e;
     }
-    this.undoCallback?.(action.description);
+    if (!opts?.silent) {
+      this.undoCallback?.(action.description);
+    }
     this.notify();
   }
 
-  async redo(): Promise<void> {
+  async redo(opts?: { silent?: boolean }): Promise<void> {
     const action = this.redoStack.pop();
     if (!action) return;
     // Push to undoStack before executing so a throw doesn't lose the action.
@@ -101,7 +103,9 @@ class UndoRedoManager {
       this.redoStack.push(action);
       throw e;
     }
-    this.redoCallback?.(action.description);
+    if (!opts?.silent) {
+      this.redoCallback?.(action.description);
+    }
     this.notify();
   }
 

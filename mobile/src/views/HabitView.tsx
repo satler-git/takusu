@@ -3,7 +3,6 @@
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert,
   FlatList,
   Pressable,
   RefreshControl,
@@ -28,6 +27,7 @@ import { BRAND_COLOR, useColors } from '@/src/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ContextMenu } from '@/src/components/ContextMenu';
 import { haptic } from '@/src/components/haptics';
+import { useUndoableToast } from '@/src/hooks/useUndoableToast';
 import { undoRedo } from '@/src/api/undoRedo';
 import { parseRule, summarizeRule } from '@/src/api/rrule';
 import { stepRowToDraft, saveHabitSteps } from '@/src/utils/habitSteps';
@@ -42,6 +42,7 @@ export function HabitView({ client, refreshKey }: HabitViewProps) {
   const router = useRouter();
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const showUndoToast = useUndoableToast();
   const [habits, setHabits] = useState<HabitRow[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -107,6 +108,14 @@ export function HabitView({ client, refreshKey }: HabitViewProps) {
     refresh();
   }, [refresh, refreshKey]);
 
+  // Refresh the habit list whenever an undoable action is pushed/undone/redone
+  // so undo from another view (e.g. HabitDetailView) is reflected here.
+  useEffect(() => {
+    return undoRedo.subscribe(() => {
+      if (client) refresh();
+    });
+  }, [client, refresh]);
+
   async function deleteSelected() {
     if (!client) return;
     const toDelete = habits.filter((h) => selected.has(h.id));
@@ -137,31 +146,6 @@ export function HabitView({ client, refreshKey }: HabitViewProps) {
       showError(e, 'ハビットのタスク取得に失敗');
       return;
     }
-    const taskCount = tasksPerHabit.reduce((sum, ts) => sum + ts.length, 0);
-    const message =
-      taskCount > 0
-        ? `${toDelete.length}件のハビットと関連する${taskCount}件のタスクを削除しますか？`
-        : `${toDelete.length}件のハビットを削除しますか？`;
-    const confirmed = await new Promise<boolean>((resolve) => {
-      Alert.alert(
-        'ハビットを削除',
-        message,
-        [
-          {
-            text: 'キャンセル',
-            style: 'cancel',
-            onPress: () => resolve(false),
-          },
-          {
-            text: '削除',
-            style: 'destructive',
-            onPress: () => resolve(true),
-          },
-        ],
-        { cancelable: true, onDismiss: () => resolve(false) },
-      );
-    });
-    if (!confirmed) return;
     const deleted: HabitRow[] = [];
     const deletedTasksPerHabit: TaskRow[][] = [];
     const deletedStepsPerHabit: HabitStepRow[][] = [];
@@ -204,6 +188,17 @@ export function HabitView({ client, refreshKey }: HabitViewProps) {
     const currentTaskIds: string[] = flatTasks.map((ft) => ft.task.id);
     const taskCreatedIdx = new Set<number>();
     const totalTasks = flatTasks.length;
+
+    const message =
+      deleted.length === 1
+        ? totalTasks > 0
+          ? `「${deleted[0].title}」と関連する${totalTasks}件のタスクを削除しました`
+          : `「${deleted[0].title}」を削除しました`
+        : totalTasks > 0
+          ? `${deleted.length}件のハビットと関連する${totalTasks}件のタスクを削除しました`
+          : `${deleted.length}件のハビットを削除しました`;
+    showUndoToast(message);
+
     undoRedo.push({
       description:
         deleted.length === 1
@@ -298,7 +293,6 @@ export function HabitView({ client, refreshKey }: HabitViewProps) {
           const remapped = origDeps.map((d) => oldToNew.get(d) ?? d);
           await client.updateTask(newId, { depends: remapped });
         }
-        await refresh();
       },
       redo: async () => {
         createdIdx.clear();
@@ -306,11 +300,9 @@ export function HabitView({ client, refreshKey }: HabitViewProps) {
         for (const id of currentIds) {
           await client.deleteHabit(id);
         }
-        await refresh();
       },
     });
     setSelected(new Set());
-    await refresh();
   }
 
   const toggleSelection = useCallback((id: string) => {
@@ -392,16 +384,10 @@ export function HabitView({ client, refreshKey }: HabitViewProps) {
           onSettings={() => router.push('/settings')}
           onStats={() => router.push('/stats')}
           onUndo={() =>
-            undoRedo
-              .undo()
-              .then(refresh)
-              .catch((e) => showError(e, 'アンドゥに失敗'))
+            undoRedo.undo().catch((e) => showError(e, 'アンドゥに失敗'))
           }
           onRedo={() =>
-            undoRedo
-              .redo()
-              .then(refresh)
-              .catch((e) => showError(e, 'リドゥに失敗'))
+            undoRedo.redo().catch((e) => showError(e, 'リドゥに失敗'))
           }
           onSelectAll={() => setSelected(new Set(habits.map((h) => h.id)))}
           onClearSelection={() => setSelected(new Set())}
