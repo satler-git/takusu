@@ -2,9 +2,9 @@ use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use takusu_storage::{
-    CreateHabit, CreateHabitScheduledSpan, HabitDetail, HabitEstimateRequest, HabitEstimateResult,
-    HabitPreviewRequest, HabitPreviewTask, HabitRow, HabitScheduledSpanRow, HabitStepInput,
-    HabitStepRow, UpdateHabit,
+    CreateHabit, CreateHabitBatch, CreateHabitBatchResult, CreateHabitScheduledSpan, HabitDetail,
+    HabitEstimateRequest, HabitEstimateResult, HabitPreviewRequest, HabitPreviewTask, HabitRow,
+    HabitScheduledSpanRow, HabitStepInput, HabitStepRow, UpdateHabit,
 };
 
 use crate::error::HttpError;
@@ -16,6 +16,14 @@ pub async fn create_habit(
 ) -> Result<(StatusCode, Json<HabitRow>), HttpError> {
     let habit = state.app.create_habit(&body).await?;
     Ok((StatusCode::CREATED, Json(habit)))
+}
+
+pub async fn create_habit_batch(
+    State(state): State<AppState>,
+    Json(body): Json<CreateHabitBatch>,
+) -> Result<(StatusCode, Json<Vec<CreateHabitBatchResult>>), HttpError> {
+    let habits = state.app.create_habit_batch(&body).await?;
+    Ok((StatusCode::CREATED, Json(habits)))
 }
 
 pub async fn preview_habit(

@@ -350,12 +350,11 @@ fn is_sentence_boundary(s: &str) -> bool {
     }
     let token = token.to_lowercase();
     const ABBREVIATIONS: &[&str] = &[
-        "mr", "mrs", "ms", "miss", "dr", "prof", "sr", "jr", "st", "ave", "blvd", "rd",
-        "no", "vs", "etc", "eg", "e.g", "ie", "i.e", "et", "al", "co", "ltd", "inc",
-        "corp", "plc", "llc", "llp", "fig", "vol", "ed", "pp", "ph", "phd", "md", "ba",
-        "ma", "esq", "dept", "univ", "est", "jan", "feb", "mar", "apr", "jun", "jul",
-        "aug", "sep", "sept", "oct", "nov", "dec", "mon", "tue", "wed", "thu", "fri",
-        "sat", "sun", "am", "pm", "a.m", "p.m", "a", "p", "m",
+        "mr", "mrs", "ms", "miss", "dr", "prof", "sr", "jr", "st", "ave", "blvd", "rd", "no", "vs",
+        "etc", "eg", "e.g", "ie", "i.e", "et", "al", "co", "ltd", "inc", "corp", "plc", "llc",
+        "llp", "fig", "vol", "ed", "pp", "ph", "phd", "md", "ba", "ma", "esq", "dept", "univ",
+        "est", "jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "sept", "oct", "nov", "dec",
+        "mon", "tue", "wed", "thu", "fri", "sat", "sun", "am", "pm", "a.m", "p.m", "a", "p", "m",
     ];
     !ABBREVIATIONS.contains(&token.as_str())
 }

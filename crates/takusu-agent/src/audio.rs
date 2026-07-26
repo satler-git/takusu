@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use takusu_audio::play::{PlayError, PcmFormat, StreamedAudioFormat, play_stream};
+use takusu_audio::play::{PcmFormat, PlayError, StreamedAudioFormat, play_stream};
 use takusu_audio::{
     CartesiaSonic, CartesiaSonicConfig, ModelCache, RecordConfig, SherpaOnnxAsr,
     SherpaOnnxAsrConfig, SherpaOnnxModel, SpeechToText, TextToSpeech, TtsOptions, TtsRequest,
@@ -200,11 +200,9 @@ impl AudioAdapter {
         let stt = tokio::task::spawn_blocking(move || build_stt(&stt_config))
             .await
             .map_err(|e| AudioError::Transcribe(format!("stt build task failed: {e}")))??;
-        let supported = tokio::task::spawn_blocking(|| {
-            takusu_audio::play::default_output_config()
-        })
-        .await
-        .map_err(|e| AudioError::Play(format!("output config task failed: {e}")))??;
+        let supported = tokio::task::spawn_blocking(takusu_audio::play::default_output_config)
+            .await
+            .map_err(|e| AudioError::Play(format!("output config task failed: {e}")))??;
         let output_rate = supported.sample_rate();
         // The Cartesia /tts/bytes endpoint returns mono PCM when no channel
         // count is requested, so the stream format is always 1 channel.

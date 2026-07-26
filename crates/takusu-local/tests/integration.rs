@@ -5141,3 +5141,195 @@ async fn delete_habit_breaks_split_reference_from_other_habit_task() {
     assert_eq!(task_b["id"], task_b_id);
     assert!(task_b["split_from_task_id"].is_null());
 }
+
+// ── Batch creation (#1083) ─────────────────────────────────────────────
+
+#[tokio::test]
+async fn create_task_batch_with_relative_dependencies() {
+    let (state, _) = setup().await;
+    let app = build_router(state);
+
+    let existing = create_task_simple(&app, "existing").await;
+
+    let req = auth_req_body(
+        Method::POST,
+        "/api/tasks/batch",
+        json!({
+            "tasks": [
+                {
+                    "client_id": "a",
+                    "title": "task A",
+                    "end_at": "2026-07-08T18:00:00Z",
+                    "avg_minutes": 30
+                },
+                {
+                    "client_id": "b",
+                    "title": "task B",
+                    "end_at": "2026-07-08T19:00:00Z",
+                    "avg_minutes": 20,
+                    "depends": ["a", existing]
+                },
+                {
+                    "title": "task C",
+                    "end_at": "2026-07-08T20:00:00Z",
+                    "avg_minutes": 10,
+                    "depends": ["b"]
+                }
+            ]
+        }),
+    );
+    let res = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::CREATED);
+    let results: Vec<serde_json::Value> =
+        serde_json::from_str(&body_str(res.into_body()).await).unwrap();
+    assert_eq!(results.len(), 3);
+    assert_eq!(results[0]["client_id"], "a");
+    assert_eq!(results[1]["client_id"], "b");
+    assert!(results[2]["client_id"].is_null());
+
+    let a_id = results[0]["id"].as_str().unwrap();
+    let b_id = results[1]["id"].as_str().unwrap();
+    let _c_id = results[2]["id"].as_str().unwrap();
+
+    let b_deps: Vec<String> =
+        serde_json::from_str(results[1]["depends"].as_str().unwrap()).unwrap();
+    assert!(b_deps.contains(&a_id.to_string()));
+    assert!(b_deps.contains(&existing));
+
+    let c_deps: Vec<String> =
+        serde_json::from_str(results[2]["depends"].as_str().unwrap()).unwrap();
+    assert_eq!(c_deps, vec![b_id.to_string()]);
+}
+
+#[tokio::test]
+async fn create_task_batch_rejects_cycles() {
+    let (state, _) = setup().await;
+    let app = build_router(state);
+
+    let req = auth_req_body(
+        Method::POST,
+        "/api/tasks/batch",
+        json!({
+            "tasks": [
+                {
+                    "client_id": "a",
+                    "title": "task A",
+                    "end_at": "2026-07-08T18:00:00Z",
+                    "avg_minutes": 30,
+                    "depends": ["b"]
+                },
+                {
+                    "client_id": "b",
+                    "title": "task B",
+                    "end_at": "2026-07-08T18:00:00Z",
+                    "avg_minutes": 30,
+                    "depends": ["a"]
+                }
+            ]
+        }),
+    );
+    let res = app.oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn create_task_batch_rejects_duplicate_client_id() {
+    let (state, _) = setup().await;
+    let app = build_router(state);
+
+    let req = auth_req_body(
+        Method::POST,
+        "/api/tasks/batch",
+        json!({
+            "tasks": [
+                {
+                    "client_id": "dup",
+                    "title": "task A",
+                    "end_at": "2026-07-08T18:00:00Z",
+                    "avg_minutes": 30
+                },
+                {
+                    "client_id": "dup",
+                    "title": "task B",
+                    "end_at": "2026-07-08T18:00:00Z",
+                    "avg_minutes": 30
+                }
+            ]
+        }),
+    );
+    let res = app.oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn create_habit_batch_succeeds() {
+    let (state, _) = setup().await;
+    let app = build_router(state);
+
+    let req = auth_req_body(
+        Method::POST,
+        "/api/habits/batch",
+        json!({
+            "habits": [
+                {
+                    "client_id": "h1",
+                    "title": "morning",
+                    "recurrence": r#"{"freq":"daily","interval":1,"by_day":[],"by_month":[],"by_month_day":[],"count":null,"exdates":[]}"#,
+                    "start_time": "08:00",
+                    "end_time": "09:00",
+                    "avg_minutes": 30
+                },
+                {
+                    "client_id": "h2",
+                    "title": "evening",
+                    "recurrence": r#"{"freq":"daily","interval":1,"by_day":[],"by_month":[],"by_month_day":[],"count":null,"exdates":[]}"#,
+                    "start_time": "18:00",
+                    "end_time": "19:00",
+                    "avg_minutes": 30
+                }
+            ]
+        }),
+    );
+    let res = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::CREATED);
+    let results: Vec<serde_json::Value> =
+        serde_json::from_str(&body_str(res.into_body()).await).unwrap();
+    assert_eq!(results.len(), 2);
+    assert_eq!(results[0]["client_id"], "h1");
+    assert_eq!(results[1]["client_id"], "h2");
+    assert!(!results[0]["id"].is_null());
+    assert!(!results[1]["id"].is_null());
+}
+
+#[tokio::test]
+async fn create_habit_batch_rejects_duplicate_client_id() {
+    let (state, _) = setup().await;
+    let app = build_router(state);
+
+    let req = auth_req_body(
+        Method::POST,
+        "/api/habits/batch",
+        json!({
+            "habits": [
+                {
+                    "client_id": "dup",
+                    "title": "morning",
+                    "recurrence": r#"{"freq":"daily","interval":1,"by_day":[],"by_month":[],"by_month_day":[],"count":null,"exdates":[]}"#,
+                    "start_time": "08:00",
+                    "end_time": "09:00",
+                    "avg_minutes": 30
+                },
+                {
+                    "client_id": "dup",
+                    "title": "evening",
+                    "recurrence": r#"{"freq":"daily","interval":1,"by_day":[],"by_month":[],"by_month_day":[],"count":null,"exdates":[]}"#,
+                    "start_time": "18:00",
+                    "end_time": "19:00",
+                    "avg_minutes": 30
+                }
+            ]
+        }),
+    );
+    let res = app.oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+}

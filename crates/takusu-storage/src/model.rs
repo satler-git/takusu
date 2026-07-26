@@ -106,6 +106,34 @@ pub struct CreateTask {
     pub original_quantity_total: Option<i64>,
 }
 
+/// A single task inside a batch create request (#1083).
+/// `client_id` is a caller-supplied temporary id that can be referenced by
+/// `depends` of other items in the same batch.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateTaskBatchItem {
+    #[serde(flatten)]
+    pub task: CreateTask,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_id: Option<String>,
+}
+
+/// Request body for `POST /api/tasks/batch` (#1083).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateTaskBatch {
+    pub tasks: Vec<CreateTaskBatchItem>,
+}
+
+/// A single result from a batch create request (#1083).
+/// The caller can correlate results with input items by `client_id` and by
+/// position.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateTaskBatchResult {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_id: Option<String>,
+    #[serde(flatten)]
+    pub task: TaskRow,
+}
+
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct UpdateTask {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -194,7 +222,7 @@ pub struct HabitRow {
     pub updated_at: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateHabit {
     pub title: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -216,6 +244,30 @@ pub struct CreateHabit {
     /// Window mode: `'day'` or `'period'` (#window_mode).
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub window_mode: Option<String>,
+}
+
+/// A single habit inside a batch create request (#1083).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateHabitBatchItem {
+    #[serde(flatten)]
+    pub habit: CreateHabit,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_id: Option<String>,
+}
+
+/// Request body for `POST /api/habits/batch` (#1083).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateHabitBatch {
+    pub habits: Vec<CreateHabitBatchItem>,
+}
+
+/// A single result from a batch create request (#1083).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateHabitBatchResult {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_id: Option<String>,
+    #[serde(flatten)]
+    pub habit: HabitRow,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]

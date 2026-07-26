@@ -13,6 +13,7 @@ pub fn router(state: AppState) -> Router {
     let api = Router::new()
         .route("/tasks", post(handlers::task::create_task))
         .route("/tasks", get(handlers::task::list_tasks))
+        .route("/tasks/batch", post(handlers::task::create_task_batch))
         .route("/tasks/complete", get(handlers::task::complete_task_query))
         .route("/tasks/import/ical", post(handlers::task::import_ical))
         .route(
@@ -48,6 +49,7 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/tasks/{id}/split", post(handlers::task::split_task))
         .route("/habits", post(handlers::habit::create_habit))
+        .route("/habits/batch", post(handlers::habit::create_habit_batch))
         .route("/habits/preview", post(handlers::habit::preview_habit))
         .route("/habits", get(handlers::habit::list_habits))
         // `/habits/scheduled-spans` and `/habits/steps` must be declared before
