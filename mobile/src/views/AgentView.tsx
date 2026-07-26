@@ -2091,6 +2091,9 @@ export function AgentView() {
 
   const handleMessagesLayout = useCallback((event: LayoutChangeEvent) => {
     setMessagesHeight(event.nativeEvent.layout.height);
+    if (!sessionJustLoadedRef.current && autoScrollRef.current) {
+      flatListRef.current?.scrollToEnd({ animated: false });
+    }
   }, []);
 
   const renderItem = useCallback(
