@@ -957,22 +957,6 @@ export function SettingsDetailView({
                 <ActivityIndicator color={BRAND_COLOR} style={styles.loader} />
               ) : (
                 <>
-                  {sleepSettings && (
-                    <View
-                      style={[
-                        styles.statusBox,
-                        { backgroundColor: colors.grayLight + '20' },
-                      ]}
-                    >
-                      <Text style={[styles.label, { color: colors.gray }]}>
-                        現在のタイムゾーン
-                      </Text>
-                      <Text style={[styles.value, { color: colors.black }]}>
-                        {sleepSettings.tz}
-                      </Text>
-                    </View>
-                  )}
-
                   <View style={styles.field}>
                     <Text style={[styles.label, { color: colors.gray }]}>
                       タイムゾーン
@@ -1045,24 +1029,6 @@ export function SettingsDetailView({
                 <ActivityIndicator color={BRAND_COLOR} style={styles.loader} />
               ) : (
                 <>
-                  {sleepSettings && (
-                    <View
-                      style={[
-                        styles.statusBox,
-                        { backgroundColor: colors.grayLight + '20' },
-                      ]}
-                    >
-                      <Text style={[styles.label, { color: colors.gray }]}>
-                        現在の設定
-                      </Text>
-                      <Text style={[styles.value, { color: colors.black }]}>
-                        就寝: {sleepSettings.sleep_start}
-                        {'\n'}
-                        起床: {sleepSettings.sleep_end}
-                      </Text>
-                    </View>
-                  )}
-
                   <View style={styles.notifGroup}>
                     <Text style={[styles.label, { color: colors.gray }]}>
                       就寝時刻
@@ -1666,28 +1632,6 @@ export function SettingsDetailView({
                 <ActivityIndicator color={BRAND_COLOR} style={styles.loader} />
               )}
 
-              {gcalSettings && (
-                <View
-                  style={[
-                    styles.statusBox,
-                    { backgroundColor: colors.grayLight + '20' },
-                  ]}
-                >
-                  <Text style={[styles.label, { color: colors.gray }]}>
-                    状態
-                  </Text>
-                  <Text style={[styles.value, { color: colors.black }]}>
-                    有効: {gcalSettings.enabled ? 'はい' : 'いいえ'}
-                    {'\n'}client_id:{' '}
-                    {gcalSettings.client_id ? '設定済み' : '未設定'}
-                    {'\n'}client_secret:{' '}
-                    {gcalSettings.has_client_secret ? '設定済み' : '未設定'}
-                    {'\n'}refresh_token:{' '}
-                    {gcalSettings.has_refresh_token ? '設定済み' : '未設定'}
-                  </Text>
-                </View>
-              )}
-
               <View style={styles.settingRow}>
                 <Text style={[styles.settingLabel, { color: colors.black }]}>
                   有効化
@@ -2122,11 +2066,6 @@ const styles = StyleSheet.create({
   warning: {
     fontSize: 13,
     fontWeight: '500',
-  },
-  statusBox: {
-    padding: 12,
-    borderRadius: 8,
-    gap: 4,
   },
   loader: {
     paddingVertical: 16,
