@@ -324,9 +324,15 @@ interface ToolCallCardProps {
   call: ToolCallItem;
   colors: ColorSet;
   isLatest: boolean;
+  onToolPress?: (call: ToolCallItem) => void;
 }
 
-function ToolCallCard({ call, colors, isLatest }: ToolCallCardProps) {
+function ToolCallCard({
+  call,
+  colors,
+  isLatest,
+  onToolPress,
+}: ToolCallCardProps) {
   const isAsr = call.name === 'correct_asr';
   const rejected = call.isRejected ?? false;
   const asrCount = isAsr
@@ -338,6 +344,30 @@ function ToolCallCard({ call, colors, isLatest }: ToolCallCardProps) {
     setExpanded(isLatest);
   }, [isLatest]);
   const toggleExpanded = useCallback(() => setExpanded((value) => !value), []);
+  const handleToolPress = useCallback(() => {
+    if (onToolPress) {
+      onToolPress(call);
+    }
+  }, [call, onToolPress]);
+  const dotColor =
+    call.result === undefined
+      ? colors.gray
+      : call.isError || rejected
+        ? colors.red
+        : colors.green;
+  const headerLeft = (
+    <>
+      <View style={[styles.toolStatus, { backgroundColor: dotColor }]} />
+      <Text style={{ color: colors.black, fontWeight: '700' }}>
+        {isAsr ? 'ASR訂正' : call.name}
+      </Text>
+      {rejected && (
+        <View style={[styles.rejectedBadge, { backgroundColor: colors.red }]}>
+          <Text style={styles.rejectedBadgeText}>拒否</Text>
+        </View>
+      )}
+    </>
+  );
   return (
     <View
       style={[
@@ -348,43 +378,38 @@ function ToolCallCard({ call, colors, isLatest }: ToolCallCardProps) {
         },
       ]}
     >
-      <Pressable
-        style={styles.toolCallHeader}
-        onPress={toggleExpanded}
-        accessibilityRole="button"
-        accessibilityState={{ expanded }}
-        accessibilityLabel={isAsr ? 'ASR訂正' : call.name}
-        accessibilityHint={
-          expanded ? 'raw JSON を折りたたむ' : 'raw JSON を展開する'
-        }
-      >
-        <View style={styles.toolCallHeaderLeft}>
-          <View
-            style={[
-              styles.toolStatus,
-              {
-                backgroundColor:
-                  call.isError || rejected ? colors.red : colors.green,
-              },
-            ]}
+      <View style={styles.toolCallHeader}>
+        {onToolPress ? (
+          <Pressable
+            style={[styles.toolCallHeaderLeft, { flex: 1 }]}
+            onPress={handleToolPress}
+            accessibilityRole="button"
+            accessibilityLabel={isAsr ? 'ASR訂正' : call.name}
+            accessibilityHint="ツールの詳細を開く"
+          >
+            {headerLeft}
+          </Pressable>
+        ) : (
+          <View style={[styles.toolCallHeaderLeft, { flex: 1 }]}>
+            {headerLeft}
+          </View>
+        )}
+        <Pressable
+          onPress={toggleExpanded}
+          accessibilityRole="button"
+          accessibilityState={{ expanded }}
+          accessibilityLabel={
+            expanded ? 'raw JSON を折りたたむ' : 'raw JSON を展開する'
+          }
+          hitSlop={8}
+        >
+          <Ionicons
+            name={expanded ? 'chevron-up' : 'chevron-down'}
+            size={14}
+            color={colors.gray}
           />
-          <Text style={{ color: colors.black, fontWeight: '700' }}>
-            {isAsr ? 'ASR訂正' : call.name}
-          </Text>
-          {rejected && (
-            <View
-              style={[styles.rejectedBadge, { backgroundColor: colors.red }]}
-            >
-              <Text style={styles.rejectedBadgeText}>拒否</Text>
-            </View>
-          )}
-        </View>
-        <Ionicons
-          name={expanded ? 'chevron-up' : 'chevron-down'}
-          size={14}
-          color={colors.gray}
-        />
-      </Pressable>
+        </Pressable>
+      </View>
       {expanded && (
         <>
           {!isAsr && call.arguments !== undefined && (
@@ -712,6 +737,7 @@ function ContextGroup({
                 call={call}
                 colors={colors}
                 isLatest={stage.callIndex === latestCallIndex}
+                onToolPress={onToolPress}
               />
             ) : null;
           })}
@@ -1857,7 +1883,12 @@ export function AgentView() {
       setMessages((current) =>
         current.map((m) =>
           m.id === assistantId
-            ? { ...m, text: message, state: 'done', toolCalls: [] }
+            ? {
+                ...m,
+                text: message,
+                state: 'done',
+                segments: finalizeTextSegment(m.segments ?? [], message),
+              }
             : m,
         ),
       );
