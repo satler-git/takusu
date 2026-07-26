@@ -8,7 +8,7 @@
 import { useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS, BRAND_COLOR, useColors } from '@/src/theme';
+import { BRAND_COLOR, useColors } from '@/src/theme';
 import { undoRedo } from '@/src/api/undoRedo';
 import { haptic } from '@/src/components/haptics';
 import type { TaskStatus } from '@/src/api/types';
@@ -168,13 +168,13 @@ export function ContextMenu({
           name={item.icon}
           size={20}
           color={
-            item.danger ? COLORS.red : item.disabled ? colors.gray : BRAND_COLOR
+            item.danger ? colors.red : item.disabled ? colors.gray : BRAND_COLOR
           }
         />
         <Text
           style={[
             styles.menuItemText,
-            { color: item.danger ? COLORS.red : colors.black },
+            { color: item.danger ? colors.red : colors.black },
             item.disabled && styles.menuItemTextDisabled,
           ]}
         >

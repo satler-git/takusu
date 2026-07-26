@@ -17,7 +17,7 @@ import DateTimePicker, {
 } from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { COLORS, BRAND_COLOR, useTheme } from '@/src/theme';
+import { BRAND_COLOR, useTheme } from '@/src/theme';
 import { haptic } from '@/src/components/haptics';
 
 interface DateTimePickerModalProps {
@@ -270,8 +270,10 @@ export function DateTimePickerModal({
                 onConfirm(null);
               }}
             >
-              <Ionicons name="trash-outline" size={16} color={COLORS.red} />
-              <Text style={styles.clearText}>クリア</Text>
+              <Ionicons name="trash-outline" size={16} color={colors.red} />
+              <Text style={[styles.clearText, { color: colors.red }]}>
+                クリア
+              </Text>
             </Pressable>
           )}
 
@@ -294,7 +296,9 @@ export function DateTimePickerModal({
                 onConfirm(tempDate);
               }}
             >
-              <Text style={styles.confirmText}>設定</Text>
+              <Text style={[styles.confirmText, { color: colors.white }]}>
+                設定
+              </Text>
             </Pressable>
           </View>
 
@@ -380,7 +384,6 @@ const styles = StyleSheet.create({
   },
   clearText: {
     fontSize: 14,
-    color: COLORS.red,
   },
   actionRow: {
     flexDirection: 'row',
@@ -406,7 +409,6 @@ const styles = StyleSheet.create({
   },
   confirmText: {
     fontSize: 15,
-    color: COLORS.white,
     fontWeight: '600',
   },
 });

@@ -12,7 +12,7 @@ import {
 } from 'expo-sharing';
 import { useServer } from '@/src/api/ServerProvider';
 import { showError } from '@/src/api/errors';
-import { COLORS, BRAND_COLOR, useColors } from '@/src/theme';
+import { BRAND_COLOR, useColors } from '@/src/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { haptic } from '@/src/components/haptics';
 
@@ -122,13 +122,15 @@ export default function ImportIcalRoute() {
                 close();
               }}
             >
-              <Text style={styles.doneButtonText}>ホームへ</Text>
+              <Text style={[styles.doneButtonText, { color: colors.white }]}>
+                ホームへ
+              </Text>
             </Pressable>
           </View>
         )}
         {status === 'error' && (
           <View style={styles.centerContent}>
-            <Ionicons name="alert-circle" size={64} color={COLORS.red} />
+            <Ionicons name="alert-circle" size={64} color={colors.red} />
             <Text style={[styles.statusText, { color: colors.black }]}>
               インポートに失敗しました
             </Text>
@@ -139,7 +141,9 @@ export default function ImportIcalRoute() {
                 close();
               }}
             >
-              <Text style={styles.doneButtonText}>ホームへ</Text>
+              <Text style={[styles.doneButtonText, { color: colors.white }]}>
+                ホームへ
+              </Text>
             </Pressable>
           </View>
         )}
@@ -190,7 +194,6 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   doneButtonText: {
-    color: COLORS.white,
     fontSize: 14,
     fontWeight: '600',
   },

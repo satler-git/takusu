@@ -66,6 +66,9 @@
     "typescript": "~6.0.3"
   },
   "jest": {
+    "moduleNameMapper": {
+      "^@takusu/client$": "<rootDir>/../ts/takusu-client/dist/index.cjs"
+    },
     "preset": "jest-expo",
     "setupFilesAfterEnv": [
       "react-native-gesture-handler/jestSetup"

@@ -31,7 +31,7 @@ import type {
   TaskStatus,
   RedundantDependency,
 } from '@/src/api/types';
-import { COLORS, BRAND_COLOR, useColors } from '@/src/theme';
+import { BRAND_COLOR, useColors } from '@/src/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DateTimePickerModal } from '@/src/components/DateTimePickerModal';
 import { haptic } from '@/src/components/haptics';
@@ -826,7 +826,7 @@ export function TaskDetailView() {
           <>
             <IconButton
               icon="check"
-              iconColor={COLORS.white}
+              iconColor={colors.white}
               containerColor={BRAND_COLOR}
               size={22}
               onPress={() => {
@@ -976,23 +976,23 @@ export function TaskDetailView() {
                 <Pressable
                   style={({ pressed }) => [
                     styles.progressButton,
-                    { backgroundColor: COLORS.red, opacity: pressed ? 0.8 : 1 },
+                    { backgroundColor: colors.red, opacity: pressed ? 0.8 : 1 },
                   ]}
                   onPress={() => openProgressSheet('pause')}
                 >
-                  <Ionicons name="pause" size={20} color={COLORS.white} />
+                  <Ionicons name="pause" size={20} color={colors.white} />
                 </Pressable>
                 <Pressable
                   style={({ pressed }) => [
                     styles.progressButton,
                     {
-                      backgroundColor: COLORS.green,
+                      backgroundColor: colors.green,
                       opacity: pressed ? 0.8 : 1,
                     },
                   ]}
                   onPress={completeTask}
                 >
-                  <Ionicons name="checkmark" size={24} color={COLORS.white} />
+                  <Ionicons name="checkmark" size={24} color={colors.white} />
                 </Pressable>
               </View>
               <Pressable
@@ -1033,7 +1033,7 @@ export function TaskDetailView() {
                   ]}
                   onPress={() => openProgressSheet('record')}
                 >
-                  <Text style={{ color: COLORS.white, fontWeight: '600' }}>
+                  <Text style={{ color: colors.white, fontWeight: '600' }}>
                     記録
                   </Text>
                 </Pressable>
@@ -1522,7 +1522,7 @@ export function TaskDetailView() {
                     <IconButton
                       icon="close"
                       size={18}
-                      iconColor={COLORS.red}
+                      iconColor={colors.red}
                       onPress={() => {
                         haptic.light();
                         setDeps(deps.filter((d) => d !== depId));
@@ -1582,8 +1582,10 @@ export function TaskDetailView() {
               save();
             }}
           >
-            <Ionicons name="checkmark-circle" size={22} color={COLORS.white} />
-            <Text style={styles.saveBarText}>保存</Text>
+            <Ionicons name="checkmark-circle" size={22} color={colors.white} />
+            <Text style={[styles.saveBarText, { color: colors.white }]}>
+              保存
+            </Text>
           </Pressable>
         </View>
       )}
@@ -1972,7 +1974,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   saveBarText: {
-    color: COLORS.white,
     fontSize: 18,
     fontWeight: '700',
   },

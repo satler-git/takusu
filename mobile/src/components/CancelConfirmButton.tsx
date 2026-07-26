@@ -5,10 +5,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS } from '@/src/theme';
+import { useColors } from '@/src/theme';
 import { haptic } from '@/src/components/haptics';
 
 export function CancelConfirmButton({ onConfirm }: { onConfirm: () => void }) {
+  const colors = useColors();
   const [armed, setArmed] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -20,7 +21,7 @@ export function CancelConfirmButton({ onConfirm }: { onConfirm: () => void }) {
 
   return (
     <Pressable
-      style={[styles.button, armed && { backgroundColor: COLORS.red }]}
+      style={[styles.button, armed && { backgroundColor: colors.red }]}
       onPress={() => {
         if (armed) {
           if (timerRef.current) clearTimeout(timerRef.current);
@@ -36,7 +37,7 @@ export function CancelConfirmButton({ onConfirm }: { onConfirm: () => void }) {
       <Ionicons
         name={armed ? 'trash' : 'close'}
         size={22}
-        color={armed ? COLORS.white : COLORS.red}
+        color={armed ? colors.white : colors.red}
       />
     </Pressable>
   );

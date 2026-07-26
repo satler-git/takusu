@@ -8,7 +8,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useColors, BRAND_COLOR, COLORS } from '@/src/theme';
+import { useColors, BRAND_COLOR } from '@/src/theme';
 import {
   TTS_PROVIDER_LABELS,
   type TtsProvider,
@@ -395,9 +395,9 @@ export function TtsProviderEditor({
       <View style={styles.actions}>
         <Pressable onPress={handleSave} style={styles.save} disabled={saving}>
           {saving ? (
-            <ActivityIndicator color={COLORS.white} />
+            <ActivityIndicator color={colors.white} />
           ) : (
-            <Text style={styles.saveText}>保存</Text>
+            <Text style={[styles.saveText, { color: colors.white }]}>保存</Text>
           )}
         </Pressable>
         <Pressable onPress={onCancel} style={styles.cancel}>
@@ -462,7 +462,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  saveText: { color: COLORS.white, fontWeight: '700' },
+  saveText: { fontWeight: '700' },
   cancel: {
     minHeight: 44,
     borderRadius: 8,

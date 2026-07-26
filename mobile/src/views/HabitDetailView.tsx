@@ -33,7 +33,7 @@ import type {
   HabitStepInput,
 } from '@/src/api/types';
 import { WINDOW_MODE_DAY, WINDOW_MODE_PERIOD } from '@/src/api/types';
-import { COLORS, BRAND_COLOR, useColors } from '@/src/theme';
+import { BRAND_COLOR, useColors } from '@/src/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RruleBuilderModal } from '@/src/components/RruleBuilderModal';
 import { DateTimePickerModal } from '@/src/components/DateTimePickerModal';
@@ -704,7 +704,7 @@ export function HabitDetailView() {
   const spanIcon = habit.active
     ? 'pause-circle-outline'
     : 'play-circle-outline';
-  const spanActiveColor = habit.active ? COLORS.red : BRAND_COLOR;
+  const spanActiveColor = habit.active ? colors.red : BRAND_COLOR;
 
   return (
     <View style={[styles.container, { backgroundColor: colors.white }]}>
@@ -723,7 +723,7 @@ export function HabitDetailView() {
           <>
             <IconButton
               icon="check"
-              iconColor={COLORS.white}
+              iconColor={colors.white}
               containerColor={BRAND_COLOR}
               size={22}
               onPress={() => {
@@ -1441,8 +1441,10 @@ export function HabitDetailView() {
               save();
             }}
           >
-            <Ionicons name="checkmark-circle" size={22} color={COLORS.white} />
-            <Text style={styles.saveBarText}>保存</Text>
+            <Ionicons name="checkmark-circle" size={22} color={colors.white} />
+            <Text style={[styles.saveBarText, { color: colors.white }]}>
+              保存
+            </Text>
           </Pressable>
         </View>
       )}
@@ -1583,7 +1585,9 @@ export function HabitDetailView() {
                   addSpan();
                 }}
               >
-                <Text style={spanStyles.confirmText}>追加</Text>
+                <Text style={[spanStyles.confirmText, { color: colors.white }]}>
+                  追加
+                </Text>
               </Pressable>
             </View>
           </Pressable>
@@ -1774,7 +1778,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   saveBarText: {
-    color: COLORS.white,
     fontSize: 18,
     fontWeight: '700',
   },
@@ -1902,7 +1905,6 @@ const spanStyles = StyleSheet.create({
     alignItems: 'center',
   },
   confirmText: {
-    color: COLORS.white,
     fontSize: 15,
     fontWeight: '600',
   },

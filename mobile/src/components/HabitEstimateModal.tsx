@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { COLORS, BRAND_COLOR, useTheme } from '@/src/theme';
+import { BRAND_COLOR, useTheme } from '@/src/theme';
 import { haptic } from '@/src/components/haptics';
 import { TakusuClient } from '@/src/api/client';
 import type { HabitEstimateResult, HabitEstimateStep } from '@/src/api/types';
@@ -165,7 +165,7 @@ export function HabitEstimateModal({
                   onValueChange={toggleOutliers}
                   disabled={loading || applying}
                   trackColor={{ false: colors.grayLight, true: BRAND_COLOR }}
-                  thumbColor={COLORS.white}
+                  thumbColor={colors.white}
                 />
               </View>
 
@@ -207,7 +207,7 @@ export function HabitEstimateModal({
                   onPress={applyEstimate}
                   disabled={applying || loading || noData}
                 >
-                  <Text style={styles.confirmText}>
+                  <Text style={[styles.confirmText, { color: colors.white }]}>
                     {applying ? '適用中…' : '適用'}
                   </Text>
                 </Pressable>
@@ -346,7 +346,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   confirmText: {
-    color: COLORS.white,
     fontSize: 15,
     fontWeight: '600',
   },

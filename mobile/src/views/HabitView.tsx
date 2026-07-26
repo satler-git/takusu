@@ -24,7 +24,7 @@ import type {
   TaskRow,
 } from '@/src/api/types';
 import { WINDOW_MODE_PERIOD } from '@/src/api/types';
-import { COLORS, BRAND_COLOR, useColors } from '@/src/theme';
+import { BRAND_COLOR, useColors } from '@/src/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ContextMenu } from '@/src/components/ContextMenu';
 import { haptic } from '@/src/components/haptics';
@@ -412,7 +412,7 @@ export function HabitView({ client, refreshKey }: HabitViewProps) {
         </View>
         <IconButton
           icon="plus"
-          iconColor={COLORS.white}
+          iconColor={colors.white}
           size={24}
           containerColor={BRAND_COLOR}
           onPress={() => {
@@ -520,8 +520,8 @@ const HabitCard = memo(function HabitCardImpl({
             >
               {habit.active ? (
                 <>
-                  <Ionicons name="pause-circle" size={11} color={COLORS.red} />
-                  <Text style={[styles.chipText, { color: COLORS.red }]}>
+                  <Ionicons name="pause-circle" size={11} color={colors.red} />
+                  <Text style={[styles.chipText, { color: colors.red }]}>
                     〜{span ? formatSpanShort(span.end_date) : ''}
                   </Text>
                 </>

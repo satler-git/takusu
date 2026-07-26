@@ -20,7 +20,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS, BRAND_COLOR, useColors } from '@/src/theme';
+import { BRAND_COLOR, useColors } from '@/src/theme';
 import { haptic } from '@/src/components/haptics';
 import type { RedundantDependency } from '@/src/api/types';
 
@@ -64,14 +64,14 @@ export function RedundantDepWarning({
       <Pressable
         style={[
           styles.banner,
-          { backgroundColor: '#F5E5D5', borderColor: COLORS.red },
+          { backgroundColor: '#F5E5D5', borderColor: colors.red },
         ]}
         onPress={() => {
           haptic.light();
           setVisible(true);
         }}
       >
-        <Ionicons name="git-branch" size={18} color={COLORS.red} />
+        <Ionicons name="git-branch" size={18} color={colors.red} />
         <Text style={[styles.bannerText, { color: colors.grayDark }]}>
           冗長な依存が{edges.length}件あります
         </Text>
@@ -139,7 +139,7 @@ export function RedundantDepWarning({
                     <Pressable
                       style={[
                         styles.optionButton,
-                        { borderColor: COLORS.red },
+                        { borderColor: colors.red },
                         resolving && { opacity: 0.5 },
                       ]}
                       disabled={resolving}
@@ -148,9 +148,9 @@ export function RedundantDepWarning({
                       <Ionicons
                         name="trash-outline"
                         size={16}
-                        color={COLORS.red}
+                        color={colors.red}
                       />
-                      <Text style={[styles.optionText, { color: COLORS.red }]}>
+                      <Text style={[styles.optionText, { color: colors.red }]}>
                         冗長な辺を削除
                       </Text>
                     </Pressable>

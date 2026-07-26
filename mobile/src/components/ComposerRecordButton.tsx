@@ -10,7 +10,7 @@ import Reanimated, {
 } from 'react-native-reanimated';
 import { startRecording, stopAndTranscribe } from '@/src/utils/voice';
 import { useVoice } from '@/src/api/VoiceContext';
-import { BRAND_COLOR, COLORS } from '@/src/theme';
+import { BRAND_COLOR, useColors } from '@/src/theme';
 import { haptic } from '@/src/components/haptics';
 
 const LONG_PRESS_MS = 350;
@@ -31,6 +31,7 @@ export function ComposerRecordButton({
   busy,
   onAppend,
 }: ComposerRecordButtonProps) {
+  const colors = useColors();
   const { isRecording } = useVoice();
 
   const recordingRef = useRef(false);
@@ -308,7 +309,7 @@ export function ComposerRecordButton({
         <Ionicons
           name={isRecording ? 'close' : 'mic'}
           size={24}
-          color={isRecording ? COLORS.white : BRAND_COLOR}
+          color={isRecording ? colors.white : BRAND_COLOR}
         />
         <Reanimated.View style={[styles.hint, styles.lockHint, lockHintStyle]}>
           <Ionicons name="lock-closed" size={16} color="#7c3aed" />

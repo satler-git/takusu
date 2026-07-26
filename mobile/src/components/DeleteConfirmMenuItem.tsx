@@ -4,7 +4,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Menu } from 'react-native-paper';
-import { COLORS } from '@/src/theme';
+import { useColors } from '@/src/theme';
 import { haptic } from '@/src/components/haptics';
 
 interface DeleteConfirmMenuItemProps {
@@ -16,6 +16,7 @@ export function DeleteConfirmMenuItem({
   onConfirm,
   visible,
 }: DeleteConfirmMenuItemProps) {
+  const colors = useColors();
   const [armed, setArmed] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -48,7 +49,7 @@ export function DeleteConfirmMenuItem({
       }}
       title={armed ? 'もう一度タップして削除' : '削除'}
       leadingIcon={armed ? 'trash-can' : 'trash-can-outline'}
-      titleStyle={armed ? { color: COLORS.red } : undefined}
+      titleStyle={armed ? { color: colors.red } : undefined}
       style={
         armed ? { backgroundColor: 'rgba(224, 112, 112, 0.15)' } : undefined
       }
