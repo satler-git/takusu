@@ -19,13 +19,17 @@ pub fn build_session_with_provider(
 ) -> Result<AgentSession, AgentError> {
     let llm = OpenAIClient::new(config.llm.clone())?;
     let tz_cache = TimeZoneCache::new(client.clone());
-    let mut registry = ToolRegistry::new();
-    register_tools(
-        &mut registry,
-        client.clone(),
-        tz_cache.clone(),
-        user_input_provider,
-    );
+    let registry = Arc::new_cyclic(|weak| {
+        let mut registry = ToolRegistry::new();
+        register_tools(
+            &mut registry,
+            client.clone(),
+            tz_cache.clone(),
+            user_input_provider,
+            weak.clone(),
+        );
+        registry
+    });
     Ok(AgentSession::new_with_client_and_cache(
         config.clone(),
         client,

@@ -16,7 +16,7 @@ use takusu_habit::{
 
 use crate::tools::other_error;
 use crate::tools::takusu::TimeZoneCache;
-use crate::{InvalidArgsError, Tool, ToolError, ToolOutput, ToolRegistry};
+use crate::{InvalidArgsError, Tool, ToolError, ToolExposure, ToolOutput, ToolRegistry};
 
 pub fn register_tools(registry: &mut ToolRegistry, tz_cache: TimeZoneCache) {
     registry.register(Box::new(ExpandRRule { tz_cache }));
@@ -37,6 +37,10 @@ impl Tool for ExpandRRule {
         Supports DTSTART, FREQ, INTERVAL, COUNT, UNTIL, BYDAY, BYMONTH, \
         BYMONTHDAY and EXDATE. Times are returned in the timezone specified \
         by DTSTART, or the server timezone when DTSTART is absent."
+    }
+
+    fn exposure(&self) -> ToolExposure {
+        ToolExposure::Deferred
     }
 
     fn parameters_schema(&self) -> Value {

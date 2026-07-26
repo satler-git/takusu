@@ -15,8 +15,8 @@ pub use permissions::Permissions;
 
 pub use crate::llm::CompactionSettings;
 pub use tool::{
-    ChangeReceipt, InferredField, InvalidArgsError, ProposedChange, Tool, ToolError, ToolOutput,
-    ToolRegistry, inferred_field_schema, inferred_fields_schema,
+    ChangeReceipt, InferredField, InvalidArgsError, ProposedChange, Tool, ToolError, ToolExposure,
+    ToolOutput, ToolRegistry, inferred_field_schema, inferred_fields_schema,
 };
 pub use user_input::{
     StubUserInputProvider, UserInputAnswer, UserInputProvider, UserInputQuestion,
@@ -25,7 +25,7 @@ pub use user_input::{
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use takusu_client::{
@@ -632,7 +632,7 @@ fn markdown_to_speech(text: &str) -> String {
 /// by tool calls, and whether the schedule needs recomputation.
 pub struct AgentSession {
     pub(crate) config: std::sync::RwLock<AgentConfig>,
-    registry: ToolRegistry,
+    registry: Arc<ToolRegistry>,
     client: takusu_client::Client,
     tz_cache: crate::tools::takusu::TimeZoneCache,
     llm: std::sync::RwLock<Arc<dyn llm::LlmClient + Send + Sync>>,
@@ -654,6 +654,8 @@ pub struct AgentSession {
     schedule_dirty: Mutex<bool>,
     bundled_skills_synced: std::sync::atomic::AtomicBool,
     skills_index: Mutex<Option<String>>,
+    /// Tools discovered via `tool_search` during the current turn.
+    discovered_tools: Mutex<HashSet<String>>,
 }
 
 impl AgentSession {
@@ -680,7 +682,7 @@ impl AgentSession {
         llm: impl llm::LlmClient + 'static,
     ) -> Self {
         let tz_cache = crate::tools::takusu::TimeZoneCache::new(client.clone());
-        Self::new_with_client_and_cache(config, client, tz_cache, registry, llm)
+        Self::new_with_client_and_cache(config, client, tz_cache, Arc::new(registry), llm)
     }
 
     /// Recommended constructor for production code. The supplied
@@ -690,7 +692,7 @@ impl AgentSession {
         config: AgentConfig,
         client: takusu_client::Client,
         tz_cache: crate::tools::takusu::TimeZoneCache,
-        registry: ToolRegistry,
+        registry: Arc<ToolRegistry>,
         llm: impl llm::LlmClient + 'static,
     ) -> Self {
         let llm: Arc<dyn llm::LlmClient + Send + Sync> = Arc::new(llm);
@@ -712,9 +714,21 @@ impl AgentSession {
             schedule_dirty: Mutex::new(false),
             bundled_skills_synced: std::sync::atomic::AtomicBool::new(false),
             skills_index: Mutex::new(None),
+            discovered_tools: Mutex::new(HashSet::new()),
         };
         tracing::info!(session_id = %session.session_id, "agent session created");
         session
+    }
+
+    /// Returns the set of tool names that should be active for the current turn.
+    fn active_tool_names(&self) -> BTreeSet<String> {
+        let mut names = self.registry.direct_tool_names();
+        names.extend(self.discovered_tools.lock().unwrap().iter().cloned());
+        names
+    }
+
+    fn clear_discovered_tools(&self) {
+        self.discovered_tools.lock().unwrap().clear();
     }
 
     pub fn set_session_permissions(&self, permissions: Permissions) {
@@ -755,7 +769,8 @@ impl AgentSession {
                 None => llm::Message::System(self.build_system_prompt().await).estimate_tokens(),
             }
         };
-        let tools_estimate = self.registry.definitions_estimate_tokens();
+        let active_names = self.active_tool_names();
+        let tools_estimate = self.registry.definitions_estimate_tokens_for(&active_names);
         let system_and_tools = system_estimate + tools_estimate;
 
         if !crate::compact::should_compact(
@@ -853,10 +868,10 @@ impl AgentSession {
 
     pub async fn run_turn(&self, user_text: &str) -> Result<TurnResult, AgentError> {
         let _guard = self.turn_lock.lock().await;
+        self.clear_discovered_tools();
         self.maybe_compact().await?;
         tracing::info!(session_id = %self.session_id, text_len = user_text.len(), "agent turn started");
 
-        let tools = self.registry.definitions();
         let system = llm::Message::System(self.build_system_prompt().await);
         let system_estimate = system.estimate_tokens();
         *self.last_system_estimate.lock().unwrap() = Some(system_estimate);
@@ -877,6 +892,9 @@ impl AgentSession {
                 self.replace_history(local, None, system_estimate);
                 return Err(AgentError::TooManyToolCalls);
             }
+
+            let active_names = self.active_tool_names();
+            let tools = self.registry.definitions_for(&active_names);
 
             let mut messages = vec![system.clone()];
             messages.extend(local.clone());
@@ -969,10 +987,10 @@ impl AgentSession {
         G: FnMut(String),
     {
         let _guard = self.turn_lock.lock().await;
+        self.clear_discovered_tools();
         self.maybe_compact().await?;
         tracing::info!(session_id = %self.session_id, text_len = user_text.len(), "agent turn stream started");
 
-        let tools = self.registry.definitions();
         let system = llm::Message::System(self.build_system_prompt().await);
         let system_estimate = system.estimate_tokens();
         *self.last_system_estimate.lock().unwrap() = Some(system_estimate);
@@ -980,7 +998,7 @@ impl AgentSession {
         let mut local = self.history.lock().unwrap().clone();
         local.push(llm::Message::User(user_text.to_string()));
 
-        self.run_from_local_stream(system, system_estimate, tools, local, emit, tts_emit)
+        self.run_from_local_stream(system, system_estimate, local, emit, tts_emit)
             .await
     }
 
@@ -1004,8 +1022,8 @@ impl AgentSession {
     {
         let _guard = self.turn_lock.lock().await;
         tracing::info!(session_id = %self.session_id, turn_index, text_len = user_text.len(), "agent edit turn stream started");
+        self.clear_discovered_tools();
 
-        let tools = self.registry.definitions();
         let system = llm::Message::System(self.build_system_prompt().await);
         let system_estimate = system.estimate_tokens();
         *self.last_system_estimate.lock().unwrap() = Some(system_estimate);
@@ -1032,7 +1050,7 @@ impl AgentSession {
         *self.schedule_dirty.lock().unwrap() = false;
         *self.last_prompt_tokens.lock().unwrap() = None;
 
-        self.run_from_local_stream(system, system_estimate, tools, local, emit, tts_emit)
+        self.run_from_local_stream(system, system_estimate, local, emit, tts_emit)
             .await
     }
 
@@ -1078,7 +1096,6 @@ impl AgentSession {
         &self,
         system: llm::Message,
         system_estimate: usize,
-        tools: Vec<Value>,
         mut local: Vec<llm::Message>,
         mut emit: F,
         mut tts_emit: G,
@@ -1101,6 +1118,9 @@ impl AgentSession {
                 self.replace_history(local, None, system_estimate);
                 return Err(AgentError::TooManyToolCalls);
             }
+
+            let active_names = self.active_tool_names();
+            let tools = self.registry.definitions_for(&active_names);
 
             let mut messages = vec![system.clone()];
             messages.extend(local.clone());
@@ -1325,6 +1345,10 @@ impl AgentSession {
                         inferred_fields.extend(output.inferred_fields);
                         changes.extend(output.changes);
                         *schedule_dirty |= output.schedule_dirty;
+                        self.discovered_tools
+                            .lock()
+                            .unwrap()
+                            .extend(output.discovered_tools.iter().cloned());
                         emit(TurnEvent::ToolResult {
                             call_id: tool_call_id,
                             name: call.name.clone(),
@@ -2432,13 +2456,9 @@ impl AgentSession {
             - get_task: 指定した1つまたは複数タスクの詳細を取得。依存タスクも再帰的に含まれ、見つからない依存は missing_dependencies に含まれる
             - list_habits: 習慣一覧を取得
             - get_habit: 指定した1つまたは複数の習慣の詳細を取得
-            - habit_scheduled_spans: 習慣の scheduled span（active フラグで休止期間／アクティブ期間の意味が反転）を action=list で参照
             - get_schedule: 現在のスケジュールを取得（from/to で期間指定可能。7d、2026-07-20、today、now などを受け付ける。overdue タスクもデフォルトで含まれる。no_overdue で省略）
-            - get_settings: タイムゾーン・就寝・勤務時間設定を取得
-            - skills_list: スキル一覧を取得
-            - skills_read: 指定したスキルの詳細を取得
-            - memory_search: 保存された記憶を検索
-            - similar_tasks: タイトルに似た完了タスクを探して見積もりの参考にする
+            - preview_schedule: スケジュール変更の影響を試算する（承認要求は生成しない）
+            - day_details: 指定した日付の曜日・祝日・スケジュール情報を取得（dates は配列。include_schedule でスケジュールも含める）
 
             ### 確認
             - correct_asr: 音声認識（ASR）の誤認識をユーザーに確認して訂正する。
@@ -2452,24 +2472,14 @@ impl AgentSession {
             - create_task: タスク作成の提案を生成
             - update_task: タスク更新の提案を生成
             - delete_task: タスク削除の提案を生成
-            - move_task: スケジュール内のタスクを指定時刻に移動する提案を生成（fixed はデフォルトで true）
-            - task_start: タスクの作業開始の提案を生成
-            - task_pause: タスクの作業一時停止の提案を生成
-            - task_progress: タスクの進捗記録の提案を生成
-            - task_complete: タスクの完了の提案を生成
-            - task_split: タスクの分割の提案を生成
             - create_habit: 習慣作成の提案を生成
             - update_habit: 習慣更新の提案を生成
             - delete_habit: 習慣削除の提案を生成
-            - habit_scheduled_spans: action=create / action=delete で scheduled span の追加・削除の提案を生成
-            - generate_schedule: スケジュール生成の提案を生成
-            - reschedule: 部分的なスケジュール変更の提案を生成
-            - preview_schedule: スケジュール変更の影響を試算
-            - skills_propose_add: 新しいスキル作成の提案を生成
-            - skills_propose_edit: 既存のスキル更新の提案を生成
-            - memory_save: 固有名詞・事実・タスク備考を保存する提案を生成
-            - memory_update: 既存の記憶を更新する提案を生成
-            - memory_delete: 既存の記憶を削除する提案を生成
+
+            ### ツール検索
+            - tool_search: 頻繁でないツールをキーワードで検索する。必要なツールが現在のツール一覧にない場合は、まず `tool_search` を呼んでから結果に含まれたツールを呼ぶ。
+              探索語にはツール名や目的を含めてください（例: 'memory search', 'skill list', 'task progress', 'reschedule schedule', 'move task', 'similar task', 'expand rrule'）。
+              他にも以下のようなツールは `tool_search` で発見できます：スキル操作（skills_list / skills_read / skills_propose_add / skills_propose_edit）、記憶操作（memory_search / memory_save / memory_update / memory_delete）、進捗操作（task_start / task_pause / task_progress / task_complete / task_split）、見積もり参照（similar_tasks）、タスク移動（move_task）、スケジュール生成（generate_schedule / reschedule）、習慣 scheduled span 変更（habit_scheduled_spans）、RRULE 展開（expand_rrule）、設定取得（get_settings）。
 
             ## Proposal / 承認フロー（最重要）
             - `create_task` / `update_task` / `delete_task` / `move_task` / `task_start` / `task_pause` / `task_progress` / `task_complete` / `task_split` / `create_habit` / `update_habit` / `delete_habit` / `habit_scheduled_spans`（`action=create` / `action=delete`） / `generate_schedule` / `reschedule` / `skills_propose_add` / `skills_propose_edit` / `memory_save` / `memory_update` / `memory_delete` を呼ぶと、システムは自動的に承認要求（Proposal）を生成します。
@@ -2479,8 +2489,8 @@ impl AgentSession {
             ## 行動指針
             1. 調査してから行動してください。タスク・習慣・スケジュールの変更を提案する前は、必ず関連する情報を取得してください。
             2. スケジュールに影響を与える変更を提案する前は、原則として `preview_schedule` を使って影響を確認してください。
-            3. タスクや習慣を作成・更新する場合、必須情報が不足していればユーザーに確認してください。ただし「明日」「3時間」など明確な言及は推定して構いません。推定値が明示されていない場合は `create_task` を呼ぶ前に `similar_tasks` を呼んで見積もりを調整してください。
-            4. ユーザーの入力に含まれる不明な固有名詞やユーザー固有の情報は、推測せず `memory_save` で保存するか、既存の `memory_search` で確認してください。
+            3. タスクや習慣を作成・更新する場合、必須情報が不足していればユーザーに確認してください。ただし「明日」「3時間」など明確な言及は推定して構いません。推定値が明示されていない場合は `create_task` を呼ぶ前に `tool_search` で `similar_tasks` を見つけて呼び、見積もりを調整してください。
+            4. ユーザーの入力に含まれる不明な固有名詞やユーザー固有の情報は、推測せず `tool_search` で `memory_save` または `memory_search` を見つけて呼んで保存・確認してください。
             5. タスク・習慣を参照・作成・更新する際は、`display_id`（`#42` や `h1#3` など）を使用してください。UUID や内部 ID は使わないでください。
             6. 不明な固有名詞やユーザー固有の情報は、推測せずに確認するか、既存のタスク・習慣を検索して一致するものを探してください。
             7. ツールの結果に基づいて応答してください。データがない場合は正直に「データがありません」と伝えてください。
@@ -2489,7 +2499,7 @@ impl AgentSession {
             10. ツールの存在を忘れないでください。応答前に、必要な情報を取得するためのツールがないか簡潔に確認し、適切なツールを順番に呼び出してください。
             11. 複雑なタスクでは、推論のステップを簡潔に整理してから行動してください。
             12. `inferred_fields` には、明らかな単位換算（例：「1時間」→ 60 分）や現在日時から補完した値は含めないでください。不自然な推定やユーザーにとって分かりにくい推論だけを記載してください。
-            13. 進捗操作（task_start / task_pause / task_progress / task_complete / task_split）でユーザーが対象タスクを明示していない場合（例：「着手した」「完了した」だけ）は、task_ref を省略してそのままツールを呼び出してください。候補が複数あればシステムが選択肢を返すので、勝手に対象を決めずにユーザーに確認してください。
+            13. 進捗操作（task_start / task_pause / task_progress / task_complete / task_split）は `tool_search` で見つけてから呼び出してください。ユーザーが対象タスクを明示していない場合（例：「着手した」「完了した」だけ）は、task_ref を省略してそのままツールを呼び出してください。候補が複数あればシステムが選択肢を返すので、勝手に対象を決めずにユーザーに確認してください。
 
             ## 応答のルール
             - 日本語で応答すること。
@@ -2583,7 +2593,10 @@ impl AgentSession {
             .as_ref()
             .map(|m| m.estimate_tokens())
             .unwrap_or(0);
-        let tools_estimate = self.registry.definitions_estimate_tokens();
+        let active_names = self.active_tool_names();
+        let tools_estimate = self
+            .registry
+            .definitions_estimate_tokens_for(&active_names);
         let last_estimate = messages.last().map_or(0, |m| m.estimate_tokens());
         let config = self.config.read().unwrap();
         let target = config
@@ -2661,7 +2674,10 @@ impl AgentSession {
         prompt_tokens: Option<usize>,
         system_estimate: usize,
     ) {
-        let tools_estimate = self.registry.definitions_estimate_tokens();
+        let active_names = self.active_tool_names();
+        let tools_estimate = self
+            .registry
+            .definitions_estimate_tokens_for(&active_names);
         let last_estimate = local.last().map_or(0, |m| m.estimate_tokens());
         let config = self.config.read().unwrap();
         let target = config

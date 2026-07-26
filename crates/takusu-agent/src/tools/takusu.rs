@@ -11,7 +11,9 @@ use takusu_client::{
 };
 use takusu_util::{parse_date_expression, parse_datetime_to_timestamp, parse_datetime_tz};
 
-use crate::{InvalidArgsError, Tool, ToolError, ToolOutput, ToolRegistry, UserInputProvider};
+use std::sync::Weak;
+
+use crate::{InvalidArgsError, Tool, ToolError, ToolExposure, ToolOutput, ToolRegistry, UserInputProvider};
 
 /// Registers planner read tools, approval-only mutation proposals, and the ASR
 /// correction tool.
@@ -20,6 +22,7 @@ pub fn register_tools(
     client: Client,
     tz_cache: TimeZoneCache,
     user_input_provider: Arc<dyn UserInputProvider>,
+    registry_ref: Weak<ToolRegistry>,
 ) {
     register_read_tools(registry, client.clone(), tz_cache.clone());
     register_mutation_tools(registry, client.clone(), tz_cache.clone());
@@ -37,6 +40,9 @@ pub fn register_tools(
     }));
     crate::tools::skills::register_tools(registry, client.clone());
     crate::tools::user_input::register_user_input_tool(registry, user_input_provider);
+    registry.register(Box::new(crate::tools::tool_search::ToolSearch::from_registry(
+        registry_ref,
+    )));
 }
 
 /// Registers the read-only planner tools used by the agent.
@@ -1167,6 +1173,10 @@ impl Tool for HabitScheduledSpans {
         "List, create, or delete scheduled spans for a habit. The effect of a span depends on the habit's active flag: for active habits it is a pause period, for disabled habits it is an activation window. action=list returns existing spans; action=create and action=delete generate approval proposals."
     }
 
+    fn exposure(&self) -> ToolExposure {
+        ToolExposure::Deferred
+    }
+
     fn parameters_schema(&self) -> Value {
         json!({
             "type": "object",
@@ -1435,6 +1445,9 @@ impl Tool for GetSettings {
     }
     fn description(&self) -> &'static str {
         "Get server timezone and sleep/work settings."
+    }
+    fn exposure(&self) -> ToolExposure {
+        ToolExposure::Deferred
     }
     fn parameters_schema(&self) -> Value {
         json!({
@@ -1834,6 +1847,12 @@ impl Tool for MutationTool {
     fn description(&self) -> &'static str {
         self.kind.description()
     }
+    fn exposure(&self) -> ToolExposure {
+        match self.kind {
+            MutationKind::GenerateSchedule | MutationKind::Reschedule => ToolExposure::Deferred,
+            _ => ToolExposure::Direct,
+        }
+    }
     fn parameters_schema(&self) -> Value {
         self.kind.schema()
     }
@@ -1986,6 +2005,10 @@ impl Tool for MoveTaskTool {
 
     fn description(&self) -> &'static str {
         "Propose moving a scheduled task to a new start time. The task can also be marked fixed (default true). Generates a pending approval request; it does not write immediately."
+    }
+
+    fn exposure(&self) -> ToolExposure {
+        ToolExposure::Deferred
     }
 
     fn parameters_schema(&self) -> Value {
