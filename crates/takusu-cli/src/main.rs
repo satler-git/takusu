@@ -35,12 +35,16 @@ use takusu_storage::{
 };
 use takusu_util::{parse_datetime_tz, parse_duration};
 
-fn prompt(label: &str) -> String {
+fn prompt(label: &str) -> Result<String, AppError> {
     print!("{label}: ");
-    io::stdout().flush().unwrap();
+    io::stdout()
+        .flush()
+        .map_err(|e| AppError::Internal(format!("failed to flush stdout: {e}")))?;
     let mut buf = String::new();
-    io::stdin().read_line(&mut buf).unwrap();
-    buf.trim().to_string()
+    io::stdin()
+        .read_line(&mut buf)
+        .map_err(|e| AppError::Internal(format!("failed to read line: {e}")))?;
+    Ok(buf.trim().to_string())
 }
 
 fn is_interactive() -> bool {
@@ -850,7 +854,7 @@ enum SyncCommands {
     /// Show Google Calendar sync settings
     Settings,
 
-    /// Update Google Calendar sync settings
+    /// Update Google Calendar sync settings (prompts for missing values)
     Setup {
         #[arg(long)]
         enabled: Option<bool>,
@@ -862,6 +866,8 @@ enum SyncCommands {
         client_secret: Option<String>,
         #[arg(long)]
         refresh_token: Option<String>,
+        #[arg(long, help = "Do not prompt for missing values")]
+        no_ask: bool,
     },
 
     /// Start a local server and complete Google OAuth2 login in one step
@@ -1280,8 +1286,8 @@ async fn run_task(
             original_quantity_total,
         } => {
             let (title, end_at) = if is_interactive() && title.is_none() && end_at.is_none() {
-                let t = prompt("Title");
-                let e = prompt("End at (e.g. 2025-06-05 or 2025-06-05T23:59)");
+                let t = prompt("Title")?;
+                let e = prompt("End at (e.g. 2025-06-05 or 2025-06-05T23:59)")?;
                 (Some(t), Some(e))
             } else {
                 (title, end_at)
@@ -1645,10 +1651,10 @@ async fn run_habit(mode: DisplayMode, app: &TakusuApp, cmd: HabitCommands) -> Re
                 && start_time.is_none()
                 && end_time.is_none()
             {
-                let t = prompt("Title");
-                let r = prompt("Recurrence (e.g. daily, weekdays, Mon,Wed,Fri)");
-                let s = prompt("Start time (HH:MM)");
-                let e = prompt("End time (HH:MM)");
+                let t = prompt("Title")?;
+                let r = prompt("Recurrence (e.g. daily, weekdays, Mon,Wed,Fri)")?;
+                let s = prompt("Start time (HH:MM)")?;
+                let e = prompt("End time (HH:MM)")?;
                 (Some(t), Some(r), Some(s), Some(e))
             } else {
                 (title, recurrence, start_time, end_time)
@@ -1885,10 +1891,10 @@ async fn run_skill(mode: DisplayMode, app: &TakusuApp, cmd: SkillCommands) -> Re
                 && description.is_none()
                 && body.is_none()
             {
-                let slug = prompt("Slug");
-                let name = prompt("Name");
-                let description = prompt("Description");
-                let body_path = prompt("Body file (or - for stdin)");
+                let slug = prompt("Slug")?;
+                let name = prompt("Name")?;
+                let description = prompt("Description")?;
+                let body_path = prompt("Body file (or - for stdin)")?;
                 (Some(slug), Some(name), Some(description), Some(body_path))
             } else {
                 (slug, name, description, body)
@@ -2229,7 +2235,48 @@ async fn run_sync(app: &TakusuApp, cmd: SyncCommands) -> Result<(), AppError> {
             client_id,
             client_secret,
             refresh_token,
+            no_ask,
         } => {
+            let (enabled, calendar_id, client_id, client_secret, refresh_token) = if !no_ask
+                && is_interactive()
+            {
+                let settings = app.get_gcal_settings().await?;
+                let enabled = match enabled {
+                    Some(v) => Some(v),
+                    None => prompt_bool("enabled", settings.enabled)?,
+                };
+                let calendar_id = match calendar_id {
+                    Some(v) => Some(v),
+                    None => prompt_optional("calendar_id", &settings.calendar_id)?,
+                };
+                let client_id = match client_id {
+                    Some(v) => Some(v),
+                    None => prompt_optional("client_id", &settings.client_id)?,
+                };
+                let client_secret = match client_secret {
+                    Some(v) => Some(v),
+                    None => prompt_secret_optional("client_secret", settings.has_client_secret)?,
+                };
+                let refresh_token = match refresh_token {
+                    Some(v) => Some(v),
+                    None => prompt_secret_optional("refresh_token", settings.has_refresh_token)?,
+                };
+                (
+                    enabled,
+                    calendar_id,
+                    client_id,
+                    client_secret,
+                    refresh_token,
+                )
+            } else {
+                (
+                    enabled,
+                    calendar_id,
+                    client_id,
+                    client_secret,
+                    refresh_token,
+                )
+            };
             let body = takusu_storage::UpdateGoogleCalSettings {
                 enabled,
                 calendar_id,
@@ -2336,6 +2383,62 @@ fn prompt_secret(label: &str) -> Result<String, AppError> {
         .map_err(|e| AppError::Internal(format!("failed to read secret: {e}")))
 }
 
+fn prompt_optional(label: &str, current: &str) -> Result<Option<String>, AppError> {
+    let display = if current.is_empty() {
+        "(not set)"
+    } else {
+        current
+    };
+    print!("{label} [{display}]: ");
+    io::stdout()
+        .flush()
+        .map_err(|e| AppError::Internal(format!("failed to flush stdout: {e}")))?;
+    let mut buf = String::new();
+    io::stdin()
+        .read_line(&mut buf)
+        .map_err(|e| AppError::Internal(format!("failed to read line: {e}")))?;
+    let trimmed = buf.trim();
+    Ok(if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    })
+}
+
+fn prompt_bool(label: &str, current: bool) -> Result<Option<bool>, AppError> {
+    loop {
+        print!("{label} [{current}] (true/false/yes/no/1/0, empty=keep): ");
+        io::stdout()
+            .flush()
+            .map_err(|e| AppError::Internal(format!("failed to flush stdout: {e}")))?;
+        let mut buf = String::new();
+        io::stdin()
+            .read_line(&mut buf)
+            .map_err(|e| AppError::Internal(format!("failed to read line: {e}")))?;
+        let s = buf.trim();
+        if s.is_empty() {
+            return Ok(None);
+        }
+        match s.to_lowercase().as_str() {
+            "true" | "t" | "yes" | "y" | "1" => return Ok(Some(true)),
+            "false" | "f" | "no" | "n" | "0" => return Ok(Some(false)),
+            _ => eprintln!("invalid input; enter true/false/yes/no/1/0 or leave empty"),
+        }
+    }
+}
+
+fn prompt_secret_optional(label: &str, current_set: bool) -> Result<Option<String>, AppError> {
+    let display = if current_set { "(set)" } else { "(not set)" };
+    let value = rpassword::prompt_password(format!("{label} [{display}]: "))
+        .map_err(|e| AppError::Internal(format!("failed to read secret: {e}")))?;
+    let trimmed = value.trim();
+    Ok(if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    })
+}
+
 async fn oauth_login(
     app: &TakusuApp,
     client_id: Option<String>,
@@ -2354,7 +2457,7 @@ async fn oauth_login(
     } else if !settings.client_id.is_empty() {
         settings.client_id
     } else if is_interactive() {
-        let id = prompt("Google OAuth client_id");
+        let id = prompt("Google OAuth client_id")?;
         if id.is_empty() {
             return Err(AppError::BadRequest("client_id is required".into()));
         }
@@ -2590,7 +2693,7 @@ async fn deps_check_tasks(app: &TakusuApp) -> Result<(), AppError> {
             println!("[2.{}] 経路上の辺 {}→{} を削除", i + 1, ta, tb);
         }
         println!("[s] スキップ  [q] 終了");
-        let choice = prompt(">");
+        let choice = prompt(">")?;
         if choice == "q" || choice == "Q" {
             return Ok(());
         }
@@ -2715,7 +2818,7 @@ async fn deps_check_steps(app: &TakusuApp, habit_id: &str) -> Result<(), AppErro
             println!("[2.{}] 経路上の辺 {}→{} を削除", i + 1, ta, tb);
         }
         println!("[s] スキップ  [q] 終了");
-        let choice = prompt(">");
+        let choice = prompt(">")?;
         if choice == "q" || choice == "Q" {
             return Ok(());
         }
