@@ -221,6 +221,13 @@
             strictDeps = true;
             pname = "takusu-cli";
             cargoExtraArgs = "-p takusu-cli";
+            # takusu-audio pulls in lindera-ipadic, which downloads a dictionary
+            # at build time. Provide it offline so the build succeeds in the sandbox.
+            preBuild = ''
+              export LINDERA_DICTIONARIES_PATH="$NIX_BUILD_TOP/lindera-dicts"
+              mkdir -p "$LINDERA_DICTIONARIES_PATH/4.0.1"
+              cp --no-preserve=mode "${linderaIpadicDict}/4.0.1/mecab-ipadic-2.7.0-20250920.tar.gz" "$LINDERA_DICTIONARIES_PATH/4.0.1/"
+            '';
             # Tests that spawn an in-process HTTP client need CA certificates,
             # which are not available in the Nix build sandbox. CI already runs
             # the full test suite separately, so skip checks here.
