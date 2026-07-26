@@ -25,17 +25,36 @@ pub use user_input::{
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use takusu_client::{
-    ClientError, CreateHabit, CreateMemory, CreateSkill, CreateTask, MoveEntry, RecordProgress,
-    SaveScheduleRequest, ScheduleEntry, SplitTask, UpdateHabit, UpdateMemory, UpdateSkill,
-    UpdateTask,
+    ClientError, CreateHabit, CreateMemory, CreateSkill, CreateTask, HabitStepInput, MoveEntry,
+    RecordProgress, SaveScheduleRequest, ScheduleEntry, SplitTask, UpdateHabit, UpdateMemory,
+    UpdateSkill, UpdateTask,
 };
 use tools::memory::client_error;
 use uuid::Uuid;
 
 use jiff::Unit;
+
+/// Intermediate representation of a habit step submitted by the agent.
+/// Display positions are 1-indexed; storage uses 0-indexed positions.
+#[derive(Debug, Clone)]
+struct PendingHabitStep {
+    position: i64,
+    title: String,
+    description: Option<String>,
+    start_time: String,
+    end_time: String,
+    avg_minutes: i64,
+    sigma_minutes: Option<i64>,
+    parallelizable: Option<bool>,
+    allows_parallel: Option<bool>,
+    abandonability: Option<f64>,
+    fixed: Option<bool>,
+    depends_on_positions: Vec<i64>,
+}
 
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
@@ -1286,13 +1305,354 @@ impl AgentSession {
         })
     }
 
+    fn parse_habit_step(value: &Value) -> Result<PendingHabitStep, AgentError> {
+        let obj = value.as_object().ok_or_else(|| {
+            AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
+                "steps",
+                "must be an array of step objects",
+            )))
+        })?;
+
+        let field = |name| {
+            obj.get(name).cloned().ok_or_else(|| {
+                AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
+                    "steps",
+                    format!("{name} is required"),
+                )))
+            })
+        };
+
+        let require_i64 = |value: Value, name: &str| -> Result<i64, AgentError> {
+            value.as_i64().ok_or_else(|| {
+                AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
+                    "steps",
+                    format!("{name} must be an integer"),
+                )))
+            })
+        };
+
+        let position = require_i64(field("position")?, "position")?;
+        if position < 1 {
+            return Err(AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
+                "steps",
+                "position must be >= 1",
+            ))));
+        }
+        let title = field("title")?
+            .as_str()
+            .map(ToOwned::to_owned)
+            .ok_or_else(|| {
+                AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
+                    "steps",
+                    "title must be a string",
+                )))
+            })?;
+        let start_time = field("start_time")?
+            .as_str()
+            .map(ToOwned::to_owned)
+            .ok_or_else(|| {
+                AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
+                    "steps",
+                    "start_time must be a string",
+                )))
+            })?;
+        let end_time = field("end_time")?
+            .as_str()
+            .map(ToOwned::to_owned)
+            .ok_or_else(|| {
+                AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
+                    "steps",
+                    "end_time must be a string",
+                )))
+            })?;
+        let avg_minutes = require_i64(field("avg_minutes")?, "avg_minutes")?;
+
+        let require_optional_bool = |name: &str| -> Result<Option<bool>, AgentError> {
+            match obj.get(name) {
+                None | Some(Value::Null) => Ok(None),
+                Some(v) => v.as_bool().map(Some).ok_or_else(|| {
+                    AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
+                        "steps",
+                        format!("{name} must be a boolean"),
+                    )))
+                }),
+            }
+        };
+        let require_optional_f64 = |name: &str| -> Result<Option<f64>, AgentError> {
+            match obj.get(name) {
+                None | Some(Value::Null) => Ok(None),
+                Some(v) => v.as_f64().map(Some).ok_or_else(|| {
+                    AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
+                        "steps",
+                        format!("{name} must be a number"),
+                    )))
+                }),
+            }
+        };
+
+        let description = match obj.get("description") {
+            None | Some(Value::Null) => None,
+            Some(v) => Some(v.as_str().ok_or_else(|| {
+                AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
+                    "steps",
+                    "description must be a string",
+                )))
+            })?.to_owned()),
+        };
+        let sigma_minutes = match obj.get("sigma_minutes") {
+            None | Some(Value::Null) => None,
+            Some(v) => Some(v.as_i64().ok_or_else(|| {
+                AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
+                    "steps",
+                    "sigma_minutes must be an integer",
+                )))
+            })?),
+        };
+        let parallelizable = require_optional_bool("parallelizable")?;
+        let allows_parallel = require_optional_bool("allows_parallel")?;
+        let abandonability = require_optional_f64("abandonability")?;
+        let fixed = require_optional_bool("fixed")?;
+
+        let depends_on_positions = obj
+            .get("depends_on")
+            .and_then(Value::as_array)
+            .map(|arr| {
+                arr.iter()
+                    .map(|v| {
+                        v.as_i64().ok_or_else(|| {
+                            AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
+                                "steps",
+                                "depends_on must contain integers",
+                            )))
+                        })
+                    })
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .unwrap_or(Ok(Vec::new()))?;
+        Ok(PendingHabitStep {
+            position,
+            title,
+            description,
+            start_time,
+            end_time,
+            avg_minutes,
+            sigma_minutes,
+            parallelizable,
+            allows_parallel,
+            abandonability,
+            fixed,
+            depends_on_positions,
+        })
+    }
+
+    fn build_habit_step_inputs(
+        pending: &[PendingHabitStep],
+        position_to_id: &HashMap<i64, String>,
+    ) -> Vec<HabitStepInput> {
+        pending
+            .iter()
+            .map(|s| HabitStepInput {
+                id: position_to_id.get(&s.position).cloned(),
+                position: s.position - 1,
+                title: s.title.clone(),
+                description: s.description.clone(),
+                start_time: s.start_time.clone(),
+                end_time: s.end_time.clone(),
+                avg_minutes: s.avg_minutes,
+                sigma_minutes: s.sigma_minutes,
+                parallelizable: s.parallelizable,
+                allows_parallel: s.allows_parallel,
+                abandonability: s.abandonability,
+                fixed: s.fixed,
+                depends_on: s
+                    .depends_on_positions
+                    .iter()
+                    .filter_map(|pos| position_to_id.get(pos).cloned())
+                    .collect(),
+            })
+            .collect()
+    }
+
+    /// Detect cycles in step dependencies. Display positions are 1-indexed.
+    fn detect_step_dependency_cycle(positions: &[i64], edges: &[(i64, i64)]) -> Option<Vec<i64>> {
+        let mut adj: HashMap<i64, Vec<i64>> = HashMap::new();
+        for (from, to) in edges {
+            adj.entry(*from).or_default().push(*to);
+        }
+        let mut visited = HashSet::new();
+        let mut stack = HashSet::new();
+        let mut path = Vec::new();
+
+        fn dfs(
+            node: i64,
+            adj: &HashMap<i64, Vec<i64>>,
+            visited: &mut HashSet<i64>,
+            stack: &mut HashSet<i64>,
+            path: &mut Vec<i64>,
+        ) -> Option<Vec<i64>> {
+            if !visited.insert(node) {
+                return if stack.contains(&node) {
+                    let start = path.iter().position(|&p| p == node).unwrap_or(path.len());
+                    Some(path[start..].to_vec())
+                } else {
+                    None
+                };
+            }
+            stack.insert(node);
+            path.push(node);
+            for next in adj.get(&node).unwrap_or(&Vec::new()) {
+                if let Some(cycle) = dfs(*next, adj, visited, stack, path) {
+                    return Some(cycle);
+                }
+            }
+            path.pop();
+            stack.remove(&node);
+            None
+        }
+
+        for &pos in positions {
+            if !visited.contains(&pos)
+                && let Some(cycle) = dfs(pos, &adj, &mut visited, &mut stack, &mut path)
+            {
+                return Some(cycle);
+            }
+        }
+        None
+    }
+
+    /// Bulk-replace habit steps from agent-facing input. Positions are
+    /// 1-indexed display numbers; `depends_on` is resolved across the submitted
+    /// step list. Existing steps are matched by display position. A two-phase
+    /// save is used when a step depends on a new step so real ids can be
+    /// assigned.
+    async fn replace_habit_steps_from_input(
+        &self,
+        habit_id: &str,
+        steps_value: Value,
+        existing_steps: &[takusu_client::HabitStepRow],
+    ) -> Result<(), AgentError> {
+        let steps_array = steps_value.as_array().ok_or_else(|| {
+            AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
+                "steps",
+                "must be an array",
+            )))
+        })?;
+        let pending: Vec<PendingHabitStep> = steps_array
+            .iter()
+            .map(Self::parse_habit_step)
+            .collect::<Result<Vec<_>, _>>()?;
+
+        // Check positions are unique within the submitted list.
+        let mut seen_positions = HashSet::new();
+        for s in &pending {
+            if !seen_positions.insert(s.position) {
+                return Err(AgentError::Tool(ToolError::InvalidArgs(
+                    InvalidArgsError::new(
+                        "steps",
+                        format!("duplicate position {}", s.position),
+                    ),
+                )));
+            }
+        }
+
+        // Match existing steps by display position so generated task links are
+        // preserved. New positions create new steps.
+        let existing_by_position: HashMap<i64, String> = existing_steps
+            .iter()
+            .map(|s| (s.position + 1, s.id.clone()))
+            .collect();
+
+        // Validate depends_on positions refer to steps in the submitted list.
+        let submitted_positions: HashSet<i64> = pending.iter().map(|s| s.position).collect();
+        let mut edges = Vec::new();
+        for s in &pending {
+            for dep_pos in &s.depends_on_positions {
+                if !submitted_positions.contains(dep_pos) {
+                    return Err(AgentError::Tool(ToolError::InvalidArgs(
+                        InvalidArgsError::new(
+                            "steps",
+                            format!(
+                                "depends_on position {dep_pos} not found in submitted steps"
+                            ),
+                        ),
+                    )));
+                }
+                edges.push((s.position, *dep_pos));
+            }
+        }
+
+        // Pre-validate dependency graph to avoid persisting an intermediate
+        // invalid state. Cycles make phase2 impossible to resolve.
+        if let Some(cycle) = Self::detect_step_dependency_cycle(
+            &pending.iter().map(|s| s.position).collect::<Vec<_>>(),
+            &edges,
+        ) {
+            return Err(AgentError::Tool(ToolError::InvalidArgs(
+                InvalidArgsError::new(
+                    "steps",
+                    format!("dependency cycle detected among positions {cycle:?}"),
+                ),
+            )));
+        }
+
+        // Phase 1: only existing step ids are known, so the position->id map
+        // contains existing steps only. `depends_on` entries that point to new
+        // steps are omitted because their ids are not yet assigned.
+        let phase1_position_to_id = existing_by_position.clone();
+        let phase1 = Self::build_habit_step_inputs(&pending, &phase1_position_to_id);
+
+        let result = self
+            .client
+            .replace_habit_steps(habit_id, &phase1)
+            .await
+            .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
+
+        // The server returns rows ordered by position, so build the final
+        // position -> real id map from each row's stored position rather than
+        // assuming input order.
+        let mut phase2_position_to_id: HashMap<i64, String> = HashMap::new();
+        for row in result {
+            phase2_position_to_id.insert(row.position + 1, row.id);
+        }
+
+        // Detect any depends_on that targets a position whose id was not known
+        // in phase1. This includes new->new and existing->new dependencies.
+        let needs_phase2 = pending.iter().any(|s| {
+            s.depends_on_positions
+                .iter()
+                .any(|pos| !phase1_position_to_id.contains_key(pos))
+        });
+        if !needs_phase2 {
+            return Ok(());
+        }
+
+        // Validate all submitted positions were returned; otherwise mapping is
+        // incomplete and phase2 would lose steps.
+        for s in &pending {
+            if !phase2_position_to_id.contains_key(&s.position) {
+                return Err(AgentError::Tool(ToolError::Other(
+                    "server did not return all submitted steps".into(),
+                )));
+            }
+        }
+
+        let phase2 = Self::build_habit_step_inputs(&pending, &phase2_position_to_id);
+        self.client
+            .replace_habit_steps(habit_id, &phase2)
+            .await
+            .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
+        Ok(())
+    }
+
     async fn execute_proposed_change(
         &self,
         change: &ProposedChange,
         args: Value,
         operation_id: Option<&str>,
     ) -> Result<ChangeReceipt, AgentError> {
-        let args = args.as_object().cloned().unwrap_or_default();
+        let mut args = args.as_object().cloned().unwrap_or_default();
+        let steps_value = args.get("steps").cloned();
+        args.remove("steps");
         let target = args
             .get("task_ref")
             .or_else(|| args.get("habit_ref"))
@@ -1301,39 +1661,43 @@ impl AgentSession {
             .and_then(Value::as_str)
             .unwrap_or("schedule")
             .to_owned();
-        let (target_id, current_updated_at) =
+        let (target_id, current_updated_at, existing_habit) =
             if change.operation == "create" || change.target_label.starts_with("schedule") {
-                (String::new(), None)
+                (String::new(), None, None)
             } else if change.target_label.starts_with("task") {
                 let task = self
                     .client
                     .get_task(&target)
                     .await
                     .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
-                (task.id, Some(task.updated_at))
+                (task.id, Some(task.updated_at), None)
             } else if change.target_label.starts_with("habit") {
                 let habit = self
                     .client
                     .get_habit(&target)
                     .await
                     .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
-                (habit.habit.id, Some(habit.habit.updated_at))
+                (
+                    habit.habit.id.clone(),
+                    Some(habit.habit.updated_at.clone()),
+                    Some(habit),
+                )
             } else if change.target_label.starts_with("skill") {
                 let skill = self
                     .client
                     .get_skill(&target)
                     .await
                     .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
-                (skill.slug, Some(skill.updated_at))
+                (skill.slug, Some(skill.updated_at), None)
             } else if change.target_label.starts_with("memory") {
                 let memory = self
                     .client
                     .get_memory(&target)
                     .await
                     .map_err(|e| AgentError::Tool(client_error(e)))?;
-                (memory.id, Some(memory.updated_at))
+                (memory.id, Some(memory.updated_at), None)
             } else {
-                (target.clone(), None)
+                (target.clone(), None, None)
             };
         if let Some(observed) = &change.observed_updated_at
             && current_updated_at.as_ref() != Some(observed)
@@ -1401,6 +1765,10 @@ impl AgentSession {
                             .await
                             .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?
                             .id;
+                    if let Some(steps) = steps_value {
+                        self.replace_habit_steps_from_input(&id, steps, &[])
+                            .await?;
+                    }
                     (id, None, None, None)
                 }
                 (Some("habit"), "update") => {
@@ -1418,6 +1786,11 @@ impl AgentSession {
                             .await
                             .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?
                             .id;
+                    if let Some(steps) = steps_value {
+                        let existing = existing_habit.map(|h| h.steps).unwrap_or_default();
+                        self.replace_habit_steps_from_input(&id, steps, &existing)
+                            .await?;
+                    }
                     (id, None, None, None)
                 }
                 (Some("habit"), "delete") => {
@@ -3275,5 +3648,128 @@ mod tests {
 
         assert_eq!(tts_blocks, vec!["hello".to_string(), "world".to_string()]);
         assert_eq!(result.text, "hello world");
+    }
+
+    #[test]
+    fn parse_habit_step_rejects_wrong_types_for_optional_fields() {
+        let value = json!({
+            "position": 1,
+            "title": "warmup",
+            "start_time": "08:00",
+            "end_time": "08:15",
+            "avg_minutes": 15,
+            "parallelizable": "yes",
+        });
+        let err = AgentSession::parse_habit_step(&value).unwrap_err();
+        assert!(format!("{err}").contains("parallelizable must be a boolean"));
+    }
+
+    #[test]
+    fn parse_habit_step_accepts_null_optional_fields() {
+        let value = json!({
+            "position": 1,
+            "title": "warmup",
+            "start_time": "08:00",
+            "end_time": "08:15",
+            "avg_minutes": 15,
+            "parallelizable": null,
+            "abandonability": null,
+        });
+        let step = AgentSession::parse_habit_step(&value).unwrap();
+        assert_eq!(step.parallelizable, None);
+        assert_eq!(step.abandonability, None);
+    }
+
+    #[test]
+    fn build_habit_step_inputs_resolves_ids_and_depends_on_from_position_map() {
+        let steps = vec![
+            PendingHabitStep {
+                position: 2,
+                title: "run".into(),
+                description: None,
+                start_time: "08:15".into(),
+                end_time: "08:45".into(),
+                avg_minutes: 30,
+                sigma_minutes: None,
+                parallelizable: None,
+                allows_parallel: None,
+                abandonability: None,
+                fixed: None,
+                depends_on_positions: vec![1],
+            },
+            PendingHabitStep {
+                position: 1,
+                title: "warmup".into(),
+                description: None,
+                start_time: "08:00".into(),
+                end_time: "08:15".into(),
+                avg_minutes: 15,
+                sigma_minutes: None,
+                parallelizable: None,
+                allows_parallel: None,
+                abandonability: None,
+                fixed: None,
+                depends_on_positions: vec![],
+            },
+        ];
+
+        // Simulate phase 1: only existing step id for position 1 is known.
+        let phase1_map: HashMap<i64, String> = [(1, "existing-1".into())].into();
+        let phase1 = AgentSession::build_habit_step_inputs(&steps, &phase1_map);
+        assert_eq!(phase1[0].id, None); // position 2 is new
+        assert_eq!(phase1[0].depends_on, vec!["existing-1".to_string()]);
+        assert_eq!(phase1[1].id, Some("existing-1".into()));
+
+        // Simulate phase 2: real ids are known for both positions, returned in
+        // an order that differs from input order (as the server may do).
+        let phase2_map: HashMap<i64, String> = [
+            (1, "real-1".into()),
+            (2, "real-2".into()),
+        ]
+        .into();
+        let phase2 = AgentSession::build_habit_step_inputs(&steps, &phase2_map);
+        assert_eq!(phase2[0].id, Some("real-2".into()));
+        assert_eq!(phase2[0].depends_on, vec!["real-1".to_string()]);
+        assert_eq!(phase2[1].id, Some("real-1".into()));
+    }
+
+    #[test]
+    fn build_habit_step_inputs_omits_unknown_dependency_positions() {
+        let steps = vec![PendingHabitStep {
+            position: 1,
+            title: "a".into(),
+            description: None,
+            start_time: "08:00".into(),
+            end_time: "08:15".into(),
+            avg_minutes: 15,
+            sigma_minutes: None,
+            parallelizable: None,
+            allows_parallel: None,
+            abandonability: None,
+            fixed: None,
+            depends_on_positions: vec![99],
+        }];
+        let map: HashMap<i64, String> = HashMap::new();
+        let inputs = AgentSession::build_habit_step_inputs(&steps, &map);
+        assert!(inputs[0].depends_on.is_empty());
+    }
+
+    #[test]
+    fn detect_step_dependency_cycle_finds_simple_cycle() {
+        let positions = vec![1, 2, 3];
+        let edges = vec![(1, 2), (2, 3), (3, 1)];
+        let cycle = AgentSession::detect_step_dependency_cycle(&positions, &edges);
+        assert!(cycle.is_some());
+        let cycle = cycle.unwrap();
+        assert!(cycle.contains(&1));
+        assert!(cycle.contains(&2));
+        assert!(cycle.contains(&3));
+    }
+
+    #[test]
+    fn detect_step_dependency_cycle_accepts_dag() {
+        let positions = vec![1, 2, 3];
+        let edges = vec![(1, 2), (1, 3)];
+        assert!(AgentSession::detect_step_dependency_cycle(&positions, &edges).is_none());
     }
 }

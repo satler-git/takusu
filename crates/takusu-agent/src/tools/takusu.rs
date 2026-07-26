@@ -662,24 +662,33 @@ fn habit_json(habit: &HabitDetail) -> Value {
         .iter()
         .map(|s| (s.id.clone(), s.position + 1))
         .collect();
-    json!({
-        "display_id": habit.habit.display_id,
-        "reference": format!("h{}", habit.habit.display_id),
-        "title": habit.habit.title,
-        "description": habit.habit.description,
-        "recurrence": habit.habit.recurrence,
-        "start_time": habit.habit.start_time,
-        "end_time": habit.habit.end_time,
-        "avg_minutes": habit.habit.avg_minutes,
-        "sigma_minutes": habit.habit.sigma_minutes,
-        "parallelizable": habit.habit.parallelizable,
-        "allows_parallel": habit.habit.allows_parallel,
-        "abandonability": habit.habit.abandonability,
-        "active": habit.habit.active,
-        "fixed": habit.habit.fixed,
-        "window_mode": habit.habit.window_mode,
-        "steps": habit.steps.iter().map(|s| step_json(s, &id_to_display_position)).collect::<Vec<_>>(),
-    })
+    let has_steps = !habit.steps.is_empty();
+    let mut value = serde_json::Map::new();
+    value.insert("display_id".into(), json!(habit.habit.display_id));
+    value.insert("reference".into(), json!(format!("h{}", habit.habit.display_id)));
+    value.insert("title".into(), json!(habit.habit.title));
+    value.insert("description".into(), json!(habit.habit.description));
+    value.insert("recurrence".into(), json!(habit.habit.recurrence));
+    // When a habit has steps, the habit-level time/cost fields are ignored by
+    // the scheduler in favor of the per-step values, so omit them to avoid
+    // misleading the agent (#1084).
+    if !has_steps {
+        value.insert("start_time".into(), json!(habit.habit.start_time));
+        value.insert("end_time".into(), json!(habit.habit.end_time));
+        value.insert("avg_minutes".into(), json!(habit.habit.avg_minutes));
+        value.insert("sigma_minutes".into(), json!(habit.habit.sigma_minutes));
+    }
+    value.insert("parallelizable".into(), json!(habit.habit.parallelizable));
+    value.insert("allows_parallel".into(), json!(habit.habit.allows_parallel));
+    value.insert("abandonability".into(), json!(habit.habit.abandonability));
+    value.insert("active".into(), json!(habit.habit.active));
+    value.insert("fixed".into(), json!(habit.habit.fixed));
+    value.insert("window_mode".into(), json!(habit.habit.window_mode));
+    value.insert(
+        "steps".into(),
+        json!(habit.steps.iter().map(|s| step_json(s, &id_to_display_position)).collect::<Vec<_>>()),
+    );
+    Value::Object(value)
 }
 
 fn step_json(step: &HabitStepRow, id_to_display_position: &HashMap<String, i64>) -> Value {
@@ -1248,6 +1257,29 @@ pub fn register_mutation_tools(
     }
 }
 
+/// JSON schema for a single habit step input used in create/update habit.
+fn habit_step_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "position": {"type": "integer", "description": "1-indexed display position of the step within the habit. On update, matching existing positions update existing steps; new positions create new steps."},
+            "title": {"type": "string"},
+            "description": {"type": "string"},
+            "start_time": {"type": "string", "description": "Time of day (HH:MM)."},
+            "end_time": {"type": "string", "description": "Time of day (HH:MM)."},
+            "avg_minutes": {"type": "integer"},
+            "sigma_minutes": {"type": "integer"},
+            "parallelizable": {"type": "boolean"},
+            "allows_parallel": {"type": "boolean"},
+            "abandonability": {"type": "number"},
+            "fixed": {"type": "boolean"},
+            "depends_on": {"type": "array", "items": {"type": "integer"}, "description": "Display positions (1-indexed) of steps this step depends on."}
+        },
+        "required": ["position", "title", "start_time", "end_time", "avg_minutes"],
+        "additionalProperties": false
+    })
+}
+
 #[derive(Clone, Copy)]
 enum MutationKind {
     CreateTask,
@@ -1374,6 +1406,10 @@ impl MutationKind {
                     "parallelizable": {"type": "boolean"},
                     "allows_parallel": {"type": "boolean"},
                     "abandonability": {"type": "number"},
+                    "fixed": {"type": "boolean", "description": "If true, the start time is fixed and the scheduler will not move the task."},
+                    "quantity_total": {"type": "integer", "description": "Total quantity for a quantitative task (e.g. 30)."},
+                    "quantity_done": {"type": "integer", "description": "Quantity already completed; defaults to 0."},
+                    "quantity_unit": {"type": "string", "description": "Unit for the quantity (e.g. 'pages', 'questions')."},
                     "inferred_fields": crate::inferred_fields_schema("List of fields that were inferred from ambiguous user input and should be highlighted. Do not include obvious conversions (e.g. '1 hour' -> 60 minutes) or values filled from the current date/time."),
                 }),
             ),
@@ -1396,6 +1432,10 @@ impl MutationKind {
                         "enum": ["pending", "scheduled", "in_progress", "completed", "skipped"],
                         "description": "New task status. 'completed' means done."
                     },
+                    "fixed": {"type": "boolean", "description": "If true, the start time is fixed and the scheduler will not move the task."},
+                    "quantity_total": {"type": "integer", "description": "Total quantity for a quantitative task (e.g. 30)."},
+                    "quantity_done": {"type": "integer", "description": "Quantity already completed."},
+                    "quantity_unit": {"type": "string", "description": "Unit for the quantity (e.g. 'pages', 'questions')."},
                     "inferred_fields": crate::inferred_fields_schema("List of fields that were inferred from ambiguous user input and should be highlighted. Do not include obvious conversions (e.g. '1 hour' -> 60 minutes) or values filled from the current date/time."),
                 }),
             ),
@@ -1424,6 +1464,9 @@ impl MutationKind {
                     "parallelizable": {"type": "boolean"},
                     "allows_parallel": {"type": "boolean"},
                     "abandonability": {"type": "number"},
+                    "fixed": {"type": "boolean", "description": "If true, generated tasks start at a fixed time and the scheduler will not move them."},
+                    "window_mode": {"type": "string", "enum": ["day", "period"], "description": "Scheduling window mode for generated tasks."},
+                    "steps": {"type": "array", "items": habit_step_schema(), "description": "Ordered steps for a multi-step habit. Existing step ids are omitted; match by position on update."},
                     "inferred_fields": crate::inferred_fields_schema("List of fields that were inferred from ambiguous user input and should be highlighted. Do not include obvious conversions (e.g. '1 hour' -> 60 minutes) or values filled from the current date/time."),
                 }),
             ),
@@ -1442,6 +1485,9 @@ impl MutationKind {
                     "allows_parallel": {"type": "boolean"},
                     "abandonability": {"type": "number"},
                     "active": {"type": "boolean"},
+                    "fixed": {"type": "boolean", "description": "If true, generated tasks start at a fixed time and the scheduler will not move them."},
+                    "window_mode": {"type": "string", "enum": ["day", "period"], "description": "Scheduling window mode for generated tasks."},
+                    "steps": {"type": "array", "items": habit_step_schema(), "description": "Complete ordered steps to replace existing ones. Match existing steps by position."},
                     "inferred_fields": crate::inferred_fields_schema("List of fields that were inferred from ambiguous user input and should be highlighted. Do not include obvious conversions (e.g. '1 hour' -> 60 minutes) or values filled from the current date/time."),
                 }),
             ),
@@ -2163,7 +2209,7 @@ mod tests {
     }
 
     #[test]
-    fn habit_json_hides_internal_uuids() {
+    fn habit_json_hides_internal_uuids_and_omits_ignored_fields_when_steps_exist() {
         let habit = habit_row("habit-uuid", 7, "habit");
         let step = step_row("step-uuid", "habit-uuid", 1, "step");
         let detail = HabitDetail {
@@ -2175,11 +2221,31 @@ mod tests {
         assert!(value.get("id").is_none());
         assert_eq!(value["display_id"], 7);
         assert_eq!(value["reference"], "h7");
+        // Habits with steps ignore top-level time/cost fields (#1084).
+        assert!(value.get("start_time").is_none());
+        assert!(value.get("end_time").is_none());
+        assert!(value.get("avg_minutes").is_none());
+        assert!(value.get("sigma_minutes").is_none());
 
         let steps = value["steps"].as_array().unwrap();
         assert_eq!(steps.len(), 1);
         assert!(steps[0].get("id").is_none());
         assert!(steps[0].get("habit_id").is_none());
+    }
+
+    #[test]
+    fn habit_json_includes_time_fields_when_no_steps() {
+        let habit = habit_row("habit-uuid", 7, "habit");
+        let detail = HabitDetail {
+            habit,
+            steps: vec![],
+        };
+
+        let value = habit_json(&detail);
+        assert!(value.get("start_time").is_some());
+        assert!(value.get("end_time").is_some());
+        assert!(value.get("avg_minutes").is_some());
+        assert!(value.get("sigma_minutes").is_some());
     }
 
     #[test]
