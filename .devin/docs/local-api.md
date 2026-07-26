@@ -11,8 +11,8 @@
 
 ## Endpoints
 
-- **Task**: CRUD + iCal import (`/api/tasks`, `/api/tasks/import/ical`)
-- **Habit**: CRUD (`/api/habits`)
+- **Task**: CRUD + batch create + iCal import (`/api/tasks`, `/api/tasks/batch`, `/api/tasks/import/ical`)
+- **Habit**: CRUD + batch create (`/api/habits`, `/api/habits/batch`)
 - **Schedule**: get/generate/reschedule/move/clear (`/api/schedule/*`)
 - **Settings**: get/update (`/api/settings`) — tz, sleep_start, sleep_end
 - **Token**: issue/list/revoke (`/api/tokens`)

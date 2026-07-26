@@ -256,7 +256,7 @@ pub async fn play_stream(
             _ => {
                 return Err(PlayError::UnsupportedFormat(format!(
                     "output sample format {sample_format:?}"
-                )))
+                )));
             }
         };
 

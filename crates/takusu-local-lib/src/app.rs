@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -10,7 +10,8 @@ use takusu_core::{
     WorkloadConfig,
 };
 use takusu_storage::{
-    CreateHabit, CreateHabitScheduledSpan, CreateMemory, CreateSkill, CreateTask,
+    CreateHabit, CreateHabitBatch, CreateHabitBatchResult, CreateHabitScheduledSpan, CreateMemory,
+    CreateSkill, CreateTask, CreateTaskBatch, CreateTaskBatchItem, CreateTaskBatchResult,
     GoogleCalEventRow, GoogleCalSettingsRow, HabitDetail, HabitEstimateRequest,
     HabitEstimateResult, HabitEstimateSample, HabitEstimateStep, HabitPreviewRequest,
     HabitPreviewTask, HabitRow, HabitScheduledSpanRow, HabitStepEstimateInput, HabitStepInput,
@@ -1123,6 +1124,129 @@ impl TakusuApp {
             .map_err(storage_to_app)
     }
 
+    pub async fn create_task_batch(
+        &self,
+        body: &CreateTaskBatch,
+    ) -> Result<Vec<CreateTaskBatchResult>, AppError> {
+        if body.tasks.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let settings = self.get_settings_or_default().await?;
+        let tz = parse_settings_timezone(&settings.tz)?;
+
+        // Validate/normalize each item and build a map from client_id to local index.
+        let mut items: Vec<CreateTaskBatchItem> = Vec::with_capacity(body.tasks.len());
+        let mut client_to_local: HashMap<String, usize> = HashMap::new();
+        for (i, item) in body.tasks.iter().enumerate() {
+            validate_minutes(item.task.avg_minutes, item.task.sigma_minutes)?;
+            validate_title(&item.task.title)?;
+            validate_task_datetimes(
+                item.task.start_at.as_deref(),
+                Some(&item.task.end_at),
+                &tz,
+                None,
+                None,
+            )?;
+            if let Some(ref cid) = item.client_id {
+                if cid.is_empty() {
+                    return Err(AppError::BadRequest("client_id must not be empty".into()));
+                }
+                if client_to_local.insert(cid.clone(), i).is_some() {
+                    return Err(AppError::BadRequest(format!("duplicate client_id: {cid}")));
+                }
+            }
+            let mut task = item.task.clone();
+            if let Some(ref s) = task.start_at {
+                task.start_at = Some(normalize_iso_datetime(s, &tz)?);
+            }
+            task.end_at = normalize_iso_datetime(&task.end_at, &tz)?;
+            items.push(CreateTaskBatchItem {
+                task,
+                client_id: item.client_id.clone(),
+            });
+        }
+
+        // Load existing tasks to detect cycles across old and new dependencies.
+        let existing_tasks = self
+            .storage
+            .list_tasks(&TaskQuery::default())
+            .await
+            .map_err(storage_to_app)?;
+        let (mut adj, existing_id_to_idx) = build_dep_graph(&existing_tasks)?;
+        let existing_offset = existing_tasks.len();
+        adj.resize(existing_offset + items.len(), Vec::new());
+
+        // Resolve each item's depends to graph indices.
+        let mut deps_by_local: Vec<Vec<usize>> = Vec::with_capacity(items.len());
+        for (local_idx, item) in items.iter().enumerate() {
+            let mut dep_indices = Vec::new();
+            if let Some(ref dep_ids) = item.task.depends {
+                for did in dep_ids {
+                    if let Some(&dep_local) = client_to_local.get(did) {
+                        dep_indices.push(existing_offset + dep_local);
+                    } else {
+                        let full = self.storage.get_task(did).await.map_err(storage_to_app)?.id;
+                        let &idx = existing_id_to_idx.get(&full).ok_or_else(|| {
+                            AppError::BadRequest(format!("depends on unknown task: {did}"))
+                        })?;
+                        dep_indices.push(idx);
+                    }
+                }
+            }
+            let global_idx = existing_offset + local_idx;
+            adj[global_idx].extend(dep_indices.iter().copied());
+            deps_by_local.push(dep_indices);
+        }
+
+        crate::graph::detect_cycle(&adj)
+            .map_err(|_| AppError::BadRequest("循環依存が検出されました".into()))?;
+
+        // Topologically sort and then reverse so dependencies are created
+        // before dependents (the graph edges point from dependent to dependency).
+        let mut order = crate::graph::topo_sort(&adj)
+            .map_err(|_| AppError::BadRequest("循環依存が検出されました".into()))?;
+        order.reverse();
+        let mut created_ids: Vec<Option<String>> = vec![None; items.len()];
+        let mut results: Vec<Option<CreateTaskBatchResult>> = vec![None; items.len()];
+        for global_idx in order {
+            if global_idx < existing_offset {
+                continue;
+            }
+            let local_idx = global_idx - existing_offset;
+            let item = &items[local_idx];
+            let mut resolved_dep_ids = Vec::with_capacity(deps_by_local[local_idx].len());
+            for &dep_global in &deps_by_local[local_idx] {
+                if dep_global < existing_offset {
+                    resolved_dep_ids.push(existing_tasks[dep_global].id.clone());
+                } else {
+                    let dep_local = dep_global - existing_offset;
+                    let actual = created_ids[dep_local].as_ref().ok_or_else(|| {
+                        AppError::Internal("dependency not created before dependent".into())
+                    })?;
+                    resolved_dep_ids.push(actual.clone());
+                }
+            }
+            let mut task = item.task.clone();
+            task.depends = Some(resolved_dep_ids).filter(|v| !v.is_empty());
+            let row = self
+                .storage
+                .create_task(&task)
+                .await
+                .map_err(storage_to_app)?;
+            created_ids[local_idx] = Some(row.id.clone());
+            results[local_idx] = Some(CreateTaskBatchResult {
+                client_id: item.client_id.clone(),
+                task: row,
+            });
+        }
+
+        results
+            .into_iter()
+            .map(|opt| opt.ok_or_else(|| AppError::Internal("missing batch task result".into())))
+            .collect()
+    }
+
     pub async fn list_tasks(&self, query: &TaskQuery) -> Result<Vec<TaskRow>, AppError> {
         self.storage.list_tasks(query).await.map_err(storage_to_app)
     }
@@ -1490,6 +1614,35 @@ impl TakusuApp {
             .create_habit(body)
             .await
             .map_err(storage_to_app)
+    }
+
+    pub async fn create_habit_batch(
+        &self,
+        body: &CreateHabitBatch,
+    ) -> Result<Vec<CreateHabitBatchResult>, AppError> {
+        if body.habits.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut seen_client_ids: HashSet<String> = HashSet::new();
+        for item in &body.habits {
+            if let Some(ref cid) = item.client_id {
+                if cid.is_empty() {
+                    return Err(AppError::BadRequest("client_id must not be empty".into()));
+                }
+                if !seen_client_ids.insert(cid.clone()) {
+                    return Err(AppError::BadRequest(format!("duplicate client_id: {cid}")));
+                }
+            }
+        }
+        let mut results = Vec::with_capacity(body.habits.len());
+        for item in &body.habits {
+            let row = self.create_habit(&item.habit).await?;
+            results.push(CreateHabitBatchResult {
+                client_id: item.client_id.clone(),
+                habit: row,
+            });
+        }
+        Ok(results)
     }
 
     /// Preview the tasks that would be generated from a habit definition

@@ -3,8 +3,8 @@ use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use serde::Deserialize;
 use takusu_storage::{
-    CreateTask, ProgressResult, RecordProgress, SplitResult, SplitTask, TaskProgress, TaskQuery,
-    TaskRow, UpdateTask,
+    CreateTask, CreateTaskBatch, CreateTaskBatchResult, ProgressResult, RecordProgress,
+    SplitResult, SplitTask, TaskProgress, TaskQuery, TaskRow, UpdateTask,
 };
 use takusu_util::search::Completion;
 
@@ -36,6 +36,14 @@ pub async fn create_task(
 ) -> Result<(StatusCode, Json<TaskRow>), HttpError> {
     let task = state.app.create_task(&body).await?;
     Ok((StatusCode::CREATED, Json(task)))
+}
+
+pub async fn create_task_batch(
+    State(state): State<AppState>,
+    Json(body): Json<CreateTaskBatch>,
+) -> Result<(StatusCode, Json<Vec<CreateTaskBatchResult>>), HttpError> {
+    let tasks = state.app.create_task_batch(&body).await?;
+    Ok((StatusCode::CREATED, Json(tasks)))
 }
 
 pub async fn list_tasks(
