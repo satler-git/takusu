@@ -97,7 +97,7 @@ fn default_max_context_tokens() -> usize {
 }
 
 fn default_max_tool_calls() -> usize {
-    16
+    64
 }
 
 fn default_request_timeout_seconds() -> u64 {

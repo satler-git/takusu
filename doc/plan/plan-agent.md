@@ -141,7 +141,7 @@ base_url = "https://api.openai.com/v1"
 model = "gpt-4.1-mini"
 api_key_env = "TAKUSU_LLM_API_KEY"
 max_context_tokens = 32000
-max_tool_calls = 16
+max_tool_calls = 64
 request_timeout_seconds = 60
 
 [server]
