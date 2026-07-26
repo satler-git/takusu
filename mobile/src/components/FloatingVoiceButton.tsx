@@ -12,7 +12,7 @@ import { usePathname, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useServer } from '@/src/api/ServerProvider';
 import { useVoice } from '@/src/api/VoiceContext';
-import { BRAND_COLOR, COLORS } from '@/src/theme';
+import { BRAND_COLOR, useColors } from '@/src/theme';
 import { haptic } from '@/src/components/haptics';
 
 const TASKADD_SLIDE_THRESHOLD = 60;
@@ -20,6 +20,7 @@ const TASKADD_SLIDE_THRESHOLD = 60;
 type ButtonState = 'idle' | 'pending' | 'gesture';
 
 export function FloatingVoiceButton() {
+  const colors = useColors();
   const pathname = usePathname();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -177,7 +178,7 @@ export function FloatingVoiceButton() {
       </Reanimated.View>
       <GestureDetector gesture={panGesture}>
         <Reanimated.View style={[styles.button, buttonStyle]}>
-          <Ionicons name="add" size={28} color={COLORS.white} />
+          <Ionicons name="add" size={28} color={colors.white} />
         </Reanimated.View>
       </GestureDetector>
     </View>

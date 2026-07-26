@@ -13,7 +13,7 @@ import type { TakusuClient } from '@/src/api/client';
 import { showError } from '@/src/api/errors';
 import type { TaskRow, HabitRow, RedundantDependency } from '@/src/api/types';
 import { parseDepends } from '@/src/api/types';
-import { COLORS, BRAND_COLOR, useTheme, habitColorFor } from '@/src/theme';
+import { BRAND_COLOR, useTheme, habitColorFor } from '@/src/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { haptic } from '@/src/components/haptics';
 import {
@@ -218,7 +218,7 @@ export function GraphView({
           <Button
             mode={editMode ? 'contained' : 'outlined'}
             onPress={toggleEditMode}
-            textColor={editMode ? COLORS.white : BRAND_COLOR}
+            textColor={editMode ? colors.white : BRAND_COLOR}
             buttonColor={editMode ? BRAND_COLOR : undefined}
             style={styles.editButton}
             labelStyle={styles.editButtonLabel}

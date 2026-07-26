@@ -24,7 +24,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { COLORS, BRAND_COLOR, useColors } from '@/src/theme';
+import { BRAND_COLOR, useColors } from '@/src/theme';
 import { haptic } from '@/src/components/haptics';
 import { DateTimePickerModal } from '@/src/components/DateTimePickerModal';
 import {
@@ -226,7 +226,7 @@ export function RruleBuilderModal({
               <Text
                 style={[
                   styles.chipText,
-                  { color: on ? COLORS.white : colors.black },
+                  { color: on ? colors.white : colors.black },
                 ]}
               >
                 {m}月
@@ -451,7 +451,7 @@ export function RruleBuilderModal({
                       styles.manualInput,
                       {
                         borderColor: manualError
-                          ? COLORS.red
+                          ? colors.red
                           : colors.separator,
                         color: colors.black,
                       },
@@ -468,7 +468,9 @@ export function RruleBuilderModal({
                     placeholderTextColor={colors.grayLight}
                   />
                   {manualError && (
-                    <Text style={styles.errorText}>{manualError}</Text>
+                    <Text style={[styles.errorText, { color: colors.red }]}>
+                      {manualError}
+                    </Text>
                   )}
                   <Pressable
                     style={[styles.advancedToggle, { marginTop: 8 }]}
@@ -520,7 +522,7 @@ export function RruleBuilderModal({
                             styles.segmentText,
                             {
                               color:
-                                rule.freq === f ? COLORS.white : colors.black,
+                                rule.freq === f ? colors.white : colors.black,
                             },
                           ]}
                         >
@@ -663,7 +665,7 @@ export function RruleBuilderModal({
                             <Text
                               style={[
                                 styles.chipText,
-                                { color: on ? COLORS.white : colors.black },
+                                { color: on ? colors.white : colors.black },
                               ]}
                             >
                               {WEEKDAY_LABELS[wd]}
@@ -672,7 +674,7 @@ export function RruleBuilderModal({
                               <Text
                                 style={[
                                   styles.chipSubText,
-                                  { color: COLORS.white },
+                                  { color: colors.white },
                                 ]}
                               >
                                 {NTH_LABELS[entry.n] ?? String(entry.n)}
@@ -730,7 +732,7 @@ export function RruleBuilderModal({
                                         styles.chipText,
                                         {
                                           color: selected
-                                            ? COLORS.white
+                                            ? colors.white
                                             : colors.black,
                                         },
                                       ]}
@@ -774,12 +776,12 @@ export function RruleBuilderModal({
                               <Ionicons
                                 name="trash-outline"
                                 size={14}
-                                color={COLORS.red}
+                                color={colors.red}
                               />
                               <Text
                                 style={[
                                   styles.nthRemoveText,
-                                  { color: COLORS.red },
+                                  { color: colors.red },
                                 ]}
                               >
                                 この曜日を削除
@@ -873,7 +875,7 @@ export function RruleBuilderModal({
                                 <Text
                                   style={[
                                     styles.chipText,
-                                    { color: on ? COLORS.white : colors.black },
+                                    { color: on ? colors.white : colors.black },
                                   ]}
                                 >
                                   {isLastDay ? '月末' : d}
@@ -1009,7 +1011,12 @@ export function RruleBuilderModal({
             )}
 
             {manualError && manualMode && (
-              <Text style={[styles.errorText, { marginBottom: 4 }]}>
+              <Text
+                style={[
+                  styles.errorText,
+                  { color: colors.red, marginBottom: 4 },
+                ]}
+              >
                 {manualError}
               </Text>
             )}
@@ -1027,7 +1034,9 @@ export function RruleBuilderModal({
                 </Text>
               </Pressable>
               <Pressable style={styles.confirmButton} onPress={handleConfirm}>
-                <Text style={styles.confirmText}>設定</Text>
+                <Text style={[styles.confirmText, { color: colors.white }]}>
+                  設定
+                </Text>
               </Pressable>
             </View>
           </View>
@@ -1332,7 +1341,6 @@ const styles = StyleSheet.create({
   },
   errorText: {
     fontSize: 12,
-    color: COLORS.red,
     marginTop: 4,
   },
   // Summary bar
@@ -1375,7 +1383,6 @@ const styles = StyleSheet.create({
   },
   confirmText: {
     fontSize: 15,
-    color: COLORS.white,
     fontWeight: '600',
   },
 });

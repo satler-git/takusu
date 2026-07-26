@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { Ionicons } from '@expo/vector-icons';
-import { BRAND_COLOR, COLORS, useColors, type ColorSet } from '@/src/theme';
+import { BRAND_COLOR, useColors, type ColorSet } from '@/src/theme';
 import { haptic } from '@/src/components/haptics';
 import { formatJson } from '@/src/utils/formatJson';
 import type { ToolCallItem } from '@/src/api/agentSessionStore';
@@ -348,7 +348,9 @@ export function ToolCallDetailModal({
               onPress={onClose}
               style={[styles.closeButton, { backgroundColor: BRAND_COLOR }]}
             >
-              <Text style={styles.closeText}>閉じる</Text>
+              <Text style={[styles.closeText, { color: colors.white }]}>
+                閉じる
+              </Text>
             </Pressable>
           </View>
         </View>
@@ -1050,7 +1052,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  closeText: { color: COLORS.white, fontWeight: '700' },
+  closeText: { fontWeight: '700' },
   emptyText: { fontSize: 13, textAlign: 'center' },
   memoryMeta: { fontSize: 11, fontFamily: 'monospace', marginTop: 4 },
   skillName: { fontSize: 16, fontWeight: '700' },

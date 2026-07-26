@@ -5,7 +5,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS, useColors } from '@/src/theme';
+import { useColors } from '@/src/theme';
 import { haptic } from '@/src/components/haptics';
 
 interface DeleteConfirmButtonProps {
@@ -45,11 +45,11 @@ export function DeleteConfirmButton({
     : armed
       ? 'trash'
       : 'trash-outline';
-  const iconColor = disabled ? colors.gray : armed ? COLORS.white : COLORS.red;
+  const iconColor = disabled ? colors.gray : armed ? colors.white : colors.red;
   const backgroundStyle = disabled
     ? { opacity: 0.4 }
     : armed
-      ? { backgroundColor: COLORS.red }
+      ? { backgroundColor: colors.red }
       : undefined;
 
   return (

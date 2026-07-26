@@ -41,7 +41,7 @@ import Reanimated, {
   withSpring,
   runOnJS,
 } from 'react-native-reanimated';
-import { useColors, COLORS, BRAND_COLOR } from '@/src/theme';
+import { useColors, BRAND_COLOR } from '@/src/theme';
 import { haptic } from '@/src/components/haptics';
 import { useTopToast } from '@/src/components/TopToast';
 import { TaskProgressSheet } from '@/src/components/TaskProgressSheet';
@@ -1587,19 +1587,41 @@ export function HomeView() {
                 setPastWeeks((w) => w + 1);
               }}
             >
-              <View style={styles.separatorBar} />
+              <View
+                style={[
+                  styles.separatorBar,
+                  { backgroundColor: colors.separator },
+                ]}
+              />
               <Text style={[styles.separatorText, { color: BRAND_COLOR }]}>
                 {item.label}
               </Text>
-              <View style={styles.separatorBar} />
+              <View
+                style={[
+                  styles.separatorBar,
+                  { backgroundColor: colors.separator },
+                ]}
+              />
             </Pressable>
           );
         }
         return (
           <View style={styles.separator}>
-            <View style={styles.separatorBar} />
-            <Text style={styles.separatorText}>{item.label}</Text>
-            <View style={styles.separatorBar} />
+            <View
+              style={[
+                styles.separatorBar,
+                { backgroundColor: colors.separator },
+              ]}
+            />
+            <Text style={[styles.separatorText, { color: colors.gray }]}>
+              {item.label}
+            </Text>
+            <View
+              style={[
+                styles.separatorBar,
+                { backgroundColor: colors.separator },
+              ]}
+            />
           </View>
         );
       }
@@ -1658,6 +1680,7 @@ export function HomeView() {
       markDone,
       markSkipped,
       deleteTask,
+      colors,
     ],
   );
 
@@ -1841,7 +1864,7 @@ export function HomeView() {
               startDoneButtonStyle,
               {
                 bottom: 16 + insets.bottom,
-                backgroundColor: inProgressTask ? COLORS.red : COLORS.green,
+                backgroundColor: inProgressTask ? colors.red : colors.green,
               },
             ]}
             accessible
@@ -1858,7 +1881,7 @@ export function HomeView() {
             <Ionicons
               name={inProgressTask ? 'pause' : 'play'}
               size={24}
-              color={COLORS.white}
+              color={colors.white}
             />
           </Reanimated.View>
         </GestureDetector>
@@ -1874,7 +1897,7 @@ export function HomeView() {
           ]}
           pointerEvents="none"
         >
-          <Ionicons name="checkmark" size={24} color={COLORS.green} />
+          <Ionicons name="checkmark" size={24} color={colors.green} />
         </Reanimated.View>
       )}
 
@@ -2036,11 +2059,9 @@ const styles = StyleSheet.create({
   separatorBar: {
     flex: 1,
     height: 1,
-    backgroundColor: COLORS.separator,
   },
   separatorText: {
     fontSize: 12,
-    color: COLORS.gray,
     fontWeight: '500',
   },
   bottomBar: {
@@ -2062,7 +2083,6 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: COLORS.green,
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000',
@@ -2073,7 +2093,6 @@ const styles = StyleSheet.create({
   },
   startDoneText: {
     fontSize: 20,
-    color: COLORS.white,
   },
   startDoneHint: {
     position: 'absolute',

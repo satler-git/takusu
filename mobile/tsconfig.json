@@ -4,7 +4,8 @@
     "strict": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./*"]
+      "@/*": ["./*"],
+      "@takusu/client": ["../ts/takusu-client/dist/index.d.ts"]
     },
     // Explicitly load only Jest globals here. React and React Native types are
     // provided by their own packages. Add other @types packages if needed.

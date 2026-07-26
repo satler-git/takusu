@@ -28,7 +28,7 @@ import Reanimated, {
   useDerivedValue,
 } from 'react-native-reanimated';
 import * as d3 from 'd3-force';
-import { COLORS, BRAND_COLOR, useColors } from '@/src/theme';
+import { BRAND_COLOR, useColors } from '@/src/theme';
 
 // Paragraph object type from react-native-skia.
 type SkParagraph = NonNullable<ComponentProps<typeof Paragraph>['paragraph']>;
@@ -735,7 +735,7 @@ export function DependencyGraph({
   // Edge color helper: crossing cut line (#382) → red, redundant (#387) → orange,
   // normal → gray
   function edgeColor(key: string, redundant: boolean): string {
-    if (crossingEdges.has(key)) return COLORS.red;
+    if (crossingEdges.has(key)) return colors.red;
     if (redundant) return REDUNDANT_EDGE_COLOR;
     return colors.grayLight ?? '#aaa';
   }
@@ -801,7 +801,7 @@ export function DependencyGraph({
             {/* Cut line (#382) — dashed red line for edge cutting */}
             <Path
               path={cutPath}
-              color={COLORS.red}
+              color={colors.red}
               style="stroke"
               strokeWidth={2}
               opacity={cutActive}
@@ -820,7 +820,7 @@ export function DependencyGraph({
               const bgColor = isDone
                 ? '#ccc'
                 : isHighlight
-                  ? COLORS.red
+                  ? colors.red
                   : (inputNode?.color ?? BRAND_COLOR);
 
               return (
@@ -842,7 +842,7 @@ export function DependencyGraph({
                       cx={node.x}
                       cy={node.y}
                       r={nodeRadius + 2}
-                      color={COLORS.red}
+                      color={colors.red}
                       style="stroke"
                       strokeWidth={2}
                     />

@@ -10,7 +10,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { BRAND_COLOR, COLORS, useColors } from '@/src/theme';
+import { BRAND_COLOR, useColors } from '@/src/theme';
 import { haptic } from '@/src/components/haptics';
 
 interface EditMessageModalProps {
@@ -90,7 +90,7 @@ export function EditMessageModal({
               <Pressable
                 style={[
                   styles.primaryButton,
-                  { backgroundColor: canSave ? BRAND_COLOR : COLORS.grayDark },
+                  { backgroundColor: canSave ? BRAND_COLOR : colors.grayDark },
                 ]}
                 disabled={!canSave}
                 onPress={() => {
@@ -98,7 +98,7 @@ export function EditMessageModal({
                   onSave(value.trim());
                 }}
               >
-                <Text style={{ color: COLORS.white, fontWeight: '700' }}>
+                <Text style={{ color: colors.white, fontWeight: '700' }}>
                   保存
                 </Text>
               </Pressable>

@@ -17,7 +17,7 @@ import { Slider } from '@expo/ui/community/slider';
 import { useServer } from '@/src/api/ServerProvider';
 import { undoRedo } from '@/src/api/undoRedo';
 import { showError } from '@/src/api/errors';
-import { COLORS, BRAND_COLOR, useColors } from '@/src/theme';
+import { BRAND_COLOR, useColors } from '@/src/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RruleBuilderModal } from '@/src/components/RruleBuilderModal';
 import { DateTimePickerModal } from '@/src/components/DateTimePickerModal';
@@ -154,12 +154,12 @@ export function HabitAddView() {
         <Pressable
           style={[
             styles.saveButton,
-            (!title || saving) && styles.saveButtonDisabled,
+            (!title || saving) && { backgroundColor: colors.grayDark },
           ]}
           onPress={create}
           disabled={!title || saving}
         >
-          <Text style={styles.saveButtonText}>
+          <Text style={[styles.saveButtonText, { color: colors.white }]}>
             {saving ? '保存中…' : '追加'}
           </Text>
         </Pressable>
@@ -510,11 +510,7 @@ const styles = StyleSheet.create({
     backgroundColor: BRAND_COLOR,
     borderRadius: 8,
   },
-  saveButtonDisabled: {
-    backgroundColor: COLORS.grayDark,
-  },
   saveButtonText: {
-    color: COLORS.white,
     fontSize: 14,
     fontWeight: '600',
   },

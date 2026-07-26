@@ -24,7 +24,7 @@ import Reanimated, {
 import { Ionicons } from '@expo/vector-icons';
 import type { TaskRow } from '@/src/api/types';
 import { parseDepends } from '@/src/api/types';
-import { taskCardColor, BRAND_COLOR, COLORS, useTheme } from '@/src/theme';
+import { taskCardColor, BRAND_COLOR, useTheme } from '@/src/theme';
 import { haptic } from '@/src/components/haptics';
 
 interface TaskCardProps {
@@ -218,11 +218,11 @@ function TaskCardImpl({
         ? 'checkmark'
         : 'play';
   const doneColor = isDone
-    ? COLORS.red
+    ? colors.red
     : isPending
-      ? COLORS.green
+      ? colors.green
       : isInProgress
-        ? COLORS.green
+        ? colors.green
         : BRAND_COLOR;
 
   const handlePress = () => {
@@ -258,7 +258,7 @@ function TaskCardImpl({
         style={[styles.doneBg, { backgroundColor: doneColor }, doneBgStyle]}
         pointerEvents="none"
       >
-        <Ionicons name={doneIcon} size={28} color={COLORS.white} />
+        <Ionicons name={doneIcon} size={28} color={colors.white} />
       </Reanimated.View>
       {/* #1044: revealed skip/delete action panel */}
       {ACTION_PANEL_WIDTH > 0 && (
@@ -268,7 +268,7 @@ function TaskCardImpl({
         >
           {onSkip && !isDone && (
             <Pressable
-              style={[styles.actionButton, { backgroundColor: COLORS.gray }]}
+              style={[styles.actionButton, { backgroundColor: colors.gray }]}
               onPress={() => {
                 haptic.warning();
                 actionsRevealedSV.value = false;
@@ -280,13 +280,13 @@ function TaskCardImpl({
               <Ionicons
                 name="play-skip-forward-outline"
                 size={24}
-                color={COLORS.white}
+                color={colors.white}
               />
             </Pressable>
           )}
           {onDelete && (
             <Pressable
-              style={[styles.actionButton, { backgroundColor: COLORS.red }]}
+              style={[styles.actionButton, { backgroundColor: colors.red }]}
               onPress={() => {
                 haptic.medium();
                 actionsRevealedSV.value = false;
@@ -295,7 +295,7 @@ function TaskCardImpl({
                 onDelete(task);
               }}
             >
-              <Ionicons name="trash" size={24} color={COLORS.white} />
+              <Ionicons name="trash" size={24} color={colors.white} />
             </Pressable>
           )}
         </View>

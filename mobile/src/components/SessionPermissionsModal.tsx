@@ -6,7 +6,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { BRAND_COLOR, COLORS, useColors } from '@/src/theme';
+import { BRAND_COLOR, useColors } from '@/src/theme';
 import type { PermissionsMap } from '@/src/api/settingsStore';
 import { PermissionsEditor } from '@/src/components/PermissionsEditor';
 
@@ -48,7 +48,9 @@ export function SessionPermissionsModal({
             onPress={onClose}
             style={[styles.close, { backgroundColor: BRAND_COLOR }]}
           >
-            <Text style={styles.closeText}>閉じる</Text>
+            <Text style={[styles.closeText, { color: colors.white }]}>
+              閉じる
+            </Text>
           </Pressable>
         </View>
       </View>
@@ -89,5 +91,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  closeText: { color: COLORS.white, fontWeight: '700' },
+  closeText: { fontWeight: '700' },
 });

@@ -19,7 +19,7 @@ import { useServer } from '@/src/api/ServerProvider';
 import { undoRedo } from '@/src/api/undoRedo';
 import { showError } from '@/src/api/errors';
 import type { TaskRow } from '@/src/api/types';
-import { COLORS, BRAND_COLOR, useColors } from '@/src/theme';
+import { BRAND_COLOR, useColors } from '@/src/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DateTimePickerModal } from '@/src/components/DateTimePickerModal';
 import { haptic } from '@/src/components/haptics';
@@ -183,12 +183,14 @@ export function TaskAddView({
         <Pressable
           style={[
             styles.saveButton,
-            (!title || !endAt || saving) && styles.saveButtonDisabled,
+            (!title || !endAt || saving) && {
+              backgroundColor: colors.grayDark,
+            },
           ]}
           onPress={create}
           disabled={!title || !endAt || saving}
         >
-          <Text style={styles.saveButtonText}>
+          <Text style={[styles.saveButtonText, { color: colors.white }]}>
             {saving ? '保存中…' : '追加'}
           </Text>
         </Pressable>
@@ -507,12 +509,14 @@ export function TaskAddView({
               <Pressable
                 style={[
                   styles.icalImportButton,
-                  (!icalText.trim() || importing) && styles.saveButtonDisabled,
+                  (!icalText.trim() || importing) && {
+                    backgroundColor: colors.grayDark,
+                  },
                 ]}
                 onPress={importIcal}
                 disabled={!icalText.trim() || importing}
               >
-                <Text style={styles.saveButtonText}>
+                <Text style={[styles.saveButtonText, { color: colors.white }]}>
                   {importing ? 'インポート中…' : 'iCalをインポート'}
                 </Text>
               </Pressable>
@@ -535,8 +539,10 @@ export function TaskAddView({
                 setShowDepPicker(true);
               }}
             >
-              <Ionicons name="add" size={16} color={COLORS.white} />
-              <Text style={styles.addDepButtonText}>追加</Text>
+              <Ionicons name="add" size={16} color={colors.white} />
+              <Text style={[styles.addDepButtonText, { color: colors.white }]}>
+                追加
+              </Text>
             </Pressable>
           </View>
           {selectedDeps.map((depId) => {
@@ -560,7 +566,7 @@ export function TaskAddView({
                     setSelectedDeps(selectedDeps.filter((d) => d !== depId));
                   }}
                 >
-                  <Ionicons name="close" size={18} color={COLORS.red} />
+                  <Ionicons name="close" size={18} color={colors.red} />
                 </Pressable>
               </View>
             );
@@ -757,11 +763,7 @@ const styles = StyleSheet.create({
     backgroundColor: BRAND_COLOR,
     borderRadius: 8,
   },
-  saveButtonDisabled: {
-    backgroundColor: COLORS.grayDark,
-  },
   saveButtonText: {
-    color: COLORS.white,
     fontSize: 14,
     fontWeight: '600',
   },
@@ -876,7 +878,6 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   addDepButtonText: {
-    color: COLORS.white,
     fontSize: 13,
   },
   depItem: {

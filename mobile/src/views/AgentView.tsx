@@ -95,7 +95,7 @@ import { MessageContextMenu } from '@/src/components/MessageContextMenu';
 import { SessionPermissionsModal } from '@/src/components/SessionPermissionsModal';
 import { ToolCallDetailModal } from '@/src/components/ToolCallDetailModal';
 import { haptic } from '@/src/components/haptics';
-import { BRAND_COLOR, COLORS, useColors, type ColorSet } from '@/src/theme';
+import { BRAND_COLOR, useColors, type ColorSet } from '@/src/theme';
 import type { PermissionsMap } from '@/src/api/settingsStore';
 
 function newId(prefix: string): string {
@@ -363,7 +363,9 @@ function ToolCallCard({
       </Text>
       {rejected && (
         <View style={[styles.rejectedBadge, { backgroundColor: colors.red }]}>
-          <Text style={styles.rejectedBadgeText}>拒否</Text>
+          <Text style={[styles.rejectedBadgeText, { color: colors.white }]}>
+            拒否
+          </Text>
         </View>
       )}
     </>
@@ -861,6 +863,7 @@ const UserMessage = memo(function UserMessageImpl({
   message,
   onLongPress,
 }: UserMessageProps) {
+  const colors = useColors();
   const handleLongPress = (event: {
     nativeEvent: { pageX?: number; pageY?: number };
   }) => {
@@ -879,7 +882,7 @@ const UserMessage = memo(function UserMessageImpl({
       ]}
       onLongPress={handleLongPress}
     >
-      <Text style={{ color: COLORS.white }}>{message.text}</Text>
+      <Text style={{ color: colors.white }}>{message.text}</Text>
     </Pressable>
   );
 });
@@ -2734,7 +2737,11 @@ export function AgentView() {
                 }
                 style={[styles.userInputButton, styles.userInputPrimary]}
               >
-                <Text style={styles.userInputPrimaryText}>確定</Text>
+                <Text
+                  style={[styles.userInputPrimaryText, { color: colors.white }]}
+                >
+                  確定
+                </Text>
               </Pressable>
             </View>
           </View>
@@ -2846,9 +2853,11 @@ export function AgentView() {
             style={styles.send}
           >
             {busy ? (
-              <ActivityIndicator color={COLORS.white} />
+              <ActivityIndicator color={colors.white} />
             ) : (
-              <Text style={styles.sendText}>送信</Text>
+              <Text style={[styles.sendText, { color: colors.white }]}>
+                送信
+              </Text>
             )}
           </Pressable>
         </View>
@@ -3025,7 +3034,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   rejectedBadgeText: {
-    color: COLORS.white,
     fontSize: 10,
     fontWeight: '700',
   },
@@ -3068,7 +3076,7 @@ const styles = StyleSheet.create({
   userInputSecondary: { borderWidth: 1, borderColor: '#B33A3A' },
   userInputSecondaryText: { color: '#B33A3A', fontWeight: '700' },
   userInputPrimary: { backgroundColor: BRAND_COLOR },
-  userInputPrimaryText: { color: COLORS.white, fontWeight: '700' },
+  userInputPrimaryText: { fontWeight: '700' },
   error: { color: '#B33A3A', paddingHorizontal: 16, paddingBottom: 8 },
   switcher: {
     flexDirection: 'row',
@@ -3107,7 +3115,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  sendText: { color: COLORS.white, fontWeight: '700' },
+  sendText: { fontWeight: '700' },
 });
 
 export default AgentView;
