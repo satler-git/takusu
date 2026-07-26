@@ -143,6 +143,7 @@ class TakusuWidgetProvider : AppWidgetProvider() {
                     WidgetSize.W2x1 -> R.layout.takusu_widget_2x1
                 }
             val views = RemoteViews(context.packageName, layout)
+            WidgetTheme.apply(context, views)
 
             when (size) {
                 WidgetSize.W4x2 -> render4x2(context, views, snapshot, updatedAt, widgetId, zone, scheme)

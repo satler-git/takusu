@@ -190,6 +190,13 @@
             inherit src;
             strictDeps = true;
             pname = "takusu-deps";
+            # takusu-audio pulls in lindera-ipadic, which downloads a dictionary
+            # at build time. Provide it offline so the deps build succeeds.
+            preBuild = ''
+              export LINDERA_DICTIONARIES_PATH="$NIX_BUILD_TOP/lindera-dicts"
+              mkdir -p "$LINDERA_DICTIONARIES_PATH/4.0.1"
+              cp --no-preserve=mode "${linderaIpadicDict}/4.0.1/mecab-ipadic-2.7.0-20250920.tar.gz" "$LINDERA_DICTIONARIES_PATH/4.0.1/"
+            '';
             nativeBuildInputs = with pkgs; [
               pkg-config
               cmake
@@ -369,6 +376,17 @@
             meta.mainProgram = "takusu-web";
           };
 
+          # Pre-fetched Lindera IPAdic dictionary source. lindera-ipadic's build
+          # script downloads this tarball, which fails in the Nix sandbox because
+          # no CA certificates are loaded. We provide it via LINDERA_DICTIONARIES_PATH.
+          linderaIpadicDict = pkgs.runCommand "lindera-ipadic-dict" { } ''
+            mkdir -p $out/4.0.1
+            cp ${pkgs.fetchurl {
+              url = "https://Lindera.dev/mecab-ipadic-2.7.0-20250920.tar.gz";
+              hash = "sha256-p7qfZF/+cJTlauHEqB0QDfj7seKLvheSYi6XKOFi2z0=";
+            }} $out/4.0.1/mecab-ipadic-2.7.0-20250920.tar.gz
+          '';
+
           # Cross-compile takusu-android .so for a list of Android targets.
           # Uses crane only for cargo registry vendoring (no network needed in
           # the Nix sandbox). We can't use crane's buildDepsOnly because it
@@ -416,6 +434,14 @@
 
               # Don't run tests — cross-compiled binaries can't execute on host.
               doCheck = false;
+
+              # lindera-ipadic tries to download its dictionary at build time.
+              # Provide the pre-fetched tarball so the build succeeds offline.
+              preBuild = ''
+                export LINDERA_DICTIONARIES_PATH="$NIX_BUILD_TOP/lindera-dicts"
+                mkdir -p "$LINDERA_DICTIONARIES_PATH/4.0.1"
+                cp --no-preserve=mode "${linderaIpadicDict}/4.0.1/mecab-ipadic-2.7.0-20250920.tar.gz" "$LINDERA_DICTIONARIES_PATH/4.0.1/"
+              '';
 
               # Override the default configurePhase (which would try to run
               # cmake since it's in nativeBuildInputs). We only need to set up
@@ -479,6 +505,13 @@
             inherit src cargoArtifacts version;
             pname = "uniffi-bindgen";
             cargoExtraArgs = "-p takusu-android --features bindgen --bin uniffi-bindgen";
+            # takusu-android pulls in takusu-audio -> lindera-ipadic, which
+            # downloads a dictionary at build time. Provide it offline.
+            preBuild = ''
+              export LINDERA_DICTIONARIES_PATH="$NIX_BUILD_TOP/lindera-dicts"
+              mkdir -p "$LINDERA_DICTIONARIES_PATH/4.0.1"
+              cp --no-preserve=mode "${linderaIpadicDict}/4.0.1/mecab-ipadic-2.7.0-20250920.tar.gz" "$LINDERA_DICTIONARIES_PATH/4.0.1/"
+            '';
             nativeBuildInputs = with pkgs; [
               pkg-config
               cmake

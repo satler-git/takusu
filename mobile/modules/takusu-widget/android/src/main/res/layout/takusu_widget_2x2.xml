@@ -14,16 +14,15 @@
     android:gravity="center_vertical"
     android:orientation="horizontal">
 
-    <TextView
+    <ImageView
       android:id="@+id/widget_brand_icon"
       android:layout_width="16dp"
       android:layout_height="16dp"
       android:background="@drawable/brand_icon_bg"
-      android:gravity="center"
-      android:text="t"
-      android:textColor="@color/takusu_widget_white"
-      android:textSize="9sp"
-      android:textStyle="bold" />
+      android:padding="2dp"
+      android:scaleType="fitCenter"
+      android:src="@drawable/ic_takusu_widget_logo"
+      android:tint="@color/takusu_widget_brand" />
 
     <TextView
       android:id="@+id/widget_brand_name"

@@ -16,4 +16,13 @@
   <color name="takusu_widget_caution">#F5A97F</color>
   <color name="takusu_widget_calm">#A6DA95</color>
   <color name="takusu_widget_white">#FFFFFF</color>
+
+  <!-- Theme-aware brand icon foreground colors. These mirror the app icon foregrounds in takusu-app-icon. -->
+  <color name="takusu_widget_logo_dark">#9B8BC4</color>
+
+  <!-- Theme-aware brand icon background colors. These mirror the app icon backgrounds in takusu-app-icon. -->
+  <color name="takusu_widget_brand_icon_bg_light">#FFFFFF</color>
+  <color name="takusu_widget_brand_icon_bg_dark">#15131C</color>
+  <color name="takusu_widget_brand_icon_bg_catppuccin">#24273A</color>
+  <color name="takusu_widget_brand_icon_bg_aura_soft_dark">#141414</color>
 </resources>
