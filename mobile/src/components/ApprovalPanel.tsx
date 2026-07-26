@@ -1274,8 +1274,7 @@ const styles = StyleSheet.create({
   },
   panelHeader: { gap: 12 },
   panelBody: {
-    flexGrow: 0,
-    flexShrink: 1,
+    flex: 1,
   },
   panelBodyContent: {
     flexGrow: 0,

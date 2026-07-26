@@ -28,6 +28,7 @@ export function EditMessageModal({
 }: EditMessageModalProps) {
   const colors = useColors();
   const [value, setValue] = useState(text);
+  const canSave = value.trim().length > 0;
 
   useEffect(() => {
     setValue(text);
@@ -49,22 +50,31 @@ export function EditMessageModal({
             <Text style={[styles.title, { color: colors.black }]}>
               メッセージを編集
             </Text>
-            <TextInput
+            <View
               style={[
-                styles.input,
+                styles.inputContainer,
                 {
-                  color: colors.black,
-                  borderColor: colors.separator,
                   backgroundColor: colors.surface,
+                  borderColor: colors.separator,
                 },
               ]}
-              value={value}
-              onChangeText={setValue}
-              multiline
-              autoFocus
-              textAlignVertical="top"
-              selectionColor={BRAND_COLOR}
-            />
+            >
+              <TextInput
+                style={[
+                  styles.input,
+                  {
+                    color: colors.black,
+                  },
+                ]}
+                value={value}
+                onChangeText={setValue}
+                multiline
+                autoFocus
+                textAlignVertical="top"
+                selectionColor={BRAND_COLOR}
+                underlineColorAndroid="transparent"
+              />
+            </View>
             <View style={styles.actions}>
               <Pressable
                 style={styles.secondaryButton}
@@ -78,8 +88,11 @@ export function EditMessageModal({
                 </Text>
               </Pressable>
               <Pressable
-                style={[styles.primaryButton, { backgroundColor: BRAND_COLOR }]}
-                disabled={!value.trim()}
+                style={[
+                  styles.primaryButton,
+                  { backgroundColor: canSave ? BRAND_COLOR : COLORS.grayDark },
+                ]}
+                disabled={!canSave}
                 onPress={() => {
                   haptic.success();
                   onSave(value.trim());
@@ -121,15 +134,20 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
   },
-  input: {
-    minHeight: 120,
-    maxHeight: 240,
+  inputContainer: {
+    width: '100%',
     borderWidth: 1,
     borderRadius: 12,
+    overflow: 'hidden',
+  },
+  input: {
+    width: '100%',
+    height: 120,
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 15,
     textAlignVertical: 'top',
+    backgroundColor: 'transparent',
   },
   actions: {
     flexDirection: 'row',
