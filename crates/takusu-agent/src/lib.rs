@@ -1413,22 +1413,53 @@ impl AgentSession {
         let abandonability = require_optional_f64("abandonability")?;
         let fixed = require_optional_bool("fixed")?;
 
-        let depends_on_positions = obj
-            .get("depends_on")
-            .and_then(Value::as_array)
-            .map(|arr| {
-                arr.iter()
-                    .map(|v| {
-                        v.as_i64().ok_or_else(|| {
-                            AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
-                                "steps",
-                                "depends_on must contain integers",
-                            )))
-                        })
+        let depends_on_positions = match obj.get("depends_on") {
+            None | Some(Value::Null) => Vec::new(),
+            Some(Value::Array(arr)) => arr
+                .iter()
+                .map(|v| {
+                    v.as_i64().ok_or_else(|| {
+                        AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
+                            "steps",
+                            "depends_on must contain integers",
+                        )))
                     })
-                    .collect::<Result<Vec<_>, _>>()
-            })
-            .unwrap_or(Ok(Vec::new()))?;
+                })
+                .collect::<Result<Vec<_>, _>>()?,
+            Some(_) => {
+                return Err(AgentError::Tool(ToolError::InvalidArgs(
+                    InvalidArgsError::new("steps", "depends_on must be an array"),
+                )))
+            }
+        };
+
+        // Reject keys not declared in the step schema to match
+        // `additionalProperties: false`.
+        const KNOWN_KEYS: &[&str] = &[
+            "position",
+            "title",
+            "description",
+            "start_time",
+            "end_time",
+            "avg_minutes",
+            "sigma_minutes",
+            "parallelizable",
+            "allows_parallel",
+            "abandonability",
+            "fixed",
+            "depends_on",
+        ];
+        for key in obj.keys() {
+            if !KNOWN_KEYS.contains(&key.as_str()) {
+                return Err(AgentError::Tool(ToolError::InvalidArgs(
+                    InvalidArgsError::new(
+                        "steps",
+                        format!("unknown step field '{key}'"),
+                    ),
+                )));
+            }
+        }
+
         Ok(PendingHabitStep {
             position,
             title,
@@ -1500,7 +1531,8 @@ impl AgentSession {
             }
             stack.insert(node);
             path.push(node);
-            for next in adj.get(&node).unwrap_or(&Vec::new()) {
+            let neighbors = adj.get(&node).map(|v| v.as_slice()).unwrap_or(&[]);
+            for next in neighbors {
                 if let Some(cycle) = dfs(*next, adj, visited, stack, path) {
                     return Some(cycle);
                 }
@@ -1518,6 +1550,43 @@ impl AgentSession {
             }
         }
         None
+    }
+
+    /// Build phase 2 inputs from the server response to a phase 1 save.
+    /// Returns `None` when no phase 2 is needed, otherwise `Some(Ok(...))` or
+    /// an error if the response does not contain every submitted position.
+    /// The server may return rows in any order, so mapping uses `row.position`.
+    fn phase2_inputs_for_response(
+        pending: &[PendingHabitStep],
+        phase1_position_to_id: &HashMap<i64, String>,
+        response_rows: &[takusu_client::HabitStepRow],
+    ) -> Option<Result<Vec<HabitStepInput>, AgentError>> {
+        let needs_phase2 = pending.iter().any(|s| {
+            s.depends_on_positions
+                .iter()
+                .any(|pos| !phase1_position_to_id.contains_key(pos))
+        });
+        if !needs_phase2 {
+            return None;
+        }
+
+        let mut phase2_position_to_id: HashMap<i64, String> = HashMap::new();
+        for row in response_rows {
+            phase2_position_to_id.insert(row.position + 1, row.id.clone());
+        }
+
+        for s in pending {
+            if !phase2_position_to_id.contains_key(&s.position) {
+                return Some(Err(AgentError::Tool(ToolError::Other(
+                    "server did not return all submitted steps".into(),
+                ))));
+            }
+        }
+
+        Some(Ok(Self::build_habit_step_inputs(
+            pending,
+            &phase2_position_to_id,
+        )))
     }
 
     /// Bulk-replace habit steps from agent-facing input. Positions are
@@ -1607,40 +1676,17 @@ impl AgentSession {
             .await
             .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
 
-        // The server returns rows ordered by position, so build the final
-        // position -> real id map from each row's stored position rather than
-        // assuming input order.
-        let mut phase2_position_to_id: HashMap<i64, String> = HashMap::new();
-        for row in result {
-            phase2_position_to_id.insert(row.position + 1, row.id);
+        if let Some(phase2) = Self::phase2_inputs_for_response(
+            &pending,
+            &phase1_position_to_id,
+            &result,
+        ) {
+            let phase2 = phase2?;
+            self.client
+                .replace_habit_steps(habit_id, &phase2)
+                .await
+                .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
         }
-
-        // Detect any depends_on that targets a position whose id was not known
-        // in phase1. This includes new->new and existing->new dependencies.
-        let needs_phase2 = pending.iter().any(|s| {
-            s.depends_on_positions
-                .iter()
-                .any(|pos| !phase1_position_to_id.contains_key(pos))
-        });
-        if !needs_phase2 {
-            return Ok(());
-        }
-
-        // Validate all submitted positions were returned; otherwise mapping is
-        // incomplete and phase2 would lose steps.
-        for s in &pending {
-            if !phase2_position_to_id.contains_key(&s.position) {
-                return Err(AgentError::Tool(ToolError::Other(
-                    "server did not return all submitted steps".into(),
-                )));
-            }
-        }
-
-        let phase2 = Self::build_habit_step_inputs(&pending, &phase2_position_to_id);
-        self.client
-            .replace_habit_steps(habit_id, &phase2)
-            .await
-            .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
         Ok(())
     }
 
@@ -3771,5 +3817,157 @@ mod tests {
         let positions = vec![1, 2, 3];
         let edges = vec![(1, 2), (1, 3)];
         assert!(AgentSession::detect_step_dependency_cycle(&positions, &edges).is_none());
+    }
+
+    #[test]
+    fn parse_habit_step_rejects_non_array_depends_on() {
+        let value = json!({
+            "position": 1,
+            "title": "warmup",
+            "start_time": "08:00",
+            "end_time": "08:15",
+            "avg_minutes": 15,
+            "depends_on": "1",
+        });
+        let err = AgentSession::parse_habit_step(&value).unwrap_err();
+        assert!(format!("{err}").contains("depends_on must be an array"));
+    }
+
+    #[test]
+    fn parse_habit_step_rejects_unknown_fields() {
+        let value = json!({
+            "position": 1,
+            "title": "warmup",
+            "start_time": "08:00",
+            "end_time": "08:15",
+            "avg_minutes": 15,
+            "unknown_field": true,
+        });
+        let err = AgentSession::parse_habit_step(&value).unwrap_err();
+        assert!(format!("{err}").contains("unknown step field 'unknown_field'"));
+    }
+
+    fn habit_step_row(id: &str, position: i64) -> takusu_client::HabitStepRow {
+        takusu_client::HabitStepRow {
+            id: id.into(),
+            habit_id: "habit-1".into(),
+            position,
+            title: "step".into(),
+            description: None,
+            start_time: "08:00".into(),
+            end_time: "08:15".into(),
+            avg_minutes: 15,
+            sigma_minutes: 3,
+            parallelizable: false,
+            allows_parallel: false,
+            abandonability: 0.5,
+            fixed: false,
+            depends_on: "[]".into(),
+            created_at: "2026-01-01T00:00:00Z".into(),
+        }
+    }
+
+    #[test]
+    fn phase2_inputs_for_response_returns_none_when_all_deps_are_existing() {
+        let steps = vec![PendingHabitStep {
+            position: 1,
+            title: "a".into(),
+            description: None,
+            start_time: "08:00".into(),
+            end_time: "08:15".into(),
+            avg_minutes: 15,
+            sigma_minutes: None,
+            parallelizable: None,
+            allows_parallel: None,
+            abandonability: None,
+            fixed: None,
+            depends_on_positions: vec![],
+        }];
+        let phase1_map: HashMap<i64, String> = [(1, "existing-1".into())].into();
+        let response = vec![habit_step_row("real-1", 0)];
+        assert!(AgentSession::phase2_inputs_for_response(&steps, &phase1_map, &response).is_none());
+    }
+
+    #[test]
+    fn phase2_inputs_for_response_resolves_new_step_ids_and_deps_in_any_order() {
+        let steps = vec![
+            PendingHabitStep {
+                position: 2,
+                title: "b".into(),
+                description: None,
+                start_time: "08:15".into(),
+                end_time: "08:30".into(),
+                avg_minutes: 15,
+                sigma_minutes: None,
+                parallelizable: None,
+                allows_parallel: None,
+                abandonability: None,
+                fixed: None,
+                depends_on_positions: vec![1],
+            },
+            PendingHabitStep {
+                position: 1,
+                title: "a".into(),
+                description: None,
+                start_time: "08:00".into(),
+                end_time: "08:15".into(),
+                avg_minutes: 15,
+                sigma_minutes: None,
+                parallelizable: None,
+                allows_parallel: None,
+                abandonability: None,
+                fixed: None,
+                depends_on_positions: vec![],
+            },
+        ];
+        let phase1_map: HashMap<i64, String> = HashMap::new();
+        let response = vec![
+            habit_step_row("real-1", 0),
+            habit_step_row("real-2", 1),
+        ];
+        let phase2 = AgentSession::phase2_inputs_for_response(&steps, &phase1_map, &response)
+            .unwrap()
+            .unwrap();
+        assert_eq!(phase2[0].id, Some("real-2".into()));
+        assert_eq!(phase2[0].depends_on, vec!["real-1".to_string()]);
+        assert_eq!(phase2[1].id, Some("real-1".into()));
+    }
+
+    #[test]
+    fn phase2_inputs_for_response_errors_when_a_position_is_missing() {
+        let steps = vec![
+            PendingHabitStep {
+                position: 1,
+                title: "a".into(),
+                description: None,
+                start_time: "08:00".into(),
+                end_time: "08:15".into(),
+                avg_minutes: 15,
+                sigma_minutes: None,
+                parallelizable: None,
+                allows_parallel: None,
+                abandonability: None,
+                fixed: None,
+                depends_on_positions: vec![2],
+            },
+            PendingHabitStep {
+                position: 2,
+                title: "b".into(),
+                description: None,
+                start_time: "08:15".into(),
+                end_time: "08:30".into(),
+                avg_minutes: 15,
+                sigma_minutes: None,
+                parallelizable: None,
+                allows_parallel: None,
+                abandonability: None,
+                fixed: None,
+                depends_on_positions: vec![],
+            },
+        ];
+        let phase1_map: HashMap<i64, String> = HashMap::new();
+        let response = vec![habit_step_row("real-1", 0)];
+        let result = AgentSession::phase2_inputs_for_response(&steps, &phase1_map, &response);
+        assert!(result.unwrap().is_err());
     }
 }

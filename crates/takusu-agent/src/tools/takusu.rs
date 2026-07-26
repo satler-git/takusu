@@ -669,18 +669,18 @@ fn habit_json(habit: &HabitDetail) -> Value {
     value.insert("title".into(), json!(habit.habit.title));
     value.insert("description".into(), json!(habit.habit.description));
     value.insert("recurrence".into(), json!(habit.habit.recurrence));
-    // When a habit has steps, the habit-level time/cost fields are ignored by
-    // the scheduler in favor of the per-step values, so omit them to avoid
-    // misleading the agent (#1084).
+    // When a habit has steps, the scheduler uses per-step values for timing,
+    // cost, and behavioral flags, so omit the habit-level fields that would
+    // otherwise be ignored to avoid misleading the agent (#1084).
     if !has_steps {
         value.insert("start_time".into(), json!(habit.habit.start_time));
         value.insert("end_time".into(), json!(habit.habit.end_time));
         value.insert("avg_minutes".into(), json!(habit.habit.avg_minutes));
         value.insert("sigma_minutes".into(), json!(habit.habit.sigma_minutes));
+        value.insert("parallelizable".into(), json!(habit.habit.parallelizable));
+        value.insert("allows_parallel".into(), json!(habit.habit.allows_parallel));
+        value.insert("abandonability".into(), json!(habit.habit.abandonability));
     }
-    value.insert("parallelizable".into(), json!(habit.habit.parallelizable));
-    value.insert("allows_parallel".into(), json!(habit.habit.allows_parallel));
-    value.insert("abandonability".into(), json!(habit.habit.abandonability));
     value.insert("active".into(), json!(habit.habit.active));
     value.insert("fixed".into(), json!(habit.habit.fixed));
     value.insert("window_mode".into(), json!(habit.habit.window_mode));
@@ -2221,11 +2221,15 @@ mod tests {
         assert!(value.get("id").is_none());
         assert_eq!(value["display_id"], 7);
         assert_eq!(value["reference"], "h7");
-        // Habits with steps ignore top-level time/cost fields (#1084).
+        // Habits with steps ignore top-level fields that the scheduler takes
+        // from each step instead (#1084).
         assert!(value.get("start_time").is_none());
         assert!(value.get("end_time").is_none());
         assert!(value.get("avg_minutes").is_none());
         assert!(value.get("sigma_minutes").is_none());
+        assert!(value.get("parallelizable").is_none());
+        assert!(value.get("allows_parallel").is_none());
+        assert!(value.get("abandonability").is_none());
 
         let steps = value["steps"].as_array().unwrap();
         assert_eq!(steps.len(), 1);
@@ -2234,7 +2238,7 @@ mod tests {
     }
 
     #[test]
-    fn habit_json_includes_time_fields_when_no_steps() {
+    fn habit_json_includes_habit_level_fields_when_no_steps() {
         let habit = habit_row("habit-uuid", 7, "habit");
         let detail = HabitDetail {
             habit,
@@ -2246,6 +2250,9 @@ mod tests {
         assert!(value.get("end_time").is_some());
         assert!(value.get("avg_minutes").is_some());
         assert!(value.get("sigma_minutes").is_some());
+        assert!(value.get("parallelizable").is_some());
+        assert!(value.get("allows_parallel").is_some());
+        assert!(value.get("abandonability").is_some());
     }
 
     #[test]
