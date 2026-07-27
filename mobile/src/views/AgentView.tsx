@@ -1337,7 +1337,9 @@ export function AgentView() {
       autoScrollRef.current = true;
       markSessionJustLoaded();
       setMessages(snapshot?.messages ?? []);
-      setApproval(snapshot?.approval ?? null);
+      // Approval state is synced from the server after activation so we do not
+      // show a stale approval from the local snapshot.
+      setApproval(null);
       sessionIdRef.current = id;
       setText('');
       setSessionIds(ids);
@@ -1589,20 +1591,6 @@ export function AgentView() {
           const newActiveId = trimmed[trimmedIndex];
           await activateSessionId(newActiveId, false);
           if (cancelled) return;
-          try {
-            const pending = await client.getApproval(newActiveId);
-            if (cancelled) return;
-            setApproval(pending);
-          } catch (e) {
-            if (e instanceof AgentApiError && e.status === 404) {
-              // The server session no longer exists, but keep the local snapshot
-              // so the history remains visible and swipable. Clear any stale
-              // pending approval because it can no longer be resolved.
-              setApproval(null);
-            } else {
-              throw e;
-            }
-          }
         }
 
         if (!cancelled) setHistoryReady(true);
@@ -1626,6 +1614,40 @@ export function AgentView() {
     setPendingSessionId,
     activateSessionId,
   ]);
+
+  // Sync the pending approval with the server whenever the active session
+  // changes. This avoids showing a stale approval from the local snapshot
+  // and prevents `approval_id: not found` when the user presses approve.
+  useEffect(() => {
+    if (!historyReady) return;
+    const sessionId = sessionIdRef.current;
+    if (!sessionId) return;
+    const activeSessionId = sessionId;
+
+    let cancelled = false;
+    async function syncApproval() {
+      try {
+        const pending = await client.getApproval(activeSessionId);
+        if (cancelled || sessionIdRef.current !== activeSessionId) return;
+        setApproval(pending);
+      } catch (e) {
+        if (cancelled || sessionIdRef.current !== activeSessionId) return;
+        if (e instanceof AgentApiError && e.status === 404) {
+          // The server session no longer exists; clear any stale approval
+          // because it can no longer be resolved.
+          setApproval(null);
+        } else {
+          console.error('Failed to sync approval:', e);
+        }
+      }
+    }
+
+    syncApproval();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [historyReady, activeIndex, client]);
 
   useEffect(() => {
     if (!historyReady) return;
@@ -2551,28 +2573,7 @@ export function AgentView() {
           permissions: sessionPermissionsRef.current,
         }).catch(() => {});
       }
-      const snapshot = (await loadSessionSnapshot(nextId)) ?? {
-        messages: [],
-        approval: null,
-      };
-      const perms = snapshot.permissions ?? {};
-      setSessionPermissions(perms);
-      sessionPermissionsRef.current = perms;
-      sessionIdRef.current = nextId;
-      setActiveIndex(nextIndex);
-      activeIndexRef.current = nextIndex;
-      setText('');
-      autoScrollRef.current = true;
-      markSessionJustLoaded();
-      setMessages(snapshot.messages);
-      setApproval(snapshot.approval);
-      if (Object.keys(perms).length > 0) {
-        client.updateSessionSettings(nextId, perms).catch(() => {});
-      }
-      saveSessionHistory({
-        ids: sessionIdsRef.current,
-        activeIndex: nextIndex,
-      }).catch(() => {});
+      await activateSessionId(nextId, false);
       resetToCenter();
     } catch (e: unknown) {
       void showError(e, 'エラー');
