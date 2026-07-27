@@ -4,7 +4,10 @@ use takusu_client::{Client, CreateMemory, MemoryQuery, MemoryRow, SimilarTaskQue
 use takusu_util::{MemoryKind, SubjectType};
 
 use crate::tools::takusu::required_i64;
-use crate::{InvalidArgsError, Tool, ToolError, ToolExposure, ToolOutput};
+use crate::{
+    ChangeOperation, InvalidArgsError, ProposedChange, Target, TargetKind, Tool, ToolError,
+    ToolExposure, ToolOutput,
+};
 
 fn object(args: Value) -> Result<serde_json::Map<String, Value>, ToolError> {
     args.as_object()
@@ -81,8 +84,8 @@ fn memory_json(row: &MemoryRow) -> Value {
 
 #[allow(clippy::too_many_arguments)]
 fn make_proposal(
-    operation: &str,
-    target_label: &str,
+    operation: ChangeOperation,
+    target: &Target,
     description: &str,
     before: Option<Value>,
     after: Option<Value>,
@@ -92,9 +95,9 @@ fn make_proposal(
     why: Option<String>,
     warnings: Vec<String>,
 ) -> ToolOutput {
-    let proposal = crate::ProposedChange {
-        operation: operation.to_owned(),
-        target_label: target_label.to_owned(),
+    let proposal = ProposedChange {
+        operation,
+        target: target.clone(),
         description: description.to_owned(),
         before,
         after,
@@ -104,7 +107,7 @@ fn make_proposal(
     ToolOutput {
         content: serde_json::to_string(&json!({
             "approval_required": true,
-            "target": proposal.target_label,
+            "target": proposal.target.to_string(),
         }))
         .unwrap(),
         why,
@@ -304,7 +307,6 @@ impl Tool for MemorySave {
             execution_args.extend(map);
         }
 
-        let target_label = format!("memory {key}");
         let description = format!("save {kind} memory \"{key}\"");
         let why = optional_string(&args, "why")?;
         let warnings = args
@@ -345,8 +347,8 @@ impl Tool for MemorySave {
         });
 
         Ok(make_proposal(
-            "create",
-            &target_label,
+            ChangeOperation::Create,
+            &Target::new(TargetKind::Memory, key.as_str()),
             &description,
             None,
             Some(after),
@@ -411,7 +413,6 @@ impl Tool for MemoryUpdate {
         }
         execution_args.insert("memory_ref".into(), Value::String(memory_ref.clone()));
 
-        let target_label = format!("memory {memory_ref}");
         let description = format!("update memory \"{}\"", current.key);
         let why = optional_string(&args, "why")?;
         let warnings = args
@@ -450,8 +451,8 @@ impl Tool for MemoryUpdate {
         }
 
         Ok(make_proposal(
-            "update",
-            &target_label,
+            ChangeOperation::Update,
+            &Target::new(TargetKind::Memory, memory_ref.as_str()),
             &description,
             Some(memory_json(&current)),
             Some(after),
@@ -507,7 +508,6 @@ impl Tool for MemoryDelete {
         let mut execution_args = args.clone();
         execution_args.insert("memory_ref".into(), Value::String(memory_ref.clone()));
 
-        let target_label = format!("memory {memory_ref}");
         let description = format!("delete memory \"{}\"", current.key);
         let why = optional_string(&args, "why")?;
         let warnings = args
@@ -534,8 +534,8 @@ impl Tool for MemoryDelete {
             })?;
 
         Ok(make_proposal(
-            "delete",
-            &target_label,
+            ChangeOperation::Delete,
+            &Target::new(TargetKind::Memory, memory_ref.as_str()),
             &description,
             Some(memory_json(&current)),
             None,

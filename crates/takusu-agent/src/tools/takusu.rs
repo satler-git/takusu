@@ -16,7 +16,8 @@ use takusu_util::{
 use std::sync::Weak;
 
 use crate::{
-    InvalidArgsError, Tool, ToolError, ToolExposure, ToolOutput, ToolRegistry, UserInputProvider,
+    ChangeOperation, InvalidArgsError, Target, TargetKind, Tool, ToolError, ToolExposure,
+    ToolOutput, ToolRegistry, UserInputProvider,
 };
 
 /// Registers planner read tools, approval-only mutation proposals, and the ASR
@@ -1269,7 +1270,7 @@ impl HabitScheduledSpans {
 
         validate_scheduled_span_dates(&start_date, &end_date)?;
 
-        self.proposal_output(args, habit, "create_scheduled_span", None)
+        self.proposal_output(args, habit, ChangeOperation::CreateScheduledSpan, None)
             .await
     }
 
@@ -1296,7 +1297,7 @@ impl HabitScheduledSpans {
                 ))
             })?;
         let before = span_json(&span, tz);
-        self.proposal_output(args, habit, "delete_scheduled_span", Some(before))
+        self.proposal_output(args, habit, ChangeOperation::DeleteScheduledSpan, Some(before))
             .await
     }
 
@@ -1304,7 +1305,7 @@ impl HabitScheduledSpans {
         &self,
         args: &mut serde_json::Map<String, Value>,
         habit: &HabitDetail,
-        operation: &str,
+        operation: ChangeOperation,
         before: Option<Value>,
     ) -> Result<ToolOutput, ToolError> {
         let mut start_date = optional_string(args, "start_date")?.unwrap_or_default();
@@ -1321,19 +1322,19 @@ impl HabitScheduledSpans {
         }
 
         let description = match operation {
-            "create_scheduled_span" => {
+            ChangeOperation::CreateScheduledSpan => {
                 format!(
                     "h{}にscheduled span {start_date}〜{end_date}を追加",
                     habit.habit.display_id
                 )
             }
-            "delete_scheduled_span" => {
+            ChangeOperation::DeleteScheduledSpan => {
                 format!(
                     "h{}のscheduled span {start_date}〜{end_date}を削除",
                     habit.habit.display_id
                 )
             }
-            _ => format!("h{}のscheduled spanを{operation}", habit.habit.display_id),
+            _ => unreachable!("unsupported operation for habit scheduled span: {operation}"),
         };
 
         let why = optional_string(args, "why")?.unwrap_or_default();
@@ -1361,8 +1362,8 @@ impl HabitScheduledSpans {
         let execution_args = args.clone();
 
         let proposal = crate::ProposedChange {
-            operation: operation.to_owned(),
-            target_label: format!("habit h{}", habit.habit.display_id),
+            operation,
+            target: Target::new(TargetKind::Habit, format!("h{}", habit.habit.display_id)),
             description,
             before,
             after: Some(Value::Object(display_args)),
@@ -1372,7 +1373,7 @@ impl HabitScheduledSpans {
 
         let content = json!({
             "approval_required": true,
-            "target": proposal.target_label,
+            "target": proposal.target.to_string(),
         });
 
         Ok(ToolOutput {
@@ -1633,21 +1634,21 @@ impl MutationKind {
         }
     }
 
-    fn target_type(self) -> &'static str {
+    fn target_type(self) -> TargetKind {
         match self {
-            Self::CreateTask | Self::UpdateTask | Self::DeleteTask => "task",
-            Self::CreateHabit | Self::UpdateHabit | Self::DeleteHabit => "habit",
-            Self::GenerateSchedule | Self::Reschedule => "schedule",
+            Self::CreateTask | Self::UpdateTask | Self::DeleteTask => TargetKind::Task,
+            Self::CreateHabit | Self::UpdateHabit | Self::DeleteHabit => TargetKind::Habit,
+            Self::GenerateSchedule | Self::Reschedule => TargetKind::Schedule,
         }
     }
 
-    fn operation(self) -> &'static str {
+    fn operation(self) -> ChangeOperation {
         match self {
-            Self::CreateTask | Self::CreateHabit => "create",
-            Self::UpdateTask | Self::UpdateHabit => "update",
-            Self::DeleteTask | Self::DeleteHabit => "delete",
-            Self::GenerateSchedule => "generate",
-            Self::Reschedule => "reschedule",
+            Self::CreateTask | Self::CreateHabit => ChangeOperation::Create,
+            Self::UpdateTask | Self::UpdateHabit => ChangeOperation::Update,
+            Self::DeleteTask | Self::DeleteHabit => ChangeOperation::Delete,
+            Self::GenerateSchedule => ChangeOperation::Generate,
+            Self::Reschedule => ChangeOperation::Reschedule,
         }
     }
 
@@ -1965,15 +1966,9 @@ impl Tool for MutationTool {
                     .collect()
             })
             .unwrap_or_default();
-        let target_type = self.kind.target_type();
-        let target_label = if target.is_empty() {
-            target_type.to_owned()
-        } else {
-            format!("{target_type} {target}")
-        };
         let proposal = crate::ProposedChange {
-            operation: self.kind.operation().to_owned(),
-            target_label,
+            operation: self.kind.operation(),
+            target: Target::new(self.kind.target_type(), target),
             description,
             before,
             after: Some(Value::Object(args)),
@@ -1983,7 +1978,7 @@ impl Tool for MutationTool {
         Ok(ToolOutput {
             content: serde_json::to_string(&json!({
                 "approval_required": true,
-                "target": proposal.target_label,
+                "target": proposal.target.to_string(),
             }))
             .unwrap(),
             why,
@@ -2162,8 +2157,8 @@ impl Tool for MoveTaskTool {
         execution_args.remove("inferred_fields");
 
         let proposal = crate::ProposedChange {
-            operation: "move".to_string(),
-            target_label: format!("task {}", display_ref),
+            operation: ChangeOperation::Move,
+            target: Target::new(TargetKind::Task, display_ref),
             description,
             before: Some(before),
             after: Some(Value::Object(display_args)),
@@ -2173,7 +2168,7 @@ impl Tool for MoveTaskTool {
         Ok(ToolOutput {
             content: serde_json::to_string(&json!({
                 "approval_required": true,
-                "target": proposal.target_label,
+                "target": proposal.target.to_string(),
             }))
             .unwrap(),
             why,
@@ -3119,8 +3114,8 @@ mod tests {
 
         assert_eq!(output.proposed_changes.len(), 1);
         let change = &output.proposed_changes[0];
-        assert_eq!(change.operation, "move");
-        assert_eq!(change.target_label, "task #42");
+        assert_eq!(change.operation, ChangeOperation::Move);
+        assert_eq!(change.target.to_string(), "task #42");
 
         let before = change.before.as_ref().unwrap();
         assert_eq!(before["schedule_start_at"], "2025-06-05T18:00:00Z");
@@ -3210,8 +3205,8 @@ mod tests {
             .unwrap();
         assert_eq!(output.proposed_changes.len(), 1);
         let change = &output.proposed_changes[0];
-        assert_eq!(change.operation, "create_scheduled_span");
-        assert_eq!(change.target_label, "habit h1");
+        assert_eq!(change.operation, ChangeOperation::CreateScheduledSpan);
+        assert_eq!(change.target.to_string(), "habit h1");
         assert!(change.before.is_none());
         let args = change.arguments.as_ref().unwrap().as_object().unwrap();
         assert_eq!(args["start_date"], "2025-09-01");
@@ -3229,8 +3224,8 @@ mod tests {
             .unwrap();
         assert_eq!(output.proposed_changes.len(), 1);
         let change = &output.proposed_changes[0];
-        assert_eq!(change.operation, "delete_scheduled_span");
-        assert_eq!(change.target_label, "habit h1");
+        assert_eq!(change.operation, ChangeOperation::DeleteScheduledSpan);
+        assert_eq!(change.target.to_string(), "habit h1");
         let before = change.before.as_ref().unwrap();
         assert_eq!(before["start_date"], "2025-08-01");
         let args = change.arguments.as_ref().unwrap().as_object().unwrap();

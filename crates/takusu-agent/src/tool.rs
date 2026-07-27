@@ -2,9 +2,10 @@ use std::collections::{BTreeSet, HashMap};
 use std::fmt;
 use std::sync::Mutex;
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{Value, json};
-use takusu_util::UnknownLabel;
+use std::str::FromStr;
+use takusu_util::{UnknownLabel, enum_label};
 
 /// Structured recoverable argument error passed back to the LLM.
 ///
@@ -98,6 +99,95 @@ pub enum ToolExposure {
     Hidden,
 }
 
+enum_label! {
+    /// Operation kind for a proposed or applied change.
+    pub enum ChangeOperation {
+        #[default] Create = "create",
+        Update = "update",
+        Delete = "delete",
+        Generate = "generate",
+        Reschedule = "reschedule",
+        Move = "move",
+        Start = "start",
+        Pause = "pause",
+        Progress = "progress",
+        Complete = "complete",
+        Split = "split",
+        CreateScheduledSpan = "create_scheduled_span",
+        DeleteScheduledSpan = "delete_scheduled_span",
+    }
+}
+
+enum_label! {
+    /// Target kind for a proposed or applied change.
+    pub enum TargetKind {
+        #[default] Task = "task",
+        Habit = "habit",
+        Skill = "skill",
+        Memory = "memory",
+        Schedule = "schedule",
+    }
+}
+
+/// A typed target identifier, preserving the JSON representation `"task #42"`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Target {
+    pub kind: TargetKind,
+    pub display_id: String,
+}
+
+impl Target {
+    pub fn new(kind: TargetKind, display_id: impl Into<String>) -> Self {
+        Self {
+            kind,
+            display_id: display_id.into(),
+        }
+    }
+}
+
+impl fmt::Display for Target {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.display_id.is_empty() {
+            write!(f, "{}", self.kind)
+        } else {
+            write!(f, "{} {}", self.kind, self.display_id)
+        }
+    }
+}
+
+impl FromStr for Target {
+    type Err = UnknownLabel;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let s = s.trim_start();
+        if let Some((kind, rest)) = s.split_once(char::is_whitespace) {
+            Ok(Self::new(kind.parse()?, rest.trim_start().to_owned()))
+        } else {
+            Ok(Self::new(s.parse()?, String::new()))
+        }
+    }
+}
+
+impl Serialize for Target {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+impl<'de> Deserialize<'de> for Target {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(deserializer)?;
+        Self::from_str(&s).map_err(serde::de::Error::custom)
+    }
+}
+
+/// Flattened target fields inside `ChangeReceipt`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ReceiptTarget {
+    #[serde(with = "takusu_util::enum_serde")]
+    pub target_type: TargetKind,
+    pub target_id: String,
+}
+
 impl ToolError {
     /// Errors that the LLM can correct by adjusting its request.
     pub fn is_recoverable(&self) -> bool {
@@ -128,8 +218,10 @@ impl ToolError {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProposedChange {
-    pub operation: String,
-    pub target_label: String,
+    #[serde(with = "takusu_util::enum_serde")]
+    pub operation: ChangeOperation,
+    #[serde(rename = "target_label")]
+    pub target: Target,
     pub description: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub before: Option<Value>,
@@ -171,9 +263,10 @@ pub fn inferred_fields_schema(description: &str) -> Value {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ChangeReceipt {
-    pub operation: String,
-    pub target_type: String,
-    pub target_id: String,
+    #[serde(with = "takusu_util::enum_serde")]
+    pub operation: ChangeOperation,
+    #[serde(flatten)]
+    pub target: ReceiptTarget,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub before: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -797,5 +890,69 @@ mod tests {
             .unwrap();
 
         assert_eq!(output.discovered_tools.len(), 3);
+    }
+
+    #[test]
+    fn proposed_change_serialization_preserves_existing_json() {
+        let change = ProposedChange {
+            operation: ChangeOperation::Update,
+            target: Target::new(TargetKind::Task, "#42"),
+            description: "update task".to_string(),
+            before: None,
+            after: Some(json!({"title": "new title"})),
+            arguments: Some(json!({"task_ref": "42"})),
+            observed_updated_at: Some("2025-01-01T00:00:00Z".to_string()),
+        };
+        let expected = r#"{"operation":"update","target_label":"task #42","description":"update task","after":{"title":"new title"},"arguments":{"task_ref":"42"},"observed_updated_at":"2025-01-01T00:00:00Z"}"#;
+        assert_eq!(serde_json::to_string(&change).unwrap(), expected);
+
+        let parsed: ProposedChange = serde_json::from_str(expected).unwrap();
+        assert_eq!(parsed.operation, ChangeOperation::Update);
+        assert_eq!(parsed.target, Target::new(TargetKind::Task, "#42"));
+
+        let schedule = ProposedChange {
+            operation: ChangeOperation::Generate,
+            target: Target::new(TargetKind::Schedule, ""),
+            description: "generate schedule".to_string(),
+            before: None,
+            after: None,
+            arguments: None,
+            observed_updated_at: None,
+        };
+        assert_eq!(
+            serde_json::to_string(&schedule).unwrap(),
+            r#"{"operation":"generate","target_label":"schedule","description":"generate schedule"}"#
+        );
+    }
+
+    #[test]
+    fn change_receipt_serialization_preserves_existing_json() {
+        let receipt = ChangeReceipt {
+            operation: ChangeOperation::Update,
+            target: ReceiptTarget {
+                target_type: TargetKind::Task,
+                target_id: "task-uuid".to_string(),
+            },
+            before: None,
+            after: Some(json!({"title": "new title"})),
+            target_revision: Some(3),
+            inferred_fields: None,
+        };
+        let expected = r#"{"operation":"update","target_type":"task","target_id":"task-uuid","after":{"title":"new title"},"target_revision":3}"#;
+        assert_eq!(serde_json::to_string(&receipt).unwrap(), expected);
+
+        let parsed: ChangeReceipt = serde_json::from_str(expected).unwrap();
+        assert_eq!(parsed.operation, ChangeOperation::Update);
+        assert_eq!(parsed.target.target_type, TargetKind::Task);
+        assert_eq!(parsed.target.target_id, "task-uuid");
+    }
+
+    #[test]
+    fn target_round_trips_display_id_with_spaces() {
+        let target = Target::new(TargetKind::Task, "some long title");
+        let s = target.to_string();
+        assert_eq!(s, "task some long title");
+        let parsed: Target = s.parse().unwrap();
+        assert_eq!(parsed, target);
     }
 }

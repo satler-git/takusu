@@ -178,8 +178,8 @@ pub struct ApprovalRequest {
 }
 
 pub struct ProposedChange {
-    pub operation: PlannerOperation,
-    pub target_label: String,
+    pub operation: ChangeOperation,
+    pub target: Target,
     pub description: String,
     pub before: Option<serde_json::Value>,
     pub after: Option<serde_json::Value>,
