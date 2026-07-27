@@ -1,5 +1,6 @@
 use crossterm::event::{KeyCode, KeyEvent};
 use takusu_storage::{HabitRow, TaskRow};
+use takusu_util::TaskStatus;
 
 use crate::app::{App, Modal};
 
@@ -50,15 +51,15 @@ async fn change_status(app: &mut App) {
         Some(t) => t.clone(),
         None => return,
     };
-    let next = match task.status.as_str() {
-        "pending" => "scheduled",
-        "scheduled" => "in_progress",
-        "in_progress" => "completed",
-        "completed" => "skipped",
-        _ => "pending",
+    let next = match task.status {
+        TaskStatus::Pending => TaskStatus::Scheduled,
+        TaskStatus::Scheduled => TaskStatus::InProgress,
+        TaskStatus::InProgress => TaskStatus::Completed,
+        TaskStatus::Completed => TaskStatus::Skipped,
+        _ => TaskStatus::Pending,
     };
     let body = takusu_storage::UpdateTask {
-        status: Some(next.to_string()),
+        status: Some(next),
         ..Default::default()
     };
     match app.app.update_task(&task.id, &body).await {
@@ -75,8 +76,8 @@ async fn work_session(app: &mut App) {
         Some(t) => t.clone(),
         None => return,
     };
-    let result = match task.status.as_str() {
-        "in_progress" => app.app.pause_task_work(&task.id, None).await,
+    let result = match task.status {
+        TaskStatus::InProgress => app.app.pause_task_work(&task.id, None).await,
         _ => app.app.start_task_work(&task.id, None).await,
     };
     match result {
@@ -209,7 +210,7 @@ fn parse_edit_text(content: &str) -> Result<takusu_storage::UpdateTask, String> 
                     update.end_at = Some(value.to_string());
                 }
             }
-            "status" => update.status = Some(value.to_string()),
+            "status" => update.status = Some(value.parse::<TaskStatus>().map_err(|e| e.to_string())?),
             "avg_minutes" => update.avg_minutes = parse_i64(value)?,
             "sigma_minutes" => update.sigma_minutes = parse_i64(value)?,
             "abandonability" => update.abandonability = parse_f64(value)?,
@@ -345,7 +346,7 @@ mod tests {
             parallelizable: true,
             allows_parallel: false,
             abandonability: 0.25,
-            status: "pending".to_string(),
+            status: TaskStatus::Pending,
             habit_id: None,
             ical_uid: None,
             user_edited: false,
@@ -377,7 +378,7 @@ mod tests {
             parallelizable: false,
             allows_parallel: false,
             abandonability: 0.5,
-            status: "completed".to_string(),
+            status: TaskStatus::Completed,
             habit_id: None,
             ical_uid: None,
             user_edited: false,
@@ -409,7 +410,7 @@ mod tests {
             parallelizable: false,
             allows_parallel: false,
             abandonability: 0.5,
-            status: "pending".to_string(),
+            status: TaskStatus::Pending,
             habit_id: Some("habit-uuid".to_string()),
             ical_uid: None,
             user_edited: false,
@@ -436,7 +437,7 @@ mod tests {
             active: true,
             start_time: "08:00".to_string(),
             end_time: "09:00".to_string(),
-            window_mode: "day".to_string(),
+            window_mode: takusu_util::WindowMode::Day,
             avg_minutes: 10,
             sigma_minutes: 2,
             abandonability: 0.5,
@@ -497,7 +498,7 @@ quantity_unit: chapters
 "#;
         let update = parse_edit_text(text).unwrap();
         assert_eq!(update.title, Some("New title".to_string()));
-        assert_eq!(update.status, Some("in_progress".to_string()));
+        assert_eq!(update.status, Some(TaskStatus::InProgress));
         assert_eq!(update.avg_minutes, Some(45));
         assert_eq!(update.sigma_minutes, Some(10));
         assert_eq!(update.abandonability, Some(0.5));
@@ -541,7 +542,7 @@ sigma_minutes: -
         let update = parse_edit_text(text).unwrap();
         assert_eq!(update.title, Some("New title".to_string()));
         assert_eq!(update.description, None);
-        assert_eq!(update.status, Some("scheduled".to_string()));
+        assert_eq!(update.status, Some(TaskStatus::Scheduled));
     }
 
     #[test]

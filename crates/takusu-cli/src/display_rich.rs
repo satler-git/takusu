@@ -4,6 +4,7 @@ use takusu_habit::{RecurrenceRule, summarize};
 use takusu_storage::{
     HabitRow, HabitScheduledSpanRow, HabitStepRow, ScheduleEntry, SkillRow, TaskRow, TokenRow,
 };
+use takusu_util::{TaskStatus, WindowMode};
 
 use crate::task_ref::task_reference;
 
@@ -21,13 +22,12 @@ pub fn display_task_detail(
     tz: &jiff::tz::TimeZone,
     habit_map: &std::collections::HashMap<String, i64>,
 ) {
-    let status_color = match task.status.as_str() {
-        "pending" => Color::Yellow,
-        "scheduled" => Color::Green,
-        "in_progress" => Color::DarkYellow,
-        "completed" => Color::DarkCyan,
-        "skipped" => Color::DarkGrey,
-        _ => Color::White,
+    let status_color = match task.status {
+        TaskStatus::Pending => Color::Yellow,
+        TaskStatus::Scheduled => Color::Green,
+        TaskStatus::InProgress => Color::DarkYellow,
+        TaskStatus::Completed => Color::DarkCyan,
+        TaskStatus::Skipped => Color::DarkGrey,
     };
 
     let mut table = Table::new();
@@ -67,7 +67,7 @@ pub fn display_task_detail(
     table.add_row(vec![
         Cell::new(task_reference(task, habit_map)),
         Cell::new(&task.title),
-        Cell::new(&task.status).fg(status_color),
+        Cell::new(task.status).fg(status_color),
         Cell::new(
             task.start_at
                 .as_deref()
@@ -196,7 +196,7 @@ pub fn display_habit_detail(habit: &HabitRow) {
     {
         println!("\nDescription: {desc}");
     }
-    if habit.window_mode == "period" {
+    if habit.window_mode == WindowMode::Period {
         println!("\nWindow: period (schedulable anywhere until next occurrence)");
     }
 }
@@ -362,13 +362,12 @@ pub fn display_tasks(
         ]);
 
     for t in tasks {
-        let status_color = match t.status.as_str() {
-            "pending" => Color::Yellow,
-            "scheduled" => Color::Green,
-            "in_progress" => Color::DarkYellow,
-            "completed" => Color::DarkCyan,
-            "skipped" => Color::DarkGrey,
-            _ => Color::White,
+        let status_color = match t.status {
+            TaskStatus::Pending => Color::Yellow,
+            TaskStatus::Scheduled => Color::Green,
+            TaskStatus::InProgress => Color::DarkYellow,
+            TaskStatus::Completed => Color::DarkCyan,
+            TaskStatus::Skipped => Color::DarkGrey,
         };
         let progress = if let Some(total) = t.quantity_total {
             format!(
@@ -389,7 +388,7 @@ pub fn display_tasks(
         table.add_row(vec![
             Cell::new(short_id),
             Cell::new(&t.title),
-            Cell::new(&t.status).fg(status_color),
+            Cell::new(t.status).fg(status_color),
             Cell::new(
                 t.start_at
                     .as_deref()

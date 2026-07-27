@@ -179,7 +179,7 @@ fn schedule_for_date(
                 "title": item.task.map(|t| t.title.clone()).unwrap_or_default(),
                 "start_at": format_ts(item.start, tz),
                 "end_at": format_ts(item.end, tz),
-                "status": item.task.map(|t| t.status.clone()).unwrap_or_default(),
+                "status": item.task.map(|t| t.status).unwrap_or_default(),
             })
         })
         .collect())

@@ -5337,6 +5337,7 @@ dependencies = [
  "takusu-habit",
  "takusu-local-lib",
  "takusu-storage",
+ "takusu-util",
  "tempfile",
  "tokio",
 ]

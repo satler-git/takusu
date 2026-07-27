@@ -4,6 +4,7 @@ use std::fs;
 use std::io;
 use std::process::Command;
 use takusu_storage::{HabitRow, HabitStepInput, HabitStepRow, TaskRow, UpdateHabit, UpdateTask};
+use takusu_util::{TaskStatus, WindowMode};
 
 use crate::task_ref::task_reference;
 
@@ -125,7 +126,7 @@ pub fn parse_edited_task(content: &str) -> Result<UpdateTask, String> {
                     Some(Some(value.to_string()))
                 }
             }
-            "status" => status = Some(value.to_string()),
+            "status" => status = Some(value.parse::<TaskStatus>().map_err(|e| format!("invalid status '{value}': {e}"))?),
             "avg_minutes" => {
                 avg_minutes = Some(
                     value
@@ -383,7 +384,7 @@ pub fn parse_edited_habit(content: &str) -> Result<UpdateHabit, String> {
                 )
             }
             "window_mode" if !value.is_empty() => {
-                window_mode = Some(value.to_string());
+                window_mode = Some(value.parse::<WindowMode>().map_err(|e| format!("invalid window_mode '{value}': {e}"))?);
             }
             _ => {}
         }
@@ -499,7 +500,7 @@ mod tests {
             parallelizable: false,
             allows_parallel: false,
             abandonability: 0.5,
-            status: "pending".into(),
+            status: TaskStatus::Pending,
             habit_id: habit_id.map(|s| s.into()),
             ical_uid: None,
             user_edited: false,

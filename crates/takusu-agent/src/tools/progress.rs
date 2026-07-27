@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use serde_json::{Value, json};
 use takusu_client::{Client, HabitRow, ProgressEventRow, TaskQuery, TaskRow};
+use takusu_util::TaskStatus;
 
 use crate::tools::takusu::{
     TaskContext, TimeZoneCache, client_error, object, optional_bool, optional_string, required_i64,
@@ -252,7 +253,7 @@ impl Tool for TaskStart {
                 let (tasks, _habits, ctx) = load_task_context(&self.client).await?;
                 let candidates: Vec<TaskRow> = tasks
                     .into_iter()
-                    .filter(|t| t.status == "scheduled" || t.status == "pending")
+                    .filter(|t| t.status == TaskStatus::Scheduled || t.status == TaskStatus::Pending)
                     .collect();
                 return Ok(focused_clarification(
                     "着手",
@@ -263,7 +264,7 @@ impl Tool for TaskStart {
             }
         };
         let display_ref = ctx.reference(&task);
-        if task.status == "completed" || task.status == "skipped" {
+        if task.status == TaskStatus::Completed || task.status == TaskStatus::Skipped {
             return Err(ToolError::InvalidArgs(InvalidArgsError::new(
                 "task_ref",
                 format!("cannot start work on a {} task", task.status),
@@ -342,7 +343,7 @@ impl Tool for TaskPause {
                 let (tasks, _habits, ctx) = load_task_context(&self.client).await?;
                 let candidates: Vec<TaskRow> = tasks
                     .into_iter()
-                    .filter(|t| t.status == "in_progress")
+                    .filter(|t| t.status == TaskStatus::InProgress)
                     .collect();
                 return Ok(focused_clarification(
                     "一時停止",
@@ -353,7 +354,7 @@ impl Tool for TaskPause {
             }
         };
         let display_ref = ctx.reference(&task);
-        if task.status == "completed" || task.status == "skipped" {
+        if task.status == TaskStatus::Completed || task.status == TaskStatus::Skipped {
             return Err(ToolError::InvalidArgs(InvalidArgsError::new(
                 "task_ref",
                 format!("cannot pause work on a {} task", task.status),
@@ -440,7 +441,7 @@ impl Tool for TaskProgress {
                 let (tasks, _habits, ctx) = load_task_context(&self.client).await?;
                 let candidates: Vec<TaskRow> = tasks
                     .into_iter()
-                    .filter(|t| t.status == "in_progress")
+                    .filter(|t| t.status == TaskStatus::InProgress)
                     .collect();
                 return Ok(focused_clarification(
                     "進捗記録",
@@ -452,7 +453,7 @@ impl Tool for TaskProgress {
         };
         let display_ref = ctx.reference(&task);
 
-        if task.status == "completed" || task.status == "skipped" {
+        if task.status == TaskStatus::Completed || task.status == TaskStatus::Skipped {
             return Err(ToolError::InvalidArgs(InvalidArgsError::new(
                 "task_ref",
                 format!("cannot record progress on a {} task", task.status),
@@ -623,13 +624,13 @@ impl Tool for TaskComplete {
                 let (tasks, _habits, ctx) = load_task_context(&self.client).await?;
                 let candidates: Vec<TaskRow> = tasks
                     .into_iter()
-                    .filter(|t| t.status == "in_progress")
+                    .filter(|t| t.status == TaskStatus::InProgress)
                     .collect();
                 return Ok(focused_clarification("完了", "作業中", &candidates, &ctx));
             }
         };
         let display_ref = ctx.reference(&task);
-        if task.status == "completed" || task.status == "skipped" {
+        if task.status == TaskStatus::Completed || task.status == TaskStatus::Skipped {
             return Err(ToolError::InvalidArgs(InvalidArgsError::new(
                 "task_ref",
                 format!("cannot complete a {} task", task.status),
@@ -761,8 +762,8 @@ impl Tool for TaskSplit {
                 let candidates: Vec<TaskRow> = tasks
                     .into_iter()
                     .filter(|t| {
-                        t.status != "completed"
-                            && t.status != "skipped"
+                        t.status != TaskStatus::Completed
+                            && t.status != TaskStatus::Skipped
                             && t.quantity_total.is_some()
                     })
                     .collect();
@@ -776,7 +777,7 @@ impl Tool for TaskSplit {
         };
         let display_ref = ctx.reference(&task);
 
-        if task.status == "completed" || task.status == "skipped" {
+        if task.status == TaskStatus::Completed || task.status == TaskStatus::Skipped {
             return Err(ToolError::InvalidArgs(InvalidArgsError::new(
                 "task_ref",
                 format!("cannot split a {} task", task.status),
@@ -1002,7 +1003,7 @@ mod tests {
             parallelizable: false,
             allows_parallel: false,
             abandonability: 0.5,
-            status: "scheduled".to_string(),
+            status: TaskStatus::Scheduled,
             habit_id: None,
             ical_uid: None,
             user_edited: false,

@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use jiff::Timestamp;
+use takusu_util::{EnumLabel, MemoryKind, TaskStatus, WindowMode};
 use serde::{Deserialize, Serialize};
 use takusu_core::{
     NormalDist, Planner, Point, RescheduleRange, SleepConfig, Solver, Task as CoreTask,
@@ -100,19 +101,6 @@ fn validate_recurrence(recurrence: &str) -> Result<(), AppError> {
     Ok(())
 }
 
-/// Validate the `window_mode` field of a habit (#window_mode). Accepts
-/// `'day'` (default) or `'period'`. Mirrors the worker-side
-/// `validate_window_mode`.
-fn validate_window_mode(mode: &str) -> Result<(), AppError> {
-    if mode == "day" || mode == "period" {
-        Ok(())
-    } else {
-        Err(AppError::BadRequest(format!(
-            "window_mode must be 'day' or 'period' (got {mode:?})"
-        )))
-    }
-}
-
 /// Validate a skill slug, name, description, and body (#WI-6).
 fn validate_skill(create: &CreateSkill) -> Result<(), AppError> {
     const MAX_SLUG_LEN: usize = 64;
@@ -159,7 +147,10 @@ fn validate_skill(create: &CreateSkill) -> Result<(), AppError> {
 
 /// Validate a memory create request (#WI-7).
 fn validate_memory(create: &CreateMemory) -> Result<(), AppError> {
-    if !matches!(create.kind.as_str(), "proper_noun" | "fact" | "task_note") {
+    if !matches!(
+        create.kind,
+        takusu_util::MemoryKind::ProperNoun | takusu_util::MemoryKind::Fact | takusu_util::MemoryKind::TaskNote
+    ) {
         return Err(AppError::BadRequest(
             "kind must be 'proper_noun', 'fact', or 'task_note'".into(),
         ));
@@ -170,14 +161,18 @@ fn validate_memory(create: &CreateMemory) -> Result<(), AppError> {
     if takusu_util::memory::normalize_content(&create.content).is_err() {
         return Err(AppError::BadRequest("invalid content".into()));
     }
-    if create.subject_type.as_ref().is_some_and(|s| s.len() > 64) {
+    if create
+        .subject_type
+        .as_ref()
+        .is_some_and(|s| s.as_str().len() > 64)
+    {
         return Err(AppError::BadRequest("subject_type too long".into()));
     }
     if create.subject_id.as_ref().is_some_and(|s| s.len() > 64) {
         return Err(AppError::BadRequest("subject_id too long".into()));
     }
-    if create.kind == "task_note" {
-        if create.subject_type.as_deref() != Some("task") {
+    if create.kind == takusu_util::MemoryKind::TaskNote {
+        if create.subject_type != Some(takusu_util::SubjectType::Task) {
             return Err(AppError::BadRequest(
                 "task_note requires subject_type='task'".into(),
             ));
@@ -999,7 +994,7 @@ impl TakusuApp {
     ) -> Result<MemoryRow, AppError> {
         validate_memory(body)?;
         let mut body = body.clone();
-        if body.kind == "task_note" {
+        if body.kind == MemoryKind::TaskNote {
             let task_id = body.subject_id.as_deref().unwrap_or("");
             let task = self
                 .storage
@@ -1607,9 +1602,7 @@ impl TakusuApp {
     pub async fn create_habit(&self, body: &CreateHabit) -> Result<HabitRow, AppError> {
         validate_minutes(body.avg_minutes, body.sigma_minutes)?;
         validate_recurrence(&body.recurrence)?;
-        if let Some(ref wm) = body.window_mode {
-            validate_window_mode(wm)?;
-        }
+
         self.storage
             .create_habit(body)
             .await
@@ -1655,9 +1648,7 @@ impl TakusuApp {
         validate_minutes(request.avg_minutes, request.sigma_minutes)?;
         validate_recurrence(&request.recurrence)?;
         validate_steps(&request.steps)?;
-        if let Some(ref wm) = request.window_mode {
-            validate_window_mode(wm)?;
-        }
+
 
         let settings = self.get_settings_or_default().await?;
         let tz = parse_settings_timezone(&settings.tz)?;
@@ -1683,7 +1674,7 @@ impl TakusuApp {
         let max_occurrences = request.max_occurrences.unwrap_or(20).max(1) as usize;
 
         let habit = build_habit_from_preview(request, &tz)?;
-        let is_period = request.window_mode.as_deref() == Some("period");
+        let is_period = request.window_mode == Some(WindowMode::Period);
 
         let mut store = takusu_habit::HabitStore::new();
         store.add(habit);
@@ -1976,9 +1967,7 @@ impl TakusuApp {
         if let Some(recurrence) = &body.recurrence {
             validate_recurrence(recurrence)?;
         }
-        if let Some(ref wm) = body.window_mode {
-            validate_window_mode(wm)?;
-        }
+
         self.storage
             .update_habit(id, body)
             .await
@@ -1988,9 +1977,7 @@ impl TakusuApp {
     pub async fn replace_habit(&self, id: &str, body: &CreateHabit) -> Result<HabitRow, AppError> {
         validate_minutes(body.avg_minutes, body.sigma_minutes)?;
         validate_recurrence(&body.recurrence)?;
-        if let Some(ref wm) = body.window_mode {
-            validate_window_mode(wm)?;
-        }
+
         self.storage
             .replace_habit(id, body)
             .await
@@ -2088,7 +2075,7 @@ impl TakusuApp {
             .map_err(storage_to_app)?;
         let active: Vec<&TaskRow> = tasks
             .iter()
-            .filter(|t| t.status != "completed" && t.status != "skipped")
+            .filter(|t| t.status != TaskStatus::Completed && t.status != TaskStatus::Skipped)
             .collect();
         let mut id_to_idx: HashMap<String, usize> = HashMap::new();
         for (i, t) in active.iter().enumerate() {
@@ -2938,7 +2925,7 @@ impl TakusuApp {
                 .map_err(storage_to_app)?;
             Ok(all
                 .into_iter()
-                .filter(|t| t.status == "pending" || t.status == "scheduled")
+                .filter(|t| t.status == TaskStatus::Pending || t.status == TaskStatus::Scheduled)
                 .collect())
         }
     }
@@ -2955,7 +2942,7 @@ impl TakusuApp {
         habit_rows
             .into_iter()
             .chain(task_rows)
-            .filter(|t| t.status == "pending" || t.status == "scheduled")
+            .filter(|t| t.status == TaskStatus::Pending || t.status == TaskStatus::Scheduled)
             .filter(|t| seen.insert(t.id.clone()))
             .collect()
     }
@@ -3049,7 +3036,7 @@ impl TakusuApp {
             // next occurrence start). 'day' (default) keeps the legacy
             // per-day window. The core planner needs no change — it already
             // schedules freely within [start, end].
-            let is_period = row.window_mode == "period";
+            let is_period = row.window_mode == WindowMode::Period;
 
             if is_period {
                 // Lookahead past `until` so we can compute the deadline of
@@ -3255,7 +3242,7 @@ impl TakusuApp {
             };
 
             if let Some(existing) = existing_by_key.remove(&key) {
-                if existing.status == "pending" && !existing.user_edited {
+                if existing.status == TaskStatus::Pending && !existing.user_edited {
                     // ユーザーが habit 由来タスクを編集していない場合は、
                     // habit の現在値で全フィールドを上書きする。
                     let update = UpdateTask {
@@ -3360,7 +3347,7 @@ impl TakusuApp {
                 let Some(task_row) = result.iter().find(|t| &t.id == task_id) else {
                     continue;
                 };
-                if task_row.status != "pending" || task_row.user_edited {
+                if task_row.status != TaskStatus::Pending || task_row.user_edited {
                     continue;
                 }
                 let update = UpdateTask {
@@ -3387,8 +3374,8 @@ impl TakusuApp {
         for (_, task) in existing_by_key {
             let deletable = !task.user_edited
                 && !matches!(
-                    task.status.as_str(),
-                    "in_progress" | "completed" | "skipped"
+                    task.status,
+                    TaskStatus::InProgress | TaskStatus::Completed | TaskStatus::Skipped
                 );
             if deletable {
                 self.storage
@@ -3467,7 +3454,7 @@ impl TakusuApp {
             .map_err(storage_to_app)?
             .into_iter()
             .filter(|h| {
-                if h.window_mode != "period" {
+                if h.window_mode != WindowMode::Period {
                     return false;
                 }
                 // Only exclude habits whose recurrence interval is > 1 day.

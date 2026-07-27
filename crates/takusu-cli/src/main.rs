@@ -34,7 +34,7 @@ use takusu_storage::{
     RecordProgress, ScheduleEntry, SimilarTaskQuery, SplitTask, TaskQuery, UpdateHabit,
     UpdateMemory, UpdateSettings,
 };
-use takusu_util::{parse_datetime_tz, parse_duration};
+use takusu_util::{parse_datetime_tz, parse_duration, MemoryKind, SubjectType, TaskStatus, WindowMode};
 
 fn prompt(label: &str) -> Result<String, AppError> {
     print!("{label}: ");
@@ -1376,6 +1376,9 @@ async fn run_task(
                 .map(|s| parse_duration(s))
                 .transpose()
                 .map_err(AppError::BadRequest)?;
+            let status = status
+                .map(|s| s.parse::<TaskStatus>().map_err(|e| AppError::BadRequest(e.to_string())))
+                .transpose()?;
             let body = takusu_storage::UpdateTask {
                 title,
                 description,
@@ -1458,8 +1461,11 @@ async fn run_task(
             println!("Task {id} deleted.");
         }
         TaskCommands::Status { id, status } => {
+            let status = status
+                .parse::<TaskStatus>()
+                .map_err(|e| AppError::BadRequest(e.to_string()))?;
             let body = takusu_storage::UpdateTask {
-                status: Some(status.clone()),
+                status: Some(status),
                 ..Default::default()
             };
             let task = app.update_task(&id, &body).await?;
@@ -1671,6 +1677,9 @@ async fn run_habit(mode: DisplayMode, app: &TakusuApp, cmd: HabitCommands) -> Re
             };
             let avg_minutes = parse_duration(&avg_time).map_err(AppError::BadRequest)?;
             let sigma_minutes: i64 = parse_duration(&sigma_time).map_err(AppError::BadRequest)?;
+            let window = window
+                .map(|s| s.parse::<WindowMode>().map_err(|e| AppError::BadRequest(e.to_string())))
+                .transpose()?;
             let body = CreateHabit {
                 title: title.unwrap_or_default(),
                 recurrence: recurrence.unwrap_or_default(),
@@ -1734,6 +1743,9 @@ async fn run_habit(mode: DisplayMode, app: &TakusuApp, cmd: HabitCommands) -> Re
                 .map(|s| parse_duration(s))
                 .transpose()
                 .map_err(AppError::BadRequest)?;
+            let window = window
+                .map(|s| s.parse::<WindowMode>().map_err(|e| AppError::BadRequest(e.to_string())))
+                .transpose()?;
             let body = UpdateHabit {
                 title,
                 description,
@@ -1772,6 +1784,9 @@ async fn run_habit(mode: DisplayMode, app: &TakusuApp, cmd: HabitCommands) -> Re
         } => {
             let avg_minutes = parse_duration(&avg_time).map_err(AppError::BadRequest)?;
             let sigma_minutes: i64 = parse_duration(&sigma_time).map_err(AppError::BadRequest)?;
+            let window = window
+                .map(|s| s.parse::<WindowMode>().map_err(|e| AppError::BadRequest(e.to_string())))
+                .transpose()?;
             let body = CreateHabit {
                 title,
                 recurrence,
@@ -1977,6 +1992,12 @@ async fn run_memory(app: &TakusuApp, cmd: MemoryCommands) -> Result<(), AppError
             subject_id,
             upsert,
         } => {
+            let kind = kind
+                .parse::<MemoryKind>()
+                .map_err(|e| AppError::BadRequest(e.to_string()))?;
+            let subject_type = subject_type
+                .map(|s| s.parse::<SubjectType>().map_err(|e| AppError::BadRequest(e.to_string())))
+                .transpose()?;
             let body = CreateMemory {
                 kind,
                 key,
@@ -2011,6 +2032,12 @@ async fn run_memory(app: &TakusuApp, cmd: MemoryCommands) -> Result<(), AppError
             subject_id,
             limit,
         } => {
+            let kind = kind
+                .map(|s| s.parse::<MemoryKind>().map_err(|e| AppError::BadRequest(e.to_string())))
+                .transpose()?;
+            let subject_type = subject_type
+                .map(|s| s.parse::<SubjectType>().map_err(|e| AppError::BadRequest(e.to_string())))
+                .transpose()?;
             let query = MemoryQuery {
                 q,
                 kind,

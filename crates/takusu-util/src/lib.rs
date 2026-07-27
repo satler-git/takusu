@@ -3,7 +3,11 @@ pub mod enum_label;
 pub mod jwt;
 pub mod option_bool_compat;
 
-pub use enum_label::{enum_serde, EnumLabel, UnknownLabel};
+pub use enum_label::{
+    enum_serde, EnumLabel, MemoryKind, SubjectType, TaskStatus, TokenScope, UnknownLabel,
+    WindowMode,
+};
+pub use enum_label::enum_serde::option as enum_option_serde;
 
 pub use takusu_search::date::{
     later_timestamp, minutes_between, now_rfc3339, now_timestamp, parse_date_expression,

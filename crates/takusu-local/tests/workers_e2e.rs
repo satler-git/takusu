@@ -20,6 +20,7 @@ use takusu_storage::{
     HabitScheduledSpanRow, MemoryQuery, MemoryRow, SimilarTaskQuery, SimilarTaskRow, Storage,
     TaskQuery, TaskRow, TokenCreateResponse, TokenRow, UpdateHabit, UpdateMemory, UpdateTask,
 };
+use takusu_util::EnumLabel;
 use tokio::net::TcpListener;
 
 const JWT_SECRET: &str = "test-secret-do-not-use-in-production";
@@ -303,7 +304,7 @@ async fn update_task(
             .fetch_one(&state.pool)
             .await
             .map_err(|_| StatusCode::NOT_FOUND)?;
-    let final_status = body.status.clone().unwrap_or(existing.status);
+    let final_status = body.status.clone().unwrap_or(existing.status).to_string();
 
     // Treat quantity_total / original_quantity_total 0 as unset (same as None) server-side.
     let quantity_total = body.quantity_total.filter(|t| *t != 0);
@@ -547,7 +548,7 @@ async fn create_habit(
     let allows_parallel = body.allows_parallel.unwrap_or(false);
     let abandonability = body.abandonability.unwrap_or(0.5);
     let fixed = body.fixed.unwrap_or(false);
-    let window_mode = body.window_mode.as_deref().unwrap_or("day");
+    let window_mode = body.window_mode.as_ref().map(|w| w.as_str()).unwrap_or("day");
     sqlx::query(
         "INSERT INTO habits (id, title, description, recurrence, start_time, end_time, \
          avg_minutes, sigma_minutes, parallelizable, allows_parallel, abandonability, \
@@ -607,7 +608,7 @@ async fn update_habit(
     .bind(body.abandonability)
     .bind(body.active)
     .bind(body.fixed)
-    .bind(body.window_mode.as_deref())
+    .bind(body.window_mode.as_ref().map(|w| w.as_str()))
     .bind(&full)
     .execute(&state.pool)
     .await
@@ -756,7 +757,7 @@ async fn workers_storage_e2e() {
     };
     let task = storage.create_task(&create_body).await.unwrap();
     assert_eq!(task.title, "e2e task");
-    assert_eq!(task.status, "pending");
+    assert_eq!(task.status, takusu_util::TaskStatus::Pending);
     let id = task.id.clone();
 
     let tasks = storage
@@ -818,12 +819,12 @@ async fn create_memory(
         "INSERT INTO memories (id, kind, key, normalized_key, content, normalized_content, subject_type, subject_id, source, revision) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'user_confirmed', 1)"
     )
     .bind(&id)
-    .bind(&body.kind)
+    .bind(body.kind.as_str())
     .bind(&body.key)
     .bind(&normalized_key)
     .bind(&body.content)
     .bind(&normalized_content)
-    .bind(&subject_type)
+    .bind(subject_type.as_str())
     .bind(&subject_id)
     .execute(&state.pool)
     .await
@@ -904,11 +905,11 @@ async fn list_memories(
     let mut binds: Vec<String> = vec![pattern.clone(), pattern];
     if let Some(ref kind) = q.kind {
         sql.push_str(" AND kind = ?");
-        binds.push(kind.clone());
+        binds.push(kind.to_string());
     }
     if let Some(ref st) = q.subject_type {
         sql.push_str(" AND subject_type = ?");
-        binds.push(st.clone());
+        binds.push(st.to_string());
     }
     if let Some(ref sid) = q.subject_id {
         sql.push_str(" AND subject_id = ?");
@@ -985,7 +986,7 @@ async fn workers_storage_memory_e2e() {
     let storage = WorkersStorage::new_with(base_url, ROOT_TOKEN.to_string());
 
     let create = CreateMemory {
-        kind: "proper_noun".into(),
+        kind: takusu_util::MemoryKind::ProperNoun,
         key: "研究室".into(),
         content: "大学の研究室".into(),
         subject_type: None,

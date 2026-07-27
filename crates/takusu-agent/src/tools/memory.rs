@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use serde_json::{Value, json};
 use takusu_client::{Client, CreateMemory, MemoryQuery, MemoryRow, SimilarTaskQuery, UpdateMemory};
+use takusu_util::{MemoryKind, SubjectType};
 
 use crate::tools::takusu::required_i64;
 use crate::{InvalidArgsError, Tool, ToolError, ToolExposure, ToolOutput};
@@ -152,7 +153,7 @@ impl Tool for MemorySearch {
             "type": "object",
             "properties": {
                 "q": {"type": "string", "description": "Search query. Multiple keywords are ANDed. * is a wildcard matching any sequence of characters. Example: 研究室 大学, 研究*大学."},
-                "kind": {"type": "string", "description": "Filter by kind; comma-separated values are ORed. Values: proper_noun, fact, task_note."},
+                "kind": {"type": "string", "description": "Filter by kind. Values: proper_noun, fact, task_note."},
                 "subject_type": {"type": "string"},
                 "subject_id": {"type": "string"},
                 "limit": {"type": "integer", "description": "Maximum results (default 10, max 50)."},
@@ -165,8 +166,12 @@ impl Tool for MemorySearch {
         let args = object(args)?;
         let query = MemoryQuery {
             q: required_string(&args, "q")?,
-            kind: optional_string(&args, "kind")?,
-            subject_type: optional_string(&args, "subject_type")?,
+            kind: optional_string(&args, "kind")?
+                .map(|s| s.parse::<MemoryKind>())
+                .transpose()?,
+            subject_type: optional_string(&args, "subject_type")?
+                .map(|s| s.parse::<SubjectType>())
+                .transpose()?,
             subject_id: optional_string(&args, "subject_id")?,
             limit: optional_i64(&args, "limit")?,
         };
@@ -260,19 +265,15 @@ impl Tool for MemorySave {
     }
     async fn call(&self, args: Value) -> Result<ToolOutput, ToolError> {
         let args = object(args)?;
-        let kind = required_string(&args, "kind")?;
-        if !matches!(kind.as_str(), "proper_noun" | "fact" | "task_note") {
-            return Err(ToolError::InvalidArgs(InvalidArgsError::new(
-                "kind",
-                "must be 'proper_noun', 'fact', or 'task_note'",
-            )));
-        }
+        let kind: MemoryKind = required_string(&args, "kind")?.parse()?;
         let key = required_string(&args, "key")?;
 
-        let subject_type = optional_string(&args, "subject_type")?;
+        let subject_type = optional_string(&args, "subject_type")?
+            .map(|s| s.parse::<SubjectType>())
+            .transpose()?;
         let subject_id = optional_string(&args, "subject_id")?;
-        if kind == "task_note" {
-            if subject_type.as_deref() != Some("task") {
+        if kind == MemoryKind::TaskNote {
+            if subject_type != Some(SubjectType::Task) {
                 return Err(ToolError::InvalidArgs(InvalidArgsError::new(
                     "subject_type",
                     "task_note requires subject_type='task'",
@@ -288,7 +289,7 @@ impl Tool for MemorySave {
 
         let mut execution_args = args.clone();
         let create = CreateMemory {
-            kind: kind.clone(),
+            kind,
             key: key.clone(),
             content: required_string(&args, "content")?,
             subject_type,
@@ -555,10 +556,10 @@ mod tests {
     fn memory_json_excludes_internal_normalized_fields() {
         let row = MemoryRow {
             id: "m1".into(),
-            kind: "proper_noun".into(),
+            kind: MemoryKind::ProperNoun,
             key: "研究室".into(),
             content: "大学".into(),
-            subject_type: "".into(),
+            subject_type: SubjectType::Empty,
             subject_id: "".into(),
             source: "user_confirmed".into(),
             revision: 1,

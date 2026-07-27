@@ -4366,7 +4366,7 @@ mod tests {
             abandonability: 0.5,
             active: true,
             fixed: false,
-            window_mode: "day".into(),
+            window_mode: takusu_util::WindowMode::Day,
             created_at: "2026-01-01T00:00:00Z".into(),
             updated_at: "2026-01-01T00:00:00Z".into(),
         }

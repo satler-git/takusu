@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use takusu_local_lib::app::{GenerateScheduleInput, RescheduleInput, TakusuApp};
+use takusu_util::EnumLabel;
 use takusu_storage::{HabitRow, ScheduleEntry, SettingsRow, TaskRow};
 
 use crate::tabs::{habits, schedule, settings, tasks};
@@ -101,7 +102,7 @@ impl App {
                 Some(filter) => self
                     .all_tasks
                     .iter()
-                    .filter(|task| task.status == filter)
+                    .filter(|task| task.status.as_str() == filter)
                     .cloned()
                     .collect(),
                 None => self.all_tasks.clone(),

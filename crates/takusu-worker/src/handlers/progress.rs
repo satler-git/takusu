@@ -273,7 +273,9 @@ pub async fn record_progress(
 
     let task = select_one(&database, &full).await?;
 
-    if task.status == "completed" || task.status == "skipped" {
+    if task.status == takusu_util::TaskStatus::Completed
+        || task.status == takusu_util::TaskStatus::Skipped
+    {
         return Err(WorkerError::BadRequest(format!(
             "cannot record progress on a {} task",
             task.status
@@ -389,12 +391,12 @@ pub async fn record_progress(
         new_sigma = sigma;
     }
 
-    let status = if task.status == "completed" {
-        "completed".to_string()
+    let status = if task.status == takusu_util::TaskStatus::Completed {
+        takusu_util::TaskStatus::Completed
     } else if delta_quantity < 0 {
-        task.status.clone()
+        task.status
     } else {
-        "in_progress".to_string()
+        takusu_util::TaskStatus::InProgress
     };
 
     let suggests_completion = task
@@ -410,7 +412,7 @@ pub async fn record_progress(
             JsValue::from_f64(body.quantity_done as f64),
             JsValue::from_f64(new_avg as f64),
             JsValue::from_f64(new_sigma as f64),
-            JsValue::from_str(&status),
+            JsValue::from_str(&status.to_string()),
             JsValue::from_str(&full),
         ])?
         .run()
@@ -453,7 +455,9 @@ pub async fn complete_task_work(req: Request, env: Env, id: &str) -> Result<Resp
     let full = resolve_task_id(&database, id).await?;
 
     let original = select_one(&database, &full).await?;
-    if original.status == "completed" || original.status == "skipped" {
+    if original.status == takusu_util::TaskStatus::Completed
+        || original.status == takusu_util::TaskStatus::Skipped
+    {
         return Err(WorkerError::BadRequest(format!(
             "cannot complete a {} task",
             original.status
@@ -600,7 +604,9 @@ pub async fn split_task(mut req: Request, env: Env, id: &str) -> Result<Response
             None,
         )?;
     }
-    if original.status == "completed" || original.status == "skipped" {
+    if original.status == takusu_util::TaskStatus::Completed
+        || original.status == takusu_util::TaskStatus::Skipped
+    {
         return Err(WorkerError::BadRequest(format!(
             "cannot split a {} task",
             original.status

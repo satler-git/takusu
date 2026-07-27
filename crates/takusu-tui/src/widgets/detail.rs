@@ -1,6 +1,7 @@
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
 use takusu_storage::TaskRow;
+use takusu_util::EnumLabel;
 
 use crate::style;
 
@@ -14,8 +15,8 @@ pub fn render_task_detail(frame: &mut Frame, area: Rect, task: &TaskRow, tz: &ji
     lines.push(Line::from(vec![
         Span::styled("Status: ", Style::default().fg(style::HEADER_FG)),
         Span::styled(
-            &task.status,
-            Style::default().fg(style::status_color(&task.status)),
+            task.status.as_str(),
+            Style::default().fg(style::status_color(task.status.as_str())),
         ),
     ]));
     lines.push(Line::from(vec![
