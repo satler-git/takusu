@@ -68,6 +68,7 @@ export function FloatingVoiceButton() {
   const isSlideRef = useRef(false);
   const transitionedRef = useRef(false);
   const buttonY = useSharedValue(0);
+  const didMove = useSharedValue(false);
 
   const isHome = pathname === '/' || pathname === '' || pathname === '/index';
 
@@ -80,16 +81,18 @@ export function FloatingVoiceButton() {
     stateRef.current = 'idle';
     isSlideRef.current = false;
     transitionedRef.current = false;
+    didMove.value = false;
     buttonY.value = 0;
-  }, [isHome, buttonY]);
+  }, [isHome, buttonY, didMove]);
 
   const reset = useCallback(() => {
     stateRef.current = 'idle';
     isSlideRef.current = false;
     transitionedRef.current = false;
+    didMove.value = false;
     buttonY.value = withSpring(0);
     setPendingSessionId(null);
-  }, [buttonY, setPendingSessionId]);
+  }, [buttonY, didMove, setPendingSessionId]);
 
   const pushAgent = useCallback(() => {
     if (transitionedRef.current || pathname === '/agent') return;
@@ -127,12 +130,19 @@ export function FloatingVoiceButton() {
     stateRef.current = 'pending';
     isSlideRef.current = false;
     transitionedRef.current = false;
+    didMove.value = false;
     buttonY.value = 0;
-  }, [buttonY]);
+  }, [buttonY, didMove]);
 
   const handleRelease = useCallback(() => {
     if (transitionedRef.current) {
       // Already transitioning; do not reset the queued request.
+      return;
+    }
+    if (didMove.value) {
+      // A pan started but the slide-to-add threshold was not reached; do
+      // not treat the release as a tap that opens AgentView.
+      reset();
       return;
     }
     if (stateRef.current === 'pending') {
@@ -140,7 +150,7 @@ export function FloatingVoiceButton() {
       return;
     }
     reset();
-  }, [pushAgent, reset]);
+  }, [pushAgent, reset, didMove]);
 
   const panGesture = Gesture.Pan()
     .activeOffsetY([-10, 10])
@@ -152,6 +162,9 @@ export function FloatingVoiceButton() {
     })
     .onUpdate((e) => {
       buttonY.value = Math.min(0, e.translationY);
+      if (!didMove.value) {
+        didMove.value = true;
+      }
       if (e.translationY < -TASKADD_SLIDE_THRESHOLD) {
         runOnJS(handleSlide)();
       }
