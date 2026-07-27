@@ -14,7 +14,7 @@ export function useUndoableToast(): (message: string) => string {
       toastId = showTopToast(message, {
         type: 'success',
         duration: UNDO_TOAST_DURATION,
-        swipeable: false,
+        swipeable: true,
         action: {
           label: '元に戻す',
           onPress: () => {

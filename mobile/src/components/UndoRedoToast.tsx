@@ -1,47 +1,46 @@
-// UndoRedoToast — listens to undoRedo callbacks and shows a Snackbar
-// with the action description when undo/redo fires.
+// UndoRedoToast — listens to undoRedo callbacks and shows a standard top
+// toast with the action description when undo/redo fires.
 // Mounted once at the app root so it works across all views.
 
-import { useEffect, useState } from 'react';
-import { Snackbar } from 'react-native-paper';
+import { useEffect, useRef } from 'react';
+import { useTopToast } from '@/src/components/TopToast';
 import { undoRedo } from '@/src/api/undoRedo';
-
-import { useColors } from '@/src/theme';
 import { haptic } from '@/src/components/haptics';
 
+const UNDO_REDO_TOAST_DURATION = 2000;
+
 export function UndoRedoToast() {
-  const colors = useColors();
-  const [visible, setVisible] = useState(false);
-  const [message, setMessage] = useState('');
+  const { showTopToast, hideTopToast } = useTopToast();
+  const toastIdRef = useRef<string | null>(null);
 
   useEffect(() => {
+    function show(description: string, prefix: string) {
+      haptic.success();
+      if (toastIdRef.current) {
+        hideTopToast(toastIdRef.current);
+      }
+      toastIdRef.current = showTopToast(`${prefix}: ${description}`, {
+        type: 'info',
+        duration: UNDO_REDO_TOAST_DURATION,
+      });
+    }
+
     function showUndo(description: string) {
-      haptic.success();
-      setMessage(`Undo: ${description}`);
-      setVisible(true);
+      show(description, 'Undo');
     }
+
     function showRedo(description: string) {
-      haptic.success();
-      setMessage(`Redo: ${description}`);
-      setVisible(true);
+      show(description, 'Redo');
     }
+
     undoRedo.setOnUndo(showUndo);
     undoRedo.setOnRedo(showRedo);
+
     return () => {
       undoRedo.setOnUndo(null);
       undoRedo.setOnRedo(null);
     };
-  }, []);
+  }, [showTopToast, hideTopToast]);
 
-  return (
-    <Snackbar
-      visible={visible}
-      onDismiss={() => setVisible(false)}
-      duration={2000}
-      style={{ backgroundColor: colors.brand }}
-      theme={{ colors: { onSurface: colors.onBrand } }}
-    >
-      {message}
-    </Snackbar>
-  );
+  return null;
 }

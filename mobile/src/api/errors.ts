@@ -9,6 +9,7 @@
 
 import { Alert } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
+import { getTopToastRef } from '@/src/api/topToastRef';
 import { ApiError } from './client';
 
 /** Format an unknown error into a human-readable string. */
@@ -68,32 +69,52 @@ function pushClientLog(level: string, context: string, message: string): void {
 }
 
 /**
- * Show an alert for an operation failure.
+ * Show a non-blocking top toast for an operation failure.
  * `title` defaults to "エラー" but can be overridden for context
  * (e.g. "タスクの削除に失敗").
  *
- * The alert includes a "コピー" button so the user can copy the full
+ * The toast includes a "コピー" action so the user can copy the full
  * error message (including stack trace when available) to the clipboard
- * for bug reports (issue #216).
+ * for bug reports (issue #216). Falls back to an alert when no toast
+ * provider is mounted.
  */
-export async function showError(e: unknown, title = 'エラー'): Promise<void> {
+export function showError(e: unknown, title = 'エラー'): string | undefined {
   const msg = formatError(e);
   const fullMsg = formatErrorForLog(e);
   pushClientLog('error', title, fullMsg);
+
+  const toastRef = getTopToastRef();
+  if (toastRef) {
+    let toastId = '';
+    toastId = toastRef.showTopToast(`${title}: ${msg}`, {
+      type: 'error',
+      duration: Infinity,
+      action: {
+        label: 'コピー',
+        onPress: () => {
+          Clipboard.setStringAsync(fullMsg).catch(() => {});
+          toastRef.hideTopToast(toastId);
+        },
+      },
+    });
+    return toastId;
+  }
+
   Alert.alert(
     title,
     msg,
     [
       {
         text: 'コピー',
-        onPress: async () => {
-          await Clipboard.setStringAsync(fullMsg);
+        onPress: () => {
+          Clipboard.setStringAsync(fullMsg).catch(() => {});
         },
       },
       { text: 'OK', style: 'cancel' },
     ],
     { cancelable: true },
   );
+  return undefined;
 }
 
 /**

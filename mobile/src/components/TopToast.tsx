@@ -35,11 +35,13 @@ import Reanimated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/src/theme';
+import { setTopToastRef } from '@/src/api/topToastRef';
 
 const DEFAULT_DURATION = 3000;
 const OFFSCREEN_MARGIN = 50;
 const SWIPE_DISMISS_THRESHOLD = 50;
 const SWIPE_VELOCITY_THRESHOLD = 300;
+const MIN_PAN_DISTANCE = 10;
 const ESTIMATED_HEIGHT = 64;
 const GAP = 8;
 
@@ -141,6 +143,13 @@ export function TopToastProvider({ children }: { children: ReactNode }) {
     () => ({ showTopToast, hideTopToast }),
     [showTopToast, hideTopToast],
   );
+
+  useEffect(() => {
+    setTopToastRef(value);
+    return () => {
+      setTopToastRef(null);
+    };
+  }, [value]);
 
   return (
     <TopToastContext.Provider value={value}>
@@ -282,6 +291,7 @@ function ToastItem({
   }, [clearDismissTimer, dismiss, duration]);
 
   const resetPanAndRestartTimer = useCallback(() => {
+    if (dismissing.value) return;
     panX.value = withTiming(0, {
       duration: 200,
       easing: Easing.out(Easing.ease),
@@ -295,7 +305,7 @@ function ToastItem({
       easing: Easing.out(Easing.ease),
     });
     startDismissTimer();
-  }, [panX, panY, offsetY, offsetYTarget, startDismissTimer]);
+  }, [dismissing, panX, panY, offsetY, offsetYTarget, startDismissTimer]);
 
   // Keep the target offset in sync with the parent stack at all times.
   // Animate to it only when the toast is not already dismissing.
@@ -332,11 +342,11 @@ function ToastItem({
     () =>
       Gesture.Pan()
         .enabled(swipeable)
-        .activeOffsetX([-10, 10])
-        .failOffsetY([-10, 10])
+        .minDistance(MIN_PAN_DISTANCE)
         .onBegin(() => {
           cancelAnimation(panX);
           cancelAnimation(panY);
+          cancelAnimation(offsetY);
           panX.value = 0;
           panY.value = 0;
           dismissing.value = false;
@@ -346,7 +356,7 @@ function ToastItem({
           panX.value = e.translationX;
         })
         .onEnd((e, success) => {
-          if (!success) return;
+          if (!success || dismissing.value) return;
           if (
             e.translationX > SWIPE_DISMISS_THRESHOLD ||
             e.velocityX > SWIPE_VELOCITY_THRESHOLD
@@ -369,6 +379,7 @@ function ToastItem({
       clearDismissTimer,
       dismissing,
       dismissHorizontal,
+      offsetY,
       panX,
       panY,
       resetPanAndRestartTimer,
