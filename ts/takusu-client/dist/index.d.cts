@@ -418,7 +418,7 @@ declare class TakusuClient {
     private token;
     constructor(baseUrl: string, token: string);
     private request;
-    health(): Promise<string>;
+    health(signal?: AbortSignal): Promise<string>;
     listTasks(query?: TaskQuery): Promise<TaskRow[]>;
     completeTaskQuery(q: string, limit?: number): Promise<Completion[]>;
     getTask(id: string): Promise<TaskRow>;

@@ -9,7 +9,7 @@ import * as TaskManager from 'expo-task-manager';
 import * as Notifications from 'expo-notifications';
 import * as Sentry from '@sentry/react-native';
 import { loadSettings } from '@/src/api/settingsStore';
-import { ensureLocalServer } from '@/src/api/server';
+import { ensureLocalServer, waitForLocalServerReady } from '@/src/api/server';
 import { handleActionButtonResponse, NOOP_HAPTIC } from './actionHandler';
 import { ACTION_DONE, ACTION_CANCEL, ACTION_START } from './categories';
 
@@ -68,6 +68,7 @@ TaskManager.defineTask<Notifications.NotificationTaskPayload>(
         workersUrl: settings.workersUrl,
         rootToken: settings.workersToken,
       });
+      await waitForLocalServerReady(client, { maxWaitMs: 3000 });
       await handleActionButtonResponse(data, {
         client,
         inProgressNotifications: settings.notifications.inProgress,

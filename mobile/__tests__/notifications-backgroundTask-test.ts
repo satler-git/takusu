@@ -24,6 +24,7 @@ jest.doMock('@/src/api/settingsStore', () => ({
 
 jest.doMock('@/src/api/server', () => ({
   ensureLocalServer: jest.fn(),
+  waitForLocalServerReady: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.doMock('@/src/notifications/actionHandler', () => ({
@@ -35,7 +36,10 @@ const TaskManager = require('expo-task-manager');
 const Notifications = require('expo-notifications');
 const Sentry = require('@sentry/react-native');
 const { loadSettings } = require('@/src/api/settingsStore');
-const { ensureLocalServer } = require('@/src/api/server');
+const {
+  ensureLocalServer,
+  waitForLocalServerReady,
+} = require('@/src/api/server');
 const {
   handleActionButtonResponse,
   NOOP_HAPTIC,
@@ -165,6 +169,9 @@ describe('background notification task executor', () => {
     expect(ensureLocalServer).toHaveBeenCalledWith({
       workersUrl: 'https://example.com',
       rootToken: 'token',
+    });
+    expect(waitForLocalServerReady).toHaveBeenCalledWith(mockClient, {
+      maxWaitMs: 3000,
     });
     expect(handleActionButtonResponse).toHaveBeenCalledWith(
       response,

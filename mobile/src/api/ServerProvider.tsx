@@ -15,6 +15,7 @@ import {
   DEFAULT_LOCAL_PORT,
   ensureLocalServer,
   getLocalServerPort,
+  waitForLocalServerReady,
 } from './server';
 import TakusuServerModule from '@/modules/takusu-server/src/TakusuServerModule';
 import TakusuAppIconModule from '@/modules/takusu-app-icon/src/TakusuAppIconModule';
@@ -147,7 +148,11 @@ export function ServerProvider({ children }: { children: ReactNode }) {
   });
 
   const startServer = useCallback(
-    async (url: string, token: string): Promise<TakusuClient | null> => {
+    async (
+      url: string,
+      token: string,
+      signal?: AbortSignal,
+    ): Promise<TakusuClient | null> => {
       const finalUrl = url || process.env.EXPO_PUBLIC_WORKERS_URL || '';
       const finalToken = token || process.env.EXPO_PUBLIC_ROOT_TOKEN || '';
 
@@ -162,6 +167,12 @@ export function ServerProvider({ children }: { children: ReactNode }) {
         rootToken: finalToken,
         agentConfigJson,
       });
+
+      // The native module starts the server in a spawned task and returns
+      // before axum is actually accepting requests. Wait for the first
+      // successful health check so callers never receive a client pointing
+      // to a server that is not yet ready (#1135).
+      await waitForLocalServerReady(client, { signal });
 
       // Persist credentials for the home screen widget so the
       // WorkManager worker can start the local server independently.
@@ -266,11 +277,12 @@ export function ServerProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
+    const controller = new AbortController();
 
     async function init() {
       const settings: PersistedSettings = await loadSettings();
 
-      if (cancelled) return;
+      if (cancelled || controller.signal.aborted) return;
 
       setState((prev) => ({
         ...prev,
@@ -294,8 +306,9 @@ export function ServerProvider({ children }: { children: ReactNode }) {
         const client = await startServer(
           settings.workersUrl,
           settings.workersToken,
+          controller.signal,
         );
-        if (cancelled) return;
+        if (cancelled || controller.signal.aborted) return;
         setState((prev) => ({
           ...prev,
           ready: true,
@@ -303,7 +316,7 @@ export function ServerProvider({ children }: { children: ReactNode }) {
           client,
         }));
       } catch (e) {
-        if (cancelled) return;
+        if (cancelled || controller.signal.aborted) return;
         setState((prev) => ({
           ...prev,
           settingsLoaded: true,
@@ -318,6 +331,7 @@ export function ServerProvider({ children }: { children: ReactNode }) {
 
     return () => {
       cancelled = true;
+      controller.abort();
       // stop() is a synchronous native Function; a thrown native
       // exception (e.g. "Server not running") propagates synchronously,
       // so use try/catch rather than Promise.resolve().catch().

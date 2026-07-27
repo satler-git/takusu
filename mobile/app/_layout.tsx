@@ -133,10 +133,17 @@ function backgroundColorForTheme(theme: AppTheme): string {
 }
 
 function ThemedApp() {
-  const { theme, settingsLoaded, client, notifications } = useServer();
+  const {
+    theme,
+    settingsLoaded,
+    client,
+    notifications,
+    error: serverError,
+  } = useServer();
   const MAX_PROCESSED_RESPONSE_IDS = 50;
 
   const [showWelcome, setShowWelcome] = useState(false);
+  const [dismissWelcome, setDismissWelcome] = useState(false);
   const [welcomeTheme, setWelcomeTheme] = useState<AppTheme | null>(null);
   const [welcomeBackgroundColor, setWelcomeBackgroundColor] = useState<
     string | null
@@ -170,8 +177,10 @@ function ThemedApp() {
     };
   }, []);
 
-  // Show the welcome overlay once per hour on cold start.
-  // Wait for settings to load so the theme is finalized before capturing it.
+  // Show the welcome overlay once per hour on cold start, and also whenever
+  // the app is waiting for the local server to become ready. The overlay stays
+  // visible until `client` is set or an error occurs, masking the empty UI
+  // during the cold-start health-check wait (#1135).
   const hasCheckedWelcome = useRef(false);
   useEffect(() => {
     if (!settingsLoaded || hasCheckedWelcome.current) return;
@@ -183,19 +192,26 @@ function ThemedApp() {
       const now = Date.now();
       const shouldShow =
         lastShown === null || now - lastShown > WELCOME_COOLDOWN_MS;
-      if (shouldShow) {
+      const isWaiting = !client && !serverError;
+      if (shouldShow || isWaiting) {
         setWelcomeTheme(theme);
         setWelcomeBackgroundColor(backgroundColorForTheme(theme));
+        setShowWelcome(true);
       }
-      setShowWelcome(shouldShow);
     }
-    checkWelcome().catch(() => {
-      setShowWelcome(false);
-    });
-  }, [settingsLoaded, theme]);
+    checkWelcome().catch(() => {});
+  }, [settingsLoaded, theme, client, serverError]);
+
+  // Dismiss the welcome overlay as soon as the server is ready or fails.
+  useEffect(() => {
+    if (showWelcome && (client || serverError)) {
+      setDismissWelcome(true);
+    }
+  }, [showWelcome, client, serverError]);
 
   const handleWelcomeFinished = useCallback(() => {
     setShowWelcome(false);
+    setDismissWelcome(false);
     saveWelcomeShownAt(Date.now()).catch(() => {
       // ignore storage errors
     });
@@ -322,6 +338,7 @@ function ThemedApp() {
               theme={welcomeTheme}
               backgroundColor={welcomeBackgroundColor ?? stackBg}
               onFinished={handleWelcomeFinished}
+              dismiss={dismissWelcome}
             />
           )}
         </TopToastProvider>
