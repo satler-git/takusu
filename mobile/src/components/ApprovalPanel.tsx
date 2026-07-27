@@ -39,7 +39,7 @@ const makeStyles = (colors: ColorSet) =>
       flex: 1,
     },
     panelBodyContent: {
-      flexGrow: 0,
+      flexGrow: 1,
     },
     panelBodyInner: { gap: 12 },
     title: { fontWeight: '700', fontSize: 16 },
