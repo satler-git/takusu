@@ -5,17 +5,25 @@ import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
+import android.util.SizeF
 import android.widget.RemoteViews
 import androidx.core.widget.RemoteViewsCompat
+import java.time.LocalDate
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
+import java.util.Locale
+import kotlin.math.abs
 import org.json.JSONArray
 import org.json.JSONObject
 
 private const val TAG = "TakusuWidgetProvider"
-private const val WIDE_DP = 250
-private const val TALL_DP = 90
+private const val WIDGET_DAYS_HORIZON = 7
 
 private enum class WidgetSize {
     W4x2,
@@ -134,7 +142,7 @@ class TakusuWidgetProvider : AppWidgetProvider() {
                 ).takeIf { !it.isNullOrEmpty() }
                     ?: "takusu"
 
-            val size = resolveSize(options)
+            val size = resolveSize(context, widgetId, options)
             val layout =
                 when (size) {
                     WidgetSize.W4x2 -> R.layout.takusu_widget_4x2
@@ -156,11 +164,84 @@ class TakusuWidgetProvider : AppWidgetProvider() {
             manager.updateAppWidget(widgetId, views)
         }
 
-        private fun resolveSize(options: Bundle): WidgetSize {
-            val width = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 0)
-            val height = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 0)
-            val wide = width >= WIDE_DP
-            val tall = height >= TALL_DP
+        private fun resolveSize(
+            context: Context,
+            widgetId: Int,
+            options: Bundle,
+        ): WidgetSize {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                @Suppress("DEPRECATION")
+                val sizes = options.getParcelableArrayList<SizeF>(AppWidgetManager.OPTION_APPWIDGET_SIZES)
+                if (!sizes.isNullOrEmpty()) {
+                    val current = pickCurrentSize(context, options, sizes)
+                    return resolveSizeFromDimensions(
+                        context,
+                        widgetId,
+                        current.width.toInt(),
+                        current.height.toInt(),
+                    )
+                }
+            }
+
+            val (width, height) = currentSizeFromOptions(context, options)
+            return resolveSizeFromDimensions(context, widgetId, width, height)
+        }
+
+        private fun pickCurrentSize(
+            context: Context,
+            options: Bundle,
+            sizes: List<SizeF>,
+        ): SizeF {
+            val (targetWidth, targetHeight) = currentSizeFromOptions(context, options)
+            return sizes.minByOrNull { abs(it.width - targetWidth) + abs(it.height - targetHeight) }
+                ?: sizes.first()
+        }
+
+        private fun currentSizeFromOptions(
+            context: Context,
+            options: Bundle,
+        ): Pair<Int, Int> {
+            val landscape = context.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+            // The options bundle exposes MIN/MAX width/height as the bounds for the current
+            // orientation. The conventional mapping is:
+            //   portrait : MIN_WIDTH (narrower)  x MAX_HEIGHT (taller)
+            //   landscape: MAX_WIDTH (wider)     x MIN_HEIGHT (shorter)
+            // This gives the current orientation's dimensions even on pre-Android 12 devices
+            // that do not report exact sizes via OPTION_APPWIDGET_SIZES.
+            val width =
+                if (landscape) {
+                    options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH, 0)
+                } else {
+                    options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 0)
+                }
+            val height =
+                if (landscape) {
+                    options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 0)
+                } else {
+                    options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 0)
+                }
+            return width to height
+        }
+
+        private fun resolveSizeFromDimensions(
+            context: Context,
+            widgetId: Int,
+            width: Int,
+            height: Int,
+        ): WidgetSize {
+            val info =
+                try {
+                    AppWidgetManager.getInstance(context).getAppWidgetInfo(widgetId)
+                } catch (_: Exception) {
+                    null
+                }
+            val baseWidth = info?.minWidth ?: 250
+            val baseHeight = info?.minHeight ?: 110
+            val landscape = context.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+            val wideTh = if (landscape) (baseWidth * 1.8).toInt() else (baseWidth * 0.8).toInt()
+            val tallTh = if (landscape) baseHeight else (baseHeight * 1.3).toInt()
+            val wide = width >= wideTh
+            val tall = height >= tallTh
             return when {
                 wide && tall -> WidgetSize.W4x2
                 wide && !tall -> WidgetSize.W4x1
@@ -193,7 +274,16 @@ class TakusuWidgetProvider : AppWidgetProvider() {
             }
 
             val upcoming = snapshot?.upcoming ?: emptyList()
-            val hasUpcoming = upcoming.isNotEmpty()
+            val (items, futureCount) =
+                buildCollectionItems(
+                    context,
+                    upcoming,
+                    maxItems = 14,
+                    overflowLayout = true,
+                    zone = zone,
+                    scheme = scheme,
+                )
+            val hasUpcoming = futureCount > 0
             val hasContent = doing != null || hasUpcoming
 
             views.setViewVisibility(
@@ -210,15 +300,6 @@ class TakusuWidgetProvider : AppWidgetProvider() {
             )
 
             if (hasUpcoming) {
-                val items =
-                    buildCollectionItems(
-                        context,
-                        upcoming,
-                        maxItems = 4,
-                        overflowLayout = true,
-                        zone = zone,
-                        scheme = scheme,
-                    )
                 try {
                     RemoteViewsCompat.setRemoteAdapter(context, views, widgetId, R.id.widget_upcoming_list, items)
                 } catch (e: Exception) {
@@ -247,7 +328,7 @@ class TakusuWidgetProvider : AppWidgetProvider() {
             zone: java.time.ZoneId,
             scheme: String,
         ) {
-            val primary = primaryTask(snapshot)
+            val primary = primaryTask(snapshot, zone)
             if (primary == null) {
                 views.setViewVisibility(R.id.widget_label, android.view.View.GONE)
                 views.setTextViewText(R.id.widget_title, "今日の予定はまだありません")
@@ -276,7 +357,7 @@ class TakusuWidgetProvider : AppWidgetProvider() {
         ) {
             views.setTextViewText(R.id.widget_updated, formatUpdated(updatedAt))
 
-            val primary = primaryTask(snapshot)
+            val primary = primaryTask(snapshot, zone)
             if (primary == null) {
                 views.setViewVisibility(R.id.widget_mini_main, android.view.View.GONE)
                 views.setViewVisibility(R.id.widget_empty, android.view.View.VISIBLE)
@@ -293,22 +374,22 @@ class TakusuWidgetProvider : AppWidgetProvider() {
 
             val extras =
                 if (primary == snapshot?.doing) {
-                    snapshot?.upcoming?.take(2) ?: emptyList()
+                    snapshot?.upcoming ?: emptyList()
                 } else {
-                    snapshot?.upcoming?.drop(1)?.take(2) ?: emptyList()
+                    snapshot?.upcoming?.drop(1) ?: emptyList()
                 }
-            if (extras.isNotEmpty()) {
+            val (items, futureCount) =
+                buildCollectionItems(
+                    context,
+                    extras,
+                    maxItems = 3,
+                    overflowLayout = false,
+                    mini = true,
+                    zone = zone,
+                    scheme = scheme,
+                )
+            if (futureCount > 0) {
                 views.setViewVisibility(R.id.widget_mini_list, android.view.View.VISIBLE)
-                val items =
-                    buildCollectionItems(
-                        context,
-                        extras,
-                        maxItems = 2,
-                        overflowLayout = false,
-                        mini = true,
-                        zone = zone,
-                        scheme = scheme,
-                    )
                 try {
                     RemoteViewsCompat.setRemoteAdapter(context, views, widgetId, R.id.widget_mini_list, items)
                 } catch (e: Exception) {
@@ -329,7 +410,7 @@ class TakusuWidgetProvider : AppWidgetProvider() {
             zone: java.time.ZoneId,
             scheme: String,
         ) {
-            val primary = primaryTask(snapshot)
+            val primary = primaryTask(snapshot, zone)
             if (primary == null) {
                 views.setTextViewText(R.id.widget_title, "予定なし")
                 views.setViewVisibility(R.id.widget_time, android.view.View.GONE)
@@ -371,6 +452,11 @@ class TakusuWidgetProvider : AppWidgetProvider() {
             }
         }
 
+        private data class CollectionResult(
+            val items: RemoteViewsCompat.RemoteCollectionItems,
+            val futureCount: Int,
+        )
+
         private fun buildCollectionItems(
             context: Context,
             tasks: List<UpcomingTask>,
@@ -379,25 +465,60 @@ class TakusuWidgetProvider : AppWidgetProvider() {
             mini: Boolean = false,
             zone: java.time.ZoneId,
             scheme: String,
-        ): RemoteViewsCompat.RemoteCollectionItems {
+        ): CollectionResult {
+            val viewTypeCount = 1 + (if (!mini) 1 else 0) + (if (overflowLayout) 1 else 0)
             val builder =
                 RemoteViewsCompat.RemoteCollectionItems
                     .Builder()
-                    .setViewTypeCount(if (overflowLayout) 2 else 1)
+                    .setViewTypeCount(viewTypeCount)
                     .setHasStableIds(false)
 
-            val shown = tasks.take(maxItems)
-            for ((index, task) in shown.withIndex()) {
-                builder.addItem(index.toLong(), buildItemRemoteViews(context, task, mini, zone, scheme))
+            val today = ZonedDateTime.now(zone).toLocalDate()
+            val horizon = today.plusDays(WIDGET_DAYS_HORIZON.toLong())
+            val datedTasks =
+                tasks
+                    .mapNotNull { task ->
+                        val date = parseDate(task.startAt ?: task.endAt, zone) ?: return@mapNotNull null
+                        if (date.isBefore(today)) {
+                            null
+                        } else {
+                            task to date
+                        }
+                    }.sortedBy { it.second }
+
+            val withinHorizon = datedTasks.filter { it.second <= horizon }
+            val shown =
+                if (withinHorizon.size >= maxItems) {
+                    withinHorizon.take(maxItems)
+                } else {
+                    withinHorizon + datedTasks.filter { it.second > horizon }.take(maxItems - withinHorizon.size)
+                }
+
+            var itemId = 0L
+            var lastDate: LocalDate? = null
+            for ((task, date) in shown) {
+                if (!mini) {
+                    if (date != lastDate) {
+                        builder.addItem(
+                            itemId++,
+                            buildDateHeaderRemoteViews(context, date, today),
+                        )
+                        lastDate = date
+                    }
+                }
+                builder.addItem(
+                    itemId++,
+                    buildItemRemoteViews(context, task, mini, zone, scheme),
+                )
             }
-            val overflow = tasks.size - maxItems
+            val overflow = datedTasks.size - shown.size
             if (overflowLayout && overflow > 0) {
                 builder.addItem(
-                    shown.size.toLong(),
+                    itemId,
                     buildOverflowRemoteViews(context, overflow, scheme),
                 )
             }
-            return builder.build()
+            return CollectionResult(builder.build(), datedTasks.size)
         }
 
         private fun buildItemRemoteViews(
@@ -439,6 +560,16 @@ class TakusuWidgetProvider : AppWidgetProvider() {
             return views
         }
 
+        private fun buildDateHeaderRemoteViews(
+            context: Context,
+            date: LocalDate,
+            today: LocalDate,
+        ): RemoteViews {
+            val views = RemoteViews(context.packageName, R.layout.takusu_widget_date_header)
+            views.setTextViewText(R.id.widget_date_header_text, formatDateLabel(date, today))
+            return views
+        }
+
         private fun setClickIntents(
             context: Context,
             views: RemoteViews,
@@ -468,9 +599,19 @@ class TakusuWidgetProvider : AppWidgetProvider() {
             }
         }
 
-        private fun primaryTask(snapshot: Snapshot?): UpcomingTask? {
+        private fun primaryTask(
+            snapshot: Snapshot?,
+            zone: java.time.ZoneId,
+        ): UpcomingTask? {
             if (snapshot == null) return null
-            return snapshot.doing ?: snapshot.upcoming.firstOrNull()
+            // Prefer the task currently in progress; otherwise use the first task that is
+            // today or in the future. `snapshot.upcoming` may contain scheduled tasks whose
+            // start time is in the past, and those are intentionally skipped here.
+            val today = ZonedDateTime.now(zone).toLocalDate()
+            return snapshot.doing ?: snapshot.upcoming.firstOrNull { task ->
+                val date = parseDate(task.startAt ?: task.endAt, zone)
+                date != null && !date.isBefore(today)
+            }
         }
 
         private fun todayRemaining(snapshot: Snapshot?): Int {
@@ -640,5 +781,32 @@ private fun parseIso(
         } catch (e2: Exception) {
             null
         }
+    }
+}
+
+private fun parseDate(
+    iso: String?,
+    zone: java.time.ZoneId = java.time.ZoneId.systemDefault(),
+): LocalDate? {
+    val epoch = parseIso(iso, zone) ?: return null
+    return try {
+        java.time.Instant
+            .ofEpochMilli(epoch)
+            .atZone(zone)
+            .toLocalDate()
+    } catch (_: Exception) {
+        null
+    }
+}
+
+private fun formatDateLabel(
+    date: LocalDate,
+    today: LocalDate,
+): String {
+    val days = ChronoUnit.DAYS.between(today, date)
+    return when (days) {
+        0L -> "今日"
+        1L -> "明日"
+        else -> DateTimeFormatter.ofPattern("M/d").withLocale(Locale.getDefault()).format(date)
     }
 }

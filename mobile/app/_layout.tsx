@@ -330,6 +330,7 @@ function ThemedApp() {
             <Stack.Screen name="settings/licenses" />
             <Stack.Screen name="stats" />
             <Stack.Screen name="import-ical" />
+            <Stack.Screen name="tasks" />
           </Stack>
           <UndoRedoToast />
           <FloatingVoiceButton />

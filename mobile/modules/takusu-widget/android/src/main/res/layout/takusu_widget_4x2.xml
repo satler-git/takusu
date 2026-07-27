@@ -5,10 +5,7 @@
   android:layout_height="match_parent"
   android:background="@drawable/widget_background"
   android:orientation="vertical"
-  android:paddingLeft="20dp"
-  android:paddingRight="20dp"
-  android:paddingTop="16dp"
-  android:paddingBottom="24dp">
+  android:padding="16dp">
 
   <LinearLayout
     android:id="@+id/widget_header"
@@ -133,8 +130,8 @@
     android:layout_weight="1"
     android:background="@android:color/transparent"
     android:cacheColorHint="@android:color/transparent"
-    android:divider="@null"
-    android:dividerHeight="0dp"
+    android:divider="@drawable/widget_list_divider"
+    android:dividerHeight="4dp"
     android:overScrollMode="never" />
 
   <LinearLayout
