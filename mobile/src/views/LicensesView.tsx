@@ -124,7 +124,7 @@ export function LicensesView() {
               style={[
                 styles.card,
                 {
-                  backgroundColor: colors.grayLight,
+                  backgroundColor: colors.surface,
                   borderColor: colors.separator,
                 },
               ]}

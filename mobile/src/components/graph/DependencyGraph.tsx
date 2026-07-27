@@ -864,7 +864,7 @@ function truncate(s: string, maxLen: number): string {
 // don't render on Android (Roboto lacks CJK). Paragraph's fontFamilies
 // list provides per-character fallback: Latin chars use sans-serif,
 // Japanese chars fall through to NotoSansCJK.
-// Label is drawn below the node (#294) with a white background pill so
+// Label is drawn below the node (#294) with a surface background pill so
 // it stays readable even when zoomed out. The background and text are
 // rendered in separate passes so edges can be drawn between them (#589).
 const NODE_LABEL_FONTS: string[] = [
@@ -898,7 +898,7 @@ function NodeLabelBackground({
   }, [x, y, height]);
 
   return (
-    <Path path={bgPath} color={colors.onBrand} style="fill" opacity={0.85} />
+    <Path path={bgPath} color={colors.surface} style="fill" opacity={0.85} />
   );
 }
 
