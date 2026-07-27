@@ -398,11 +398,7 @@ impl Tool for SkillsProposeAdd {
         Ok(ToolOutput {
             content: serde_json::to_string(&json!({
                 "approval_required": true,
-                "operation": proposal.operation,
                 "target": proposal.target_label,
-                "why": why,
-                "warnings": warnings,
-                "inferred_fields": inferred_fields,
             }))
             .unwrap(),
             why,
@@ -536,11 +532,7 @@ impl Tool for SkillsProposeEdit {
         Ok(ToolOutput {
             content: serde_json::to_string(&json!({
                 "approval_required": true,
-                "operation": proposal.operation,
                 "target": proposal.target_label,
-                "why": why,
-                "warnings": warnings,
-                "inferred_fields": inferred_fields,
             }))
             .unwrap(),
             why,

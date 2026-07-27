@@ -6,7 +6,9 @@ use crate::tools::takusu::{
     TaskContext, TimeZoneCache, client_error, object, optional_bool, optional_string, required_i64,
     server_timezone, strip_leading_hash, task_json,
 };
-use crate::{InvalidArgsError, ProposedChange, Tool, ToolError, ToolExposure, ToolOutput, ToolRegistry};
+use crate::{
+    InvalidArgsError, ProposedChange, Tool, ToolError, ToolExposure, ToolOutput, ToolRegistry,
+};
 
 /// Register the active-session progress tools.
 pub fn register_tools(registry: &mut ToolRegistry, client: Client, tz_cache: TimeZoneCache) {
@@ -181,10 +183,7 @@ fn progress_output(
 ) -> ToolOutput {
     let mut content = json!({
         "approval_required": true,
-        "operation": operation,
         "target": target_label,
-        "before": before,
-        "after": after,
     });
     if let Some(obj) = content.as_object_mut() {
         for (k, v) in content_extra {

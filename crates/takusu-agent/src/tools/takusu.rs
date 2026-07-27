@@ -13,7 +13,9 @@ use takusu_util::{parse_date_expression, parse_datetime_to_timestamp, parse_date
 
 use std::sync::Weak;
 
-use crate::{InvalidArgsError, Tool, ToolError, ToolExposure, ToolOutput, ToolRegistry, UserInputProvider};
+use crate::{
+    InvalidArgsError, Tool, ToolError, ToolExposure, ToolOutput, ToolRegistry, UserInputProvider,
+};
 
 /// Registers planner read tools, approval-only mutation proposals, and the ASR
 /// correction tool.
@@ -40,9 +42,9 @@ pub fn register_tools(
     }));
     crate::tools::skills::register_tools(registry, client.clone());
     crate::tools::user_input::register_user_input_tool(registry, user_input_provider);
-    registry.register(Box::new(crate::tools::tool_search::ToolSearch::from_registry(
-        registry_ref,
-    )));
+    registry.register(Box::new(
+        crate::tools::tool_search::ToolSearch::from_registry(registry_ref),
+    ));
 }
 
 /// Registers the read-only planner tools used by the agent.
@@ -1368,11 +1370,7 @@ impl HabitScheduledSpans {
 
         let content = json!({
             "approval_required": true,
-            "operation": proposal.operation,
             "target": proposal.target_label,
-            "inferred_fields": inferred_fields,
-            "why": why,
-            "warnings": warnings,
         });
 
         Ok(ToolOutput {
@@ -1981,7 +1979,11 @@ impl Tool for MutationTool {
             observed_updated_at,
         };
         Ok(ToolOutput {
-            content: serde_json::to_string(&json!({"approval_required":true,"operation":proposal.operation,"target":proposal.target_label,"inferred_fields":inferred_fields,"why":why,"warnings":warnings})).unwrap(),
+            content: serde_json::to_string(&json!({
+                "approval_required": true,
+                "target": proposal.target_label,
+            }))
+            .unwrap(),
             why,
             warnings,
             proposed_changes: vec![proposal],
@@ -2167,7 +2169,11 @@ impl Tool for MoveTaskTool {
             observed_updated_at: Some(task.updated_at),
         };
         Ok(ToolOutput {
-            content: serde_json::to_string(&json!({"approval_required":true,"operation":proposal.operation,"target":proposal.target_label,"inferred_fields":inferred_fields,"why":why,"warnings":warnings})).unwrap(),
+            content: serde_json::to_string(&json!({
+                "approval_required": true,
+                "target": proposal.target_label,
+            }))
+            .unwrap(),
             why,
             warnings,
             proposed_changes: vec![proposal],
