@@ -6,6 +6,7 @@ mod model;
 
 use std::sync::{Arc, Mutex};
 
+use tokio::runtime::{Builder, Runtime};
 use tokio::sync::RwLock;
 
 use axum::Router;
@@ -49,7 +50,7 @@ pub enum ServerStatus {
 /// Storage backend is WorkersStorage (HTTP → Cloudflare Worker).
 #[derive(uniffi::Object)]
 pub struct TakusuServer {
-    runtime: Mutex<Option<tokio::runtime::Runtime>>,
+    runtime: Mutex<Option<Arc<Runtime>>>,
     port: Mutex<u16>,
 }
 
@@ -93,11 +94,7 @@ impl TakusuServer {
         // already set.
         log_buffer::install();
 
-        let mut runtime_guard = self.runtime.lock().map_err(|e| {
-            let detail = format!("lock poisoned: {e}");
-            tracing::error!("{detail}");
-            TakusuError::Server { detail }
-        })?;
+        let mut runtime_guard = self.runtime.lock().unwrap_or_else(|e| e.into_inner());
         if runtime_guard.is_some() {
             tracing::error!("server already running");
             return Err(TakusuError::AlreadyRunning);
@@ -116,14 +113,16 @@ impl TakusuServer {
             });
         }
 
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .map_err(|e| {
-                let detail = format!("failed to create runtime: {e}");
-                tracing::error!("{detail}");
-                TakusuError::Server { detail }
-            })?;
+        let runtime = Arc::new(
+            Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .map_err(|e| {
+                    let detail = format!("failed to create runtime: {e}");
+                    tracing::error!("{detail}");
+                    TakusuError::Server { detail }
+                })?,
+        );
 
         // Build a reqwest client that uses bundled Mozilla root certificates
         // (webpki-root-certs) instead of rustls-platform-verifier.  The
@@ -208,11 +207,7 @@ impl TakusuServer {
             })?;
 
         let actual_port = listener.local_addr().map(|a| a.port()).unwrap_or(port);
-        *self.port.lock().map_err(|e| {
-            let detail = format!("lock poisoned: {e}");
-            tracing::error!("{detail}");
-            TakusuError::Server { detail }
-        })? = actual_port;
+        *self.port.lock().unwrap_or_else(|e| e.into_inner()) = actual_port;
 
         tracing::info!("takusu-local listening on 127.0.0.1:{actual_port} (workers storage)");
 
@@ -228,26 +223,26 @@ impl TakusuServer {
 
     /// Stop the server gracefully.
     pub fn stop(&self) -> Result<(), TakusuError> {
-        let mut runtime_guard = self.runtime.lock().map_err(|e| TakusuError::Server {
-            detail: format!("lock poisoned: {e}"),
-        })?;
-        let runtime = runtime_guard.take().ok_or(TakusuError::NotRunning)?;
-        if let Ok(mut p) = self.port.lock() {
-            *p = 0;
+        let mut runtime_guard = self.runtime.lock().unwrap_or_else(|e| e.into_inner());
+        let arc = runtime_guard.take().ok_or(TakusuError::NotRunning)?;
+        *self.port.lock().unwrap_or_else(|e| e.into_inner()) = 0;
+        // If another caller still holds a clone of the runtime, let that task
+        // finish; the runtime will be dropped once the last clone is released.
+        drop(runtime_guard);
+        if let Ok(runtime) = Arc::try_unwrap(arc) {
+            runtime.shutdown_background();
         }
-        runtime.shutdown_background();
         Ok(())
     }
 
     /// Get the current server status.
     pub fn status(&self) -> ServerStatus {
-        let runtime_guard = self.runtime.lock();
-        let port_guard = self.port.lock();
-        match (runtime_guard, port_guard) {
-            (Ok(guard), Ok(port)) if guard.is_some() && *port > 0 => {
-                ServerStatus::Running { port: *port }
-            }
-            _ => ServerStatus::Stopped,
+        let runtime_guard = self.runtime.lock().unwrap_or_else(|e| e.into_inner());
+        let port_guard = self.port.lock().unwrap_or_else(|e| e.into_inner());
+        if runtime_guard.is_some() && *port_guard > 0 {
+            ServerStatus::Running { port: *port_guard }
+        } else {
+            ServerStatus::Stopped
         }
     }
 }
