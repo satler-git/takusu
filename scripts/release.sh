@@ -140,3 +140,5 @@ if [ "$NO_PUSH" -eq 0 ]; then
 else
   echo "(--no-push: staging branch created locally only)"
 fi
+
+jj new
