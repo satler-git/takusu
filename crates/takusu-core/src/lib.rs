@@ -20,7 +20,7 @@
 //!     depends: vec![],
 //!     parallelizable: false,
 //!     allows_parallel: false,
-//!     abandonability: 0.5,
+//!     abandonability: 0.5.into(),
 //!     fixed: false,
 //!     habit_group: None,
 //! }).unwrap();
@@ -65,7 +65,7 @@ static GLOBAL_ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 // ── Minutes / Slots ───────────────────────────────────────────────────
 
-pub use takusu_util::{Minutes, SLOT_MINUTES, Slots};
+pub use takusu_util::{Abandonability, Minutes, SLOT_MINUTES, Slots};
 
 // ── Point ────────────────────────────────────────────────────────────
 
@@ -312,7 +312,7 @@ pub struct Task {
 
     /// 諦めやすさ [0.0, 1.0]。大きいほど諦められやすい。
     /// 全タスクが収まらない場合、この値が大きいタスクからドロップされる。
-    pub abandonability: f64,
+    pub abandonability: Abandonability,
 
     /// 開始時刻を固定するか。true の場合、Planner は now 以前の
     /// 配置も許可し、SA の近傍操作でも移動しない。
@@ -416,7 +416,7 @@ type ResultE<T> = Result<T, Error>;
 ///     depends: vec![],
 ///     parallelizable: false,
 ///     allows_parallel: false,
-///     abandonability: 0.5,
+///     abandonability: 0.5.into(),
 ///     fixed: false,
 ///     habit_group: None,
 /// }).unwrap();
@@ -686,7 +686,7 @@ mod tests {
                 depends: vec![],
                 parallelizable: false,
                 allows_parallel: false,
-                abandonability: 0.5,
+                abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
             })
@@ -700,7 +700,7 @@ mod tests {
                 depends: vec![],
                 parallelizable: false,
                 allows_parallel: false,
-                abandonability: 0.5,
+                abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
             })
@@ -735,7 +735,7 @@ mod tests {
             depends: vec![],
             parallelizable: false,
             allows_parallel: false,
-            abandonability: 0.5,
+            abandonability: 0.5.into(),
             fixed: false,
             habit_group: None,
         })
@@ -767,7 +767,7 @@ mod tests {
             depends: vec![],
             parallelizable: false,
             allows_parallel: false,
-            abandonability: 0.9,
+            abandonability: 0.9.into(),
             fixed: false,
             habit_group: None,
         })
@@ -804,7 +804,7 @@ mod tests {
                 depends: vec![],
                 parallelizable: false,
                 allows_parallel: false,
-                abandonability: 0.5,
+                abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
             })
@@ -818,7 +818,7 @@ mod tests {
                 depends: vec![],
                 parallelizable: false,
                 allows_parallel: false,
-                abandonability: 0.5,
+                abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
             })
@@ -849,7 +849,7 @@ mod tests {
             depends: vec![],
             parallelizable: false,
             allows_parallel: false,
-            abandonability: 0.5,
+            abandonability: 0.5.into(),
             fixed: false,
             habit_group: None,
         })
@@ -876,7 +876,7 @@ mod tests {
                 depends: vec![],
                 parallelizable: false,
                 allows_parallel: false,
-                abandonability: 0.5,
+                abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
             })
@@ -890,7 +890,7 @@ mod tests {
                 depends: vec![],
                 parallelizable: false,
                 allows_parallel: false,
-                abandonability: 0.5,
+                abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
             })
@@ -921,7 +921,7 @@ mod tests {
                 depends: vec![],
                 parallelizable: false,
                 allows_parallel: false,
-                abandonability: 0.5,
+                abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
             })
@@ -935,7 +935,7 @@ mod tests {
                 depends: vec![],
                 parallelizable: false,
                 allows_parallel: false,
-                abandonability: 0.5,
+                abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
             })
@@ -949,7 +949,7 @@ mod tests {
                 depends: vec![],
                 parallelizable: false,
                 allows_parallel: false,
-                abandonability: 0.5,
+                abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
             })
@@ -1004,7 +1004,7 @@ mod tests {
                 depends: vec![],
                 parallelizable: false,
                 allows_parallel: false,
-                abandonability: 0.5,
+                abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
             })
@@ -1018,7 +1018,7 @@ mod tests {
                 depends: vec![0],
                 parallelizable: false,
                 allows_parallel: false,
-                abandonability: 0.5,
+                abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
             })
@@ -1032,7 +1032,7 @@ mod tests {
                 depends: vec![1],
                 parallelizable: false,
                 allows_parallel: false,
-                abandonability: 0.5,
+                abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
             })
@@ -1075,7 +1075,7 @@ mod tests {
                 depends: vec![],
                 parallelizable: false,
                 allows_parallel: false,
-                abandonability: 0.5,
+                abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
             })
@@ -1089,7 +1089,7 @@ mod tests {
                 depends: vec![0],
                 parallelizable: false,
                 allows_parallel: false,
-                abandonability: 0.5,
+                abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
             })
@@ -1103,7 +1103,7 @@ mod tests {
                 depends: vec![1],
                 parallelizable: false,
                 allows_parallel: false,
-                abandonability: 0.5,
+                abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
             })
@@ -1191,7 +1191,7 @@ mod tests {
                 depends: vec![],
                 parallelizable: false,
                 allows_parallel: false,
-                abandonability: 0.5,
+                abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
             })
@@ -1205,7 +1205,7 @@ mod tests {
                 depends: vec![],
                 parallelizable: false,
                 allows_parallel: false,
-                abandonability: 0.5,
+                abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
             })
@@ -1226,7 +1226,7 @@ mod tests {
                 depends: vec![],
                 parallelizable: false,
                 allows_parallel: false,
-                abandonability: 0.5,
+                abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
             })
@@ -1240,7 +1240,7 @@ mod tests {
                 depends: vec![0],
                 parallelizable: false,
                 allows_parallel: false,
-                abandonability: 0.5,
+                abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
             })
@@ -1260,7 +1260,7 @@ mod tests {
                 depends: vec![],
                 parallelizable: false,
                 allows_parallel: false,
-                abandonability: 0.0,
+                abandonability: 0.0.into(),
                 fixed: false,
                 habit_group: None,
             })
@@ -1285,7 +1285,7 @@ mod tests {
                 depends: vec![],
                 parallelizable: false,
                 allows_parallel: false,
-                abandonability: 0.5,
+                abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
             })
@@ -1299,7 +1299,7 @@ mod tests {
                 depends: vec![],
                 parallelizable: false,
                 allows_parallel: false,
-                abandonability: 0.5,
+                abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
             })
@@ -1373,7 +1373,7 @@ mod tests {
                 depends: vec![],
                 parallelizable: false,
                 allows_parallel: false,
-                abandonability: 0.5,
+                abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
             })
@@ -1387,7 +1387,7 @@ mod tests {
                 depends: vec![],
                 parallelizable: false,
                 allows_parallel: false,
-                abandonability: 0.5,
+                abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
             })
@@ -1422,7 +1422,7 @@ mod tests {
                 depends: vec![],
                 parallelizable: false,
                 allows_parallel: false,
-                abandonability: 0.5,
+                abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
             })
@@ -1436,7 +1436,7 @@ mod tests {
                 depends: vec![a],
                 parallelizable: false,
                 allows_parallel: false,
-                abandonability: 0.5,
+                abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
             })
@@ -1471,7 +1471,7 @@ mod tests {
                 depends: vec![],
                 parallelizable: false,
                 allows_parallel: false,
-                abandonability: 0.5,
+                abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
             })
@@ -1485,7 +1485,7 @@ mod tests {
                 depends: vec![],
                 parallelizable: false,
                 allows_parallel: false,
-                abandonability: 0.5,
+                abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
             })
@@ -1518,7 +1518,7 @@ mod tests {
                 depends: vec![],
                 parallelizable: false,
                 allows_parallel: false,
-                abandonability: 0.5,
+                abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
             })
@@ -1532,7 +1532,7 @@ mod tests {
                 depends: vec![a],
                 parallelizable: false,
                 allows_parallel: false,
-                abandonability: 0.5,
+                abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
             })
@@ -1576,7 +1576,7 @@ mod tests {
                 depends: vec![],
                 parallelizable: false,
                 allows_parallel: false,
-                abandonability: 0.5,
+                abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
             })
@@ -1617,7 +1617,7 @@ mod tests {
                 depends: vec![],
                 parallelizable: false,
                 allows_parallel: false,
-                abandonability: 0.5,
+                abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
             })
@@ -1631,7 +1631,7 @@ mod tests {
                 depends: vec![],
                 parallelizable: false,
                 allows_parallel: false,
-                abandonability: 0.5,
+                abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
             })

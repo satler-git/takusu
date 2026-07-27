@@ -20,7 +20,7 @@ use takusu_storage::{
     HabitScheduledSpanRow, MemoryQuery, MemoryRow, SimilarTaskQuery, SimilarTaskRow, Storage,
     TaskQuery, TaskRow, TokenCreateResponse, TokenRow, UpdateHabit, UpdateMemory, UpdateTask,
 };
-use takusu_util::{EnumLabel, Minutes};
+use takusu_util::{EnumLabel, Minutes, Quantity};
 use tokio::net::TcpListener;
 
 const JWT_SECRET: &str = "test-secret-do-not-use-in-production";
@@ -221,10 +221,10 @@ async fn create_task(
         .unwrap_or(Minutes(body.avg_minutes).to_slots().0.max(1));
     let parallelizable = body.parallelizable.unwrap_or(false);
     let allows_parallel = body.allows_parallel.unwrap_or(false);
-    let abandonability = body.abandonability.unwrap_or(0.5);
+    let abandonability = body.abandonability.unwrap_or(0.5.into());
     let fixed = body.fixed.unwrap_or(false);
 
-    let quantity_done = body.quantity_done.unwrap_or(0);
+    let quantity_done = body.quantity_done.unwrap_or_default();
     // Treat quantity_total / original_quantity_total 0 as unset (same as None) server-side.
     let quantity_total = body.quantity_total.filter(|t| *t != 0);
     let original_quantity_total = body.original_quantity_total.filter(|t| *t != 0);
@@ -306,7 +306,7 @@ async fn update_task(
             .fetch_one(&state.pool)
             .await
             .map_err(|_| StatusCode::NOT_FOUND)?;
-    let final_status = body.status.clone().unwrap_or(existing.status).to_string();
+    let final_status = body.status.unwrap_or(existing.status).to_string();
 
     // Treat quantity_total / original_quantity_total 0 as unset (same as None) server-side.
     let quantity_total = body.quantity_total.filter(|t| *t != 0);
@@ -356,8 +356,8 @@ async fn replace_task(
         .unwrap_or(Minutes(body.avg_minutes).to_slots().0.max(1));
     let parallelizable = body.parallelizable.unwrap_or(false);
     let allows_parallel = body.allows_parallel.unwrap_or(false);
-    let abandonability = body.abandonability.unwrap_or(0.5);
-    let quantity_done = body.quantity_done.unwrap_or(0);
+    let abandonability = body.abandonability.unwrap_or(0.5.into());
+    let quantity_done = body.quantity_done.unwrap_or_default();
     // Treat quantity_total / original_quantity_total 0 as unset (same as None) server-side.
     let quantity_total = body.quantity_total.filter(|t| *t != 0);
     let original_quantity_total = body.original_quantity_total.filter(|t| *t != 0);
@@ -552,7 +552,7 @@ async fn create_habit(
         .unwrap_or(Minutes(body.avg_minutes).to_slots().0.max(1));
     let parallelizable = body.parallelizable.unwrap_or(false);
     let allows_parallel = body.allows_parallel.unwrap_or(false);
-    let abandonability = body.abandonability.unwrap_or(0.5);
+    let abandonability = body.abandonability.unwrap_or(0.5.into());
     let fixed = body.fixed.unwrap_or(false);
     let window_mode = body
         .window_mode
@@ -755,7 +755,7 @@ async fn workers_storage_e2e() {
         depends: Some(vec![]),
         parallelizable: Some(false),
         allows_parallel: Some(false),
-        abandonability: Some(0.3),
+        abandonability: Some(0.3.into()),
         ical_uid: None,
         habit_id: None,
         fixed: None,
@@ -821,7 +821,7 @@ async fn create_memory(
     Json(body): Json<CreateMemory>,
 ) -> Result<(StatusCode, Json<MemoryRow>), StatusCode> {
     let id = uuid::Uuid::now_v7().to_string();
-    let subject_type = body.subject_type.clone().unwrap_or_default();
+    let subject_type = body.subject_type.unwrap_or_default();
     let subject_id = body.subject_id.clone().unwrap_or_default();
     let normalized_key = body.key.clone();
     let normalized_content = body.content.clone();
@@ -1056,7 +1056,7 @@ async fn workers_storage_list_tasks_no_overdue_filter() {
         depends: Some(vec![]),
         parallelizable: Some(false),
         allows_parallel: Some(false),
-        abandonability: Some(0.5),
+        abandonability: Some(0.5.into()),
         ical_uid: None,
         habit_id: None,
         fixed: None,
@@ -1108,10 +1108,10 @@ async fn workers_storage_e2e_zero_quantity() {
             habit_id: None,
             fixed: None,
             habit_step_id: None,
-            quantity_total: Some(0),
+            quantity_total: Some(Quantity::default()),
             quantity_done: None,
             quantity_unit: None,
-            original_quantity_total: Some(0),
+            original_quantity_total: Some(Quantity::default()),
         })
         .await
         .unwrap();
@@ -1138,10 +1138,10 @@ async fn workers_storage_e2e_zero_quantity() {
                 user_edited: None,
                 fixed: None,
                 habit_step_id: None,
-                quantity_total: Some(0),
+                quantity_total: Some(Quantity::default()),
                 quantity_done: None,
                 quantity_unit: None,
-                original_quantity_total: Some(0),
+                original_quantity_total: Some(Quantity::default()),
             },
         )
         .await

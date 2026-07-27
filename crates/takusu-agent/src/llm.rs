@@ -53,8 +53,12 @@ pub struct LlmConfig {
     pub max_context_tokens: usize,
     #[serde(default = "default_max_tool_calls")]
     pub max_tool_calls: usize,
-    #[serde(default = "default_request_timeout_seconds")]
-    pub request_timeout_seconds: u64,
+    #[serde(
+        default = "default_request_timeout",
+        with = "takusu_util::duration_seconds",
+        alias = "request_timeout_seconds"
+    )]
+    pub request_timeout: Duration,
     #[serde(default)]
     pub compaction: CompactionSettings,
 }
@@ -70,7 +74,7 @@ impl Default for LlmConfig {
             max_history: default_max_history(),
             max_context_tokens: default_max_context_tokens(),
             max_tool_calls: default_max_tool_calls(),
-            request_timeout_seconds: default_request_timeout_seconds(),
+            request_timeout: default_request_timeout(),
             compaction: CompactionSettings::default(),
         }
     }
@@ -100,8 +104,8 @@ fn default_max_tool_calls() -> usize {
     64
 }
 
-fn default_request_timeout_seconds() -> u64 {
-    60
+fn default_request_timeout() -> Duration {
+    Duration::from_secs(60)
 }
 
 #[derive(Debug, Error)]
@@ -322,7 +326,7 @@ pub struct OpenAIClient {
 
 impl OpenAIClient {
     pub fn new(config: LlmConfig) -> Result<Self, LlmError> {
-        let client = takusu_client::default_http_client(Some(config.request_timeout_seconds))
+        let client = takusu_client::default_http_client(Some(config.request_timeout.as_secs()))
             .map_err(|e| LlmError::Request(e.to_string()))?;
 
         let api_key = if config.api_key.is_empty() {
@@ -336,7 +340,7 @@ impl OpenAIClient {
             base_url: config.base_url,
             api_key,
             model: config.model,
-            request_timeout: Duration::from_secs(config.request_timeout_seconds),
+            request_timeout: config.request_timeout,
             max_retries: 3,
             initial_backoff: Duration::from_millis(500),
         })
@@ -1139,7 +1143,7 @@ mod tests {
 
         let cfg = LlmConfig {
             base_url: format!("http://{addr}/"),
-            request_timeout_seconds: 5,
+            request_timeout: Duration::from_secs(5),
             api_key_env: "UNUSED".into(),
             ..Default::default()
         };
@@ -1176,7 +1180,7 @@ mod tests {
 
         let cfg = LlmConfig {
             base_url: format!("http://{addr}/"),
-            request_timeout_seconds: 5,
+            request_timeout: Duration::from_secs(5),
             api_key_env: "UNUSED".into(),
             ..Default::default()
         };
@@ -1235,7 +1239,7 @@ mod tests {
 
         let cfg = LlmConfig {
             base_url: format!("http://{addr}/"),
-            request_timeout_seconds: 5,
+            request_timeout: Duration::from_secs(5),
             api_key_env: "UNUSED".into(),
             ..Default::default()
         };
@@ -1272,7 +1276,7 @@ mod tests {
 
         let cfg = LlmConfig {
             base_url: format!("http://{addr}/"),
-            request_timeout_seconds: 1,
+            request_timeout: Duration::from_secs(1),
             api_key_env: "UNUSED".into(),
             ..Default::default()
         };
@@ -1288,7 +1292,7 @@ mod tests {
     async fn real_endpoint_smoke_test() {
         let cfg = LlmConfig {
             api_key_env: "TAKUSU_LLM_API_KEY".into(),
-            request_timeout_seconds: 30,
+            request_timeout: Duration::from_secs(30),
             ..Default::default()
         };
         let client = OpenAIClient::new(cfg).unwrap();

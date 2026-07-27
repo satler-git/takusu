@@ -516,6 +516,7 @@ fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use takusu_util::Quantity;
 
     fn task(id: &str) -> TaskRow {
         TaskRow {
@@ -530,7 +531,7 @@ mod tests {
             depends: "[]".to_string(),
             parallelizable: false,
             allows_parallel: false,
-            abandonability: 0.5,
+            abandonability: 0.5.into(),
             status: TaskStatus::Pending,
             habit_id: None,
             ical_uid: None,
@@ -538,7 +539,7 @@ mod tests {
             fixed: false,
             habit_step_id: None,
             quantity_total: None,
-            quantity_done: 0,
+            quantity_done: Quantity::default(),
             quantity_unit: None,
             completed_at: None,
             split_from_task_id: None,

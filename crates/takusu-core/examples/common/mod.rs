@@ -115,7 +115,7 @@ pub fn build_planner_from_str(input: &str) -> Planner {
                 depends: t.depends,
                 parallelizable: t.parallelizable,
                 allows_parallel: t.allows_parallel,
-                abandonability: t.abandonability,
+                abandonability: t.abandonability.into(),
                 fixed: t.fixed,
                 habit_group: t.habit_group,
             })

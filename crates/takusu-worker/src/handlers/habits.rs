@@ -44,7 +44,7 @@ pub async fn create(mut req: worker::Request, env: Env) -> Result<Response, Work
         .unwrap_or(Minutes(body.avg_minutes).to_slots().0.max(1));
     let parallelizable = body.parallelizable.unwrap_or(false);
     let allows_parallel = body.allows_parallel.unwrap_or(false);
-    let abandonability = body.abandonability.unwrap_or(0.5);
+    let abandonability = body.abandonability.unwrap_or(0.5.into());
     let fixed = body.fixed.unwrap_or(false);
 
     // Atomically reserve a monotonic display_id from the sequence table
@@ -75,7 +75,7 @@ pub async fn create(mut req: worker::Request, env: Env) -> Result<Response, Work
         JsValue::from_f64(sigma as f64),
         JsValue::from_bool(parallelizable),
         JsValue::from_bool(allows_parallel),
-        JsValue::from_f64(abandonability),
+        JsValue::from_f64(abandonability.into()),
         JsValue::from_bool(fixed),
         JsValue::from_str(&window_mode.to_string()),
     ])?
@@ -145,7 +145,7 @@ pub async fn update(mut req: worker::Request, env: Env, id: &str) -> Result<Resp
             .map(JsValue::from_bool)
             .unwrap_or(JsValue::NULL),
         body.abandonability
-            .map(JsValue::from_f64)
+            .map(|a| JsValue::from_f64(a.into()))
             .unwrap_or(JsValue::NULL),
         body.active.map(JsValue::from_bool).unwrap_or(JsValue::NULL),
         body.fixed.map(JsValue::from_bool).unwrap_or(JsValue::NULL),
@@ -179,7 +179,7 @@ pub async fn replace(
         .unwrap_or(Minutes(body.avg_minutes).to_slots().0.max(1));
     let parallelizable = body.parallelizable.unwrap_or(false);
     let allows_parallel = body.allows_parallel.unwrap_or(false);
-    let abandonability = body.abandonability.unwrap_or(0.5);
+    let abandonability = body.abandonability.unwrap_or(0.5.into());
     let fixed = body.fixed.unwrap_or(false);
 
     let stmt = database.prepare(
@@ -198,7 +198,7 @@ pub async fn replace(
         JsValue::from_f64(sigma as f64),
         JsValue::from_bool(parallelizable),
         JsValue::from_bool(allows_parallel),
-        JsValue::from_f64(abandonability),
+        JsValue::from_f64(abandonability.into()),
         JsValue::from_bool(fixed),
         JsValue::from_str(&window_mode.to_string()),
         JsValue::from_str(&full),
@@ -484,7 +484,7 @@ pub async fn replace_steps(
             .unwrap_or(Minutes(s.avg_minutes).to_slots().0.max(1));
         let parallelizable = s.parallelizable.unwrap_or(false);
         let allows_parallel = s.allows_parallel.unwrap_or(false);
-        let abandonability = s.abandonability.unwrap_or(0.5);
+        let abandonability = s.abandonability.unwrap_or(0.5.into());
         let fixed = s.fixed.unwrap_or(false);
         let depends_json =
             serde_json::to_string(&s.depends_on).unwrap_or_else(|_| "[]".to_string());
@@ -507,7 +507,7 @@ pub async fn replace_steps(
                     JsValue::from_f64(sigma as f64),
                     JsValue::from_bool(parallelizable),
                     JsValue::from_bool(allows_parallel),
-                    JsValue::from_f64(abandonability),
+                    JsValue::from_f64(abandonability.into()),
                     JsValue::from_bool(fixed),
                     JsValue::from_str(&depends_json),
                     JsValue::from_str(&id),
@@ -534,7 +534,7 @@ pub async fn replace_steps(
                     JsValue::from_f64(sigma as f64),
                     JsValue::from_bool(parallelizable),
                     JsValue::from_bool(allows_parallel),
-                    JsValue::from_f64(abandonability),
+                    JsValue::from_f64(abandonability.into()),
                     JsValue::from_bool(fixed),
                     JsValue::from_str(&depends_json),
                 ])?,

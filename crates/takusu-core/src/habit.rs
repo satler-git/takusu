@@ -241,7 +241,7 @@ mod tests {
             depends: vec![],
             parallelizable: false,
             allows_parallel: false,
-            abandonability: 0.3,
+            abandonability: 0.3.into(),
             fixed,
             habit_group: Some(0),
         }

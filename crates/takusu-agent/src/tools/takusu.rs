@@ -1569,7 +1569,7 @@ fn habit_step_schema() -> Value {
             "sigma_minutes": {"type": "integer"},
             "parallelizable": {"type": "boolean"},
             "allows_parallel": {"type": "boolean"},
-            "abandonability": {"type": "number"},
+            "abandonability": {"type": "number", "description": "A value in [0.0, 1.0]; out-of-range values are silently clamped."},
             "fixed": {"type": "boolean"},
             "depends_on": {"type": "array", "items": {"type": "integer"}, "description": "Display positions (1-indexed) of steps this step depends on."}
         },
@@ -1703,7 +1703,7 @@ impl MutationKind {
                     "depends": {"type": "array", "items": {"type": "string"}},
                     "parallelizable": {"type": "boolean"},
                     "allows_parallel": {"type": "boolean"},
-                    "abandonability": {"type": "number"},
+                    "abandonability": {"type": "number", "description": "A value in [0.0, 1.0]; out-of-range values are silently clamped."},
                     "fixed": {"type": "boolean", "description": "If true, the start time is fixed and the scheduler will not move the task."},
                     "quantity_total": {"type": "integer", "description": "Total quantity for a quantitative task (e.g. 30)."},
                     "quantity_done": {"type": "integer", "description": "Quantity already completed; defaults to 0."},
@@ -1724,7 +1724,7 @@ impl MutationKind {
                     "depends": {"type": "array", "items": {"type": "string"}},
                     "parallelizable": {"type": "boolean"},
                     "allows_parallel": {"type": "boolean"},
-                    "abandonability": {"type": "number"},
+                    "abandonability": {"type": "number", "description": "A value in [0.0, 1.0]; out-of-range values are silently clamped."},
                     "status": {
                         "type": "string",
                         "enum": ["pending", "scheduled", "in_progress", "completed", "skipped"],
@@ -1761,7 +1761,7 @@ impl MutationKind {
                     "sigma_minutes": {"type": "integer"},
                     "parallelizable": {"type": "boolean"},
                     "allows_parallel": {"type": "boolean"},
-                    "abandonability": {"type": "number"},
+                    "abandonability": {"type": "number", "description": "A value in [0.0, 1.0]; out-of-range values are silently clamped."},
                     "fixed": {"type": "boolean", "description": "If true, generated tasks start at a fixed time and the scheduler will not move them."},
                     "window_mode": {"type": "string", "enum": ["day", "period"], "description": "Scheduling window mode for generated tasks."},
                     "steps": {"type": "array", "items": habit_step_schema(), "description": "Ordered steps for a multi-step habit. Existing step ids are omitted; match by position on update."},
@@ -1781,7 +1781,7 @@ impl MutationKind {
                     "sigma_minutes": {"type": "integer"},
                     "parallelizable": {"type": "boolean"},
                     "allows_parallel": {"type": "boolean"},
-                    "abandonability": {"type": "number"},
+                    "abandonability": {"type": "number", "description": "A value in [0.0, 1.0]; out-of-range values are silently clamped."},
                     "active": {"type": "boolean"},
                     "fixed": {"type": "boolean", "description": "If true, generated tasks start at a fixed time and the scheduler will not move them."},
                     "window_mode": {"type": "string", "enum": ["day", "period"], "description": "Scheduling window mode for generated tasks."},
@@ -2301,6 +2301,7 @@ mod tests {
     use super::*;
     use axum::{Json, Router, routing::get};
     use takusu_client::{HabitDetail, HabitScheduledSpanRow, ScheduleRow, SettingsResponse};
+    use takusu_util::Quantity;
 
     fn task_row(
         id: &str,
@@ -2324,7 +2325,7 @@ mod tests {
             .unwrap(),
             parallelizable: false,
             allows_parallel: false,
-            abandonability: 0.5,
+            abandonability: 0.5.into(),
             status: TaskStatus::Pending,
             habit_id: habit_id.map(|s| s.to_string()),
             ical_uid: None,
@@ -2332,7 +2333,7 @@ mod tests {
             fixed: false,
             habit_step_id: None,
             quantity_total: None,
-            quantity_done: 0,
+            quantity_done: Quantity::default(),
             quantity_unit: None,
             completed_at: None,
             split_from_task_id: None,
@@ -2356,7 +2357,7 @@ mod tests {
             sigma_minutes: 10,
             parallelizable: false,
             allows_parallel: false,
-            abandonability: 0.5,
+            abandonability: 0.5.into(),
             active: true,
             fixed: false,
             window_mode: takusu_util::WindowMode::Day,
@@ -2378,7 +2379,7 @@ mod tests {
             sigma_minutes: 5,
             parallelizable: false,
             allows_parallel: false,
-            abandonability: 0.5,
+            abandonability: 0.5.into(),
             fixed: false,
             depends_on: "[]".to_string(),
             created_at: "2025-06-01T00:00:00Z".to_string(),

@@ -46,7 +46,7 @@ fn generate_tasks_with(
                 depends,
                 parallelizable: rng.random_bool(parallelizable_prob),
                 allows_parallel: rng.random_bool(allows_parallel_prob),
-                abandonability: rng.random::<f64>(),
+                abandonability: rng.random::<f64>().into(),
                 fixed,
                 habit_group: None,
             })

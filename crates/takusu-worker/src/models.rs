@@ -3,7 +3,7 @@
 //! `FromRow` derive the storage crate uses) into the WASM bundle.
 
 use serde::{Deserialize, Serialize};
-use takusu_util::EnumLabel;
+pub use takusu_util::{Abandonability, EnumLabel, Quantity};
 
 use crate::memory;
 
@@ -23,7 +23,7 @@ pub struct TaskRow {
     pub parallelizable: bool,
     #[serde(with = "takusu_util::bool_compat", default)]
     pub allows_parallel: bool,
-    pub abandonability: f64,
+    pub abandonability: Abandonability,
     #[serde(with = "takusu_util::enum_serde")]
     pub status: takusu_util::TaskStatus,
     pub habit_id: Option<String>,
@@ -35,9 +35,9 @@ pub struct TaskRow {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub habit_step_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub quantity_total: Option<i64>,
+    pub quantity_total: Option<Quantity>,
     #[serde(default)]
-    pub quantity_done: i64,
+    pub quantity_done: Quantity,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quantity_unit: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -45,7 +45,7 @@ pub struct TaskRow {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub split_from_task_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub original_quantity_total: Option<i64>,
+    pub original_quantity_total: Option<Quantity>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub actual_minutes: Option<i64>,
     pub created_at: String,
@@ -70,7 +70,7 @@ pub struct CreateTask {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub allows_parallel: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub abandonability: Option<f64>,
+    pub abandonability: Option<Abandonability>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ical_uid: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -80,13 +80,13 @@ pub struct CreateTask {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub habit_step_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub quantity_total: Option<i64>,
+    pub quantity_total: Option<Quantity>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub quantity_done: Option<i64>,
+    pub quantity_done: Option<Quantity>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quantity_unit: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub original_quantity_total: Option<i64>,
+    pub original_quantity_total: Option<Quantity>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -110,7 +110,7 @@ pub struct UpdateTask {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub allows_parallel: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub abandonability: Option<f64>,
+    pub abandonability: Option<Abandonability>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(with = "takusu_util::enum_serde::option")]
     pub status: Option<takusu_util::TaskStatus>,
@@ -123,13 +123,13 @@ pub struct UpdateTask {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub habit_step_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub quantity_total: Option<i64>,
+    pub quantity_total: Option<Quantity>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub quantity_done: Option<i64>,
+    pub quantity_done: Option<Quantity>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quantity_unit: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub original_quantity_total: Option<i64>,
+    pub original_quantity_total: Option<Quantity>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -148,7 +148,7 @@ pub struct HabitRow {
     pub parallelizable: bool,
     #[serde(with = "takusu_util::bool_compat", default)]
     pub allows_parallel: bool,
-    pub abandonability: f64,
+    pub abandonability: Abandonability,
     #[serde(with = "takusu_util::bool_compat", default)]
     pub active: bool,
     #[serde(with = "takusu_util::bool_compat", default)]
@@ -175,7 +175,7 @@ pub struct CreateHabit {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub allows_parallel: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub abandonability: Option<f64>,
+    pub abandonability: Option<Abandonability>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fixed: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -204,7 +204,7 @@ pub struct UpdateHabit {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub allows_parallel: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub abandonability: Option<f64>,
+    pub abandonability: Option<Abandonability>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub active: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -253,7 +253,7 @@ pub struct HabitStepRow {
     pub parallelizable: bool,
     #[serde(with = "takusu_util::bool_compat", default)]
     pub allows_parallel: bool,
-    pub abandonability: f64,
+    pub abandonability: Abandonability,
     #[serde(with = "takusu_util::bool_compat", default)]
     pub fixed: bool,
     pub depends_on: String,
@@ -279,7 +279,7 @@ pub struct HabitStepInput {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub allows_parallel: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub abandonability: Option<f64>,
+    pub abandonability: Option<Abandonability>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fixed: Option<bool>,
     #[serde(default)]
@@ -568,7 +568,7 @@ pub struct ProgressEventRow {
     pub id: String,
     pub task_id: String,
     pub at: String,
-    pub quantity_done: Option<i64>,
+    pub quantity_done: Option<Quantity>,
     pub delta_quantity: Option<i64>,
     pub active_minutes: i64,
     pub note: Option<String>,
@@ -576,7 +576,7 @@ pub struct ProgressEventRow {
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct RecordProgress {
-    pub quantity_done: i64,
+    pub quantity_done: Quantity,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
 }
@@ -600,7 +600,7 @@ pub struct TaskProgress {
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct SplitTask {
-    pub retained_quantity: i64,
+    pub retained_quantity: Quantity,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub set_dependency: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

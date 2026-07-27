@@ -11,8 +11,8 @@ use crate::handlers::settings::get_timezone;
 use crate::handlers::tasks::{allocate_display_id, resolve_task_id, select_one};
 use crate::handlers::tokens::{json_ok, parse_json};
 use crate::models::{
-    ProgressEventRow, ProgressResult, RecordProgress, SplitResult, SplitTask, TaskProgress,
-    TaskRow, TaskWorkSessionRow,
+    ProgressEventRow, ProgressResult, Quantity, RecordProgress, SplitResult, SplitTask,
+    TaskProgress, TaskRow, TaskWorkSessionRow,
 };
 use crate::validate::validate_task_datetimes;
 
@@ -252,11 +252,6 @@ pub async fn record_progress(
     id: &str,
 ) -> Result<Response, WorkerError> {
     let body: RecordProgress = parse_json(&mut req).await?;
-    if body.quantity_done < 0 {
-        return Err(WorkerError::BadRequest(
-            "quantity_done cannot be negative".into(),
-        ));
-    }
 
     let database = db(&env)?;
     let op_id = operation_id(&req);
@@ -311,7 +306,7 @@ pub async fn record_progress(
     struct NowRow {
         now: String,
     }
-    let delta_quantity = body.quantity_done - task.quantity_done;
+    let delta_quantity = body.quantity_done.get() - task.quantity_done.get();
 
     if delta_quantity == 0 {
         let result = ProgressResult {
@@ -362,7 +357,7 @@ pub async fn record_progress(
         .bind(&[
             JsValue::from_str(&event_id),
             JsValue::from_str(&full),
-            JsValue::from_f64(body.quantity_done as f64),
+            JsValue::from_f64(f64::from(body.quantity_done)),
             JsValue::from_f64(delta_quantity as f64),
             JsValue::from_f64(active_minutes as f64),
             body.note
@@ -382,7 +377,7 @@ pub async fn record_progress(
             &full,
             task.avg_minutes,
             task.sigma_minutes,
-            task.quantity_total,
+            task.quantity_total.map(|q| q.get()),
             active_minutes,
             delta_quantity,
         )
@@ -409,7 +404,7 @@ pub async fn record_progress(
     );
     update
         .bind(&[
-            JsValue::from_f64(body.quantity_done as f64),
+            JsValue::from_f64(f64::from(body.quantity_done)),
             JsValue::from_f64(new_avg as f64),
             JsValue::from_f64(new_sigma as f64),
             JsValue::from_str(&status.to_string()),
@@ -483,7 +478,7 @@ pub async fn complete_task_work(req: Request, env: Env, id: &str) -> Result<Resp
     let total_active_minutes: i64 = sessions.iter().map(session_minutes).sum();
 
     let quantity_done = original.quantity_total.unwrap_or(original.quantity_done);
-    let delta_quantity = quantity_done - original.quantity_done;
+    let delta_quantity = quantity_done.get() - original.quantity_done.get();
 
     let (new_avg, new_sigma) = if delta_quantity > 0 && total_active_minutes > 0 {
         compute_updated_estimate(
@@ -491,7 +486,7 @@ pub async fn complete_task_work(req: Request, env: Env, id: &str) -> Result<Resp
             &full,
             original.avg_minutes,
             original.sigma_minutes,
-            original.quantity_total,
+            original.quantity_total.map(|q| q.get()),
             total_active_minutes,
             delta_quantity,
         )
@@ -507,7 +502,7 @@ pub async fn complete_task_work(req: Request, env: Env, id: &str) -> Result<Resp
     );
     update
         .bind(&[
-            JsValue::from_f64(quantity_done as f64),
+            JsValue::from_f64(f64::from(quantity_done)),
             JsValue::from_f64(new_avg as f64),
             JsValue::from_f64(new_sigma as f64),
             JsValue::from_str(&full),
@@ -525,7 +520,7 @@ pub async fn complete_task_work(req: Request, env: Env, id: &str) -> Result<Resp
             .bind(&[
                 JsValue::from_str(&event_id),
                 JsValue::from_str(&full),
-                JsValue::from_f64(quantity_done as f64),
+                JsValue::from_f64(f64::from(quantity_done)),
                 JsValue::from_f64(delta_quantity as f64),
                 JsValue::from_f64(total_active_minutes as f64),
                 JsValue::from_str("completed"),
@@ -574,11 +569,6 @@ pub async fn get_task_progress(_req: Request, env: Env, id: &str) -> Result<Resp
 
 pub async fn split_task(mut req: Request, env: Env, id: &str) -> Result<Response, WorkerError> {
     let body: SplitTask = parse_json(&mut req).await?;
-    if body.retained_quantity < 0 {
-        return Err(WorkerError::BadRequest(
-            "retained_quantity cannot be negative".into(),
-        ));
-    }
 
     let database = db(&env)?;
     let op_id = operation_id(&req);
@@ -636,7 +626,8 @@ pub async fn split_task(mut req: Request, env: Env, id: &str) -> Result<Response
             "retained_quantity cannot be less than quantity_done".into(),
         ));
     }
-    let remainder_quantity = total - body.retained_quantity;
+    let remainder_quantity = Quantity::new(total.get() - body.retained_quantity.get())
+        .expect("retained_quantity is less than total, so remainder is non-negative");
     let original_quantity_total = original
         .original_quantity_total
         .filter(|t| *t != 0)
@@ -683,12 +674,12 @@ pub async fn split_task(mut req: Request, env: Env, id: &str) -> Result<Response
             JsValue::from_str(&depends_json),
             JsValue::from_bool(original.parallelizable),
             JsValue::from_bool(original.allows_parallel),
-            JsValue::from_f64(original.abandonability),
+            JsValue::from_f64(original.abandonability.into()),
             JsValue::NULL,
             JsValue::NULL,
             JsValue::from_bool(original.fixed),
             JsValue::NULL,
-            JsValue::from_f64(remainder_quantity as f64),
+            JsValue::from_f64(f64::from(remainder_quantity)),
             JsValue::from_f64(0.0),
             original
                 .quantity_unit
@@ -697,7 +688,7 @@ pub async fn split_task(mut req: Request, env: Env, id: &str) -> Result<Response
                 .unwrap_or(JsValue::NULL),
             JsValue::NULL,
             JsValue::from_str(&full),
-            JsValue::from_f64(original_quantity_total as f64),
+            JsValue::from_f64(f64::from(original_quantity_total)),
             normalized_title
                 .as_deref()
                 .map(JsValue::from_str)
@@ -713,9 +704,9 @@ pub async fn split_task(mut req: Request, env: Env, id: &str) -> Result<Response
     );
     update
         .bind(&[
-            JsValue::from_f64(body.retained_quantity as f64),
-            JsValue::from_f64(new_done as f64),
-            JsValue::from_f64(original_quantity_total as f64),
+            JsValue::from_f64(f64::from(body.retained_quantity)),
+            JsValue::from_f64(f64::from(new_done)),
+            JsValue::from_f64(f64::from(original_quantity_total)),
             JsValue::from_str(&full),
         ])?
         .run()

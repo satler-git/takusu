@@ -2,7 +2,7 @@ use jiff::Timestamp;
 use jiff::ToSpan;
 use jiff::civil::Date;
 use jiff::tz::TimeZone;
-use takusu_core::{NormalDist, Point, Task};
+use takusu_core::{Abandonability, NormalDist, Point, Task};
 
 use crate::GeneratedTask;
 use crate::rule::{Frequency, NWeekday, RecurrenceRule, Weekday};
@@ -16,7 +16,7 @@ pub struct RecurrenceGenerator {
     deadline_slots: Option<u64>,
     parallelizable: bool,
     allows_parallel: bool,
-    abandonability: f64,
+    abandonability: Abandonability,
     fixed: bool,
     start_point: Point,
     until_point: Point,
@@ -37,7 +37,7 @@ impl RecurrenceGenerator {
         deadline_slots: Option<u64>,
         parallelizable: bool,
         allows_parallel: bool,
-        abandonability: f64,
+        abandonability: Abandonability,
         fixed: bool,
         start: Point,
         until: Point,

@@ -22,7 +22,7 @@ use takusu_storage::{
     UpdateTask,
 };
 use takusu_util::search::{Completion, complete};
-use takusu_util::{EnumLabel, MemoryKind, TaskStatus, WindowMode};
+use takusu_util::{Abandonability, EnumLabel, MemoryKind, TaskStatus, WindowMode};
 
 use crate::error::AppError;
 use crate::error::storage_to_app;
@@ -413,7 +413,7 @@ fn step_input_to_preview_row(input: &HabitStepInput) -> HabitStepRow {
         sigma_minutes: input.sigma_minutes.unwrap_or(0),
         parallelizable: input.parallelizable.unwrap_or(false),
         allows_parallel: input.allows_parallel.unwrap_or(false),
-        abandonability: input.abandonability.unwrap_or(0.5),
+        abandonability: input.abandonability.unwrap_or(0.5.into()),
         fixed: input.fixed.unwrap_or(false),
         depends_on: serde_json::to_string(&input.depends_on).unwrap_or_default(),
         created_at: String::new(),
@@ -699,7 +699,7 @@ fn build_habit_from_preview(
         request.sigma_minutes.unwrap_or(0),
         request.parallelizable.unwrap_or(false),
         request.allows_parallel.unwrap_or(false),
-        request.abandonability.unwrap_or(0.5),
+        request.abandonability.unwrap_or(0.5.into()),
         request.fixed.unwrap_or(false),
         tz,
     )
@@ -714,7 +714,7 @@ fn build_habit_core(
     sigma_minutes: i64,
     parallelizable: bool,
     allows_parallel: bool,
-    abandonability: f64,
+    abandonability: Abandonability,
     fixed: bool,
     tz: &jiff::tz::TimeZone,
 ) -> Result<takusu_habit::Habit, AppError> {
@@ -1576,7 +1576,7 @@ impl TakusuApp {
                     depends: Some(vec![]),
                     parallelizable: Some(false),
                     allows_parallel: Some(false),
-                    abandonability: Some(0.5),
+                    abandonability: Some(0.5.into()),
                     ical_uid: event.uid.clone(),
                     habit_id: None,
                     fixed: Some(true),
@@ -1750,7 +1750,7 @@ impl TakusuApp {
                     depends: vec![],
                     parallelizable: request.parallelizable.unwrap_or(false),
                     allows_parallel: request.allows_parallel.unwrap_or(false),
-                    abandonability: request.abandonability.unwrap_or(0.5),
+                    abandonability: request.abandonability.unwrap_or(0.5.into()),
                     fixed: request.fixed.unwrap_or(false),
                     habit_group: None,
                 };

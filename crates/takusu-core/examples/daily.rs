@@ -60,7 +60,7 @@ fn main() {
                 depends: vec![],
                 parallelizable: false,
                 allows_parallel: false,
-                abandonability: 0.1, // // ほぼ諦めない
+                abandonability: 0.1.into(), // // ほぼ諦めない
                 fixed: false,
                 habit_group: None,
             })
@@ -79,7 +79,7 @@ fn main() {
                 depends: vec![],
                 parallelizable: false,
                 allows_parallel: true, // 洗濯中に他のことできる
-                abandonability: 0.2,
+                abandonability: 0.2.into(),
                 fixed: false,
                 habit_group: None,
             })
@@ -98,7 +98,7 @@ fn main() {
                 depends: vec![],
                 parallelizable: true, // 他のタスク中でも可
                 allows_parallel: false,
-                abandonability: 0.6, // // まあできなくてもいい
+                abandonability: 0.6.into(), // // まあできなくてもいい
                 fixed: false,
                 habit_group: None,
             })
@@ -115,7 +115,7 @@ fn main() {
             depends: vec![],
             parallelizable: false,
             allows_parallel: false,
-            abandonability: 0.1,
+            abandonability: 0.1.into(),
             fixed: false,
             habit_group: None,
         })
@@ -134,7 +134,7 @@ fn main() {
                 depends: vec![survey_id], // 調査が終わってから
                 parallelizable: false,
                 allows_parallel: false,
-                abandonability: 0.2,
+                abandonability: 0.2.into(),
                 fixed: false,
                 habit_group: None,
             })
@@ -151,7 +151,7 @@ fn main() {
             depends: vec![],
             parallelizable: false,
             allows_parallel: false,
-            abandonability: 0.3,
+            abandonability: 0.3.into(),
             fixed: false,
             habit_group: None,
         })
@@ -170,7 +170,7 @@ fn main() {
                 depends: vec![list_id],
                 parallelizable: false,
                 allows_parallel: false,
-                abandonability: 0.2,
+                abandonability: 0.2.into(),
                 fixed: false,
                 habit_group: None,
             })
@@ -189,7 +189,7 @@ fn main() {
                 depends: vec![],
                 parallelizable: false,
                 allows_parallel: false,
-                abandonability: 0.8, // // deadline 超過を大きく許容
+                abandonability: 0.8.into(), // // deadline 超過を大きく許容
                 fixed: false,
                 habit_group: None,
             })
@@ -208,7 +208,7 @@ fn main() {
                 depends: vec![],
                 parallelizable: false,
                 allows_parallel: true, // 移動中にメールできる
-                abandonability: 0.1,
+                abandonability: 0.1.into(),
                 fixed: false,
                 habit_group: None,
             })
@@ -226,7 +226,7 @@ fn main() {
                 depends: vec![],
                 parallelizable: true, // 他のタスク(移動)中にできる
                 allows_parallel: false,
-                abandonability: 0.3,
+                abandonability: 0.3.into(),
                 fixed: false,
                 habit_group: None,
             })
