@@ -306,6 +306,18 @@ enum_label! {
     }
 }
 
+enum_label! {
+    /// Phase 5 solver label (see `doc/type-safety-issues.md` §3.3).
+    ///
+    /// Kept in `takusu-util` because `takusu-core` does not depend on `serde`,
+    /// and `takusu-storage` / `takusu-client` / `takusu-worker` all depend on `takusu-util`.
+    pub enum Solver {
+        #[default] Sa = "sa",
+        Priority = "priority",
+        Auto = "auto",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -382,6 +394,18 @@ mod tests {
                 Status::Completed
             ]
         );
+    }
+
+    #[test]
+    fn solver_round_trips() {
+        assert_eq!(Solver::Sa.to_string(), "sa");
+        assert_eq!(Solver::Priority.to_string(), "priority");
+        assert_eq!(Solver::Auto.to_string(), "auto");
+        assert_eq!("sa".parse::<Solver>().unwrap(), Solver::Sa);
+        assert_eq!("priority".parse::<Solver>().unwrap(), Solver::Priority);
+        assert_eq!("auto".parse::<Solver>().unwrap(), Solver::Auto);
+        assert_eq!(Solver::default(), Solver::Sa);
+        assert_eq!(Solver::enum_default(), Solver::Sa);
     }
 
     #[derive(Debug, PartialEq, Serialize, Deserialize)]

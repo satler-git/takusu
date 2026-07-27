@@ -114,8 +114,7 @@ impl App {
     pub async fn reload_schedule(&mut self) {
         if let Ok(s) = self.app.get_schedule().await {
             self.schedule_entries = serde_json::from_str(&s.schedule).unwrap_or_default();
-            self.schedule_entries
-                .sort_by(|a, b| a.start_at.cmp(&b.start_at));
+            self.schedule_entries.sort_by_key(|e| e.start_at);
             self.schedule_list.set_len(self.schedule_entries.len());
         }
     }
@@ -300,6 +299,13 @@ impl App {
             self.status_msg = Some("Title and deadline required".into());
             return;
         }
+        let end_at = match takusu_util::Timestamp::parse_with_tz(&end_at, &self.tz) {
+            Ok(ts) => ts,
+            Err(e) => {
+                self.status_msg = Some(format!("Invalid deadline: {e}"));
+                return;
+            }
+        };
         let body = takusu_storage::CreateTask {
             title,
             description: None,

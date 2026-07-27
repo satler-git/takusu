@@ -234,8 +234,8 @@ async fn create_task(
     .bind(&id)
     .bind(&body.title)
     .bind(&body.description)
-    .bind(&body.start_at)
-    .bind(&body.end_at)
+    .bind(body.start_at)
+    .bind(body.end_at)
     .bind(body.avg_minutes)
     .bind(sigma)
     .bind(&depends_json)
@@ -316,8 +316,8 @@ async fn update_task(
     )
     .bind(body.title.as_deref())
     .bind(body.description.as_deref())
-    .bind(body.start_at.as_deref())
-    .bind(body.end_at.as_deref())
+    .bind(body.start_at.as_ref().and_then(|o| o.as_ref().map(|t| t.to_string())))
+    .bind(body.end_at.as_ref().map(|t| t.to_string()))
     .bind(body.avg_minutes)
     .bind(body.sigma_minutes)
     .bind(depends_json.as_deref())
@@ -367,8 +367,8 @@ async fn replace_task(
     )
     .bind(&body.title)
     .bind(&body.description)
-    .bind(&body.start_at)
-    .bind(&body.end_at)
+    .bind(body.start_at)
+    .bind(body.end_at)
     .bind(body.avg_minutes)
     .bind(sigma)
     .bind(&depends_json)
@@ -570,8 +570,8 @@ async fn create_habit(
     .bind(&body.title)
     .bind(&body.description)
     .bind(&body.recurrence)
-    .bind(&body.start_time)
-    .bind(&body.end_time)
+    .bind(body.start_time)
+    .bind(body.end_time)
     .bind(body.avg_minutes)
     .bind(sigma)
     .bind(parallelizable)
@@ -609,8 +609,8 @@ async fn update_habit(
     .bind(body.title.as_deref())
     .bind(body.description.as_deref())
     .bind(body.recurrence.as_deref())
-    .bind(body.start_time.as_deref())
-    .bind(body.end_time.as_deref())
+    .bind(body.start_time.as_ref().map(|t| t.to_string()))
+    .bind(body.end_time.as_ref().map(|t| t.to_string()))
     .bind(body.avg_minutes)
     .bind(body.sigma_minutes)
     .bind(body.parallelizable)
@@ -683,8 +683,8 @@ async fn create_habit_scheduled_span(
     )
     .bind(&span_id)
     .bind(&full)
-    .bind(&body.start_date)
-    .bind(&body.end_date)
+    .bind(body.start_date)
+    .bind(body.end_date)
     .bind(&body.reason)
     .execute(&state.pool)
     .await
@@ -748,8 +748,8 @@ async fn workers_storage_e2e() {
     let create_body = CreateTask {
         title: "e2e task".to_string(),
         description: Some("integration test".to_string()),
-        start_at: Some("2026-06-05T09:00:00+09:00".to_string()),
-        end_at: "2026-06-05T18:00:00+09:00".to_string(),
+        start_at: Some("2026-06-05T09:00:00+09:00".parse().unwrap()),
+        end_at: "2026-06-05T18:00:00+09:00".parse().unwrap(),
         avg_minutes: 60,
         sigma_minutes: Some(15),
         depends: Some(vec![]),
@@ -973,9 +973,7 @@ async fn similar_tasks(
     scored.sort_by(|(sa, a), (sb, b)| {
         sa.total_cmp(sb)
             .reverse()
-            .then_with(|| {
-                takusu_util::memory::compare_optional_desc(&a.completed_at, &b.completed_at)
-            })
+            .then_with(|| b.completed_at.cmp(&a.completed_at))
             .then_with(|| b.updated_at.cmp(&a.updated_at))
             .then_with(|| a.task_id.cmp(&b.task_id))
     });
@@ -1050,7 +1048,7 @@ async fn workers_storage_list_tasks_no_overdue_filter() {
         title: "overdue task".into(),
         description: None,
         start_at: None,
-        end_at: "2020-01-01T00:00:00+00:00".into(),
+        end_at: "2020-01-01T00:00:00+00:00".parse().unwrap(),
         avg_minutes: 10,
         sigma_minutes: Some(2),
         depends: Some(vec![]),
@@ -1070,7 +1068,7 @@ async fn workers_storage_list_tasks_no_overdue_filter() {
         title: "future task".into(),
         description: None,
         start_at: None,
-        end_at: "2030-01-01T00:00:00+00:00".into(),
+        end_at: "2030-01-01T00:00:00+00:00".parse().unwrap(),
         ..overdue.clone()
     };
     storage.create_task(&overdue).await.unwrap();
@@ -1097,7 +1095,7 @@ async fn workers_storage_e2e_zero_quantity() {
             title: "zero-total".into(),
             description: None,
             start_at: None,
-            end_at: "2030-01-01T00:00:00+00:00".into(),
+            end_at: "2030-01-01T00:00:00+00:00".parse().unwrap(),
             avg_minutes: 30,
             sigma_minutes: None,
             depends: None,

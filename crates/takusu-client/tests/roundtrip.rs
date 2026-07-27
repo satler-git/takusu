@@ -8,7 +8,7 @@ fn create_task_serialization() {
         title: "Test task".to_string(),
         description: Some("A test".to_string()),
         start_at: None,
-        end_at: "2025-06-05T18:00:00Z".to_string(),
+        end_at: "2025-06-05T18:00:00Z".parse().unwrap(),
         avg_minutes: 60,
         sigma_minutes: Some(10),
         depends: Some(vec!["dep1".to_string()]),
@@ -40,7 +40,7 @@ fn create_task_defaults_are_skipped() {
         title: "Minimal".to_string(),
         description: None,
         start_at: None,
-        end_at: "2025-06-05T18:00:00Z".to_string(),
+        end_at: "2025-06-05T18:00:00Z".parse().unwrap(),
         avg_minutes: 30,
         sigma_minutes: None,
         depends: None,
@@ -122,7 +122,7 @@ fn reschedule_serialization() {
 #[test]
 fn move_entry_serialization() {
     let me = MoveEntry {
-        start_at: "2025-06-05T12:00:00Z".to_string(),
+        start_at: "2025-06-05T12:00:00Z".parse().unwrap(),
         force: true,
     };
 
@@ -134,7 +134,7 @@ fn move_entry_serialization() {
 #[test]
 fn move_entry_default_force_omitted() {
     let me = MoveEntry {
-        start_at: "2025-06-05T12:00:00Z".to_string(),
+        start_at: "2025-06-05T12:00:00Z".parse().unwrap(),
         force: false,
     };
 
@@ -153,8 +153,8 @@ fn move_entry_response_deserialization() {
     });
     let resp: MoveEntryResponse = serde_json::from_value(json).unwrap();
     assert_eq!(resp.task_id, "task-1");
-    assert_eq!(resp.start_at, "2025-06-05T12:00:00Z");
-    assert_eq!(resp.end_at, "2025-06-05T13:00:00Z");
+    assert_eq!(resp.start_at, "2025-06-05T12:00:00Z".parse().unwrap());
+    assert_eq!(resp.end_at, "2025-06-05T13:00:00Z".parse().unwrap());
     assert_eq!(resp.warnings, vec!["overlap ignored"]);
 }
 
@@ -175,8 +175,8 @@ fn create_habit_serialization() {
         title: "Daily standup".to_string(),
         description: None,
         recurrence: "daily".to_string(),
-        start_time: "09:00".to_string(),
-        end_time: "09:30".to_string(),
+        start_time: "09:00".parse().unwrap(),
+        end_time: "09:30".parse().unwrap(),
         avg_minutes: 30,
         sigma_minutes: None,
         parallelizable: None,
@@ -195,7 +195,7 @@ fn create_habit_serialization() {
 fn update_settings_serialization() {
     let us = UpdateSettings {
         tz: Some("Asia/Tokyo".to_string()),
-        sleep_start: Some("23:00".to_string()),
+        sleep_start: Some("23:00".parse().unwrap()),
         sleep_end: None,
         comfortable_minutes: None,
         maximum_minutes: None,
@@ -223,7 +223,7 @@ fn update_settings_new_fields_serialization() {
         sleep_end: None,
         comfortable_minutes: None,
         maximum_minutes: None,
-        solver: Some("sa".to_string()),
+        solver: Some(takusu_util::Solver::Sa),
         time_budget_ms: Some(1500),
         seed: Some(42),
         warm_start: Some(true),
@@ -337,7 +337,10 @@ fn token_create_response_deserialization() {
     let tcr: TokenCreateResponse = serde_json::from_value(json).unwrap();
     assert_eq!(tcr.token, "tsk_new_token_value");
     assert_eq!(tcr.id, 1);
-    assert_eq!(tcr.expires_at.as_deref(), Some("2026-06-01T00:00:00Z"));
+    assert_eq!(
+        tcr.expires_at,
+        Some("2026-06-01T00:00:00Z".parse().unwrap())
+    );
 }
 
 #[test]
@@ -349,7 +352,7 @@ fn settings_response_deserialization() {
     });
     let sr: SettingsResponse = serde_json::from_value(json).unwrap();
     assert_eq!(sr.tz, "UTC");
-    assert_eq!(sr.sleep_start, "22:00");
+    assert_eq!(sr.sleep_start, "22:00".parse().unwrap());
 }
 
 #[test]

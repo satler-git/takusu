@@ -34,7 +34,7 @@ use takusu_client::{
     HabitStepInput, MoveEntry, RecordProgress, SaveScheduleRequest, ScheduleEntry, SplitTask,
     UpdateHabit, UpdateMemory, UpdateSkill, UpdateTask,
 };
-use takusu_util::{Abandonability, EnumLabel, Quantity};
+use takusu_util::{Abandonability, EnumLabel, Quantity, TimeOfDay};
 use tools::memory::client_error;
 use uuid::Uuid;
 
@@ -47,8 +47,8 @@ struct PendingHabitStep {
     position: i64,
     title: String,
     description: Option<String>,
-    start_time: String,
-    end_time: String,
+    start_time: TimeOfDay,
+    end_time: TimeOfDay,
     avg_minutes: i64,
     sigma_minutes: Option<i64>,
     parallelizable: Option<bool>,
@@ -1458,7 +1458,10 @@ impl AgentSession {
         let changes_for_message = request.changes.clone();
         let schedule_commit = request.changes.iter().any(|change| {
             change.target.kind == TargetKind::Schedule
-                && matches!(change.operation, ChangeOperation::Generate | ChangeOperation::Reschedule)
+                && matches!(
+                    change.operation,
+                    ChangeOperation::Generate | ChangeOperation::Reschedule
+                )
         });
         let mut receipts = Vec::new();
         let mut schedule_dirty = *self.schedule_dirty.lock().unwrap();
@@ -1471,7 +1474,8 @@ impl AgentSession {
                 .await
             {
                 Ok(receipt) => {
-                    schedule_dirty |= matches!(change.target.kind, TargetKind::Task | TargetKind::Habit);
+                    schedule_dirty |=
+                        matches!(change.target.kind, TargetKind::Task | TargetKind::Habit);
                     receipts.push(receipt);
                 }
                 Err(e) => {
@@ -1560,21 +1564,35 @@ impl AgentSession {
             })?;
         let start_time = field("start_time")?
             .as_str()
-            .map(ToOwned::to_owned)
             .ok_or_else(|| {
                 AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
                     "steps",
                     "start_time must be a string",
                 )))
+            })
+            .and_then(|s| {
+                s.parse::<TimeOfDay>().map_err(|_| {
+                    AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
+                        "steps",
+                        "start_time must be a valid HH:MM time",
+                    )))
+                })
             })?;
         let end_time = field("end_time")?
             .as_str()
-            .map(ToOwned::to_owned)
             .ok_or_else(|| {
                 AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
                     "steps",
                     "end_time must be a string",
                 )))
+            })
+            .and_then(|s| {
+                s.parse::<TimeOfDay>().map_err(|_| {
+                    AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
+                        "steps",
+                        "end_time must be a valid HH:MM time",
+                    )))
+                })
             })?;
         let avg_minutes = require_i64(field("avg_minutes")?, "avg_minutes")?;
 
@@ -1699,8 +1717,8 @@ impl AgentSession {
                 position: s.position - 1,
                 title: s.title.clone(),
                 description: s.description.clone(),
-                start_time: s.start_time.clone(),
-                end_time: s.end_time.clone(),
+                start_time: s.start_time,
+                end_time: s.end_time,
                 avg_minutes: s.avg_minutes,
                 sigma_minutes: s.sigma_minutes,
                 parallelizable: s.parallelizable,
@@ -1904,47 +1922,54 @@ impl AgentSession {
         let mut args = args.as_object().cloned().unwrap_or_default();
         let steps_value = args.get("steps").cloned();
         args.remove("steps");
-        let (target_id, current_updated_at, existing_habit) = match (change.target.kind, change.operation) {
-            (_, ChangeOperation::Create) | (TargetKind::Schedule, _) => (String::new(), None, None),
-            (TargetKind::Task, _) => {
-                let task = self
-                    .client
-                    .get_task(&change.target.display_id)
-                    .await
-                    .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
-                (task.id, Some(task.updated_at), None)
-            }
-            (TargetKind::Habit, _) => {
-                let habit = self
-                    .client
-                    .get_habit(&change.target.display_id)
-                    .await
-                    .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
-                (
-                    habit.habit.id.clone(),
-                    Some(habit.habit.updated_at.clone()),
-                    Some(habit),
-                )
-            }
-            (TargetKind::Skill, _) => {
-                let skill = self
-                    .client
-                    .get_skill(&change.target.display_id)
-                    .await
-                    .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
-                (skill.slug, Some(skill.updated_at), None)
-            }
-            (TargetKind::Memory, _) => {
-                let memory = self
-                    .client
-                    .get_memory(&change.target.display_id)
-                    .await
-                    .map_err(|e| AgentError::Tool(client_error(e)))?;
-                (memory.id, Some(memory.updated_at), None)
-            }
-        };
+        let (target_id, current_updated_at, existing_habit) =
+            match (change.target.kind, change.operation) {
+                (_, ChangeOperation::Create) | (TargetKind::Schedule, _) => {
+                    (String::new(), None, None)
+                }
+                (TargetKind::Task, _) => {
+                    let task = self
+                        .client
+                        .get_task(&change.target.display_id)
+                        .await
+                        .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
+                    (task.id, Some(task.updated_at), None)
+                }
+                (TargetKind::Habit, _) => {
+                    let habit = self
+                        .client
+                        .get_habit(&change.target.display_id)
+                        .await
+                        .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
+                    (
+                        habit.habit.id.clone(),
+                        Some(habit.habit.updated_at),
+                        Some(habit),
+                    )
+                }
+                (TargetKind::Skill, _) => {
+                    let skill = self
+                        .client
+                        .get_skill(&change.target.display_id)
+                        .await
+                        .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
+                    (skill.slug, Some(skill.updated_at), None)
+                }
+                (TargetKind::Memory, _) => {
+                    let memory = self
+                        .client
+                        .get_memory(&change.target.display_id)
+                        .await
+                        .map_err(|e| AgentError::Tool(client_error(e)))?;
+                    (memory.id, Some(memory.updated_at), None)
+                }
+            };
         if let Some(observed) = &change.observed_updated_at
-            && current_updated_at.as_ref() != Some(observed)
+            && current_updated_at
+                .as_ref()
+                .map(|t| t.to_string())
+                .as_deref()
+                != Some(observed.as_str())
         {
             return Err(AgentError::Tool(ToolError::Conflict(
                 "target changed after proposal".into(),
@@ -2051,8 +2076,15 @@ impl AgentSession {
                                 "start_date",
                                 "missing",
                             )))
-                        })?
-                        .to_owned();
+                        })
+                        .and_then(|s| {
+                            s.parse::<takusu_util::Date>().map_err(|_| {
+                                AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
+                                    "start_date",
+                                    "must be a valid YYYY-MM-DD date",
+                                )))
+                            })
+                        })?;
                     let end_date = args
                         .get("end_date")
                         .and_then(Value::as_str)
@@ -2062,8 +2094,15 @@ impl AgentSession {
                             AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
                                 "end_date", "missing",
                             )))
-                        })?
-                        .to_owned();
+                        })
+                        .and_then(|s| {
+                            s.parse::<takusu_util::Date>().map_err(|_| {
+                                AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
+                                    "end_date",
+                                    "must be a valid YYYY-MM-DD date",
+                                )))
+                            })
+                        })?;
                     let reason = args
                         .get("reason")
                         .and_then(Value::as_str)
@@ -2213,8 +2252,15 @@ impl AgentSession {
                             AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
                                 "start_at", "missing",
                             )))
-                        })?
-                        .to_owned();
+                        })
+                        .and_then(|s| {
+                            s.parse::<takusu_util::Timestamp>().map_err(|_| {
+                                AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
+                                    "start_at",
+                                    "must be a valid RFC3339 timestamp",
+                                )))
+                            })
+                        })?;
                     let force = args.get("force").and_then(Value::as_bool).unwrap_or(false);
                     let fixed = args.get("fixed").and_then(Value::as_bool).unwrap_or(true);
                     let move_result = self
@@ -2338,7 +2384,14 @@ impl AgentSession {
                     let end_at = args
                         .get("end_at")
                         .and_then(Value::as_str)
-                        .map(|s| s.to_owned());
+                        .map(|s| s.parse::<takusu_util::Timestamp>())
+                        .transpose()
+                        .map_err(|_| {
+                            AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
+                                "end_at",
+                                "must be a valid RFC3339 timestamp",
+                            )))
+                        })?;
                     let split = SplitTask {
                         retained_quantity,
                         set_dependency,
@@ -2355,7 +2408,8 @@ impl AgentSession {
                         .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
                     (target_id.clone(), change.before.clone(), Some(after), None)
                 }
-                (TargetKind::Schedule, ChangeOperation::Generate) | (TargetKind::Schedule, ChangeOperation::Reschedule) => {
+                (TargetKind::Schedule, ChangeOperation::Generate)
+                | (TargetKind::Schedule, ChangeOperation::Reschedule) => {
                     let entries = args.get("_preview_entries").cloned().ok_or_else(|| {
                         AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
                             "_preview_entries",
@@ -3577,8 +3631,8 @@ mod tests {
             post(|Json(_): Json<serde_json::Value>| async move {
                 Json(ScheduleRow {
                     id: "sched-1".to_string(),
-                    created_at: "2026-07-18T00:00:00Z".to_string(),
-                    updated_at: "2026-07-18T00:00:00Z".to_string(),
+                    created_at: "2026-07-18T00:00:00Z".parse().unwrap(),
+                    updated_at: "2026-07-18T00:00:00Z".parse().unwrap(),
                     schedule: "{}".to_string(),
                 })
             }),
@@ -3641,8 +3695,8 @@ mod tests {
             post(|Json(_): Json<serde_json::Value>| async move {
                 Json(ScheduleRow {
                     id: "sched-1".to_string(),
-                    created_at: "2026-07-18T00:00:00Z".to_string(),
-                    updated_at: "2026-07-18T00:00:00Z".to_string(),
+                    created_at: "2026-07-18T00:00:00Z".parse().unwrap(),
+                    updated_at: "2026-07-18T00:00:00Z".parse().unwrap(),
                     schedule: "{}".to_string(),
                 })
             }),
@@ -3708,8 +3762,8 @@ mod tests {
             post(|Json(_): Json<serde_json::Value>| async move {
                 Json(ScheduleRow {
                     id: "sched-1".to_string(),
-                    created_at: "2026-07-18T00:00:00Z".to_string(),
-                    updated_at: "2026-07-18T00:00:00Z".to_string(),
+                    created_at: "2026-07-18T00:00:00Z".parse().unwrap(),
+                    updated_at: "2026-07-18T00:00:00Z".parse().unwrap(),
                     schedule: "{}".to_string(),
                 })
             }),
@@ -4221,8 +4275,8 @@ mod tests {
                 position: 2,
                 title: "run".into(),
                 description: None,
-                start_time: "08:15".into(),
-                end_time: "08:45".into(),
+                start_time: "08:15".parse().unwrap(),
+                end_time: "08:45".parse().unwrap(),
                 avg_minutes: 30,
                 sigma_minutes: None,
                 parallelizable: None,
@@ -4235,8 +4289,8 @@ mod tests {
                 position: 1,
                 title: "warmup".into(),
                 description: None,
-                start_time: "08:00".into(),
-                end_time: "08:15".into(),
+                start_time: "08:00".parse().unwrap(),
+                end_time: "08:15".parse().unwrap(),
                 avg_minutes: 15,
                 sigma_minutes: None,
                 parallelizable: None,
@@ -4269,8 +4323,8 @@ mod tests {
             position: 1,
             title: "a".into(),
             description: None,
-            start_time: "08:00".into(),
-            end_time: "08:15".into(),
+            start_time: "08:00".parse().unwrap(),
+            end_time: "08:15".parse().unwrap(),
             avg_minutes: 15,
             sigma_minutes: None,
             parallelizable: None,
@@ -4338,8 +4392,8 @@ mod tests {
             position,
             title: "step".into(),
             description: None,
-            start_time: "08:00".into(),
-            end_time: "08:15".into(),
+            start_time: "08:00".parse().unwrap(),
+            end_time: "08:15".parse().unwrap(),
             avg_minutes: 15,
             sigma_minutes: 3,
             parallelizable: false,
@@ -4347,7 +4401,7 @@ mod tests {
             abandonability: 0.5.into(),
             fixed: false,
             depends_on: "[]".into(),
-            created_at: "2026-01-01T00:00:00Z".into(),
+            created_at: "2026-01-01T00:00:00Z".parse().unwrap(),
         }
     }
 
@@ -4358,8 +4412,8 @@ mod tests {
             title: title.into(),
             description: None,
             recurrence: "FREQ=DAILY".into(),
-            start_time: "08:00".into(),
-            end_time: "09:00".into(),
+            start_time: "08:00".parse().unwrap(),
+            end_time: "09:00".parse().unwrap(),
             avg_minutes: 60,
             sigma_minutes: 10,
             parallelizable: false,
@@ -4368,8 +4422,8 @@ mod tests {
             active: true,
             fixed: false,
             window_mode: takusu_util::WindowMode::Day,
-            created_at: "2026-01-01T00:00:00Z".into(),
-            updated_at: "2026-01-01T00:00:00Z".into(),
+            created_at: "2026-01-01T00:00:00Z".parse().unwrap(),
+            updated_at: "2026-01-01T00:00:00Z".parse().unwrap(),
         }
     }
 
@@ -4379,8 +4433,8 @@ mod tests {
             position: 1,
             title: "a".into(),
             description: None,
-            start_time: "08:00".into(),
-            end_time: "08:15".into(),
+            start_time: "08:00".parse().unwrap(),
+            end_time: "08:15".parse().unwrap(),
             avg_minutes: 15,
             sigma_minutes: None,
             parallelizable: None,
@@ -4401,8 +4455,8 @@ mod tests {
                 position: 2,
                 title: "b".into(),
                 description: None,
-                start_time: "08:15".into(),
-                end_time: "08:30".into(),
+                start_time: "08:15".parse().unwrap(),
+                end_time: "08:30".parse().unwrap(),
                 avg_minutes: 15,
                 sigma_minutes: None,
                 parallelizable: None,
@@ -4415,8 +4469,8 @@ mod tests {
                 position: 1,
                 title: "a".into(),
                 description: None,
-                start_time: "08:00".into(),
-                end_time: "08:15".into(),
+                start_time: "08:00".parse().unwrap(),
+                end_time: "08:15".parse().unwrap(),
                 avg_minutes: 15,
                 sigma_minutes: None,
                 parallelizable: None,
@@ -4443,8 +4497,8 @@ mod tests {
                 position: 1,
                 title: "a".into(),
                 description: None,
-                start_time: "08:00".into(),
-                end_time: "08:15".into(),
+                start_time: "08:00".parse().unwrap(),
+                end_time: "08:15".parse().unwrap(),
                 avg_minutes: 15,
                 sigma_minutes: None,
                 parallelizable: None,
@@ -4457,8 +4511,8 @@ mod tests {
                 position: 2,
                 title: "b".into(),
                 description: None,
-                start_time: "08:15".into(),
-                end_time: "08:30".into(),
+                start_time: "08:15".parse().unwrap(),
+                end_time: "08:30".parse().unwrap(),
                 avg_minutes: 15,
                 sigma_minutes: None,
                 parallelizable: None,
@@ -4488,10 +4542,10 @@ mod tests {
         let created = HabitScheduledSpanRow {
             id: "span-uuid".into(),
             habit_id: "habit-uuid".into(),
-            start_date: "2025-09-01".into(),
-            end_date: "2025-09-07".into(),
+            start_date: "2025-09-01".parse().unwrap(),
+            end_date: "2025-09-07".parse().unwrap(),
             reason: None,
-            created_at: "2025-06-01T00:00:00Z".into(),
+            created_at: "2025-06-01T00:00:00Z".parse().unwrap(),
         };
 
         let app = Router::new()

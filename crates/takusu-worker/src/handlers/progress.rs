@@ -101,11 +101,13 @@ fn parse_timestamp(s: &str) -> Result<i64, WorkerError> {
 }
 
 fn session_minutes(session: &TaskWorkSessionRow) -> i64 {
-    match session.ended_at.as_deref() {
-        Some(end) => takusu_util::minutes_between(&session.started_at, end),
+    match session.ended_at {
+        Some(end) => {
+            takusu_util::minutes_between(&session.started_at.to_string(), &end.to_string())
+        }
         None => {
             let now = now_seconds();
-            let start = parse_timestamp(&session.started_at).unwrap_or(now);
+            let start = parse_timestamp(&session.started_at.to_string()).unwrap_or(now);
             ((now - start) / 60).max(1)
         }
     }
@@ -340,11 +342,11 @@ pub async fn record_progress(
 
     let active_minutes = if let Some(ref session) = open {
         let base = if let Some(ref ev) = last_event {
-            takusu_util::later_timestamp(&session.started_at, &ev.at)
+            std::cmp::max(session.started_at, ev.at)
         } else {
-            &session.started_at
+            session.started_at
         };
-        takusu_util::minutes_between(base, &now)
+        takusu_util::minutes_between(&base.to_string(), &now)
     } else {
         0
     };
@@ -588,9 +590,9 @@ pub async fn split_task(mut req: Request, env: Env, id: &str) -> Result<Response
         let tz = get_timezone(&database).await?;
         validate_task_datetimes(
             None,
-            body.end_at.as_deref(),
+            body.end_at.as_ref(),
             &tz,
-            original.start_at.as_deref(),
+            original.start_at.as_ref(),
             None,
         )?;
     }
@@ -666,9 +668,9 @@ pub async fn split_task(mut req: Request, env: Env, id: &str) -> Result<Response
             original
                 .start_at
                 .as_ref()
-                .map(|s| JsValue::from_str(s.as_str()))
+                .map(|s| JsValue::from_str(&s.to_string()))
                 .unwrap_or(JsValue::NULL),
-            JsValue::from_str(body.end_at.as_ref().unwrap_or(&original.end_at).as_str()),
+            JsValue::from_str(&body.end_at.unwrap_or(original.end_at).to_string()),
             JsValue::from_f64(original.avg_minutes as f64),
             JsValue::from_f64(original.sigma_minutes as f64),
             JsValue::from_str(&depends_json),

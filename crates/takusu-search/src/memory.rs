@@ -150,7 +150,7 @@ pub trait MemoryRankable {
     fn id(&self) -> &str;
     fn normalized_key(&self) -> &str;
     fn normalized_content(&self) -> &str;
-    fn updated_at(&self) -> &str;
+    fn updated_at(&self) -> String;
 }
 
 /// Rank key match quality; lower is better.
@@ -312,7 +312,7 @@ pub fn sort_memories<T: MemoryRankable>(query: &str, items: &mut [T]) {
         Err(_) => {
             items.sort_by(|a, b| {
                 b.updated_at()
-                    .cmp(a.updated_at())
+                    .cmp(&a.updated_at())
                     .then_with(|| a.id().cmp(b.id()))
             });
             return;
@@ -321,7 +321,7 @@ pub fn sort_memories<T: MemoryRankable>(query: &str, items: &mut [T]) {
     if terms.is_empty() {
         items.sort_by(|a, b| {
             b.updated_at()
-                .cmp(a.updated_at())
+                .cmp(&a.updated_at())
                 .then_with(|| a.id().cmp(b.id()))
         });
         return;
@@ -332,7 +332,7 @@ pub fn sort_memories<T: MemoryRankable>(query: &str, items: &mut [T]) {
         sa.cmp(&sb)
             .then_with(|| kb.cmp(&ka))
             .then_with(|| cb.cmp(&ca))
-            .then_with(|| b.updated_at().cmp(a.updated_at()))
+            .then_with(|| b.updated_at().cmp(&a.updated_at()))
             .then_with(|| a.id().cmp(b.id()))
     });
 }
@@ -511,8 +511,8 @@ mod tests {
             fn normalized_content(&self) -> &str {
                 &self.content
             }
-            fn updated_at(&self) -> &str {
-                &self.updated
+            fn updated_at(&self) -> String {
+                self.updated.clone()
             }
         }
         let mut items = vec![
@@ -593,8 +593,8 @@ mod tests {
             fn normalized_content(&self) -> &str {
                 &self.content
             }
-            fn updated_at(&self) -> &str {
-                &self.updated
+            fn updated_at(&self) -> String {
+                self.updated.clone()
             }
         }
         let mut items = vec![

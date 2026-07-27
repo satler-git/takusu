@@ -4,14 +4,25 @@ use std::fs;
 use std::io;
 use std::process::Command;
 use takusu_storage::{HabitRow, HabitStepInput, HabitStepRow, TaskRow, UpdateHabit, UpdateTask};
-use takusu_util::{TaskStatus, WindowMode};
+use takusu_util::{TaskStatus, TimeOfDay, Timestamp, WindowMode, parse_datetime_to_timestamp};
 
 use crate::task_ref::task_reference;
+
+/// Format a `Timestamp` in the given timezone for display in the editor.
+/// Returns an empty string for `None`.
+fn fmt_ts(ts: Option<&Timestamp>, tz: &jiff::tz::TimeZone) -> String {
+    ts.map(|t| {
+        let zdt = t.to_zoned(tz.clone());
+        zdt.to_string()
+    })
+    .unwrap_or_default()
+}
 
 pub fn format_task_for_editing(
     task: &TaskRow,
     all_tasks: &[TaskRow],
     habit_map: &HashMap<String, i64>,
+    tz: &jiff::tz::TimeZone,
 ) -> String {
     let depends_uuids: Vec<String> =
         serde_json::from_str::<Vec<String>>(&task.depends).unwrap_or_default();
@@ -49,8 +60,8 @@ original_quantity_total: {oqtotal}
 depends: {depends}"#,
         title = task.title,
         desc = task.description.as_deref().unwrap_or(""),
-        start = task.start_at.as_deref().unwrap_or(""),
-        end = task.end_at,
+        start = fmt_ts(task.start_at.as_ref(), tz),
+        end = fmt_ts(Some(&task.end_at), tz),
         status = task.status,
         avg = task.avg_minutes,
         sigma = task.sigma_minutes,
@@ -71,7 +82,7 @@ depends: {depends}"#,
     )
 }
 
-pub fn parse_edited_task(content: &str) -> Result<UpdateTask, String> {
+pub fn parse_edited_task(content: &str, tz: &jiff::tz::TimeZone) -> Result<UpdateTask, String> {
     let mut title = None;
     let mut description = None;
     let mut start_at = None;
@@ -114,16 +125,24 @@ pub fn parse_edited_task(content: &str) -> Result<UpdateTask, String> {
             }
             "start_at" => {
                 start_at = if value.is_empty() {
-                    Some(None)
+                    None
                 } else {
-                    Some(Some(value.to_string()))
+                    Some(Some(
+                        parse_datetime_to_timestamp(value, tz)
+                            .map(Timestamp::from)
+                            .map_err(|e| format!("invalid start_at '{value}': {e}"))?,
+                    ))
                 }
             }
             "end_at" => {
                 end_at = if value.is_empty() {
-                    Some(None)
+                    None
                 } else {
-                    Some(Some(value.to_string()))
+                    Some(
+                        parse_datetime_to_timestamp(value, tz)
+                            .map(Timestamp::from)
+                            .map_err(|e| format!("invalid end_at '{value}': {e}"))?,
+                    )
                 }
             }
             "status" => {
@@ -233,8 +252,8 @@ pub fn parse_edited_task(content: &str) -> Result<UpdateTask, String> {
     Ok(UpdateTask {
         title,
         description: description.flatten(),
-        start_at: start_at.flatten(),
-        end_at: end_at.flatten(),
+        start_at,
+        end_at,
         avg_minutes,
         sigma_minutes,
         depends,
@@ -330,14 +349,22 @@ pub fn parse_edited_habit(content: &str) -> Result<UpdateHabit, String> {
                 start_time = if value.is_empty() {
                     Some(None)
                 } else {
-                    Some(Some(value.to_string()))
+                    Some(Some(
+                        value
+                            .parse::<TimeOfDay>()
+                            .map_err(|e| format!("invalid start_time '{value}': {e}"))?,
+                    ))
                 }
             }
             "end_time" => {
                 end_time = if value.is_empty() {
                     Some(None)
                 } else {
-                    Some(Some(value.to_string()))
+                    Some(Some(
+                        value
+                            .parse::<TimeOfDay>()
+                            .map_err(|e| format!("invalid end_time '{value}': {e}"))?,
+                    ))
                 }
             }
             "avg_minutes" => {
@@ -423,8 +450,8 @@ fn habit_step_row_to_input(step: &HabitStepRow) -> Result<HabitStepInput, String
         position: step.position,
         title: step.title.clone(),
         description: step.description.clone(),
-        start_time: step.start_time.clone(),
-        end_time: step.end_time.clone(),
+        start_time: step.start_time,
+        end_time: step.end_time,
         avg_minutes: step.avg_minutes,
         sigma_minutes: Some(step.sigma_minutes),
         parallelizable: Some(step.parallelizable),
@@ -501,7 +528,7 @@ mod tests {
             title: title.into(),
             description: None,
             start_at: None,
-            end_at: "2026-07-23T23:59:00Z".into(),
+            end_at: "2026-07-23T23:59:00Z".parse().unwrap(),
             avg_minutes: 30,
             sigma_minutes: 5,
             depends: serde_json::to_string(
@@ -524,15 +551,15 @@ mod tests {
             split_from_task_id: None,
             original_quantity_total: None,
             actual_minutes: None,
-            created_at: "2026-07-23T00:00:00Z".into(),
-            updated_at: "2026-07-23T00:00:00Z".into(),
+            created_at: "2026-07-23T00:00:00Z".parse().unwrap(),
+            updated_at: "2026-07-23T00:00:00Z".parse().unwrap(),
         }
     }
 
     #[test]
     fn parse_edited_task_empty_end_at_is_skipped() {
         let input = "title: t\nend_at:\n";
-        let update = parse_edited_task(input).unwrap();
+        let update = parse_edited_task(input, &jiff::tz::TimeZone::UTC).unwrap();
         assert_eq!(update.title.as_deref(), Some("t"));
         assert_eq!(update.end_at, None, "empty end_at should skip update");
     }
@@ -540,10 +567,10 @@ mod tests {
     #[test]
     fn parse_edited_task_nonempty_end_at_is_set() {
         let input = "title: t\nend_at: 2026-07-06T18:00:00\n";
-        let update = parse_edited_task(input).unwrap();
+        let update = parse_edited_task(input, &jiff::tz::TimeZone::UTC).unwrap();
         assert_eq!(
-            update.end_at.as_deref(),
-            Some("2026-07-06T18:00:00"),
+            update.end_at.map(|t| t.to_string()),
+            Some("2026-07-06T18:00:00Z".to_string()),
             "non-empty end_at should be set"
         );
     }
@@ -551,7 +578,7 @@ mod tests {
     #[test]
     fn parse_edited_task_empty_start_at_is_skipped() {
         let input = "title: t\nstart_at:\n";
-        let update = parse_edited_task(input).unwrap();
+        let update = parse_edited_task(input, &jiff::tz::TimeZone::UTC).unwrap();
         assert_eq!(update.start_at, None, "empty start_at should skip update");
     }
 
@@ -570,8 +597,14 @@ mod tests {
     fn parse_edited_habit_nonempty_times_are_set() {
         let input = "title: h\nstart_time: 09:00\nend_time: 10:00\n";
         let update = parse_edited_habit(input).unwrap();
-        assert_eq!(update.start_time.as_deref(), Some("09:00"));
-        assert_eq!(update.end_time.as_deref(), Some("10:00"));
+        assert_eq!(
+            update.start_time.map(|t| t.to_string()),
+            Some("09:00".to_string())
+        );
+        assert_eq!(
+            update.end_time.map(|t| t.to_string()),
+            Some("10:00".to_string())
+        );
     }
 
     // ── Per-line error reporting (#347) ─────────────────────────────────
@@ -580,7 +613,7 @@ mod tests {
     fn parse_edited_task_line_without_colon_is_skipped() {
         // A malformed line should NOT discard the whole edit.
         let input = "title: t\nthis line has no colon\navg_minutes: 30\n";
-        let update = parse_edited_task(input).unwrap();
+        let update = parse_edited_task(input, &jiff::tz::TimeZone::UTC).unwrap();
         assert_eq!(update.title.as_deref(), Some("t"));
         assert_eq!(update.avg_minutes, Some(30));
     }
@@ -588,7 +621,7 @@ mod tests {
     #[test]
     fn parse_edited_task_bad_numeric_field_reports_error() {
         let input = "title: t\navg_minutes: abc\n";
-        let err = parse_edited_task(input).unwrap_err();
+        let err = parse_edited_task(input, &jiff::tz::TimeZone::UTC).unwrap_err();
         assert!(
             err.contains("avg_minutes"),
             "error should mention the field: {err}"
@@ -605,7 +638,7 @@ mod tests {
         // (we do not silently drop the valid `title`). The caller can show
         // the error so the user fixes the one bad line and re-edits.
         let input = "title: t\nsigma_minutes: xyz\nfixed: true\n";
-        let err = parse_edited_task(input).unwrap_err();
+        let err = parse_edited_task(input, &jiff::tz::TimeZone::UTC).unwrap_err();
         assert!(err.contains("sigma_minutes"), "error: {err}");
     }
 
@@ -644,8 +677,8 @@ mod tests {
             position: 2,
             title: "Prepare".into(),
             description: Some("get ready".into()),
-            start_time: "09:00".into(),
-            end_time: "09:30".into(),
+            start_time: "09:00".parse().unwrap(),
+            end_time: "09:30".parse().unwrap(),
             avg_minutes: 15,
             sigma_minutes: 3,
             parallelizable: false,
@@ -653,7 +686,7 @@ mod tests {
             abandonability: 0.25.into(),
             fixed: true,
             depends_on: "[\"step-0\"]".into(),
-            created_at: "2026-07-16T00:00:00Z".into(),
+            created_at: "2026-07-16T00:00:00Z".parse().unwrap(),
         };
         let formatted = format_steps_for_editing(&[row]).unwrap();
         let parsed = parse_edited_steps(&formatted).unwrap();
@@ -662,8 +695,8 @@ mod tests {
         assert_eq!(parsed[0].position, 2);
         assert_eq!(parsed[0].title, "Prepare");
         assert_eq!(parsed[0].description.as_deref(), Some("get ready"));
-        assert_eq!(parsed[0].start_time, "09:00");
-        assert_eq!(parsed[0].end_time, "09:30");
+        assert_eq!(parsed[0].start_time.to_string(), "09:00");
+        assert_eq!(parsed[0].end_time.to_string(), "09:30");
         assert_eq!(parsed[0].avg_minutes, 15);
         assert_eq!(parsed[0].sigma_minutes, Some(3));
         assert_eq!(parsed[0].parallelizable, Some(false));
@@ -681,8 +714,8 @@ mod tests {
             position: 1,
             title: "No variance".into(),
             description: None,
-            start_time: "09:00".into(),
-            end_time: "09:15".into(),
+            start_time: "09:00".parse().unwrap(),
+            end_time: "09:15".parse().unwrap(),
             avg_minutes: 15,
             sigma_minutes: 0,
             parallelizable: false,
@@ -690,7 +723,7 @@ mod tests {
             abandonability: 0.5.into(),
             fixed: false,
             depends_on: "[]".into(),
-            created_at: "2026-07-16T00:00:00Z".into(),
+            created_at: "2026-07-16T00:00:00Z".parse().unwrap(),
         };
         let formatted = format_steps_for_editing(&[row]).unwrap();
         let parsed = parse_edited_steps(&formatted).unwrap();
@@ -705,8 +738,8 @@ mod tests {
             position: 1,
             title: "Bad".into(),
             description: None,
-            start_time: "09:00".into(),
-            end_time: "09:15".into(),
+            start_time: "09:00".parse().unwrap(),
+            end_time: "09:15".parse().unwrap(),
             avg_minutes: 15,
             sigma_minutes: 0,
             parallelizable: false,
@@ -714,7 +747,7 @@ mod tests {
             abandonability: 0.5.into(),
             fixed: false,
             depends_on: "not-json".into(),
-            created_at: "2026-07-16T00:00:00Z".into(),
+            created_at: "2026-07-16T00:00:00Z".parse().unwrap(),
         };
         let err = format_steps_for_editing(&[row]).unwrap_err();
         assert!(err.contains("depends_on"), "error: {err}");
@@ -731,7 +764,12 @@ mod tests {
         let habit_task = task_row("task-b", 3, "habit task", Some("habit-1"), &[]);
         let edited = task_row("edited", 1, "edited", None, &["task-a", "task-b"]);
 
-        let formatted = format_task_for_editing(&edited, &[standalone, habit_task], &habit_map);
+        let formatted = format_task_for_editing(
+            &edited,
+            &[standalone, habit_task],
+            &habit_map,
+            &jiff::tz::TimeZone::UTC,
+        );
         assert!(
             formatted.contains("depends: #3, h7#3"),
             "expected '#3, h7#3' in:\n{formatted}"
@@ -743,7 +781,12 @@ mod tests {
         let habit_task = task_row("task-b", 3, "habit task", Some("habit-1"), &[]);
         let edited = task_row("edited", 1, "edited", None, &["task-b"]);
 
-        let formatted = format_task_for_editing(&edited, &[habit_task], &HashMap::new());
+        let formatted = format_task_for_editing(
+            &edited,
+            &[habit_task],
+            &HashMap::new(),
+            &jiff::tz::TimeZone::UTC,
+        );
         assert!(
             formatted.contains("depends: #3"),
             "expected '#3' fallback in:\n{formatted}"
@@ -758,7 +801,8 @@ mod tests {
         let habit_task = task_row("task-b", 5, "habit task", Some("habit-1"), &[]);
         let edited = task_row("edited", 1, "edited", None, &["task-b"]);
 
-        let formatted = format_task_for_editing(&edited, &[habit_task], &habit_map);
+        let formatted =
+            format_task_for_editing(&edited, &[habit_task], &habit_map, &jiff::tz::TimeZone::UTC);
         assert!(
             formatted.contains("depends: h1#5"),
             "expected 'h1#5' in:\n{formatted}"
@@ -768,7 +812,7 @@ mod tests {
     #[test]
     fn parse_edited_task_preserves_habit_dependency_reference() {
         let input = "depends: h1#5, #3, task-uuid\n";
-        let update = parse_edited_task(input).unwrap();
+        let update = parse_edited_task(input, &jiff::tz::TimeZone::UTC).unwrap();
         assert_eq!(
             update.depends,
             Some(vec![
@@ -784,7 +828,7 @@ mod tests {
         // A leading `#` on a habit-scoped reference is acceptable input and
         // must be stripped without removing the `#` separator inside `h1#5`.
         let input = "depends: #h1#5, #3\n";
-        let update = parse_edited_task(input).unwrap();
+        let update = parse_edited_task(input, &jiff::tz::TimeZone::UTC).unwrap();
         assert_eq!(
             update.depends,
             Some(vec!["h1#5".to_string(), "3".to_string()])
@@ -809,8 +853,8 @@ mod tests {
                 title: "h".into(),
                 description: None,
                 recurrence: "RRULE:FREQ=DAILY".into(),
-                start_time: "09:00".into(),
-                end_time: "09:30".into(),
+                start_time: "09:00".parse().unwrap(),
+                end_time: "09:30".parse().unwrap(),
                 avg_minutes: 10,
                 sigma_minutes: None,
                 parallelizable: None,
@@ -830,7 +874,7 @@ mod tests {
                     title: format!("h{i}"),
                     description: None,
                     start_at: None,
-                    end_at: "2026-07-24T23:59:00Z".into(),
+                    end_at: "2026-07-24T23:59:00Z".parse().unwrap(),
                     avg_minutes: 10,
                     sigma_minutes: None,
                     depends: None,
@@ -853,7 +897,7 @@ mod tests {
 
         // Parse the editor output for a task that depends on h1#5.
         let input = "depends: h1#5\n";
-        let update = parse_edited_task(input).unwrap();
+        let update = parse_edited_task(input, &jiff::tz::TimeZone::UTC).unwrap();
         assert_eq!(update.depends, Some(vec!["h1#5".to_string()]));
 
         // Create the dependent task and verify that h1#5 resolves to the habit task.
@@ -862,7 +906,7 @@ mod tests {
                 title: "target".into(),
                 description: None,
                 start_at: None,
-                end_at: "2026-07-25T23:59:00Z".into(),
+                end_at: "2026-07-25T23:59:00Z".parse().unwrap(),
                 avg_minutes: 10,
                 sigma_minutes: None,
                 depends: update.depends,

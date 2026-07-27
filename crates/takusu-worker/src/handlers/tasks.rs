@@ -154,7 +154,7 @@ async fn filter_rows_with_query(
 
     let schedule: Vec<(String, (String, String))> = schedule_entries
         .into_iter()
-        .map(|e| (e.task_id, (e.start_at, e.end_at)))
+        .map(|e| (e.task_id, (e.start_at.to_string(), e.end_at.to_string())))
         .collect();
 
     let ctx = EvalContext::new(tz, now, schedule, &rows, &habits);
@@ -172,7 +172,7 @@ pub async fn create(mut req: Request, env: Env) -> Result<Response, WorkerError>
     let database = db(&env)?;
     let tz = get_timezone(&database).await?;
     validate_task_datetimes(
-        body.start_at.as_deref(),
+        body.start_at.as_ref().map(Some),
         Some(&body.end_at),
         &tz,
         None,
@@ -246,10 +246,9 @@ pub async fn create(mut req: Request, env: Env) -> Result<Response, WorkerError>
             .map(JsValue::from_str)
             .unwrap_or(JsValue::NULL),
         body.start_at
-            .as_deref()
-            .map(JsValue::from_str)
+            .map(|t| JsValue::from_str(&t.to_string()))
             .unwrap_or(JsValue::NULL),
-        JsValue::from_str(&body.end_at),
+        JsValue::from_str(&body.end_at.to_string()),
         JsValue::from_f64(body.avg_minutes as f64),
         JsValue::from_f64(sigma as f64),
         JsValue::from_str(&depends_json),
@@ -318,10 +317,10 @@ pub async fn update(mut req: Request, env: Env, id: &str) -> Result<Response, Wo
     if body.start_at.is_some() || body.end_at.is_some() {
         let tz = get_timezone(&database).await?;
         validate_task_datetimes(
-            body.start_at.as_deref(),
-            body.end_at.as_deref(),
+            body.start_at.as_ref().map(|o| o.as_ref()),
+            body.end_at.as_ref(),
             &tz,
-            existing.start_at.as_deref(),
+            existing.start_at.as_ref(),
             Some(&existing.end_at),
         )?;
     }
@@ -351,8 +350,17 @@ pub async fn update(mut req: Request, env: Env, id: &str) -> Result<Response, Wo
         takusu_util::memory::normalize_text(t, Some(takusu_util::memory::MAX_CONTENT_SCALARS)).ok()
     });
 
+    // Unpack Option<Option<Timestamp>> for start_at.
+    // None = no change, Some(None) = clear, Some(Some(ts)) = set.
+    // end_at is NOT NULL so it stays Option<Timestamp> with COALESCE.
+    let (upd_start, start_val) = match body.start_at {
+        None => (0i32, JsValue::NULL),
+        Some(None) => (1i32, JsValue::NULL),
+        Some(Some(ref ts)) => (1i32, JsValue::from_str(&ts.to_string())),
+    };
+
     let main_stmt = database.prepare(
-        "UPDATE tasks SET title=COALESCE(?1,title), description=COALESCE(?2,description), start_at=COALESCE(?3,start_at), end_at=COALESCE(?4,end_at), avg_minutes=COALESCE(?5,avg_minutes), sigma_minutes=COALESCE(?6,sigma_minutes), depends=COALESCE(?7,depends), parallelizable=COALESCE(?8,parallelizable), allows_parallel=COALESCE(?9,allows_parallel), abandonability=COALESCE(?10,abandonability), status=?11, habit_id=COALESCE(?13,habit_id), user_edited=COALESCE(?14,user_edited), fixed=COALESCE(?15,fixed), habit_step_id=COALESCE(?16,habit_step_id), quantity_total=COALESCE(?17,quantity_total), quantity_done=COALESCE(?18,quantity_done), quantity_unit=COALESCE(?19,quantity_unit), original_quantity_total=COALESCE(?20,original_quantity_total), normalized_title=COALESCE(?21,normalized_title), updated_at=strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?12"
+        "UPDATE tasks SET title=COALESCE(?1,title), description=COALESCE(?2,description), start_at=CASE WHEN ?3=0 THEN start_at ELSE ?4 END, end_at=COALESCE(?5,end_at), avg_minutes=COALESCE(?6,avg_minutes), sigma_minutes=COALESCE(?7,sigma_minutes), depends=COALESCE(?8,depends), parallelizable=COALESCE(?9,parallelizable), allows_parallel=COALESCE(?10,allows_parallel), abandonability=COALESCE(?11,abandonability), status=?12, habit_id=COALESCE(?14,habit_id), user_edited=COALESCE(?15,user_edited), fixed=COALESCE(?16,fixed), habit_step_id=COALESCE(?17,habit_step_id), quantity_total=COALESCE(?18,quantity_total), quantity_done=COALESCE(?19,quantity_done), quantity_unit=COALESCE(?20,quantity_unit), original_quantity_total=COALESCE(?21,original_quantity_total), normalized_title=COALESCE(?22,normalized_title), updated_at=strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?13"
     );
     let main_stmt = main_stmt.bind(&[
         body.title
@@ -363,13 +371,10 @@ pub async fn update(mut req: Request, env: Env, id: &str) -> Result<Response, Wo
             .as_deref()
             .map(JsValue::from_str)
             .unwrap_or(JsValue::NULL),
-        body.start_at
-            .as_deref()
-            .map(JsValue::from_str)
-            .unwrap_or(JsValue::NULL),
+        JsValue::from_f64(upd_start as f64),
+        start_val,
         body.end_at
-            .as_deref()
-            .map(JsValue::from_str)
+            .map(|t| JsValue::from_str(&t.to_string()))
             .unwrap_or(JsValue::NULL),
         body.avg_minutes
             .map(|n| JsValue::from_f64(n as f64))
@@ -469,7 +474,7 @@ pub async fn replace(mut req: Request, env: Env, id: &str) -> Result<Response, W
     let database = db(&env)?;
     let tz = get_timezone(&database).await?;
     validate_task_datetimes(
-        body.start_at.as_deref(),
+        body.start_at.as_ref().map(Some),
         Some(&body.end_at),
         &tz,
         None,
@@ -501,10 +506,9 @@ pub async fn replace(mut req: Request, env: Env, id: &str) -> Result<Response, W
             .map(JsValue::from_str)
             .unwrap_or(JsValue::NULL),
         body.start_at
-            .as_deref()
-            .map(JsValue::from_str)
+            .map(|t| JsValue::from_str(&t.to_string()))
             .unwrap_or(JsValue::NULL),
-        JsValue::from_str(&body.end_at),
+        JsValue::from_str(&body.end_at.to_string()),
         JsValue::from_f64(body.avg_minutes as f64),
         JsValue::from_f64(sigma as f64),
         JsValue::from_str(&depends_json),

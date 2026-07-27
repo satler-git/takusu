@@ -651,7 +651,11 @@ pub async fn similar_tasks(req: Request, env: Env) -> Result<Response, WorkerErr
     scored.sort_by(|(sa, a), (sb, b)| {
         sa.total_cmp(sb)
             .reverse()
-            .then_with(|| memory::compare_optional_desc(&a.completed_at, &b.completed_at))
+            .then_with(|| {
+                let a_str = a.completed_at.map(|t| t.to_string());
+                let b_str = b.completed_at.map(|t| t.to_string());
+                memory::compare_optional_desc(&a_str, &b_str)
+            })
             .then_with(|| b.updated_at.cmp(&a.updated_at))
             .then_with(|| a.task_id.cmp(&b.task_id))
     });

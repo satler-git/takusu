@@ -287,7 +287,7 @@ impl Tool for TaskStart {
             "task_ref".to_string(),
             Value::String(display_ref.trim_start_matches('#').to_string()),
         )]);
-        let observed = Some(task.updated_at);
+        let observed = Some(task.updated_at.to_string());
 
         Ok(progress_output(
             ChangeOperation::Start,
@@ -374,7 +374,7 @@ impl Tool for TaskPause {
             "task_ref".to_string(),
             Value::String(display_ref.trim_start_matches('#').to_string()),
         )]);
-        let observed = Some(task.updated_at);
+        let observed = Some(task.updated_at.to_string());
 
         Ok(progress_output(
             ChangeOperation::Pause,
@@ -504,12 +504,14 @@ impl Tool for TaskProgress {
             match self.client.get_task_progress(&task.id).await {
                 Ok(progress) => {
                     let active_minutes = if let Some(ref session) = progress.open_session {
-                        let base = if let Some(last) = progress.events.last() {
-                            takusu_util::later_timestamp(&session.started_at, &last.at)
+                        let started_at = session.started_at.to_string();
+                        let base: String = if let Some(last) = progress.events.last() {
+                            takusu_util::later_timestamp(&started_at, &last.at.to_string())
+                                .to_string()
                         } else {
-                            &session.started_at
+                            started_at
                         };
-                        takusu_util::minutes_between(base, &takusu_util::now_rfc3339())
+                        takusu_util::minutes_between(&base, &takusu_util::now_rfc3339())
                     } else {
                         0
                     };
@@ -577,7 +579,7 @@ impl Tool for TaskProgress {
             execution_args,
             warnings,
             content_extra,
-            Some(task.updated_at),
+            Some(task.updated_at.to_string()),
             false,
         ))
     }
@@ -707,7 +709,7 @@ impl Tool for TaskComplete {
             execution_args,
             warnings,
             content_extra,
-            Some(task.updated_at),
+            Some(task.updated_at.to_string()),
             true,
         ))
     }
@@ -873,8 +875,8 @@ impl Tool for TaskSplit {
         }
         if let Some(end) = end_at_normalized.as_ref() {
             remainder.insert("end_at".to_string(), Value::String(end.clone()));
-        } else if !task.end_at.is_empty() {
-            remainder.insert("end_at".to_string(), Value::String(task.end_at.clone()));
+        } else if task.end_at != takusu_util::Timestamp::default() {
+            remainder.insert("end_at".to_string(), Value::String(task.end_at.to_string()));
         }
         if set_dependency {
             remainder.insert(
@@ -904,7 +906,7 @@ impl Tool for TaskSplit {
             execution_args,
             Vec::new(),
             content_extra,
-            Some(task.updated_at),
+            Some(task.updated_at.to_string()),
             true,
         ))
     }
@@ -990,7 +992,7 @@ mod tests {
         ProgressEventRow {
             id: "e1".to_string(),
             task_id: "t1".to_string(),
-            at: "2025-01-01T00:00:00Z".to_string(),
+            at: "2025-01-01T00:00:00Z".parse().unwrap(),
             quantity_done: Some(Quantity::new(delta).unwrap()),
             delta_quantity: Some(delta),
             active_minutes: active,
@@ -1005,7 +1007,7 @@ mod tests {
             title: "task".to_string(),
             description: None,
             start_at: None,
-            end_at: "2025-01-02T00:00:00Z".to_string(),
+            end_at: "2025-01-02T00:00:00Z".parse().unwrap(),
             avg_minutes: 60,
             sigma_minutes: 10,
             depends: "[]".to_string(),
@@ -1025,8 +1027,8 @@ mod tests {
             split_from_task_id: None,
             original_quantity_total: None,
             actual_minutes: None,
-            created_at: "2025-01-01T00:00:00Z".to_string(),
-            updated_at: "2025-01-01T00:00:00Z".to_string(),
+            created_at: "2025-01-01T00:00:00Z".parse().unwrap(),
+            updated_at: "2025-01-01T00:00:00Z".parse().unwrap(),
         }
     }
 }

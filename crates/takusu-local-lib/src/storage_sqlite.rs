@@ -625,8 +625,8 @@ impl Storage for SqliteStorage {
         .bind(&body.title)
         .bind(&normalized_title)
         .bind(&body.description)
-        .bind(&body.start_at)
-        .bind(&body.end_at)
+        .bind(body.start_at)
+        .bind(body.end_at)
         .bind(body.avg_minutes)
         .bind(sigma)
         .bind(&depends_json)
@@ -704,13 +704,21 @@ impl Storage for SqliteStorage {
                 .ok()
         });
 
+        // Unpack Option<Option<Timestamp>> for start_at.
+        // None = no change, Some(None) = clear to NULL, Some(Some(ts)) = set value.
+        // end_at is NOT NULL so it stays Option<Timestamp> with COALESCE.
+        let (upd_start, start_val) = match body.start_at {
+            None => (0i64, None),
+            Some(inner) => (1i64, inner),
+        };
+
         sqlx::query(
             "UPDATE tasks SET \
              title=COALESCE(?,title), \
              normalized_title=COALESCE(?,normalized_title), \
              description=CASE WHEN ?= '' THEN NULL ELSE COALESCE(?,description) END, \
-             start_at=CASE WHEN ?= '' THEN NULL ELSE COALESCE(?,start_at) END, \
-             end_at=CASE WHEN ?= '' THEN end_at ELSE COALESCE(?,end_at) END, \
+             start_at=CASE WHEN ?=0 THEN start_at ELSE ? END, \
+             end_at=COALESCE(?,end_at), \
              avg_minutes=COALESCE(?,avg_minutes), \
              sigma_minutes=COALESCE(?,sigma_minutes), \
              depends=COALESCE(?,depends), \
@@ -732,10 +740,9 @@ impl Storage for SqliteStorage {
         .bind(&normalized_title)
         .bind(body.description.as_ref())
         .bind(body.description.as_ref())
-        .bind(body.start_at.as_ref())
-        .bind(body.start_at.as_ref())
-        .bind(body.end_at.as_ref())
-        .bind(body.end_at.as_ref())
+        .bind(upd_start)
+        .bind(start_val)
+        .bind(body.end_at)
         .bind(body.avg_minutes)
         .bind(body.sigma_minutes)
         .bind(depends_json.as_ref())
@@ -764,15 +771,14 @@ impl Storage for SqliteStorage {
             let completed_at = if status == TaskStatus::Completed {
                 existing
                     .completed_at
-                    .clone()
-                    .or(Some(takusu_util::now_rfc3339()))
+                    .or(Some(takusu_util::Timestamp::now()))
             } else if existing.status == TaskStatus::Completed {
                 None
             } else {
-                existing.completed_at.clone()
+                existing.completed_at
             };
             sqlx::query("UPDATE tasks SET completed_at = ? WHERE id = ?")
-                .bind(&completed_at)
+                .bind(completed_at)
                 .bind(&full)
                 .execute(&mut *tx)
                 .await
@@ -834,8 +840,8 @@ impl Storage for SqliteStorage {
         .bind(&body.title)
         .bind(&normalized_title)
         .bind(&body.description)
-        .bind(&body.start_at)
-        .bind(&body.end_at)
+        .bind(body.start_at)
+        .bind(body.end_at)
         .bind(body.avg_minutes)
         .bind(sigma)
         .bind(&depends_json)
@@ -941,8 +947,8 @@ impl Storage for SqliteStorage {
         .bind(&body.title)
         .bind(&body.description)
         .bind(&body.recurrence)
-        .bind(&body.start_time)
-        .bind(&body.end_time)
+        .bind(body.start_time)
+        .bind(body.end_time)
         .bind(body.avg_minutes)
         .bind(sigma)
         .bind(parallelizable)
@@ -1008,8 +1014,8 @@ impl Storage for SqliteStorage {
         .bind(&body.title)
         .bind(&body.description)
         .bind(&body.recurrence)
-        .bind(&body.start_time)
-        .bind(&body.end_time)
+        .bind(body.start_time)
+        .bind(body.end_time)
         .bind(body.avg_minutes)
         .bind(sigma)
         .bind(parallelizable)
@@ -1135,8 +1141,8 @@ impl Storage for SqliteStorage {
         )
         .bind(&id)
         .bind(&full)
-        .bind(&body.start_date)
-        .bind(&body.end_date)
+        .bind(body.start_date)
+        .bind(body.end_date)
         .bind(body.reason.as_deref())
         .bind(&now)
         .execute(&self.pool)
@@ -1236,8 +1242,8 @@ impl Storage for SqliteStorage {
                 .bind(s.position)
                 .bind(&s.title)
                 .bind(s.description.as_ref())
-                .bind(&s.start_time)
-                .bind(&s.end_time)
+                .bind(s.start_time)
+                .bind(s.end_time)
                 .bind(s.avg_minutes)
                 .bind(sigma)
                 .bind(parallelizable)
@@ -1259,8 +1265,8 @@ impl Storage for SqliteStorage {
                 .bind(s.position)
                 .bind(&s.title)
                 .bind(s.description.as_ref())
-                .bind(&s.start_time)
-                .bind(&s.end_time)
+                .bind(s.start_time)
+                .bind(s.end_time)
                 .bind(s.avg_minutes)
                 .bind(sigma)
                 .bind(parallelizable)
@@ -1466,11 +1472,11 @@ impl Storage for SqliteStorage {
     async fn update_settings(&self, body: &UpdateSettings) -> StorageResult<SettingsRow> {
         let existing = self.get_settings().await?;
         let tz = body.tz.clone().unwrap_or(existing.tz);
-        let sleep_start = body.sleep_start.clone().unwrap_or(existing.sleep_start);
-        let sleep_end = body.sleep_end.clone().unwrap_or(existing.sleep_end);
+        let sleep_start = body.sleep_start.unwrap_or(existing.sleep_start);
+        let sleep_end = body.sleep_end.unwrap_or(existing.sleep_end);
         let comfortable_minutes = body.comfortable_minutes.or(existing.comfortable_minutes);
         let maximum_minutes = body.maximum_minutes.or(existing.maximum_minutes);
-        let solver = body.solver.clone().unwrap_or(existing.solver);
+        let solver = body.solver.unwrap_or(existing.solver).to_string();
         let time_budget_ms = body.time_budget_ms.or(existing.time_budget_ms);
         let seed = body.seed.or(existing.seed);
         let warm_start = body.warm_start.unwrap_or(existing.warm_start);
@@ -1478,8 +1484,8 @@ impl Storage for SqliteStorage {
             "UPDATE settings SET tz = ?, sleep_start = ?, sleep_end = ?, comfortable_minutes = ?, maximum_minutes = ?, solver = ?, time_budget_ms = ?, seed = ?, warm_start = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = 'active'",
         )
         .bind(&tz)
-        .bind(&sleep_start)
-        .bind(&sleep_end)
+        .bind(sleep_start)
+        .bind(sleep_end)
         .bind(comfortable_minutes)
         .bind(maximum_minutes)
         .bind(&solver)
@@ -1510,8 +1516,8 @@ impl Storage for SqliteStorage {
             client_id: String::new(),
             client_secret: String::new(),
             refresh_token: None,
-            created_at: String::new(),
-            updated_at: String::new(),
+            created_at: takusu_util::Timestamp::default(),
+            updated_at: takusu_util::Timestamp::default(),
         }))
     }
 
@@ -1984,9 +1990,7 @@ impl Storage for SqliteStorage {
         scored.sort_by(|(sa, a), (sb, b)| {
             sa.total_cmp(sb)
                 .reverse()
-                .then_with(|| {
-                    takusu_util::memory::compare_optional_desc(&a.completed_at, &b.completed_at)
-                })
+                .then_with(|| b.completed_at.cmp(&a.completed_at))
                 .then_with(|| b.updated_at.cmp(&a.updated_at))
                 .then_with(|| a.task_id.cmp(&b.task_id))
         });
@@ -2219,12 +2223,18 @@ impl Storage for SqliteStorage {
         .map_err(map_err)?;
 
         let active_minutes = if let Some(ref session) = open {
+            // Active minutes are measured from the later of the open session start
+            // and the most recent progress event.
             let base = if let Some(ref ev) = last_event {
-                takusu_util::later_timestamp(&session.started_at, &ev.at)
+                if session.started_at >= ev.at {
+                    session.started_at
+                } else {
+                    ev.at
+                }
             } else {
-                &session.started_at
+                session.started_at
             };
-            takusu_util::minutes_between(base, &now)
+            takusu_util::minutes_between(&base.to_string(), &now)
         } else {
             0
         };
@@ -2566,7 +2576,7 @@ impl Storage for SqliteStorage {
         .bind(remainder_title)
         .bind(&normalized_title)
         .bind(body.description.as_ref().or(original.description.as_ref()))
-        .bind(&original.start_at)
+        .bind(original.start_at)
         .bind(body.end_at.as_ref().unwrap_or(&original.end_at))
         .bind(original.avg_minutes)
         .bind(original.sigma_minutes)
@@ -2655,7 +2665,7 @@ async fn filter_rows_with_query(
     };
     let schedule: Vec<(String, (String, String))> = schedule_entries
         .into_iter()
-        .map(|e| (e.task_id, (e.start_at, e.end_at)))
+        .map(|e| (e.task_id, (e.start_at.to_string(), e.end_at.to_string())))
         .collect();
 
     let ctx = EvalContext::new(tz, now, schedule, &rows, &habits);
@@ -2833,9 +2843,14 @@ fn validate_quantity(
 
 /// Active minutes for a work session (closed or open).
 fn session_minutes(session: &TaskWorkSessionRow) -> i64 {
-    match session.ended_at.as_deref() {
-        Some(end) => takusu_util::minutes_between(&session.started_at, end),
-        None => takusu_util::minutes_between(&session.started_at, &takusu_util::now_rfc3339()),
+    match &session.ended_at {
+        Some(end) => {
+            takusu_util::minutes_between(&session.started_at.to_string(), &end.to_string())
+        }
+        None => takusu_util::minutes_between(
+            &session.started_at.to_string(),
+            &takusu_util::now_rfc3339(),
+        ),
     }
 }
 
@@ -2998,12 +3013,11 @@ async fn resolve_depends(pool: &SqlitePool, deps: Option<&[String]>) -> StorageR
 
 /// Validate that `start` and `end` are real `YYYY-MM-DD` calendar dates and
 /// that `start <= end`. Mirrors the worker-side `validate_scheduled_span_dates`.
-fn validate_scheduled_span_dates(start: &str, end: &str) -> Result<(), StorageError> {
-    let s = parse_calendar_date(start)
-        .ok_or_else(|| StorageError::BadRequest(format!("invalid start_date: {start}")))?;
-    let e = parse_calendar_date(end)
-        .ok_or_else(|| StorageError::BadRequest(format!("invalid end_date: {end}")))?;
-    if s > e {
+fn validate_scheduled_span_dates(
+    start: &takusu_util::Date,
+    end: &takusu_util::Date,
+) -> Result<(), StorageError> {
+    if start > end {
         return Err(StorageError::BadRequest(format!(
             "start_date ({start}) must be <= end_date ({end})"
         )));
@@ -3017,6 +3031,7 @@ fn validate_scheduled_span_dates(start: &str, end: &str) -> Result<(), StorageEr
 /// Enforces zero-padded fields (4-digit year, 2-digit month/day) so that
 /// lexicographic comparison against `jiff`'s zero-padded `Date::to_string()`
 /// works correctly during pause matching (#303).
+#[allow(dead_code)]
 fn parse_calendar_date(s: &str) -> Option<(i64, u32, u32)> {
     let parts: Vec<&str> = s.split('-').collect();
     if parts.len() != 3 {

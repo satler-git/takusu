@@ -1,10 +1,9 @@
 use comfy_table::{Cell, Color, ContentArrangement, Table, presets::UTF8_FULL};
-use jiff::Timestamp;
 use takusu_habit::{RecurrenceRule, summarize};
 use takusu_storage::{
     HabitRow, HabitScheduledSpanRow, HabitStepRow, ScheduleEntry, SkillRow, TaskRow, TokenRow,
 };
-use takusu_util::{TaskStatus, WindowMode};
+use takusu_util::{TaskStatus, Timestamp, WindowMode};
 
 use crate::task_ref::task_reference;
 
@@ -46,8 +45,8 @@ pub fn display_task_detail(
     };
     let completed = task
         .completed_at
-        .as_deref()
-        .map(|s| format_datetime(s, tz))
+        .as_ref()
+        .map(|t| format_datetime(t, tz))
         .unwrap_or_else(|| "—".into());
 
     table.set_header(vec![
@@ -70,8 +69,8 @@ pub fn display_task_detail(
         Cell::new(task.status).fg(status_color),
         Cell::new(
             task.start_at
-                .as_deref()
-                .map(|s| format_datetime(s, tz))
+                .as_ref()
+                .map(|t| format_datetime(t, tz))
                 .unwrap_or_else(|| "—".into()),
         ),
         Cell::new(format_datetime(&task.end_at, tz)),
@@ -279,8 +278,8 @@ pub fn display_all_habit_scheduled_spans(spans: &[HabitScheduledSpanRow], habits
         table.add_row(vec![
             Cell::new(format!("h{} {}", display_id, title)),
             Cell::new(&s.id),
-            Cell::new(&s.start_date),
-            Cell::new(&s.end_date),
+            Cell::new(s.start_date),
+            Cell::new(s.end_date),
             Cell::new(s.reason.as_deref().unwrap_or("")),
         ]);
     }
@@ -381,8 +380,8 @@ pub fn display_tasks(
         };
         let completed = t
             .completed_at
-            .as_deref()
-            .map(|s| format_datetime(s, tz))
+            .as_ref()
+            .map(|t| format_datetime(t, tz))
             .unwrap_or_else(|| "—".into());
         let short_id = task_reference(t, habit_map);
         table.add_row(vec![
@@ -391,8 +390,8 @@ pub fn display_tasks(
             Cell::new(t.status).fg(status_color),
             Cell::new(
                 t.start_at
-                    .as_deref()
-                    .map(|s| format_datetime(s, tz))
+                    .as_ref()
+                    .map(|t| format_datetime(t, tz))
                     .unwrap_or_else(|| "—".into()),
             ),
             Cell::new(format_datetime(&t.end_at, tz)),
@@ -420,7 +419,7 @@ pub fn display_schedule(
     }
 
     let mut sorted = entries.to_vec();
-    sorted.sort_by(|a, b| a.start_at.cmp(&b.start_at));
+    sorted.sort_by_key(|e| e.start_at);
 
     let mut table = Table::new();
     table
@@ -459,29 +458,18 @@ pub fn display_schedule(
     println!("{table}");
 }
 
-fn format_datetime(iso: &str, tz: &jiff::tz::TimeZone) -> String {
-    iso.parse::<Timestamp>()
-        .map(|ts| {
-            let zdt = ts.to_zoned(tz.clone());
-            zdt.strftime("%m/%d %H:%M").to_string()
-        })
-        .unwrap_or_else(|_| iso.to_string())
+fn format_datetime(ts: &Timestamp, tz: &jiff::tz::TimeZone) -> String {
+    let zdt = ts.to_zoned(tz.clone());
+    zdt.strftime("%m/%d %H:%M").to_string()
 }
 
-fn format_duration(start_iso: &str, end_iso: &str) -> String {
-    let start: Result<Timestamp, _> = start_iso.parse();
-    let end: Result<Timestamp, _> = end_iso.parse();
-    match (start, end) {
-        (Ok(s), Ok(e)) => {
-            let secs = (e.as_second() - s.as_second()).unsigned_abs();
-            let mins = secs / 60;
-            if mins >= 60 {
-                format!("{}h{}m", mins / 60, mins % 60)
-            } else {
-                format!("{mins}m")
-            }
-        }
-        _ => "?".to_string(),
+fn format_duration(start: &Timestamp, end: &Timestamp) -> String {
+    let secs = (end.as_second() - start.as_second()).unsigned_abs();
+    let mins = secs / 60;
+    if mins >= 60 {
+        format!("{}h{}m", mins / 60, mins % 60)
+    } else {
+        format!("{mins}m")
     }
 }
 
@@ -506,14 +494,14 @@ pub fn display_tokens(tokens: &[TokenRow]) {
     for t in tokens {
         let revoked = t
             .revoked_at
-            .as_deref()
+            .as_ref()
             .map(|_| Cell::new("YES").fg(Color::Red))
             .unwrap_or_else(|| Cell::new("no").fg(Color::Green));
         table.add_row(vec![
             Cell::new(t.id),
             Cell::new(t.label.as_deref().unwrap_or("—")),
             Cell::new(&t.created_by[..8]),
-            Cell::new(&t.created_at),
+            Cell::new(t.created_at),
             revoked,
         ]);
     }
@@ -566,8 +554,8 @@ pub fn display_skill_detail(skill: &SkillRow) {
         Cell::new(&skill.name),
         Cell::new(&skill.description),
         Cell::new(if skill.built_in { "yes" } else { "no" }),
-        Cell::new(&skill.created_at),
-        Cell::new(&skill.updated_at),
+        Cell::new(skill.created_at),
+        Cell::new(skill.updated_at),
     ]);
     println!("{table}");
     println!("\n{}", skill.body);

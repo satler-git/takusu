@@ -10,7 +10,7 @@ use takusu_client::{
     TaskQuery, TaskRow,
 };
 use takusu_util::{
-    TaskStatus, parse_date_expression, parse_datetime_to_timestamp, parse_datetime_tz,
+    TaskStatus, Timestamp, parse_date_expression, parse_datetime_to_timestamp, parse_datetime_tz,
 };
 
 use std::sync::Weak;
@@ -310,13 +310,11 @@ pub(crate) fn format_datetime_for_display(s: &str, tz: &jiff::tz::TimeZone) -> S
 
 /// Returns true if the task is not completed/skipped and its `end_at` has
 /// passed relative to the current time.
-fn is_overdue(task: &TaskRow, tz: &jiff::tz::TimeZone) -> bool {
+fn is_overdue(task: &TaskRow, _tz: &jiff::tz::TimeZone) -> bool {
     if task.status == TaskStatus::Completed || task.status == TaskStatus::Skipped {
         return false;
     }
-    let Ok(end) = parse_datetime_to_timestamp(&task.end_at, tz) else {
-        return false;
-    };
+    let end = task.end_at.to_jiff();
     end < jiff::Timestamp::now()
 }
 
@@ -404,7 +402,7 @@ fn overdue_in_range(
     task: &TaskRow,
     from: Option<jiff::Timestamp>,
     to: Option<jiff::Timestamp>,
-    tz: &jiff::tz::TimeZone,
+    _tz: &jiff::tz::TimeZone,
 ) -> bool {
     if let (Some(from), Some(to)) = (from, to)
         && from > to
@@ -412,10 +410,7 @@ fn overdue_in_range(
         return false;
     }
 
-    let Ok(end) = parse_datetime_to_timestamp(&task.end_at, tz) else {
-        // Cannot verify the deadline; fail closed.
-        return false;
-    };
+    let end = task.end_at.to_jiff();
     if let Some(from) = from
         && end < from
     {
@@ -563,16 +558,16 @@ pub(crate) fn task_json(
     ctx: &TaskContext,
     tz: Option<&jiff::tz::TimeZone>,
 ) -> Value {
-    let fmt = |s: &str| match tz {
-        Some(tz) => format_datetime_for_display(s, tz),
-        None => s.to_string(),
+    let fmt = |t: &Timestamp| match tz {
+        Some(tz) => format_datetime_for_display(&t.to_string(), tz),
+        None => t.to_string(),
     };
     let mut value = json!({
         "display_id": task.display_id,
         "reference": ctx.reference(task),
         "title": task.title,
         "description": task.description,
-        "start_at": task.start_at.as_deref().map(fmt),
+        "start_at": task.start_at.as_ref().map(fmt),
         "end_at": fmt(&task.end_at),
         "avg_minutes": task.avg_minutes,
         "sigma_minutes": task.sigma_minutes,
@@ -585,7 +580,7 @@ pub(crate) fn task_json(
         "quantity_total": task.quantity_total,
         "quantity_done": task.quantity_done,
         "quantity_unit": task.quantity_unit,
-        "completed_at": task.completed_at.as_deref().map(fmt),
+        "completed_at": task.completed_at.as_ref().map(fmt),
         "split_from_task_id": task.split_from_task_id.as_deref().and_then(|id| ctx.ref_by_id(id).map(|r| r.reference.clone())),
         "original_quantity_total": task.original_quantity_total,
         "actual_minutes": task.actual_minutes,
@@ -1117,8 +1112,8 @@ impl Tool for GetSchedule {
 
         let mut content = json!({
             "id": schedule.id,
-            "created_at": format_datetime_for_display(&schedule.created_at, &tz),
-            "updated_at": format_datetime_for_display(&schedule.updated_at, &tz),
+            "created_at": format_datetime_for_display(&schedule.created_at.to_string(), &tz),
+            "updated_at": format_datetime_for_display(&schedule.updated_at.to_string(), &tz),
             "entries": entries,
         });
 
@@ -1144,7 +1139,7 @@ impl Tool for GetSchedule {
                         "reference": reference,
                         "display_id": display_id,
                         "title": title,
-                        "end_at": format_datetime_for_display(&task.end_at, &tz),
+                        "end_at": format_datetime_for_display(&task.end_at.to_string(), &tz),
                     })
                 })
                 .collect();
@@ -1297,8 +1292,13 @@ impl HabitScheduledSpans {
                 ))
             })?;
         let before = span_json(&span, tz);
-        self.proposal_output(args, habit, ChangeOperation::DeleteScheduledSpan, Some(before))
-            .await
+        self.proposal_output(
+            args,
+            habit,
+            ChangeOperation::DeleteScheduledSpan,
+            Some(before),
+        )
+        .await
     }
 
     async fn proposal_output(
@@ -1394,7 +1394,7 @@ fn span_json(span: &HabitScheduledSpanRow, tz: &jiff::tz::TimeZone) -> Value {
         "start_date": span.start_date,
         "end_date": span.end_date,
         "reason": span.reason,
-        "created_at": format_datetime_for_display(&span.created_at, tz),
+        "created_at": format_datetime_for_display(&span.created_at.to_string(), tz),
     })
 }
 
@@ -1889,7 +1889,7 @@ impl Tool for MutationTool {
                 let ctx = TaskContext::new(&all_tasks, &habits);
                 (
                     Some(task_json(&task, &ctx, Some(&tz))),
-                    Some(task.updated_at),
+                    Some(task.updated_at.to_string()),
                 )
             }
             MutationKind::UpdateHabit | MutationKind::DeleteHabit => {
@@ -1899,7 +1899,10 @@ impl Tool for MutationTool {
                     .get_habit(&reference)
                     .await
                     .map_err(client_error)?;
-                (Some(habit_json(&habit)), Some(habit.habit.updated_at))
+                (
+                    Some(habit_json(&habit)),
+                    Some(habit.habit.updated_at.to_string()),
+                )
             }
             _ => (None, None),
         };
@@ -2163,7 +2166,7 @@ impl Tool for MoveTaskTool {
             before: Some(before),
             after: Some(Value::Object(display_args)),
             arguments: Some(Value::Object(execution_args)),
-            observed_updated_at: Some(task.updated_at),
+            observed_updated_at: Some(task.updated_at.to_string()),
         };
         Ok(ToolOutput {
             content: serde_json::to_string(&json!({
@@ -2311,7 +2314,7 @@ mod tests {
             title: title.to_string(),
             description: None,
             start_at: None,
-            end_at: "2025-06-05T10:00:00Z".to_string(),
+            end_at: "2025-06-05T10:00:00Z".parse().unwrap(),
             avg_minutes: 30,
             sigma_minutes: 5,
             depends: serde_json::to_string(
@@ -2334,8 +2337,8 @@ mod tests {
             split_from_task_id: None,
             original_quantity_total: None,
             actual_minutes: None,
-            created_at: "2025-06-01T00:00:00Z".to_string(),
-            updated_at: "2025-06-01T00:00:00Z".to_string(),
+            created_at: "2025-06-01T00:00:00Z".parse().unwrap(),
+            updated_at: "2025-06-01T00:00:00Z".parse().unwrap(),
         }
     }
 
@@ -2346,8 +2349,8 @@ mod tests {
             title: title.to_string(),
             description: None,
             recurrence: "FREQ=DAILY".to_string(),
-            start_time: "08:00".to_string(),
-            end_time: "09:00".to_string(),
+            start_time: "08:00".parse().unwrap(),
+            end_time: "09:00".parse().unwrap(),
             avg_minutes: 60,
             sigma_minutes: 10,
             parallelizable: false,
@@ -2356,8 +2359,8 @@ mod tests {
             active: true,
             fixed: false,
             window_mode: takusu_util::WindowMode::Day,
-            created_at: "2025-06-01T00:00:00Z".to_string(),
-            updated_at: "2025-06-01T00:00:00Z".to_string(),
+            created_at: "2025-06-01T00:00:00Z".parse().unwrap(),
+            updated_at: "2025-06-01T00:00:00Z".parse().unwrap(),
         }
     }
 
@@ -2368,8 +2371,8 @@ mod tests {
             position,
             title: title.to_string(),
             description: None,
-            start_time: "08:00".to_string(),
-            end_time: "09:00".to_string(),
+            start_time: "08:00".parse().unwrap(),
+            end_time: "09:00".parse().unwrap(),
             avg_minutes: 30,
             sigma_minutes: 5,
             parallelizable: false,
@@ -2377,7 +2380,7 @@ mod tests {
             abandonability: 0.5.into(),
             fixed: false,
             depends_on: "[]".to_string(),
-            created_at: "2025-06-01T00:00:00Z".to_string(),
+            created_at: "2025-06-01T00:00:00Z".parse().unwrap(),
         }
     }
 
@@ -3044,7 +3047,7 @@ mod tests {
     fn overdue_in_range_filters_by_deadline() {
         let tz = jiff::tz::TimeZone::UTC;
         let mut task = task_row("t1", 1, "task", None, &[]);
-        task.end_at = "2026-07-20T10:00:00Z".to_string();
+        task.end_at = "2026-07-20T10:00:00Z".parse().unwrap();
 
         let before = jiff::Timestamp::from_str("2026-07-20T09:00:00Z").unwrap();
         let after = jiff::Timestamp::from_str("2026-07-20T11:00:00Z").unwrap();
@@ -3055,10 +3058,6 @@ mod tests {
 
         // Reversed range excludes everything.
         assert!(!overdue_in_range(&task, Some(after), Some(before), &tz));
-
-        // Unparseable deadline fails closed.
-        task.end_at = "not-a-date".to_string();
-        assert!(!overdue_in_range(&task, Some(before), Some(after), &tz));
     }
 
     #[tokio::test]
@@ -3075,8 +3074,8 @@ mod tests {
         .unwrap();
         let schedule_row = ScheduleRow {
             id: "sched-1".into(),
-            created_at: "2025-06-01T00:00:00Z".into(),
-            updated_at: "2025-06-01T00:00:00Z".into(),
+            created_at: "2025-06-01T00:00:00Z".parse().unwrap(),
+            updated_at: "2025-06-01T00:00:00Z".parse().unwrap(),
             schedule,
         };
 
@@ -3090,11 +3089,11 @@ mod tests {
                 get(|| async {
                     Json(SettingsResponse {
                         tz: "Asia/Tokyo".into(),
-                        sleep_start: "23:00".into(),
-                        sleep_end: "07:00".into(),
+                        sleep_start: "23:00".parse().unwrap(),
+                        sleep_end: "07:00".parse().unwrap(),
                         comfortable_minutes: None,
                         maximum_minutes: None,
-                        solver: "auto".into(),
+                        solver: takusu_util::Solver::Auto,
                         time_budget_ms: None,
                         seed: None,
                         warm_start: false,
@@ -3139,10 +3138,10 @@ mod tests {
         let span = HabitScheduledSpanRow {
             id: "span-uuid".into(),
             habit_id: "habit-uuid".into(),
-            start_date: "2025-08-01".into(),
-            end_date: "2025-08-07".into(),
+            start_date: "2025-08-01".parse().unwrap(),
+            end_date: "2025-08-07".parse().unwrap(),
             reason: Some("旅行".into()),
-            created_at: "2025-06-01T00:00:00Z".into(),
+            created_at: "2025-06-01T00:00:00Z".parse().unwrap(),
         };
         let spans_for_list = vec![span.clone()];
 
@@ -3160,11 +3159,11 @@ mod tests {
                 get(|| async {
                     Json(SettingsResponse {
                         tz: "Asia/Tokyo".into(),
-                        sleep_start: "23:00".into(),
-                        sleep_end: "07:00".into(),
+                        sleep_start: "23:00".parse().unwrap(),
+                        sleep_end: "07:00".parse().unwrap(),
                         comfortable_minutes: None,
                         maximum_minutes: None,
-                        solver: "auto".into(),
+                        solver: takusu_util::Solver::Auto,
                         time_budget_ms: None,
                         seed: None,
                         warm_start: false,

@@ -101,11 +101,11 @@ fn draw_schedule_tab(frame: &mut Frame, app: &mut App, area: Rect) {
                 ))),
                 Line::from(Span::raw(format!(
                     "Start: {}",
-                    fmt_dt(&entry.start_at, &app.tz)
+                    fmt_dt(&entry.start_at.to_string(), &app.tz)
                 ))),
                 Line::from(Span::raw(format!(
                     "End: {}",
-                    fmt_dt(&entry.end_at, &app.tz)
+                    fmt_dt(&entry.end_at.to_string(), &app.tz)
                 ))),
             ];
             render_text_detail(frame, chunks[1], "Entry", lines);
@@ -127,7 +127,7 @@ fn build_schedule_items(
     let mut prev_day: Option<String> = None;
 
     for e in entries {
-        let day = fmt_day(&e.start_at, tz);
+        let day = fmt_day(&e.start_at.to_string(), tz);
         if let Some(ref d) = day
             && prev_day.as_deref() != Some(d.as_str())
         {
@@ -145,8 +145,8 @@ fn build_schedule_items(
             .map(|t| style::status_color(t.status.as_str()))
             .unwrap_or(Color::White);
         let title = task.map(|t| t.title.as_str()).unwrap_or("?");
-        let start = fmt_dt(&e.start_at, tz);
-        let end = fmt_dt(&e.end_at, tz);
+        let start = fmt_dt(&e.start_at.to_string(), tz);
+        let end = fmt_dt(&e.end_at.to_string(), tz);
         items.push(ListItem::new(Line::from(vec![
             Span::styled(format!(" {start}"), Style::default().fg(Color::DarkGray)),
             Span::styled(" ─ ", Style::default().fg(Color::DarkGray)),
@@ -345,7 +345,7 @@ fn draw_settings_tab(frame: &mut Frame, app: &App, area: Rect) {
         ]));
         lines.push(Line::from(vec![
             Span::styled("Solver: ", Style::default().fg(style::HEADER_FG)),
-            Span::raw(&s.solver),
+            Span::raw(s.solver.as_str()),
         ]));
         if let Some(cm) = s.comfortable_minutes {
             lines.push(Line::from(vec![
@@ -525,7 +525,7 @@ mod tests {
             title: format!("Task {id}"),
             description: None,
             start_at: None,
-            end_at: "2025-06-15T10:00:00Z".to_string(),
+            end_at: "2025-06-15T10:00:00Z".parse().unwrap(),
             avg_minutes: 30,
             sigma_minutes: 5,
             depends: "[]".to_string(),
@@ -545,16 +545,16 @@ mod tests {
             split_from_task_id: None,
             original_quantity_total: None,
             actual_minutes: None,
-            created_at: "2025-06-14T00:00:00Z".to_string(),
-            updated_at: "2025-06-14T00:00:00Z".to_string(),
+            created_at: "2025-06-14T00:00:00Z".parse().unwrap(),
+            updated_at: "2025-06-14T00:00:00Z".parse().unwrap(),
         }
     }
 
     fn entry(task_id: &str, start: &str, end: &str) -> ScheduleEntry {
         ScheduleEntry {
             task_id: task_id.to_string(),
-            start_at: start.to_string(),
-            end_at: end.to_string(),
+            start_at: start.parse().unwrap(),
+            end_at: end.parse().unwrap(),
         }
     }
 

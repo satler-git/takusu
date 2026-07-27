@@ -374,6 +374,16 @@ pub enum Solver {
     Auto,
 }
 
+impl From<takusu_util::Solver> for Solver {
+    fn from(solver: takusu_util::Solver) -> Self {
+        match solver {
+            takusu_util::Solver::Sa => Self::Sa,
+            takusu_util::Solver::Priority => Self::Priority,
+            takusu_util::Solver::Auto => Self::Auto,
+        }
+    }
+}
+
 // ── RescheduleRange ───────────────────────────────────────────────────
 
 /// 部分再スケジュールの期間指定。
