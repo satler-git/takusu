@@ -13,7 +13,7 @@ mod common;
 use std::collections::BTreeMap;
 use std::time::Instant;
 
-use takusu_core::{Plan, Planner, Point, Task};
+use takusu_core::{Plan, Planner, Point, Slots, Task};
 
 fn env_or(key: &str, default: &str) -> String {
     std::env::var(key).unwrap_or_else(|_| default.to_string())
@@ -721,7 +721,7 @@ fn metric_row_usize(out: &mut String, name: &str, a: usize, b: usize, higher_is_
 }
 
 fn fmt_relative(slot: i64, origin: i64) -> String {
-    let total_minutes = (slot - origin) * 5;
+    let total_minutes = Slots(slot - origin).to_minutes().0;
     let day = total_minutes.div_euclid(1440);
     let rem = total_minutes.rem_euclid(1440);
     let h = rem / 60;
@@ -740,7 +740,7 @@ fn fmt_relative(slot: i64, origin: i64) -> String {
 }
 
 fn fmt_duration(slots: i64) -> String {
-    let minutes = slots * 5;
+    let minutes = Slots(slots).to_minutes().0;
     if minutes >= 60 {
         format!("{}h{:02}m", minutes / 60, minutes % 60)
     } else {

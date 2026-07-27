@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use jiff::tz::TimeZone;
 use sqlx::SqlitePool;
 use sqlx::sqlite::SqlitePoolOptions;
-use takusu_util::{EnumLabel, TaskStatus, WindowMode};
+use takusu_core::Minutes;
 use takusu_storage::{
     CreateHabit, CreateHabitScheduledSpan, CreateMemory, CreateSkill, CreateTask,
     GoogleCalEventRow, GoogleCalSettingsRow, HabitRow, HabitScheduledSpanRow,
@@ -15,6 +15,7 @@ use takusu_storage::{
 };
 use takusu_util::search::{EvalContext, filter_tasks};
 use takusu_util::{DEFAULT_AUD, SCOPE_READ_WRITE};
+use takusu_util::{EnumLabel, TaskStatus, WindowMode};
 
 use crate::config::LocalConfig;
 
@@ -571,7 +572,9 @@ impl Storage for SqliteStorage {
         let depends_json =
             serde_json::to_string(&resolved_depends).unwrap_or_else(|_| "[]".to_string());
         // sigma 未指定時は avg の 20% をデフォルトにする (確定タスクでない限りある程度バッファを見込む)
-        let sigma = body.sigma_minutes.unwrap_or((body.avg_minutes / 5).max(1));
+        let sigma = body
+            .sigma_minutes
+            .unwrap_or(Minutes(body.avg_minutes).to_slots().0.max(1));
         let parallelizable = body.parallelizable.unwrap_or(false);
         let allows_parallel = body.allows_parallel.unwrap_or(false);
         let abandonability = body.abandonability.unwrap_or(0.5);
@@ -808,7 +811,9 @@ impl Storage for SqliteStorage {
         let full = resolve_task_id(&self.pool, id).await?;
         let resolved_depends = resolve_depends(&self.pool, body.depends.as_deref()).await?;
         let depends_json = serde_json::to_string(&resolved_depends).unwrap_or_else(|_| "[]".into());
-        let sigma = body.sigma_minutes.unwrap_or((body.avg_minutes / 5).max(1));
+        let sigma = body
+            .sigma_minutes
+            .unwrap_or(Minutes(body.avg_minutes).to_slots().0.max(1));
         let parallelizable = body.parallelizable.unwrap_or(false);
         let allows_parallel = body.allows_parallel.unwrap_or(false);
         let abandonability = body.abandonability.unwrap_or(0.5);
@@ -908,7 +913,9 @@ impl Storage for SqliteStorage {
 
     async fn create_habit(&self, body: &CreateHabit) -> StorageResult<HabitRow> {
         let id = uuid::Uuid::now_v7().to_string();
-        let sigma = body.sigma_minutes.unwrap_or((body.avg_minutes / 5).max(1));
+        let sigma = body
+            .sigma_minutes
+            .unwrap_or(Minutes(body.avg_minutes).to_slots().0.max(1));
         let parallelizable = body.parallelizable.unwrap_or(false);
         let allows_parallel = body.allows_parallel.unwrap_or(false);
         let abandonability = body.abandonability.unwrap_or(0.5);
@@ -983,7 +990,9 @@ impl Storage for SqliteStorage {
 
     async fn replace_habit(&self, id: &str, body: &CreateHabit) -> StorageResult<HabitRow> {
         let full = resolve_habit_id(&self.pool, id).await?;
-        let sigma = body.sigma_minutes.unwrap_or((body.avg_minutes / 5).max(1));
+        let sigma = body
+            .sigma_minutes
+            .unwrap_or(Minutes(body.avg_minutes).to_slots().0.max(1));
         let parallelizable = body.parallelizable.unwrap_or(false);
         let allows_parallel = body.allows_parallel.unwrap_or(false);
         let abandonability = body.abandonability.unwrap_or(0.5);
@@ -1206,7 +1215,9 @@ impl Storage for SqliteStorage {
                 s.id.clone()
                     .unwrap_or_else(|| uuid::Uuid::now_v7().to_string());
             input_ids.insert(id.clone());
-            let sigma = s.sigma_minutes.unwrap_or((s.avg_minutes / 5).max(1));
+            let sigma = s
+                .sigma_minutes
+                .unwrap_or(Minutes(s.avg_minutes).to_slots().0.max(1));
             let parallelizable = s.parallelizable.unwrap_or(false);
             let allows_parallel = s.allows_parallel.unwrap_or(false);
             let abandonability = s.abandonability.unwrap_or(0.5);

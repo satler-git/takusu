@@ -172,7 +172,9 @@ async fn record_operation(
 fn validate_create(body: &CreateMemory) -> Result<(), WorkerError> {
     if !matches!(
         body.kind,
-        takusu_util::MemoryKind::ProperNoun | takusu_util::MemoryKind::Fact | takusu_util::MemoryKind::TaskNote
+        takusu_util::MemoryKind::ProperNoun
+            | takusu_util::MemoryKind::Fact
+            | takusu_util::MemoryKind::TaskNote
     ) {
         return Err(WorkerError::BadRequest(
             "kind must be 'proper_noun', 'fact', or 'task_note'".into(),

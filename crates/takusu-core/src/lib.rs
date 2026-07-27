@@ -63,6 +63,10 @@ use thiserror::Error;
 #[global_allocator]
 static GLOBAL_ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
+// ── Minutes / Slots ───────────────────────────────────────────────────
+
+pub use takusu_util::{Minutes, SLOT_MINUTES, Slots};
+
 // ── Point ────────────────────────────────────────────────────────────
 
 /// 離散時間点。1単位 = 5分。
@@ -87,6 +91,11 @@ impl Point {
     /// スロット値から Point を生成。`Point::from_raw(12)` = 60 分後。
     pub fn from_raw(n: i64) -> Self {
         Point(n)
+    }
+
+    /// エポックからの経過分。
+    pub const fn minutes_since_epoch(self) -> Minutes {
+        Minutes(self.0 * SLOT_MINUTES)
     }
 
     /// 絶対値の差 (符号なし)。
@@ -134,6 +143,14 @@ impl NormalDist {
     /// `avg` スロット、`sigma` スロットの正規分布。
     pub fn new(avg: u64, sigma: u64) -> Self {
         Self { avg, sigma }
+    }
+
+    /// 分から構築する。負値は 0 クランプ。
+    pub fn from_minutes(avg: Minutes, sigma: Minutes) -> Self {
+        Self {
+            avg: avg.to_slots().0.max(0) as u64,
+            sigma: sigma.to_slots().0.max(0) as u64,
+        }
     }
 }
 

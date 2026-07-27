@@ -34,7 +34,9 @@ use takusu_storage::{
     RecordProgress, ScheduleEntry, SimilarTaskQuery, SplitTask, TaskQuery, UpdateHabit,
     UpdateMemory, UpdateSettings,
 };
-use takusu_util::{parse_datetime_tz, parse_duration, MemoryKind, SubjectType, TaskStatus, WindowMode};
+use takusu_util::{
+    MemoryKind, SubjectType, TaskStatus, WindowMode, parse_datetime_tz, parse_duration,
+};
 
 fn prompt(label: &str) -> Result<String, AppError> {
     print!("{label}: ");
@@ -1377,7 +1379,10 @@ async fn run_task(
                 .transpose()
                 .map_err(AppError::BadRequest)?;
             let status = status
-                .map(|s| s.parse::<TaskStatus>().map_err(|e| AppError::BadRequest(e.to_string())))
+                .map(|s| {
+                    s.parse::<TaskStatus>()
+                        .map_err(|e| AppError::BadRequest(e.to_string()))
+                })
                 .transpose()?;
             let body = takusu_storage::UpdateTask {
                 title,
@@ -1678,7 +1683,10 @@ async fn run_habit(mode: DisplayMode, app: &TakusuApp, cmd: HabitCommands) -> Re
             let avg_minutes = parse_duration(&avg_time).map_err(AppError::BadRequest)?;
             let sigma_minutes: i64 = parse_duration(&sigma_time).map_err(AppError::BadRequest)?;
             let window = window
-                .map(|s| s.parse::<WindowMode>().map_err(|e| AppError::BadRequest(e.to_string())))
+                .map(|s| {
+                    s.parse::<WindowMode>()
+                        .map_err(|e| AppError::BadRequest(e.to_string()))
+                })
                 .transpose()?;
             let body = CreateHabit {
                 title: title.unwrap_or_default(),
@@ -1744,7 +1752,10 @@ async fn run_habit(mode: DisplayMode, app: &TakusuApp, cmd: HabitCommands) -> Re
                 .transpose()
                 .map_err(AppError::BadRequest)?;
             let window = window
-                .map(|s| s.parse::<WindowMode>().map_err(|e| AppError::BadRequest(e.to_string())))
+                .map(|s| {
+                    s.parse::<WindowMode>()
+                        .map_err(|e| AppError::BadRequest(e.to_string()))
+                })
                 .transpose()?;
             let body = UpdateHabit {
                 title,
@@ -1785,7 +1796,10 @@ async fn run_habit(mode: DisplayMode, app: &TakusuApp, cmd: HabitCommands) -> Re
             let avg_minutes = parse_duration(&avg_time).map_err(AppError::BadRequest)?;
             let sigma_minutes: i64 = parse_duration(&sigma_time).map_err(AppError::BadRequest)?;
             let window = window
-                .map(|s| s.parse::<WindowMode>().map_err(|e| AppError::BadRequest(e.to_string())))
+                .map(|s| {
+                    s.parse::<WindowMode>()
+                        .map_err(|e| AppError::BadRequest(e.to_string()))
+                })
                 .transpose()?;
             let body = CreateHabit {
                 title,
@@ -1996,7 +2010,10 @@ async fn run_memory(app: &TakusuApp, cmd: MemoryCommands) -> Result<(), AppError
                 .parse::<MemoryKind>()
                 .map_err(|e| AppError::BadRequest(e.to_string()))?;
             let subject_type = subject_type
-                .map(|s| s.parse::<SubjectType>().map_err(|e| AppError::BadRequest(e.to_string())))
+                .map(|s| {
+                    s.parse::<SubjectType>()
+                        .map_err(|e| AppError::BadRequest(e.to_string()))
+                })
                 .transpose()?;
             let body = CreateMemory {
                 kind,
@@ -2033,10 +2050,16 @@ async fn run_memory(app: &TakusuApp, cmd: MemoryCommands) -> Result<(), AppError
             limit,
         } => {
             let kind = kind
-                .map(|s| s.parse::<MemoryKind>().map_err(|e| AppError::BadRequest(e.to_string())))
+                .map(|s| {
+                    s.parse::<MemoryKind>()
+                        .map_err(|e| AppError::BadRequest(e.to_string()))
+                })
                 .transpose()?;
             let subject_type = subject_type
-                .map(|s| s.parse::<SubjectType>().map_err(|e| AppError::BadRequest(e.to_string())))
+                .map(|s| {
+                    s.parse::<SubjectType>()
+                        .map_err(|e| AppError::BadRequest(e.to_string()))
+                })
                 .transpose()?;
             let query = MemoryQuery {
                 q,

@@ -2,7 +2,7 @@ use criterion::{Criterion, criterion_group, criterion_main};
 use jiff::civil::Date;
 use jiff::tz::TimeZone;
 use std::hint::black_box;
-use takusu_core::{NormalDist, Point};
+use takusu_core::{Minutes, NormalDist, Point};
 use takusu_habit::{Habit, HabitStore, RecurrenceRule, TimeOfDay};
 
 #[derive(serde::Deserialize)]
@@ -66,9 +66,9 @@ fn bench_habit_generate(c: &mut Criterion) {
     for habit in fixture.habits {
         let (h, m) = parse_hhmm(&habit.start_time);
         let start_time = TimeOfDay::new(h, m).expect("failed to build fixture TimeOfDay");
-        let duration = NormalDist::new(
-            (habit.duration_avg_minutes / 5) as u64,
-            (habit.duration_sigma_minutes / 5) as u64,
+        let duration = NormalDist::from_minutes(
+            Minutes(habit.duration_avg_minutes),
+            Minutes(habit.duration_sigma_minutes),
         );
 
         store.add(Habit {

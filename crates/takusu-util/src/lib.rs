@@ -3,11 +3,11 @@ pub mod enum_label;
 pub mod jwt;
 pub mod option_bool_compat;
 
-pub use enum_label::{
-    enum_serde, EnumLabel, MemoryKind, SubjectType, TaskStatus, TokenScope, UnknownLabel,
-    WindowMode,
-};
 pub use enum_label::enum_serde::option as enum_option_serde;
+pub use enum_label::{
+    EnumLabel, MemoryKind, SubjectType, TaskStatus, TokenScope, UnknownLabel, WindowMode,
+    enum_serde,
+};
 
 pub use takusu_search::date::{
     later_timestamp, minutes_between, now_rfc3339, now_timestamp, parse_date_expression,
@@ -16,6 +16,37 @@ pub use takusu_search::date::{
 pub use takusu_search::{impl_search_habit, impl_search_task, memory, search};
 
 use uuid::Uuid;
+
+/// 1 スロットあたりの分数。
+pub const SLOT_MINUTES: i64 = 5;
+
+/// 分単位の長さ。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Minutes(pub i64);
+
+/// 5 分スロット数。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Slots(pub i64);
+
+impl Minutes {
+    /// 整数除算（0 方向への切り捨て）。
+    pub const fn to_slots(self) -> Slots {
+        Slots(self.0 / SLOT_MINUTES)
+    }
+
+    /// 切り上げ。
+    pub const fn to_slots_ceil(self) -> Slots {
+        let div = self.0.div_euclid(SLOT_MINUTES);
+        let rem = self.0.rem_euclid(SLOT_MINUTES);
+        Slots(div + if rem == 0 { 0 } else { 1 })
+    }
+}
+
+impl Slots {
+    pub const fn to_minutes(self) -> Minutes {
+        Minutes(self.0 * SLOT_MINUTES)
+    }
+}
 
 pub use jwt::{
     Claims as TokenClaims, DEFAULT_AUD, DEFAULT_ISS, JwtError, SCOPE_READ_WRITE, SCOPE_ROOT,
@@ -303,7 +334,7 @@ pub fn parse_duration(s: &str) -> Result<i64, String> {
             let value = match unit {
                 'h' => num.checked_mul(60),
                 'm' => Some(num),
-                's' => num.checked_mul(5),
+                's' => num.checked_mul(SLOT_MINUTES),
                 _ => {
                     return Err(format!(
                         "unknown unit '{unit}' in duration (use h, m, s for slots)"

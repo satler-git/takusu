@@ -20,7 +20,7 @@ use takusu_storage::{
     HabitScheduledSpanRow, MemoryQuery, MemoryRow, SimilarTaskQuery, SimilarTaskRow, Storage,
     TaskQuery, TaskRow, TokenCreateResponse, TokenRow, UpdateHabit, UpdateMemory, UpdateTask,
 };
-use takusu_util::EnumLabel;
+use takusu_util::{EnumLabel, Minutes};
 use tokio::net::TcpListener;
 
 const JWT_SECRET: &str = "test-secret-do-not-use-in-production";
@@ -216,7 +216,9 @@ async fn create_task(
     let id = uuid::Uuid::now_v7().to_string();
     let depends_json = serde_json::to_string(&body.depends.clone().unwrap_or_default())
         .unwrap_or_else(|_| "[]".to_string());
-    let sigma = body.sigma_minutes.unwrap_or((body.avg_minutes / 5).max(1));
+    let sigma = body
+        .sigma_minutes
+        .unwrap_or(Minutes(body.avg_minutes).to_slots().0.max(1));
     let parallelizable = body.parallelizable.unwrap_or(false);
     let allows_parallel = body.allows_parallel.unwrap_or(false);
     let abandonability = body.abandonability.unwrap_or(0.5);
@@ -349,7 +351,9 @@ async fn replace_task(
 ) -> Result<Json<TaskRow>, StatusCode> {
     let depends_json = serde_json::to_string(&body.depends.clone().unwrap_or_default())
         .unwrap_or_else(|_| "[]".to_string());
-    let sigma = body.sigma_minutes.unwrap_or((body.avg_minutes / 5).max(1));
+    let sigma = body
+        .sigma_minutes
+        .unwrap_or(Minutes(body.avg_minutes).to_slots().0.max(1));
     let parallelizable = body.parallelizable.unwrap_or(false);
     let allows_parallel = body.allows_parallel.unwrap_or(false);
     let abandonability = body.abandonability.unwrap_or(0.5);
@@ -543,12 +547,18 @@ async fn create_habit(
     Json(body): Json<CreateHabit>,
 ) -> Result<(StatusCode, Json<HabitRow>), StatusCode> {
     let id = uuid::Uuid::now_v7().to_string();
-    let sigma = body.sigma_minutes.unwrap_or((body.avg_minutes / 5).max(1));
+    let sigma = body
+        .sigma_minutes
+        .unwrap_or(Minutes(body.avg_minutes).to_slots().0.max(1));
     let parallelizable = body.parallelizable.unwrap_or(false);
     let allows_parallel = body.allows_parallel.unwrap_or(false);
     let abandonability = body.abandonability.unwrap_or(0.5);
     let fixed = body.fixed.unwrap_or(false);
-    let window_mode = body.window_mode.as_ref().map(|w| w.as_str()).unwrap_or("day");
+    let window_mode = body
+        .window_mode
+        .as_ref()
+        .map(|w| w.as_str())
+        .unwrap_or("day");
     sqlx::query(
         "INSERT INTO habits (id, title, description, recurrence, start_time, end_time, \
          avg_minutes, sigma_minutes, parallelizable, allows_parallel, abandonability, \

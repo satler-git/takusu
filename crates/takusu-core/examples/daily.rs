@@ -9,10 +9,10 @@
 
 use std::collections::HashMap;
 
-use takusu_core::{NormalDist, Planner, Point, SleepConfig, Task};
+use takusu_core::{NormalDist, Planner, Point, SleepConfig, Slots, Task};
 
 fn fmt_time(slot: i64) -> String {
-    let total_minutes = slot * 5;
+    let total_minutes = Slots(slot).to_minutes().0;
     let hours = total_minutes / 60;
     let minutes = total_minutes % 60;
     format!("{:02}:{:02}", hours % 24, minutes)
@@ -26,7 +26,7 @@ fn name_of<'a>(ids: &'a HashMap<&str, usize>, id: &usize) -> &'a str {
 }
 
 fn fmt_duration(slots: i64) -> String {
-    let total_minutes = slots * 5;
+    let total_minutes = Slots(slots).to_minutes().0;
     if total_minutes >= 60 {
         format!("{}h{:02}m", total_minutes / 60, total_minutes % 60)
     } else {

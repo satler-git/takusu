@@ -8,7 +8,7 @@
 use async_trait::async_trait;
 use jiff::{ToSpan, civil::Date};
 use serde_json::{Value, json};
-use takusu_core::{NormalDist, Point};
+use takusu_core::{NormalDist, Point, SLOT_MINUTES};
 use takusu_habit::{
     Frequency, NWeekday, ParsedRule, RecurrenceGenerator, TimeOfDay, Until, Weekday,
     date_time_to_point, date_to_day_number, parse_rrule, point_to_date,
@@ -176,7 +176,6 @@ fn expand_dates(parsed: &ParsedRule, count: usize) -> Result<Vec<String>, ToolEr
         until_point,
     );
 
-    const SLOT_MINUTES: i64 = 5;
     let mut results = Vec::new();
     for gt in generator {
         let point = gt

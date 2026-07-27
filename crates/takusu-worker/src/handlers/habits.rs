@@ -13,6 +13,7 @@ use crate::models::{
 use crate::validate::{
     validate_minutes, validate_recurrence, validate_scheduled_span_dates, validate_steps,
 };
+use takusu_util::Minutes;
 
 const HABIT_COLS: &str = "id, display_id, title, description, recurrence, start_time, end_time, avg_minutes, sigma_minutes, parallelizable, allows_parallel, abandonability, active, fixed, window_mode, created_at, updated_at";
 const STEP_COLS: &str = "id, habit_id, position, title, description, start_time, end_time, avg_minutes, sigma_minutes, parallelizable, allows_parallel, abandonability, fixed, depends_on, created_at";
@@ -38,7 +39,9 @@ pub async fn create(mut req: worker::Request, env: Env) -> Result<Response, Work
     let window_mode = body.window_mode.unwrap_or(takusu_util::WindowMode::Day);
     let database = db(&env)?;
     let id = uuid::Uuid::now_v7().to_string();
-    let sigma = body.sigma_minutes.unwrap_or((body.avg_minutes / 5).max(1));
+    let sigma = body
+        .sigma_minutes
+        .unwrap_or(Minutes(body.avg_minutes).to_slots().0.max(1));
     let parallelizable = body.parallelizable.unwrap_or(false);
     let allows_parallel = body.allows_parallel.unwrap_or(false);
     let abandonability = body.abandonability.unwrap_or(0.5);
@@ -171,7 +174,9 @@ pub async fn replace(
     let window_mode = body.window_mode.unwrap_or(takusu_util::WindowMode::Day);
     let database = db(&env)?;
     let full = resolve_habit_id(&database, id).await?;
-    let sigma = body.sigma_minutes.unwrap_or((body.avg_minutes / 5).max(1));
+    let sigma = body
+        .sigma_minutes
+        .unwrap_or(Minutes(body.avg_minutes).to_slots().0.max(1));
     let parallelizable = body.parallelizable.unwrap_or(false);
     let allows_parallel = body.allows_parallel.unwrap_or(false);
     let abandonability = body.abandonability.unwrap_or(0.5);
@@ -474,7 +479,9 @@ pub async fn replace_steps(
             s.id.clone()
                 .unwrap_or_else(|| uuid::Uuid::now_v7().to_string());
         input_ids.insert(id.clone());
-        let sigma = s.sigma_minutes.unwrap_or((s.avg_minutes / 5).max(1));
+        let sigma = s
+            .sigma_minutes
+            .unwrap_or(Minutes(s.avg_minutes).to_slots().0.max(1));
         let parallelizable = s.parallelizable.unwrap_or(false);
         let allows_parallel = s.allows_parallel.unwrap_or(false);
         let abandonability = s.abandonability.unwrap_or(0.5);

@@ -9,7 +9,9 @@ use takusu_client::{
     Client, HabitDetail, HabitRow, HabitScheduledSpanRow, HabitStepRow, SchedulePreviewRequest,
     TaskQuery, TaskRow,
 };
-use takusu_util::{parse_date_expression, parse_datetime_to_timestamp, parse_datetime_tz, TaskStatus};
+use takusu_util::{
+    TaskStatus, parse_date_expression, parse_datetime_to_timestamp, parse_datetime_tz,
+};
 
 use std::sync::Weak;
 

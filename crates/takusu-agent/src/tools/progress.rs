@@ -253,7 +253,9 @@ impl Tool for TaskStart {
                 let (tasks, _habits, ctx) = load_task_context(&self.client).await?;
                 let candidates: Vec<TaskRow> = tasks
                     .into_iter()
-                    .filter(|t| t.status == TaskStatus::Scheduled || t.status == TaskStatus::Pending)
+                    .filter(|t| {
+                        t.status == TaskStatus::Scheduled || t.status == TaskStatus::Pending
+                    })
                     .collect();
                 return Ok(focused_clarification(
                     "着手",

@@ -10,7 +10,7 @@ default = ["sqlite"]
 sqlite = ["dep:sqlx"]
 
 [dependencies]
-takusu-core.workspace = true
+takusu-core = { workspace = true, features = ["jemalloc"] }
 takusu-ical.workspace = true
 takusu-habit.workspace = true
 takusu-storage.workspace = true
