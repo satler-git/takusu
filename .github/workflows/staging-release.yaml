@@ -102,7 +102,11 @@ jobs:
     secrets: inherit
     permissions:
       actions: write
-      contents: read
+      # The called release.yaml statically validates that callers grant at
+      # least the maximum permission any of its jobs request. The prerelease
+      # job requests `contents: write` even though it is skipped on branch
+      # refs, so the caller must grant `contents: write` here too.
+      contents: write
 
   merge-and-tag:
     needs: [validate, create-pr, build]

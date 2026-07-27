@@ -15,10 +15,11 @@ on:
         type: boolean
         default: true
   workflow_call:
-    # Callers must grant `actions: write` and `contents: write` when calling this
-    # workflow from a tag reference, because the `prerelease` job needs to create
-    # a GitHub release. The `staging-release` workflow calls it from a branch
-    # reference, so it uses `contents: read` because the `prerelease` job is skipped.
+    # Callers must grant `actions: write` and `contents: write` when calling
+    # this workflow. GitHub statically validates that callers grant at least
+    # the maximum permission any job in the called workflow requests, so even
+    # though the `prerelease` job is skipped on branch refs (it only runs for
+    # tag pushes), callers must still grant `contents: write`.
     inputs:
       deploy_worker:
         description: Deploy worker to Cloudflare after build
