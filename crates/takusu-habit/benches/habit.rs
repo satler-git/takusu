@@ -79,7 +79,7 @@ fn bench_habit_generate(c: &mut Criterion) {
             deadline_slots: None,
             parallelizable: habit.parallelizable,
             allows_parallel: habit.allows_parallel,
-            abandonability: habit.abandonability,
+            abandonability: habit.abandonability.into(),
             fixed: habit.fixed,
         });
     }

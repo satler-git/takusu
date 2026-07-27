@@ -35,7 +35,8 @@ use takusu_storage::{
     UpdateMemory, UpdateSettings,
 };
 use takusu_util::{
-    MemoryKind, SubjectType, TaskStatus, WindowMode, parse_datetime_tz, parse_duration,
+    Abandonability, MemoryKind, Quantity, SubjectType, TaskStatus, WindowMode, parse_datetime_tz,
+    parse_duration,
 };
 
 fn prompt(label: &str) -> Result<String, AppError> {
@@ -1306,6 +1307,18 @@ async fn run_task(
             };
             let avg_minutes = parse_duration(&avg_time).map_err(AppError::BadRequest)?;
             let sigma_minutes: i64 = parse_duration(&sigma_time).map_err(AppError::BadRequest)?;
+            let quantity_total = quantity_total
+                .map(Quantity::new)
+                .transpose()
+                .map_err(|e| AppError::BadRequest(e.to_string()))?;
+            let quantity_done = quantity_done
+                .map(Quantity::new)
+                .transpose()
+                .map_err(|e| AppError::BadRequest(e.to_string()))?;
+            let original_quantity_total = original_quantity_total
+                .map(Quantity::new)
+                .transpose()
+                .map_err(|e| AppError::BadRequest(e.to_string()))?;
             let body = CreateTask {
                 title: title.unwrap_or_default(),
                 end_at: parse_dt(&end_at.unwrap_or_default(), tz)?,
@@ -1319,7 +1332,7 @@ async fn run_task(
                 depends,
                 parallelizable,
                 allows_parallel,
-                abandonability: Some(abandonability),
+                abandonability: Some(abandonability.into()),
                 description,
                 ical_uid: None,
                 habit_id: None,
@@ -1384,6 +1397,19 @@ async fn run_task(
                         .map_err(|e| AppError::BadRequest(e.to_string()))
                 })
                 .transpose()?;
+            let abandonability = abandonability.map(Abandonability::new);
+            let quantity_total = quantity_total
+                .map(Quantity::new)
+                .transpose()
+                .map_err(|e| AppError::BadRequest(e.to_string()))?;
+            let quantity_done = quantity_done
+                .map(Quantity::new)
+                .transpose()
+                .map_err(|e| AppError::BadRequest(e.to_string()))?;
+            let original_quantity_total = original_quantity_total
+                .map(Quantity::new)
+                .transpose()
+                .map_err(|e| AppError::BadRequest(e.to_string()))?;
             let body = takusu_storage::UpdateTask {
                 title,
                 description,
@@ -1431,6 +1457,18 @@ async fn run_task(
         } => {
             let avg_minutes = parse_duration(&avg_time).map_err(AppError::BadRequest)?;
             let sigma_minutes: i64 = parse_duration(&sigma_time).map_err(AppError::BadRequest)?;
+            let quantity_total = quantity_total
+                .map(Quantity::new)
+                .transpose()
+                .map_err(|e| AppError::BadRequest(e.to_string()))?;
+            let quantity_done = quantity_done
+                .map(Quantity::new)
+                .transpose()
+                .map_err(|e| AppError::BadRequest(e.to_string()))?;
+            let original_quantity_total = original_quantity_total
+                .map(Quantity::new)
+                .transpose()
+                .map_err(|e| AppError::BadRequest(e.to_string()))?;
             let body = CreateTask {
                 title,
                 end_at: parse_dt(&end_at, tz)?,
@@ -1444,7 +1482,7 @@ async fn run_task(
                 depends,
                 parallelizable,
                 allows_parallel,
-                abandonability: Some(abandonability),
+                abandonability: Some(abandonability.into()),
                 description,
                 ical_uid: None,
                 habit_id: None,
@@ -1538,8 +1576,10 @@ async fn run_work(
             }
         }
         WorkCommands::Progress { id, quantity, note } => {
+            let quantity_done =
+                Quantity::new(quantity).map_err(|e| AppError::BadRequest(e.to_string()))?;
             let body = RecordProgress {
-                quantity_done: quantity,
+                quantity_done,
                 note,
             };
             let result = app.record_progress(&id, &body, None).await?;
@@ -1550,7 +1590,7 @@ async fn run_work(
             if let Some(event) = result.event {
                 println!(
                     "recorded: quantity {} (+{}), active {}min",
-                    event.quantity_done.unwrap_or(quantity),
+                    event.quantity_done.unwrap_or(quantity_done),
                     event.delta_quantity.unwrap_or(0),
                     event.active_minutes
                 );
@@ -1573,6 +1613,8 @@ async fn run_work(
             description,
             end_at,
         } => {
+            let retained_quantity = Quantity::new(retained_quantity)
+                .map_err(|e| AppError::BadRequest(e.to_string()))?;
             let end_at = end_at.map(|s| parse_dt(&s, tz)).transpose()?;
             let body = SplitTask {
                 retained_quantity,
@@ -1701,7 +1743,7 @@ async fn run_habit(mode: DisplayMode, app: &TakusuApp, cmd: HabitCommands) -> Re
                 },
                 parallelizable: if parallelizable { Some(true) } else { None },
                 allows_parallel: if allows_parallel { Some(true) } else { None },
-                abandonability: Some(abandonability),
+                abandonability: Some(abandonability.into()),
                 description,
                 fixed: if fixed { Some(true) } else { None },
                 window_mode: window,
@@ -1757,6 +1799,7 @@ async fn run_habit(mode: DisplayMode, app: &TakusuApp, cmd: HabitCommands) -> Re
                         .map_err(|e| AppError::BadRequest(e.to_string()))
                 })
                 .transpose()?;
+            let abandonability = abandonability.map(Abandonability::new);
             let body = UpdateHabit {
                 title,
                 description,
@@ -1814,7 +1857,7 @@ async fn run_habit(mode: DisplayMode, app: &TakusuApp, cmd: HabitCommands) -> Re
                 },
                 parallelizable: if parallelizable { Some(true) } else { None },
                 allows_parallel: if allows_parallel { Some(true) } else { None },
-                abandonability: Some(abandonability),
+                abandonability: Some(abandonability.into()),
                 description,
                 fixed: if fixed { Some(true) } else { None },
                 window_mode: window,

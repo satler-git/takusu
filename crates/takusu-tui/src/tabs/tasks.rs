@@ -1,6 +1,6 @@
 use crossterm::event::{KeyCode, KeyEvent};
 use takusu_storage::{HabitRow, TaskRow};
-use takusu_util::TaskStatus;
+use takusu_util::{Abandonability, Quantity, TaskStatus};
 
 use crate::app::{App, Modal};
 
@@ -215,11 +215,21 @@ fn parse_edit_text(content: &str) -> Result<takusu_storage::UpdateTask, String> 
             }
             "avg_minutes" => update.avg_minutes = parse_i64(value)?,
             "sigma_minutes" => update.sigma_minutes = parse_i64(value)?,
-            "abandonability" => update.abandonability = parse_f64(value)?,
+            "abandonability" => update.abandonability = parse_f64(value)?.map(Abandonability::new),
             "fixed" => update.fixed = Some(parse_bool(value)?),
             "depends" => update.depends = parse_depends(value)?,
-            "quantity_total" => update.quantity_total = parse_clear_i64(value)?,
-            "quantity_done" => update.quantity_done = parse_i64(value)?,
+            "quantity_total" => {
+                update.quantity_total = parse_clear_i64(value)?
+                    .map(Quantity::new)
+                    .transpose()
+                    .map_err(|e| e.to_string())?;
+            }
+            "quantity_done" => {
+                update.quantity_done = parse_i64(value)?
+                    .map(Quantity::new)
+                    .transpose()
+                    .map_err(|e| e.to_string())?;
+            }
             "quantity_unit" => update.quantity_unit = parse_clear_string(value),
             "parallelizable" => update.parallelizable = Some(parse_bool(value)?),
             "allows_parallel" => update.allows_parallel = Some(parse_bool(value)?),
@@ -347,15 +357,15 @@ mod tests {
             depends: serde_json::to_string(&["dep-uuid".to_string()]).unwrap(),
             parallelizable: true,
             allows_parallel: false,
-            abandonability: 0.25,
+            abandonability: 0.25.into(),
             status: TaskStatus::Pending,
             habit_id: None,
             ical_uid: None,
             user_edited: false,
             fixed: true,
             habit_step_id: None,
-            quantity_total: Some(100),
-            quantity_done: 50,
+            quantity_total: Some(Quantity::new(100).unwrap()),
+            quantity_done: Quantity::new(50).unwrap(),
             quantity_unit: Some("pages".to_string()),
             completed_at: None,
             split_from_task_id: None,
@@ -379,7 +389,7 @@ mod tests {
             depends: "[]".to_string(),
             parallelizable: false,
             allows_parallel: false,
-            abandonability: 0.5,
+            abandonability: 0.5.into(),
             status: TaskStatus::Completed,
             habit_id: None,
             ical_uid: None,
@@ -387,7 +397,7 @@ mod tests {
             fixed: false,
             habit_step_id: None,
             quantity_total: None,
-            quantity_done: 0,
+            quantity_done: Quantity::default(),
             quantity_unit: None,
             completed_at: None,
             split_from_task_id: None,
@@ -411,7 +421,7 @@ mod tests {
             depends: "[]".to_string(),
             parallelizable: false,
             allows_parallel: false,
-            abandonability: 0.5,
+            abandonability: 0.5.into(),
             status: TaskStatus::Pending,
             habit_id: Some("habit-uuid".to_string()),
             ical_uid: None,
@@ -419,7 +429,7 @@ mod tests {
             fixed: false,
             habit_step_id: None,
             quantity_total: None,
-            quantity_done: 0,
+            quantity_done: Quantity::default(),
             quantity_unit: None,
             completed_at: None,
             split_from_task_id: None,
@@ -442,7 +452,7 @@ mod tests {
             window_mode: takusu_util::WindowMode::Day,
             avg_minutes: 10,
             sigma_minutes: 2,
-            abandonability: 0.5,
+            abandonability: 0.5.into(),
             parallelizable: false,
             allows_parallel: false,
             fixed: false,
@@ -503,12 +513,12 @@ quantity_unit: chapters
         assert_eq!(update.status, Some(TaskStatus::InProgress));
         assert_eq!(update.avg_minutes, Some(45));
         assert_eq!(update.sigma_minutes, Some(10));
-        assert_eq!(update.abandonability, Some(0.5));
+        assert_eq!(update.abandonability, Some(0.5.into()));
         assert_eq!(update.fixed, Some(false));
         assert_eq!(update.parallelizable, Some(false));
         assert_eq!(update.allows_parallel, Some(true));
-        assert_eq!(update.quantity_total, Some(200));
-        assert_eq!(update.quantity_done, Some(75));
+        assert_eq!(update.quantity_total, Some(Quantity::new(200).unwrap()));
+        assert_eq!(update.quantity_done, Some(Quantity::new(75).unwrap()));
         assert_eq!(update.quantity_unit, Some("chapters".to_string()));
     }
 
@@ -525,7 +535,7 @@ sigma_minutes: -
         assert_eq!(update.description, Some(String::new()));
         assert_eq!(update.start_at, Some(String::new()));
         assert_eq!(update.quantity_unit, Some(String::new()));
-        assert_eq!(update.quantity_total, Some(0));
+        assert_eq!(update.quantity_total, Some(Quantity::default()));
         assert_eq!(update.depends, Some(Vec::new()));
         // sigma_minutes is not nullable; '-' should be a no-op.
         assert_eq!(update.sigma_minutes, None);

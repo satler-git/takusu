@@ -14,7 +14,7 @@ fn create_task_serialization() {
         depends: Some(vec!["dep1".to_string()]),
         parallelizable: Some(true),
         allows_parallel: Some(false),
-        abandonability: Some(0.3),
+        abandonability: Some(0.3.into()),
         ical_uid: Some("ical-123@example.com".to_string()),
         habit_id: Some("habit-1".to_string()),
         fixed: None,

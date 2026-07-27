@@ -5,7 +5,7 @@
 //! crashing later (e.g. during schedule generation).
 
 use serde::Deserialize;
-use takusu_util::parse_timezone;
+use takusu_util::{Quantity, parse_timezone};
 
 use crate::error::WorkerError;
 use crate::models::UpdateSettings;
@@ -157,22 +157,15 @@ pub(crate) fn validate_title(title: &str) -> Result<(), WorkerError> {
 /// Reject nonsensical quantity values and ensure `done <= total` when both
 /// sides are provided.
 pub(crate) fn validate_quantity(
-    total: Option<i64>,
-    done: Option<i64>,
-    original: Option<i64>,
+    total: Option<Quantity>,
+    done: Option<Quantity>,
+    original: Option<Quantity>,
 ) -> Result<(), WorkerError> {
     if let Some(t) = total
         && t <= 0
     {
         return Err(WorkerError::BadRequest(format!(
             "quantity_total must be > 0 (got {t})"
-        )));
-    }
-    if let Some(d) = done
-        && d < 0
-    {
-        return Err(WorkerError::BadRequest(format!(
-            "quantity_done must be >= 0 (got {d})"
         )));
     }
     if let Some(o) = original

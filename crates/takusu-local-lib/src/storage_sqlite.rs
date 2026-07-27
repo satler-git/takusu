@@ -15,7 +15,7 @@ use takusu_storage::{
 };
 use takusu_util::search::{EvalContext, filter_tasks};
 use takusu_util::{DEFAULT_AUD, SCOPE_READ_WRITE};
-use takusu_util::{EnumLabel, TaskStatus, WindowMode};
+use takusu_util::{EnumLabel, Quantity, TaskStatus, WindowMode};
 
 use crate::config::LocalConfig;
 
@@ -577,7 +577,7 @@ impl Storage for SqliteStorage {
             .unwrap_or(Minutes(body.avg_minutes).to_slots().0.max(1));
         let parallelizable = body.parallelizable.unwrap_or(false);
         let allows_parallel = body.allows_parallel.unwrap_or(false);
-        let abandonability = body.abandonability.unwrap_or(0.5);
+        let abandonability = body.abandonability.unwrap_or(0.5.into());
         let fixed = body.fixed.unwrap_or(false);
         // Atomically reserve a monotonic display_id from the sequence table.
         // This prevents display_id reuse after task deletion (#186).
@@ -607,7 +607,7 @@ impl Storage for SqliteStorage {
             .await
             .map_err(map_err)?
         };
-        let quantity_done = body.quantity_done.unwrap_or(0);
+        let quantity_done = body.quantity_done.unwrap_or_default();
         let quantity_unit = body.quantity_unit.as_deref();
         // A title that fails NFKC normalization (e.g. control-character only)
         // stores NULL, excluding the task from similar-task search rather than
@@ -807,7 +807,11 @@ impl Storage for SqliteStorage {
         let quantity_total = body.quantity_total.filter(|t| *t != 0);
         let original_quantity_total = body.original_quantity_total.filter(|t| *t != 0);
         // Full replacement resets quantity_done to 0, so validate against that.
-        validate_quantity(quantity_total, Some(0), original_quantity_total)?;
+        validate_quantity(
+            quantity_total,
+            Some(Quantity::default()),
+            original_quantity_total,
+        )?;
         let full = resolve_task_id(&self.pool, id).await?;
         let resolved_depends = resolve_depends(&self.pool, body.depends.as_deref()).await?;
         let depends_json = serde_json::to_string(&resolved_depends).unwrap_or_else(|_| "[]".into());
@@ -816,7 +820,7 @@ impl Storage for SqliteStorage {
             .unwrap_or(Minutes(body.avg_minutes).to_slots().0.max(1));
         let parallelizable = body.parallelizable.unwrap_or(false);
         let allows_parallel = body.allows_parallel.unwrap_or(false);
-        let abandonability = body.abandonability.unwrap_or(0.5);
+        let abandonability = body.abandonability.unwrap_or(0.5.into());
         let fixed = body.fixed.unwrap_or(false);
         let quantity_unit = body.quantity_unit.as_deref();
         let normalized_title = takusu_util::memory::normalize_text(
@@ -918,7 +922,7 @@ impl Storage for SqliteStorage {
             .unwrap_or(Minutes(body.avg_minutes).to_slots().0.max(1));
         let parallelizable = body.parallelizable.unwrap_or(false);
         let allows_parallel = body.allows_parallel.unwrap_or(false);
-        let abandonability = body.abandonability.unwrap_or(0.5);
+        let abandonability = body.abandonability.unwrap_or(0.5.into());
         let fixed = body.fixed.unwrap_or(false);
         let window_mode = body.window_mode.unwrap_or(WindowMode::Day);
         // Atomically reserve a monotonic display_id from the sequence table
@@ -995,7 +999,7 @@ impl Storage for SqliteStorage {
             .unwrap_or(Minutes(body.avg_minutes).to_slots().0.max(1));
         let parallelizable = body.parallelizable.unwrap_or(false);
         let allows_parallel = body.allows_parallel.unwrap_or(false);
-        let abandonability = body.abandonability.unwrap_or(0.5);
+        let abandonability = body.abandonability.unwrap_or(0.5.into());
         let fixed = body.fixed.unwrap_or(false);
         let window_mode = body.window_mode.unwrap_or(WindowMode::Day);
         sqlx::query(
@@ -1220,7 +1224,7 @@ impl Storage for SqliteStorage {
                 .unwrap_or(Minutes(s.avg_minutes).to_slots().0.max(1));
             let parallelizable = s.parallelizable.unwrap_or(false);
             let allows_parallel = s.allows_parallel.unwrap_or(false);
-            let abandonability = s.abandonability.unwrap_or(0.5);
+            let abandonability = s.abandonability.unwrap_or(0.5.into());
             let fixed = s.fixed.unwrap_or(false);
             let depends_json =
                 serde_json::to_string(&s.depends_on).unwrap_or_else(|_| "[]".to_string());
@@ -2186,7 +2190,7 @@ impl Storage for SqliteStorage {
             ));
         }
 
-        let delta_quantity = body.quantity_done - task.quantity_done;
+        let delta_quantity = body.quantity_done.get() - task.quantity_done.get();
 
         if delta_quantity == 0 {
             let result = ProgressResult {
@@ -2248,7 +2252,7 @@ impl Storage for SqliteStorage {
                 &full,
                 task.avg_minutes,
                 task.sigma_minutes,
-                task.quantity_total,
+                task.quantity_total.map(|q| q.get()),
                 active_minutes,
                 delta_quantity,
             )
@@ -2362,7 +2366,7 @@ impl Storage for SqliteStorage {
         let quantity_done = task_before
             .quantity_total
             .unwrap_or(task_before.quantity_done);
-        let delta_quantity = quantity_done - task_before.quantity_done;
+        let delta_quantity = quantity_done.get() - task_before.quantity_done.get();
 
         let (new_avg, new_sigma) = if delta_quantity > 0 && total_active_minutes > 0 {
             compute_updated_estimate(
@@ -2370,7 +2374,7 @@ impl Storage for SqliteStorage {
                 &full,
                 task_before.avg_minutes,
                 task_before.sigma_minutes,
-                task_before.quantity_total,
+                task_before.quantity_total.map(|q| q.get()),
                 total_active_minutes,
                 delta_quantity,
             )
@@ -2525,7 +2529,8 @@ impl Storage for SqliteStorage {
                 "retained_quantity cannot be less than quantity_done".into(),
             ));
         }
-        let remainder_quantity = total - body.retained_quantity;
+        let remainder_quantity = Quantity::new(total.get() - body.retained_quantity.get())
+            .expect("retained_quantity is less than total, so remainder is non-negative");
         let original_quantity_total = original
             .original_quantity_total
             .filter(|t| *t != 0)
@@ -2798,29 +2803,22 @@ fn progress_request_hash(payload: &str, operation_id: Option<&str>) -> String {
 /// Reject nonsensical quantity values and ensure `done <= total` when both
 /// sides are provided.
 fn validate_quantity(
-    total: Option<i64>,
-    done: Option<i64>,
-    original: Option<i64>,
+    total: Option<Quantity>,
+    done: Option<Quantity>,
+    original: Option<Quantity>,
 ) -> StorageResult<()> {
     if let Some(t) = total
-        && t < 0
+        && t <= 0
     {
         return Err(StorageError::BadRequest(format!(
-            "quantity_total must be >= 0 (got {t})"
-        )));
-    }
-    if let Some(d) = done
-        && d < 0
-    {
-        return Err(StorageError::BadRequest(format!(
-            "quantity_done must be >= 0 (got {d})"
+            "quantity_total must be > 0 (got {t})"
         )));
     }
     if let Some(o) = original
-        && o < 0
+        && o <= 0
     {
         return Err(StorageError::BadRequest(format!(
-            "original_quantity_total must be >= 0 (got {o})"
+            "original_quantity_total must be > 0 (got {o})"
         )));
     }
     if let (Some(t), Some(d)) = (total, done)

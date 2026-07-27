@@ -33,6 +33,7 @@ use takusu_client::{
     HabitStepInput, MoveEntry, RecordProgress, SaveScheduleRequest, ScheduleEntry, SplitTask,
     UpdateHabit, UpdateMemory, UpdateSkill, UpdateTask,
 };
+use takusu_util::{Abandonability, Quantity};
 use tools::memory::client_error;
 use uuid::Uuid;
 
@@ -51,7 +52,7 @@ struct PendingHabitStep {
     sigma_minutes: Option<i64>,
     parallelizable: Option<bool>,
     allows_parallel: Option<bool>,
-    abandonability: Option<f64>,
+    abandonability: Option<Abandonability>,
     fixed: Option<bool>,
     depends_on_positions: Vec<i64>,
 }
@@ -1627,7 +1628,7 @@ impl AgentSession {
         };
         let parallelizable = require_optional_bool("parallelizable")?;
         let allows_parallel = require_optional_bool("allows_parallel")?;
-        let abandonability = require_optional_f64("abandonability")?;
+        let abandonability = require_optional_f64("abandonability")?.map(Abandonability::new);
         let fixed = require_optional_bool("fixed")?;
 
         let depends_on_positions = match obj.get("depends_on") {
@@ -2284,6 +2285,14 @@ impl AgentSession {
                                 "quantity_done",
                                 "missing",
                             )))
+                        })
+                        .and_then(|v| {
+                            Quantity::new(v).map_err(|_| {
+                                AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
+                                    "quantity_done",
+                                    "must be non-negative",
+                                )))
+                            })
                         })?;
                     let note = args
                         .get("note")
@@ -2317,11 +2326,19 @@ impl AgentSession {
                         .get("retained_quantity")
                         .and_then(Value::as_i64)
                         .ok_or_else(|| {
-                        AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
-                            "retained_quantity",
-                            "missing",
-                        )))
-                    })?;
+                            AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
+                                "retained_quantity",
+                                "missing",
+                            )))
+                        })
+                        .and_then(|v| {
+                            Quantity::new(v).map_err(|_| {
+                                AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
+                                    "retained_quantity",
+                                    "must be non-negative",
+                                )))
+                            })
+                        })?;
                     let set_dependency = args.get("set_dependency").and_then(Value::as_bool);
                     let title = args
                         .get("title")
@@ -4343,7 +4360,7 @@ mod tests {
             sigma_minutes: 3,
             parallelizable: false,
             allows_parallel: false,
-            abandonability: 0.5,
+            abandonability: 0.5.into(),
             fixed: false,
             depends_on: "[]".into(),
             created_at: "2026-01-01T00:00:00Z".into(),
@@ -4363,7 +4380,7 @@ mod tests {
             sigma_minutes: 10,
             parallelizable: false,
             allows_parallel: false,
-            abandonability: 0.5,
+            abandonability: 0.5.into(),
             active: true,
             fixed: false,
             window_mode: takusu_util::WindowMode::Day,

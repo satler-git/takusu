@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use serde_json::{Value, json};
 use takusu_client::{Client, HabitRow, ProgressEventRow, TaskQuery, TaskRow};
-use takusu_util::TaskStatus;
+use takusu_util::{Quantity, TaskStatus};
 
 use crate::tools::takusu::{
     TaskContext, TimeZoneCache, client_error, object, optional_bool, optional_string, required_i64,
@@ -429,12 +429,9 @@ impl Tool for TaskProgress {
         let quantity_done = required_i64(&args, "quantity_done")?;
         let note = optional_string(&args, "note")?;
 
-        if quantity_done < 0 {
-            return Err(ToolError::InvalidArgs(InvalidArgsError::new(
-                "quantity_done",
-                "cannot be negative",
-            )));
-        }
+        let quantity_done = Quantity::new(quantity_done).map_err(|_| {
+            ToolError::InvalidArgs(InvalidArgsError::new("quantity_done", "cannot be negative"))
+        })?;
 
         let tz = server_timezone(&self.tz_cache).await;
         let (task, ctx) = match task_ref {
@@ -478,7 +475,7 @@ impl Tool for TaskProgress {
         if let Some(obj) = after.as_object_mut() {
             obj.insert(
                 "quantity_done".to_string(),
-                Value::Number(quantity_done.into()),
+                Value::Number(quantity_done.get().into()),
             );
         }
 
@@ -501,7 +498,7 @@ impl Tool for TaskProgress {
             content_extra.insert("is_correction".to_string(), Value::Bool(true));
         }
 
-        let delta_quantity = quantity_done - task.quantity_done;
+        let delta_quantity = quantity_done.get() - task.quantity_done.get();
         if delta_quantity > 0 {
             match self.client.get_task_progress(&task.id).await {
                 Ok(progress) => {
@@ -518,7 +515,7 @@ impl Tool for TaskProgress {
                     let (new_avg, new_sigma) = estimate_preview(
                         task.avg_minutes,
                         task.sigma_minutes,
-                        task.quantity_total,
+                        task.quantity_total.map(|q| q.get()),
                         active_minutes,
                         delta_quantity,
                         &progress.events,
@@ -546,7 +543,7 @@ impl Tool for TaskProgress {
             ),
             (
                 "quantity_done".to_string(),
-                Value::Number(quantity_done.into()),
+                Value::Number(quantity_done.get().into()),
             ),
         ]);
         if let Some(note) = &note {
@@ -644,7 +641,10 @@ impl Tool for TaskComplete {
         if let Some(obj) = after.as_object_mut() {
             obj.insert("status".to_string(), Value::String("completed".to_string()));
             if let Some(total) = task.quantity_total {
-                obj.insert("quantity_done".to_string(), Value::Number(total.into()));
+                obj.insert(
+                    "quantity_done".to_string(),
+                    Value::Number(total.get().into()),
+                );
             }
         }
 
@@ -654,11 +654,11 @@ impl Tool for TaskComplete {
             Ok(progress) => {
                 let total_active = progress.total_active_minutes;
                 if let Some(total) = task.quantity_total {
-                    let delta_quantity = total - task.quantity_done;
+                    let delta_quantity = total.get() - task.quantity_done.get();
                     let (new_avg, new_sigma) = estimate_preview(
                         task.avg_minutes,
                         task.sigma_minutes,
-                        Some(total),
+                        Some(total.get()),
                         total_active,
                         delta_quantity,
                         &progress.events,
@@ -751,6 +751,12 @@ impl Tool for TaskSplit {
         let mut args = object(args)?;
         let task_ref = optional_task_ref_arg(&mut args)?;
         let retained_quantity = required_i64(&args, "retained_quantity")?;
+        let retained_quantity = Quantity::new(retained_quantity).map_err(|_| {
+            ToolError::InvalidArgs(InvalidArgsError::new(
+                "retained_quantity",
+                "cannot be negative",
+            ))
+        })?;
         let set_dependency = optional_bool(&args, "set_dependency")?.unwrap_or(true);
         let title = optional_string(&args, "title")?;
         let description = optional_string(&args, "description")?;
@@ -815,11 +821,11 @@ impl Tool for TaskSplit {
         if let Some(obj) = after.as_object_mut() {
             obj.insert(
                 "quantity_total".to_string(),
-                Value::Number(retained_quantity.into()),
+                Value::Number(retained_quantity.get().into()),
             );
             obj.insert(
                 "quantity_done".to_string(),
-                Value::Number(task.quantity_done.min(retained_quantity).into()),
+                Value::Number(task.quantity_done.min(retained_quantity).get().into()),
             );
         }
 
@@ -830,7 +836,7 @@ impl Tool for TaskSplit {
         );
         execution_args.insert(
             "retained_quantity".to_string(),
-            Value::Number(retained_quantity.into()),
+            Value::Number(retained_quantity.get().into()),
         );
         execution_args.insert("set_dependency".to_string(), Value::Bool(set_dependency));
         if let Some(v) = &title {
@@ -849,7 +855,7 @@ impl Tool for TaskSplit {
             None
         };
 
-        let remainder_quantity = total - retained_quantity;
+        let remainder_quantity = total.get() - retained_quantity.get();
         let remainder_title = title.unwrap_or_else(|| format!("{}（残り）", task.title));
         let mut remainder = serde_json::Map::new();
         remainder.insert("title".to_string(), Value::String(remainder_title.clone()));
@@ -984,7 +990,7 @@ mod tests {
             id: "e1".to_string(),
             task_id: "t1".to_string(),
             at: "2025-01-01T00:00:00Z".to_string(),
-            quantity_done: Some(delta),
+            quantity_done: Some(Quantity::new(delta).unwrap()),
             delta_quantity: Some(delta),
             active_minutes: active,
             note: None,
@@ -1004,7 +1010,7 @@ mod tests {
             depends: "[]".to_string(),
             parallelizable: false,
             allows_parallel: false,
-            abandonability: 0.5,
+            abandonability: 0.5.into(),
             status: TaskStatus::Scheduled,
             habit_id: None,
             ical_uid: None,
@@ -1012,7 +1018,7 @@ mod tests {
             fixed: false,
             habit_step_id: None,
             quantity_total: None,
-            quantity_done: 0,
+            quantity_done: Quantity::default(),
             quantity_unit: None,
             completed_at: None,
             split_from_task_id: None,

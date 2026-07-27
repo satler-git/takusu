@@ -182,7 +182,7 @@ fn main() {
             deadline_slots: None,
             parallelizable: habit.parallelizable,
             allows_parallel: habit.allows_parallel,
-            abandonability: habit.abandonability,
+            abandonability: habit.abandonability.into(),
             fixed: habit.fixed,
         };
 
@@ -238,7 +238,7 @@ fn main() {
                         depends,
                         parallelizable: step.parallelizable,
                         allows_parallel: step.allows_parallel,
-                        abandonability: step.abandonability,
+                        abandonability: step.abandonability.into(),
                         fixed: step.fixed,
                         habit_group: Some(group_id),
                     };
@@ -258,7 +258,7 @@ fn main() {
             depends: t.depends,
             parallelizable: t.parallelizable,
             allows_parallel: t.allows_parallel,
-            abandonability: t.abandonability,
+            abandonability: t.abandonability.into(),
             fixed: t.fixed,
             habit_group: t.habit_group,
         })

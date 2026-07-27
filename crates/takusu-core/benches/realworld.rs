@@ -58,7 +58,7 @@ fn build_planner(fixture: &str) -> (Planner, i64) {
                 depends: t.depends,
                 parallelizable: t.parallelizable,
                 allows_parallel: t.allows_parallel,
-                abandonability: t.abandonability,
+                abandonability: t.abandonability.into(),
                 fixed: t.fixed,
                 habit_group: t.habit_group,
             })

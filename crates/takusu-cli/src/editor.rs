@@ -486,6 +486,7 @@ pub fn open_editor(content: &str, suffix: &str) -> io::Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use takusu_util::Quantity;
 
     fn task_row(
         id: &str,
@@ -509,7 +510,7 @@ mod tests {
             .unwrap(),
             parallelizable: false,
             allows_parallel: false,
-            abandonability: 0.5,
+            abandonability: 0.5.into(),
             status: TaskStatus::Pending,
             habit_id: habit_id.map(|s| s.into()),
             ical_uid: None,
@@ -517,7 +518,7 @@ mod tests {
             fixed: false,
             habit_step_id: None,
             quantity_total: None,
-            quantity_done: 0,
+            quantity_done: Quantity::default(),
             quantity_unit: None,
             completed_at: None,
             split_from_task_id: None,
@@ -649,7 +650,7 @@ mod tests {
             sigma_minutes: 3,
             parallelizable: false,
             allows_parallel: true,
-            abandonability: 0.25,
+            abandonability: 0.25.into(),
             fixed: true,
             depends_on: "[\"step-0\"]".into(),
             created_at: "2026-07-16T00:00:00Z".into(),
@@ -667,7 +668,7 @@ mod tests {
         assert_eq!(parsed[0].sigma_minutes, Some(3));
         assert_eq!(parsed[0].parallelizable, Some(false));
         assert_eq!(parsed[0].allows_parallel, Some(true));
-        assert_eq!(parsed[0].abandonability, Some(0.25));
+        assert_eq!(parsed[0].abandonability, Some(0.25.into()));
         assert_eq!(parsed[0].fixed, Some(true));
         assert_eq!(parsed[0].depends_on, vec!["step-0"]);
     }
@@ -686,7 +687,7 @@ mod tests {
             sigma_minutes: 0,
             parallelizable: false,
             allows_parallel: false,
-            abandonability: 0.5,
+            abandonability: 0.5.into(),
             fixed: false,
             depends_on: "[]".into(),
             created_at: "2026-07-16T00:00:00Z".into(),
@@ -710,7 +711,7 @@ mod tests {
             sigma_minutes: 0,
             parallelizable: false,
             allows_parallel: false,
-            abandonability: 0.5,
+            abandonability: 0.5.into(),
             fixed: false,
             depends_on: "not-json".into(),
             created_at: "2026-07-16T00:00:00Z".into(),

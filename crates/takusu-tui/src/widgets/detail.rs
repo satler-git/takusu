@@ -61,7 +61,7 @@ pub fn render_task_detail(frame: &mut Frame, area: Rect, task: &TaskRow, tz: &ji
     }
     if let Some(total) = task.quantity_total {
         let pct = if total > 0 {
-            ((task.quantity_done as f64 / total as f64) * 100.0).clamp(0.0, 100.0) as u16
+            ((f64::from(task.quantity_done) / f64::from(total)) * 100.0).clamp(0.0, 100.0) as u16
         } else {
             0
         };

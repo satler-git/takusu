@@ -6,7 +6,9 @@ use crate::handlers::auth::db;
 use crate::handlers::d1::safe_all;
 use crate::handlers::settings::get_timezone;
 use crate::handlers::tokens::{json_created, json_ok, parse_json};
-use crate::models::{CreateTask, HabitRow, ScheduleEntry, ScheduleRow, TaskRow, UpdateTask};
+use crate::models::{
+    CreateTask, HabitRow, Quantity, ScheduleEntry, ScheduleRow, TaskRow, UpdateTask,
+};
 use crate::validate::{
     validate_minutes, validate_quantity, validate_task_datetimes, validate_title,
 };
@@ -185,7 +187,7 @@ pub async fn create(mut req: Request, env: Env) -> Result<Response, WorkerError>
         .unwrap_or(Minutes(body.avg_minutes).to_slots().0.max(1));
     let parallelizable = body.parallelizable.unwrap_or(false);
     let allows_parallel = body.allows_parallel.unwrap_or(false);
-    let abandonability = body.abandonability.unwrap_or(0.5);
+    let abandonability = body.abandonability.unwrap_or(0.5.into());
 
     // Atomically reserve a monotonic display_id from the sequence table.
     // This prevents display_id reuse after task deletion (#186).
@@ -224,7 +226,7 @@ pub async fn create(mut req: Request, env: Env) -> Result<Response, WorkerError>
             .display_id
     };
 
-    let quantity_done = body.quantity_done.unwrap_or(0);
+    let quantity_done = body.quantity_done.unwrap_or_default();
     // A title that fails NFKC normalization stores NULL, excluding the task from
     // similar-task search rather than matching on a misleading empty string (#942).
     let normalized_title = takusu_util::memory::normalize_text(
@@ -253,7 +255,7 @@ pub async fn create(mut req: Request, env: Env) -> Result<Response, WorkerError>
         JsValue::from_str(&depends_json),
         JsValue::from_bool(parallelizable),
         JsValue::from_bool(allows_parallel),
-        JsValue::from_f64(abandonability),
+        JsValue::from_f64(abandonability.into()),
         body.ical_uid
             .as_deref()
             .map(JsValue::from_str)
@@ -268,9 +270,9 @@ pub async fn create(mut req: Request, env: Env) -> Result<Response, WorkerError>
             .map(JsValue::from_str)
             .unwrap_or(JsValue::NULL),
         quantity_total
-            .map(|n| JsValue::from_f64(n as f64))
+            .map(|n| JsValue::from_f64(f64::from(n)))
             .unwrap_or(JsValue::NULL),
-        JsValue::from_f64(quantity_done as f64),
+        JsValue::from_f64(f64::from(quantity_done)),
         body.quantity_unit
             .as_deref()
             .map(JsValue::from_str)
@@ -278,7 +280,7 @@ pub async fn create(mut req: Request, env: Env) -> Result<Response, WorkerError>
         JsValue::NULL,
         JsValue::NULL,
         original_quantity_total
-            .map(|n| JsValue::from_f64(n as f64))
+            .map(|n| JsValue::from_f64(f64::from(n)))
             .unwrap_or(JsValue::NULL),
         normalized_title
             .as_deref()
@@ -386,7 +388,7 @@ pub async fn update(mut req: Request, env: Env, id: &str) -> Result<Response, Wo
             .map(JsValue::from_bool)
             .unwrap_or(JsValue::NULL),
         body.abandonability
-            .map(JsValue::from_f64)
+            .map(|a| JsValue::from_f64(a.into()))
             .unwrap_or(JsValue::NULL),
         JsValue::from_str(&status.to_string()),
         JsValue::from_str(&full),
@@ -403,17 +405,17 @@ pub async fn update(mut req: Request, env: Env, id: &str) -> Result<Response, Wo
             .map(JsValue::from_str)
             .unwrap_or(JsValue::NULL),
         quantity_total
-            .map(|n| JsValue::from_f64(n as f64))
+            .map(|n| JsValue::from_f64(f64::from(n)))
             .unwrap_or(JsValue::NULL),
         body.quantity_done
-            .map(|n| JsValue::from_f64(n as f64))
+            .map(|n| JsValue::from_f64(f64::from(n)))
             .unwrap_or(JsValue::NULL),
         body.quantity_unit
             .as_deref()
             .map(JsValue::from_str)
             .unwrap_or(JsValue::NULL),
         original_quantity_total
-            .map(|n| JsValue::from_f64(n as f64))
+            .map(|n| JsValue::from_f64(f64::from(n)))
             .unwrap_or(JsValue::NULL),
         normalized_title
             .as_deref()
@@ -459,7 +461,11 @@ pub async fn replace(mut req: Request, env: Env, id: &str) -> Result<Response, W
     // Treat quantity_total / original_quantity_total 0 as unset (same as None) server-side.
     let quantity_total = body.quantity_total.filter(|t| *t != 0);
     let original_quantity_total = body.original_quantity_total.filter(|t| *t != 0);
-    validate_quantity(quantity_total, Some(0), original_quantity_total)?;
+    validate_quantity(
+        quantity_total,
+        Some(Quantity::default()),
+        original_quantity_total,
+    )?;
     let database = db(&env)?;
     let tz = get_timezone(&database).await?;
     validate_task_datetimes(
@@ -477,7 +483,7 @@ pub async fn replace(mut req: Request, env: Env, id: &str) -> Result<Response, W
         .unwrap_or(Minutes(body.avg_minutes).to_slots().0.max(1));
     let parallelizable = body.parallelizable.unwrap_or(false);
     let allows_parallel = body.allows_parallel.unwrap_or(false);
-    let abandonability = body.abandonability.unwrap_or(0.5);
+    let abandonability = body.abandonability.unwrap_or(0.5.into());
 
     let normalized_title = takusu_util::memory::normalize_text(
         &body.title,
@@ -504,7 +510,7 @@ pub async fn replace(mut req: Request, env: Env, id: &str) -> Result<Response, W
         JsValue::from_str(&depends_json),
         JsValue::from_bool(parallelizable),
         JsValue::from_bool(allows_parallel),
-        JsValue::from_f64(abandonability),
+        JsValue::from_f64(abandonability.into()),
         body.habit_id
             .as_deref()
             .map(JsValue::from_str)
@@ -515,7 +521,7 @@ pub async fn replace(mut req: Request, env: Env, id: &str) -> Result<Response, W
             .map(JsValue::from_str)
             .unwrap_or(JsValue::NULL),
         quantity_total
-            .map(|n| JsValue::from_f64(n as f64))
+            .map(|n| JsValue::from_f64(f64::from(n)))
             .unwrap_or(JsValue::NULL),
         body.quantity_unit
             .as_deref()
@@ -524,7 +530,7 @@ pub async fn replace(mut req: Request, env: Env, id: &str) -> Result<Response, W
         JsValue::NULL,
         JsValue::NULL,
         original_quantity_total
-            .map(|n| JsValue::from_f64(n as f64))
+            .map(|n| JsValue::from_f64(f64::from(n)))
             .unwrap_or(JsValue::NULL),
         normalized_title
             .as_deref()

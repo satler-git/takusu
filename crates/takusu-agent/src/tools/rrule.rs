@@ -170,7 +170,7 @@ fn expand_dates(parsed: &ParsedRule, count: usize) -> Result<Vec<String>, ToolEr
         None,
         false,
         false,
-        0.0,
+        0.0.into(),
         false,
         start_point,
         until_point,
