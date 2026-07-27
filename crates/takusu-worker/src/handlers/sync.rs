@@ -8,6 +8,7 @@ use crate::handlers::auth::db;
 use crate::handlers::d1::safe_all;
 use crate::handlers::tokens::{json_ok, parse_json};
 use crate::models::{GoogleCalEventRow, GoogleCalSettingsRow, UpdateGoogleCalSettings};
+use takusu_util::Timestamp;
 
 #[derive(Deserialize)]
 pub struct MappingPair {
@@ -135,7 +136,7 @@ async fn get_settings_row(
             client_id: String::new(),
             client_secret: String::new(),
             refresh_token: None,
-            created_at: String::new(),
-            updated_at: String::new(),
+            created_at: Timestamp::default(),
+            updated_at: Timestamp::default(),
         }))
 }

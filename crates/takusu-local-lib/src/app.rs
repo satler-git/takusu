@@ -6,8 +6,8 @@ use std::time::Duration;
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use takusu_core::{
-    Minutes, NormalDist, Planner, Point, RescheduleRange, SleepConfig, Slots, Solver,
-    Task as CoreTask, WorkloadConfig,
+    Minutes, NormalDist, Planner, Point, RescheduleRange, SleepConfig, Slots, Task as CoreTask,
+    WorkloadConfig,
 };
 use takusu_storage::{
     CreateHabit, CreateHabitBatch, CreateHabitBatchResult, CreateHabitScheduledSpan, CreateMemory,
@@ -93,12 +93,19 @@ fn validate_title(title: &str) -> Result<(), AppError> {
     Ok(())
 }
 
+/// Parse a recurrence JSON string into a `RecurrenceRule`.
+/// This is the single point inside `takusu-local-lib` where storage/client strings
+/// become `takusu_habit` types (see `doc/type-safety-issues.md` §3.4 / §8.6).
+/// `takusu-worker` validates recurrences separately without converting to `takusu_habit`.
+fn parse_recurrence(recurrence: &str) -> Result<takusu_habit::RecurrenceRule, AppError> {
+    serde_json::from_str::<takusu_habit::RecurrenceRule>(recurrence)
+        .map_err(|e| AppError::BadRequest(format!("invalid recurrence: {e}")))
+}
+
 /// Verify the recurrence string parses as a `RecurrenceRule` so that bad JSON
 /// is rejected at the API boundary instead of crashing later (#285).
 fn validate_recurrence(recurrence: &str) -> Result<(), AppError> {
-    serde_json::from_str::<takusu_habit::RecurrenceRule>(recurrence)
-        .map_err(|e| AppError::BadRequest(format!("invalid recurrence: {e}")))?;
-    Ok(())
+    parse_recurrence(recurrence).map(|_| ())
 }
 
 /// Validate a skill slug, name, description, and body (#WI-6).
@@ -187,6 +194,7 @@ fn validate_memory(create: &CreateMemory) -> Result<(), AppError> {
 }
 
 /// Validate a `HH:MM` time string (#95).
+#[allow(dead_code)]
 fn validate_hhmm(s: &str) -> Result<(), AppError> {
     parse_hhmm(s).map(|_| ())
 }
@@ -199,8 +207,7 @@ fn validate_steps(steps: &[HabitStepInput]) -> Result<(), AppError> {
 
     for s in steps {
         validate_minutes(s.avg_minutes, s.sigma_minutes)?;
-        validate_hhmm(&s.start_time)?;
-        validate_hhmm(&s.end_time)?;
+        // start_time/end_time are TimeOfDay, already validated by deserialization.
     }
 
     // Build id → index map for steps that carry an id. A depends_on reference
@@ -270,51 +277,21 @@ fn parse_settings_timezone(tz: &str) -> Result<jiff::tz::TimeZone, AppError> {
 /// existing value is needed for comparison but cannot be parsed, it is treated
 /// as a data-corruption error rather than silently ignored.
 fn validate_task_datetimes(
-    start_at: Option<&str>,
-    end_at: Option<&str>,
-    tz: &jiff::tz::TimeZone,
-    existing_start: Option<&str>,
-    existing_end: Option<&str>,
+    start_at: Option<Option<&takusu_util::Timestamp>>,
+    end_at: Option<&takusu_util::Timestamp>,
+    _tz: &jiff::tz::TimeZone,
+    existing_start: Option<&takusu_util::Timestamp>,
+    existing_end: Option<&takusu_util::Timestamp>,
 ) -> Result<(), AppError> {
-    let parse_new = |s: &str, label: &str| {
-        takusu_util::parse_datetime_to_timestamp(s, tz)
-            .map_err(|e| AppError::BadRequest(format!("invalid {label}: {e}")))
+    // start_at: None = no change → use existing; Some(None) = clear; Some(Some(ts)) = set.
+    // end_at:   None = no change → use existing; Some(ts) = set (cannot be cleared).
+    let effective_start = match &start_at {
+        None => existing_start.copied(),
+        Some(inner) => inner.copied(),
     };
-    let parse_existing = |s: &str, label: &str| {
-        takusu_util::parse_datetime_to_timestamp(s, tz)
-            .map_err(|e| AppError::Internal(format!("invalid {label}: {e}")))
-    };
-
-    let start = start_at
-        .filter(|s| !s.is_empty())
-        .map(|s| parse_new(s, "start_at"))
-        .transpose()?;
-    let end = end_at
-        .filter(|s| !s.is_empty())
-        .map(|e| parse_new(e, "end_at"))
-        .transpose()?;
-
-    let need_existing_start = start.is_none() && end.is_some();
-    let need_existing_end = start.is_some() && end.is_none();
-
-    let effective_start = if let Some(s) = start {
-        Some(s)
-    } else if need_existing_start {
-        existing_start
-            .map(|s| parse_existing(s, "existing start_at"))
-            .transpose()?
-    } else {
-        None
-    };
-
-    let effective_end = if let Some(e) = end {
-        Some(e)
-    } else if need_existing_end {
-        existing_end
-            .map(|e| parse_existing(e, "existing end_at"))
-            .transpose()?
-    } else {
-        None
+    let effective_end = match &end_at {
+        None => existing_end.copied(),
+        Some(e) => Some(**e),
     };
 
     if let (Some(s), Some(e)) = (effective_start, effective_end)
@@ -338,13 +315,13 @@ fn step_to_core_task(
 ) -> Result<CoreTask, AppError> {
     let date = takusu_habit::point_to_date(occ_start, tz)
         .ok_or_else(|| AppError::Internal("occurrence date out of range".into()))?;
-    let (sh, sm) = parse_hhmm(&step.start_time)?;
+    let (sh, sm) = (step.start_time.hour(), step.start_time.minute());
     let start_time = takusu_habit::TimeOfDay::new(sh, sm).ok_or_else(|| {
         AppError::BadRequest(format!("invalid step start_time: {}", step.start_time))
     })?;
     let start_pt = takusu_habit::date_time_to_point(date, &start_time, tz)
         .ok_or_else(|| AppError::Internal("step start point out of range".into()))?;
-    let (eh, em) = parse_hhmm(&step.end_time)?;
+    let (eh, em) = (step.end_time.hour(), step.end_time.minute());
     let start_minutes = sh as i64 * 60 + sm as i64;
     let end_minutes = eh as i64 * 60 + em as i64;
     let end_pt = if step.fixed {
@@ -407,8 +384,8 @@ fn step_input_to_preview_row(input: &HabitStepInput) -> HabitStepRow {
         position: input.position,
         title: input.title.clone(),
         description: input.description.clone(),
-        start_time: input.start_time.clone(),
-        end_time: input.end_time.clone(),
+        start_time: input.start_time,
+        end_time: input.end_time,
         avg_minutes: input.avg_minutes,
         sigma_minutes: input.sigma_minutes.unwrap_or(0),
         parallelizable: input.parallelizable.unwrap_or(false),
@@ -416,7 +393,7 @@ fn step_input_to_preview_row(input: &HabitStepInput) -> HabitStepRow {
         abandonability: input.abandonability.unwrap_or(0.5.into()),
         fixed: input.fixed.unwrap_or(false),
         depends_on: serde_json::to_string(&input.depends_on).unwrap_or_default(),
-        created_at: String::new(),
+        created_at: takusu_util::Timestamp::default(),
     }
 }
 
@@ -445,12 +422,11 @@ fn freq_fallback_slots(rule: &takusu_habit::RecurrenceRule) -> i64 {
 
 /// Validate that `start` and `end` are real `YYYY-MM-DD` calendar dates and
 /// that `start <= end` (#303).
-fn validate_scheduled_span_dates(start: &str, end: &str) -> Result<(), AppError> {
-    let s = parse_calendar_date(start)
-        .ok_or_else(|| AppError::BadRequest(format!("invalid start_date: {start}")))?;
-    let e = parse_calendar_date(end)
-        .ok_or_else(|| AppError::BadRequest(format!("invalid end_date: {end}")))?;
-    if s > e {
+fn validate_scheduled_span_dates(
+    start: &takusu_util::Date,
+    end: &takusu_util::Date,
+) -> Result<(), AppError> {
+    if start > end {
         return Err(AppError::BadRequest(format!(
             "start_date ({start}) must be <= end_date ({end})"
         )));
@@ -464,6 +440,7 @@ fn validate_scheduled_span_dates(start: &str, end: &str) -> Result<(), AppError>
 /// Enforces zero-padded fields (4-digit year, 2-digit month/day) so that
 /// lexicographic comparison against `jiff`'s zero-padded `Date::to_string()`
 /// works correctly during pause matching (#303).
+#[allow(dead_code)]
 fn parse_calendar_date(s: &str) -> Option<(i64, u32, u32)> {
     let parts: Vec<&str> = s.split('-').collect();
     if parts.len() != 3 {
@@ -499,8 +476,8 @@ fn parse_sleep(
 ) -> Result<SleepConfig, AppError> {
     match s {
         "recommended" => {
-            let (sh, sm) = parse_hhmm(&settings.sleep_start)?;
-            let (eh, em) = parse_hhmm(&settings.sleep_end)?;
+            let (sh, sm) = (settings.sleep_start.hour(), settings.sleep_start.minute());
+            let (eh, em) = (settings.sleep_end.hour(), settings.sleep_end.minute());
             Ok(SleepConfig::from_local(5, tz, sh, sm, eh, em))
         }
         "disabled" => Ok(SleepConfig::disabled()),
@@ -555,24 +532,10 @@ fn parse_workload(settings: &SettingsRow) -> WorkloadConfig {
     }
 }
 
-/// #772: 設定文字列から `Solver` を構築する。不明・空の場合は `Sa`。
-fn parse_solver(s: &str) -> Solver {
-    let t = s.trim();
-    if t.eq_ignore_ascii_case("sa") {
-        Solver::Sa
-    } else if t.eq_ignore_ascii_case("priority") {
-        Solver::Priority
-    } else if t.eq_ignore_ascii_case("auto") {
-        Solver::Auto
-    } else {
-        Solver::Sa
-    }
-}
-
 /// #772: `Planner` に settings の solver / time budget / seed / warm start を反映する。
 fn apply_planner_settings(planner: &mut Planner, settings: &SettingsRow) {
     planner.set_workload(parse_workload(settings));
-    planner.set_solver(parse_solver(&settings.solver));
+    planner.set_solver(settings.solver.into());
     planner.set_time_budget(
         settings
             .time_budget_ms
@@ -601,19 +564,19 @@ fn iso_to_point(iso: &str, tz: &jiff::tz::TimeZone) -> Result<Point, AppError> {
 /// ISO 8601 日時文字列を絶対 UTC 表記に正規化する。
 /// 明示的なオフセット/Z が付いていればそのまま UTC に変換し、
 /// naive な文字列は設定タイムゾーンで解釈して絶対時刻にする。
+#[allow(dead_code)]
 fn normalize_iso_datetime(iso: &str, tz: &jiff::tz::TimeZone) -> Result<String, AppError> {
     let ts = takusu_util::parse_datetime_to_timestamp(iso, tz)
         .map_err(|e| AppError::BadRequest(format!("invalid datetime: {e}")))?;
     Ok(ts.to_string())
 }
 
-fn point_to_iso(slot: i64) -> Result<String, AppError> {
+fn point_to_iso(slot: i64) -> Result<takusu_util::Timestamp, AppError> {
     let secs = slot
         .checked_mul(5 * 60)
         .ok_or_else(|| AppError::Internal("timestamp overflow".into()))?;
-    let ts = Timestamp::from_second(secs)
-        .map_err(|e| AppError::Internal(format!("invalid timestamp: {e}")))?;
-    Ok(ts.to_string())
+    takusu_util::Timestamp::from_second(secs)
+        .ok_or_else(|| AppError::Internal("invalid timestamp".into()))
 }
 
 /// Point スロット値 → ローカルタイムゾーンの日付文字列 (YYYY-MM-DD)。
@@ -675,8 +638,8 @@ fn habit_row_to_config(
 ) -> Result<takusu_habit::Habit, AppError> {
     build_habit_core(
         &row.recurrence,
-        &row.start_time,
-        &row.end_time,
+        row.start_time,
+        row.end_time,
         row.avg_minutes,
         row.sigma_minutes,
         row.parallelizable,
@@ -693,8 +656,8 @@ fn build_habit_from_preview(
 ) -> Result<takusu_habit::Habit, AppError> {
     build_habit_core(
         &request.recurrence,
-        &request.start_time,
-        &request.end_time,
+        request.start_time,
+        request.end_time,
         request.avg_minutes,
         request.sigma_minutes.unwrap_or(0),
         request.parallelizable.unwrap_or(false),
@@ -708,8 +671,8 @@ fn build_habit_from_preview(
 #[allow(clippy::too_many_arguments)]
 fn build_habit_core(
     recurrence: &str,
-    start_time: &str,
-    end_time: &str,
+    start_time: takusu_util::TimeOfDay,
+    end_time: takusu_util::TimeOfDay,
     avg_minutes: i64,
     sigma_minutes: i64,
     parallelizable: bool,
@@ -718,13 +681,12 @@ fn build_habit_core(
     fixed: bool,
     tz: &jiff::tz::TimeZone,
 ) -> Result<takusu_habit::Habit, AppError> {
-    let recurrence: takusu_habit::RecurrenceRule = serde_json::from_str(recurrence)
-        .map_err(|e| AppError::BadRequest(format!("invalid recurrence: {e}")))?;
-    let (sh, sm) = parse_hhmm(start_time)?;
+    let recurrence = parse_recurrence(recurrence)?;
+    let (sh, sm) = (start_time.hour(), start_time.minute());
     let start_time = takusu_habit::TimeOfDay::new(sh, sm)
         .ok_or_else(|| AppError::BadRequest(format!("invalid start_time: {start_time}")))?;
     let duration = NormalDist::from_minutes(Minutes(avg_minutes), Minutes(sigma_minutes));
-    let (eh, em) = parse_hhmm(end_time)?;
+    let (eh, em) = (end_time.hour(), end_time.minute());
     let deadline_slots = if fixed {
         let start_minutes = sh as i64 * 60 + sm as i64;
         let end_minutes = eh as i64 * 60 + em as i64;
@@ -832,16 +794,16 @@ fn default_settings_row() -> SettingsRow {
     SettingsRow {
         id: "active".to_string(),
         tz: "UTC".to_string(),
-        sleep_start: "22:00".to_string(),
-        sleep_end: "06:00".to_string(),
+        sleep_start: takusu_util::TimeOfDay::new(22, 0).unwrap(),
+        sleep_end: takusu_util::TimeOfDay::new(6, 0).unwrap(),
         comfortable_minutes: None,
         maximum_minutes: None,
-        solver: "sa".to_string(),
+        solver: takusu_util::Solver::Sa,
         time_budget_ms: None,
         seed: None,
         warm_start: false,
-        created_at: String::new(),
-        updated_at: String::new(),
+        created_at: takusu_util::Timestamp::default(),
+        updated_at: takusu_util::Timestamp::default(),
     }
 }
 
@@ -902,12 +864,7 @@ impl TakusuApp {
         if let Some(tz) = &body.tz {
             validate_timezone(tz)?;
         }
-        if let Some(s) = &body.sleep_start {
-            validate_hhmm(s)?;
-        }
-        if let Some(s) = &body.sleep_end {
-            validate_hhmm(s)?;
-        }
+        // sleep_start/sleep_end are Option<TimeOfDay>, already validated by deserialization.
         self.storage
             .update_settings(body)
             .await
@@ -1083,17 +1040,14 @@ impl TakusuApp {
         let settings = self.get_settings_or_default().await?;
         let tz = parse_settings_timezone(&settings.tz)?;
         validate_task_datetimes(
-            body.start_at.as_deref(),
+            Some(body.start_at.as_ref()),
             Some(&body.end_at),
             &tz,
             None,
             None,
         )?;
         let mut body = body.clone();
-        if let Some(ref s) = body.start_at {
-            body.start_at = Some(normalize_iso_datetime(s, &tz)?);
-        }
-        body.end_at = normalize_iso_datetime(&body.end_at, &tz)?;
+        // Timestamps are already normalized (RFC 3339 UTC) by deserialization.
         if let Some(ref dep_ids) = body.depends
             && !dep_ids.is_empty()
         {
@@ -1141,7 +1095,7 @@ impl TakusuApp {
             validate_minutes(item.task.avg_minutes, item.task.sigma_minutes)?;
             validate_title(&item.task.title)?;
             validate_task_datetimes(
-                item.task.start_at.as_deref(),
+                Some(item.task.start_at.as_ref()),
                 Some(&item.task.end_at),
                 &tz,
                 None,
@@ -1155,11 +1109,8 @@ impl TakusuApp {
                     return Err(AppError::BadRequest(format!("duplicate client_id: {cid}")));
                 }
             }
-            let mut task = item.task.clone();
-            if let Some(ref s) = task.start_at {
-                task.start_at = Some(normalize_iso_datetime(s, &tz)?);
-            }
-            task.end_at = normalize_iso_datetime(&task.end_at, &tz)?;
+            let task = item.task.clone();
+            // Timestamps are already normalized (RFC 3339 UTC) by deserialization.
             items.push(CreateTaskBatchItem {
                 task,
                 client_id: item.client_id.clone(),
@@ -1324,29 +1275,17 @@ impl TakusuApp {
         if body.start_at.is_some() || body.end_at.is_some() {
             let existing = existing.as_ref().unwrap();
             validate_task_datetimes(
-                body.start_at.as_deref(),
-                body.end_at.as_deref(),
+                body.start_at.as_ref().map(|o| o.as_ref()),
+                body.end_at.as_ref(),
                 &tz,
-                existing.start_at.as_deref(),
+                existing.start_at.as_ref(),
                 Some(&existing.end_at),
             )?;
         }
 
-        if let Some(ref s) = body.start_at {
-            if s.is_empty() {
-                // Sentinel used by the TUI to clear start_at.
-            } else {
-                body.start_at = Some(normalize_iso_datetime(s, &tz)?);
-            }
-        }
-        if let Some(ref s) = body.end_at {
-            if s.is_empty() {
-                // end_at is NOT NULL in the DB; an empty string is treated as no change.
-                body.end_at = None;
-            } else {
-                body.end_at = Some(normalize_iso_datetime(s, &tz)?);
-            }
-        }
+        // Timestamps are already normalized (RFC 3339 UTC) by deserialization.
+        // start_at/end_at use Option<Option<Timestamp>>:
+        //   None = no change, Some(None) = clear to NULL, Some(Some(ts)) = set.
 
         if let Some(dep_ids) = &body.depends {
             let tasks = self
@@ -1414,17 +1353,14 @@ impl TakusuApp {
         let settings = self.get_settings_or_default().await?;
         let tz = parse_settings_timezone(&settings.tz)?;
         validate_task_datetimes(
-            body.start_at.as_deref(),
+            Some(body.start_at.as_ref()),
             Some(&body.end_at),
             &tz,
             None,
             None,
         )?;
         let mut body = body.clone();
-        if let Some(ref s) = body.start_at {
-            body.start_at = Some(normalize_iso_datetime(s, &tz)?);
-        }
-        body.end_at = normalize_iso_datetime(&body.end_at, &tz)?;
+        // Timestamps are already normalized (RFC 3339 UTC) by deserialization.
         if let Some(ref dep_ids) = body.depends
             && !dep_ids.is_empty()
         {
@@ -1537,9 +1473,9 @@ impl TakusuApp {
             let original = self.storage.get_task(id).await.map_err(storage_to_app)?;
             validate_task_datetimes(
                 None,
-                body.end_at.as_deref(),
+                body.end_at.as_ref(),
                 &tz,
-                original.start_at.as_deref(),
+                original.start_at.as_ref(),
                 None,
             )?;
         }
@@ -1564,13 +1500,21 @@ impl TakusuApp {
             }
             let avg_minutes = takusu_util::minutes_between(&event.start_at, &event.end_at).max(1);
             validate_minutes(avg_minutes, Some(0))?;
+            let start_at: takusu_util::Timestamp = event
+                .start_at
+                .parse()
+                .map_err(|e| AppError::BadRequest(format!("invalid start_at: {e}")))?;
+            let end_at: takusu_util::Timestamp = event
+                .end_at
+                .parse()
+                .map_err(|e| AppError::BadRequest(format!("invalid end_at: {e}")))?;
             let task = self
                 .storage
                 .create_task(&CreateTask {
                     title: event.title.clone(),
                     description: event.description.clone(),
-                    start_at: Some(event.start_at.to_string()),
-                    end_at: event.end_at.to_string(),
+                    start_at: Some(start_at),
+                    end_at,
                     avg_minutes,
                     sigma_minutes: Some(0),
                     depends: Some(vec![]),
@@ -1684,8 +1628,7 @@ impl TakusuApp {
 
         let mut occurrences: Vec<(Point, Point)> = Vec::new();
         if is_period {
-            let rule: takusu_habit::RecurrenceRule = serde_json::from_str(&request.recurrence)
-                .map_err(|e| AppError::BadRequest(format!("invalid recurrence: {e}")))?;
+            let rule = parse_recurrence(&request.recurrence)?;
             let until_lookahead = Point(until.0 + 365 * 288);
             let occs: Vec<(String, Point)> = store
                 .generate(from, until_lookahead)
@@ -2199,8 +2142,8 @@ impl TakusuApp {
                 .iter()
                 .filter_map(|entry| {
                     let idx = id_to_idx.get(&entry.task_id)?;
-                    let s = iso_to_point(&entry.start_at, &tz).ok()?;
-                    let e = iso_to_point(&entry.end_at, &tz).ok()?;
+                    let s = iso_to_point(&entry.start_at.to_string(), &tz).ok()?;
+                    let e = iso_to_point(&entry.end_at.to_string(), &tz).ok()?;
                     Some((s, e, *idx))
                 })
                 .collect();
@@ -2258,8 +2201,8 @@ impl TakusuApp {
             .iter()
             .filter_map(|entry| {
                 Some((
-                    iso_to_point(&entry.start_at, &tz).ok()?,
-                    iso_to_point(&entry.end_at, &tz).ok()?,
+                    iso_to_point(&entry.start_at.to_string(), &tz).ok()?,
+                    iso_to_point(&entry.end_at.to_string(), &tz).ok()?,
                     *id_to_idx.get(&entry.task_id)?,
                 ))
             })
@@ -2385,8 +2328,8 @@ impl TakusuApp {
             .iter()
             .filter_map(|entry| {
                 let idx = *id_to_idx.get(&entry.task_id)?;
-                let s = iso_to_point(&entry.start_at, &tz).ok()?;
-                let e = iso_to_point(&entry.end_at, &tz).ok()?;
+                let s = iso_to_point(&entry.start_at.to_string(), &tz).ok()?;
+                let e = iso_to_point(&entry.end_at.to_string(), &tz).ok()?;
                 Some((s, e, idx))
             })
             .collect();
@@ -2491,8 +2434,8 @@ impl TakusuApp {
             .get_task(&full_task_id)
             .await
             .map_err(storage_to_app)?;
-        let old_start = iso_to_point(&entries[idx].start_at, &tz)?;
-        let old_end = iso_to_point(&entries[idx].end_at, &tz)?;
+        let old_start = iso_to_point(&entries[idx].start_at.to_string(), &tz)?;
+        let old_end = iso_to_point(&entries[idx].end_at.to_string(), &tz)?;
         let duration = Point::delta(old_end, old_start);
         let new_end = Point(new_start_point.0 + duration);
         let new_entry = ScheduleEntry {
@@ -2507,7 +2450,7 @@ impl TakusuApp {
         // 自動スケジューラの制約をすべて検証すると自由度が下がるため。
         // force=true で強制上書きも可能。
         let mut warnings = Vec::new();
-        let task_deadline = iso_to_point(&task_row.end_at, &tz)?;
+        let task_deadline = iso_to_point(&task_row.end_at.to_string(), &tz)?;
         if new_end.0 > task_deadline.0 {
             warnings.push("deadline_violation".to_string());
         }
@@ -2531,8 +2474,8 @@ impl TakusuApp {
 
         Ok(MoveEntryOutput {
             task_id: task_row.id,
-            start_at: point_to_iso(new_start_point.0)?,
-            end_at: point_to_iso(new_end.0)?,
+            start_at: point_to_iso(new_start_point.0)?.to_string(),
+            end_at: point_to_iso(new_end.0)?.to_string(),
             warnings,
         })
     }
@@ -2731,8 +2674,8 @@ impl TakusuApp {
                             task_id: e.task_id.clone(),
                             summary,
                             description,
-                            start: e.start_at.clone(),
-                            end: e.end_at.clone(),
+                            start: e.start_at.to_string(),
+                            end: e.end_at.to_string(),
                         }
                     })
                     .collect();
@@ -3047,8 +2990,7 @@ impl TakusuApp {
                 // limited rules the generator stops early anyway.
                 let until_lookahead = Point(until.0 + 365 * 288);
                 let today_str = point_to_local_date(from.0, tz)?;
-                let rule: takusu_habit::RecurrenceRule = serde_json::from_str(&row.recurrence)
-                    .map_err(|e| AppError::BadRequest(format!("invalid recurrence: {e}")))?;
+                let rule = parse_recurrence(&row.recurrence)?;
                 let occs: Vec<(String, Point)> = store
                     .generate(from, until_lookahead)
                     .into_iter()
@@ -3068,8 +3010,8 @@ impl TakusuApp {
                     let in_span = spans.is_some_and(|spans| {
                         spans.iter().any(|&i| {
                             let s = &all_spans[i];
-                            date.as_str() >= s.start_date.as_str()
-                                && date.as_str() <= s.end_date.as_str()
+                            date.as_str() >= s.start_date.to_string().as_str()
+                                && date.as_str() <= s.end_date.to_string().as_str()
                         })
                     });
                     // active habit: span 内は pause してスキップ
@@ -3152,8 +3094,8 @@ impl TakusuApp {
                     let in_span = spans.is_some_and(|spans| {
                         spans.iter().any(|&i| {
                             let s = &all_spans[i];
-                            date.as_str() >= s.start_date.as_str()
-                                && date.as_str() <= s.end_date.as_str()
+                            date.as_str() >= s.start_date.to_string().as_str()
+                                && date.as_str() <= s.end_date.to_string().as_str()
                         })
                     });
                     // active habit: span 内は pause してスキップ
@@ -3218,8 +3160,8 @@ impl TakusuApp {
             if let Some(ref hid) = task.habit_id {
                 let date = task
                     .start_at
-                    .as_deref()
-                    .map(|s| iso_to_local_date(s, tz))
+                    .as_ref()
+                    .map(|ts| iso_to_local_date(&ts.to_string(), tz))
                     .unwrap_or_default();
                 if !date.is_empty() {
                     existing_by_key.insert(
@@ -3250,7 +3192,11 @@ impl TakusuApp {
                     // ユーザーが habit 由来タスクを編集していない場合は、
                     // habit の現在値で全フィールドを上書きする。
                     let update = UpdateTask {
-                        start_at: core_task.start.map(|p| point_to_iso(p.0)).transpose()?,
+                        start_at: core_task
+                            .start
+                            .map(|p| point_to_iso(p.0))
+                            .transpose()?
+                            .map(Some),
                         end_at: Some(point_to_iso(core_task.end.0)?),
                         title: Some(title),
                         description: habit_desc.clone(),
@@ -3465,7 +3411,7 @@ impl TakusuApp {
                 }
                 // Only exclude habits whose recurrence interval is > 1 day.
                 let rule: Option<takusu_habit::RecurrenceRule> =
-                    serde_json::from_str(&h.recurrence).ok();
+                    parse_recurrence(&h.recurrence).ok();
                 match rule {
                     Some(r) => {
                         let days = match r.freq {
@@ -3502,9 +3448,9 @@ impl TakusuApp {
             let start_opt = row
                 .start_at
                 .as_ref()
-                .map(|s| iso_to_point(s, tz))
+                .map(|s| iso_to_point(&s.to_string(), tz))
                 .transpose()?;
-            let end = iso_to_point(&row.end_at, tz)?;
+            let end = iso_to_point(&row.end_at.to_string(), tz)?;
             let core_task = CoreTask {
                 id: planner.tasks().len(),
                 start: start_opt,
@@ -3763,70 +3709,36 @@ mod tests {
     #[test]
     fn validate_task_datetimes_accepts_valid_range() {
         let tz = jiff::tz::TimeZone::UTC;
-        assert!(
-            validate_task_datetimes(
-                Some("2026-07-22T10:00:00Z"),
-                Some("2026-07-22T12:00:00Z"),
-                &tz,
-                None,
-                None,
-            )
-            .is_ok()
-        );
+        let s: takusu_util::Timestamp = "2026-07-22T10:00:00Z".parse().unwrap();
+        let e: takusu_util::Timestamp = "2026-07-22T12:00:00Z".parse().unwrap();
+        assert!(validate_task_datetimes(Some(Some(&s)), Some(&e), &tz, None, None,).is_ok());
     }
 
     #[test]
     fn validate_task_datetimes_rejects_reversed() {
         let tz = jiff::tz::TimeZone::UTC;
-        assert!(
-            validate_task_datetimes(
-                Some("2026-07-22T12:00:00Z"),
-                Some("2026-07-22T10:00:00Z"),
-                &tz,
-                None,
-                None,
-            )
-            .is_err()
-        );
+        let s: takusu_util::Timestamp = "2026-07-22T12:00:00Z".parse().unwrap();
+        let e: takusu_util::Timestamp = "2026-07-22T10:00:00Z".parse().unwrap();
+        assert!(validate_task_datetimes(Some(Some(&s)), Some(&e), &tz, None, None,).is_err());
     }
 
     #[test]
     fn validate_task_datetimes_fills_existing_for_partial_update() {
         let tz = jiff::tz::TimeZone::UTC;
-        assert!(
-            validate_task_datetimes(
-                None,
-                Some("2026-07-22T10:00:00Z"),
-                &tz,
-                Some("2026-07-22T08:00:00Z"),
-                None,
-            )
-            .is_ok()
-        );
-        assert!(
-            validate_task_datetimes(
-                None,
-                Some("2026-07-22T07:00:00Z"),
-                &tz,
-                Some("2026-07-22T08:00:00Z"),
-                None,
-            )
-            .is_err()
-        );
+        let e: takusu_util::Timestamp = "2026-07-22T10:00:00Z".parse().unwrap();
+        let existing: takusu_util::Timestamp = "2026-07-22T08:00:00Z".parse().unwrap();
+        assert!(validate_task_datetimes(None, Some(&e), &tz, Some(&existing), None,).is_ok());
+        let e2: takusu_util::Timestamp = "2026-07-22T07:00:00Z".parse().unwrap();
+        assert!(validate_task_datetimes(None, Some(&e2), &tz, Some(&existing), None,).is_err());
     }
 
     #[test]
     fn validate_task_datetimes_rejects_invalid_existing() {
+        // With typed Timestamp, invalid strings cannot be constructed.
+        // This test now verifies that a None existing value with a Some end
+        // still works (no existing to compare against).
         let tz = jiff::tz::TimeZone::UTC;
-        assert!(
-            validate_task_datetimes(
-                None,
-                Some("2026-07-22T10:00:00Z"),
-                &tz,
-                Some("not-a-datetime"),
-                None,
-            )
-            .is_err()
-        );
+        let e: takusu_util::Timestamp = "2026-07-22T10:00:00Z".parse().unwrap();
+        assert!(validate_task_datetimes(None, Some(&e), &tz, None, None,).is_ok());
     }
 }

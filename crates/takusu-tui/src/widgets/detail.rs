@@ -32,12 +32,12 @@ pub fn render_task_detail(frame: &mut Frame, area: Rect, task: &TaskRow, tz: &ji
     if let Some(ref start) = task.start_at {
         lines.push(Line::from(vec![
             Span::styled("Start: ", Style::default().fg(style::HEADER_FG)),
-            Span::raw(fmt_dt(start, tz)),
+            Span::raw(fmt_dt(&start.to_string(), tz)),
         ]));
     }
     lines.push(Line::from(vec![
         Span::styled("Deadline: ", Style::default().fg(style::HEADER_FG)),
-        Span::raw(fmt_dt(&task.end_at, tz)),
+        Span::raw(fmt_dt(&task.end_at.to_string(), tz)),
     ]));
     lines.push(Line::from(vec![
         Span::styled("Estimate: ", Style::default().fg(style::HEADER_FG)),

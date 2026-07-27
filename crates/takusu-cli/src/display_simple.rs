@@ -1,8 +1,7 @@
-use jiff::Timestamp;
 use takusu_storage::{
     HabitRow, HabitScheduledSpanRow, HabitStepRow, ScheduleEntry, SkillRow, TaskRow, TokenRow,
 };
-use takusu_util::TaskStatus;
+use takusu_util::{TaskStatus, Timestamp};
 
 use crate::task_ref::task_reference;
 
@@ -122,7 +121,7 @@ pub fn display_schedule(
     }
 
     let mut sorted = entries.to_vec();
-    sorted.sort_by(|a, b| a.start_at.cmp(&b.start_at));
+    sorted.sort_by_key(|e| e.start_at);
 
     let task_map: std::collections::HashMap<&str, &TaskRow> =
         tasks.iter().map(|t| (t.id.as_str(), t)).collect();
@@ -147,7 +146,7 @@ pub fn display_tokens(tokens: &[TokenRow]) {
         return;
     }
     for t in tokens {
-        let revoked = t.revoked_at.as_deref().map(|_| " [REVOKED]").unwrap_or("");
+        let revoked = t.revoked_at.as_ref().map(|_| " [REVOKED]").unwrap_or("");
         println!(
             "  #{} {:8}  {}{}",
             t.id,
@@ -158,29 +157,18 @@ pub fn display_tokens(tokens: &[TokenRow]) {
     }
 }
 
-fn fmt_simple(iso: &str, tz: &jiff::tz::TimeZone) -> String {
-    iso.parse::<Timestamp>()
-        .map(|ts| {
-            let zdt = ts.to_zoned(tz.clone());
-            zdt.strftime("%d %H:%M").to_string()
-        })
-        .unwrap_or_else(|_| iso.to_string())
+fn fmt_simple(ts: &Timestamp, tz: &jiff::tz::TimeZone) -> String {
+    let zdt = ts.to_zoned(tz.clone());
+    zdt.strftime("%d %H:%M").to_string()
 }
 
-fn fmt_duration(start_iso: &str, end_iso: &str) -> String {
-    let start: Result<Timestamp, _> = start_iso.parse();
-    let end: Result<Timestamp, _> = end_iso.parse();
-    match (start, end) {
-        (Ok(s), Ok(e)) => {
-            let secs = (e.as_second() - s.as_second()).unsigned_abs();
-            let mins = secs / 60;
-            if mins >= 60 {
-                format!("{}h{}m", mins / 60, mins % 60)
-            } else {
-                format!("{mins}m")
-            }
-        }
-        _ => "?".to_string(),
+fn fmt_duration(start: &Timestamp, end: &Timestamp) -> String {
+    let secs = (end.as_second() - start.as_second()).unsigned_abs();
+    let mins = secs / 60;
+    if mins >= 60 {
+        format!("{}h{}m", mins / 60, mins % 60)
+    } else {
+        format!("{mins}m")
     }
 }
 

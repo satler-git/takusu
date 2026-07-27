@@ -526,7 +526,7 @@ impl Tool for SkillsProposeEdit {
             before: Some(before),
             after: Some(after),
             arguments: Some(Value::Object(args)),
-            observed_updated_at: Some(existing.updated_at),
+            observed_updated_at: Some(existing.updated_at.to_string()),
         };
 
         Ok(ToolOutput {

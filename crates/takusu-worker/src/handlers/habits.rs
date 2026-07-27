@@ -69,8 +69,8 @@ pub async fn create(mut req: worker::Request, env: Env) -> Result<Response, Work
             .map(JsValue::from_str)
             .unwrap_or(JsValue::NULL),
         JsValue::from_str(&body.recurrence),
-        JsValue::from_str(&body.start_time),
-        JsValue::from_str(&body.end_time),
+        JsValue::from_str(&body.start_time.to_string()),
+        JsValue::from_str(&body.end_time.to_string()),
         JsValue::from_f64(body.avg_minutes as f64),
         JsValue::from_f64(sigma as f64),
         JsValue::from_bool(parallelizable),
@@ -125,12 +125,10 @@ pub async fn update(mut req: worker::Request, env: Env, id: &str) -> Result<Resp
             .map(JsValue::from_str)
             .unwrap_or(JsValue::NULL),
         body.start_time
-            .as_deref()
-            .map(JsValue::from_str)
+            .map(|t| JsValue::from_str(&t.to_string()))
             .unwrap_or(JsValue::NULL),
         body.end_time
-            .as_deref()
-            .map(JsValue::from_str)
+            .map(|t| JsValue::from_str(&t.to_string()))
             .unwrap_or(JsValue::NULL),
         body.avg_minutes
             .map(|n| JsValue::from_f64(n as f64))
@@ -192,8 +190,8 @@ pub async fn replace(
             .map(JsValue::from_str)
             .unwrap_or(JsValue::NULL),
         JsValue::from_str(&body.recurrence),
-        JsValue::from_str(&body.start_time),
-        JsValue::from_str(&body.end_time),
+        JsValue::from_str(&body.start_time.to_string()),
+        JsValue::from_str(&body.end_time.to_string()),
         JsValue::from_f64(body.avg_minutes as f64),
         JsValue::from_f64(sigma as f64),
         JsValue::from_bool(parallelizable),
@@ -350,7 +348,7 @@ pub async fn create_scheduled_span(
     id: &str,
 ) -> Result<Response, WorkerError> {
     let body: CreateHabitScheduledSpan = parse_json(&mut req).await?;
-    validate_scheduled_span_dates(&body.start_date, &body.end_date)?;
+    validate_scheduled_span_dates(&body.start_date.to_string(), &body.end_date.to_string())?;
     let database = db(&env)?;
     let full = resolve_habit_id(&database, id).await?;
     let span_id = uuid::Uuid::now_v7().to_string();
@@ -360,8 +358,8 @@ pub async fn create_scheduled_span(
     stmt.bind(&[
         JsValue::from_str(&span_id),
         JsValue::from_str(&full),
-        JsValue::from_str(&body.start_date),
-        JsValue::from_str(&body.end_date),
+        JsValue::from_str(&body.start_date.to_string()),
+        JsValue::from_str(&body.end_date.to_string()),
         body.reason
             .as_deref()
             .map(JsValue::from_str)
@@ -501,8 +499,8 @@ pub async fn replace_steps(
                         .as_deref()
                         .map(JsValue::from_str)
                         .unwrap_or(JsValue::NULL),
-                    JsValue::from_str(&s.start_time),
-                    JsValue::from_str(&s.end_time),
+                    JsValue::from_str(&s.start_time.to_string()),
+                    JsValue::from_str(&s.end_time.to_string()),
                     JsValue::from_f64(s.avg_minutes as f64),
                     JsValue::from_f64(sigma as f64),
                     JsValue::from_bool(parallelizable),
@@ -528,8 +526,8 @@ pub async fn replace_steps(
                         .as_deref()
                         .map(JsValue::from_str)
                         .unwrap_or(JsValue::NULL),
-                    JsValue::from_str(&s.start_time),
-                    JsValue::from_str(&s.end_time),
+                    JsValue::from_str(&s.start_time.to_string()),
+                    JsValue::from_str(&s.end_time.to_string()),
                     JsValue::from_f64(s.avg_minutes as f64),
                     JsValue::from_f64(sigma as f64),
                     JsValue::from_bool(parallelizable),

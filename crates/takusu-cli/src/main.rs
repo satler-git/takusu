@@ -35,8 +35,8 @@ use takusu_storage::{
     UpdateMemory, UpdateSettings,
 };
 use takusu_util::{
-    Abandonability, MemoryKind, Quantity, SubjectType, TaskStatus, WindowMode, parse_datetime_tz,
-    parse_duration,
+    Abandonability, Date, MemoryKind, Quantity, SubjectType, TaskStatus, TimeOfDay, Timestamp,
+    WindowMode, parse_datetime_to_timestamp, parse_duration,
 };
 
 fn prompt(label: &str) -> Result<String, AppError> {
@@ -55,8 +55,20 @@ fn is_interactive() -> bool {
     atty::is(atty::Stream::Stdin) && atty::is(atty::Stream::Stdout)
 }
 
-fn parse_dt(s: &str, tz: &jiff::tz::TimeZone) -> Result<String, AppError> {
-    parse_datetime_tz(s, tz).map_err(AppError::BadRequest)
+fn parse_dt(s: &str, tz: &jiff::tz::TimeZone) -> Result<Timestamp, AppError> {
+    parse_datetime_to_timestamp(s, tz)
+        .map(Timestamp::from)
+        .map_err(AppError::BadRequest)
+}
+
+fn parse_time(s: &str) -> Result<TimeOfDay, AppError> {
+    s.parse::<TimeOfDay>()
+        .map_err(|e| AppError::BadRequest(format!("invalid time '{s}': {e}")))
+}
+
+fn parse_date(s: &str) -> Result<Date, AppError> {
+    s.parse::<Date>()
+        .map_err(|e| AppError::BadRequest(format!("invalid date '{s}': {e}")))
 }
 
 #[derive(Parser)]
@@ -304,7 +316,7 @@ enum ConfigCommands {
         maximum: Option<f64>,
         /// Solver to use: sa, priority, or auto
         #[arg(long)]
-        solver: Option<String>,
+        solver: Option<takusu_util::Solver>,
         /// Time budget for solving in milliseconds
         #[arg(long)]
         time_budget_ms: Option<i64>,
@@ -1248,8 +1260,12 @@ async fn run_task(
             };
             let query = TaskQuery {
                 status,
-                from: from.map(|s| parse_dt(&s, tz)).transpose()?,
-                until: until.map(|s| parse_dt(&s, tz)).transpose()?,
+                from: from
+                    .map(|s| parse_dt(&s, tz).map(|t| t.to_string()))
+                    .transpose()?,
+                until: until
+                    .map(|s| parse_dt(&s, tz).map(|t| t.to_string()))
+                    .transpose()?,
                 no_overdue: Some(no_overdue).filter(|x| *x),
                 habit_id,
                 ical_uid,
@@ -1352,10 +1368,10 @@ async fn run_task(
         TaskCommands::Edit { id } => {
             let task = app.get_task(&id).await?;
             let all_tasks = app.list_tasks(&Default::default()).await?;
-            let original = editor::format_task_for_editing(&task, &all_tasks, &habit_map);
+            let original = editor::format_task_for_editing(&task, &all_tasks, &habit_map, tz);
             let edited = editor::open_editor(&original, &task.id)
                 .map_err(|e| AppError::BadRequest(e.to_string()))?;
-            let update = editor::parse_edited_task(&edited).map_err(AppError::BadRequest)?;
+            let update = editor::parse_edited_task(&edited, tz).map_err(AppError::BadRequest)?;
             let updated = app.update_task(&id, &update).await?;
             match mode {
                 DisplayMode::Rich => display_rich::display_tasks(&[updated], tz, &habit_map),
@@ -1413,7 +1429,7 @@ async fn run_task(
             let body = takusu_storage::UpdateTask {
                 title,
                 description,
-                start_at: start_at.map(|s| parse_dt(&s, tz)).transpose()?,
+                start_at: start_at.map(|s| parse_dt(&s, tz)).transpose()?.map(Some),
                 end_at: end_at.map(|s| parse_dt(&s, tz)).transpose()?,
                 avg_minutes,
                 sigma_minutes,
@@ -1733,8 +1749,8 @@ async fn run_habit(mode: DisplayMode, app: &TakusuApp, cmd: HabitCommands) -> Re
             let body = CreateHabit {
                 title: title.unwrap_or_default(),
                 recurrence: recurrence.unwrap_or_default(),
-                start_time: start_time.unwrap_or_default(),
-                end_time: end_time.unwrap_or_default(),
+                start_time: parse_time(&start_time.unwrap_or_default())?,
+                end_time: parse_time(&end_time.unwrap_or_default())?,
                 avg_minutes,
                 sigma_minutes: if sigma_minutes > 0 {
                     Some(sigma_minutes)
@@ -1804,8 +1820,8 @@ async fn run_habit(mode: DisplayMode, app: &TakusuApp, cmd: HabitCommands) -> Re
                 title,
                 description,
                 recurrence,
-                start_time,
-                end_time,
+                start_time: start_time.map(|s| parse_time(&s)).transpose()?,
+                end_time: end_time.map(|s| parse_time(&s)).transpose()?,
                 avg_minutes,
                 sigma_minutes,
                 parallelizable,
@@ -1847,8 +1863,8 @@ async fn run_habit(mode: DisplayMode, app: &TakusuApp, cmd: HabitCommands) -> Re
             let body = CreateHabit {
                 title,
                 recurrence,
-                start_time,
-                end_time,
+                start_time: parse_time(&start_time)?,
+                end_time: parse_time(&end_time)?,
                 avg_minutes,
                 sigma_minutes: if sigma_minutes > 0 {
                     Some(sigma_minutes)
@@ -2153,8 +2169,8 @@ async fn run_scheduled_spans(
             reason,
         } => {
             let body = CreateHabitScheduledSpan {
-                start_date: from,
-                end_date: to,
+                start_date: parse_date(&from)?,
+                end_date: parse_date(&to)?,
                 reason,
             };
             let span = app.create_habit_scheduled_span(&id, &body).await?;
@@ -2255,8 +2271,12 @@ async fn run_schedule(
         } => {
             let body = takusu_local_lib::app::RescheduleInput {
                 mode: rmode,
-                from: from.map(|s| parse_dt(&s, tz)).transpose()?,
-                until: until.map(|s| parse_dt(&s, tz)).transpose()?,
+                from: from
+                    .map(|s| parse_dt(&s, tz).map(|t| t.to_string()))
+                    .transpose()?,
+                until: until
+                    .map(|s| parse_dt(&s, tz).map(|t| t.to_string()))
+                    .transpose()?,
                 task_ids,
                 pinned: pinned.unwrap_or_default(),
                 sleep,
@@ -2283,7 +2303,7 @@ async fn run_schedule(
             force,
         } => {
             let result = app
-                .move_entry(&task_id, &parse_dt(&start_at, tz)?, force)
+                .move_entry(&task_id, &parse_dt(&start_at, tz)?.to_string(), force)
                 .await?;
             println!("{}", serde_json::to_string_pretty(&result).unwrap());
         }
@@ -2673,8 +2693,8 @@ async fn run_config(cmd: ConfigCommands, app: &TakusuApp, cfg: &CliConfig) -> Re
         } => {
             let mut update = UpdateSettings {
                 tz,
-                sleep_start,
-                sleep_end,
+                sleep_start: sleep_start.map(|s| parse_time(&s)).transpose()?,
+                sleep_end: sleep_end.map(|s| parse_time(&s)).transpose()?,
                 comfortable_minutes: comfortable.map(|h| (h * 60.0).round() as i64),
                 maximum_minutes: maximum.map(|h| (h * 60.0).round() as i64),
                 solver,
@@ -2686,10 +2706,10 @@ async fn run_config(cmd: ConfigCommands, app: &TakusuApp, cfg: &CliConfig) -> Re
                 update.tz = cfg.tz.clone();
             }
             if update.sleep_start.is_none() && cfg.sleep_start.is_some() {
-                update.sleep_start = cfg.sleep_start.clone();
+                update.sleep_start = Some(parse_time(cfg.sleep_start.as_deref().unwrap())?);
             }
             if update.sleep_end.is_none() && cfg.sleep_end.is_some() {
-                update.sleep_end = cfg.sleep_end.clone();
+                update.sleep_end = Some(parse_time(cfg.sleep_end.as_deref().unwrap())?);
             }
             let resp = app.update_settings(&update).await?;
             let comfortable_h = resp.comfortable_minutes.unwrap_or(0) as f64 / 60.0;
@@ -2856,8 +2876,8 @@ async fn remove_step_dep(
                 position: s.position,
                 title: s.title.clone(),
                 description: s.description.clone(),
-                start_time: s.start_time.clone(),
-                end_time: s.end_time.clone(),
+                start_time: s.start_time,
+                end_time: s.end_time,
                 avg_minutes: s.avg_minutes,
                 sigma_minutes: if s.sigma_minutes > 0 {
                     Some(s.sigma_minutes)

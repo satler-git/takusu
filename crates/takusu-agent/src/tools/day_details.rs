@@ -12,9 +12,8 @@ use async_trait::async_trait;
 use jiff::ToSpan;
 use serde_json::{Value, json};
 use takusu_client::{Client, ScheduleEntry, TaskQuery, TaskRow};
-use takusu_util::{parse_date_expression, parse_datetime_to_timestamp};
+use takusu_util::parse_date_expression;
 
-use crate::tools::other_error;
 use crate::tools::takusu::TimeZoneCache;
 use crate::tools::takusu::client_error;
 use crate::{InvalidArgsError, Tool, ToolError, ToolOutput, ToolRegistry};
@@ -152,8 +151,8 @@ fn schedule_for_date(
 
     let mut items = Vec::new();
     for entry in entries {
-        let start = parse_datetime_to_timestamp(&entry.start_at, tz).map_err(other_error)?;
-        let end = parse_datetime_to_timestamp(&entry.end_at, tz).map_err(other_error)?;
+        let start = entry.start_at.to_jiff();
+        let end = entry.end_at.to_jiff();
 
         // Overlap: entry starts before the next day and ends after today starts.
         if start >= day_end_excl || end <= day_start {
@@ -263,18 +262,18 @@ mod tests {
         let entries = vec![
             ScheduleEntry {
                 task_id: "t1".into(),
-                start_at: "2026-07-27T09:00:00Z".into(),
-                end_at: "2026-07-27T10:00:00Z".into(),
+                start_at: "2026-07-27T09:00:00Z".parse().unwrap(),
+                end_at: "2026-07-27T10:00:00Z".parse().unwrap(),
             },
             ScheduleEntry {
                 task_id: "t2".into(),
-                start_at: "2026-07-26T23:00:00Z".into(),
-                end_at: "2026-07-27T01:00:00Z".into(),
+                start_at: "2026-07-26T23:00:00Z".parse().unwrap(),
+                end_at: "2026-07-27T01:00:00Z".parse().unwrap(),
             },
             ScheduleEntry {
                 task_id: "t3".into(),
-                start_at: "2026-07-28T09:00:00Z".into(),
-                end_at: "2026-07-28T10:00:00Z".into(),
+                start_at: "2026-07-28T09:00:00Z".parse().unwrap(),
+                end_at: "2026-07-28T10:00:00Z".parse().unwrap(),
             },
         ];
         let tasks = HashMap::new();
@@ -294,13 +293,13 @@ mod tests {
         let entries = vec![
             ScheduleEntry {
                 task_id: "later".into(),
-                start_at: "2026-07-27T14:00:00Z".into(),
-                end_at: "2026-07-27T15:00:00Z".into(),
+                start_at: "2026-07-27T14:00:00Z".parse().unwrap(),
+                end_at: "2026-07-27T15:00:00Z".parse().unwrap(),
             },
             ScheduleEntry {
                 task_id: "early".into(),
-                start_at: "2026-07-27T08:00:00Z".into(),
-                end_at: "2026-07-27T09:00:00Z".into(),
+                start_at: "2026-07-27T08:00:00Z".parse().unwrap(),
+                end_at: "2026-07-27T09:00:00Z".parse().unwrap(),
             },
         ];
         let tasks = HashMap::new();

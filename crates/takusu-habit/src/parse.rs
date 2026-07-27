@@ -164,7 +164,7 @@ fn parse_zoned(value: &str, params: &Params, default_tz: &TimeZone) -> Result<Zo
     } else {
         let (date, hour, minute, _second) = parse_ymd_hms(value)?;
         let tod = TimeOfDay::new(hour, minute).ok_or(Error::InvalidTimeOfDay { hour, minute })?;
-        tz.to_zoned(date.at(tod.hour(), tod.minute(), 0, 0))
+        tz.to_zoned(date.at(tod.hour() as i8, tod.minute() as i8, 0, 0))
             .map_err(|e| Error::InvalidRule(e.to_string()))
     }
 }
@@ -200,7 +200,7 @@ fn parse_until(value: &str, tz: &TimeZone) -> Result<Until, Error> {
     let (date, hour, minute, _second) = parse_ymd_hms(v)?;
     let tod = TimeOfDay::new(hour, minute).ok_or(Error::InvalidTimeOfDay { hour, minute })?;
     let z = tz_for_value
-        .to_zoned(date.at(tod.hour(), tod.minute(), 0, 0))
+        .to_zoned(date.at(tod.hour() as i8, tod.minute() as i8, 0, 0))
         .map_err(|e| Error::InvalidRule(e.to_string()))?;
 
     // Convert the UNTIL instant to the recurrence timezone so comparisons are

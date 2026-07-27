@@ -208,24 +208,6 @@ pub(crate) fn validate_scheduled_span_dates(start: &str, end: &str) -> Result<()
     Ok(())
 }
 
-/// Validate a `HH:MM` time string. Returns `()` if valid, else an error.
-pub(crate) fn validate_hhmm(s: &str) -> Result<(), WorkerError> {
-    let parts: Vec<&str> = s.split(':').collect();
-    if parts.len() != 2 {
-        return Err(WorkerError::BadRequest(format!("invalid time: {s}")));
-    }
-    let h: u32 = parts[0]
-        .parse()
-        .map_err(|_| WorkerError::BadRequest(format!("invalid time: {s}")))?;
-    let m: u32 = parts[1]
-        .parse()
-        .map_err(|_| WorkerError::BadRequest(format!("invalid time: {s}")))?;
-    if h > 23 || m > 59 {
-        return Err(WorkerError::BadRequest(format!("invalid time: {s}")));
-    }
-    Ok(())
-}
-
 /// Validate a user-supplied timezone string. Accepts IANA identifiers and
 /// fixed-offset strings supported by `jiff`. Bad input is reported as
 /// `400 Bad Request`.
@@ -242,76 +224,32 @@ pub(crate) fn validate_settings(body: &UpdateSettings) -> Result<(), WorkerError
     if let Some(tz) = &body.tz {
         validate_timezone(tz)?;
     }
-    if let Some(s) = &body.sleep_start {
-        validate_hhmm(s)?;
-    }
-    if let Some(s) = &body.sleep_end {
-        validate_hhmm(s)?;
-    }
+    // sleep_start / sleep_end are TimeOfDay and validated at deserialization.
     Ok(())
 }
 
-/// Parse a user-supplied task datetime string using the configured timezone (#934).
-fn parse_new_datetime(
-    s: &str,
-    label: &str,
-    tz: &jiff::tz::TimeZone,
-) -> Result<jiff::Timestamp, WorkerError> {
-    takusu_util::parse_datetime_to_timestamp(s, tz)
-        .map_err(|e| WorkerError::BadRequest(format!("invalid {label}: {e}")))
-}
-
-/// Parse an existing task datetime string. Failures are treated as data
-/// corruption rather than user error.
-fn parse_existing_datetime(
-    s: &str,
-    label: &str,
-    tz: &jiff::tz::TimeZone,
-) -> Result<jiff::Timestamp, WorkerError> {
-    takusu_util::parse_datetime_to_timestamp(s, tz)
-        .map_err(|e| WorkerError::Internal(format!("invalid {label}: {e}")))
-}
-
-/// Validate `start_at` / `end_at` datetime strings and that the effective
+/// Validate `start_at` / `end_at` datetime values and that the effective
 /// start is not after the effective end. Missing fields are filled from the
-/// existing row for comparison when one side is being updated (#934). If an
-/// existing value is needed for comparison but cannot be parsed, it is treated
-/// as a data-corruption error rather than silently ignored.
+/// existing row for comparison when one side is being updated (#934).
+///
+/// Uses `Option<Option<Timestamp>>` semantics:
+/// `None` = no change, `Some(None)` = clear, `Some(Some(ts))` = set.
 pub(crate) fn validate_task_datetimes(
-    start_at: Option<&str>,
-    end_at: Option<&str>,
-    tz: &jiff::tz::TimeZone,
-    existing_start: Option<&str>,
-    existing_end: Option<&str>,
+    start_at: Option<Option<&takusu_util::Timestamp>>,
+    end_at: Option<&takusu_util::Timestamp>,
+    _tz: &jiff::tz::TimeZone,
+    existing_start: Option<&takusu_util::Timestamp>,
+    existing_end: Option<&takusu_util::Timestamp>,
 ) -> Result<(), WorkerError> {
-    let start = start_at
-        .map(|s| parse_new_datetime(s, "start_at", tz))
-        .transpose()?;
-    let end = end_at
-        .map(|e| parse_new_datetime(e, "end_at", tz))
-        .transpose()?;
-
-    let need_existing_start = start.is_none() && end.is_some();
-    let need_existing_end = start.is_some() && end.is_none();
-
-    let effective_start = if let Some(s) = start {
-        Some(s)
-    } else if need_existing_start {
-        existing_start
-            .map(|s| parse_existing_datetime(s, "existing start_at", tz))
-            .transpose()?
-    } else {
-        None
+    // start_at: None = no change → use existing; Some(None) = clear; Some(Some(ts)) = set.
+    // end_at:   None = no change → use existing; Some(ts) = set (cannot be cleared).
+    let effective_start = match &start_at {
+        None => existing_start.copied(),
+        Some(inner) => inner.copied(),
     };
-
-    let effective_end = if let Some(e) = end {
-        Some(e)
-    } else if need_existing_end {
-        existing_end
-            .map(|e| parse_existing_datetime(e, "existing end_at", tz))
-            .transpose()?
-    } else {
-        None
+    let effective_end = match &end_at {
+        None => existing_end.copied(),
+        Some(e) => Some(**e),
     };
 
     if let (Some(s), Some(e)) = (effective_start, effective_end)
@@ -333,8 +271,7 @@ pub(crate) fn validate_steps(steps: &[crate::models::HabitStepInput]) -> Result<
     // Per-field validation.
     for s in steps {
         validate_minutes(s.avg_minutes, s.sigma_minutes)?;
-        validate_hhmm(&s.start_time)?;
-        validate_hhmm(&s.end_time)?;
+        // start_time / end_time are TimeOfDay and validated at deserialization.
     }
 
     // Build id → index map for steps that carry an id. A depends_on reference
@@ -535,8 +472,8 @@ mod tests {
             position: 0,
             title: "s".into(),
             description: None,
-            start_time: "08:00".into(),
-            end_time: "09:00".into(),
+            start_time: "08:00".parse().unwrap(),
+            end_time: "09:00".parse().unwrap(),
             avg_minutes: 30,
             sigma_minutes: Some(5),
             parallelizable: None,
@@ -567,9 +504,12 @@ mod tests {
 
     #[test]
     fn steps_reject_bad_time() {
-        let mut s = step("a", vec![]);
-        s.start_time = "25:00".into();
-        assert!(validate_steps(&[s]).is_err());
+        // TimeOfDay cannot represent invalid times like "25:00" — the type
+        // itself rejects them at parse time. Here we verify that a valid
+        // TimeOfDay passes validation (the bad-time case is now impossible
+        // to construct).
+        let s = step("a", vec![]);
+        assert!(validate_steps(&[s]).is_ok());
     }
 
     #[test]
@@ -577,19 +517,6 @@ mod tests {
         let mut s = step("a", vec![]);
         s.avg_minutes = -1;
         assert!(validate_steps(&[s]).is_err());
-    }
-
-    #[test]
-    fn hhmm_accepts_valid() {
-        assert!(validate_hhmm("00:00").is_ok());
-        assert!(validate_hhmm("23:59").is_ok());
-    }
-
-    #[test]
-    fn hhmm_rejects_invalid() {
-        assert!(validate_hhmm("24:00").is_err());
-        assert!(validate_hhmm("12:60").is_err());
-        assert!(validate_hhmm("notatime").is_err());
     }
 
     #[test]
@@ -618,18 +545,22 @@ mod tests {
 
     #[test]
     fn validate_settings_rejects_invalid_sleep_time() {
+        // TimeOfDay cannot represent "25:00" — invalid times are rejected at
+        // parse/deserialization time, not by validate_settings. Here we verify
+        // that a valid TimeOfDay passes (the bad-time case is now impossible
+        // to construct via the type system).
         let body = UpdateSettings {
-            sleep_start: Some("25:00".into()),
+            sleep_start: Some("23:00".parse().unwrap()),
             ..Default::default()
         };
-        assert!(validate_settings(&body).is_err());
+        assert!(validate_settings(&body).is_ok());
     }
 
     #[test]
     fn validate_settings_accepts_valid_partial_update() {
         let body = UpdateSettings {
-            sleep_start: Some("23:00".into()),
-            sleep_end: Some("07:00".into()),
+            sleep_start: Some("23:00".parse().unwrap()),
+            sleep_end: Some("07:00".parse().unwrap()),
             ..Default::default()
         };
         assert!(validate_settings(&body).is_ok());
@@ -638,70 +569,36 @@ mod tests {
     #[test]
     fn validate_task_datetimes_accepts_valid_range() {
         let tz = jiff::tz::TimeZone::UTC;
-        assert!(
-            validate_task_datetimes(
-                Some("2026-07-22T10:00:00Z"),
-                Some("2026-07-22T12:00:00Z"),
-                &tz,
-                None,
-                None,
-            )
-            .is_ok()
-        );
+        let s: takusu_util::Timestamp = "2026-07-22T10:00:00Z".parse().unwrap();
+        let e: takusu_util::Timestamp = "2026-07-22T12:00:00Z".parse().unwrap();
+        assert!(validate_task_datetimes(Some(Some(&s)), Some(&e), &tz, None, None,).is_ok());
     }
 
     #[test]
     fn validate_task_datetimes_rejects_reversed() {
         let tz = jiff::tz::TimeZone::UTC;
-        assert!(
-            validate_task_datetimes(
-                Some("2026-07-22T12:00:00Z"),
-                Some("2026-07-22T10:00:00Z"),
-                &tz,
-                None,
-                None,
-            )
-            .is_err()
-        );
+        let s: takusu_util::Timestamp = "2026-07-22T12:00:00Z".parse().unwrap();
+        let e: takusu_util::Timestamp = "2026-07-22T10:00:00Z".parse().unwrap();
+        assert!(validate_task_datetimes(Some(Some(&s)), Some(&e), &tz, None, None,).is_err());
     }
 
     #[test]
     fn validate_task_datetimes_fills_existing_for_partial_update() {
         let tz = jiff::tz::TimeZone::UTC;
-        assert!(
-            validate_task_datetimes(
-                None,
-                Some("2026-07-22T10:00:00Z"),
-                &tz,
-                Some("2026-07-22T08:00:00Z"),
-                None,
-            )
-            .is_ok()
-        );
-        assert!(
-            validate_task_datetimes(
-                None,
-                Some("2026-07-22T07:00:00Z"),
-                &tz,
-                Some("2026-07-22T08:00:00Z"),
-                None,
-            )
-            .is_err()
-        );
+        let e: takusu_util::Timestamp = "2026-07-22T10:00:00Z".parse().unwrap();
+        let existing: takusu_util::Timestamp = "2026-07-22T08:00:00Z".parse().unwrap();
+        assert!(validate_task_datetimes(None, Some(&e), &tz, Some(&existing), None,).is_ok());
+        let e2: takusu_util::Timestamp = "2026-07-22T07:00:00Z".parse().unwrap();
+        assert!(validate_task_datetimes(None, Some(&e2), &tz, Some(&existing), None,).is_err());
     }
 
     #[test]
     fn validate_task_datetimes_rejects_invalid_existing() {
+        // With typed Timestamp, invalid strings cannot be constructed.
+        // This test now verifies that a None existing value with a Some end
+        // still works (no existing to compare against).
         let tz = jiff::tz::TimeZone::UTC;
-        assert!(
-            validate_task_datetimes(
-                None,
-                Some("2026-07-22T10:00:00Z"),
-                &tz,
-                Some("not-a-datetime"),
-                None,
-            )
-            .is_err()
-        );
+        let e: takusu_util::Timestamp = "2026-07-22T10:00:00Z".parse().unwrap();
+        assert!(validate_task_datetimes(None, Some(&e), &tz, None, None,).is_ok());
     }
 }

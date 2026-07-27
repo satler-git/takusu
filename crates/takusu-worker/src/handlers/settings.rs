@@ -22,11 +22,12 @@ pub async fn update(mut req: worker::Request, env: Env) -> Result<Response, Work
     let database = db(&env)?;
     let existing = get_inner(&database).await?;
     let tz = body.tz.clone().unwrap_or(existing.tz);
-    let sleep_start = body.sleep_start.clone().unwrap_or(existing.sleep_start);
-    let sleep_end = body.sleep_end.clone().unwrap_or(existing.sleep_end);
+    let sleep_start = body.sleep_start.unwrap_or(existing.sleep_start);
+    let sleep_end = body.sleep_end.unwrap_or(existing.sleep_end);
     let comfortable_minutes = body.comfortable_minutes.or(existing.comfortable_minutes);
     let maximum_minutes = body.maximum_minutes.or(existing.maximum_minutes);
-    let solver = body.solver.clone().unwrap_or(existing.solver);
+    let solver = body.solver.unwrap_or(existing.solver);
+    let solver = solver.to_string();
     let time_budget_ms = body
         .time_budget_ms
         .filter(|&v| v > 0)
@@ -38,8 +39,8 @@ pub async fn update(mut req: worker::Request, env: Env) -> Result<Response, Work
     );
     stmt.bind(&[
         JsValue::from_str(&tz),
-        JsValue::from_str(&sleep_start),
-        JsValue::from_str(&sleep_end),
+        JsValue::from_str(&sleep_start.to_string()),
+        JsValue::from_str(&sleep_end.to_string()),
         comfortable_minutes
             .map(|v| JsValue::from_f64(v as f64))
             .unwrap_or(JsValue::NULL),

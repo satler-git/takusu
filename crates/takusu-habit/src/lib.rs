@@ -159,16 +159,16 @@ mod tests {
     #[test]
     fn time_of_day_new_valid() {
         let t = TimeOfDay::new(9, 30).unwrap();
-        assert_eq!(t.hour, 9);
-        assert_eq!(t.minute, 30);
+        assert_eq!(t.hour(), 9);
+        assert_eq!(t.minute(), 30);
     }
 
     #[test]
     fn time_of_day_snaps_to_5min() {
         let t = TimeOfDay::new(9, 33).unwrap();
-        assert_eq!(t.minute, 30);
+        assert_eq!(t.minute(), 30);
         let t2 = TimeOfDay::new(9, 37).unwrap();
-        assert_eq!(t2.minute, 35);
+        assert_eq!(t2.minute(), 35);
     }
 
     #[test]

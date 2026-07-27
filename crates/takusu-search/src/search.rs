@@ -11,15 +11,15 @@ pub trait Task {
     fn display_id(&self) -> i64;
     fn title(&self) -> &str;
     fn description(&self) -> Option<&str>;
-    fn status(&self) -> &str;
-    fn start_at(&self) -> Option<&str>;
-    fn end_at(&self) -> &str;
+    fn status(&self) -> String;
+    fn start_at(&self) -> Option<String>;
+    fn end_at(&self) -> String;
     fn depends(&self) -> &str;
     fn habit_id(&self) -> Option<&str>;
     fn fixed(&self) -> bool;
     fn parallelizable(&self) -> bool;
     fn allows_parallel(&self) -> bool;
-    fn completed_at(&self) -> Option<&str>;
+    fn completed_at(&self) -> Option<String>;
 
     fn scheduled_start<'c>(&self, ctx: &'c EvalContext) -> Option<&'c str> {
         ctx.schedule.get(self.id()).map(|(s, _)| s.as_str())
@@ -53,14 +53,14 @@ macro_rules! impl_search_task {
             fn description(&self) -> Option<&str> {
                 self.description.as_deref()
             }
-            fn status(&self) -> &str {
-                self.status.as_str()
+            fn status(&self) -> String {
+                self.status.to_string()
             }
-            fn start_at(&self) -> Option<&str> {
-                self.start_at.as_deref()
+            fn start_at(&self) -> Option<String> {
+                self.start_at.map(|t| t.to_string())
             }
-            fn end_at(&self) -> &str {
-                &self.end_at
+            fn end_at(&self) -> String {
+                self.end_at.to_string()
             }
             fn depends(&self) -> &str {
                 &self.depends
@@ -77,8 +77,8 @@ macro_rules! impl_search_task {
             fn allows_parallel(&self) -> bool {
                 self.allows_parallel
             }
-            fn completed_at(&self) -> Option<&str> {
-                self.completed_at.as_deref()
+            fn completed_at(&self) -> Option<String> {
+                self.completed_at.map(|t| t.to_string())
             }
         }
     };
@@ -526,7 +526,7 @@ fn eval_qualifier<T: Task>(key: &str, value: &str, task: &T, ctx: &EvalContext) 
             if v == "overdue" {
                 task.status() != "completed"
                     && task.status() != "skipped"
-                    && timestamp_lt(task.end_at(), &ctx.now)
+                    && timestamp_lt(&task.end_at(), &ctx.now)
             } else {
                 task.status() == v
             }
@@ -536,13 +536,18 @@ fn eval_qualifier<T: Task>(key: &str, value: &str, task: &T, ctx: &EvalContext) 
             .description()
             .map(|d| d.to_lowercase().contains(&vl))
             .unwrap_or(false),
-        "from" => eval_date(task.end_at(), v, ctx, ">="),
+        "from" => eval_date(&task.end_at(), v, ctx, ">="),
         "until" => task
             .start_at()
-            .map(|s| eval_date(s, v, ctx, "<="))
+            .map(|s| eval_date(&s, v, ctx, "<="))
             .unwrap_or(true),
-        "start" => eval_date(task.start_at().unwrap_or(""), v, ctx, default_op_for(key)),
-        "end" => eval_date(task.end_at(), v, ctx, default_op_for(key)),
+        "start" => eval_date(
+            &task.start_at().unwrap_or_default(),
+            v,
+            ctx,
+            default_op_for(key),
+        ),
+        "end" => eval_date(&task.end_at(), v, ctx, default_op_for(key)),
         "scheduled-start" => eval_date(
             task.scheduled_start(ctx).unwrap_or(""),
             v,
@@ -587,7 +592,7 @@ fn eval_qualifier<T: Task>(key: &str, value: &str, task: &T, ctx: &EvalContext) 
             "overdue" => {
                 task.status() != "completed"
                     && task.status() != "skipped"
-                    && timestamp_lt(task.end_at(), &ctx.now)
+                    && timestamp_lt(&task.end_at(), &ctx.now)
             }
             "fixed" => task.fixed(),
             "parallelizable" => task.parallelizable(),
@@ -963,14 +968,14 @@ mod tests {
         fn description(&self) -> Option<&str> {
             self.description.as_deref()
         }
-        fn status(&self) -> &str {
-            &self.status
+        fn status(&self) -> String {
+            self.status.clone()
         }
-        fn start_at(&self) -> Option<&str> {
-            self.start_at.as_deref()
+        fn start_at(&self) -> Option<String> {
+            self.start_at.clone()
         }
-        fn end_at(&self) -> &str {
-            &self.end_at
+        fn end_at(&self) -> String {
+            self.end_at.clone()
         }
         fn depends(&self) -> &str {
             &self.depends
@@ -987,8 +992,8 @@ mod tests {
         fn allows_parallel(&self) -> bool {
             self.allows_parallel
         }
-        fn completed_at(&self) -> Option<&str> {
-            self.completed_at.as_deref()
+        fn completed_at(&self) -> Option<String> {
+            self.completed_at.clone()
         }
     }
 

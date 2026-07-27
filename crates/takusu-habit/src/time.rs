@@ -4,38 +4,11 @@ use jiff::tz::TimeZone;
 use takusu_core::Point;
 
 pub use takusu_core::SLOT_MINUTES;
+pub use takusu_util::TimeOfDay;
 #[allow(dead_code)]
 pub const SLOTS_PER_HOUR: i64 = 12;
 #[allow(dead_code)]
 pub const SLOTS_PER_DAY: i64 = 288;
-
-#[derive(Debug, Clone, Copy)]
-pub struct TimeOfDay {
-    pub hour: u8,
-    pub minute: u8,
-}
-
-impl TimeOfDay {
-    pub fn new(hour: u8, minute: u8) -> Option<Self> {
-        if hour > 23 || minute > 59 {
-            return None;
-        }
-        // snap minute to 5-min slots
-        let snapped = (minute as i64 / SLOT_MINUTES * SLOT_MINUTES) as u8;
-        Some(Self {
-            hour,
-            minute: snapped,
-        })
-    }
-
-    pub fn hour(self) -> i8 {
-        self.hour as i8
-    }
-
-    pub fn minute(self) -> i8 {
-        self.minute as i8
-    }
-}
 
 pub fn point_to_date(point: Point, tz: &TimeZone) -> Option<Date> {
     let seconds = point.0.checked_mul(SLOT_MINUTES)?.checked_mul(60)?;
@@ -44,7 +17,7 @@ pub fn point_to_date(point: Point, tz: &TimeZone) -> Option<Date> {
 }
 
 pub fn date_time_to_point(date: Date, time: &TimeOfDay, tz: &TimeZone) -> Option<Point> {
-    let dt = date.at(time.hour(), time.minute(), 0, 0);
+    let dt = date.at(time.hour() as i8, time.minute() as i8, 0, 0);
     let ts = tz.to_timestamp(dt).ok()?;
     Some(Point::from_timestamp(ts, SLOT_MINUTES as u16))
 }

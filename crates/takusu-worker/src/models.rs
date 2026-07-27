@@ -3,7 +3,7 @@
 //! `FromRow` derive the storage crate uses) into the WASM bundle.
 
 use serde::{Deserialize, Serialize};
-pub use takusu_util::{Abandonability, EnumLabel, Quantity};
+pub use takusu_util::{Abandonability, Date, Quantity, TimeOfDay, Timestamp};
 
 use crate::memory;
 
@@ -14,8 +14,8 @@ pub struct TaskRow {
     pub display_id: i64,
     pub title: String,
     pub description: Option<String>,
-    pub start_at: Option<String>,
-    pub end_at: String,
+    pub start_at: Option<Timestamp>,
+    pub end_at: Timestamp,
     pub avg_minutes: i64,
     pub sigma_minutes: i64,
     pub depends: String,
@@ -41,15 +41,15 @@ pub struct TaskRow {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quantity_unit: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub completed_at: Option<String>,
+    pub completed_at: Option<Timestamp>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub split_from_task_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub original_quantity_total: Option<Quantity>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub actual_minutes: Option<i64>,
-    pub created_at: String,
-    pub updated_at: String,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -58,8 +58,8 @@ pub struct CreateTask {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub start_at: Option<String>,
-    pub end_at: String,
+    pub start_at: Option<Timestamp>,
+    pub end_at: Timestamp,
     pub avg_minutes: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sigma_minutes: Option<i64>,
@@ -96,9 +96,9 @@ pub struct UpdateTask {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub start_at: Option<String>,
+    pub start_at: Option<Option<Timestamp>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub end_at: Option<String>,
+    pub end_at: Option<Timestamp>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub avg_minutes: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -140,8 +140,8 @@ pub struct HabitRow {
     pub title: String,
     pub description: Option<String>,
     pub recurrence: String,
-    pub start_time: String,
-    pub end_time: String,
+    pub start_time: TimeOfDay,
+    pub end_time: TimeOfDay,
     pub avg_minutes: i64,
     pub sigma_minutes: i64,
     #[serde(with = "takusu_util::bool_compat", default)]
@@ -155,8 +155,8 @@ pub struct HabitRow {
     pub fixed: bool,
     #[serde(with = "takusu_util::enum_serde", default)]
     pub window_mode: takusu_util::WindowMode,
-    pub created_at: String,
-    pub updated_at: String,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -165,8 +165,8 @@ pub struct CreateHabit {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     pub recurrence: String,
-    pub start_time: String,
-    pub end_time: String,
+    pub start_time: TimeOfDay,
+    pub end_time: TimeOfDay,
     pub avg_minutes: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sigma_minutes: Option<i64>,
@@ -192,9 +192,9 @@ pub struct UpdateHabit {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recurrence: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub start_time: Option<String>,
+    pub start_time: Option<TimeOfDay>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub end_time: Option<String>,
+    pub end_time: Option<TimeOfDay>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub avg_minutes: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -223,16 +223,16 @@ pub struct UpdateHabit {
 pub struct HabitScheduledSpanRow {
     pub id: String,
     pub habit_id: String,
-    pub start_date: String,
-    pub end_date: String,
+    pub start_date: Date,
+    pub end_date: Date,
     pub reason: Option<String>,
-    pub created_at: String,
+    pub created_at: Timestamp,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CreateHabitScheduledSpan {
-    pub start_date: String,
-    pub end_date: String,
+    pub start_date: Date,
+    pub end_date: Date,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
 }
@@ -245,8 +245,8 @@ pub struct HabitStepRow {
     pub position: i64,
     pub title: String,
     pub description: Option<String>,
-    pub start_time: String,
-    pub end_time: String,
+    pub start_time: TimeOfDay,
+    pub end_time: TimeOfDay,
     pub avg_minutes: i64,
     pub sigma_minutes: i64,
     #[serde(with = "takusu_util::bool_compat", default)]
@@ -257,7 +257,7 @@ pub struct HabitStepRow {
     #[serde(with = "takusu_util::bool_compat", default)]
     pub fixed: bool,
     pub depends_on: String,
-    pub created_at: String,
+    pub created_at: Timestamp,
 }
 
 /// Input element for `PUT /api/habits/:id/steps` (bulk replace, #95).
@@ -269,8 +269,8 @@ pub struct HabitStepInput {
     pub title: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
-    pub start_time: String,
-    pub end_time: String,
+    pub start_time: TimeOfDay,
+    pub end_time: TimeOfDay,
     pub avg_minutes: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sigma_minutes: Option<i64>,
@@ -313,16 +313,16 @@ pub struct HabitDetail {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScheduleRow {
     pub id: String,
-    pub created_at: String,
-    pub updated_at: String,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
     pub schedule: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScheduleEntry {
     pub task_id: String,
-    pub start_at: String,
-    pub end_at: String,
+    pub start_at: Timestamp,
+    pub end_at: Timestamp,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -340,9 +340,9 @@ pub struct TokenRow {
     pub scope: takusu_util::TokenScope,
     pub label: Option<String>,
     pub created_by: String,
-    pub created_at: String,
-    pub revoked_at: Option<String>,
-    pub expires_at: Option<String>,
+    pub created_at: Timestamp,
+    pub revoked_at: Option<Timestamp>,
+    pub expires_at: Option<Timestamp>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -352,8 +352,8 @@ pub struct TokenCreateResponse {
     #[serde(with = "takusu_util::enum_serde")]
     pub scope: takusu_util::TokenScope,
     pub label: Option<String>,
-    pub created_at: String,
-    pub expires_at: Option<String>,
+    pub created_at: Timestamp,
+    pub expires_at: Option<Timestamp>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -365,8 +365,8 @@ pub struct GoogleCalSettingsRow {
     pub client_id: String,
     pub client_secret: String,
     pub refresh_token: Option<String>,
-    pub created_at: String,
-    pub updated_at: String,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -387,22 +387,22 @@ pub struct UpdateGoogleCalSettings {
 pub struct GoogleCalEventRow {
     pub task_id: String,
     pub google_event_id: String,
-    pub updated_at: String,
+    pub updated_at: Timestamp,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SettingsRow {
     pub id: String,
     pub tz: String,
-    pub sleep_start: String,
-    pub sleep_end: String,
+    pub sleep_start: TimeOfDay,
+    pub sleep_end: TimeOfDay,
     /// #459: 1 日の快適な作業時間（分）。`None` または未設定の場合はデフォルトを使う。
     pub comfortable_minutes: Option<i64>,
     /// #459: 1 日の最大作業時間（分）。`None` または未設定の場合はデフォルトを使う。
     pub maximum_minutes: Option<i64>,
-    /// 使用する solver。`"sa"` / `"priority"` / `"auto"`。空または不明な場合は `sa`。
-    #[serde(default)]
-    pub solver: String,
+    /// 使用する solver。`"sa"` / `"priority"` / `"auto"`。未設定の場合は `sa`。未知値はエラー。
+    #[serde(with = "takusu_util::enum_serde", default)]
+    pub solver: takusu_util::Solver,
     /// 求解時間の上限（ミリ秒）。`None` または `0` の場合は制限なし。
     #[serde(default)]
     pub time_budget_ms: Option<i64>,
@@ -412,8 +412,8 @@ pub struct SettingsRow {
     /// 前回スケジュールから priority/ALNS の初期解を warm start する。
     #[serde(with = "takusu_util::bool_compat", default)]
     pub warm_start: bool,
-    pub created_at: String,
-    pub updated_at: String,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -424,8 +424,8 @@ pub struct SkillRow {
     pub body: String,
     #[serde(with = "takusu_util::bool_compat", default)]
     pub built_in: bool,
-    pub created_at: String,
-    pub updated_at: String,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -464,9 +464,9 @@ pub struct MemoryRow {
     pub subject_id: String,
     pub source: String,
     pub revision: i64,
-    pub created_at: String,
-    pub updated_at: String,
-    pub last_used_at: Option<String>,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
+    pub last_used_at: Option<Timestamp>,
 }
 
 impl memory::MemoryRankable for MemoryRow {
@@ -479,8 +479,8 @@ impl memory::MemoryRankable for MemoryRow {
     fn normalized_content(&self) -> &str {
         &self.normalized_content
     }
-    fn updated_at(&self) -> &str {
-        &self.updated_at
+    fn updated_at(&self) -> String {
+        self.updated_at.to_string()
     }
 }
 
@@ -514,9 +514,9 @@ pub struct SimilarTaskRow {
     pub avg_minutes: i64,
     pub sigma_minutes: i64,
     pub actual_minutes: Option<i64>,
-    pub completed_at: Option<String>,
+    pub completed_at: Option<Timestamp>,
     #[serde(skip_serializing)]
-    pub updated_at: String,
+    pub updated_at: Timestamp,
     pub similarity: String,
 }
 
@@ -525,9 +525,9 @@ pub struct UpdateSettings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tz: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sleep_start: Option<String>,
+    pub sleep_start: Option<TimeOfDay>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sleep_end: Option<String>,
+    pub sleep_end: Option<TimeOfDay>,
     /// #459: 1 日の快適な作業時間（分）。`None` または未設定の場合はデフォルトを使う。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub comfortable_minutes: Option<i64>,
@@ -535,8 +535,12 @@ pub struct UpdateSettings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub maximum_minutes: Option<i64>,
     /// 使用する solver。`"sa"` / `"priority"` / `"auto"`。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub solver: Option<String>,
+    #[serde(
+        with = "takusu_util::enum_serde::option",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub solver: Option<takusu_util::Solver>,
     /// 求解時間の上限（ミリ秒）。`None` または `0` で制限なし。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub time_budget_ms: Option<i64>,
@@ -558,16 +562,16 @@ pub struct UpdateSettings {
 pub struct TaskWorkSessionRow {
     pub id: String,
     pub task_id: String,
-    pub started_at: String,
-    pub ended_at: Option<String>,
-    pub created_at: String,
+    pub started_at: Timestamp,
+    pub ended_at: Option<Timestamp>,
+    pub created_at: Timestamp,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProgressEventRow {
     pub id: String,
     pub task_id: String,
-    pub at: String,
+    pub at: Timestamp,
     pub quantity_done: Option<Quantity>,
     pub delta_quantity: Option<i64>,
     pub active_minutes: i64,
@@ -608,7 +612,7 @@ pub struct SplitTask {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub end_at: Option<String>,
+    pub end_at: Option<Timestamp>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

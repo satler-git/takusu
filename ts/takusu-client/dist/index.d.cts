@@ -267,7 +267,7 @@ interface SettingsRow {
     sleep_end: string;
     comfortable_minutes: number | null;
     maximum_minutes: number | null;
-    solver: string;
+    solver: 'sa' | 'priority' | 'auto';
     time_budget_ms: number | null;
     seed: number | null;
     warm_start: boolean;
@@ -278,7 +278,7 @@ interface UpdateSettings {
     sleep_end?: string;
     comfortable_minutes?: number | null;
     maximum_minutes?: number | null;
-    solver?: string;
+    solver?: 'sa' | 'priority' | 'auto';
     time_budget_ms?: number | null;
     seed?: number | null;
     warm_start?: boolean;

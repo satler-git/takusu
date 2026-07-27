@@ -200,7 +200,7 @@ impl Storage for CountingStorage {
             token: "tsk_new".into(),
             scope: takusu_util::TokenScope::ReadWrite,
             label: None,
-            created_at: "2026-06-22T00:00:00Z".into(),
+            created_at: "2026-06-22T00:00:00Z".parse().unwrap(),
             expires_at: None,
         })
     }

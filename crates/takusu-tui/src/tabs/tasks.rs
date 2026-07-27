@@ -95,7 +95,7 @@ async fn edit_task(app: &mut App, terminal: &mut ratatui::DefaultTerminal) {
         None => return,
     };
 
-    let content = format_edit_text(&task, &app.all_tasks, &app.habits);
+    let content = format_edit_text(&task, &app.all_tasks, &app.habits, &app.tz);
 
     ratatui::restore();
     let edited = open_editor(&content);
@@ -109,7 +109,7 @@ async fn edit_task(app: &mut App, terminal: &mut ratatui::DefaultTerminal) {
         }
     };
 
-    let update = match parse_edit_text(&edited) {
+    let update = match parse_edit_text(&edited, &app.tz) {
         Ok(u) => u,
         Err(e) => {
             app.status_msg = Some(format!("Parse error: {e}"));
@@ -127,7 +127,12 @@ async fn edit_task(app: &mut App, terminal: &mut ratatui::DefaultTerminal) {
     }
 }
 
-fn format_edit_text(task: &TaskRow, all_tasks: &[TaskRow], habits: &[HabitRow]) -> String {
+fn format_edit_text(
+    task: &TaskRow,
+    all_tasks: &[TaskRow],
+    habits: &[HabitRow],
+    tz: &jiff::tz::TimeZone,
+) -> String {
     let depends = format_task_depends(task, all_tasks, habits);
     format!(
         "# Edit task. Lines starting with '#' are comments.
@@ -150,8 +155,12 @@ parallelizable: {parallel}
 allows_parallel: {allows}",
         title = task.title,
         desc = task.description.as_deref().unwrap_or(""),
-        start = task.start_at.as_deref().unwrap_or(""),
-        end = task.end_at,
+        start = task
+            .start_at
+            .as_ref()
+            .map(|t| (*t).to_zoned(tz.clone()).to_string())
+            .unwrap_or_default(),
+        end = task.end_at.to_zoned(tz.clone()),
         status = task.status,
         avg = task.avg_minutes,
         sigma = task.sigma_minutes,
@@ -185,7 +194,10 @@ fn task_ref(id: &str, all_tasks: &[TaskRow], habits: &[HabitRow]) -> Option<Stri
     }
 }
 
-fn parse_edit_text(content: &str) -> Result<takusu_storage::UpdateTask, String> {
+fn parse_edit_text(
+    content: &str,
+    tz: &jiff::tz::TimeZone,
+) -> Result<takusu_storage::UpdateTask, String> {
     let mut update = takusu_storage::UpdateTask::default();
     for line in content.lines() {
         let line = line.trim();
@@ -204,10 +216,15 @@ fn parse_edit_text(content: &str) -> Result<takusu_storage::UpdateTask, String> 
         match key {
             "title" => update.title = Some(value.to_string()),
             "description" => update.description = parse_clear_string(value),
-            "start_at" => update.start_at = parse_clear_string(value),
+            "start_at" => {
+                update.start_at = parse_clear_timestamp(value, tz)?;
+            }
             "end_at" => {
                 if value != "-" {
-                    update.end_at = Some(value.to_string());
+                    update.end_at = Some(
+                        takusu_util::Timestamp::parse_with_tz(value, tz)
+                            .map_err(|e| format!("invalid end_at: {e}"))?,
+                    );
                 }
             }
             "status" => {
@@ -244,6 +261,23 @@ fn parse_clear_string(value: &str) -> Option<String> {
     Some(String::new())
         .filter(|_| value == "-")
         .or(Some(value.to_string()))
+}
+
+/// '-' clears the field (None); any other non-empty value is parsed with the
+/// given timezone. Returns `Option<Option<Timestamp>>`:
+/// `None` = no change (shouldn't happen since empty is skipped by caller),
+/// `Some(None)` = clear, `Some(Some(ts))` = set.
+fn parse_clear_timestamp(
+    value: &str,
+    tz: &jiff::tz::TimeZone,
+) -> Result<Option<Option<takusu_util::Timestamp>>, String> {
+    if value == "-" {
+        Ok(Some(None))
+    } else {
+        let ts = takusu_util::Timestamp::parse_with_tz(value, tz)
+            .map_err(|e| format!("invalid start_at: {e}"))?;
+        Ok(Some(Some(ts)))
+    }
 }
 
 /// '-' clears the field (Some(0)); any other non-empty value is parsed.
@@ -350,8 +384,8 @@ mod tests {
             display_id: 1,
             title: "Read book".to_string(),
             description: Some("Important".to_string()),
-            start_at: Some("2025-06-15T08:00:00Z".to_string()),
-            end_at: "2025-06-15T10:00:00Z".to_string(),
+            start_at: Some("2025-06-15T08:00:00Z".parse().unwrap()),
+            end_at: "2025-06-15T10:00:00Z".parse().unwrap(),
             avg_minutes: 30,
             sigma_minutes: 5,
             depends: serde_json::to_string(&["dep-uuid".to_string()]).unwrap(),
@@ -371,8 +405,8 @@ mod tests {
             split_from_task_id: None,
             original_quantity_total: None,
             actual_minutes: None,
-            created_at: "2025-06-14T00:00:00Z".to_string(),
-            updated_at: "2025-06-14T00:00:00Z".to_string(),
+            created_at: "2025-06-14T00:00:00Z".parse().unwrap(),
+            updated_at: "2025-06-14T00:00:00Z".parse().unwrap(),
         }
     }
 
@@ -383,7 +417,7 @@ mod tests {
             title: "Prerequisite".to_string(),
             description: None,
             start_at: None,
-            end_at: "2025-06-15T12:00:00Z".to_string(),
+            end_at: "2025-06-15T12:00:00Z".parse().unwrap(),
             avg_minutes: 15,
             sigma_minutes: 3,
             depends: "[]".to_string(),
@@ -403,8 +437,8 @@ mod tests {
             split_from_task_id: None,
             original_quantity_total: None,
             actual_minutes: None,
-            created_at: "2025-06-14T00:00:00Z".to_string(),
-            updated_at: "2025-06-14T00:00:00Z".to_string(),
+            created_at: "2025-06-14T00:00:00Z".parse().unwrap(),
+            updated_at: "2025-06-14T00:00:00Z".parse().unwrap(),
         }
     }
 
@@ -415,7 +449,7 @@ mod tests {
             title: "Habit task".to_string(),
             description: None,
             start_at: None,
-            end_at: "2025-06-15T12:00:00Z".to_string(),
+            end_at: "2025-06-15T12:00:00Z".parse().unwrap(),
             avg_minutes: 15,
             sigma_minutes: 3,
             depends: "[]".to_string(),
@@ -435,8 +469,8 @@ mod tests {
             split_from_task_id: None,
             original_quantity_total: None,
             actual_minutes: None,
-            created_at: "2025-06-14T00:00:00Z".to_string(),
-            updated_at: "2025-06-14T00:00:00Z".to_string(),
+            created_at: "2025-06-14T00:00:00Z".parse().unwrap(),
+            updated_at: "2025-06-14T00:00:00Z".parse().unwrap(),
         }
     }
 
@@ -447,8 +481,8 @@ mod tests {
             title: "Daily habit".to_string(),
             description: None,
             active: true,
-            start_time: "08:00".to_string(),
-            end_time: "09:00".to_string(),
+            start_time: "08:00".parse().unwrap(),
+            end_time: "09:00".parse().unwrap(),
             window_mode: takusu_util::WindowMode::Day,
             avg_minutes: 10,
             sigma_minutes: 2,
@@ -457,18 +491,23 @@ mod tests {
             allows_parallel: false,
             fixed: false,
             recurrence: r#"{"freq":"daily"}"#.to_string(),
-            created_at: "2025-06-14T00:00:00Z".to_string(),
-            updated_at: "2025-06-14T00:00:00Z".to_string(),
+            created_at: "2025-06-14T00:00:00Z".parse().unwrap(),
+            updated_at: "2025-06-14T00:00:00Z".parse().unwrap(),
         }
     }
 
     #[test]
     fn format_edit_text_includes_all_fields() {
-        let text = format_edit_text(&sample_task(), &[sample_dep_task()], &[]);
+        let text = format_edit_text(
+            &sample_task(),
+            &[sample_dep_task()],
+            &[],
+            &jiff::tz::TimeZone::UTC,
+        );
         assert!(text.contains("title: Read book"));
         assert!(text.contains("description: Important"));
-        assert!(text.contains("start_at: 2025-06-15T08:00:00Z"));
-        assert!(text.contains("end_at: 2025-06-15T10:00:00Z"));
+        assert!(text.contains("start_at: 2025-06-15T08:00:00+00:00"));
+        assert!(text.contains("end_at: 2025-06-15T10:00:00+00:00"));
         assert!(text.contains("depends: #42"));
         assert!(!text.contains("dep-uuid"));
         assert!(text.contains("quantity_total: 100"));
@@ -484,6 +523,7 @@ mod tests {
             &sample_task_with_dep("habit-task-uuid"),
             &[sample_habit_task()],
             &[sample_habit()],
+            &jiff::tz::TimeZone::UTC,
         );
         assert!(text.contains("depends: h3#7"));
     }
@@ -508,7 +548,7 @@ quantity_total: 200
 quantity_done: 75
 quantity_unit: chapters
 "#;
-        let update = parse_edit_text(text).unwrap();
+        let update = parse_edit_text(text, &jiff::tz::TimeZone::UTC).unwrap();
         assert_eq!(update.title, Some("New title".to_string()));
         assert_eq!(update.status, Some(TaskStatus::InProgress));
         assert_eq!(update.avg_minutes, Some(45));
@@ -531,9 +571,9 @@ quantity_total: -
 depends: -
 sigma_minutes: -
 "#;
-        let update = parse_edit_text(text).unwrap();
+        let update = parse_edit_text(text, &jiff::tz::TimeZone::UTC).unwrap();
         assert_eq!(update.description, Some(String::new()));
-        assert_eq!(update.start_at, Some(String::new()));
+        assert_eq!(update.start_at, Some(None));
         assert_eq!(update.quantity_unit, Some(String::new()));
         assert_eq!(update.quantity_total, Some(Quantity::default()));
         assert_eq!(update.depends, Some(Vec::new()));
@@ -544,14 +584,14 @@ sigma_minutes: -
     #[test]
     fn parse_edit_text_dash_does_not_clear_required_string() {
         let text = "end_at: -\n";
-        let update = parse_edit_text(text).unwrap();
+        let update = parse_edit_text(text, &jiff::tz::TimeZone::UTC).unwrap();
         assert_eq!(update.end_at, None);
     }
 
     #[test]
     fn parse_edit_text_skips_empty_lines() {
         let text = "title: New title\ndescription:\nstatus: scheduled\n";
-        let update = parse_edit_text(text).unwrap();
+        let update = parse_edit_text(text, &jiff::tz::TimeZone::UTC).unwrap();
         assert_eq!(update.title, Some("New title".to_string()));
         assert_eq!(update.description, None);
         assert_eq!(update.status, Some(TaskStatus::Scheduled));
@@ -560,7 +600,7 @@ sigma_minutes: -
     #[test]
     fn parse_edit_text_parses_comma_separated_depends() {
         let text = "depends: a, b, c\n";
-        let update = parse_edit_text(text).unwrap();
+        let update = parse_edit_text(text, &jiff::tz::TimeZone::UTC).unwrap();
         assert_eq!(
             update.depends,
             Some(vec!["a".to_string(), "b".to_string(), "c".to_string()])
@@ -570,13 +610,13 @@ sigma_minutes: -
     #[test]
     fn parse_edit_text_parses_json_depends() {
         let text = r#"depends: ["x", "y"]"#;
-        let update = parse_edit_text(text).unwrap();
+        let update = parse_edit_text(text, &jiff::tz::TimeZone::UTC).unwrap();
         assert_eq!(update.depends, Some(vec!["x".to_string(), "y".to_string()]));
     }
 
     #[test]
     fn parse_edit_text_rejects_invalid_number() {
         let text = "avg_minutes: not-a-number\n";
-        assert!(parse_edit_text(text).is_err());
+        assert!(parse_edit_text(text, &jiff::tz::TimeZone::UTC).is_err());
     }
 }

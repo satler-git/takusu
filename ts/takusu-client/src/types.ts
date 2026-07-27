@@ -323,8 +323,8 @@ export interface SettingsRow {
   comfortable_minutes: number | null;
   /// #459: 1 日の最大作業時間（分）。`null` または未設定の場合はデフォルト（12 時間）を使う。
   maximum_minutes: number | null;
-  /// #789: 使用する solver。`"sa"` / `"priority"` / `"auto"`。空または不明な場合は `"sa"`。
-  solver: string;
+  /// #789: 使用する solver。`"sa"` / `"priority"` / `"auto"`。未設定の場合は `"sa"`。未知値はエラー。
+  solver: 'sa' | 'priority' | 'auto';
   /// #789: 求解時間の上限（ミリ秒）。`null` または `0` の場合は制限なし。
   time_budget_ms: number | null;
   /// #789: 乱数シード。`null` の場合は決定的なデフォルト。
@@ -341,8 +341,8 @@ export interface UpdateSettings {
   comfortable_minutes?: number | null;
   /// #459: 1 日の最大作業時間（分）。`null` または未設定の場合はデフォルトを使う。
   maximum_minutes?: number | null;
-  /// #789: 使用する solver。`"sa"` / `"priority"` / `"auto"`。
-  solver?: string;
+  /// #789: 使用する solver。`"sa"` / `"priority"` / `"auto"`。未設定の場合は変更しない。
+  solver?: 'sa' | 'priority' | 'auto';
   /// #789: 求解時間の上限（ミリ秒）。`null` または `0` で制限なし。
   time_budget_ms?: number | null;
   /// #789: 乱数シード。`null` でデフォルト。

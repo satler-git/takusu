@@ -457,7 +457,7 @@ impl Tool for MemoryUpdate {
             Some(memory_json(&current)),
             Some(after),
             execution_args,
-            Some(current.updated_at),
+            Some(current.updated_at.to_string()),
             inferred_fields,
             why,
             warnings,
@@ -540,7 +540,7 @@ impl Tool for MemoryDelete {
             Some(memory_json(&current)),
             None,
             execution_args,
-            Some(current.updated_at),
+            Some(current.updated_at.to_string()),
             inferred_fields,
             why,
             warnings,
@@ -563,8 +563,8 @@ mod tests {
             subject_id: "".into(),
             source: "user_confirmed".into(),
             revision: 1,
-            created_at: "2025-01-01T00:00:00Z".into(),
-            updated_at: "2025-01-01T00:00:00Z".into(),
+            created_at: "2025-01-01T00:00:00Z".parse().unwrap(),
+            updated_at: "2025-01-01T00:00:00Z".parse().unwrap(),
             last_used_at: None,
         };
         let value = memory_json(&row);
