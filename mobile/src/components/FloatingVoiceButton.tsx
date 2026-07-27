@@ -67,16 +67,9 @@ export function FloatingVoiceButton() {
   const stateRef = useRef<ButtonState>('idle');
   const isSlideRef = useRef(false);
   const transitionedRef = useRef(false);
-  const slideResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const buttonY = useSharedValue(0);
 
   const isHome = pathname === '/' || pathname === '' || pathname === '/index';
-
-  useEffect(() => {
-    return () => {
-      if (slideResetTimerRef.current) clearTimeout(slideResetTimerRef.current);
-    };
-  }, []);
 
   // FloatingVoiceButton is mounted at the root (_layout.tsx), so it stays
   // alive while navigating to /agent or /task/add. Reset only the button UI
@@ -88,17 +81,9 @@ export function FloatingVoiceButton() {
     isSlideRef.current = false;
     transitionedRef.current = false;
     buttonY.value = 0;
-    if (slideResetTimerRef.current) {
-      clearTimeout(slideResetTimerRef.current);
-      slideResetTimerRef.current = null;
-    }
   }, [isHome, buttonY]);
 
   const reset = useCallback(() => {
-    if (slideResetTimerRef.current) {
-      clearTimeout(slideResetTimerRef.current);
-      slideResetTimerRef.current = null;
-    }
     stateRef.current = 'idle';
     isSlideRef.current = false;
     transitionedRef.current = false;
@@ -134,8 +119,7 @@ export function FloatingVoiceButton() {
     stateRef.current = 'gesture';
     pushTaskAdd();
     haptic.light();
-    slideResetTimerRef.current = setTimeout(reset, 100);
-  }, [pushTaskAdd, reset]);
+  }, [pushTaskAdd]);
 
   const handlePressIn = useCallback(() => {
     if (stateRef.current !== 'idle' || transitionedRef.current) return;
@@ -147,10 +131,6 @@ export function FloatingVoiceButton() {
   }, [buttonY]);
 
   const handleRelease = useCallback(() => {
-    if (isSlideRef.current) {
-      reset();
-      return;
-    }
     if (transitionedRef.current) {
       // Already transitioning; do not reset the queued request.
       return;
@@ -165,6 +145,8 @@ export function FloatingVoiceButton() {
   const panGesture = Gesture.Pan()
     .activeOffsetY([-10, 10])
     .failOffsetX([-20, 20])
+    // testID allows the gesture to be retrieved in unit tests.
+    .withTestId('floating-voice-button-pan')
     .onBegin(() => {
       runOnJS(handlePressIn)();
     })
