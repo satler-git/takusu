@@ -10,12 +10,12 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import {
   Button,
-  Checkbox,
   IconButton,
   List,
   Menu,
   Modal,
   Portal,
+  Switch,
   TextInput as PaperTextInput,
   Divider,
 } from 'react-native-paper';
@@ -37,7 +37,6 @@ import { DateTimePickerModal } from '@/src/components/DateTimePickerModal';
 import { haptic } from '@/src/components/haptics';
 import { TaskProgressSheet } from '@/src/components/TaskProgressSheet';
 import { SplitTaskModal } from '@/src/components/SplitTaskModal';
-import { CancelConfirmButton } from '@/src/components/CancelConfirmButton';
 import { DeleteConfirmMenuItem } from '@/src/components/DeleteConfirmMenuItem';
 import { RedundantDepWarning } from '@/src/components/RedundantDepWarning';
 import { formatDate } from '@/src/formatDate';
@@ -199,13 +198,19 @@ const makeStyles = (colors: ColorSet) =>
       flexDirection: 'row',
       alignItems: 'center',
     },
+    maximizeButton: {
+      width: 44,
+      height: 44,
+      borderRadius: 10,
+      borderWidth: 1.5,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    maximizeButtonDisabled: {
+      opacity: 0.4,
+    },
     costInput: {
       flex: 1,
-    },
-    costHint: {
-      fontSize: 11,
-      marginTop: 2,
-      marginLeft: 4,
     },
     toggleRow: {
       flexDirection: 'row',
@@ -1052,28 +1057,7 @@ export function TaskDetailView() {
           }}
         />
         <View style={{ flex: 1 }} />
-        {editing ? (
-          <>
-            <IconButton
-              icon="check"
-              iconColor={colors.white}
-              containerColor={colors.brand}
-              size={22}
-              onPress={() => {
-                haptic.medium();
-                save();
-              }}
-            />
-            <CancelConfirmButton
-              onConfirm={() => {
-                haptic.light();
-                editingRef.current = false;
-                refresh();
-                setEditing(false);
-              }}
-            />
-          </>
-        ) : (
+        {!editing && (
           <IconButton
             icon="pencil-outline"
             iconColor={colors.brand}
@@ -1114,22 +1098,43 @@ export function TaskDetailView() {
           { paddingBottom: 40 + insets.bottom },
         ]}
       >
-        {/* Title */}
+        {/* Title + Description (hero) */}
         {editing ? (
-          <PaperTextInput
-            mode="outlined"
-            value={title}
-            onChangeText={setTitle}
-            label="タイトル"
-            outlineColor={colors.separator}
-            activeOutlineColor={colors.brand}
-            style={styles.titleInput}
-            contentStyle={{ fontSize: 20, fontWeight: '600' }}
-          />
+          <View style={styles.section}>
+            <PaperTextInput
+              mode="outlined"
+              value={title}
+              onChangeText={setTitle}
+              label="タイトル"
+              outlineColor={colors.separator}
+              activeOutlineColor={colors.brand}
+              style={styles.titleInput}
+              contentStyle={{ fontSize: 20, fontWeight: '600' }}
+            />
+            <PaperTextInput
+              mode="outlined"
+              value={description}
+              onChangeText={setDescription}
+              label="説明"
+              multiline
+              numberOfLines={4}
+              outlineColor={colors.separator}
+              activeOutlineColor={colors.brand}
+              style={styles.descriptionInput}
+            />
+          </View>
         ) : (
           <Pressable onPress={() => handleSectionTap('title')}>
             <Text style={[styles.title, { color: colors.black }]}>
               {task.title}
+            </Text>
+            <Text
+              style={[
+                styles.sectionValue,
+                { color: colors.gray, marginTop: 4 },
+              ]}
+            >
+              {task.description || '(なし)'}
             </Text>
           </Pressable>
         )}
@@ -1396,7 +1401,7 @@ export function TaskDetailView() {
               <View style={styles.avgInputContainer}>
                 <PaperTextInput
                   mode="outlined"
-                  label="avg (1h30m / 90m / 90)"
+                  label="avg"
                   value={avgMinutes}
                   onChangeText={setAvgMinutes}
                   autoCapitalize="none"
@@ -1406,10 +1411,12 @@ export function TaskDetailView() {
                   style={styles.costInput}
                   dense
                 />
-                <IconButton
-                  icon="arrow-expand"
-                  size={18}
-                  iconColor={colors.brand}
+                <Pressable
+                  style={[
+                    styles.maximizeButton,
+                    { borderColor: colors.brand },
+                    (!startAt || !endAt) && styles.maximizeButtonDisabled,
+                  ]}
                   disabled={!startAt || !endAt}
                   onPress={() => {
                     if (!startAt || !endAt) return;
@@ -1420,25 +1427,23 @@ export function TaskDetailView() {
                     );
                     setAvgMinutes(String(diffMin));
                   }}
-                />
+                >
+                  <Ionicons name="expand" size={18} color={colors.brand} />
+                </Pressable>
               </View>
               <View style={styles.costInput}>
                 <PaperTextInput
                   mode="outlined"
-                  label="sigma (1h30m / 90m / 90)"
+                  label="sigma"
                   value={sigmaMinutes}
                   onChangeText={setSigmaMinutes}
                   autoCapitalize="none"
                   autoCorrect={false}
+                  placeholder="1m (avg/5)"
                   outlineColor={colors.separator}
                   activeOutlineColor={colors.brand}
                   dense
                 />
-                {sigmaMinutes === '' && (
-                  <Text style={[styles.costHint, { color: colors.grayLight }]}>
-                    {task.sigma_minutes}m
-                  </Text>
-                )}
               </View>
             </View>
           ) : (
@@ -1562,31 +1567,6 @@ export function TaskDetailView() {
           </Pressable>
         )}
 
-        {/* Description */}
-        <View style={styles.section}>
-          <Text style={[styles.sectionLabel, { color: colors.gray }]}>
-            説明
-          </Text>
-          {editing ? (
-            <PaperTextInput
-              mode="outlined"
-              value={description}
-              onChangeText={setDescription}
-              multiline
-              numberOfLines={4}
-              outlineColor={colors.separator}
-              activeOutlineColor={colors.brand}
-              style={styles.descriptionInput}
-            />
-          ) : (
-            <Pressable onPress={() => handleSectionTap('description')}>
-              <Text style={[styles.sectionValue, { color: colors.black }]}>
-                {task.description || '(なし)'}
-              </Text>
-            </Pressable>
-          )}
-        </View>
-
         {/* Parallel config */}
         <View style={styles.section}>
           <Text style={[styles.sectionLabel, { color: colors.gray }]}>
@@ -1594,44 +1574,32 @@ export function TaskDetailView() {
           </Text>
           {editing ? (
             <View style={styles.toggleRow}>
-              <Pressable
-                style={styles.toggleItem}
-                onPress={() => {
-                  haptic.select();
-                  setParallelizable(!parallelizable);
-                }}
-              >
+              <View style={styles.toggleItem}>
                 <Text style={[styles.toggleLabel, { color: colors.black }]}>
                   並列実行可能
                 </Text>
-                <Checkbox
-                  status={parallelizable ? 'checked' : 'unchecked'}
-                  onPress={() => {
+                <Switch
+                  value={parallelizable}
+                  onValueChange={() => {
                     haptic.select();
                     setParallelizable(!parallelizable);
                   }}
-                  color={colors.brand}
+                  trackColor={{ true: colors.brand }}
                 />
-              </Pressable>
-              <Pressable
-                style={styles.toggleItem}
-                onPress={() => {
-                  haptic.select();
-                  setAllowsParallel(!allowsParallel);
-                }}
-              >
+              </View>
+              <View style={styles.toggleItem}>
                 <Text style={[styles.toggleLabel, { color: colors.black }]}>
                   並列受け入れ
                 </Text>
-                <Checkbox
-                  status={allowsParallel ? 'checked' : 'unchecked'}
-                  onPress={() => {
+                <Switch
+                  value={allowsParallel}
+                  onValueChange={() => {
                     haptic.select();
                     setAllowsParallel(!allowsParallel);
                   }}
-                  color={colors.brand}
+                  trackColor={{ true: colors.brand }}
                 />
-              </Pressable>
+              </View>
             </View>
           ) : (
             <Pressable
@@ -1642,20 +1610,20 @@ export function TaskDetailView() {
                 <Text style={[styles.toggleLabel, { color: colors.black }]}>
                   並列実行可能
                 </Text>
-                <Checkbox
-                  status={task.parallelizable ? 'checked' : 'unchecked'}
+                <Switch
+                  value={task.parallelizable}
                   disabled
-                  color={colors.brand}
+                  trackColor={{ true: colors.brand }}
                 />
               </View>
               <View style={styles.toggleItem}>
                 <Text style={[styles.toggleLabel, { color: colors.black }]}>
                   並列受け入れ
                 </Text>
-                <Checkbox
-                  status={task.allows_parallel ? 'checked' : 'unchecked'}
+                <Switch
+                  value={task.allows_parallel}
                   disabled
-                  color={colors.brand}
+                  trackColor={{ true: colors.brand }}
                 />
               </View>
             </Pressable>
@@ -1669,27 +1637,30 @@ export function TaskDetailView() {
           </Text>
           {editing ? (
             <View style={styles.toggleItem}>
-              <Checkbox
-                status={fixed ? 'checked' : 'unchecked'}
-                onPress={() => {
+              <Text style={[styles.toggleLabel, { color: colors.black }]}>
+                時間固定
+              </Text>
+              <Switch
+                value={fixed}
+                onValueChange={() => {
                   haptic.select();
                   setFixed(!fixed);
                 }}
-                color={colors.brand}
+                trackColor={{ true: colors.brand }}
               />
-              <Text style={[styles.hint, { color: colors.grayLight }]}>
-                開始時刻を固定し、スケジューラの移動を許可しない
-              </Text>
             </View>
           ) : (
             <Pressable
               style={styles.toggleItem}
               onPress={() => handleSectionTap('fixed')}
             >
-              <Checkbox
-                status={task.fixed ? 'checked' : 'unchecked'}
+              <Text style={[styles.toggleLabel, { color: colors.black }]}>
+                時間固定
+              </Text>
+              <Switch
+                value={task.fixed}
                 disabled
-                color={colors.brand}
+                trackColor={{ true: colors.brand }}
               />
             </Pressable>
           )}
@@ -1701,20 +1672,6 @@ export function TaskDetailView() {
             <Text style={[styles.sectionLabel, { color: colors.gray }]}>
               依存 ({deps.length})
             </Text>
-            {editing && (
-              <Button
-                mode="text"
-                compact
-                onPress={() => {
-                  haptic.light();
-                  setDepSearch('');
-                  setDepModalVisible(true);
-                }}
-                textColor={colors.brand}
-              >
-                + 追加
-              </Button>
-            )}
           </View>
           {!editing && (
             <RedundantDepWarning
@@ -1768,8 +1725,41 @@ export function TaskDetailView() {
             </Text>
           )}
 
-          {/* Dependency graph: connected component around this task */}
-          {detailGraphNodes.length > 1 && (
+          {editing && (
+            <Pressable
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderWidth: 1,
+                borderStyle: 'dashed',
+                borderColor: colors.brand,
+                borderRadius: 10,
+                paddingVertical: 10,
+                marginTop: 4,
+              }}
+              onPress={() => {
+                haptic.light();
+                setDepSearch('');
+                setDepModalVisible(true);
+              }}
+            >
+              <Ionicons name="add" size={18} color={colors.brand} />
+              <Text
+                style={{
+                  color: colors.brand,
+                  fontSize: 14,
+                  fontWeight: '500',
+                  marginLeft: 6,
+                }}
+              >
+                依存を追加
+              </Text>
+            </Pressable>
+          )}
+
+          {/* Dependency graph: connected component around this task (view only) */}
+          {!editing && detailGraphNodes.length > 1 && (
             <View
               style={[styles.miniGraph, { borderTopColor: colors.separator }]}
             >
@@ -1806,7 +1796,30 @@ export function TaskDetailView() {
           ]}
         >
           <Pressable
-            style={[styles.saveBarButton, { backgroundColor: colors.brand }]}
+            style={[
+              styles.saveBarButton,
+              {
+                borderColor: colors.separator,
+                borderWidth: 1,
+                flex: 1,
+              },
+            ]}
+            onPress={() => {
+              haptic.light();
+              editingRef.current = false;
+              refresh();
+              setEditing(false);
+            }}
+          >
+            <Text style={[styles.saveBarText, { color: colors.black }]}>
+              キャンセル
+            </Text>
+          </Pressable>
+          <Pressable
+            style={[
+              styles.saveBarButton,
+              { backgroundColor: colors.brand, flex: 2 },
+            ]}
             onPress={() => {
               haptic.medium();
               save();

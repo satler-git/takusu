@@ -12,7 +12,11 @@
 import { useState, useMemo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Checkbox, TextInput as PaperTextInput } from 'react-native-paper';
+import {
+  Checkbox,
+  Switch,
+  TextInput as PaperTextInput,
+} from 'react-native-paper';
 import { Slider } from '@expo/ui/community/slider';
 import { useColors, type ColorSet } from '@/src/theme';
 import { haptic } from '@/src/components/haptics';
@@ -90,9 +94,9 @@ const makeStyles = (colors: ColorSet) =>
       flex: 1,
     },
     maximizeButton: {
-      width: 36,
-      height: 36,
-      borderRadius: 8,
+      width: 44,
+      height: 44,
+      borderRadius: 10,
       borderWidth: 1.5,
       alignItems: 'center',
       justifyContent: 'center',
@@ -330,8 +334,25 @@ export function HabitStepEditor({ drafts, onChange }: HabitStepEditorProps) {
                 >
                   {d.title || '(無題)'}
                 </Text>
-                <Text style={[styles.stepTime, { color: colors.gray }]}>
-                  {d.start_time}-{d.end_time}
+                <Text
+                  style={[styles.stepTime, { color: colors.gray }]}
+                  numberOfLines={2}
+                >
+                  {d.start_time}-{d.end_time} · {formatDuration(d.avg_minutes)}{' '}
+                  ±
+                  {formatDuration(
+                    d.sigma_minutes > 0
+                      ? d.sigma_minutes
+                      : Math.max(1, Math.round(d.avg_minutes / 5)),
+                  )}{' '}
+                  ·{' '}
+                  {Math.round(
+                    d.avg_minutes /
+                      (d.sigma_minutes > 0
+                        ? d.sigma_minutes
+                        : Math.max(1, Math.round(d.avg_minutes / 5))),
+                  )}
+                  x{d.fixed ? ' · 時間固定' : ''}
                 </Text>
               </Pressable>
               <View style={styles.stepHeaderActions}>
@@ -469,16 +490,12 @@ export function HabitStepEditor({ drafts, onChange }: HabitStepEditorProps) {
                         />
                       </Pressable>
                     </View>
-                    {canMaximize && (
-                      <Text style={[styles.hint, { color: colors.grayLight }]}>
-                        window: {windowMin}分
-                      </Text>
-                    )}
                   </View>
                   <PaperTextInput
                     mode="outlined"
                     label="sigma"
                     value={d.sigma_minutes > 0 ? String(d.sigma_minutes) : ''}
+                    placeholder="1m (avg/5)"
                     onChangeText={(v) => {
                       const parsed = parseDuration(v);
                       update(d.tempId, {
@@ -491,11 +508,6 @@ export function HabitStepEditor({ drafts, onChange }: HabitStepEditorProps) {
                     dense
                   />
                 </View>
-                {d.sigma_minutes === 0 && (
-                  <Text style={[styles.hint, { color: colors.grayLight }]}>
-                    sigma: {Math.max(1, Math.round(d.avg_minutes / 5))}m (avg/5)
-                  </Text>
-                )}
 
                 {/* Abandonability */}
                 <View style={styles.sliderRow}>
@@ -520,55 +532,46 @@ export function HabitStepEditor({ drafts, onChange }: HabitStepEditorProps) {
 
                 {/* Parallel + fixed */}
                 <View style={styles.toggleRow}>
-                  <Pressable
-                    style={styles.toggleItem}
-                    onPress={() =>
-                      update(d.tempId, { parallelizable: !d.parallelizable })
-                    }
-                  >
+                  <View style={styles.toggleItem}>
                     <Text style={[styles.toggleLabel, { color: colors.black }]}>
                       並列実行可能
                     </Text>
-                    <Checkbox
-                      status={d.parallelizable ? 'checked' : 'unchecked'}
-                      onPress={() =>
-                        update(d.tempId, { parallelizable: !d.parallelizable })
+                    <Switch
+                      value={d.parallelizable}
+                      onValueChange={() =>
+                        update(d.tempId, {
+                          parallelizable: !d.parallelizable,
+                        })
                       }
-                      color={colors.brand}
+                      trackColor={{ true: colors.brand }}
                     />
-                  </Pressable>
-                  <Pressable
-                    style={styles.toggleItem}
-                    onPress={() =>
-                      update(d.tempId, { allows_parallel: !d.allows_parallel })
-                    }
-                  >
+                  </View>
+                  <View style={styles.toggleItem}>
                     <Text style={[styles.toggleLabel, { color: colors.black }]}>
                       並列受け入れ
                     </Text>
-                    <Checkbox
-                      status={d.allows_parallel ? 'checked' : 'unchecked'}
-                      onPress={() =>
+                    <Switch
+                      value={d.allows_parallel}
+                      onValueChange={() =>
                         update(d.tempId, {
                           allows_parallel: !d.allows_parallel,
                         })
                       }
-                      color={colors.brand}
+                      trackColor={{ true: colors.brand }}
                     />
-                  </Pressable>
-                  <Pressable
-                    style={styles.toggleItem}
-                    onPress={() => update(d.tempId, { fixed: !d.fixed })}
-                  >
+                  </View>
+                  <View style={styles.toggleItem}>
                     <Text style={[styles.toggleLabel, { color: colors.black }]}>
                       時間固定
                     </Text>
-                    <Checkbox
-                      status={d.fixed ? 'checked' : 'unchecked'}
-                      onPress={() => update(d.tempId, { fixed: !d.fixed })}
-                      color={colors.brand}
+                    <Switch
+                      value={d.fixed}
+                      onValueChange={() =>
+                        update(d.tempId, { fixed: !d.fixed })
+                      }
+                      trackColor={{ true: colors.brand }}
                     />
-                  </Pressable>
+                  </View>
                 </View>
 
                 {/* Depends */}

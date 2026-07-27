@@ -12,10 +12,10 @@ import {
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import {
-  Checkbox,
   IconButton,
   Menu,
   SegmentedButtons,
+  Switch,
   TextInput as PaperTextInput,
 } from 'react-native-paper';
 import { Slider } from '@expo/ui/community/slider';
@@ -42,7 +42,6 @@ import { RedundantDepWarning } from '@/src/components/RedundantDepWarning';
 import { parseRule, summarizeRule } from '@/src/api/rrule';
 import { haptic } from '@/src/components/haptics';
 import { useUndoableToast } from '@/src/hooks/useUndoableToast';
-import { CancelConfirmButton } from '@/src/components/CancelConfirmButton';
 import { DeleteConfirmButton } from '@/src/components/DeleteConfirmButton';
 import { parseDuration } from '@/src/utils/duration';
 import {
@@ -155,11 +154,6 @@ const makeStyles = (colors: ColorSet) =>
       fontSize: 16,
     },
     costInput: {},
-    costHint: {
-      fontSize: 11,
-      marginTop: 2,
-      marginLeft: 4,
-    },
     sliderContainer: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -1005,28 +999,6 @@ export function HabitDetailView() {
           }}
         />
         <View style={{ flex: 1 }} />
-        {editing && (
-          <>
-            <IconButton
-              icon="check"
-              iconColor={colors.white}
-              containerColor={colors.brand}
-              size={22}
-              onPress={() => {
-                haptic.medium();
-                save();
-              }}
-            />
-            <CancelConfirmButton
-              onConfirm={() => {
-                haptic.light();
-                editingRef.current = false;
-                setEditing(false);
-                refresh();
-              }}
-            />
-          </>
-        )}
         <Menu
           visible={menuVisible}
           onDismiss={() => setMenuVisible(false)}
@@ -1040,26 +1012,16 @@ export function HabitDetailView() {
           }
         >
           {editing ? (
-            <>
-              <Menu.Item
-                onPress={() => {
-                  setMenuVisible(false);
-                  save();
-                }}
-                title="保存"
-                leadingIcon="content-save-outline"
-              />
-              <Menu.Item
-                onPress={() => {
-                  setMenuVisible(false);
-                  editingRef.current = false;
-                  setEditing(false);
-                  refresh();
-                }}
-                title="キャンセル"
-                leadingIcon="close"
-              />
-            </>
+            <Menu.Item
+              onPress={() => {
+                setMenuVisible(false);
+                editingRef.current = false;
+                setEditing(false);
+                refresh();
+              }}
+              title="キャンセル"
+              leadingIcon="close"
+            />
           ) : (
             <>
               <Menu.Item
@@ -1098,44 +1060,41 @@ export function HabitDetailView() {
           { paddingBottom: 16 + insets.bottom },
         ]}
       >
-        {/* Title */}
+        {/* Title + Description (hero) */}
         {editing ? (
-          <PaperTextInput
-            mode="outlined"
-            value={title}
-            onChangeText={setTitle}
-            label="タイトル"
-            outlineColor={colors.separator}
-            activeOutlineColor={colors.brand}
-            style={styles.titleInput}
-            contentStyle={{ fontSize: 20, fontWeight: '600' }}
-          />
-        ) : (
-          <Text style={[styles.title, { color: colors.black }]}>
-            {habit.title}
-          </Text>
-        )}
-
-        {/* Description */}
-        <View style={styles.section}>
-          <Text style={[styles.label, { color: colors.gray }]}>説明</Text>
-          {editing ? (
+          <View style={styles.section}>
+            <PaperTextInput
+              mode="outlined"
+              value={title}
+              onChangeText={setTitle}
+              label="タイトル"
+              outlineColor={colors.separator}
+              activeOutlineColor={colors.brand}
+              style={styles.titleInput}
+              contentStyle={{ fontSize: 20, fontWeight: '600' }}
+            />
             <PaperTextInput
               mode="outlined"
               value={description}
               onChangeText={setDescription}
+              label="説明"
               multiline
               numberOfLines={4}
               outlineColor={colors.separator}
               activeOutlineColor={colors.brand}
               style={styles.descriptionInput}
             />
-          ) : (
-            <Text style={[styles.value, { color: colors.black }]}>
+          </View>
+        ) : (
+          <View>
+            <Text style={[styles.title, { color: colors.black }]}>
+              {habit.title}
+            </Text>
+            <Text style={[styles.value, { color: colors.gray, marginTop: 4 }]}>
               {habit.description || '(なし)'}
             </Text>
-          )}
-        </View>
+          </View>
+        )}
 
         {/* Scheduled spans (#303 / #503) */}
         <View style={styles.section}>
@@ -1386,7 +1345,7 @@ export function HabitDetailView() {
                 <View style={styles.row}>
                   <PaperTextInput
                     mode="outlined"
-                    label="avg (1h30m / 90m / 90)"
+                    label="avg"
                     value={avgMinutes}
                     onChangeText={setAvgMinutes}
                     autoCapitalize="none"
@@ -1399,22 +1358,16 @@ export function HabitDetailView() {
                   <View style={[styles.costInput, { flex: 1 }]}>
                     <PaperTextInput
                       mode="outlined"
-                      label="sigma (1h30m / 90m / 90)"
+                      label="sigma"
                       value={sigmaMinutes}
                       onChangeText={setSigmaMinutes}
                       autoCapitalize="none"
                       autoCorrect={false}
+                      placeholder="1m (avg/5)"
                       outlineColor={colors.separator}
                       activeOutlineColor={colors.brand}
                       dense
                     />
-                    {sigmaMinutes === '' && (
-                      <Text
-                        style={[styles.costHint, { color: colors.grayLight }]}
-                      >
-                        {habit.sigma_minutes}m
-                      </Text>
-                    )}
                   </View>
                 </View>
               ) : (
@@ -1503,32 +1456,26 @@ export function HabitDetailView() {
               </Text>
               {editing ? (
                 <View style={styles.toggleRow}>
-                  <Pressable
-                    style={styles.toggleItem}
-                    onPress={() => setParallelizable(!parallelizable)}
-                  >
+                  <View style={styles.toggleItem}>
                     <Text style={[styles.toggleLabel, { color: colors.black }]}>
                       並列実行可能
                     </Text>
-                    <Checkbox
-                      status={parallelizable ? 'checked' : 'unchecked'}
-                      onPress={() => setParallelizable(!parallelizable)}
-                      color={colors.brand}
+                    <Switch
+                      value={parallelizable}
+                      onValueChange={() => setParallelizable(!parallelizable)}
+                      trackColor={{ true: colors.brand }}
                     />
-                  </Pressable>
-                  <Pressable
-                    style={styles.toggleItem}
-                    onPress={() => setAllowsParallel(!allowsParallel)}
-                  >
+                  </View>
+                  <View style={styles.toggleItem}>
                     <Text style={[styles.toggleLabel, { color: colors.black }]}>
                       並列受け入れ
                     </Text>
-                    <Checkbox
-                      status={allowsParallel ? 'checked' : 'unchecked'}
-                      onPress={() => setAllowsParallel(!allowsParallel)}
-                      color={colors.brand}
+                    <Switch
+                      value={allowsParallel}
+                      onValueChange={() => setAllowsParallel(!allowsParallel)}
+                      trackColor={{ true: colors.brand }}
                     />
-                  </Pressable>
+                  </View>
                 </View>
               ) : (
                 <View style={styles.toggleRow}>
@@ -1536,20 +1483,20 @@ export function HabitDetailView() {
                     <Text style={[styles.toggleLabel, { color: colors.black }]}>
                       並列実行可能
                     </Text>
-                    <Checkbox
-                      status={habit.parallelizable ? 'checked' : 'unchecked'}
+                    <Switch
+                      value={habit.parallelizable}
                       disabled
-                      color={colors.brand}
+                      trackColor={{ true: colors.brand }}
                     />
                   </View>
                   <View style={styles.toggleItem}>
                     <Text style={[styles.toggleLabel, { color: colors.black }]}>
                       並列受け入れ
                     </Text>
-                    <Checkbox
-                      status={habit.allows_parallel ? 'checked' : 'unchecked'}
+                    <Switch
+                      value={habit.allows_parallel}
                       disabled
-                      color={colors.brand}
+                      trackColor={{ true: colors.brand }}
                     />
                   </View>
                 </View>
@@ -1568,22 +1515,27 @@ export function HabitDetailView() {
                 時間固定
               </Text>
               {editing ? (
-                <>
-                  <Checkbox
-                    status={fixed ? 'checked' : 'unchecked'}
-                    onPress={() => setFixed(!fixed)}
-                    color={colors.brand}
-                  />
-                  <Text style={[styles.hint, { color: colors.grayLight }]}>
-                    開始時刻を固定し、スケジューラの移動を許可しない
+                <View style={styles.toggleItem}>
+                  <Text style={[styles.toggleLabel, { color: colors.black }]}>
+                    時間固定
                   </Text>
-                </>
+                  <Switch
+                    value={fixed}
+                    onValueChange={() => setFixed(!fixed)}
+                    trackColor={{ true: colors.brand }}
+                  />
+                </View>
               ) : (
-                <Checkbox
-                  status={habit.fixed ? 'checked' : 'unchecked'}
-                  disabled
-                  color={colors.brand}
-                />
+                <View style={styles.toggleItem}>
+                  <Text style={[styles.toggleLabel, { color: colors.black }]}>
+                    時間固定
+                  </Text>
+                  <Switch
+                    value={habit.fixed}
+                    disabled
+                    trackColor={{ true: colors.brand }}
+                  />
+                </View>
               )}
             </View>
           </>
@@ -1593,17 +1545,27 @@ export function HabitDetailView() {
         <View style={styles.section}>
           <Text style={[styles.label, { color: colors.gray }]}>アクティブ</Text>
           {editing ? (
-            <Checkbox
-              status={active ? 'checked' : 'unchecked'}
-              onPress={() => setActive(!active)}
-              color={colors.brand}
-            />
+            <View style={styles.toggleItem}>
+              <Text style={[styles.toggleLabel, { color: colors.black }]}>
+                アクティブ
+              </Text>
+              <Switch
+                value={active}
+                onValueChange={() => setActive(!active)}
+                trackColor={{ true: colors.brand }}
+              />
+            </View>
           ) : (
-            <Checkbox
-              status={habit.active ? 'checked' : 'unchecked'}
-              disabled
-              color={colors.brand}
-            />
+            <View style={styles.toggleItem}>
+              <Text style={[styles.toggleLabel, { color: colors.black }]}>
+                アクティブ
+              </Text>
+              <Switch
+                value={habit.active}
+                disabled
+                trackColor={{ true: colors.brand }}
+              />
+            </View>
           )}
         </View>
 
@@ -1721,7 +1683,30 @@ export function HabitDetailView() {
           ]}
         >
           <Pressable
-            style={[styles.saveBarButton, { backgroundColor: colors.brand }]}
+            style={[
+              styles.saveBarButton,
+              {
+                borderColor: colors.separator,
+                borderWidth: 1,
+                flex: 1,
+              },
+            ]}
+            onPress={() => {
+              haptic.light();
+              editingRef.current = false;
+              setEditing(false);
+              refresh();
+            }}
+          >
+            <Text style={[styles.saveBarText, { color: colors.black }]}>
+              キャンセル
+            </Text>
+          </Pressable>
+          <Pressable
+            style={[
+              styles.saveBarButton,
+              { backgroundColor: colors.brand, flex: 2 },
+            ]}
             onPress={() => {
               haptic.medium();
               save();

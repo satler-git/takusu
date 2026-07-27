@@ -1,0 +1,1883 @@
+<!DOCTYPE html>
+<html lang='ja'>
+<head>
+  <meta charset='UTF-8'>
+  <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+  <title>Task / Habit DetailView redesign mock (#1146) v7</title>
+  <style>
+    :root {
+      --bg: #FBFAFD;
+      --text: #1C1824;
+      --muted: #6C6578;
+      --card: #ffffff;
+      --surface: #FBFAFD;
+      --surfaceTint: #F3EEF7;
+      --border: #E5DDEE;
+      --brand: #7261A3;
+      --brandLight: #9B8BC4;
+      --brandDark: #5A4A85;
+      --red: #C06B6B;
+      --green: #5A8F6E;
+      --warning: #A65B00;
+      --onBrand: #FBFAFD;
+      --shadow: rgba(28, 24, 36, 0.08);
+    }
+
+    [data-theme='dark'] {
+      --bg: #15131C;
+      --text: #F0ECF5;
+      --muted: #A9A3B4;
+      --card: #1E1B27;
+      --surface: #1E1B27;
+      --surfaceTint: #272236;
+      --border: #363049;
+      --brand: #9B8BC4;
+      --brandLight: #B8B0D6;
+      --brandDark: #7261A3;
+      --red: #D67A7A;
+      --green: #6AA67E;
+      --warning: #E0B080;
+      --onBrand: #15131C;
+      --shadow: rgba(0, 0, 0, 0.3);
+    }
+
+    [data-theme='catppuccin'] {
+      --bg: #24273A;
+      --text: #CAD3F5;
+      --muted: #8087A2;
+      --card: #363A4F;
+      --surface: #363A4F;
+      --surfaceTint: #494D64;
+      --border: #494D64;
+      --brand: #B8B0D6;
+      --brandLight: #C6C0E0;
+      --brandDark: #8B7FB8;
+      --red: #ED8796;
+      --green: #A6DA95;
+      --warning: #F5A97F;
+      --onBrand: #24273A;
+      --shadow: rgba(0, 0, 0, 0.25);
+    }
+
+    [data-theme='aura-soft-dark'] {
+      --bg: #141414;
+      --text: #bdbdbd;
+      --muted: #b4b4b4;
+      --card: #21202e;
+      --surface: #21202e;
+      --surfaceTint: #3d375e;
+      --border: #2e2b38;
+      --brand: #a48bd6;
+      --brandLight: #b8a6e0;
+      --brandDark: #8464c6;
+      --red: #c55858;
+      --green: #54c59f;
+      --warning: #ffca85;
+      --onBrand: #141414;
+      --shadow: rgba(0, 0, 0, 0.3);
+    }
+
+    * { box-sizing: border-box; }
+    html, body { overflow-x: clip; }
+
+    body {
+      margin: 0;
+      padding: 24px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+
+    h1 { margin: 0 0 8px; font-size: 22px; }
+
+    .sub {
+      margin: 0 0 16px;
+      color: var(--muted);
+      font-size: 14px;
+      max-width: 800px;
+    }
+
+    a { color: var(--brand); }
+
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+
+    .controls span { font-size: 13px; color: var(--muted); }
+
+    .controls button {
+      border: 1px solid var(--border);
+      background: var(--card);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 7px 13px;
+      cursor: pointer;
+      font: inherit;
+      font-size: 13px;
+    }
+
+    .controls button.active {
+      background: var(--brand);
+      color: var(--onBrand);
+      border-color: var(--brand);
+    }
+
+    .mock {
+      display: flex;
+      gap: 24px;
+      flex-wrap: wrap;
+      align-items: flex-start;
+    }
+
+    .phone {
+      width: 360px;
+      height: 740px;
+      border: 12px solid #0e0c14;
+      border-radius: 44px;
+      overflow: hidden;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+      background: var(--bg);
+      flex-shrink: 0;
+    }
+
+    .screen {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .sc { display: none; flex-direction: column; height: 100%; }
+
+    .screen[data-sc='task-view'] .sc.task-view,
+    .screen[data-sc='task-edit'] .sc.task-edit,
+    .screen[data-sc='task-pending'] .sc.task-pending,
+    .screen[data-sc='habit-view'] .sc.habit-view,
+    .screen[data-sc='habit-edit'] .sc.habit-edit { display: flex; }
+
+    /* ---------- header ---------- */
+
+    .header {
+      padding: 10px 8px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    .header-icon {
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 19px;
+      color: var(--brand);
+      cursor: pointer;
+      border-radius: 999px;
+    }
+
+    .header-spacer { flex: 1; }
+
+    .scroll {
+      flex: 1;
+      overflow-y: auto;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    /* ---------- hero (summary) ---------- */
+
+    .hero {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .hero-title {
+      font-size: 21px;
+      font-weight: 700;
+      line-height: 1.3;
+      overflow-wrap: anywhere;
+      min-width: 0;
+    }
+
+    .hero-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .hero-time {
+      font-size: 13px;
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .hero-description {
+      font-size: 14px;
+      color: var(--text);
+      line-height: 1.5;
+      overflow-wrap: anywhere;
+      min-width: 0;
+    }
+
+    .hero-description.empty {
+      color: var(--muted);
+    }
+
+    .hero-progress {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .hero-progress-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .hero-progress-num {
+      font-variant-numeric: tabular-nums;
+      color: var(--text);
+      font-weight: 700;
+      font-size: 13px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: var(--surfaceTint);
+      border: 1px solid var(--border);
+      color: var(--brand);
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      white-space: nowrap;
+      font-family: inherit;
+    }
+
+    .pill .caret { font-size: 8px; color: var(--muted); }
+    .pill.ok { color: var(--green); }
+    .pill.warn { color: var(--warning); }
+
+    .pill .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: currentColor;
+      flex-shrink: 0;
+    }
+
+    /* ---------- section ---------- */
+
+    .section {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .section-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      padding: 0 4px;
+      gap: 8px;
+    }
+
+    .section-title {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--muted);
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .section-body {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    .section-body.pad {
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .section-body.dim { opacity: 0.45; }
+
+    /* ---------- rows ---------- */
+
+    .row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 16px;
+      min-height: 48px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .row:last-child { border-bottom: none; }
+
+    .row-label {
+      font-size: 14px;
+      color: var(--muted);
+      flex-shrink: 0;
+      padding-right: 8px;
+    }
+
+    .row-value {
+      font-size: 15px;
+      color: var(--text);
+      text-align: right;
+      flex: 1;
+      min-width: 0;
+      overflow-wrap: anywhere;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .row-value .sup {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .row-link {
+      font-size: 15px;
+      color: var(--brand);
+      font-weight: 700;
+      text-align: right;
+      flex: 1;
+      min-width: 0;
+      cursor: pointer;
+      overflow-wrap: anywhere;
+    }
+
+    .row-empty { color: var(--muted); }
+
+    .row-switch-label {
+      font-size: 15px;
+      color: var(--text);
+      flex: 1;
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+
+    /* ---------- flags as chips ---------- */
+
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 6px 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      background: transparent;
+      cursor: pointer;
+      font-family: inherit;
+    }
+
+    .chip.on {
+      border-color: var(--brandLight);
+      background: var(--surfaceTint);
+      color: var(--brand);
+    }
+
+    /* ---------- buttons ---------- */
+
+    .btn {
+      padding: 10px 8px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--card);
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 700;
+      text-align: center;
+      cursor: pointer;
+      font-family: inherit;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      min-width: 0;
+    }
+
+    .btn.primary {
+      background: var(--brand);
+      color: var(--onBrand);
+      border-color: var(--brand);
+      font-size: 15px;
+      padding: 12px;
+    }
+
+    .btn.block { width: 100%; }
+    .btn.ok { color: var(--green); border-color: color-mix(in srgb, var(--green) 45%, var(--border)); }
+    .btn.danger { color: var(--red); border-color: color-mix(in srgb, var(--red) 45%, var(--border)); }
+
+    .action-row {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .stepper {
+      display: flex;
+      align-items: stretch;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+
+    .stepper button {
+      width: 56px;
+      border: none;
+      background: var(--surface);
+      color: var(--brand);
+      font-size: 17px;
+      font-weight: 700;
+      cursor: pointer;
+      font-family: inherit;
+    }
+
+    .stepper-val {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      font-size: 17px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      border-left: 1px solid var(--border);
+      border-right: 1px solid var(--border);
+      padding: 9px 0;
+    }
+
+    .stepper-val .den { font-size: 13px; color: var(--muted); font-weight: 400; }
+
+    .add-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 12px 16px;
+      border: none;
+      border-top: 1px dashed var(--brandLight);
+      border-radius: 0 0 11px 11px;
+      background: transparent;
+      color: var(--brand);
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      font-family: inherit;
+      width: 100%;
+    }
+
+    .icon-btn {
+      width: 30px;
+      height: 30px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 8px;
+      border: none;
+      background: transparent;
+      color: var(--brand);
+      font-size: 15px;
+      cursor: pointer;
+      flex-shrink: 0;
+      font-family: inherit;
+    }
+
+    .icon-btn.danger { color: var(--red); }
+    .icon-btn[disabled] { color: var(--border); cursor: default; }
+
+    /* ---------- outlined inputs (react-native-paper mode="outlined") ---------- */
+
+    .ofield {
+      position: relative;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 13px 12px 9px;
+      background: transparent;
+      min-width: 0;
+    }
+
+    .ofield > .ofield-label {
+      position: absolute;
+      top: -8px;
+      left: 9px;
+      padding: 0 5px;
+      background: var(--card);
+      font-size: 11px;
+      color: var(--muted);
+      white-space: nowrap;
+      max-width: calc(100% - 18px);
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .ofield.focused { border-color: var(--brand); border-width: 2px; padding: 10px 11px 8px; }
+    .ofield.focused > .ofield-label { color: var(--brand); }
+
+    .ofield input,
+    .ofield textarea {
+      width: 100%;
+      border: none;
+      background: transparent;
+      color: var(--text);
+      font-size: 15px;
+      font-family: inherit;
+      outline: none;
+      padding: 0;
+      line-height: 1.4;
+    }
+
+    .ofield textarea { resize: none; min-height: 68px; }
+
+    .ofield .ofield-value {
+      font-size: 15px;
+      color: var(--text);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .ofield.pressable { cursor: pointer; }
+    .ofield .suffix {
+      position: absolute;
+      right: 12px;
+      bottom: 9px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .field-row {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .field-row.with-btn { grid-template-columns: minmax(0, 1fr) 44px minmax(0, 1fr); align-items: center; }
+
+    .maximize {
+      width: 44px;
+      height: 44px;
+      border-radius: 10px;
+      border: 1.5px solid var(--brand);
+      background: transparent;
+      color: var(--brand);
+      font-size: 16px;
+      cursor: pointer;
+      font-family: inherit;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .hint {
+      font-size: 11px;
+      color: var(--muted);
+      padding: 0 2px;
+    }
+
+    .form {
+      padding: 18px 16px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    /* ---------- switch / slider ---------- */
+
+    .switch {
+      width: 46px;
+      height: 26px;
+      border-radius: 999px;
+      background: var(--border);
+      position: relative;
+      transition: background 0.2s;
+      flex-shrink: 0;
+      cursor: pointer;
+    }
+
+    .switch.on { background: var(--brand); }
+
+    .switch::after {
+      content: '';
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: var(--card);
+      border: 1px solid var(--border);
+      transition: transform 0.2s;
+    }
+
+    .switch.on::after { transform: translateX(20px); border-color: var(--brand); }
+
+    .slider-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .slider-row:last-child { border-bottom: none; }
+
+    .slider {
+      position: relative;
+      flex: 1;
+      height: 20px;
+      min-width: 0;
+    }
+
+    .slider-track {
+      position: absolute;
+      top: 9px;
+      left: 0;
+      right: 0;
+      height: 3px;
+      border-radius: 2px;
+      background: var(--border);
+    }
+
+    .slider-fill {
+      position: absolute;
+      top: 9px;
+      left: 0;
+      height: 3px;
+      border-radius: 2px;
+      background: var(--brand);
+    }
+
+    .slider-thumb {
+      position: absolute;
+      top: 3px;
+      width: 15px;
+      height: 15px;
+      border-radius: 50%;
+      background: var(--brand);
+      transform: translateX(-50%);
+    }
+
+    .slider-val {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--brand);
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .seg {
+      display: flex;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      overflow: hidden;
+      flex: 1;
+      min-width: 0;
+    }
+
+    .seg button {
+      flex: 1;
+      min-width: 0;
+      border: none;
+      background: transparent;
+      color: var(--text);
+      font-size: 12px;
+      padding: 9px 4px;
+      border-right: 1px solid var(--border);
+      cursor: pointer;
+      font-family: inherit;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .seg button:last-child { border-right: none; }
+    .seg button.active { background: var(--brand); color: var(--onBrand); font-weight: 700; }
+
+    /* ---------- info button + popover ---------- */
+
+    .label-info {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    .info-btn {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      border: 1.2px solid var(--muted);
+      background: transparent;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+      line-height: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      flex-shrink: 0;
+      font-family: Georgia, serif;
+      padding: 0;
+    }
+
+    .info-btn.open { border-color: var(--brand); color: var(--brand); }
+
+    .pop-host { overflow: visible; }
+    .row.has-pop { position: relative; }
+
+    .popover {
+      position: absolute;
+      top: calc(100% - 4px);
+      left: 10px;
+      right: 10px;
+      z-index: 5;
+      background: var(--card);
+      border: 1px solid var(--brandLight);
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 12.5px;
+      line-height: 1.5;
+      color: var(--text);
+      box-shadow: 0 10px 28px var(--shadow);
+    }
+
+    .popover::before {
+      content: '';
+      position: absolute;
+      top: -5px;
+      left: 22px;
+      width: 8px;
+      height: 8px;
+      background: var(--card);
+      border-left: 1px solid var(--brandLight);
+      border-top: 1px solid var(--brandLight);
+      transform: rotate(45deg);
+    }
+
+    /* ---------- notices ---------- */
+
+    .notice {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 12px 16px;
+      font-size: 13px;
+      line-height: 1.5;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .notice:last-child { border-bottom: none; }
+
+    .notice.warn {
+      color: var(--warning);
+      background: color-mix(in srgb, var(--warning) 10%, var(--card));
+      font-weight: 700;
+    }
+
+    .notice.info { color: var(--muted); background: var(--surfaceTint); }
+    .notice.fold { color: var(--text); background: var(--surfaceTint); cursor: pointer; font-weight: 500; }
+    .notice .notice-icon { flex-shrink: 0; font-size: 14px; line-height: 1.45; }
+
+    .text-block {
+      padding: 14px 16px;
+      font-size: 15px;
+      color: var(--text);
+      line-height: 1.6;
+    }
+
+    .text-block.empty { color: var(--muted); }
+
+    /* ---------- list items ---------- */
+
+    .list-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 8px 12px 16px;
+      min-height: 48px;
+      border-bottom: 1px solid var(--border);
+      font-size: 15px;
+    }
+
+    .list-item:last-child { border-bottom: none; }
+    .list-item.today { background: var(--surfaceTint); }
+
+    .list-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+    .list-title { overflow-wrap: anywhere; }
+    .list-sub { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+    .step-deps {
+      font-size: 12px;
+      color: var(--brand);
+      line-height: 1.4;
+      overflow-wrap: anywhere;
+    }
+    .list-trailing { font-size: 13px; color: var(--muted); flex-shrink: 0; font-variant-numeric: tabular-nums; }
+    .list-chevron { color: var(--muted); flex-shrink: 0; padding-right: 8px; }
+    .list-item.stopped .list-title { color: var(--red); }
+
+    /* ---------- dependency graph (embedded DependencyGraph, height=240) ---------- */
+
+    .graph-wrap {
+      border-top: 1px solid var(--border);
+      padding: 12px 16px 14px;
+    }
+
+    .graph-label {
+      font-size: 11px;
+      color: var(--muted);
+      margin-bottom: 2px;
+    }
+
+    .dep-canvas { width: 100%; height: 240px; display: block; }
+    .dep-canvas .edge-line { stroke: var(--border); stroke-width: 2; }
+    .dep-canvas .edge-line.redundant { stroke: var(--red); stroke-dasharray: 6 5; }
+    .dep-canvas .n { fill: var(--card); stroke: var(--brand); stroke-width: 2; }
+    .dep-canvas .n.done { stroke: var(--muted); }
+    .dep-canvas .n.hl { fill: var(--brand); stroke: var(--brandDark); stroke-width: 3; }
+
+    .dep-canvas text {
+      font-size: 9px;
+      font-weight: 700;
+      fill: var(--brand);
+      text-anchor: middle;
+      font-family: inherit;
+    }
+
+    .dep-canvas text.on-hl { fill: var(--onBrand); }
+    .dep-canvas text.on-done { fill: var(--muted); }
+
+    /* ---------- step accordion ---------- */
+
+    .acc-item { border-bottom: 1px solid var(--border); }
+    .acc-item:last-of-type { border-bottom: none; }
+
+    .acc-head {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 10px 8px 10px 12px;
+      min-height: 52px;
+      cursor: pointer;
+    }
+
+    .acc-idx {
+      width: 24px;
+      text-align: center;
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--brand);
+      flex-shrink: 0;
+    }
+
+    .acc-main {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .acc-title {
+      font-size: 15px;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .acc-time {
+      font-size: 12px;
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .acc-item.open .acc-time { display: none; }
+
+    .acc-body {
+      padding: 6px 16px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .check-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+
+    .check {
+      width: 20px;
+      height: 20px;
+      border-radius: 4px;
+      border: 1.5px solid var(--muted);
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      color: transparent;
+    }
+
+    .check.on { background: var(--brand); border-color: var(--brand); color: var(--onBrand); }
+    .check-row.disabled { opacity: 0.4; }
+
+    .check-group { display: flex; flex-direction: column; gap: 10px; }
+    .group-label { font-size: 12px; font-weight: 700; color: var(--muted); }
+
+    /* ---------- save bar ---------- */
+
+    .save-bar {
+      padding: 12px 14px;
+      border-top: 1px solid var(--border);
+      background: var(--card);
+      display: flex;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+
+    .save-bar button {
+      flex: 1;
+      min-width: 0;
+      padding: 14px;
+      border-radius: 12px;
+      font-size: 15px;
+      font-weight: 700;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text);
+      cursor: pointer;
+      font-family: inherit;
+      white-space: nowrap;
+    }
+
+    .save-bar button.primary { background: var(--brand); color: var(--onBrand); border-color: var(--brand); flex: 2; }
+
+    /* ---------- legend ---------- */
+
+    .legend {
+      flex: 1;
+      min-width: 260px;
+      max-width: 560px;
+      font-size: 13px;
+      line-height: 1.7;
+      color: var(--muted);
+    }
+
+    .legend h2 {
+      font-size: 15px;
+      color: var(--text);
+      margin: 0 0 10px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .legend h2:not(:first-child) { margin-top: 24px; }
+    .legend ul { margin: 0 0 12px; padding-left: 18px; }
+    .legend li { margin-bottom: 7px; }
+    .legend strong { color: var(--text); }
+
+    .legend code {
+      background: var(--surfaceTint);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body data-theme='light'>
+  <h1>Task / Habit DetailView リデザイン mock</h1>
+  <p class='sub'>
+    Issue <a href='https://github.com/takusu-dev/takusu/issues/1146'>#1146</a> への叩き台（v6）。
+    v5 の「見づらさ」の修正に加えて、v5 が現行実装から落としていた機能（ステップの accordion / 並び替え / 最大化ボタン / 循環検出 / 各種警告）を復元した。
+  </p>
+
+  <div class='controls theme-controls'>
+    <span>theme:</span>
+    <button class='active' data-theme='light'>Light</button>
+    <button data-theme='dark'>Dark</button>
+    <button data-theme='catppuccin'>Catppuccin</button>
+    <button data-theme='aura-soft-dark'>Aura</button>
+  </div>
+
+  <div class='controls scenario-controls'>
+    <span>scenario:</span>
+    <button class='active' data-sc='task-view'>Task view</button>
+    <button data-sc='task-edit'>Task edit</button>
+    <button data-sc='task-pending'>Task pending</button>
+    <button data-sc='habit-view'>Habit view</button>
+    <button data-sc='habit-edit'>Habit edit</button>
+  </div>
+
+  <div class='mock'>
+    <div class='phone'>
+      <div class='screen' id='screen' data-sc='task-view'>
+
+        <!-- ============ Task view ============ -->
+        <div class='sc task-view'>
+          <div class='header'>
+            <div class='header-icon'>&#8249;</div>
+            <div class='header-spacer'></div>
+            <div class='header-icon'>&#9998;</div>
+            <div class='header-icon'>&#8942;</div>
+          </div>
+          <div class='scroll'>
+
+            <div class='hero'>
+              <div class='hero-title'>買い物</div>
+              <div class='hero-meta'>
+                <span></span>
+                <button class='pill'><span class='dot'></span> 進行中 <span class='caret'>&#9660;</span></button>
+              </div>
+              <div class='hero-description'>スーパーで食材を買い、帰りに薬局に寄る。</div>
+              <div class='hero-progress'>
+                <div class='hero-progress-head'>
+                  <span>進捗</span>
+                  <span class='hero-progress-num'>2 / 5 ページ</span>
+                </div>
+                <div class='slider'>
+                  <div class='slider-track'></div>
+                  <div class='slider-fill' style='width: 40%;'></div>
+                </div>
+              </div>
+            </div>
+
+            <div class='section'>
+              <div class='section-head'><span class='section-title'>操作</span></div>
+              <div class='section-body pad'>
+                <div class='stepper'>
+                  <button>&#8722;</button>
+                  <div class='stepper-val'>2 <span class='den'>/ 5</span></div>
+                  <button>&#43;</button>
+                </div>
+                <button class='btn primary block'>進捗を記録</button>
+                <div class='action-row'>
+                  <button class='btn danger'>&#8214; 停止</button>
+                  <button class='btn'>&#9986; 分割</button>
+                  <button class='btn ok'>&#10003; 完了</button>
+                </div>
+              </div>
+            </div>
+
+            <div class='section'>
+              <div class='section-head'><span class='section-title'>見積もり</span></div>
+              <div class='section-body'>
+                <div class='row'>
+                  <div class='row-label'>コスト</div>
+                  <div class='row-value'>1h &#177; 10m <span class='sup'>／ 実績 55m</span></div>
+                </div>
+                <div class='row'>
+                  <div class='row-label'>数量</div>
+                  <div class='row-value'>5 ページ</div>
+                </div>
+                <div class='row'>
+                  <div class='row-label'>放棄しやすさ</div>
+                  <div class='row-value'>標準 <span class='sup'>0.50</span></div>
+                </div>
+                <div class='chips'>
+                  <span class='chip on'>&#10003; 並列実行</span>
+                  <span class='chip'>並列受け入れ</span>
+                  <span class='chip'>時間固定</span>
+                </div>
+              </div>
+            </div>
+
+            <div class='section'>
+              <div class='section-head'><span class='section-title'>関連</span></div>
+              <div class='section-body'>
+                <div class='row'>
+                  <div class='row-label'>並列タスク</div>
+                  <div class='row-link'>洗濯機を回す &#8250;</div>
+                </div>
+                <div class='row'>
+                  <div class='row-label'>Habit</div>
+                  <div class='row-link'>朝のランニング &#8250;</div>
+                </div>
+              </div>
+            </div>
+
+            <div class='section'>
+              <div class='section-head'>
+                <span class='section-title'>依存</span>
+                <span class='section-title'>2 件</span>
+              </div>
+              <div class='section-body'>
+                <div class='notice warn'>
+                  <span class='notice-icon'>&#9888;</span>
+                  <span>#4 は #3 経由でも到達できるため、この依存は冗長です</span>
+                </div>
+                <div class='list-item'>
+                  <div class='list-main'><span class='list-title'>#3 買い物リスト作成</span></div>
+                  <span class='list-chevron'>&#8250;</span>
+                </div>
+                <div class='list-item'>
+                  <div class='list-main'><span class='list-title'>#4 冷蔵庫チェック</span></div>
+                  <span class='list-chevron'>&#8250;</span>
+                </div>
+                <div class='graph-wrap'>
+                  <div class='graph-label'>依存グラフ</div>
+                  <svg class='dep-canvas' viewBox='0 0 336 240' preserveAspectRatio='xMidYMid meet'>
+                    <line class='edge-line' x1='72' y1='58' x2='168' y2='120' />
+                    <line class='edge-line' x1='264' y1='54' x2='168' y2='120' />
+                    <line class='edge-line' x1='168' y1='120' x2='70' y2='190' />
+                    <line class='edge-line' x1='70' y1='190' x2='268' y2='188' />
+                    <line class='edge-line redundant' x1='168' y1='120' x2='268' y2='188' />
+
+                    <circle class='n done' cx='72' cy='58' r='26' />
+                    <text class='on-done' x='72' y='55'>買い物リ</text>
+                    <text class='on-done' x='72' y='67'>スト作成</text>
+
+                    <circle class='n' cx='264' cy='54' r='26' />
+                    <text x='264' y='51'>冷蔵庫</text>
+                    <text x='264' y='63'>チェック</text>
+
+                    <circle class='n hl' cx='168' cy='120' r='26' />
+                    <text class='on-hl' x='168' y='124'>買い物</text>
+
+                    <circle class='n' cx='70' cy='190' r='26' />
+                    <text x='70' y='187'>夕食を</text>
+                    <text x='70' y='199'>作る</text>
+
+                    <circle class='n' cx='268' cy='188' r='26' />
+                    <text x='268' y='192'>皿洗い</text>
+                  </svg>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- ============ Task edit ============ -->
+        <div class='sc task-edit'>
+          <div class='header'>
+            <div class='header-icon'>&#8249;</div>
+            <div class='header-spacer'></div>
+            <div class='header-icon'>&#8942;</div>
+          </div>
+          <div class='scroll'>
+
+            <div class='section'>
+              <div class='section-body form'>
+                <div class='ofield focused'>
+                  <span class='ofield-label'>タイトル</span>
+                  <input value='買い物' />
+                </div>
+                <div class='hero-meta'>
+                  <span></span>
+                  <button class='pill'><span class='dot'></span> 進行中 <span class='caret'>&#9660;</span></button>
+                </div>
+                <div class='ofield'>
+                  <span class='ofield-label'>説明</span>
+                  <textarea>スーパーで食材を買い、帰りに薬局に寄る。</textarea>
+                </div>
+              </div>
+            </div>
+
+            <div class='section'>
+              <div class='section-head'><span class='section-title'>スケジュール</span></div>
+              <div class='section-body form'>
+                <div class='ofield pressable'>
+                  <span class='ofield-label'>開始</span>
+                  <div class='ofield-value'>2026/7/27 14:00</div>
+                </div>
+                <div class='ofield pressable'>
+                  <span class='ofield-label'>終了</span>
+                  <div class='ofield-value'>2026/7/27 15:00</div>
+                </div>
+              </div>
+            </div>
+
+            <div class='section'>
+              <div class='section-head'><span class='section-title'>見積もり</span></div>
+              <div class='section-body form'>
+                <div class='field-row with-btn'>
+                  <div class='ofield'>
+                    <span class='ofield-label'>avg</span>
+                    <input value='1h' />
+                  </div>
+                  <button class='maximize' title='開始〜終了いっぱいに広げる'>&#8596;</button>
+                  <div class='ofield'>
+                    <span class='ofield-label'>sigma</span>
+                    <input value='' placeholder='1m (avg/5)' />
+                  </div>
+                </div>
+                <div class='hint' style='margin-top: -10px;'>window: 60分 ／ 1h30m / 90m / 90 形式</div>
+                <div class='field-row'>
+                  <div class='ofield'>
+                    <span class='ofield-label'>数量</span>
+                    <input value='5' />
+                  </div>
+                  <div class='ofield'>
+                    <span class='ofield-label'>単位</span>
+                    <input value='ページ' />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class='section'>
+              <div class='section-head'><span class='section-title'>制約</span></div>
+              <div class='section-body pop-host'>
+                <div class='slider-row'>
+                  <span class='label-info'>
+                    <span class='row-label'>放棄しやすさ</span>
+                    <button class='info-btn'>i</button>
+                  </span>
+                  <div class='slider'>
+                    <div class='slider-track'></div>
+                    <div class='slider-fill' style='width: 50%;'></div>
+                    <div class='slider-thumb' style='left: 50%;'></div>
+                  </div>
+                  <span class='slider-val'>0.50</span>
+                </div>
+                <div class='row'>
+                  <span class='label-info'>
+                    <span class='row-label'>並列実行</span>
+                    <button class='info-btn'>i</button>
+                  </span>
+                  <div class='switch on'></div>
+                </div>
+                <div class='row'>
+                  <span class='label-info'>
+                    <span class='row-label'>並列受け入れ</span>
+                    <button class='info-btn'>i</button>
+                  </span>
+                  <div class='switch'></div>
+                </div>
+                <div class='row has-pop'>
+                  <span class='label-info'>
+                    <span class='row-label'>時間固定</span>
+                    <button class='info-btn open'>i</button>
+                  </span>
+                  <div class='switch'></div>
+                  <div class='popover'>開始時刻を固定し、スケジューラによる移動を許可しません。会議など、時刻をずらせない予定に使います。</div>
+                </div>
+              </div>
+            </div>
+
+            <div class='section'>
+              <div class='section-head'>
+                <span class='section-title'>依存</span>
+                <span class='section-title'>2 件</span>
+              </div>
+              <div class='section-body'>
+                <div class='list-item'>
+                  <div class='list-main'><span class='list-title'>#3 買い物リスト作成</span></div>
+                  <button class='icon-btn danger'>&#10005;</button>
+                </div>
+                <div class='list-item'>
+                  <div class='list-main'><span class='list-title'>#4 冷蔵庫チェック</span></div>
+                  <button class='icon-btn danger'>&#10005;</button>
+                </div>
+                <button class='add-btn'>&#43; 依存を追加</button>
+              </div>
+            </div>
+
+          </div>
+          <div class='save-bar'>
+            <button>キャンセル</button>
+            <button class='primary'>保存</button>
+          </div>
+        </div>
+
+        <!-- ============ Task pending ============ -->
+        <div class='sc task-pending'>
+          <div class='header'>
+            <div class='header-icon'>&#8249;</div>
+            <div class='header-spacer'></div>
+            <div class='header-icon'>&#9998;</div>
+            <div class='header-icon'>&#8942;</div>
+          </div>
+          <div class='scroll'>
+
+            <div class='hero'>
+              <div class='hero-title'>買い物</div>
+              <div class='hero-meta'>
+                <span></span>
+                <button class='pill warn'><span class='dot'></span> 未スケジュール <span class='caret'>&#9660;</span></button>
+              </div>
+              <div class='hero-description empty'>(なし)</div>
+            </div>
+
+            <div class='section'>
+              <div class='section-body'>
+                <div class='notice warn'>
+                  <span class='notice-icon'>&#9888;</span>
+                  <span>まだスケジュールされていません。進捗の記録と時刻の変更はできません。</span>
+                </div>
+              </div>
+            </div>
+
+            <div class='section'>
+              <div class='section-head'><span class='section-title'>時間</span></div>
+              <div class='section-body'>
+                <div class='row'>
+                  <div class='row-label'>期限</div>
+                  <div class='row-value'>7/27 23:59</div>
+                </div>
+              </div>
+            </div>
+
+            <div class='section'>
+              <div class='section-head'><span class='section-title'>見積もり</span></div>
+              <div class='section-body'>
+                <div class='row'>
+                  <div class='row-label'>コスト</div>
+                  <div class='row-value'>1h &#177; 10m</div>
+                </div>
+                <div class='row'>
+                  <div class='row-label'>数量</div>
+                  <div class='row-value'>5 ページ</div>
+                </div>
+                <div class='row'>
+                  <div class='row-label'>放棄しやすさ</div>
+                  <div class='row-value'>標準 <span class='sup'>0.50</span></div>
+                </div>
+                <div class='chips'>
+                  <span class='chip on'>&#10003; 並列実行</span>
+                  <span class='chip'>並列受け入れ</span>
+                  <span class='chip'>時間固定</span>
+                </div>
+              </div>
+            </div>
+
+            <div class='section'>
+              <div class='section-head'><span class='section-title'>関連</span></div>
+              <div class='section-body'>
+                <div class='row'>
+                  <div class='row-label'>Habit</div>
+                  <div class='row-link'>朝のランニング &#8250;</div>
+                </div>
+              </div>
+            </div>
+
+            <div class='section'>
+              <div class='section-head'>
+                <span class='section-title'>依存</span>
+                <span class='section-title'>2 件</span>
+              </div>
+              <div class='section-body'>
+                <div class='list-item'>
+                  <div class='list-main'><span class='list-title'>#3 買い物リスト作成</span></div>
+                  <span class='list-chevron'>&#8250;</span>
+                </div>
+                <div class='list-item'>
+                  <div class='list-main'><span class='list-title'>#4 冷蔵庫チェック</span></div>
+                  <span class='list-chevron'>&#8250;</span>
+                </div>
+                <div class='graph-wrap'>
+                  <div class='graph-label'>依存グラフ</div>
+                  <svg class='dep-canvas' viewBox='0 0 336 240' preserveAspectRatio='xMidYMid meet'>
+                    <line class='edge-line' x1='72' y1='58' x2='168' y2='120' />
+                    <line class='edge-line' x1='264' y1='54' x2='168' y2='120' />
+                    <line class='edge-line' x1='168' y1='120' x2='70' y2='190' />
+                    <line class='edge-line' x1='70' y1='190' x2='268' y2='188' />
+                    <line class='edge-line redundant' x1='168' y1='120' x2='268' y2='188' />
+
+                    <circle class='n done' cx='72' cy='58' r='26' />
+                    <text class='on-done' x='72' y='55'>買い物リ</text>
+                    <text class='on-done' x='72' y='67'>スト作成</text>
+
+                    <circle class='n' cx='264' cy='54' r='26' />
+                    <text x='264' y='51'>冷蔵庫</text>
+                    <text x='264' y='63'>チェック</text>
+
+                    <circle class='n hl' cx='168' cy='120' r='26' />
+                    <text class='on-hl' x='168' y='124'>買い物</text>
+
+                    <circle class='n' cx='70' cy='190' r='26' />
+                    <text x='70' y='187'>夕食を</text>
+                    <text x='70' y='199'>作る</text>
+
+                    <circle class='n' cx='268' cy='188' r='26' />
+                    <text x='268' y='192'>皿洗い</text>
+                  </svg>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- ============ Habit view ============ -->
+        <div class='sc habit-view'>
+          <div class='header'>
+            <div class='header-icon'>&#8249;</div>
+            <div class='header-spacer'></div>
+            <div class='header-icon'>&#9998;</div>
+            <div class='header-icon'>&#8942;</div>
+          </div>
+          <div class='scroll'>
+
+            <div class='hero'>
+              <div class='hero-title'>朝のランニング</div>
+              <div class='hero-meta'>
+                <span></span>
+                <span class='pill ok'><span class='dot'></span> 有効</span>
+              </div>
+              <div class='hero-description'>朝の運動習慣。雨の日は室内に変更。</div>
+            </div>
+
+            <div class='section'>
+              <div class='section-head'>
+                <span class='section-title'>繰り返し</span>
+              </div>
+              <div class='section-body'>
+                <div class='row'>
+                  <div class='row-label'>周期</div>
+                  <div class='row-value'>毎日</div>
+                </div>
+                <div class='row'>
+                  <div class='row-label'>時間帯</div>
+                  <div class='row-value'>07:00 &#8594; 07:30</div>
+                </div>
+                <div class='row'>
+                  <div class='row-label'>スケジュール枠</div>
+                  <div class='row-value'>当日</div>
+                </div>
+              </div>
+            </div>
+
+            <div class='section'>
+              <div class='section-head'>
+                <span class='section-title'>休止期間</span>
+                <span class='section-title'>2 件</span>
+              </div>
+              <div class='section-body'>
+                <div class='list-item today stopped'>
+                  <div class='list-main'>
+                    <span class='list-title'>8/10 &#65374; 8/15</span>
+                    <span class='list-sub'>旅行（この期間はタスクを生成しない）</span>
+                  </div>
+                  <button class='icon-btn danger'>&#10005;</button>
+                </div>
+                <div class='list-item'>
+                  <div class='list-main'>
+                    <span class='list-title'>9/1</span>
+                    <span class='list-sub'>調整</span>
+                  </div>
+                  <button class='icon-btn danger'>&#10005;</button>
+                </div>
+                <button class='add-btn'>&#43; 休止期間を追加</button>
+              </div>
+            </div>
+
+            <div class='section'>
+              <div class='section-head'>
+                <span class='section-title'>ステップ</span>
+                <span class='section-title'>4 件</span>
+              </div>
+              <div class='section-body'>
+                <div class='list-item' style='margin-top: 4px;'>
+                  <span class='acc-idx'>1</span>
+                  <div class='list-main'>
+                    <span class='list-title'>準備</span>
+                    <span class='list-sub'>07:00-07:05 &#183; 5m &#177;1m &#183; 5x &#183; 時間固定</span>
+                  </div>
+                </div>
+                <div class='list-item'>
+                  <span class='acc-idx'>2</span>
+                  <div class='list-main'>
+                    <span class='list-title'>走る</span>
+                    <span class='list-sub'>07:05-07:25 &#183; 20m &#177;4m &#183; 5x</span>
+                    <span class='step-deps'>&#8618; 依存: 1. 準備</span>
+                  </div>
+                </div>
+                <div class='list-item'>
+                  <span class='acc-idx'>3</span>
+                  <div class='list-main'>
+                    <span class='list-title'>ストレッチ</span>
+                    <span class='list-sub'>07:25-07:30 &#183; 5m &#177;1m &#183; 5x</span>
+                    <span class='step-deps'>&#8618; 依存: 1. 準備</span>
+                  </div>
+                </div>
+                <div class='list-item'>
+                  <span class='acc-idx'>4</span>
+                  <div class='list-main'>
+                    <span class='list-title'>クールダウン</span>
+                    <span class='list-sub'>07:30-07:35 &#183; 5m &#177;1m &#183; 5x</span>
+                    <span class='step-deps'>&#8618; 依存: 2. 走る, 3. ストレッチ</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class='section'>
+              <div class='section-head'><span class='section-title'>Habit 本体の設定</span></div>
+              <div class='section-body'>
+                <div class='notice fold'>
+                  <span class='notice-icon'>&#9660;</span>
+                  <span>ステップ優先のため無視されます</span>
+                </div>
+              </div>
+            </div>
+
+            <div class='section'>
+              <div class='section-head'><span class='section-title'>直近のタスク</span></div>
+              <div class='section-body'>
+                <div class='list-item'>
+                  <div class='list-main'>
+                    <span class='list-title'>朝のランニング</span>
+                    <span class='list-sub'>スケジュール済</span>
+                  </div>
+                  <span class='list-trailing'>7/28 07:00</span>
+                  <span class='list-chevron'>&#8250;</span>
+                </div>
+                <div class='list-item'>
+                  <div class='list-main'>
+                    <span class='list-title'>朝のランニング</span>
+                    <span class='list-sub'>未スケジュール</span>
+                  </div>
+                  <span class='list-trailing'>7/29 07:00</span>
+                  <span class='list-chevron'>&#8250;</span>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- ============ Habit edit ============ -->
+        <div class='sc habit-edit'>
+          <div class='header'>
+            <div class='header-icon'>&#8249;</div>
+            <div class='header-spacer'></div>
+            <div class='header-icon'>&#8942;</div>
+          </div>
+          <div class='scroll'>
+
+            <div class='section'>
+              <div class='section-body form'>
+                <div class='ofield focused'>
+                  <span class='ofield-label'>タイトル</span>
+                  <input value='朝のランニング' />
+                </div>
+                <div class='row' style='padding: 0; min-height: 0; border: none;'>
+                  <div class='row-label'>アクティブ</div>
+                  <div class='switch on'></div>
+                </div>
+                <div class='ofield'>
+                  <span class='ofield-label'>説明</span>
+                  <textarea>朝の運動習慣。雨の日は室内に変更。</textarea>
+                </div>
+              </div>
+            </div>
+
+            <div class='section'>
+              <div class='section-head'><span class='section-title'>繰り返し</span></div>
+              <div class='section-body form'>
+                <div class='ofield pressable'>
+                  <span class='ofield-label'>周期 (RRULE)</span>
+                  <div class='ofield-value'>毎日</div>
+                  <span class='suffix'>&#8250;</span>
+                </div>
+                <div>
+                  <div class='group-label' style='margin-bottom: 6px;'>スケジュール枠</div>
+                  <div class='seg'>
+                    <button class='active'>当日</button>
+                    <button>期間内どこでも</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class='section'>
+              <div class='section-head'>
+                <span class='section-title'>休止期間</span>
+                <span class='section-title'>2 件</span>
+              </div>
+              <div class='section-body'>
+                <div class='list-item today stopped'>
+                  <div class='list-main'>
+                    <span class='list-title'>8/10 &#65374; 8/15</span>
+                    <span class='list-sub'>旅行</span>
+                  </div>
+                  <button class='icon-btn danger'>&#10005;</button>
+                </div>
+                <div class='list-item'>
+                  <div class='list-main'>
+                    <span class='list-title'>9/1</span>
+                    <span class='list-sub'>調整</span>
+                  </div>
+                  <button class='icon-btn danger'>&#10005;</button>
+                </div>
+                <button class='add-btn'>&#43; 休止期間を追加</button>
+              </div>
+            </div>
+
+            <div class='section'>
+              <div class='section-head'>
+                <span class='section-title'>ステップ</span>
+                <span class='section-title'>3 件</span>
+              </div>
+              <div class='section-body'>
+                <div class='notice info'>
+                  <span>ステップがある場合、Habit 本体の時間・コスト・放棄しやすさは無視されます</span>
+                </div>
+
+                <!-- step 1: expanded -->
+                <div class='acc-item open'>
+                  <div class='acc-head'>
+                    <button class='icon-btn'>&#9650;</button>
+                    <span class='acc-idx'>1</span>
+                    <span class='acc-main'>
+                      <span class='acc-title'>準備</span>
+                      <span class='acc-time'>07:00-07:05</span>
+                    </span>
+                    <button class='icon-btn' disabled>&#8593;</button>
+                    <button class='icon-btn'>&#8595;</button>
+                    <button class='icon-btn danger'>&#10005;</button>
+                  </div>
+                  <div class='acc-body'>
+                    <div class='ofield'>
+                      <span class='ofield-label'>タイトル</span>
+                      <input value='準備' />
+                    </div>
+                    <div class='field-row'>
+                      <div class='ofield pressable'>
+                        <span class='ofield-label'>開始</span>
+                        <div class='ofield-value'>07:00</div>
+                      </div>
+                      <div class='ofield pressable'>
+                        <span class='ofield-label'>終了</span>
+                        <div class='ofield-value'>07:05</div>
+                      </div>
+                    </div>
+                    <div class='field-row with-btn'>
+                      <div class='ofield'>
+                        <span class='ofield-label'>avg</span>
+                        <input value='5m' />
+                      </div>
+                      <button class='maximize'>&#8596;</button>
+                      <div class='ofield'>
+                        <span class='ofield-label'>sigma</span>
+                        <input value='' placeholder='1m (avg/5)' />
+                      </div>
+                    </div>
+                    <div class='slider-row' style='padding: 0; border: none;'>
+                      <span class='row-label'>放棄しやすさ</span>
+                      <div class='slider'>
+                        <div class='slider-track'></div>
+                        <div class='slider-fill' style='width: 50%;'></div>
+                        <div class='slider-thumb' style='left: 50%;'></div>
+                      </div>
+                      <span class='slider-val'>0.50</span>
+                    </div>
+                    <div class='row'>
+                      <span class='row-switch-label'>時間固定</span>
+                      <div class='switch on'></div>
+                    </div>
+                    <div class='row'>
+                      <span class='row-switch-label'>並列実行</span>
+                      <div class='switch'></div>
+                    </div>
+                    <div class='row'>
+                      <span class='row-switch-label'>並列受け入れ</span>
+                      <div class='switch'></div>
+                    </div>
+                    <div class='check-group'>
+                      <span class='label-info'>
+                        <span class='group-label'>依存 (DAG)</span>
+                        <button class='info-btn'>i</button>
+                      </span>
+                      <div class='check-row disabled'><span class='check'>&#10003;</span> 2. 走る<span class='hint'>（循環するため選択不可）</span></div>
+                      <div class='check-row'><span class='check'>&#10003;</span> 3. ストレッチ</div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- step 2: collapsed -->
+                <div class='acc-item'>
+                  <div class='acc-head'>
+                    <button class='icon-btn'>&#9660;</button>
+                    <span class='acc-idx'>2</span>
+                    <span class='acc-main'>
+                      <span class='acc-title'>走る</span>
+                      <span class='acc-time'>07:05-07:25</span>
+                    </span>
+                    <button class='icon-btn'>&#8593;</button>
+                    <button class='icon-btn'>&#8595;</button>
+                    <button class='icon-btn danger'>&#10005;</button>
+                  </div>
+                </div>
+
+                <!-- step 3: collapsed -->
+                <div class='acc-item'>
+                  <div class='acc-head'>
+                    <button class='icon-btn'>&#9660;</button>
+                    <span class='acc-idx'>3</span>
+                    <span class='acc-main'>
+                      <span class='acc-title'>ストレッチ</span>
+                      <span class='acc-time'>07:25-07:30</span>
+                    </span>
+                    <button class='icon-btn'>&#8593;</button>
+                    <button class='icon-btn' disabled>&#8595;</button>
+                    <button class='icon-btn danger'>&#10005;</button>
+                  </div>
+                </div>
+
+                <button class='add-btn'>&#43; ステップを追加</button>
+              </div>
+            </div>
+
+            <div class='section'>
+              <div class='section-head'><span class='section-title'>Habit 本体の設定</span></div>
+              <div class='section-body'>
+                <div class='notice fold'>
+                  <span class='notice-icon'>&#9654;</span>
+                  <span>ステップ優先のため無視されます</span>
+                </div>
+              </div>
+            </div>
+
+          </div>
+          <div class='save-bar'>
+            <button>キャンセル</button>
+            <button class='primary'>保存</button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <div class='legend'>
+      <h2>v7: レイアウト整理（2026-07-27）</h2>
+      <ul>
+        <li><strong>hero の情報を絞った</strong>: タイトル + ステータス pill + 説明 + 進捗バーに集約。時刻・RRULE 要約は専用セクションに委ね、情報の被りを減らした。</li>
+        <li><strong>Status pill を右寄せ</strong>: <code>.hero-meta</code> を <code>justify-content: space-between</code> にし、ステータス pulldown を右端に配置。</li>
+        <li><strong>説明は hero 直下</strong>: 独立した説明カードを廃止し、hero 内またはタイトル入力の直下に置いた。</li>
+        <li><strong>add ボタンを full-width</strong>: 「依存を追加」「休止期間を追加」「ステップを追加」をセクション幅いっぱいに。</li>
+        <li><strong>休止/アクティブ期間を view から編集</strong>: 追加・削除ボタンを view モードにも配置。</li>
+        <li><strong>edit 時は依存グラフを非表示</strong>: view のみ表示。</li>
+        <li><strong>ステップ表示を整理</strong>: 時間軸 timeline（.step-track）を廃止し、依存関係は <code>.step-deps</code> で独立表示。accordion unfold 時はヘッダーから時刻を消し、fold 時のみ表示。</li>
+        <li><strong>bool 編集を switch に統一</strong>: 並列実行 / 並列受け入れ / 時間固定 / アクティブは switch。依存だけ checkbox。</li>
+        <li><strong>sigma 未入力は placeholder</strong>: 「1m (avg/5)」を placeholder 表示。window ヒントを削除。</li>
+        <li><strong>maximize ボタン</strong>: 44px に拡大、センタリング。</li>
+      </ul>
+
+      <h2>v6: 見づらさの修正</h2>
+      <ul>
+        <li><strong>ヘッダーに要約を集約</strong>: タイトル + ステータス pill + 進捗バー + 説明を 1 枚の hero にまとめた。スクロールせずに「今どうなっているか」が分かる。</li>
+        <li><strong>無題カードの廃止</strong>: 全セクションに見出し（操作 / 見積もり / 関連 / 説明 / 依存）を付け、件数は右肩に置いた。帯の羅列に見えなくなる。</li>
+        <li><strong>操作ボタンの整理</strong>: v5 は「一時停止」が 2 行に折り返し、primary（緑の完了・紫の記録）が 2 つあった。v6 は <em>記録</em> のみを塗り potential とし、停止 / 分割 / 完了は同じ重みのアウトラインに統一。ラベルを短くして 1 行に収めた。数量の増減は stepper に統合。</li>
+        <li><strong>同語反復の除去</strong>: 「並列実行 → 並列で実行」のような重複行をやめ、3 つの真偽値を chip 1 行に圧縮（on は tint、off はグレー枠）。4 行が 1 行になった。</li>
+        <li><strong>意味のない色の除去</strong>: 「並列で実行」の緑を廃止。緑は完了系にのみ使う。</li>
+        <li><strong>用語</strong>: <code>abandonability</code> → 「放棄しやすさ」。値は「標準 <span class='sup'>0.50</span>」のように意味を主、数値を従にした。</li>
+        <li><strong>依存グラフ</strong>: v5 の「3 ノード横一列」は実物と違う。実際は <code>components/graph/DependencyGraph.tsx</code>（Skia + d3-force の力学配置）を <code>height={240}</code> で埋め込んでおり、GraphView と同じコンポーネント。表示条件は連結成分のノード数 &gt; 1、ラベルはタスクの title、完了/スキップ済みは done 色、冗長な辺は破線（#387）、タップで <code>/task/{id}</code> へ遷移（view のみ）。mock もそれに寄せ、依存リストの<strong>下</strong>に「依存グラフ」ラベル付きで置いた。edit モードでも表示される（実装に <code>!editing</code> ガードはない）。</li>
+        <li><strong>補足説明は info ボタンに退避</strong>: 「時間固定を有効にすると…」のような説明文を常時表示のカードに置くと、読み終わった後もずっと縦を食う。ラベル横の <code>i</code> ボタン → popover に変えた。<code>放棄しやすさ</code> / <code>並列実行</code> / <code>並列受け入れ</code> / <code>依存 (DAG)</code> も同じ扱い。</li>
+      </ul>
+
+      <h2>v6: 現行実装からの退行を修正</h2>
+      <p>v5 は現行 UI にある機能をいくつも落としていた。以下を復元した。</p>
+      <ul>
+        <li><strong>ステップの accordion</strong>（<code>HabitStepEditor</code> #390）: v5 は全展開の平坦カードで、3 ステップで約 2000px あった。折りたたみヘッダー（idx / タイトル / 時刻）に戻し、<strong>↑↓ 並び替え</strong>と<strong>削除確認ボタン</strong>も復元。</li>
+        <li><strong>outlined 入力</strong>: 現行は react-native-paper の <code>mode="outlined"</code>。v5 の「下線だけ・右寄せ」はフィールド境界が読めず、実装よりも曖昧だった。枠 + フローティングラベルに戻した。</li>
+        <li><strong>放棄しやすさは Slider</strong>: 現行は step=0.25 の Slider。v5 の pulldown は実装と別物だった。</li>
+        <li><strong>avg 最大化ボタン</strong>と <strong>window / sigma ヒント</strong>。</li>
+        <li><strong>依存の循環検出 UI</strong>: 循環する候補は disabled + 理由表示。</li>
+        <li><strong><code>RedundantDepWarning</code></strong>（冗長な依存の警告）。</li>
+        <li><strong>並列タスク行</strong>、<strong>コストの実績表示</strong>、<strong>直近タスクの status</strong>。</li>
+        <li><strong>Habit 本体設定の折りたたみ</strong>: v5 は静的な注意書きに置き換わっていたが、現行どおり開閉するセクションに戻した。</li>
+      </ul>
+
+      <h2>要確認</h2>
+      <ul>
+        <li>edit のヘッダーから ✓ / ✕ を外し、下部の sticky save bar に一本化。長いフォームでは下部バーが届きやすい。</li>
+        <li>view の真偽値を chip にしたことで、編集時は switch に切り替わる。視覚的な一貫性をどこまで保つか。</li>
+        <li><code>abandonability</code> の日本語化は UI 全体（TaskAddView / HabitAddView など）に波及する。</li>
+        <li>avg 欄の書式ヒントは placeholder 化していない。入力値が空の場合のみ placeholder が表示される。</li>
+        <li>Habit の rrule 要約は「繰り返し」セクションに移動。長い RRULE の折り返しを実装で確認する必要がある。</li>
+        <li>Habit の step 依存は checkbox 羅列のまま。step 数が増えると見づらくなる。別途 DependencyGraph 埋め込みまたは tree 表示を検討。</li>
+      </ul>
+    </div>
+  </div>
+
+  <script>
+    var SCENARIOS = ['task-view', 'task-edit', 'task-pending', 'habit-view', 'habit-edit'];
+
+    function setTheme(name) {
+      document.body.setAttribute('data-theme', name);
+      document.querySelectorAll('.theme-controls button').forEach(function (b) {
+        b.classList.toggle('active', b.getAttribute('data-theme') === name);
+      });
+    }
+
+    function setScenario(name) {
+      if (SCENARIOS.indexOf(name) < 0) return;
+      document.getElementById('screen').setAttribute('data-sc', name);
+      document.querySelectorAll('.scenario-controls button').forEach(function (b) {
+        b.classList.toggle('active', b.getAttribute('data-sc') === name);
+      });
+    }
+
+    document.querySelector('.theme-controls').addEventListener('click', function (e) {
+      var b = e.target.closest('button[data-theme]');
+      if (b) setTheme(b.getAttribute('data-theme'));
+    });
+
+    document.querySelector('.scenario-controls').addEventListener('click', function (e) {
+      var b = e.target.closest('button[data-sc]');
+      if (b) setScenario(b.getAttribute('data-sc'));
+    });
+
+    // #task-edit / #dark,task-edit で直接開けるようにする（スクリーンショット用）
+    function applyHash() {
+      location.hash.replace('#', '').split(',').forEach(function (part) {
+        if (SCENARIOS.indexOf(part) >= 0) setScenario(part);
+        else if (part) setTheme(part);
+      });
+    }
+
+    window.addEventListener('hashchange', applyHash);
+    applyHash();
+  </script>
+</body>
+</html>
