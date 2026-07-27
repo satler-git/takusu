@@ -193,4 +193,20 @@ describe('FloatingVoiceButton gestures', () => {
     });
     expect(pushMock).toHaveBeenCalledTimes(1);
   });
+
+  it('does not push any route when the slide is too short', async () => {
+    await render(<FloatingVoiceButton />, { wrapper: TestWrapper });
+
+    const panGesture = getByGestureTestId('floating-voice-button-pan') as any;
+
+    await act(async () => {
+      fireGestureHandler(panGesture, [
+        { x: 200, y: 700, numberOfPointers: 1 },
+        { x: 200, y: 690, numberOfPointers: 1, translationY: -10 },
+        { x: 200, y: 670, numberOfPointers: 1, translationY: -30 },
+      ]);
+    });
+
+    expect(pushMock).not.toHaveBeenCalled();
+  });
 });
