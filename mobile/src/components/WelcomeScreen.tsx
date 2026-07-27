@@ -1,7 +1,7 @@
 // WelcomeScreen — shown briefly on cold start after the native splash.
 // Fades in over 0.2s, holds for 0.2s, then fades out over 0.2s.
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Animated, Easing, Image, StyleSheet, View } from 'react-native';
 import { type AppTheme } from '@/src/theme';
 
@@ -9,6 +9,7 @@ interface WelcomeScreenProps {
   theme: AppTheme;
   backgroundColor: string;
   onFinished: () => void;
+  dismiss?: boolean;
 }
 
 const FADE_IN_DURATION = 200;
@@ -26,9 +27,13 @@ export function WelcomeScreen({
   theme,
   backgroundColor,
   onFinished,
+  dismiss = true,
 }: WelcomeScreenProps) {
   const fadeAnim = useRef(new Animated.Value(0)).current;
+  const [phase, setPhase] = useState<'in' | 'hold'>('in');
 
+  // Fade in and hold briefly. The welcome stays visible until `dismiss` is true,
+  // so it can cover the screen while the local server starts on cold boot.
   useEffect(() => {
     const easing = Easing.inOut(Easing.ease);
     const animation = Animated.sequence([
@@ -39,24 +44,34 @@ export function WelcomeScreen({
         useNativeDriver: true,
       }),
       Animated.delay(HOLD_DURATION),
-      Animated.timing(fadeAnim, {
-        toValue: 0,
-        duration: FADE_OUT_DURATION,
-        easing,
-        useNativeDriver: true,
-      }),
     ]);
 
     animation.start(({ finished }) => {
-      if (finished) {
-        onFinished();
-      }
+      if (finished) setPhase('hold');
     });
 
     return () => {
       animation.stop();
     };
-  }, [fadeAnim, onFinished]);
+  }, [fadeAnim]);
+
+  // Fade out once `dismiss` becomes true after the hold phase.
+  useEffect(() => {
+    if (phase !== 'hold' || !dismiss) return;
+    const easing = Easing.inOut(Easing.ease);
+    const animation = Animated.timing(fadeAnim, {
+      toValue: 0,
+      duration: FADE_OUT_DURATION,
+      easing,
+      useNativeDriver: true,
+    });
+    animation.start(({ finished }) => {
+      if (finished) onFinished();
+    });
+    return () => {
+      animation.stop();
+    };
+  }, [phase, dismiss, fadeAnim, onFinished]);
 
   return (
     <View pointerEvents="none" style={[styles.container, { backgroundColor }]}>

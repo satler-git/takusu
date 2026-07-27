@@ -109,6 +109,11 @@ impl Client {
             .get(format!("{}/health", self.base_url))
             .send()
             .await?;
+        let status = resp.status().as_u16();
+        if status >= 400 {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(ClientError::Api { status, body });
+        }
         Ok(resp.text().await?)
     }
 

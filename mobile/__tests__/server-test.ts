@@ -1,7 +1,9 @@
 import TakusuServerModule from '@/modules/takusu-server/src/TakusuServerModule';
+import { TakusuClient } from '@/src/api/client';
 import {
   ensureLocalServer,
   getLocalServerPort,
+  waitForLocalServerReady,
   DEFAULT_LOCAL_PORT,
 } from '@/src/api/server';
 
@@ -148,5 +150,68 @@ describe('getLocalServerPort', () => {
       throw new Error('not available');
     });
     expect(getLocalServerPort()).toBe(DEFAULT_LOCAL_PORT);
+  });
+});
+
+describe('waitForLocalServerReady', () => {
+  let healthSpy: jest.SpyInstance<ReturnType<TakusuClient['health']>>;
+
+  beforeEach(() => {
+    healthSpy = jest
+      .spyOn(TakusuClient.prototype, 'health')
+      .mockRejectedValue(new Error('not ready'));
+  });
+
+  afterEach(() => {
+    healthSpy.mockRestore();
+  });
+
+  it('returns when health() succeeds', async () => {
+    const client = new TakusuClient('http://127.0.0.1:3838', 'token');
+    healthSpy.mockResolvedValueOnce('ok');
+    await expect(
+      waitForLocalServerReady(client, { maxWaitMs: 1000 }),
+    ).resolves.toBeUndefined();
+  });
+
+  it('retries until health() succeeds', async () => {
+    const client = new TakusuClient('http://127.0.0.1:3838', 'token');
+    healthSpy
+      .mockRejectedValueOnce(new Error('not ready'))
+      .mockRejectedValueOnce(new Error('not ready'))
+      .mockResolvedValueOnce('ok');
+
+    await expect(
+      waitForLocalServerReady(client, { maxWaitMs: 1000 }),
+    ).resolves.toBeUndefined();
+    expect(healthSpy).toHaveBeenCalledTimes(3);
+  });
+
+  it('throws the last health error when the deadline passes', async () => {
+    const client = new TakusuClient('http://127.0.0.1:3838', 'token');
+    const lastError = new Error('connection refused');
+    healthSpy.mockRejectedValue(lastError);
+
+    await expect(
+      waitForLocalServerReady(client, { maxWaitMs: 50 }),
+    ).rejects.toThrow('connection refused');
+  });
+
+  it('tries once even when maxWaitMs is 0', async () => {
+    const client = new TakusuClient('http://127.0.0.1:3838', 'token');
+    healthSpy.mockResolvedValueOnce('ok');
+    await expect(
+      waitForLocalServerReady(client, { maxWaitMs: 0 }),
+    ).resolves.toBeUndefined();
+    expect(healthSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops polling when the signal is aborted', async () => {
+    const client = new TakusuClient('http://127.0.0.1:3838', 'token');
+    const controller = new AbortController();
+    controller.abort();
+    await expect(
+      waitForLocalServerReady(client, { signal: controller.signal }),
+    ).rejects.toThrow('aborted');
   });
 });

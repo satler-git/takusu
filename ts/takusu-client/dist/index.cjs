@@ -102,8 +102,12 @@ var TakusuClient = class {
     return JSON.parse(text);
   }
   // ── Health ──
-  async health() {
-    const resp = await fetch(`${this.baseUrl}/health`);
+  async health(signal) {
+    const resp = await fetch(`${this.baseUrl}/health`, { signal });
+    if (resp.status >= 400) {
+      const body = await resp.text().catch(() => "");
+      throw new ApiError(resp.status, body);
+    }
     return resp.text();
   }
   // ── Task ──

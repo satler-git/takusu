@@ -93,8 +93,12 @@ export class TakusuClient {
   }
 
   // ── Health ──
-  async health(): Promise<string> {
-    const resp = await fetch(`${this.baseUrl}/health`);
+  async health(signal?: AbortSignal): Promise<string> {
+    const resp = await fetch(`${this.baseUrl}/health`, { signal });
+    if (resp.status >= 400) {
+      const body = await resp.text().catch(() => '');
+      throw new ApiError(resp.status, body);
+    }
     return resp.text();
   }
 
