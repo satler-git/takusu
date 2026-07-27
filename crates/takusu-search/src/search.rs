@@ -54,7 +54,7 @@ macro_rules! impl_search_task {
                 self.description.as_deref()
             }
             fn status(&self) -> &str {
-                &self.status
+                self.status.as_str()
             }
             fn start_at(&self) -> Option<&str> {
                 self.start_at.as_deref()

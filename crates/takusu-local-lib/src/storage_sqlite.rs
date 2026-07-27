@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use jiff::tz::TimeZone;
 use sqlx::SqlitePool;
 use sqlx::sqlite::SqlitePoolOptions;
+use takusu_util::{EnumLabel, TaskStatus, WindowMode};
 use takusu_storage::{
     CreateHabit, CreateHabitScheduledSpan, CreateMemory, CreateSkill, CreateTask,
     GoogleCalEventRow, GoogleCalSettingsRow, HabitRow, HabitScheduledSpanRow,
@@ -678,15 +679,15 @@ impl Storage for SqliteStorage {
             original_quantity_total,
         )?;
 
-        let status = body.status.as_ref().unwrap_or(&existing.status);
+        let status = body.status.unwrap_or(existing.status);
         let validated = [
-            "pending",
-            "scheduled",
-            "in_progress",
-            "completed",
-            "skipped",
+            TaskStatus::Pending,
+            TaskStatus::Scheduled,
+            TaskStatus::InProgress,
+            TaskStatus::Completed,
+            TaskStatus::Skipped,
         ];
-        if !validated.contains(&status.as_str()) {
+        if !validated.contains(&status) {
             return Err(StorageError::BadRequest(format!(
                 "invalid status: {status}"
             )));
@@ -738,7 +739,7 @@ impl Storage for SqliteStorage {
         .bind(body.parallelizable)
         .bind(body.allows_parallel)
         .bind(body.abandonability)
-        .bind(status)
+        .bind(status.to_string())
         .bind(body.habit_id.as_ref())
         .bind(body.user_edited)
         .bind(body.fixed)
@@ -757,12 +758,12 @@ impl Storage for SqliteStorage {
         // completed_at must follow explicit status transitions: set on
         // completion, clear when leaving completed.
         if body.status.is_some() {
-            let completed_at = if status == "completed" {
+            let completed_at = if status == TaskStatus::Completed {
                 existing
                     .completed_at
                     .clone()
                     .or(Some(takusu_util::now_rfc3339()))
-            } else if existing.status == "completed" {
+            } else if existing.status == TaskStatus::Completed {
                 None
             } else {
                 existing.completed_at.clone()
@@ -776,7 +777,7 @@ impl Storage for SqliteStorage {
 
             // #1044: moving to a terminal status should close any open work
             // session so active time is not left dangling.
-            if status == "skipped" || status == "completed" {
+            if status == TaskStatus::Skipped || status == TaskStatus::Completed {
                 let now = takusu_util::now_rfc3339();
                 sqlx::query(
                     "UPDATE task_work_sessions SET ended_at = ? WHERE task_id = ? AND ended_at IS NULL",
@@ -912,7 +913,7 @@ impl Storage for SqliteStorage {
         let allows_parallel = body.allows_parallel.unwrap_or(false);
         let abandonability = body.abandonability.unwrap_or(0.5);
         let fixed = body.fixed.unwrap_or(false);
-        let window_mode = body.window_mode.as_deref().unwrap_or("day");
+        let window_mode = body.window_mode.unwrap_or(WindowMode::Day);
         // Atomically reserve a monotonic display_id from the sequence table
         // (mirrors tasks.display_id, issue #186 / #305).
         let display_id: i64 = sqlx::query_scalar(
@@ -937,7 +938,7 @@ impl Storage for SqliteStorage {
         .bind(allows_parallel)
         .bind(abandonability)
         .bind(fixed)
-        .bind(window_mode)
+        .bind(window_mode.to_string())
         .execute(&self.pool)
         .await
         .map_err(map_err)?;
@@ -965,7 +966,7 @@ impl Storage for SqliteStorage {
         .bind(body.abandonability)
         .bind(body.active)
         .bind(body.fixed)
-        .bind(body.window_mode.as_ref())
+        .bind(body.window_mode.map(|w| w.to_string()))
         .bind(&full)
         .execute(&self.pool)
         .await
@@ -987,7 +988,7 @@ impl Storage for SqliteStorage {
         let allows_parallel = body.allows_parallel.unwrap_or(false);
         let abandonability = body.abandonability.unwrap_or(0.5);
         let fixed = body.fixed.unwrap_or(false);
-        let window_mode = body.window_mode.as_deref().unwrap_or("day");
+        let window_mode = body.window_mode.unwrap_or(WindowMode::Day);
         sqlx::query(
             "UPDATE habits SET title=?, description=?, recurrence=?, start_time=?, end_time=?, avg_minutes=?, sigma_minutes=?, parallelizable=?, allows_parallel=?, abandonability=?, fixed=?, window_mode=?, updated_at=strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?"
         )
@@ -1002,7 +1003,7 @@ impl Storage for SqliteStorage {
         .bind(allows_parallel)
         .bind(abandonability)
         .bind(fixed)
-        .bind(window_mode)
+        .bind(window_mode.to_string())
         .bind(&full)
         .execute(&self.pool)
         .await
@@ -1662,7 +1663,7 @@ impl Storage for SqliteStorage {
             .map_err(|e| StorageError::BadRequest(format!("invalid key: {e}")))?;
         let normalized_content = takusu_util::memory::normalize_content(&body.content)
             .map_err(|e| StorageError::BadRequest(format!("invalid content: {e}")))?;
-        let subject_type = body.subject_type.clone().unwrap_or_default();
+        let subject_type = body.subject_type.unwrap_or_default();
         let subject_id = body.subject_id.clone().unwrap_or_default();
 
         let mut tx = self.pool.begin().await.map_err(map_err)?;
@@ -1677,9 +1678,9 @@ impl Storage for SqliteStorage {
         let existing: Option<MemoryRow> = sqlx::query_as::<_, MemoryRow>(
             "SELECT * FROM memories WHERE kind = ? AND normalized_key = ? AND subject_type = ? AND subject_id = ?",
         )
-        .bind(&body.kind)
+        .bind(body.kind.as_str())
         .bind(&normalized_key)
-        .bind(&subject_type)
+        .bind(subject_type.as_str())
         .bind(&subject_id)
         .fetch_optional(&mut *tx)
         .await
@@ -1729,12 +1730,12 @@ impl Storage for SqliteStorage {
             "INSERT INTO memories (id, kind, key, normalized_key, content, normalized_content, subject_type, subject_id, source, revision, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))",
         )
         .bind(&id)
-        .bind(&body.kind)
+        .bind(body.kind.as_str())
         .bind(&body.key)
         .bind(&normalized_key)
         .bind(&body.content)
         .bind(&normalized_content)
-        .bind(&subject_type)
+        .bind(subject_type.as_str())
         .bind(&subject_id)
         .bind(source)
         .execute(&mut *tx)
@@ -1893,27 +1894,13 @@ impl Storage for SqliteStorage {
             bindings.push(pat.clone());
         }
 
-        if let Some(ref kind) = query.kind {
-            let kinds: Vec<&str> = kind
-                .split(',')
-                .map(|s| s.trim())
-                .filter(|s| !s.is_empty())
-                .collect();
-            if kinds.is_empty() {
-                return Ok(Vec::new());
-            }
-            if kinds.len() == 1 {
-                sql.push_str(" AND kind = ?");
-                bindings.push(kinds[0].to_string());
-            } else {
-                let placeholders: Vec<String> = (0..kinds.len()).map(|_| "?".to_string()).collect();
-                sql.push_str(&format!(" AND kind IN ({})", placeholders.join(",")));
-                bindings.extend(kinds.iter().map(|s| s.to_string()));
-            }
+        if let Some(kind) = query.kind {
+            sql.push_str(" AND kind = ?");
+            bindings.push(kind.as_str().to_string());
         }
-        if let Some(ref subject_type) = query.subject_type {
+        if let Some(subject_type) = query.subject_type {
             sql.push_str(" AND subject_type = ?");
-            bindings.push(subject_type.clone());
+            bindings.push(subject_type.as_str().to_string());
         }
         if let Some(ref subject_id) = query.subject_id {
             sql.push_str(" AND subject_id = ?");
@@ -2157,7 +2144,7 @@ impl Storage for SqliteStorage {
                 other => StorageError::Internal(other.to_string()),
             })?;
 
-        if task.status == "completed" || task.status == "skipped" {
+        if task.status == TaskStatus::Completed || task.status == TaskStatus::Skipped {
             return Err(StorageError::BadRequest(format!(
                 "cannot record progress on a {} task",
                 task.status
@@ -2259,12 +2246,12 @@ impl Storage for SqliteStorage {
             new_sigma = sigma;
         }
 
-        let status = if task.status == "completed" {
-            "completed".to_string()
+        let status = if task.status == TaskStatus::Completed {
+            TaskStatus::Completed
         } else if delta_quantity < 0 {
-            task.status.clone()
+            task.status
         } else {
-            "in_progress".to_string()
+            TaskStatus::InProgress
         };
 
         let suggests_completion = task
@@ -2278,7 +2265,7 @@ impl Storage for SqliteStorage {
         .bind(body.quantity_done)
         .bind(new_avg)
         .bind(new_sigma)
-        .bind(&status)
+        .bind(status.to_string())
         .bind(&full)
         .execute(&mut *tx)
         .await
@@ -2497,7 +2484,7 @@ impl Storage for SqliteStorage {
                 other => StorageError::Internal(other.to_string()),
             })?;
 
-        if original.status == "completed" || original.status == "skipped" {
+        if original.status == TaskStatus::Completed || original.status == TaskStatus::Skipped {
             return Err(StorageError::BadRequest(format!(
                 "cannot split a {} task",
                 original.status

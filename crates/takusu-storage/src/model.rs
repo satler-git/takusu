@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use takusu_util::EnumLabel;
 
 #[allow(dead_code)]
 fn default_abandonability() -> f64 {
@@ -27,7 +28,9 @@ pub struct TaskRow {
     #[serde(with = "takusu_util::bool_compat", default)]
     pub allows_parallel: bool,
     pub abandonability: f64,
-    pub status: String,
+    #[serde(with = "takusu_util::enum_serde")]
+    #[sqlx(try_from = "String")]
+    pub status: takusu_util::TaskStatus,
     pub habit_id: Option<String>,
     pub ical_uid: Option<String>,
     #[serde(with = "takusu_util::bool_compat", default)]
@@ -156,8 +159,9 @@ pub struct UpdateTask {
     pub allows_parallel: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub abandonability: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub status: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[serde(with = "takusu_util::enum_serde::option")]
+    pub status: Option<takusu_util::TaskStatus>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub habit_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
@@ -216,8 +220,9 @@ pub struct HabitRow {
     /// Window mode for generated tasks (#window_mode).
     /// `'day'` (default) = occurrence day's start_time..end_time.
     /// `'period'` = occurrence start_time .. next occurrence's start_time.
-    #[serde(default)]
-    pub window_mode: String,
+    #[serde(with = "takusu_util::enum_serde", default)]
+    #[sqlx(try_from = "String")]
+    pub window_mode: takusu_util::WindowMode,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -243,7 +248,8 @@ pub struct CreateHabit {
     pub fixed: Option<bool>,
     /// Window mode: `'day'` or `'period'` (#window_mode).
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub window_mode: Option<String>,
+    #[serde(with = "takusu_util::enum_serde::option")]
+    pub window_mode: Option<takusu_util::WindowMode>,
 }
 
 /// A single habit inside a batch create request (#1083).
@@ -298,7 +304,8 @@ pub struct UpdateHabit {
     pub fixed: Option<bool>,
     /// Window mode: `'day'` or `'period'` (#window_mode).
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub window_mode: Option<String>,
+    #[serde(with = "takusu_util::enum_serde::option")]
+    pub window_mode: Option<takusu_util::WindowMode>,
 }
 
 /// A scheduled span for a habit (#503).
@@ -406,7 +413,8 @@ pub struct HabitPreviewRequest {
     pub fixed: Option<bool>,
     /// Window mode: `'day'` or `'period'` (#window_mode).
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub window_mode: Option<String>,
+    #[serde(with = "takusu_util::enum_serde::option")]
+    pub window_mode: Option<takusu_util::WindowMode>,
     #[serde(default)]
     pub steps: Vec<HabitStepInput>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -483,7 +491,9 @@ takusu_util::impl_search_habit!(HabitRow);
 pub struct TokenRow {
     pub id: i64,
     pub jti: String,
-    pub scope: String,
+    #[serde(with = "takusu_util::enum_serde")]
+    #[sqlx(try_from = "String")]
+    pub scope: takusu_util::TokenScope,
     pub label: Option<String>,
     pub created_by: String,
     pub created_at: String,
@@ -495,7 +505,8 @@ pub struct TokenRow {
 pub struct TokenCreateResponse {
     pub id: i64,
     pub token: String,
-    pub scope: String,
+    #[serde(with = "takusu_util::enum_serde")]
+    pub scope: takusu_util::TokenScope,
     pub label: Option<String>,
     pub created_at: String,
     pub expires_at: Option<String>,
@@ -596,14 +607,18 @@ pub struct UpdateSkill {
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct MemoryRow {
     pub id: String,
-    pub kind: String,
+    #[serde(with = "takusu_util::enum_serde")]
+    #[sqlx(try_from = "String")]
+    pub kind: takusu_util::MemoryKind,
     pub key: String,
     #[serde(default, skip_serializing)]
     pub normalized_key: String,
     pub content: String,
     #[serde(default, skip_serializing)]
     pub normalized_content: String,
-    pub subject_type: String,
+    #[serde(with = "takusu_util::enum_serde", default)]
+    #[sqlx(try_from = "String")]
+    pub subject_type: takusu_util::SubjectType,
     pub subject_id: String,
     pub source: String,
     pub revision: i64,
@@ -629,11 +644,13 @@ impl takusu_util::memory::MemoryRankable for MemoryRow {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateMemory {
-    pub kind: String,
+    #[serde(with = "takusu_util::enum_serde")]
+    pub kind: takusu_util::MemoryKind,
     pub key: String,
     pub content: String,
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub subject_type: Option<String>,
+    #[serde(with = "takusu_util::enum_serde::option")]
+    pub subject_type: Option<takusu_util::SubjectType>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub subject_id: Option<String>,
     #[serde(default)]
@@ -650,10 +667,12 @@ pub struct UpdateMemory {
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct MemoryQuery {
     pub q: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub kind: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub subject_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[serde(with = "takusu_util::enum_serde::option")]
+    pub kind: Option<takusu_util::MemoryKind>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[serde(with = "takusu_util::enum_serde::option")]
+    pub subject_type: Option<takusu_util::SubjectType>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub subject_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

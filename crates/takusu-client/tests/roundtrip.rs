@@ -1,5 +1,6 @@
 use serde_json::json;
 use takusu_client::*;
+use takusu_util::TaskStatus;
 
 #[test]
 fn create_task_serialization() {
@@ -69,7 +70,7 @@ fn create_task_defaults_are_skipped() {
 fn update_task_serialization() {
     let ut = UpdateTask {
         title: Some("Updated".to_string()),
-        status: Some("in_progress".to_string()),
+        status: Some(TaskStatus::InProgress),
         parallelizable: Some(true),
         habit_id: Some("habit-2".to_string()),
         ..Default::default()
@@ -288,7 +289,7 @@ fn task_row_deserialization() {
     let tr: TaskRow = serde_json::from_value(json).unwrap();
     assert_eq!(tr.id, "task-123");
     assert_eq!(tr.display_id, 42);
-    assert_eq!(tr.status, "pending");
+    assert_eq!(tr.status, TaskStatus::Pending);
     assert_eq!(tr.depends, "[]");
 }
 

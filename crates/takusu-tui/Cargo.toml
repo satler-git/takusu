@@ -13,6 +13,7 @@ jiff = { workspace = true }
 takusu-local-lib = { workspace = true, features = ["sqlite"] }
 takusu-storage = { workspace = true }
 takusu-habit = { workspace = true }
+takusu-util = { workspace = true }
 serde_json = { workspace = true }
 tempfile = "3.27.0"
 shell-words = "1.1.1"

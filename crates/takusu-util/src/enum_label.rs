@@ -87,6 +87,10 @@ pub trait EnumLabel:
     /// All variants, in declaration order. Useful for error messages and
     /// API-side validation.
     fn all_variants() -> &'static [Self];
+
+    /// The string label for this variant. Equivalent to `to_string()` but
+    /// returns a `&'static str` so it can be used in contexts that need one.
+    fn as_str(&self) -> &'static str;
 }
 
 /// Serde adapter for [`EnumLabel`] types.
@@ -116,6 +120,42 @@ pub mod enum_serde {
     {
         let s = String::deserialize(deserializer)?;
         s.parse().map_err(serde::de::Error::custom)
+    }
+
+    /// Serde adapter for `Option<EnumLabel>` fields.
+    ///
+    /// Use with `#[serde(with = "takusu_util::enum_serde::option")]` on
+    /// `Option<SomeEnum>` fields. `None` is serialized as a missing/null
+    /// value; `Some(value)` is serialized as the enum's `Display` string.
+    pub mod option {
+        use super::EnumLabel;
+        use serde::{Deserialize, Deserializer, Serializer};
+
+        /// Serialize an `Option<EnumLabel>` value.
+        pub fn serialize<S, T>(value: &Option<T>, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+            T: EnumLabel,
+        {
+            match value {
+                Some(v) => super::serialize(v, serializer),
+                None => serializer.serialize_none(),
+            }
+        }
+
+        /// Deserialize an `Option<EnumLabel>` value from an optional string.
+        pub fn deserialize<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+        where
+            D: Deserializer<'de>,
+            T: EnumLabel,
+            <T as std::str::FromStr>::Err: std::fmt::Display,
+        {
+            let opt = Option::<String>::deserialize(deserializer)?;
+            match opt {
+                Some(s) => s.parse().map(Some).map_err(serde::de::Error::custom),
+                None => Ok(None),
+            }
+        }
     }
 }
 
@@ -159,10 +199,14 @@ macro_rules! enum_label {
         }
     ) => {
         $(#[$meta])*
-        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
         $vis enum $name {
+            #[serde(rename = $first_s)]
             $first,
-            $($variant),*
+            $(
+                #[serde(rename = $s)]
+                $variant
+            ),*
         }
 
         impl std::fmt::Display for $name {
@@ -205,8 +249,61 @@ macro_rules! enum_label {
             fn all_variants() -> &'static [Self] {
                 &[Self::$first, $(Self::$variant),*]
             }
+            fn as_str(&self) -> &'static str {
+                match self {
+                    Self::$first => $first_s,
+                    $(Self::$variant => $s),*
+                }
+            }
         }
     };
+}
+
+enum_label! {
+    /// Phase 1 type-safe labels (see `doc/type-safety-issues.md` §3.1 / 3.2 / 3.5 / 3.6).
+    ///
+    /// These are intentionally kept in `takusu-util` so that `takusu-storage`,
+    /// `takusu-client`, and `takusu-worker` can all use them without changing the
+    /// crate dependency graph.
+    pub enum TaskStatus {
+        #[default] Pending = "pending",
+        Scheduled = "scheduled",
+        InProgress = "in_progress",
+        Completed = "completed",
+        Skipped = "skipped",
+    }
+}
+
+enum_label! {
+    pub enum WindowMode {
+        #[default] Day = "day",
+        Period = "period",
+    }
+}
+
+enum_label! {
+    pub enum TokenScope {
+        #[default] ReadWrite = "read-write",
+        Root = "root",
+    }
+}
+
+enum_label! {
+    pub enum MemoryKind {
+        #[default] ProperNoun = "proper_noun",
+        Fact = "fact",
+        TaskNote = "task_note",
+    }
+}
+
+enum_label! {
+    pub enum SubjectType {
+        #[default] Empty = "",
+        Task = "task",
+        Habit = "habit",
+        Skill = "skill",
+        Schedule = "schedule",
+    }
 }
 
 #[cfg(test)]
@@ -249,10 +346,7 @@ mod tests {
         let err = "deleted".parse::<Status>().unwrap_err();
         assert_eq!(err.enum_name(), "Status");
         assert_eq!(err.value(), "deleted");
-        assert_eq!(
-            err.to_string(),
-            r#"unknown Status label: "deleted""#
-        );
+        assert_eq!(err.to_string(), r#"unknown Status label: "deleted""#);
     }
 
     #[test]
@@ -296,6 +390,12 @@ mod tests {
         status: Status,
     }
 
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    struct OptionWrapper {
+        #[serde(with = "super::enum_serde::option", default)]
+        status: Option<Status>,
+    }
+
     #[test]
     fn serde_serializes_as_display_string() {
         let w = Wrapper {
@@ -308,9 +408,12 @@ mod tests {
     #[test]
     fn serde_deserializes_known_label() {
         let w: Wrapper = serde_json::from_str(r#"{"status":"completed"}"#).unwrap();
-        assert_eq!(w, Wrapper {
-            status: Status::Completed
-        });
+        assert_eq!(
+            w,
+            Wrapper {
+                status: Status::Completed
+            }
+        );
     }
 
     #[test]
@@ -356,5 +459,50 @@ mod tests {
     #[test]
     fn trailing_comma_is_accepted() {
         assert_eq!(WithTrailingComma::all_variants().len(), 3);
+    }
+
+    #[test]
+    fn option_serde_serializes_some_as_string() {
+        let w = OptionWrapper {
+            status: Some(Status::InProgress),
+        };
+        let json = serde_json::to_string(&w).unwrap();
+        assert_eq!(json, r#"{"status":"in_progress"}"#);
+    }
+
+    #[test]
+    fn option_serde_serializes_none_as_null() {
+        let w = OptionWrapper { status: None };
+        let json = serde_json::to_string(&w).unwrap();
+        assert_eq!(json, r#"{"status":null}"#);
+    }
+
+    #[test]
+    fn option_serde_deserializes_known_label() {
+        let w: OptionWrapper = serde_json::from_str(r#"{"status":"completed"}"#).unwrap();
+        assert_eq!(
+            w,
+            OptionWrapper {
+                status: Some(Status::Completed)
+            }
+        );
+    }
+
+    #[test]
+    fn option_serde_deserializes_null_as_none() {
+        let w: OptionWrapper = serde_json::from_str(r#"{"status":null}"#).unwrap();
+        assert_eq!(w, OptionWrapper { status: None });
+    }
+
+    #[test]
+    fn option_serde_deserializes_missing_as_none() {
+        let w: OptionWrapper = serde_json::from_str(r#"{}"#).unwrap();
+        assert_eq!(w, OptionWrapper { status: None });
+    }
+
+    #[test]
+    fn option_serde_rejects_unknown_label() {
+        let err = serde_json::from_str::<OptionWrapper>(r#"{"status":"deleted"}"#);
+        assert!(err.is_err());
     }
 }

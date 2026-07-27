@@ -3,6 +3,7 @@
 //! `FromRow` derive the storage crate uses) into the WASM bundle.
 
 use serde::{Deserialize, Serialize};
+use takusu_util::EnumLabel;
 
 use crate::memory;
 
@@ -23,7 +24,8 @@ pub struct TaskRow {
     #[serde(with = "takusu_util::bool_compat", default)]
     pub allows_parallel: bool,
     pub abandonability: f64,
-    pub status: String,
+    #[serde(with = "takusu_util::enum_serde")]
+    pub status: takusu_util::TaskStatus,
     pub habit_id: Option<String>,
     pub ical_uid: Option<String>,
     #[serde(with = "takusu_util::bool_compat", default)]
@@ -110,7 +112,8 @@ pub struct UpdateTask {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub abandonability: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub status: Option<String>,
+    #[serde(with = "takusu_util::enum_serde::option")]
+    pub status: Option<takusu_util::TaskStatus>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub habit_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -150,8 +153,8 @@ pub struct HabitRow {
     pub active: bool,
     #[serde(with = "takusu_util::bool_compat", default)]
     pub fixed: bool,
-    #[serde(default)]
-    pub window_mode: String,
+    #[serde(with = "takusu_util::enum_serde", default)]
+    pub window_mode: takusu_util::WindowMode,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -176,7 +179,8 @@ pub struct CreateHabit {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fixed: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub window_mode: Option<String>,
+    #[serde(with = "takusu_util::enum_serde::option")]
+    pub window_mode: Option<takusu_util::WindowMode>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -206,7 +210,8 @@ pub struct UpdateHabit {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fixed: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub window_mode: Option<String>,
+    #[serde(with = "takusu_util::enum_serde::option")]
+    pub window_mode: Option<takusu_util::WindowMode>,
 }
 
 /// A scheduled span for a habit (#303 / #503).
@@ -331,7 +336,8 @@ pub struct SaveScheduleRequest {
 pub struct TokenRow {
     pub id: i64,
     pub jti: String,
-    pub scope: String,
+    #[serde(with = "takusu_util::enum_serde")]
+    pub scope: takusu_util::TokenScope,
     pub label: Option<String>,
     pub created_by: String,
     pub created_at: String,
@@ -343,7 +349,8 @@ pub struct TokenRow {
 pub struct TokenCreateResponse {
     pub id: i64,
     pub token: String,
-    pub scope: String,
+    #[serde(with = "takusu_util::enum_serde")]
+    pub scope: takusu_util::TokenScope,
     pub label: Option<String>,
     pub created_at: String,
     pub expires_at: Option<String>,
@@ -444,14 +451,16 @@ pub struct UpdateSkill {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemoryRow {
     pub id: String,
-    pub kind: String,
+    #[serde(with = "takusu_util::enum_serde")]
+    pub kind: takusu_util::MemoryKind,
     pub key: String,
     #[serde(skip_serializing)]
     pub normalized_key: String,
     pub content: String,
     #[serde(skip_serializing)]
     pub normalized_content: String,
-    pub subject_type: String,
+    #[serde(with = "takusu_util::enum_serde", default)]
+    pub subject_type: takusu_util::SubjectType,
     pub subject_id: String,
     pub source: String,
     pub revision: i64,
@@ -477,11 +486,13 @@ impl memory::MemoryRankable for MemoryRow {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CreateMemory {
-    pub kind: String,
+    #[serde(with = "takusu_util::enum_serde")]
+    pub kind: takusu_util::MemoryKind,
     pub key: String,
     pub content: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub subject_type: Option<String>,
+    #[serde(with = "takusu_util::enum_serde::option")]
+    pub subject_type: Option<takusu_util::SubjectType>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub subject_id: Option<String>,
     #[serde(default)]

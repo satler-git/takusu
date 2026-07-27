@@ -9,7 +9,7 @@ use takusu_client::{
     Client, HabitDetail, HabitRow, HabitScheduledSpanRow, HabitStepRow, SchedulePreviewRequest,
     TaskQuery, TaskRow,
 };
-use takusu_util::{parse_date_expression, parse_datetime_to_timestamp, parse_datetime_tz};
+use takusu_util::{parse_date_expression, parse_datetime_to_timestamp, parse_datetime_tz, TaskStatus};
 
 use std::sync::Weak;
 
@@ -308,7 +308,7 @@ pub(crate) fn format_datetime_for_display(s: &str, tz: &jiff::tz::TimeZone) -> S
 /// Returns true if the task is not completed/skipped and its `end_at` has
 /// passed relative to the current time.
 fn is_overdue(task: &TaskRow, tz: &jiff::tz::TimeZone) -> bool {
-    if task.status == "completed" || task.status == "skipped" {
+    if task.status == TaskStatus::Completed || task.status == TaskStatus::Skipped {
         return false;
     }
     let Ok(end) = parse_datetime_to_timestamp(&task.end_at, tz) else {
@@ -2323,7 +2323,7 @@ mod tests {
             parallelizable: false,
             allows_parallel: false,
             abandonability: 0.5,
-            status: "pending".to_string(),
+            status: TaskStatus::Pending,
             habit_id: habit_id.map(|s| s.to_string()),
             ical_uid: None,
             user_edited: false,
@@ -2357,7 +2357,7 @@ mod tests {
             abandonability: 0.5,
             active: true,
             fixed: false,
-            window_mode: "day".to_string(),
+            window_mode: takusu_util::WindowMode::Day,
             created_at: "2025-06-01T00:00:00Z".to_string(),
             updated_at: "2025-06-01T00:00:00Z".to_string(),
         }

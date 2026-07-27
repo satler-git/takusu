@@ -12,7 +12,6 @@ use crate::models::{
 };
 use crate::validate::{
     validate_minutes, validate_recurrence, validate_scheduled_span_dates, validate_steps,
-    validate_window_mode,
 };
 
 const HABIT_COLS: &str = "id, display_id, title, description, recurrence, start_time, end_time, avg_minutes, sigma_minutes, parallelizable, allows_parallel, abandonability, active, fixed, window_mode, created_at, updated_at";
@@ -36,8 +35,7 @@ pub async fn create(mut req: worker::Request, env: Env) -> Result<Response, Work
     let body: CreateHabit = parse_json(&mut req).await?;
     validate_minutes(body.avg_minutes, body.sigma_minutes)?;
     validate_recurrence(&body.recurrence)?;
-    let window_mode = body.window_mode.as_deref().unwrap_or("day");
-    validate_window_mode(window_mode)?;
+    let window_mode = body.window_mode.unwrap_or(takusu_util::WindowMode::Day);
     let database = db(&env)?;
     let id = uuid::Uuid::now_v7().to_string();
     let sigma = body.sigma_minutes.unwrap_or((body.avg_minutes / 5).max(1));
@@ -76,7 +74,7 @@ pub async fn create(mut req: worker::Request, env: Env) -> Result<Response, Work
         JsValue::from_bool(allows_parallel),
         JsValue::from_f64(abandonability),
         JsValue::from_bool(fixed),
-        JsValue::from_str(window_mode),
+        JsValue::from_str(&window_mode.to_string()),
     ])?
     .run()
     .await
@@ -104,9 +102,6 @@ pub async fn update(mut req: worker::Request, env: Env, id: &str) -> Result<Resp
     }
     if let Some(ref recurrence) = body.recurrence {
         validate_recurrence(recurrence)?;
-    }
-    if let Some(ref wm) = body.window_mode {
-        validate_window_mode(wm)?;
     }
     let database = db(&env)?;
     let full = resolve_habit_id(&database, id).await?;
@@ -152,8 +147,8 @@ pub async fn update(mut req: worker::Request, env: Env, id: &str) -> Result<Resp
         body.active.map(JsValue::from_bool).unwrap_or(JsValue::NULL),
         body.fixed.map(JsValue::from_bool).unwrap_or(JsValue::NULL),
         body.window_mode
-            .as_deref()
-            .map(JsValue::from_str)
+            .as_ref()
+            .map(|w| JsValue::from_str(&w.to_string()))
             .unwrap_or(JsValue::NULL),
         JsValue::from_str(&full),
     ])?
@@ -173,8 +168,7 @@ pub async fn replace(
     let body: CreateHabit = parse_json(&mut req).await?;
     validate_minutes(body.avg_minutes, body.sigma_minutes)?;
     validate_recurrence(&body.recurrence)?;
-    let window_mode = body.window_mode.as_deref().unwrap_or("day");
-    validate_window_mode(window_mode)?;
+    let window_mode = body.window_mode.unwrap_or(takusu_util::WindowMode::Day);
     let database = db(&env)?;
     let full = resolve_habit_id(&database, id).await?;
     let sigma = body.sigma_minutes.unwrap_or((body.avg_minutes / 5).max(1));
@@ -201,7 +195,7 @@ pub async fn replace(
         JsValue::from_bool(allows_parallel),
         JsValue::from_f64(abandonability),
         JsValue::from_bool(fixed),
-        JsValue::from_str(window_mode),
+        JsValue::from_str(&window_mode.to_string()),
         JsValue::from_str(&full),
     ])?
     .run()

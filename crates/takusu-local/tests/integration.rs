@@ -946,7 +946,7 @@ async fn task_update_status() {
         json!({ "status": "invalid" }),
     );
     let res = app.oneshot(bad_req).await.unwrap();
-    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(res.status(), StatusCode::UNPROCESSABLE_ENTITY);
 }
 
 #[tokio::test]
@@ -3231,7 +3231,7 @@ async fn habit_window_mode_validation_rejects_unknown() {
         }),
     );
     let res = app.clone().oneshot(req).await.unwrap();
-    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(res.status(), StatusCode::UNPROCESSABLE_ENTITY);
 }
 
 #[tokio::test]

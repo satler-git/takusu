@@ -328,20 +328,7 @@ pub async fn update(mut req: Request, env: Env, id: &str) -> Result<Response, Wo
         original_quantity_total,
     )?;
 
-    let validated = [
-        "pending",
-        "scheduled",
-        "in_progress",
-        "completed",
-        "skipped",
-    ];
-    if let Some(ref s) = body.status
-        && !validated.contains(&s.as_str())
-    {
-        return Err(WorkerError::BadRequest(format!("invalid status: {s}")));
-    }
-
-    let status = body.status.clone().unwrap_or(existing.status);
+    let status = body.status.unwrap_or(existing.status);
 
     let depends_json = if let Some(ref deps) = body.depends {
         let resolved = resolve_depends(&database, Some(deps)).await?;
@@ -396,7 +383,7 @@ pub async fn update(mut req: Request, env: Env, id: &str) -> Result<Response, Wo
         body.abandonability
             .map(JsValue::from_f64)
             .unwrap_or(JsValue::NULL),
-        JsValue::from_str(&status),
+        JsValue::from_str(&status.to_string()),
         JsValue::from_str(&full),
         body.habit_id
             .as_deref()
@@ -436,11 +423,11 @@ pub async fn update(mut req: Request, env: Env, id: &str) -> Result<Response, Wo
         let completed_stmt = database.prepare(
             "UPDATE tasks SET completed_at = CASE WHEN ?1 = 'completed' AND completed_at IS NULL THEN strftime('%Y-%m-%dT%H:%M:%SZ','now') WHEN ?1 != 'completed' AND completed_at IS NOT NULL THEN NULL ELSE completed_at END WHERE id = ?2",
         );
-        stmts.push(completed_stmt.bind(&[JsValue::from_str(&status), JsValue::from_str(&full)])?);
+        stmts.push(completed_stmt.bind(&[JsValue::from_str(&status.to_string()), JsValue::from_str(&full)])?);
 
         // #1044: moving to a terminal status should close any open work
         // session so active time is not left dangling.
-        if status == "skipped" || status == "completed" {
+        if status == takusu_util::TaskStatus::Skipped || status == takusu_util::TaskStatus::Completed {
             let now = takusu_util::now_rfc3339();
             let session_stmt = database.prepare(
                 "UPDATE task_work_sessions SET ended_at = ?1 WHERE task_id = ?2 AND ended_at IS NULL",

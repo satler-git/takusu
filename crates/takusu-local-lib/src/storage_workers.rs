@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use takusu_util::EnumLabel;
 use reqwest::Client;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -697,10 +698,10 @@ impl Storage for WorkersStorage {
         let mut parts: Vec<String> = Vec::new();
         parts.push(format!("q={}", url_encode(&query.q)));
         if let Some(ref kind) = query.kind {
-            parts.push(format!("kind={}", url_encode(kind)));
+            parts.push(format!("kind={}", url_encode(kind.as_str())));
         }
         if let Some(ref subject_type) = query.subject_type {
-            parts.push(format!("subject_type={}", url_encode(subject_type)));
+            parts.push(format!("subject_type={}", url_encode(subject_type.as_str())));
         }
         if let Some(ref subject_id) = query.subject_id {
             parts.push(format!("subject_id={}", url_encode(subject_id)));

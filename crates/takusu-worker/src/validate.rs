@@ -215,19 +215,6 @@ pub(crate) fn validate_scheduled_span_dates(start: &str, end: &str) -> Result<()
     Ok(())
 }
 
-/// Validate the `window_mode` field of a habit (#window_mode). Accepts
-/// `'day'` (default) or `'period'`. Mirrors the app-side
-/// `validate_window_mode`.
-pub(crate) fn validate_window_mode(mode: &str) -> Result<(), WorkerError> {
-    if mode == "day" || mode == "period" {
-        Ok(())
-    } else {
-        Err(WorkerError::BadRequest(format!(
-            "window_mode must be 'day' or 'period' (got {mode:?})"
-        )))
-    }
-}
-
 /// Validate a `HH:MM` time string. Returns `()` if valid, else an error.
 pub(crate) fn validate_hhmm(s: &str) -> Result<(), WorkerError> {
     let parts: Vec<&str> = s.split(':').collect();
@@ -597,18 +584,6 @@ mod tests {
         let mut s = step("a", vec![]);
         s.avg_minutes = -1;
         assert!(validate_steps(&[s]).is_err());
-    }
-
-    #[test]
-    fn window_mode_accepts_day_and_period() {
-        assert!(validate_window_mode("day").is_ok());
-        assert!(validate_window_mode("period").is_ok());
-    }
-
-    #[test]
-    fn window_mode_rejects_unknown() {
-        assert!(validate_window_mode("weekly").is_err());
-        assert!(validate_window_mode("").is_err());
     }
 
     #[test]

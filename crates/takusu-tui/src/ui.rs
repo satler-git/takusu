@@ -1,6 +1,7 @@
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Tabs, Wrap};
 use takusu_storage::{ScheduleEntry, TaskRow};
+use takusu_util::{EnumLabel, TaskStatus, WindowMode};
 
 use crate::app::{App, Modal, Tab};
 use crate::style;
@@ -141,7 +142,7 @@ fn build_schedule_items(
 
         let task = all_tasks.iter().find(|t| t.id == e.task_id);
         let color = task
-            .map(|t| style::status_color(&t.status))
+            .map(|t| style::status_color(t.status.as_str()))
             .unwrap_or(Color::White);
         let title = task.map(|t| t.title.as_str()).unwrap_or("?");
         let start = fmt_dt(&e.start_at, tz);
@@ -173,14 +174,13 @@ fn draw_tasks_tab(frame: &mut Frame, app: &mut App, area: Rect) {
         .tasks
         .iter()
         .map(|t| {
-            let color = style::status_color(&t.status);
-            let marker = match t.status.as_str() {
-                "pending" => "[ ]",
-                "scheduled" => "[~]",
-                "in_progress" => "[>]",
-                "completed" => "[x]",
-                "skipped" => "[-]",
-                _ => "[?]",
+            let color = style::status_color(t.status.as_str());
+            let marker = match t.status {
+                TaskStatus::Pending => "[ ]",
+                TaskStatus::Scheduled => "[~]",
+                TaskStatus::InProgress => "[>]",
+                TaskStatus::Completed => "[x]",
+                TaskStatus::Skipped => "[-]",
             };
             ListItem::new(Line::from(vec![
                 Span::styled(format!("{marker} "), Style::default().fg(color)),
@@ -277,10 +277,9 @@ fn draw_habits_tab(frame: &mut Frame, app: &mut App, area: Rect) {
         ]));
         lines.push(Line::from(vec![
             Span::styled("Mode: ", Style::default().fg(style::HEADER_FG)),
-            Span::raw(match habit.window_mode.as_str() {
-                "day" => "daily (within day)",
-                "period" => "period (within window)",
-                other => other,
+            Span::raw(match habit.window_mode {
+                WindowMode::Day => "daily (within day)",
+                WindowMode::Period => "period (within window)",
             }),
         ]));
         lines.push(Line::from(vec![
@@ -532,7 +531,7 @@ mod tests {
             parallelizable: false,
             allows_parallel: false,
             abandonability: 0.5,
-            status: "pending".to_string(),
+            status: TaskStatus::Pending,
             habit_id: None,
             ical_uid: None,
             user_edited: false,

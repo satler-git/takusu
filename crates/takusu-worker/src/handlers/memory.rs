@@ -1,3 +1,4 @@
+use takusu_util::EnumLabel;
 use wasm_bindgen::JsValue;
 use worker::{Env, Request, Response};
 
@@ -169,7 +170,10 @@ async fn record_operation(
 }
 
 fn validate_create(body: &CreateMemory) -> Result<(), WorkerError> {
-    if !matches!(body.kind.as_str(), "proper_noun" | "fact" | "task_note") {
+    if !matches!(
+        body.kind,
+        takusu_util::MemoryKind::ProperNoun | takusu_util::MemoryKind::Fact | takusu_util::MemoryKind::TaskNote
+    ) {
         return Err(WorkerError::BadRequest(
             "kind must be 'proper_noun', 'fact', or 'task_note'".into(),
         ));
@@ -178,14 +182,18 @@ fn validate_create(body: &CreateMemory) -> Result<(), WorkerError> {
         .map_err(|e| WorkerError::BadRequest(format!("invalid key: {e}")))?;
     memory::normalize_content(&body.content)
         .map_err(|e| WorkerError::BadRequest(format!("invalid content: {e}")))?;
-    if body.subject_type.as_ref().is_some_and(|s| s.len() > 64) {
+    if body
+        .subject_type
+        .as_ref()
+        .is_some_and(|s| s.as_str().len() > 64)
+    {
         return Err(WorkerError::BadRequest("subject_type too long".into()));
     }
     if body.subject_id.as_ref().is_some_and(|s| s.len() > 64) {
         return Err(WorkerError::BadRequest("subject_id too long".into()));
     }
-    if body.kind == "task_note" {
-        if body.subject_type.as_deref() != Some("task") {
+    if body.kind == takusu_util::MemoryKind::TaskNote {
+        if body.subject_type != Some(takusu_util::SubjectType::Task) {
             return Err(WorkerError::BadRequest(
                 "task_note requires subject_type='task'".into(),
             ));
@@ -223,8 +231,8 @@ pub async fn create(mut req: Request, env: Env) -> Result<Response, WorkerError>
         .map_err(|e| WorkerError::BadRequest(format!("invalid key: {e}")))?;
     let normalized_content = memory::normalize_content(&body.content)
         .map_err(|e| WorkerError::BadRequest(format!("invalid content: {e}")))?;
-    let subject_type = body.subject_type.clone().unwrap_or_default();
-    let subject_id = if body.kind == "task_note" {
+    let subject_type = body.subject_type.unwrap_or_default();
+    let subject_id = if body.kind == takusu_util::MemoryKind::TaskNote {
         resolve_task_id_for_memory(&database, &body.subject_id.clone().unwrap_or_default()).await?
     } else {
         body.subject_id.clone().unwrap_or_default()
@@ -241,9 +249,9 @@ pub async fn create(mut req: Request, env: Env) -> Result<Response, WorkerError>
 
     let existing = find_existing(
         &database,
-        &body.kind,
+        body.kind.as_str(),
         &normalized_key,
-        &subject_type,
+        subject_type.as_str(),
         &subject_id,
     )
     .await?;
@@ -274,12 +282,12 @@ pub async fn create(mut req: Request, env: Env) -> Result<Response, WorkerError>
     let result = insert
         .bind(&[
             JsValue::from_str(&id),
-            JsValue::from_str(&body.kind),
+            JsValue::from_str(body.kind.as_str()),
             JsValue::from_str(&body.key),
             JsValue::from_str(&normalized_key),
             JsValue::from_str(&body.content),
             JsValue::from_str(&normalized_content),
-            JsValue::from_str(&subject_type),
+            JsValue::from_str(subject_type.as_str()),
             JsValue::from_str(&subject_id),
         ])?
         .run()

@@ -4,6 +4,7 @@ use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use takusu_util::UnknownLabel;
 
 /// Structured recoverable argument error passed back to the LLM.
 ///
@@ -78,6 +79,12 @@ pub enum ToolError {
     Cancelled,
     #[error(transparent)]
     Other(#[from] Box<dyn std::error::Error + Send + Sync + 'static>),
+}
+
+impl From<UnknownLabel> for ToolError {
+    fn from(err: UnknownLabel) -> Self {
+        ToolError::InvalidArgs(InvalidArgsError::no_field(err.to_string()))
+    }
 }
 
 /// How a tool is exposed to the model.

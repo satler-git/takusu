@@ -2,6 +2,7 @@ use jiff::Timestamp;
 use takusu_storage::{
     HabitRow, HabitScheduledSpanRow, HabitStepRow, ScheduleEntry, SkillRow, TaskRow, TokenRow,
 };
+use takusu_util::TaskStatus;
 
 use crate::task_ref::task_reference;
 
@@ -11,13 +12,12 @@ pub fn display_task_detail(
     tz: &jiff::tz::TimeZone,
     habit_map: &std::collections::HashMap<String, i64>,
 ) {
-    let status_marker = match task.status.as_str() {
-        "pending" => "[ ]",
-        "scheduled" => "[~]",
-        "in_progress" => "[>]",
-        "completed" => "[x]",
-        "skipped" => "[-]",
-        _ => "[?]",
+    let status_marker = match task.status {
+        TaskStatus::Pending => "[ ]",
+        TaskStatus::Scheduled => "[~]",
+        TaskStatus::InProgress => "[>]",
+        TaskStatus::Completed => "[x]",
+        TaskStatus::Skipped => "[-]",
     };
     println!(
         "{} {} {}",
@@ -74,13 +74,12 @@ pub fn display_tasks(
     }
 
     for t in tasks {
-        let status_marker = match t.status.as_str() {
-            "pending" => "[ ]",
-            "scheduled" => "[~]",
-            "in_progress" => "[>]",
-            "completed" => "[x]",
-            "skipped" => "[-]",
-            _ => "[?]",
+        let status_marker = match t.status {
+            TaskStatus::Pending => "[ ]",
+            TaskStatus::Scheduled => "[~]",
+            TaskStatus::InProgress => "[>]",
+            TaskStatus::Completed => "[x]",
+            TaskStatus::Skipped => "[-]",
         };
         let short_id = task_reference(t, habit_map);
         println!("{} {} {}", status_marker, short_id, t.title);
