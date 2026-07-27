@@ -13,6 +13,7 @@ web-time.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
+thiserror.workspace = true
 hmac = "0.13"
 base64 = { version = "0.22", default-features = false, features = ["alloc"] }
 getrandom = { version = "0.4", features = ["wasm_js"] }
