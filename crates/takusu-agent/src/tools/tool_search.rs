@@ -60,10 +60,7 @@ impl Tool for ToolSearch {
 
     async fn call(&self, args: Value) -> Result<ToolOutput, ToolError> {
         let registry = self.registry.upgrade().ok_or_else(|| {
-            ToolError::InvalidArgs(InvalidArgsError::new(
-                "tool_search",
-                "registry unavailable",
-            ))
+            ToolError::InvalidArgs(InvalidArgsError::new("tool_search", "registry unavailable"))
         })?;
         let args = object(args)?;
         let query = required_string(&args, "query")?;

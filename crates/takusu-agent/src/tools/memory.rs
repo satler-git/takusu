@@ -103,11 +103,7 @@ fn make_proposal(
     ToolOutput {
         content: serde_json::to_string(&json!({
             "approval_required": true,
-            "operation": proposal.operation,
             "target": proposal.target_label,
-            "inferred_fields": inferred_fields,
-            "why": why,
-            "warnings": warnings,
         }))
         .unwrap(),
         why,

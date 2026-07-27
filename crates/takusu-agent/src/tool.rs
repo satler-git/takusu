@@ -429,8 +429,10 @@ impl ToolRegistry {
             let name = tool.name().to_string();
             let description = tool.description().to_string();
             let mut param_names = Vec::new();
-            if let Some(properties) =
-                tool.parameters_schema().get("properties").and_then(Value::as_object)
+            if let Some(properties) = tool
+                .parameters_schema()
+                .get("properties")
+                .and_then(Value::as_object)
             {
                 for name in properties.keys() {
                     param_names.push(name.to_lowercase());
@@ -473,13 +475,14 @@ impl ToolRegistry {
                 scored.push((score, entry));
             }
         }
-        scored.sort_by(|a, b| {
-            b.0.cmp(&a.0)
-                .then_with(|| a.1.name.cmp(&b.1.name))
-        });
+        scored.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.name.cmp(&b.1.name)));
 
         let limit = limit.unwrap_or(usize::MAX);
-        scored.into_iter().take(limit).map(|(_, e)| e.clone()).collect()
+        scored
+            .into_iter()
+            .take(limit)
+            .map(|(_, e)| e.clone())
+            .collect()
     }
 
     pub async fn call(&self, name: &str, args: Value) -> Result<ToolOutput, ToolError> {
@@ -759,10 +762,7 @@ mod tests {
         });
 
         let tool_search = ToolSearch::from_registry(Arc::downgrade(&registry));
-        let output = tool_search
-            .call(json!({"query": "tool"}))
-            .await
-            .unwrap();
+        let output = tool_search.call(json!({"query": "tool"})).await.unwrap();
 
         assert_eq!(output.discovered_tools.len(), 5);
         let parsed: serde_json::Value = serde_json::from_str(&output.content).unwrap();

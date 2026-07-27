@@ -2594,9 +2594,7 @@ impl AgentSession {
             .map(|m| m.estimate_tokens())
             .unwrap_or(0);
         let active_names = self.active_tool_names();
-        let tools_estimate = self
-            .registry
-            .definitions_estimate_tokens_for(&active_names);
+        let tools_estimate = self.registry.definitions_estimate_tokens_for(&active_names);
         let last_estimate = messages.last().map_or(0, |m| m.estimate_tokens());
         let config = self.config.read().unwrap();
         let target = config
@@ -2675,9 +2673,7 @@ impl AgentSession {
         system_estimate: usize,
     ) {
         let active_names = self.active_tool_names();
-        let tools_estimate = self
-            .registry
-            .definitions_estimate_tokens_for(&active_names);
+        let tools_estimate = self.registry.definitions_estimate_tokens_for(&active_names);
         let last_estimate = local.last().map_or(0, |m| m.estimate_tokens());
         let config = self.config.read().unwrap();
         let target = config
