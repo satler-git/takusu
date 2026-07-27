@@ -161,7 +161,6 @@
                   "scripts"
                   ".devin"
                   ".github"
-                  ".serena"
                   "design"
                   ".wrangler"
                   "target"
@@ -550,14 +549,6 @@
             flavor = "claude";
             fileName = "config.json";
             programs = {
-              serena = {
-                enable = true;
-                context = "agent";
-                extraPackages = [
-                  pkgs.rust-analyzer
-                  pkgs.nixd
-                ];
-              };
               context7.enable = true;
               # GitHub MCP server (stdio). The passwordCommand wraps the
               # binary so GITHUB_PERSONAL_ACCESS_TOKEN is fetched at runtime
