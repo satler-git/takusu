@@ -1226,6 +1226,7 @@ export function AgentView() {
   const sessionLoadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+  const sessionLoadScrolledRef = useRef(false);
   const skipSnapshotSaveRef = useRef(false);
   const lastPendingSessionIdRef = useRef<string | null>(null);
   const sessionPermissionsRef = useRef<PermissionsMap>({});
@@ -1275,22 +1276,22 @@ export function AgentView() {
     };
   }, []);
 
-  function markSessionJustLoaded() {
-    sessionJustLoadedRef.current = true;
+  function scheduleSessionLoadScroll() {
     if (sessionLoadTimerRef.current) clearTimeout(sessionLoadTimerRef.current);
     sessionLoadTimerRef.current = setTimeout(() => {
-      sessionJustLoadedRef.current = false;
       sessionLoadTimerRef.current = null;
-      flatListRef.current?.scrollToEnd({ animated: false });
+      sessionJustLoadedRef.current = false;
+      sessionLoadScrolledRef.current = false;
+      if (autoScrollRef.current) {
+        flatListRef.current?.scrollToEnd({ animated: false });
+      }
     }, 500);
   }
 
-  function clearSessionJustLoaded() {
-    if (sessionLoadTimerRef.current) {
-      clearTimeout(sessionLoadTimerRef.current);
-      sessionLoadTimerRef.current = null;
-    }
-    sessionJustLoadedRef.current = false;
+  function markSessionJustLoaded() {
+    sessionJustLoadedRef.current = true;
+    sessionLoadScrolledRef.current = false;
+    scheduleSessionLoadScroll();
   }
 
   useEffect(() => {
@@ -2350,9 +2351,19 @@ export function AgentView() {
   );
 
   const handleMessagesContentSizeChange = useCallback(() => {
-    if (autoScrollRef.current || sessionJustLoadedRef.current) {
+    if (sessionJustLoadedRef.current) {
+      // FlatList's content size may change several times while a past
+      // session is being laid out. Scroll on the first size change so
+      // the user sees the newest messages quickly, then re-schedule the
+      // final scroll so we settle on the actual bottom once layout is
+      // stable.
+      if (!sessionLoadScrolledRef.current) {
+        flatListRef.current?.scrollToEnd({ animated: false });
+        sessionLoadScrolledRef.current = true;
+      }
+      scheduleSessionLoadScroll();
+    } else if (autoScrollRef.current) {
       flatListRef.current?.scrollToEnd({ animated: false });
-      clearSessionJustLoaded();
     }
   }, []);
 
