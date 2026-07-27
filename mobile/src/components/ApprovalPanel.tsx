@@ -332,7 +332,7 @@ function formatTimeRange(start: string, end: string): string {
   return `${start} 〜 ${end}`;
 }
 
-function formatRecurrence(rrule: string): string {
+export function formatRecurrence(rrule: string): string {
   const freq = rrule.match(/FREQ=([^;]+)/i)?.[1]?.toUpperCase();
   const map: Record<string, string> = {
     DAILY: '毎日',
@@ -523,7 +523,7 @@ function quantityText(
   return '';
 }
 
-const STATUS_LABELS: Record<TaskStatus, string> = {
+export const STATUS_LABELS: Record<TaskStatus, string> = {
   pending: '未スケジュール',
   scheduled: 'スケジュール済',
   in_progress: '進行中',
