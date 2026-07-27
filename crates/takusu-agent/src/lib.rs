@@ -15,8 +15,9 @@ pub use permissions::Permissions;
 
 pub use crate::llm::CompactionSettings;
 pub use tool::{
-    ChangeReceipt, InferredField, InvalidArgsError, ProposedChange, Tool, ToolError, ToolExposure,
-    ToolOutput, ToolRegistry, inferred_field_schema, inferred_fields_schema,
+    ChangeOperation, ChangeReceipt, InferredField, InvalidArgsError, ProposedChange, ReceiptTarget,
+    Target, TargetKind, Tool, ToolError, ToolExposure, ToolOutput, ToolRegistry,
+    inferred_field_schema, inferred_fields_schema,
 };
 pub use user_input::{
     StubUserInputProvider, UserInputAnswer, UserInputProvider, UserInputQuestion,
@@ -33,7 +34,7 @@ use takusu_client::{
     HabitStepInput, MoveEntry, RecordProgress, SaveScheduleRequest, ScheduleEntry, SplitTask,
     UpdateHabit, UpdateMemory, UpdateSkill, UpdateTask,
 };
-use takusu_util::{Abandonability, Quantity};
+use takusu_util::{Abandonability, EnumLabel, Quantity};
 use tools::memory::client_error;
 use uuid::Uuid;
 
@@ -862,8 +863,7 @@ impl AgentSession {
 
     fn all_changes_allowed(&self, changes: &[ProposedChange]) -> bool {
         changes.iter().all(|change| {
-            let target = change.target_label.split_whitespace().next().unwrap_or("");
-            self.is_auto_approved(target, &change.operation)
+            self.is_auto_approved(change.target.kind.as_str(), change.operation.as_str())
         })
     }
 
@@ -1457,8 +1457,8 @@ impl AgentSession {
         tracing::info!(session_id = %self.session_id, approval_id = %request.id, count = request.changes.len(), auto, "executing approved changes");
         let changes_for_message = request.changes.clone();
         let schedule_commit = request.changes.iter().any(|change| {
-            change.target_label.split_whitespace().next() == Some("schedule")
-                && matches!(change.operation.as_str(), "generate" | "reschedule")
+            change.target.kind == TargetKind::Schedule
+                && matches!(change.operation, ChangeOperation::Generate | ChangeOperation::Reschedule)
         });
         let mut receipts = Vec::new();
         let mut schedule_dirty = *self.schedule_dirty.lock().unwrap();
@@ -1471,10 +1471,7 @@ impl AgentSession {
                 .await
             {
                 Ok(receipt) => {
-                    schedule_dirty |= matches!(
-                        change.target_label.split_whitespace().next(),
-                        Some("task" | "habit")
-                    );
+                    schedule_dirty |= matches!(change.target.kind, TargetKind::Task | TargetKind::Habit);
                     receipts.push(receipt);
                 }
                 Err(e) => {
@@ -1907,28 +1904,20 @@ impl AgentSession {
         let mut args = args.as_object().cloned().unwrap_or_default();
         let steps_value = args.get("steps").cloned();
         args.remove("steps");
-        let target = args
-            .get("task_ref")
-            .or_else(|| args.get("habit_ref"))
-            .or_else(|| args.get("memory_ref"))
-            .or_else(|| args.get("slug"))
-            .and_then(Value::as_str)
-            .unwrap_or("schedule")
-            .to_owned();
-        let (target_id, current_updated_at, existing_habit) =
-            if change.operation == "create" || change.target_label.starts_with("schedule") {
-                (String::new(), None, None)
-            } else if change.target_label.starts_with("task") {
+        let (target_id, current_updated_at, existing_habit) = match (change.target.kind, change.operation) {
+            (_, ChangeOperation::Create) | (TargetKind::Schedule, _) => (String::new(), None, None),
+            (TargetKind::Task, _) => {
                 let task = self
                     .client
-                    .get_task(&target)
+                    .get_task(&change.target.display_id)
                     .await
                     .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
                 (task.id, Some(task.updated_at), None)
-            } else if change.target_label.starts_with("habit") {
+            }
+            (TargetKind::Habit, _) => {
                 let habit = self
                     .client
-                    .get_habit(&target)
+                    .get_habit(&change.target.display_id)
                     .await
                     .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
                 (
@@ -1936,23 +1925,24 @@ impl AgentSession {
                     Some(habit.habit.updated_at.clone()),
                     Some(habit),
                 )
-            } else if change.target_label.starts_with("skill") {
+            }
+            (TargetKind::Skill, _) => {
                 let skill = self
                     .client
-                    .get_skill(&target)
+                    .get_skill(&change.target.display_id)
                     .await
                     .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
                 (skill.slug, Some(skill.updated_at), None)
-            } else if change.target_label.starts_with("memory") {
+            }
+            (TargetKind::Memory, _) => {
                 let memory = self
                     .client
-                    .get_memory(&target)
+                    .get_memory(&change.target.display_id)
                     .await
                     .map_err(|e| AgentError::Tool(client_error(e)))?;
                 (memory.id, Some(memory.updated_at), None)
-            } else {
-                (target.clone(), None, None)
-            };
+            }
+        };
         if let Some(observed) = &change.observed_updated_at
             && current_updated_at.as_ref() != Some(observed)
         {
@@ -1961,11 +1951,8 @@ impl AgentSession {
             )));
         }
         let (result, before, after, target_revision) =
-            match (
-                change.target_label.split_whitespace().next(),
-                change.operation.as_str(),
-            ) {
-                (Some("task"), "create") => {
+            match (change.target.kind, change.operation) {
+                (TargetKind::Task, ChangeOperation::Create) => {
                     let id =
                         self.client
                             .create_task(
@@ -1981,7 +1968,7 @@ impl AgentSession {
                             .id;
                     (id, None, None, None)
                 }
-                (Some("task"), "update") => {
+                (TargetKind::Task, ChangeOperation::Update) => {
                     let id =
                         self.client
                             .update_task(
@@ -1998,14 +1985,14 @@ impl AgentSession {
                             .id;
                     (id, None, None, None)
                 }
-                (Some("task"), "delete") => {
+                (TargetKind::Task, ChangeOperation::Delete) => {
                     self.client
                         .delete_task(&target_id)
                         .await
                         .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
                     (target_id.clone(), None, None, None)
                 }
-                (Some("habit"), "create") => {
+                (TargetKind::Habit, ChangeOperation::Create) => {
                     let id =
                         self.client
                             .create_habit(
@@ -2024,7 +2011,7 @@ impl AgentSession {
                     }
                     (id, None, None, None)
                 }
-                (Some("habit"), "update") => {
+                (TargetKind::Habit, ChangeOperation::Update) => {
                     let id =
                         self.client
                             .update_habit(
@@ -2046,14 +2033,14 @@ impl AgentSession {
                     }
                     (id, None, None, None)
                 }
-                (Some("habit"), "delete") => {
+                (TargetKind::Habit, ChangeOperation::Delete) => {
                     self.client
                         .delete_habit(&target_id)
                         .await
                         .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
                     (target_id.clone(), None, None, None)
                 }
-                (Some("habit"), "create_scheduled_span") => {
+                (TargetKind::Habit, ChangeOperation::CreateScheduledSpan) => {
                     let start_date = args
                         .get("start_date")
                         .and_then(Value::as_str)
@@ -2099,7 +2086,7 @@ impl AgentSession {
                         .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
                     (target_id.clone(), None, Some(after), None)
                 }
-                (Some("habit"), "delete_scheduled_span") => {
+                (TargetKind::Habit, ChangeOperation::DeleteScheduledSpan) => {
                     let span_id = args
                         .get("span_id")
                         .and_then(Value::as_str)
@@ -2116,7 +2103,7 @@ impl AgentSession {
                         .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
                     (target_id.clone(), change.before.clone(), None, None)
                 }
-                (Some("skill"), "create") => {
+                (TargetKind::Skill, ChangeOperation::Create) => {
                     let slug =
                         self.client
                             .create_skill(
@@ -2132,7 +2119,7 @@ impl AgentSession {
                             .slug;
                     (slug, None, None, None)
                 }
-                (Some("skill"), "update") => {
+                (TargetKind::Skill, ChangeOperation::Update) => {
                     let slug =
                         self.client
                             .update_skill(
@@ -2149,7 +2136,7 @@ impl AgentSession {
                             .slug;
                     (slug, None, None, None)
                 }
-                (Some("memory"), "create") => {
+                (TargetKind::Memory, ChangeOperation::Create) => {
                     let row =
                         self.client
                             .create_memory(
@@ -2167,7 +2154,7 @@ impl AgentSession {
                         .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
                     (row.id, None, Some(after), Some(row.revision))
                 }
-                (Some("memory"), "update") => {
+                (TargetKind::Memory, ChangeOperation::Update) => {
                     let observed_revision = args
                         .get("observed_revision")
                         .and_then(Value::as_i64)
@@ -2202,7 +2189,7 @@ impl AgentSession {
                         Some(row.revision),
                     )
                 }
-                (Some("memory"), "delete") => {
+                (TargetKind::Memory, ChangeOperation::Delete) => {
                     let observed_revision = args
                         .get("observed_revision")
                         .and_then(Value::as_i64)
@@ -2218,7 +2205,7 @@ impl AgentSession {
                         .map_err(|e| AgentError::Tool(client_error(e)))?;
                     (target_id.clone(), change.before.clone(), None, None)
                 }
-                (Some("task"), "move") => {
+                (TargetKind::Task, ChangeOperation::Move) => {
                     let start_at = args
                         .get("start_at")
                         .and_then(Value::as_str)
@@ -2256,7 +2243,7 @@ impl AgentSession {
                         .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
                     (target_id.clone(), change.before.clone(), Some(after), None)
                 }
-                (Some("task"), "start") => {
+                (TargetKind::Task, ChangeOperation::Start) => {
                     let task = self
                         .client
                         .start_task_work(&target_id, operation_id)
@@ -2266,7 +2253,7 @@ impl AgentSession {
                         .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
                     (target_id.clone(), change.before.clone(), Some(after), None)
                 }
-                (Some("task"), "pause") => {
+                (TargetKind::Task, ChangeOperation::Pause) => {
                     let task = self
                         .client
                         .pause_task_work(&target_id, operation_id)
@@ -2276,7 +2263,7 @@ impl AgentSession {
                         .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
                     (target_id.clone(), change.before.clone(), Some(after), None)
                 }
-                (Some("task"), "progress") => {
+                (TargetKind::Task, ChangeOperation::Progress) => {
                     let quantity_done = args
                         .get("quantity_done")
                         .and_then(Value::as_i64)
@@ -2311,7 +2298,7 @@ impl AgentSession {
                         .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
                     (target_id.clone(), change.before.clone(), Some(after), None)
                 }
-                (Some("task"), "complete") => {
+                (TargetKind::Task, ChangeOperation::Complete) => {
                     let task = self
                         .client
                         .complete_task_work(&target_id, operation_id)
@@ -2321,7 +2308,7 @@ impl AgentSession {
                         .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
                     (target_id.clone(), change.before.clone(), Some(after), None)
                 }
-                (Some("task"), "split") => {
+                (TargetKind::Task, ChangeOperation::Split) => {
                     let retained_quantity = args
                         .get("retained_quantity")
                         .and_then(Value::as_i64)
@@ -2368,7 +2355,7 @@ impl AgentSession {
                         .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
                     (target_id.clone(), change.before.clone(), Some(after), None)
                 }
-                (_, "generate") | (_, "reschedule") => {
+                (TargetKind::Schedule, ChangeOperation::Generate) | (TargetKind::Schedule, ChangeOperation::Reschedule) => {
                     let entries = args.get("_preview_entries").cloned().ok_or_else(|| {
                         AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
                             "_preview_entries",
@@ -2409,18 +2396,15 @@ impl AgentSession {
                     )));
                 }
             };
-        if change.target_label.starts_with("skill") {
+        if change.target.kind == TargetKind::Skill {
             self.clear_skills_index();
         }
         Ok(ChangeReceipt {
-            operation: change.operation.clone(),
-            target_type: change
-                .target_label
-                .split_whitespace()
-                .next()
-                .unwrap_or("schedule")
-                .to_owned(),
-            target_id: result,
+            operation: change.operation,
+            target: ReceiptTarget {
+                target_type: change.target.kind,
+                target_id: result,
+            },
             before,
             after,
             target_revision,
@@ -2867,8 +2851,8 @@ mod tests {
                 content: r#"{"approval_required":true}"#.to_string(),
                 why: Some(format!("propose creating {title}")),
                 proposed_changes: vec![ProposedChange {
-                    operation: "create".to_string(),
-                    target_label: format!("task {title}"),
+                    operation: ChangeOperation::Create,
+                    target: Target::new(TargetKind::Task, title),
                     description: format!("create task {title}"),
                     before: None,
                     after: Some(args.clone()),
@@ -2906,8 +2890,8 @@ mod tests {
                 content: r#"{"approval_required":true}"#.to_string(),
                 why: Some("propose generating schedule".to_string()),
                 proposed_changes: vec![ProposedChange {
-                    operation: "generate".to_string(),
-                    target_label: "schedule".to_string(),
+                    operation: ChangeOperation::Generate,
+                    target: Target::new(TargetKind::Schedule, ""),
                     description: "スケジュールを生成".to_string(),
                     before: None,
                     after: Some(args.clone()),
@@ -4538,8 +4522,8 @@ mod tests {
         let session = AgentSession::new(cfg, registry, mock);
 
         let create_change = ProposedChange {
-            operation: "create_scheduled_span".to_string(),
-            target_label: "habit h1".to_string(),
+            operation: ChangeOperation::CreateScheduledSpan,
+            target: Target::new(TargetKind::Habit, "h1"),
             description: "h1にscheduled span 2025-09-01〜2025-09-07を追加".to_string(),
             before: None,
             after: Some(json!({
@@ -4562,13 +4546,13 @@ mod tests {
             )
             .await
             .unwrap();
-        assert_eq!(receipt.target_type, "habit");
-        assert_eq!(receipt.target_id, "habit-uuid");
+        assert_eq!(receipt.target.target_type, TargetKind::Habit);
+        assert_eq!(receipt.target.target_id, "habit-uuid");
         assert!(receipt.after.is_some());
 
         let delete_change = ProposedChange {
-            operation: "delete_scheduled_span".to_string(),
-            target_label: "habit h1".to_string(),
+            operation: ChangeOperation::DeleteScheduledSpan,
+            target: Target::new(TargetKind::Habit, "h1"),
             description: "h1のscheduled span 2025-08-01〜2025-08-07を削除".to_string(),
             before: Some(json!({
                 "id": "span-uuid",
@@ -4587,8 +4571,8 @@ mod tests {
             )
             .await
             .unwrap();
-        assert_eq!(receipt.target_type, "habit");
-        assert_eq!(receipt.target_id, "habit-uuid");
+        assert_eq!(receipt.target.target_type, TargetKind::Habit);
+        assert_eq!(receipt.target.target_id, "habit-uuid");
         assert!(receipt.before.is_some());
     }
 }

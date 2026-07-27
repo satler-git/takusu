@@ -8,7 +8,8 @@ use crate::tools::takusu::{
     server_timezone, strip_leading_hash, task_json,
 };
 use crate::{
-    InvalidArgsError, ProposedChange, Tool, ToolError, ToolExposure, ToolOutput, ToolRegistry,
+    ChangeOperation, InvalidArgsError, ProposedChange, Target, TargetKind, Tool, ToolError,
+    ToolExposure, ToolOutput, ToolRegistry,
 };
 
 /// Register the active-session progress tools.
@@ -170,8 +171,8 @@ fn apply_estimate_preview(
 
 #[allow(clippy::too_many_arguments)]
 fn progress_output(
-    operation: &str,
-    target_label: &str,
+    operation: ChangeOperation,
+    target: &Target,
     description: &str,
     why: &str,
     before: Value,
@@ -184,7 +185,7 @@ fn progress_output(
 ) -> ToolOutput {
     let mut content = json!({
         "approval_required": true,
-        "target": target_label,
+        "target": target.to_string(),
     });
     if let Some(obj) = content.as_object_mut() {
         for (k, v) in content_extra {
@@ -196,8 +197,8 @@ fn progress_output(
         why: Some(why.to_string()),
         warnings,
         proposed_changes: vec![ProposedChange {
-            operation: operation.to_string(),
-            target_label: target_label.to_string(),
+            operation,
+            target: target.clone(),
             description: description.to_string(),
             before: Some(before),
             after: Some(after),
@@ -289,8 +290,8 @@ impl Tool for TaskStart {
         let observed = Some(task.updated_at);
 
         Ok(progress_output(
-            "start",
-            &format!("task {display_ref}"),
+            ChangeOperation::Start,
+            &Target::new(TargetKind::Task, display_ref.as_str()),
             &format!("「{}」の作業を開始", task.title),
             &format!("「{}」の作業を開始します", task.title),
             before,
@@ -376,8 +377,8 @@ impl Tool for TaskPause {
         let observed = Some(task.updated_at);
 
         Ok(progress_output(
-            "pause",
-            &format!("task {display_ref}"),
+            ChangeOperation::Pause,
+            &Target::new(TargetKind::Task, display_ref.as_str()),
             &format!("「{}」の作業を一時停止", task.title),
             &format!("「{}」の作業を一時停止します", task.title),
             before,
@@ -567,8 +568,8 @@ impl Tool for TaskProgress {
         };
 
         Ok(progress_output(
-            "progress",
-            &format!("task {display_ref}"),
+            ChangeOperation::Progress,
+            &Target::new(TargetKind::Task, display_ref.as_str()),
             &why,
             &why,
             before,
@@ -697,8 +698,8 @@ impl Tool for TaskComplete {
         )]);
 
         Ok(progress_output(
-            "complete",
-            &format!("task {display_ref}"),
+            ChangeOperation::Complete,
+            &Target::new(TargetKind::Task, display_ref.as_str()),
             &format!("「{}」の作業を完了", task.title),
             &format!("「{}」の作業を完了し、実績時間を記録します", task.title),
             before,
@@ -894,8 +895,8 @@ impl Tool for TaskSplit {
         );
 
         Ok(progress_output(
-            "split",
-            &format!("task {display_ref}"),
+            ChangeOperation::Split,
+            &Target::new(TargetKind::Task, display_ref.as_str()),
             &why,
             &why,
             before,

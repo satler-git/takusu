@@ -4,8 +4,8 @@ use serde_json::{Value, json};
 use takusu_client::Client;
 
 use crate::{
-    InferredField, InvalidArgsError, ProposedChange, Tool, ToolError, ToolExposure, ToolOutput,
-    ToolRegistry,
+    ChangeOperation, InferredField, InvalidArgsError, ProposedChange, Target, TargetKind, Tool,
+    ToolError, ToolExposure, ToolOutput, ToolRegistry,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -386,8 +386,8 @@ impl Tool for SkillsProposeAdd {
             "body": body,
         });
         let proposal = ProposedChange {
-            operation: "create".to_owned(),
-            target_label: format!("skill {slug}"),
+            operation: ChangeOperation::Create,
+            target: Target::new(TargetKind::Skill, &slug),
             description: format!("Create skill {slug}: {name}"),
             before: None,
             after: Some(after),
@@ -398,7 +398,7 @@ impl Tool for SkillsProposeAdd {
         Ok(ToolOutput {
             content: serde_json::to_string(&json!({
                 "approval_required": true,
-                "target": proposal.target_label,
+                "target": proposal.target.to_string(),
             }))
             .unwrap(),
             why,
@@ -520,8 +520,8 @@ impl Tool for SkillsProposeEdit {
             })?;
 
         let proposal = ProposedChange {
-            operation: "update".to_owned(),
-            target_label: format!("skill {slug}"),
+            operation: ChangeOperation::Update,
+            target: Target::new(TargetKind::Skill, &slug),
             description: format!("Update skill {slug}"),
             before: Some(before),
             after: Some(after),
@@ -532,7 +532,7 @@ impl Tool for SkillsProposeEdit {
         Ok(ToolOutput {
             content: serde_json::to_string(&json!({
                 "approval_required": true,
-                "target": proposal.target_label,
+                "target": proposal.target.to_string(),
             }))
             .unwrap(),
             why,

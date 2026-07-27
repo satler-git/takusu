@@ -97,7 +97,7 @@ async fn run_text(session: &AgentSession, text: &str, yes: bool) -> Result<(), A
             for receipt in &res.changes {
                 println!(
                     "  {} {}: {}",
-                    receipt.operation, receipt.target_type, receipt.target_id
+                    receipt.operation, receipt.target.target_type, receipt.target.target_id
                 );
             }
         } else {
@@ -110,7 +110,7 @@ async fn run_text(session: &AgentSession, text: &str, yes: bool) -> Result<(), A
             for receipt in &result.changes {
                 eprintln!(
                     "  {} {}: {}",
-                    receipt.operation, receipt.target_type, receipt.target_id
+                    receipt.operation, receipt.target.target_type, receipt.target.target_id
                 );
             }
         }
@@ -144,7 +144,7 @@ fn display_approval(req: &ApprovalRequest) {
     for change in &req.changes {
         println!(
             "  {} {}: {}",
-            change.operation, change.target_label, change.description
+            change.operation, change.target, change.description
         );
     }
     println!("expires at: {}", req.expires_at);
