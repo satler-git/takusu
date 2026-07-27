@@ -10,7 +10,10 @@ use crate::models::{CreateTask, HabitRow, ScheduleEntry, ScheduleRow, TaskRow, U
 use crate::validate::{
     validate_minutes, validate_quantity, validate_task_datetimes, validate_title,
 };
-use takusu_util::search::{EvalContext, filter_tasks};
+use takusu_util::{
+    Minutes,
+    search::{EvalContext, filter_tasks},
+};
 
 const TASK_COLS: &str = "id, display_id, title, description, start_at, end_at, avg_minutes, sigma_minutes, depends, parallelizable, allows_parallel, abandonability, status, habit_id, ical_uid, user_edited, fixed, habit_step_id, quantity_total, quantity_done, quantity_unit, completed_at, split_from_task_id, original_quantity_total, created_at, updated_at, tam.actual_minutes";
 const TASK_FROM: &str = "tasks LEFT JOIN task_actual_minutes tam ON tam.task_id = tasks.id";
@@ -177,7 +180,9 @@ pub async fn create(mut req: Request, env: Env) -> Result<Response, WorkerError>
     let resolved_depends = resolve_depends(&database, body.depends.as_deref()).await?;
     let depends_json =
         serde_json::to_string(&resolved_depends).unwrap_or_else(|_| "[]".to_string());
-    let sigma = body.sigma_minutes.unwrap_or((body.avg_minutes / 5).max(1));
+    let sigma = body
+        .sigma_minutes
+        .unwrap_or(Minutes(body.avg_minutes).to_slots().0.max(1));
     let parallelizable = body.parallelizable.unwrap_or(false);
     let allows_parallel = body.allows_parallel.unwrap_or(false);
     let abandonability = body.abandonability.unwrap_or(0.5);
@@ -423,11 +428,16 @@ pub async fn update(mut req: Request, env: Env, id: &str) -> Result<Response, Wo
         let completed_stmt = database.prepare(
             "UPDATE tasks SET completed_at = CASE WHEN ?1 = 'completed' AND completed_at IS NULL THEN strftime('%Y-%m-%dT%H:%M:%SZ','now') WHEN ?1 != 'completed' AND completed_at IS NOT NULL THEN NULL ELSE completed_at END WHERE id = ?2",
         );
-        stmts.push(completed_stmt.bind(&[JsValue::from_str(&status.to_string()), JsValue::from_str(&full)])?);
+        stmts.push(completed_stmt.bind(&[
+            JsValue::from_str(&status.to_string()),
+            JsValue::from_str(&full),
+        ])?);
 
         // #1044: moving to a terminal status should close any open work
         // session so active time is not left dangling.
-        if status == takusu_util::TaskStatus::Skipped || status == takusu_util::TaskStatus::Completed {
+        if status == takusu_util::TaskStatus::Skipped
+            || status == takusu_util::TaskStatus::Completed
+        {
             let now = takusu_util::now_rfc3339();
             let session_stmt = database.prepare(
                 "UPDATE task_work_sessions SET ended_at = ?1 WHERE task_id = ?2 AND ended_at IS NULL",
@@ -462,7 +472,9 @@ pub async fn replace(mut req: Request, env: Env, id: &str) -> Result<Response, W
     let full = resolve_task_id(&database, id).await?;
     let resolved_depends = resolve_depends(&database, body.depends.as_deref()).await?;
     let depends_json = serde_json::to_string(&resolved_depends).unwrap_or_else(|_| "[]".into());
-    let sigma = body.sigma_minutes.unwrap_or((body.avg_minutes / 5).max(1));
+    let sigma = body
+        .sigma_minutes
+        .unwrap_or(Minutes(body.avg_minutes).to_slots().0.max(1));
     let parallelizable = body.parallelizable.unwrap_or(false);
     let allows_parallel = body.allows_parallel.unwrap_or(false);
     let abandonability = body.abandonability.unwrap_or(0.5);

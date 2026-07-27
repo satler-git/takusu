@@ -3,7 +3,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use takusu_util::EnumLabel;
 use reqwest::Client;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -17,6 +16,7 @@ use takusu_storage::{
     TaskQuery, TaskRow, TokenCreateResponse, TokenRow, UpdateGoogleCalSettings, UpdateHabit,
     UpdateMemory, UpdateSettings, UpdateSkill, UpdateTask, storage::StorageResult,
 };
+use takusu_util::EnumLabel;
 use takusu_util::{TokenClaims, url_encode};
 use tokio::sync::RwLock;
 
@@ -701,7 +701,10 @@ impl Storage for WorkersStorage {
             parts.push(format!("kind={}", url_encode(kind.as_str())));
         }
         if let Some(ref subject_type) = query.subject_type {
-            parts.push(format!("subject_type={}", url_encode(subject_type.as_str())));
+            parts.push(format!(
+                "subject_type={}",
+                url_encode(subject_type.as_str())
+            ));
         }
         if let Some(ref subject_id) = query.subject_id {
             parts.push(format!("subject_id={}", url_encode(subject_id)));

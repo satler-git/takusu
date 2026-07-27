@@ -4,11 +4,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use jiff::Timestamp;
-use takusu_util::{EnumLabel, MemoryKind, TaskStatus, WindowMode};
 use serde::{Deserialize, Serialize};
 use takusu_core::{
-    NormalDist, Planner, Point, RescheduleRange, SleepConfig, Solver, Task as CoreTask,
-    WorkloadConfig,
+    Minutes, NormalDist, Planner, Point, RescheduleRange, SleepConfig, Slots, Solver,
+    Task as CoreTask, WorkloadConfig,
 };
 use takusu_storage::{
     CreateHabit, CreateHabitBatch, CreateHabitBatchResult, CreateHabitScheduledSpan, CreateMemory,
@@ -23,6 +22,7 @@ use takusu_storage::{
     UpdateTask,
 };
 use takusu_util::search::{Completion, complete};
+use takusu_util::{EnumLabel, MemoryKind, TaskStatus, WindowMode};
 
 use crate::error::AppError;
 use crate::error::storage_to_app;
@@ -149,7 +149,9 @@ fn validate_skill(create: &CreateSkill) -> Result<(), AppError> {
 fn validate_memory(create: &CreateMemory) -> Result<(), AppError> {
     if !matches!(
         create.kind,
-        takusu_util::MemoryKind::ProperNoun | takusu_util::MemoryKind::Fact | takusu_util::MemoryKind::TaskNote
+        takusu_util::MemoryKind::ProperNoun
+            | takusu_util::MemoryKind::Fact
+            | takusu_util::MemoryKind::TaskNote
     ) {
         return Err(AppError::BadRequest(
             "kind must be 'proper_noun', 'fact', or 'task_note'".into(),
@@ -345,24 +347,25 @@ fn step_to_core_task(
     let (eh, em) = parse_hhmm(&step.end_time)?;
     let start_minutes = sh as i64 * 60 + sm as i64;
     let end_minutes = eh as i64 * 60 + em as i64;
-    let avg_slots = (step.avg_minutes / 5) as u64;
-    let sigma_slots = (step.sigma_minutes / 5) as u64;
     let end_pt = if step.fixed {
         let diff = end_minutes - start_minutes;
         if diff > 0 {
-            start_pt + diff / 5
+            start_pt + Minutes(diff).to_slots().0
         } else {
             // overnight fixed step — fall back to avg-based deadline
-            start_pt + avg_slots as i64
+            start_pt + Minutes(step.avg_minutes).to_slots().0
         }
     } else {
-        start_pt + avg_slots as i64
+        start_pt + Minutes(step.avg_minutes).to_slots().0
     };
     Ok(CoreTask {
         id: 0,
         start: Some(start_pt),
         end: end_pt,
-        cost_estimate: NormalDist::new(avg_slots, sigma_slots),
+        cost_estimate: NormalDist::from_minutes(
+            Minutes(step.avg_minutes),
+            Minutes(step.sigma_minutes),
+        ),
         depends: vec![],
         parallelizable: step.parallelizable,
         allows_parallel: step.allows_parallel,
@@ -377,13 +380,14 @@ fn step_to_core_task(
 /// (`window_start`..`deadline`), so the step's own `start_time`/`end_time`
 /// are ignored. The step's avg/sigma/flags still apply.
 fn step_to_core_task_period(step: &HabitStepRow, window_start: Point, deadline: Point) -> CoreTask {
-    let avg_slots = (step.avg_minutes / 5) as u64;
-    let sigma_slots = (step.sigma_minutes / 5) as u64;
     CoreTask {
         id: 0,
         start: Some(window_start),
         end: deadline,
-        cost_estimate: NormalDist::new(avg_slots, sigma_slots),
+        cost_estimate: NormalDist::from_minutes(
+            Minutes(step.avg_minutes),
+            Minutes(step.sigma_minutes),
+        ),
         depends: vec![],
         parallelizable: step.parallelizable,
         allows_parallel: step.allows_parallel,
@@ -514,14 +518,14 @@ fn parse_sleep(
 }
 
 /// #459: 設定から WorkloadConfig を構築する。`None` または `0` の場合はデフォルトを使う。
-/// 1 スロット = 5 分なので、分を 5 で割ってスロット数に変換する。
+/// 1 スロット = 5 分なので、`Minutes` からスロット数に変換する。
 fn parse_workload(settings: &SettingsRow) -> WorkloadConfig {
     let comfortable = settings.comfortable_minutes.filter(|&m| m > 0);
     let maximum = settings.maximum_minutes.filter(|&m| m > 0);
     match (comfortable, maximum) {
         (Some(c), Some(m)) => {
-            let c_slots = c / 5;
-            let m_slots = m / 5;
+            let c_slots = Minutes(c).to_slots().0;
+            let m_slots = Minutes(m).to_slots().0;
             if c_slots <= 0 || m_slots <= 0 {
                 return WorkloadConfig::default();
             }
@@ -532,7 +536,7 @@ fn parse_workload(settings: &SettingsRow) -> WorkloadConfig {
             }
         }
         (Some(c), None) => {
-            let c_slots = c / 5;
+            let c_slots = Minutes(c).to_slots().0;
             if c_slots <= 0 {
                 return WorkloadConfig::default();
             }
@@ -540,7 +544,7 @@ fn parse_workload(settings: &SettingsRow) -> WorkloadConfig {
             WorkloadConfig::new(c_slots, m_slots)
         }
         (None, Some(m)) => {
-            let m_slots = m / 5;
+            let m_slots = Minutes(m).to_slots().0;
             if m_slots <= 0 {
                 return WorkloadConfig::default();
             }
@@ -719,14 +723,14 @@ fn build_habit_core(
     let (sh, sm) = parse_hhmm(start_time)?;
     let start_time = takusu_habit::TimeOfDay::new(sh, sm)
         .ok_or_else(|| AppError::BadRequest(format!("invalid start_time: {start_time}")))?;
-    let duration = NormalDist::new((avg_minutes / 5) as u64, (sigma_minutes / 5) as u64);
+    let duration = NormalDist::from_minutes(Minutes(avg_minutes), Minutes(sigma_minutes));
     let (eh, em) = parse_hhmm(end_time)?;
     let deadline_slots = if fixed {
         let start_minutes = sh as i64 * 60 + sm as i64;
         let end_minutes = eh as i64 * 60 + em as i64;
         let diff = end_minutes - start_minutes;
         if diff > 0 {
-            Some((diff / 5) as u64)
+            Some(Minutes(diff).to_slots().0 as u64)
         } else {
             None
         }
@@ -1649,7 +1653,6 @@ impl TakusuApp {
         validate_recurrence(&request.recurrence)?;
         validate_steps(&request.steps)?;
 
-
         let settings = self.get_settings_or_default().await?;
         let tz = parse_settings_timezone(&settings.tz)?;
         let now_ts = Timestamp::now();
@@ -1737,14 +1740,13 @@ impl TakusuApp {
                     tasks.push(core_task_to_preview(&core, &step.title));
                 }
             } else {
-                let avg_slots = (request.avg_minutes / 5) as u64;
                 let sigma = request.sigma_minutes.unwrap_or(0);
-                let sigma_slots = (sigma / 5) as u64;
+                let cost = NormalDist::from_minutes(Minutes(request.avg_minutes), Minutes(sigma));
                 let core = CoreTask {
                     id: 0,
                     start: Some(occ_start),
                     end: deadline,
-                    cost_estimate: NormalDist::new(avg_slots, sigma_slots),
+                    cost_estimate: cost,
                     depends: vec![],
                     parallelizable: request.parallelizable.unwrap_or(false),
                     allows_parallel: request.allows_parallel.unwrap_or(false),
@@ -3115,13 +3117,15 @@ impl TakusuApp {
                             ));
                         }
                     } else {
-                        let avg_slots = (row.avg_minutes / 5) as u64;
-                        let sigma_slots = (row.sigma_minutes / 5) as u64;
+                        let cost = NormalDist::from_minutes(
+                            Minutes(row.avg_minutes),
+                            Minutes(row.sigma_minutes),
+                        );
                         let core = CoreTask {
                             id: 0,
                             start: Some(window_start),
                             end: deadline_pt,
-                            cost_estimate: NormalDist::new(avg_slots, sigma_slots),
+                            cost_estimate: cost,
                             depends: vec![],
                             parallelizable: row.parallelizable,
                             allows_parallel: row.allows_parallel,
@@ -3250,8 +3254,10 @@ impl TakusuApp {
                         end_at: Some(point_to_iso(core_task.end.0)?),
                         title: Some(title),
                         description: habit_desc.clone(),
-                        avg_minutes: Some(core_task.cost_estimate.avg as i64 * 5),
-                        sigma_minutes: Some(core_task.cost_estimate.sigma as i64 * 5),
+                        avg_minutes: Some(Slots(core_task.cost_estimate.avg as i64).to_minutes().0),
+                        sigma_minutes: Some(
+                            Slots(core_task.cost_estimate.sigma as i64).to_minutes().0,
+                        ),
                         parallelizable: Some(core_task.parallelizable),
                         allows_parallel: Some(core_task.allows_parallel),
                         abandonability: Some(core_task.abandonability),
@@ -3286,8 +3292,8 @@ impl TakusuApp {
                     title,
                     start_at: core_task.start.map(|p| point_to_iso(p.0)).transpose()?,
                     end_at: point_to_iso(core_task.end.0)?,
-                    avg_minutes: core_task.cost_estimate.avg as i64 * 5,
-                    sigma_minutes: Some(core_task.cost_estimate.sigma as i64 * 5),
+                    avg_minutes: Slots(core_task.cost_estimate.avg as i64).to_minutes().0,
+                    sigma_minutes: Some(Slots(core_task.cost_estimate.sigma as i64).to_minutes().0),
                     depends: Some(vec![]),
                     parallelizable: Some(core_task.parallelizable),
                     allows_parallel: Some(core_task.allows_parallel),
@@ -3503,9 +3509,9 @@ impl TakusuApp {
                 id: planner.tasks().len(),
                 start: start_opt,
                 end,
-                cost_estimate: NormalDist::new(
-                    (row.avg_minutes / 5) as u64,
-                    (row.sigma_minutes / 5) as u64,
+                cost_estimate: NormalDist::from_minutes(
+                    Minutes(row.avg_minutes),
+                    Minutes(row.sigma_minutes),
                 ),
                 depends: all_depends[i].clone(),
                 parallelizable: row.parallelizable,

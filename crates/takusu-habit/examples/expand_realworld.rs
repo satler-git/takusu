@@ -11,7 +11,7 @@ use jiff::tz::TimeZone;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
-use takusu_core::{NormalDist, Point, SleepConfig, Task};
+use takusu_core::{Minutes, NormalDist, Point, SleepConfig, Task};
 use takusu_habit::{
     Habit, HabitStore, RecurrenceRule, TimeOfDay, date_time_to_point, point_to_date,
 };
@@ -169,9 +169,9 @@ fn main() {
 
         let (h, m) = parse_hhmm(&habit.start_time);
         let start_time = TimeOfDay::new(h, m).expect("failed to build habit TimeOfDay");
-        let duration = NormalDist::new(
-            (habit.duration_avg_minutes / 5) as u64,
-            (habit.duration_sigma_minutes / 5) as u64,
+        let duration = NormalDist::from_minutes(
+            Minutes(habit.duration_avg_minutes),
+            Minutes(habit.duration_sigma_minutes),
         );
 
         let h_cfg = Habit {
@@ -207,8 +207,6 @@ fn main() {
                     let step_time = TimeOfDay::new(sh, sm).expect("failed to build step TimeOfDay");
                     let start_pt = date_time_to_point(date, &step_time, &tz)
                         .expect("failed to convert step datetime to point");
-                    let avg_slots = (step.avg_minutes / 5) as u64;
-                    let sigma_slots = (step.sigma_minutes / 5) as u64;
                     let end_pt = if step.fixed {
                         if let Some(ref end_time) = step.end_time {
                             let (eh, em) = parse_hhmm(end_time);
@@ -219,12 +217,12 @@ fn main() {
                                 "step end_time {end_time} must be at or after start_time {}",
                                 step.start_time
                             );
-                            start_pt + ((end_minutes - start_minutes) / 5)
+                            start_pt + Minutes(end_minutes - start_minutes).to_slots().0
                         } else {
-                            start_pt + avg_slots as i64
+                            start_pt + Minutes(step.avg_minutes).to_slots().0
                         }
                     } else {
-                        start_pt + avg_slots as i64
+                        start_pt + Minutes(step.avg_minutes).to_slots().0
                     };
 
                     let depends: Vec<usize> = step.depends.iter().map(|&d| base + d).collect();
@@ -233,7 +231,10 @@ fn main() {
                         id: 0,
                         start: Some(start_pt),
                         end: end_pt,
-                        cost_estimate: NormalDist::new(avg_slots, sigma_slots),
+                        cost_estimate: NormalDist::from_minutes(
+                            Minutes(step.avg_minutes),
+                            Minutes(step.sigma_minutes),
+                        ),
                         depends,
                         parallelizable: step.parallelizable,
                         allows_parallel: step.allows_parallel,

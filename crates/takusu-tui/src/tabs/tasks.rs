@@ -210,7 +210,9 @@ fn parse_edit_text(content: &str) -> Result<takusu_storage::UpdateTask, String> 
                     update.end_at = Some(value.to_string());
                 }
             }
-            "status" => update.status = Some(value.parse::<TaskStatus>().map_err(|e| e.to_string())?),
+            "status" => {
+                update.status = Some(value.parse::<TaskStatus>().map_err(|e| e.to_string())?)
+            }
             "avg_minutes" => update.avg_minutes = parse_i64(value)?,
             "sigma_minutes" => update.sigma_minutes = parse_i64(value)?,
             "abandonability" => update.abandonability = parse_f64(value)?,

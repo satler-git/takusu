@@ -126,7 +126,13 @@ pub fn parse_edited_task(content: &str) -> Result<UpdateTask, String> {
                     Some(Some(value.to_string()))
                 }
             }
-            "status" => status = Some(value.parse::<TaskStatus>().map_err(|e| format!("invalid status '{value}': {e}"))?),
+            "status" => {
+                status = Some(
+                    value
+                        .parse::<TaskStatus>()
+                        .map_err(|e| format!("invalid status '{value}': {e}"))?,
+                )
+            }
             "avg_minutes" => {
                 avg_minutes = Some(
                     value
@@ -384,7 +390,11 @@ pub fn parse_edited_habit(content: &str) -> Result<UpdateHabit, String> {
                 )
             }
             "window_mode" if !value.is_empty() => {
-                window_mode = Some(value.parse::<WindowMode>().map_err(|e| format!("invalid window_mode '{value}': {e}"))?);
+                window_mode = Some(
+                    value
+                        .parse::<WindowMode>()
+                        .map_err(|e| format!("invalid window_mode '{value}': {e}"))?,
+                );
             }
             _ => {}
         }

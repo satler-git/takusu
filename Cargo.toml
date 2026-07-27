@@ -34,7 +34,7 @@ reqwest = { version = "0.13", features = [
   "form",
   "rustls",
 ], default-features = false }
-takusu-core = { path = "crates/takusu-core" }
+takusu-core = { path = "crates/takusu-core", default-features = false }
 takusu-ical = { path = "crates/takusu-ical" }
 takusu-client = { path = "crates/takusu-client" }
 takusu-util = { path = "crates/takusu-util" }

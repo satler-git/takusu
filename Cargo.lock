@@ -5223,6 +5223,7 @@ dependencies = [
  "rustc-hash",
  "serde",
  "serde_json",
+ "takusu-util",
  "thiserror 2.0.18",
  "tikv-jemallocator",
 ]

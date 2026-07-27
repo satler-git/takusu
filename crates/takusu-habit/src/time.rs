@@ -3,7 +3,7 @@ use jiff::civil::Date;
 use jiff::tz::TimeZone;
 use takusu_core::Point;
 
-pub const SLOT_MINUTES: i64 = 5;
+pub use takusu_core::SLOT_MINUTES;
 #[allow(dead_code)]
 pub const SLOTS_PER_HOUR: i64 = 12;
 #[allow(dead_code)]
