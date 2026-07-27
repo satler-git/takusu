@@ -1,7 +1,6 @@
-use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::{
-    Mutex, MutexGuard,
+    Arc, Mutex,
     atomic::{AtomicBool, Ordering},
 };
 
@@ -14,39 +13,6 @@ use tokio::runtime::{Builder, Runtime};
 
 use crate::TakusuError;
 
-/// State of the tokio runtime. All transitions happen under the same mutex,
-/// so `shutdown` and `ensure_runtime` cannot race.
-#[derive(Default)]
-enum RuntimeState {
-    #[default]
-    Uninitialized,
-    Running(Runtime),
-    ShutDown,
-}
-
-/// Guard that keeps the runtime mutex locked while exposing the underlying
-/// `Runtime`. The `Deref` implementation assumes the state is `Running`;
-/// it panics only if that invariant is violated.
-struct RuntimeGuard<'a> {
-    guard: MutexGuard<'a, RuntimeState>,
-}
-
-impl<'a> RuntimeGuard<'a> {
-    fn new(guard: MutexGuard<'a, RuntimeState>) -> Self {
-        Self { guard }
-    }
-}
-
-impl<'a> Deref for RuntimeGuard<'a> {
-    type Target = Runtime;
-    fn deref(&self) -> &Self::Target {
-        match &*self.guard {
-            RuntimeState::Running(runtime) => runtime,
-            _ => unreachable!("RuntimeGuard created only from Running state"),
-        }
-    }
-}
-
 /// Android audio bridge. Recording is performed by Kotlin AudioRecord; model
 /// inference and provider TTS stay in Rust so desktop and Android share the
 /// same audio backend behavior.
@@ -56,12 +22,18 @@ impl<'a> Deref for RuntimeGuard<'a> {
 /// to download STT weights up front. The tokio runtime is also created lazily,
 /// both to avoid forcing model/TTS-only users to pay for it and to avoid
 /// `process`/`signal` driver registration that can fail on some Android builds.
+///
+/// The runtime is stored as `Option<Arc<Runtime>>` so that a task can clone the
+/// `Arc`, release the mutex, and call `block_on` without the mutex being held.
+/// This prevents a panic in an audio task from poisoning the runtime lock and
+/// permanently disabling TTS/STT.
 #[derive(uniffi::Object)]
 pub struct MobileAudio {
     hush: Mutex<Option<Hush>>,
-    stt: Mutex<Option<SherpaOnnxAsr>>,
+    stt: Mutex<Option<Arc<SherpaOnnxAsr>>>,
     tts: Option<CartesiaSonic>,
-    runtime: Mutex<RuntimeState>,
+    runtime: Mutex<Option<Arc<Runtime>>>,
+    runtime_shutdown: AtomicBool,
     model_dir: PathBuf,
     language: String,
     voice_id: String,
@@ -71,22 +43,33 @@ pub struct MobileAudio {
 }
 
 impl MobileAudio {
-    /// Return the tokio runtime, initializing it on first use.
+    /// Return a handle to the tokio runtime, initializing it on first use.
     ///
     /// Only `io` and `time` drivers are enabled; `signal`/`process` are not
     /// needed for audio inference/networking and can trip up Android hosts.
-    /// After `shutdown` this returns an error, and the state is permanently
-    /// `ShutDown` under the same mutex.
-    fn ensure_runtime(&self) -> Result<RuntimeGuard<'_>, TakusuError> {
-        let mut guard = self.runtime.lock().map_err(|error| TakusuError::Audio {
-            detail: format!("runtime lock poisoned: {error}"),
-        })?;
-        if matches!(&*guard, RuntimeState::ShutDown) {
+    /// The returned `Arc<Runtime>` is released before `block_on` is called by
+    /// the public methods, so the runtime mutex is never held across a blocking
+    /// audio operation.
+    ///
+    /// A concurrent `shutdown` may set `runtime_shutdown` after we clone the
+    /// `Arc`; the clone keeps the runtime alive for the current task, and
+    /// `shutdown` will not call `shutdown_background` while any clone is alive.
+    fn ensure_runtime(&self) -> Result<Arc<Runtime>, TakusuError> {
+        if self.runtime_shutdown.load(Ordering::Acquire) {
             return Err(TakusuError::Audio {
                 detail: "audio runtime has been shut down".to_string(),
             });
         }
-        if matches!(&*guard, RuntimeState::Uninitialized) {
+        let mut guard = self
+            .runtime
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if self.runtime_shutdown.load(Ordering::Acquire) {
+            return Err(TakusuError::Audio {
+                detail: "audio runtime has been shut down".to_string(),
+            });
+        }
+        if guard.is_none() {
             let runtime = Builder::new_multi_thread()
                 .enable_io()
                 .enable_time()
@@ -94,9 +77,9 @@ impl MobileAudio {
                 .map_err(|error| TakusuError::Audio {
                     detail: format!("failed to create audio runtime: {error}"),
                 })?;
-            *guard = RuntimeState::Running(runtime);
+            *guard = Some(Arc::new(runtime));
         }
-        Ok(RuntimeGuard::new(guard))
+        Ok(guard.as_ref().unwrap().clone())
     }
 }
 
@@ -127,7 +110,8 @@ impl MobileAudio {
             hush: Mutex::new(None),
             stt: Mutex::new(None),
             tts,
-            runtime: Mutex::new(RuntimeState::Uninitialized),
+            runtime: Mutex::new(None),
+            runtime_shutdown: AtomicBool::new(false),
             model_dir: root,
             language,
             voice_id,
@@ -138,13 +122,20 @@ impl MobileAudio {
     }
 
     pub fn shutdown(&self) -> Result<(), TakusuError> {
-        let mut guard = self.runtime.lock().map_err(|error| TakusuError::Audio {
-            detail: format!("runtime lock poisoned: {error}"),
-        })?;
-        if let RuntimeState::Running(runtime) = std::mem::take(&mut *guard) {
-            runtime.shutdown_background();
+        let mut guard = self
+            .runtime
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        self.runtime_shutdown.store(true, Ordering::Release);
+        if let Some(arc) = guard.take() {
+            // Any task that already cloned the `Arc` can finish. If no task is
+            // active we can shut the runtime down immediately; otherwise it will
+            // be dropped once the last clone is released.
+            drop(guard);
+            if let Ok(runtime) = Arc::try_unwrap(arc) {
+                runtime.shutdown_background();
+            }
         }
-        *guard = RuntimeState::ShutDown;
         Ok(())
     }
 
@@ -159,9 +150,14 @@ impl MobileAudio {
             .map(|sample| sample as f32 / i16::MAX as f32)
             .collect();
 
-        let mut hush_guard = self.hush.lock().map_err(|error| TakusuError::Audio {
-            detail: format!("Hush lock poisoned: {error}"),
-        })?;
+        // Hush state is mutated by enhance(), so a panic while the guard is
+        // held could leave the model in an inconsistent state. If the mutex is
+        // poisoned, discard the cached model so the next call reloads it.
+        let mut hush_guard = self.hush.lock().unwrap_or_else(|error| {
+            let mut guard = error.into_inner();
+            guard.take();
+            guard
+        });
         if hush_guard.is_none() {
             let hush = Hush::from_model_dir(self.model_dir.join("hush")).map_err(|error| {
                 TakusuError::Audio {
@@ -176,24 +172,26 @@ impl MobileAudio {
         })?;
         drop(hush_guard);
 
-        let mut stt_guard = self.stt.lock().map_err(|error| TakusuError::Audio {
-            detail: format!("SenseVoice lock poisoned: {error}"),
-        })?;
-        if stt_guard.is_none() {
-            let stt = SherpaOnnxAsr::from_config(&SherpaOnnxAsrConfig {
-                model: SherpaOnnxModel::SenseVoice,
-                model_dir: self.model_dir.join("sherpa-sense-voice-int8"),
-                sample_rate: 16_000,
-                language: Some(self.language.clone()),
-                use_itn: true,
-                ..Default::default()
-            })
-            .map_err(|error: SttError| TakusuError::Audio {
-                detail: format!("failed to load SenseVoice: {error}"),
-            })?;
-            *stt_guard = Some(stt);
-        }
-        let stt = stt_guard.as_ref().unwrap();
+        // Load the STT model once, then release the mutex before the runtime
+        // block_on call so a panic in transcribe() cannot poison the stt lock.
+        let stt = {
+            let mut stt_guard = self.stt.lock().unwrap_or_else(|error| error.into_inner());
+            if stt_guard.is_none() {
+                let stt = SherpaOnnxAsr::from_config(&SherpaOnnxAsrConfig {
+                    model: SherpaOnnxModel::SenseVoice,
+                    model_dir: self.model_dir.join("sherpa-sense-voice-int8"),
+                    sample_rate: 16_000,
+                    language: Some(self.language.clone()),
+                    use_itn: true,
+                    ..Default::default()
+                })
+                .map_err(|error: SttError| TakusuError::Audio {
+                    detail: format!("failed to load SenseVoice: {error}"),
+                })?;
+                *stt_guard = Some(Arc::new(stt));
+            }
+            stt_guard.as_ref().unwrap().clone()
+        };
         let runtime = self.ensure_runtime()?;
         runtime
             .block_on(stt.transcribe(&enhanced))
@@ -279,8 +277,109 @@ mod tests {
         );
         let audio = audio.unwrap();
         assert!(
-            matches!(&*audio.runtime.lock().unwrap(), RuntimeState::Uninitialized),
+            audio.runtime.lock().unwrap().is_none()
+                && !audio.runtime_shutdown.load(Ordering::Relaxed),
             "runtime should not be created when the API key is empty"
+        );
+    }
+
+    #[test]
+    fn ensure_runtime_after_shutdown_returns_error() {
+        let model_dir = std::env::temp_dir()
+            .join("takusu_ensure_runtime_after_shutdown_test")
+            .to_string_lossy()
+            .to_string();
+        let audio = MobileAudio::new(
+            model_dir,
+            String::new(),
+            String::new(),
+            "ja".to_string(),
+            44100,
+            Some(1.0),
+            false,
+        )
+        .unwrap();
+
+        let _runtime = audio.ensure_runtime().unwrap();
+        audio.shutdown().unwrap();
+        let err = audio.ensure_runtime().unwrap_err();
+        assert!(
+            matches!(err, TakusuError::Audio { ref detail } if detail == "audio runtime has been shut down"),
+            "ensure_runtime should fail after shutdown: {err:?}"
+        );
+    }
+
+    #[test]
+    fn runtime_lock_poison_is_recovered() {
+        let model_dir = std::env::temp_dir()
+            .join("takusu_runtime_lock_poison_test")
+            .to_string_lossy()
+            .to_string();
+        let audio = MobileAudio::new(
+            model_dir,
+            String::new(),
+            String::new(),
+            "ja".to_string(),
+            44100,
+            Some(1.0),
+            false,
+        )
+        .unwrap();
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = audio.runtime.lock().unwrap();
+            panic!("intentional runtime lock poison");
+        }));
+        assert!(
+            result.is_err(),
+            "the test must intentionally poison the runtime lock"
+        );
+
+        // ensure_runtime should recover from the poisoned lock and create a
+        // usable runtime.
+        let runtime = audio.ensure_runtime().unwrap();
+        let value = runtime.block_on(async { 42 });
+        assert_eq!(value, 42);
+        audio.shutdown().unwrap();
+    }
+
+    #[test]
+    fn shutdown_during_block_on_races_safely() {
+        use std::time::Duration;
+
+        let model_dir = std::env::temp_dir()
+            .join("takusu_shutdown_during_block_on_test")
+            .to_string_lossy()
+            .to_string();
+        let audio = MobileAudio::new(
+            model_dir,
+            String::new(),
+            String::new(),
+            "ja".to_string(),
+            44100,
+            Some(1.0),
+            false,
+        )
+        .unwrap();
+
+        let runtime = audio.ensure_runtime().unwrap();
+        std::thread::scope(|s| {
+            let worker_runtime = Arc::clone(&runtime);
+            s.spawn(move || {
+                worker_runtime.block_on(async {
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                });
+            });
+            // This should not deadlock or panic even though the worker is still
+            // inside block_on. The Arc clone keeps the runtime alive for the
+            // worker; once the clone is dropped the runtime is shut down.
+            audio.shutdown().unwrap();
+        });
+
+        let err = audio.ensure_runtime().unwrap_err();
+        assert!(
+            matches!(err, TakusuError::Audio { ref detail } if detail == "audio runtime has been shut down"),
+            "ensure_runtime should fail after shutdown: {err:?}"
         );
     }
 }
