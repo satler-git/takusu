@@ -68,6 +68,29 @@ function pushClientLog(level: string, context: string, message: string): void {
   }
 }
 
+// Track active error toasts so repeated identical errors replace the
+// existing toast instead of filling the screen. A hard cap also prevents
+// an unrelated burst of errors from covering the UI.
+const MAX_ERROR_TOASTS = 3;
+
+interface ActiveErrorToast {
+  id: string;
+  count: number;
+}
+
+const activeErrorToasts = new Map<string, ActiveErrorToast>();
+const activeErrorToastIds = new Map<string, string>();
+
+function removeActiveErrorToast(id: string): void {
+  const key = activeErrorToastIds.get(id);
+  if (!key) return;
+  activeErrorToastIds.delete(id);
+  const current = activeErrorToasts.get(key);
+  if (current && current.id === id) {
+    activeErrorToasts.delete(key);
+  }
+}
+
 /**
  * Show a non-blocking top toast for an operation failure.
  * `title` defaults to "エラー" but can be overridden for context
@@ -77,26 +100,68 @@ function pushClientLog(level: string, context: string, message: string): void {
  * error message (including stack trace when available) to the clipboard
  * for bug reports (issue #216). Falls back to an alert when no toast
  * provider is mounted.
+ *
+ * Identical errors replace the previous toast for that error and count up,
+ * so the screen cannot be filled with repeated failures.
  */
-export function showError(e: unknown, title = 'エラー'): string | undefined {
+export async function showError(
+  e: unknown,
+  title = 'エラー',
+): Promise<string | undefined> {
   const msg = formatError(e);
   const fullMsg = formatErrorForLog(e);
   pushClientLog('error', title, fullMsg);
 
   const toastRef = getTopToastRef();
   if (toastRef) {
+    const key = `${title}\n${msg}`;
+    const existing = activeErrorToasts.get(key);
+    const count = existing ? existing.count + 1 : 1;
+
+    if (existing) {
+      toastRef.hideTopToast(existing.id);
+      removeActiveErrorToast(existing.id);
+    }
+
+    while (activeErrorToasts.size >= MAX_ERROR_TOASTS) {
+      const firstKey = activeErrorToasts.keys().next().value as string;
+      const first = activeErrorToasts.get(firstKey);
+      if (first) {
+        toastRef.hideTopToast(first.id);
+        removeActiveErrorToast(first.id);
+      }
+    }
+
+    const displayMessage =
+      count > 1 ? `${title}: ${msg} (${count})` : `${title}: ${msg}`;
+
     let toastId = '';
-    toastId = toastRef.showTopToast(`${title}: ${msg}`, {
+    toastId = toastRef.showTopToast(displayMessage, {
       type: 'error',
       duration: Infinity,
       action: {
         label: 'コピー',
         onPress: () => {
-          Clipboard.setStringAsync(fullMsg).catch(() => {});
-          toastRef.hideTopToast(toastId);
+          void (async () => {
+            try {
+              await Clipboard.setStringAsync(fullMsg);
+              toastRef.hideTopToast(toastId);
+            } catch {
+              toastRef.showTopToast('コピーに失敗しました', {
+                type: 'error',
+                duration: 3000,
+              });
+            }
+          })();
         },
       },
+      onDismiss: () => {
+        removeActiveErrorToast(toastId);
+      },
     });
+
+    activeErrorToasts.set(key, { id: toastId, count });
+    activeErrorToastIds.set(toastId, key);
     return toastId;
   }
 
@@ -107,7 +172,7 @@ export function showError(e: unknown, title = 'エラー'): string | undefined {
       {
         text: 'コピー',
         onPress: () => {
-          Clipboard.setStringAsync(fullMsg).catch(() => {});
+          void Clipboard.setStringAsync(fullMsg);
         },
       },
       { text: 'OK', style: 'cancel' },

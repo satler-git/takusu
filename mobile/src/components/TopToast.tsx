@@ -41,7 +41,6 @@ const DEFAULT_DURATION = 3000;
 const OFFSCREEN_MARGIN = 50;
 const SWIPE_DISMISS_THRESHOLD = 50;
 const SWIPE_VELOCITY_THRESHOLD = 300;
-const MIN_PAN_DISTANCE = 10;
 const ESTIMATED_HEIGHT = 64;
 const GAP = 8;
 
@@ -49,7 +48,7 @@ export type ToastType = 'info' | 'success' | 'error' | 'loading';
 
 export interface ToastAction {
   label: string;
-  onPress: () => void;
+  onPress: () => void | Promise<void>;
 }
 
 export interface ToastOptions {
@@ -57,6 +56,7 @@ export interface ToastOptions {
   duration?: number;
   action?: ToastAction;
   swipeable?: boolean;
+  onDismiss?: () => void;
 }
 
 interface Toast {
@@ -66,6 +66,7 @@ interface Toast {
   duration: number;
   action?: ToastAction;
   swipeable: boolean;
+  onDismiss?: () => void;
 }
 
 export interface TopToastContextValue {
@@ -123,6 +124,7 @@ export function TopToastProvider({ children }: { children: ReactNode }) {
           duration: opts.duration ?? DEFAULT_DURATION,
           action: opts.action,
           swipeable: opts.swipeable ?? true,
+          onDismiss: opts.onDismiss,
         };
         setToasts((prev) => [...prev, next]);
         return id;
@@ -168,6 +170,7 @@ export function TopToastProvider({ children }: { children: ReactNode }) {
           colors={colors}
           action={toast.action}
           swipeable={toast.swipeable}
+          onDismissed={toast.onDismiss}
           onLayout={handleLayout}
           onDismiss={handleDismiss}
           onRegisterDismiss={registerDismiss}
@@ -190,6 +193,7 @@ interface ToastItemProps {
   colors: ReturnType<typeof useColors>;
   action?: ToastAction;
   swipeable: boolean;
+  onDismissed?: () => void;
   onLayout: (id: string, height: number) => void;
   onDismiss: (id: string) => void;
   onRegisterDismiss: (id: string, fn: () => void) => void;
@@ -208,6 +212,7 @@ function ToastItem({
   colors,
   action,
   swipeable,
+  onDismissed,
   onLayout,
   onDismiss,
   onRegisterDismiss,
@@ -247,6 +252,11 @@ function ToastItem({
     }
   }, []);
 
+  const notifyDismissed = useCallback(() => {
+    onDismiss(id);
+    onDismissed?.();
+  }, [id, onDismiss, onDismissed]);
+
   const dismiss = useCallback(() => {
     if (dismissing.value) return;
     dismissing.value = true;
@@ -260,10 +270,10 @@ function ToastItem({
       { duration: 200, easing: Easing.out(Easing.ease) },
       (finished) => {
         'worklet';
-        if (finished) runOnJS(onDismiss)(id);
+        if (finished) runOnJS(notifyDismissed)();
       },
     );
-  }, [clearDismissTimer, dismissing, id, insetsTop, onDismiss, panX, panY]);
+  }, [clearDismissTimer, dismissing, insetsTop, notifyDismissed, panX, panY]);
 
   const dismissHorizontal = useCallback(
     (direction: 'left' | 'right') => {
@@ -276,11 +286,11 @@ function ToastItem({
         { duration: 250, easing: Easing.out(Easing.ease) },
         (finished) => {
           'worklet';
-          if (finished) runOnJS(onDismiss)(id);
+          if (finished) runOnJS(notifyDismissed)();
         },
       );
     },
-    [clearDismissTimer, dismissing, id, onDismiss, panX, screenWidth],
+    [clearDismissTimer, dismissing, notifyDismissed, panX, screenWidth],
   );
 
   const startDismissTimer = useCallback(() => {
@@ -342,7 +352,8 @@ function ToastItem({
     () =>
       Gesture.Pan()
         .enabled(swipeable)
-        .minDistance(MIN_PAN_DISTANCE)
+        .activeOffsetX([-10, 10])
+        .failOffsetY([-15, 15])
         .onBegin(() => {
           cancelAnimation(panX);
           cancelAnimation(panY);
