@@ -4,6 +4,7 @@ use worker::{Env, Request, Response};
 use crate::error::WorkerError;
 use crate::handlers::auth::db;
 use crate::handlers::d1::safe_all;
+use crate::handlers::id_resolver::resolve_task_id;
 use crate::handlers::settings::get_timezone;
 use crate::handlers::tokens::{json_created, json_ok, parse_json};
 use crate::models::{
@@ -583,67 +584,6 @@ pub async fn select_one(database: &worker::D1Database, id: &str) -> Result<TaskR
     row.ok_or_else(|| WorkerError::NotFound(format!("task {id} not found")))
 }
 
-/// Resolve a single task reference (display_id number or full UUID) to a full
-/// UUID string. UUID prefixes are not accepted (#1251).
-pub(crate) async fn resolve_task_id(
-    database: &worker::D1Database,
-    id: &str,
-) -> Result<String, WorkerError> {
-    // Allow display ids with a leading `#` (e.g. `#42`) written by the LLM.
-    let id = id.strip_prefix('#').unwrap_or(id);
-
-    // `h{habit_display_id}#{task_display_id}` → habit task lookup (#380).
-    if let Some(rest) = id.strip_prefix(['h', 'H'])
-        && let Some((hdisp, tdisp)) = rest.split_once('#')
-        && let (Ok(hnum), Ok(tnum)) = (hdisp.parse::<i64>(), tdisp.parse::<i64>())
-    {
-        let stmt = database.prepare(
-            "SELECT t.id AS id FROM tasks t JOIN habits h ON t.habit_id = h.id \
-             WHERE h.display_id = ?1 AND t.display_id = ?2",
-        );
-        let row: Option<IdRow> = stmt
-            .bind(&[
-                JsValue::from_f64(hnum as f64),
-                JsValue::from_f64(tnum as f64),
-            ])?
-            .first(None)
-            .await
-            .map_err(WorkerError::Worker)?;
-        return row
-            .map(|r| r.id)
-            .ok_or_else(|| WorkerError::NotFound(format!("task {id} not found")));
-    }
-    // Numeric → display_id lookup for non-habit tasks only (#380).
-    if let Ok(num) = id.parse::<i64>() {
-        let stmt = database.prepare(format!(
-            "{select} WHERE display_id = ?1 AND habit_id IS NULL",
-            select = select_tasks()
-        ));
-        let row: Option<TaskRow> = stmt
-            .bind(&[JsValue::from_f64(num as f64)])?
-            .first(None)
-            .await
-            .map_err(WorkerError::Worker)?;
-        return row
-            .map(|t| t.id)
-            .ok_or_else(|| WorkerError::NotFound(format!("task {id} not found")));
-    }
-    // Full UUID — verify it exists before accepting it.
-    if id.contains('-') {
-        let stmt = database.prepare("SELECT id FROM tasks WHERE id = ?1");
-        let row: Option<IdRow> = stmt
-            .bind(&[JsValue::from_str(id)])?
-            .first(None)
-            .await
-            .map_err(WorkerError::Worker)?;
-        return row
-            .map(|r| r.id)
-            .ok_or_else(|| WorkerError::NotFound(format!("task {id} not found")));
-    }
-    // Anything else (e.g. a UUID prefix) is not a valid reference (#1251).
-    Err(WorkerError::NotFound(format!("task {id} not found")))
-}
-
 /// Resolve a list of dependency references to full UUID strings.
 pub(crate) async fn resolve_depends(
     database: &worker::D1Database,
@@ -714,9 +654,4 @@ mod tests {
 #[derive(serde::Deserialize)]
 pub(crate) struct DisplayIdRow {
     pub(crate) display_id: i64,
-}
-
-#[derive(serde::Deserialize)]
-pub(crate) struct IdRow {
-    pub(crate) id: String,
 }

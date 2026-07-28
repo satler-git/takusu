@@ -5,6 +5,7 @@ use worker::Response;
 use crate::error::WorkerError;
 use crate::handlers::auth::db;
 use crate::handlers::d1::safe_all;
+use crate::handlers::id_resolver::resolve_habit_id;
 use crate::handlers::tokens::{json_created, json_ok, parse_json};
 use crate::models::{
     ApplyHabitEstimateRequest, CreateHabit, CreateHabitScheduledSpan, HabitDetail, HabitRow,
@@ -264,42 +265,6 @@ pub async fn select_one(database: &worker::D1Database, id: &str) -> Result<Habit
         .await
         .map_err(WorkerError::Worker)?;
     row.ok_or_else(|| WorkerError::NotFound(format!("habit {id} not found")))
-}
-
-/// Resolve a habit reference (`h<N>` or full UUID) to a full UUID. UUID
-/// prefixes are not accepted (#1251).
-async fn resolve_habit_id(database: &worker::D1Database, id: &str) -> Result<String, WorkerError> {
-    // `h<N>` → habit display_id lookup (#305).
-    if let Some(rest) = id.strip_prefix(['h', 'H'])
-        && let Ok(num) = rest.parse::<i64>()
-    {
-        let stmt = database.prepare(format!(
-            "{select} WHERE display_id = ?1",
-            select = select_habits()
-        ));
-        let row: Option<HabitRow> = stmt
-            .bind(&[JsValue::from_f64(num as f64)])?
-            .first(None)
-            .await
-            .map_err(WorkerError::Worker)?;
-        return row
-            .map(|h| h.id)
-            .ok_or_else(|| WorkerError::NotFound(format!("habit {id} not found")));
-    }
-    // Full UUID — verify it exists before accepting it (#1271).
-    if id.contains('-') {
-        let stmt = database.prepare("SELECT id FROM habits WHERE id = ?1");
-        let row: Option<IdRow> = stmt
-            .bind(&[JsValue::from_str(id)])?
-            .first(None)
-            .await
-            .map_err(WorkerError::Worker)?;
-        return row
-            .map(|r| r.id)
-            .ok_or_else(|| WorkerError::NotFound(format!("habit {id} not found")));
-    }
-    // Anything else (e.g. a UUID prefix) is not a valid reference (#1251).
-    Err(WorkerError::NotFound(format!("habit {id} not found")))
 }
 
 #[derive(serde::Deserialize)]
