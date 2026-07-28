@@ -1015,22 +1015,7 @@ impl WorkersStorage {
         if id.contains('-') {
             return Ok(id.to_string());
         }
-        // UUID prefix — fetch all tasks and filter client-side (matches
-        // SqliteStorage's `LIKE prefix%` behaviour).
-        let tasks: Vec<TaskRow> = self
-            .send_json::<Vec<TaskRow>>(reqwest::Method::GET, "/api/tasks", RequestBody::None, None)
-            .await?;
-        let mut matches: Vec<String> = tasks
-            .iter()
-            .filter(|t| t.id.starts_with(id))
-            .map(|t| t.id.clone())
-            .collect();
-        match matches.len() {
-            0 => Err(StorageError::NotFound(format!("task {id} not found"))),
-            1 => Ok(matches.remove(0)),
-            _ => Err(StorageError::BadRequest(format!(
-                "ambiguous task id prefix: {id}"
-            ))),
-        }
+        // Anything else (e.g. a UUID prefix) is not a valid reference (#1251).
+        Err(StorageError::NotFound(format!("task {id} not found")))
     }
 }

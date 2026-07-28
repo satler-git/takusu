@@ -524,6 +524,6 @@ takusu-worker (WASM / cdylib)
 .devin/docs/code-style.md の "Hacks / Brittle Code" セクションを参照。
 特に注意すべきもの:
 - `point_to_iso` のハードコードされた 5分スロット (全クレートに分散)
-- `LIKE ? || '%'` による前方一致ID解決 (フルテーブルスキャン)
+- ~~`LIKE ? || '%'` による前方一致ID解決 (フルテーブルスキャン)~~ 解決済み (#1251)
 - `COALESCE` によるフィールドクリア不能問題 (Worker側・SQLite側の両方)
 - `freeness()` の直感に反する命名 (高いほど余裕がある = 優先度が低い)

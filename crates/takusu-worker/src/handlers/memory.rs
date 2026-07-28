@@ -84,7 +84,7 @@ async fn resolve_task_id_for_memory(
             .ok_or_else(|| WorkerError::BadRequest(format!("task {id} not found")));
     }
 
-    // Full UUID or UUID prefix.
+    // Full UUID — verify it exists. UUID prefixes are not accepted (#1251).
     if id.contains('-') {
         let stmt = database.prepare("SELECT id FROM tasks WHERE id = ?1");
         let rows: Vec<serde_json::Value> = safe_all(&stmt.bind(&[JsValue::from_str(id)])?).await?;
@@ -93,26 +93,9 @@ async fn resolve_task_id_for_memory(
             .next()
             .and_then(|v| v["id"].as_str().map(|s| s.to_owned()))
             .ok_or_else(|| WorkerError::BadRequest(format!("task {id} not found")));
-    } else {
-        let stmt = database.prepare("SELECT id FROM tasks WHERE id LIKE ?1 || '%'");
-        let rows: Vec<serde_json::Value> = safe_all(&stmt.bind(&[JsValue::from_str(id)])?).await?;
-        match rows.len() {
-            0 => {}
-            1 => {
-                return rows
-                    .into_iter()
-                    .next()
-                    .and_then(|v| v["id"].as_str().map(|s| s.to_owned()))
-                    .ok_or_else(|| WorkerError::Internal(format!("task {id} not found")));
-            }
-            _ => {
-                return Err(WorkerError::BadRequest(format!(
-                    "ambiguous task id prefix: {id}"
-                )));
-            }
-        }
     }
 
+    // Anything else (e.g. a UUID prefix) is not a valid reference (#1251).
     Err(WorkerError::BadRequest(format!("task {id} not found")))
 }
 

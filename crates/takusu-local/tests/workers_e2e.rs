@@ -476,8 +476,8 @@ async fn revoke_token(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// Resolve a habit reference (`h<N>`, full UUID, or UUID prefix) to its full
-/// UUID, mirroring the local storage helper.
+/// Resolve a habit reference (`h<N>` or full UUID) to its full UUID, mirroring
+/// the local storage helper. UUID prefixes are not accepted (#1251).
 async fn resolve_habit_id(pool: &SqlitePool, id: &str) -> Result<String, StatusCode> {
     if let Some(rest) = id.strip_prefix(['h', 'H'])
         && let Ok(num) = rest.parse::<i64>()
@@ -499,16 +499,7 @@ async fn resolve_habit_id(pool: &SqlitePool, id: &str) -> Result<String, StatusC
             return Ok(id.to_string());
         }
     }
-    let matches: Vec<String> = sqlx::query_scalar("SELECT id FROM habits WHERE id LIKE ? || '%'")
-        .bind(id)
-        .fetch_all(pool)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    match matches.len() {
-        0 => Err(StatusCode::NOT_FOUND),
-        1 => Ok(matches.into_iter().next().unwrap()),
-        _ => Err(StatusCode::BAD_REQUEST),
-    }
+    Err(StatusCode::NOT_FOUND)
 }
 
 async fn list_habits(State(state): State<MockState>) -> Json<Vec<HabitRow>> {

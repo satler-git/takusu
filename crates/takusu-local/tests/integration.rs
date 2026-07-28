@@ -865,7 +865,12 @@ async fn task_prefix_lookup() {
     assert!(full_id.contains('-'));
     let short_id = &full_id[..8];
 
+    // UUID prefixes are no longer accepted (#1251); only the full UUID works.
     let get_req = auth_req(Method::GET, &format!("/api/tasks/{short_id}"));
+    let res = app.clone().oneshot(get_req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::NOT_FOUND);
+
+    let get_req = auth_req(Method::GET, &format!("/api/tasks/{full_id}"));
     let res = app.clone().oneshot(get_req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
     let task: serde_json::Value = serde_json::from_str(&body_str(res.into_body()).await).unwrap();
@@ -874,7 +879,7 @@ async fn task_prefix_lookup() {
 
     let update_req = auth_req_body(
         Method::PATCH,
-        &format!("/api/tasks/{short_id}"),
+        &format!("/api/tasks/{full_id}"),
         json!({ "title": "prefix-updated" }),
     );
     let res = app.clone().oneshot(update_req).await.unwrap();
@@ -882,7 +887,7 @@ async fn task_prefix_lookup() {
 
     let replace_req = auth_req_body(
         Method::PUT,
-        &format!("/api/tasks/{short_id}"),
+        &format!("/api/tasks/{full_id}"),
         json!({
             "title": "prefix-replaced",
             "end_at": "2026-06-06T12:00:00+09:00",
@@ -900,7 +905,7 @@ async fn task_prefix_lookup() {
     let res = app.clone().oneshot(not_found_req).await.unwrap();
     assert_eq!(res.status(), StatusCode::NOT_FOUND);
 
-    let delete_req = auth_req(Method::DELETE, &format!("/api/tasks/{short_id}"));
+    let delete_req = auth_req(Method::DELETE, &format!("/api/tasks/{full_id}"));
     let res = app.oneshot(delete_req).await.unwrap();
     assert_eq!(res.status(), StatusCode::NO_CONTENT);
 }
@@ -1099,11 +1104,11 @@ async fn generate_preserves_in_progress_schedule_entry() {
     let (state, pool) = setup().await;
 
     sqlx::query(
-        "INSERT INTO tasks (id, title, end_at, avg_minutes, sigma_minutes, depends, parallelizable, allows_parallel, abandonability, status) VALUES ('task1', 'pending-task', '2026-06-05T18:00:00+09:00', 60, 0, '[]', 0, 0, 0.5, 'pending')"
+        "INSERT INTO tasks (id, title, end_at, avg_minutes, sigma_minutes, depends, parallelizable, allows_parallel, abandonability, status) VALUES ('task-1', 'pending-task', '2026-06-05T18:00:00+09:00', 60, 0, '[]', 0, 0, 0.5, 'pending')"
     ).execute(&pool).await.unwrap();
 
     sqlx::query(
-        "INSERT INTO tasks (id, title, end_at, avg_minutes, sigma_minutes, depends, parallelizable, allows_parallel, abandonability, status) VALUES ('task2', 'will-be-in-progress', '2026-06-05T18:00:00+09:00', 30, 0, '[]', 0, 0, 0.5, 'pending')"
+        "INSERT INTO tasks (id, title, end_at, avg_minutes, sigma_minutes, depends, parallelizable, allows_parallel, abandonability, status) VALUES ('task-2', 'will-be-in-progress', '2026-06-05T18:00:00+09:00', 30, 0, '[]', 0, 0, 0.5, 'pending')"
     ).execute(&pool).await.unwrap();
 
     let app = build_router(state.clone());
@@ -1121,20 +1126,20 @@ async fn generate_preserves_in_progress_schedule_entry() {
         serde_json::from_str(body["schedule"].as_str().unwrap()).unwrap();
     let task2_entry: serde_json::Value = schedule
         .iter()
-        .find(|e| e["task_id"] == "task2")
-        .expect("task2 should be scheduled initially")
+        .find(|e| e["task_id"] == "task-2")
+        .expect("task-2 should be scheduled initially")
         .clone();
 
-    // Mark task2 as in_progress (user started working on it).
+    // Mark task-2 as in_progress (user started working on it).
     let upd_req = auth_req_body(
         Method::PATCH,
-        "/api/tasks/task2",
+        "/api/tasks/task-2",
         json!({ "status": "in_progress" }),
     );
     let res = app.clone().oneshot(upd_req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
 
-    // Regenerate: task2 is in_progress so it's excluded from the planner,
+    // Regenerate: task-2 is in_progress so it's excluded from the planner,
     // but its previous schedule entry must be preserved (#354).
     let gen_req = auth_req_body(
         Method::POST,
@@ -1151,14 +1156,14 @@ async fn generate_preserves_in_progress_schedule_entry() {
         .map(|e| e["task_id"].as_str().unwrap())
         .collect();
     assert!(
-        task_ids.contains(&"task1"),
+        task_ids.contains(&"task-1"),
         "pending task should be scheduled"
     );
     assert!(
-        task_ids.contains(&"task2"),
+        task_ids.contains(&"task-2"),
         "in_progress task entry should be preserved (#354)"
     );
-    let preserved = schedule.iter().find(|e| e["task_id"] == "task2").unwrap();
+    let preserved = schedule.iter().find(|e| e["task_id"] == "task-2").unwrap();
     assert_eq!(preserved["start_at"], task2_entry["start_at"]);
     assert_eq!(preserved["end_at"], task2_entry["end_at"]);
 }
@@ -1399,14 +1404,14 @@ async fn move_entry_with_force_overrides_warnings() {
     let (state, pool) = setup().await;
 
     sqlx::query(
-        "INSERT INTO tasks (id, title, end_at, avg_minutes, sigma_minutes, depends, parallelizable, allows_parallel, abandonability, status) VALUES ('t1', 'Task1', '2026-06-10T12:00:00Z', 60, 0, '[]', 0, 0, 0.5, 'scheduled')",
+        "INSERT INTO tasks (id, title, end_at, avg_minutes, sigma_minutes, depends, parallelizable, allows_parallel, abandonability, status) VALUES ('t-1', 'Task1', '2026-06-10T12:00:00Z', 60, 0, '[]', 0, 0, 0.5, 'scheduled')",
     )
     .execute(&pool)
     .await
     .unwrap();
 
     sqlx::query(
-        "INSERT INTO schedules (id, schedule, created_at, updated_at) VALUES ('active', '[{\"task_id\":\"t1\",\"start_at\":\"2026-06-10T10:00:00Z\",\"end_at\":\"2026-06-10T11:00:00Z\"}]', strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))",
+        "INSERT INTO schedules (id, schedule, created_at, updated_at) VALUES ('active', '[{\"task_id\":\"t-1\",\"start_at\":\"2026-06-10T10:00:00Z\",\"end_at\":\"2026-06-10T11:00:00Z\"}]', strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))",
     )
     .execute(&pool)
     .await
@@ -1416,7 +1421,7 @@ async fn move_entry_with_force_overrides_warnings() {
 
     let req = auth_req_body(
         Method::PATCH,
-        "/api/schedule/entries/t1",
+        "/api/schedule/entries/t-1",
         json!({
             "start_at": "2026-06-10T13:00:00Z",
             "force": true
@@ -1425,7 +1430,7 @@ async fn move_entry_with_force_overrides_warnings() {
     let res = app.oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
     let body: serde_json::Value = serde_json::from_str(&body_str(res.into_body()).await).unwrap();
-    assert_eq!(body["task_id"], "t1");
+    assert_eq!(body["task_id"], "t-1");
     assert!(
         body["warnings"]
             .as_array()
@@ -1439,14 +1444,14 @@ async fn move_entry_without_force_rejects_violations() {
     let (state, pool) = setup().await;
 
     sqlx::query(
-        "INSERT INTO tasks (id, title, end_at, avg_minutes, sigma_minutes, depends, parallelizable, allows_parallel, abandonability, status) VALUES ('t1', 'Task1', '2026-06-10T12:00:00Z', 60, 0, '[]', 0, 0, 0.5, 'scheduled')",
+        "INSERT INTO tasks (id, title, end_at, avg_minutes, sigma_minutes, depends, parallelizable, allows_parallel, abandonability, status) VALUES ('t-1', 'Task1', '2026-06-10T12:00:00Z', 60, 0, '[]', 0, 0, 0.5, 'scheduled')",
     )
     .execute(&pool)
     .await
     .unwrap();
 
     sqlx::query(
-        "INSERT INTO schedules (id, schedule, created_at, updated_at) VALUES ('active', '[{\"task_id\":\"t1\",\"start_at\":\"2026-06-10T10:00:00Z\",\"end_at\":\"2026-06-10T11:00:00Z\"}]', strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))",
+        "INSERT INTO schedules (id, schedule, created_at, updated_at) VALUES ('active', '[{\"task_id\":\"t-1\",\"start_at\":\"2026-06-10T10:00:00Z\",\"end_at\":\"2026-06-10T11:00:00Z\"}]', strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))",
     )
     .execute(&pool)
     .await
@@ -1456,7 +1461,7 @@ async fn move_entry_without_force_rejects_violations() {
 
     let req = auth_req_body(
         Method::PATCH,
-        "/api/schedule/entries/t1",
+        "/api/schedule/entries/t-1",
         json!({
             "start_at": "2026-06-10T13:00:00Z",
             "force": false
@@ -1471,14 +1476,14 @@ async fn move_entry_no_violation_succeeds() {
     let (state, pool) = setup().await;
 
     sqlx::query(
-        "INSERT INTO tasks (id, title, end_at, avg_minutes, sigma_minutes, depends, parallelizable, allows_parallel, abandonability, status) VALUES ('t1', 'Task1', '2026-06-10T14:00:00Z', 60, 0, '[]', 0, 0, 0.5, 'scheduled')",
+        "INSERT INTO tasks (id, title, end_at, avg_minutes, sigma_minutes, depends, parallelizable, allows_parallel, abandonability, status) VALUES ('t-1', 'Task1', '2026-06-10T14:00:00Z', 60, 0, '[]', 0, 0, 0.5, 'scheduled')",
     )
     .execute(&pool)
     .await
     .unwrap();
 
     sqlx::query(
-        "INSERT INTO schedules (id, schedule, created_at, updated_at) VALUES ('active', '[{\"task_id\":\"t1\",\"start_at\":\"2026-06-10T10:00:00Z\",\"end_at\":\"2026-06-10T11:00:00Z\"}]', strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))",
+        "INSERT INTO schedules (id, schedule, created_at, updated_at) VALUES ('active', '[{\"task_id\":\"t-1\",\"start_at\":\"2026-06-10T10:00:00Z\",\"end_at\":\"2026-06-10T11:00:00Z\"}]', strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))",
     )
     .execute(&pool)
     .await
@@ -1488,7 +1493,7 @@ async fn move_entry_no_violation_succeeds() {
 
     let req = auth_req_body(
         Method::PATCH,
-        "/api/schedule/entries/t1",
+        "/api/schedule/entries/t-1",
         json!({
             "start_at": "2026-06-10T12:00:00Z",
             "force": false
@@ -1497,7 +1502,7 @@ async fn move_entry_no_violation_succeeds() {
     let res = app.oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
     let body: serde_json::Value = serde_json::from_str(&body_str(res.into_body()).await).unwrap();
-    assert_eq!(body["task_id"], "t1");
+    assert_eq!(body["task_id"], "t-1");
 }
 
 #[tokio::test]
@@ -1505,7 +1510,7 @@ async fn move_entry_task_not_in_schedule_errors() {
     let (state, pool) = setup().await;
 
     sqlx::query(
-        "INSERT INTO tasks (id, title, end_at, avg_minutes, sigma_minutes, depends, parallelizable, allows_parallel, abandonability, status) VALUES ('t1', 'Task1', '2026-06-10T14:00:00Z', 60, 0, '[]', 0, 0, 0.5, 'scheduled')",
+        "INSERT INTO tasks (id, title, end_at, avg_minutes, sigma_minutes, depends, parallelizable, allows_parallel, abandonability, status) VALUES ('t-1', 'Task1', '2026-06-10T14:00:00Z', 60, 0, '[]', 0, 0, 0.5, 'scheduled')",
     )
     .execute(&pool)
     .await
@@ -1522,7 +1527,7 @@ async fn move_entry_task_not_in_schedule_errors() {
 
     let req = auth_req_body(
         Method::PATCH,
-        "/api/schedule/entries/t1",
+        "/api/schedule/entries/t-1",
         json!({ "start_at": "2026-06-10T12:00:00Z" }),
     );
     let res = app.oneshot(req).await.unwrap();
@@ -1544,14 +1549,14 @@ async fn reschedule_range_mode() {
     let (state, pool) = setup().await;
 
     sqlx::query(
-        "INSERT INTO tasks (id, title, end_at, avg_minutes, sigma_minutes, depends, parallelizable, allows_parallel, abandonability, status) VALUES ('t1', 'Task1', '2026-06-10T14:00:00Z', 60, 0, '[]', 0, 0, 0.5, 'scheduled')",
+        "INSERT INTO tasks (id, title, end_at, avg_minutes, sigma_minutes, depends, parallelizable, allows_parallel, abandonability, status) VALUES ('t-1', 'Task1', '2026-06-10T14:00:00Z', 60, 0, '[]', 0, 0, 0.5, 'scheduled')",
     )
     .execute(&pool)
     .await
     .unwrap();
 
     sqlx::query(
-        "INSERT INTO schedules (id, schedule, created_at, updated_at) VALUES ('active', '[{\"task_id\":\"t1\",\"start_at\":\"2026-06-10T10:00:00Z\",\"end_at\":\"2026-06-10T11:00:00Z\"}]', strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))",
+        "INSERT INTO schedules (id, schedule, created_at, updated_at) VALUES ('active', '[{\"task_id\":\"t-1\",\"start_at\":\"2026-06-10T10:00:00Z\",\"end_at\":\"2026-06-10T11:00:00Z\"}]', strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))",
     )
     .execute(&pool)
     .await
@@ -1578,14 +1583,14 @@ async fn preview_range_mode() {
     let (state, pool) = setup().await;
 
     sqlx::query(
-        "INSERT INTO tasks (id, title, end_at, avg_minutes, sigma_minutes, depends, parallelizable, allows_parallel, abandonability, status) VALUES ('t1', 'Task1', '2026-06-10T14:00:00Z', 60, 0, '[]', 0, 0, 0.5, 'scheduled')",
+        "INSERT INTO tasks (id, title, end_at, avg_minutes, sigma_minutes, depends, parallelizable, allows_parallel, abandonability, status) VALUES ('t-1', 'Task1', '2026-06-10T14:00:00Z', 60, 0, '[]', 0, 0, 0.5, 'scheduled')",
     )
     .execute(&pool)
     .await
     .unwrap();
 
     sqlx::query(
-        "INSERT INTO schedules (id, schedule, created_at, updated_at) VALUES ('active', '[{\"task_id\":\"t1\",\"start_at\":\"2026-06-10T10:00:00Z\",\"end_at\":\"2026-06-10T11:00:00Z\"}]', strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))",
+        "INSERT INTO schedules (id, schedule, created_at, updated_at) VALUES ('active', '[{\"task_id\":\"t-1\",\"start_at\":\"2026-06-10T10:00:00Z\",\"end_at\":\"2026-06-10T11:00:00Z\"}]', strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))",
     )
     .execute(&pool)
     .await
@@ -2053,7 +2058,7 @@ async fn stale_user_edited_task_is_not_deleted() {
     let habit_id = body["id"].as_str().unwrap();
 
     sqlx::query(
-        "INSERT INTO tasks (id, title, end_at, avg_minutes, sigma_minutes, depends, parallelizable, allows_parallel, abandonability, status, habit_id, user_edited, start_at) VALUES ('stale1', 'Stale edited', '2030-01-01T18:00:00Z', 30, 0, '[]', 0, 0, 0.5, 'pending', ?, 1, '2030-01-01T09:00:00Z')",
+        "INSERT INTO tasks (id, title, end_at, avg_minutes, sigma_minutes, depends, parallelizable, allows_parallel, abandonability, status, habit_id, user_edited, start_at) VALUES ('stale-1', 'Stale edited', '2030-01-01T18:00:00Z', 30, 0, '[]', 0, 0, 0.5, 'pending', ?, 1, '2030-01-01T09:00:00Z')",
     )
     .bind(habit_id)
     .execute(&pool)
@@ -2063,7 +2068,7 @@ async fn stale_user_edited_task_is_not_deleted() {
     // Use a different date so the two stale tasks do not collide in the
     // (habit_id, date) key used by sync_habit_tasks.
     sqlx::query(
-        "INSERT INTO tasks (id, title, end_at, avg_minutes, sigma_minutes, depends, parallelizable, allows_parallel, abandonability, status, habit_id, user_edited, start_at) VALUES ('stale2', 'Stale unedited', '2030-01-02T18:00:00Z', 30, 0, '[]', 0, 0, 0.5, 'pending', ?, 0, '2030-01-02T09:00:00Z')",
+        "INSERT INTO tasks (id, title, end_at, avg_minutes, sigma_minutes, depends, parallelizable, allows_parallel, abandonability, status, habit_id, user_edited, start_at) VALUES ('stale-2', 'Stale unedited', '2030-01-02T18:00:00Z', 30, 0, '[]', 0, 0, 0.5, 'pending', ?, 0, '2030-01-02T09:00:00Z')",
     )
     .bind(habit_id)
     .execute(&pool)
@@ -2080,11 +2085,11 @@ async fn stale_user_edited_task_is_not_deleted() {
     let res = app.clone().oneshot(gen_req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
 
-    let get_req = auth_req(Method::GET, "/api/tasks/stale1");
+    let get_req = auth_req(Method::GET, "/api/tasks/stale-1");
     let res = app.clone().oneshot(get_req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
 
-    let get_req = auth_req(Method::GET, "/api/tasks/stale2");
+    let get_req = auth_req(Method::GET, "/api/tasks/stale-2");
     let res = app.clone().oneshot(get_req).await.unwrap();
     assert_eq!(res.status(), StatusCode::NOT_FOUND);
 }

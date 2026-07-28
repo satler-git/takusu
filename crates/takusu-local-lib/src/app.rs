@@ -1122,7 +1122,7 @@ impl TakusuApp {
                 .await
                 .map_err(storage_to_app)?;
             let (_adj, id_to_idx) = build_dep_graph(&tasks)?;
-            // Resolve display_id numbers / UUID prefixes to full UUIDs before
+            // Resolve display_id numbers / full UUIDs before
             // validating against the dep graph (which is keyed by UUID).
             let mut resolved = Vec::with_capacity(dep_ids.len());
             for did in dep_ids {
@@ -1369,7 +1369,7 @@ impl TakusuApp {
             let target_idx = id_to_idx
                 .get(&full_id)
                 .ok_or_else(|| AppError::NotFound(format!("task {id} not found")))?;
-            // Resolve display_id numbers / UUID prefixes to full UUIDs before
+            // Resolve display_id numbers / full UUIDs before
             // validating against the dep graph (which is keyed by UUID).
             let mut resolved = Vec::with_capacity(dep_ids.len());
             for did in dep_ids {
@@ -1445,7 +1445,7 @@ impl TakusuApp {
             let target_idx = id_to_idx
                 .get(&full_id)
                 .ok_or_else(|| AppError::NotFound(format!("task {id} not found")))?;
-            // Resolve display_id numbers / UUID prefixes to full UUIDs before
+            // Resolve display_id numbers / full UUIDs before
             // validating against the dep graph (which is keyed by UUID).
             let mut resolved = Vec::with_capacity(dep_ids.len());
             for did in dep_ids {
