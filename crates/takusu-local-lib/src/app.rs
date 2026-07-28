@@ -7,7 +7,7 @@ use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use takusu_core::{
     Minutes, NormalDist, ParallelMode, Planner, PlannerConfig, Point, RescheduleRange, SleepConfig,
-    Slots, Task as CoreTask, TaskPlacement, WorkloadConfig,
+    Slots, Task as CoreTask, TaskPlacement,
 };
 use takusu_storage::{
     CreateHabit, CreateHabitBatch, CreateHabitBatchResult, CreateHabitScheduledSpan, CreateMemory,
@@ -23,236 +23,16 @@ use takusu_storage::{
 };
 use takusu_util::search::{Completion, complete};
 use takusu_util::{
-    Abandonability, EnumLabel, MemoryKind, ScheduleMode, TaskStatus, TaskStatusFilter, WindowMode,
+    Abandonability, MemoryKind, ScheduleMode, TaskStatus, TaskStatusFilter, WindowMode,
 };
 
-use crate::date_utils::validate_scheduled_span_dates;
 use crate::error::storage_to_app;
 use crate::error::{AppError, BadRequestKind, ConflictKind, SkillOp};
 use crate::token_cache::TokenCache;
-use takusu_util::parse_timezone;
-
-fn parse_hhmm(s: &str) -> Result<(u8, u8), AppError> {
-    let parts: Vec<&str> = s.split(':').collect();
-    if parts.len() != 2 {
-        return Err(AppError::BadRequest(BadRequestKind::InvalidTime(format!(
-            "invalid time: {s}"
-        ))));
-    }
-    let h: u8 = parts[0].parse().map_err(|_| {
-        AppError::BadRequest(BadRequestKind::InvalidTime(format!("invalid time: {s}")))
-    })?;
-    let m: u8 = parts[1].parse().map_err(|_| {
-        AppError::BadRequest(BadRequestKind::InvalidTime(format!("invalid time: {s}")))
-    })?;
-    if h > 23 || m > 59 {
-        return Err(AppError::BadRequest(BadRequestKind::InvalidTime(format!(
-            "invalid time: {s}"
-        ))));
-    }
-    Ok((h, m))
-}
-
-/// Reject negative or unrealistically large `avg_minutes` / `sigma_minutes`,
-/// which would wrap to a huge `u64` slot count in the planner and break the
-/// schedule (#269, #604).
-fn validate_minutes(avg: i64, sigma: Option<i64>) -> Result<(), AppError> {
-    // Roughly one year in minutes.  This keeps the converted slot count well
-    // within the range where `duration_score`, `total_avg`, and timestamp
-    // arithmetic cannot overflow, while still allowing long-running tasks.
-    const MAX_MINUTES: i64 = 60 * 24 * 365;
-
-    if avg < 0 {
-        return Err(AppError::BadRequest(BadRequestKind::Other(format!(
-            "avg_minutes must be >= 0 (got {avg})"
-        ))));
-    }
-    if avg > MAX_MINUTES {
-        return Err(AppError::BadRequest(BadRequestKind::Other(format!(
-            "avg_minutes must be at most {MAX_MINUTES} (got {avg})"
-        ))));
-    }
-    if let Some(s) = sigma
-        && s < 0
-    {
-        return Err(AppError::BadRequest(BadRequestKind::Other(format!(
-            "sigma_minutes must be >= 0 (got {s})"
-        ))));
-    }
-    if let Some(s) = sigma
-        && s > MAX_MINUTES
-    {
-        return Err(AppError::BadRequest(BadRequestKind::Other(format!(
-            "sigma_minutes must be at most {MAX_MINUTES} (got {s})"
-        ))));
-    }
-    Ok(())
-}
-
-/// Reject titles that cannot be NFKC-normalized for similar-task search (empty,
-/// control-character only, or exceeding the normalized-title scalar limit).
-/// Validating at the boundary keeps `normalized_title` always populated for
-/// stored tasks, so a task is never silently excluded from similar-task search
-/// (#942).
-fn validate_title(title: &str) -> Result<(), AppError> {
-    takusu_util::memory::normalize_text(title, Some(takusu_util::memory::MAX_CONTENT_SCALARS))
-        .map_err(|e| AppError::BadRequest(BadRequestKind::Other(format!("invalid title: {e}"))))?;
-    Ok(())
-}
-
-/// Parse a recurrence JSON string into a `RecurrenceRule`.
-/// This is the single point inside `takusu-local-lib` where storage/client strings
-/// become `takusu_habit` types (see `doc/type-safety-issues.md` §3.4 / §8.6).
-/// `takusu-worker` validates recurrences separately without converting to `takusu_habit`.
-fn parse_recurrence(recurrence: &str) -> Result<takusu_habit::RecurrenceRule, AppError> {
-    serde_json::from_str::<takusu_habit::RecurrenceRule>(recurrence).map_err(|e| {
-        AppError::BadRequest(BadRequestKind::Other(format!("invalid recurrence: {e}")))
-    })
-}
-
-/// Verify the recurrence string parses as a `RecurrenceRule` so that bad JSON
-/// is rejected at the API boundary instead of crashing later (#285).
-fn validate_recurrence(recurrence: &str) -> Result<(), AppError> {
-    parse_recurrence(recurrence).map(|_| ())
-}
-
-/// Validate a skill slug, name, description, and body (#WI-6).
-fn validate_skill(create: &CreateSkill) -> Result<(), AppError> {
-    const MAX_SLUG_LEN: usize = 64;
-    const MAX_NAME_LEN: usize = 100;
-    const MAX_DESC_LEN: usize = 500;
-    const MAX_BODY_LEN: usize = 64 * 1024;
-
-    if create.slug.is_empty() || create.slug.len() > MAX_SLUG_LEN {
-        return Err(AppError::BadRequest(BadRequestKind::Other(format!(
-            "slug must be 1..{MAX_SLUG_LEN} characters"
-        ))));
-    }
-    if create.slug.starts_with('.') || create.slug.contains('/') || create.slug.contains("..") {
-        return Err(AppError::BadRequest(BadRequestKind::Other(
-            "slug must not contain path components".into(),
-        )));
-    }
-    if !create
-        .slug
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
-    {
-        return Err(AppError::BadRequest(BadRequestKind::Other(
-            "slug must contain only ASCII letters, digits, '-', '_'".into(),
-        )));
-    }
-    if create.name.is_empty() || create.name.len() > MAX_NAME_LEN {
-        return Err(AppError::BadRequest(BadRequestKind::Other(format!(
-            "name must be 1..{MAX_NAME_LEN} characters"
-        ))));
-    }
-    if create.description.len() > MAX_DESC_LEN {
-        return Err(AppError::BadRequest(BadRequestKind::Other(format!(
-            "description must be at most {MAX_DESC_LEN} characters"
-        ))));
-    }
-    if create.body.is_empty() || create.body.len() > MAX_BODY_LEN {
-        return Err(AppError::BadRequest(BadRequestKind::Other(format!(
-            "body must be 1..{MAX_BODY_LEN} characters"
-        ))));
-    }
-    Ok(())
-}
-
-/// Validate a memory create request (#WI-7).
-fn validate_memory(create: &CreateMemory) -> Result<(), AppError> {
-    if !matches!(
-        create.kind,
-        takusu_util::MemoryKind::ProperNoun
-            | takusu_util::MemoryKind::Fact
-            | takusu_util::MemoryKind::TaskNote
-    ) {
-        return Err(AppError::BadRequest(BadRequestKind::Other(
-            "kind must be 'proper_noun', 'fact', or 'task_note'".into(),
-        )));
-    }
-    if takusu_util::memory::normalize_key(&create.key).is_err() {
-        return Err(AppError::BadRequest(BadRequestKind::Other(
-            "invalid key".into(),
-        )));
-    }
-    if takusu_util::memory::normalize_content(&create.content).is_err() {
-        return Err(AppError::BadRequest(BadRequestKind::Other(
-            "invalid content".into(),
-        )));
-    }
-    if create
-        .subject_type
-        .as_ref()
-        .is_some_and(|s| s.as_str().len() > 64)
-    {
-        return Err(AppError::BadRequest(BadRequestKind::Other(
-            "subject_type too long".into(),
-        )));
-    }
-    if create.subject_id.as_ref().is_some_and(|s| s.len() > 64) {
-        return Err(AppError::BadRequest(BadRequestKind::Other(
-            "subject_id too long".into(),
-        )));
-    }
-    if create.kind == takusu_util::MemoryKind::TaskNote {
-        if create.subject_type != Some(takusu_util::SubjectType::Task) {
-            return Err(AppError::BadRequest(BadRequestKind::Other(
-                "task_note requires subject_type='task'".into(),
-            )));
-        }
-        if create.subject_id.as_ref().is_none_or(|s| s.is_empty()) {
-            return Err(AppError::BadRequest(BadRequestKind::Other(
-                "task_note requires subject_id".into(),
-            )));
-        }
-    }
-    Ok(())
-}
-
-/// Validate a `HH:MM` time string (#95).
-#[allow(dead_code)]
-fn validate_hhmm(s: &str) -> Result<(), AppError> {
-    parse_hhmm(s).map(|_| ())
-}
-
-/// Validate a bulk-replace step array (#95): per-field sanity + DAG integrity
-/// (intra-habit references, cycle detection). Mirrors the worker-side
-/// `validate_steps`.
-fn validate_steps(steps: &[HabitStepInput]) -> Result<(), AppError> {
-    use std::collections::HashMap;
-
-    for s in steps {
-        validate_minutes(s.avg_minutes, s.sigma_minutes)?;
-        // start_time/end_time are TimeOfDay, already validated by deserialization.
-    }
-
-    // Build id → index map for steps that carry an id. A depends_on reference
-    // must point at a sibling step with a known id.
-    let mut id_to_idx: HashMap<String, usize> = HashMap::new();
-    for (i, s) in steps.iter().enumerate() {
-        if let Some(ref id) = s.id {
-            id_to_idx.insert(id.clone(), i);
-        }
-    }
-
-    let mut adj = vec![Vec::new(); steps.len()];
-    for (i, s) in steps.iter().enumerate() {
-        for dep in &s.depends_on {
-            let Some(&dep_idx) = id_to_idx.get(dep) else {
-                return Err(AppError::BadRequest(BadRequestKind::Other(format!(
-                    "step depends_on references unknown step id: {dep}"
-                ))));
-            };
-            adj[i].push(dep_idx);
-        }
-    }
-
-    crate::graph::detect_cycle(&adj)
-        .map_err(|_| AppError::BadRequest(BadRequestKind::CycleDetected))?;
-    Ok(())
-}
+use crate::validate::{
+    parse_recurrence, parse_settings_timezone, validate_minutes, validate_task_datetimes,
+    SettingsPlannerExt, Validate,
+};
 
 /// Topologically sort habit steps by their `depends_on` DAG (#95). Steps with
 /// no dependencies come first. Returns indices into `steps`. Cycles are
@@ -273,54 +53,6 @@ fn topo_sort_steps(steps: &[HabitStepRow]) -> Result<Vec<usize>, AppError> {
         }
     }
     crate::graph::topo_sort(&adj).map_err(|_| AppError::BadRequest(BadRequestKind::CycleDetected))
-}
-
-/// Verify the timezone string resolves to a real `jiff::tz::TimeZone` so that
-/// typos don't silently fall back to UTC (#277). User-supplied timezones are
-/// reported as BadRequest.
-fn validate_timezone(tz: &str) -> Result<(), AppError> {
-    parse_timezone(tz)
-        .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))
-        .map(|_| ())
-}
-
-/// Parse the timezone stored in settings. A corrupt stored timezone is a
-/// server-side data error, so it is reported as Internal.
-fn parse_settings_timezone(tz: &str) -> Result<jiff::tz::TimeZone, AppError> {
-    parse_timezone(tz).map_err(AppError::Internal)
-}
-
-/// Validate `start_at` / `end_at` datetime strings and that the effective
-/// start is not after the effective end. Missing fields are filled from the
-/// existing row for comparison when one side is being updated (#934). If an
-/// existing value is needed for comparison but cannot be parsed, it is treated
-/// as a data-corruption error rather than silently ignored.
-fn validate_task_datetimes(
-    start_at: Option<Option<&takusu_util::Timestamp>>,
-    end_at: Option<&takusu_util::Timestamp>,
-    _tz: &jiff::tz::TimeZone,
-    existing_start: Option<&takusu_util::Timestamp>,
-    existing_end: Option<&takusu_util::Timestamp>,
-) -> Result<(), AppError> {
-    // start_at: None = no change → use existing; Some(None) = clear; Some(Some(ts)) = set.
-    // end_at:   None = no change → use existing; Some(ts) = set (cannot be cleared).
-    let effective_start = match &start_at {
-        None => existing_start.copied(),
-        Some(inner) => inner.copied(),
-    };
-    let effective_end = match &end_at {
-        None => existing_end.copied(),
-        Some(e) => Some(**e),
-    };
-
-    if let (Some(s), Some(e)) = (effective_start, effective_end)
-        && s > e
-    {
-        return Err(AppError::BadRequest(BadRequestKind::Other(format!(
-            "start_at must be <= end_at ({s} > {e})"
-        ))));
-    }
-    Ok(())
 }
 
 /// Build a `CoreTask` for a single step occurrence (#95). The step's window is
@@ -440,74 +172,11 @@ fn freq_fallback_slots(rule: &takusu_habit::RecurrenceRule) -> i64 {
     days * 288 // 288 slots per day (5-min slots)
 }
 
-fn parse_sleep(
-    s: &str,
-    settings: &SettingsRow,
-    tz: &jiff::tz::TimeZone,
-) -> Result<SleepConfig, AppError> {
-    match s {
-        "recommended" => {
-            let (sh, sm) = (settings.sleep_start.hour(), settings.sleep_start.minute());
-            let (eh, em) = (settings.sleep_end.hour(), settings.sleep_end.minute());
-            Ok(SleepConfig::from_local(5, tz, sh, sm, eh, em))
-        }
-        "disabled" => Ok(SleepConfig::disabled()),
-        custom => {
-            let parts: Vec<&str> = custom.splitn(2, '-').collect();
-            if parts.len() == 2 {
-                let (sh, sm) = parse_hhmm(parts[0])?;
-                let (eh, em) = parse_hhmm(parts[1])?;
-                Ok(SleepConfig::from_local(5, tz, sh, sm, eh, em))
-            } else {
-                Ok(SleepConfig::disabled())
-            }
-        }
-    }
-}
-
-/// #459: 設定から WorkloadConfig を構築する。`None` または `0` の場合はデフォルトを使う。
-/// 1 スロット = 5 分なので、`Minutes` からスロット数に変換する。
-fn parse_workload(settings: &SettingsRow) -> WorkloadConfig {
-    let comfortable = settings.comfortable_minutes.filter(|&m| m > 0);
-    let maximum = settings.maximum_minutes.filter(|&m| m > 0);
-    match (comfortable, maximum) {
-        (Some(c), Some(m)) => {
-            let c_slots = Minutes(c).to_slots().0;
-            let m_slots = Minutes(m).to_slots().0;
-            if c_slots <= 0 || m_slots <= 0 {
-                return WorkloadConfig::default();
-            }
-            if c_slots > m_slots {
-                WorkloadConfig::new(m_slots, c_slots)
-            } else {
-                WorkloadConfig::new(c_slots, m_slots)
-            }
-        }
-        (Some(c), None) => {
-            let c_slots = Minutes(c).to_slots().0;
-            if c_slots <= 0 {
-                return WorkloadConfig::default();
-            }
-            let m_slots = (c_slots * 3 / 2).max(c_slots + 48);
-            WorkloadConfig::new(c_slots, m_slots)
-        }
-        (None, Some(m)) => {
-            let m_slots = Minutes(m).to_slots().0;
-            if m_slots <= 0 {
-                return WorkloadConfig::default();
-            }
-            let c_slots = (m_slots * 2 / 3).min(m_slots - 24).max(1);
-            WorkloadConfig::new(c_slots, m_slots)
-        }
-        (None, None) => WorkloadConfig::default(),
-    }
-}
-
 /// #772: settings の solver / time budget / seed / warm start / workload を
 /// `PlannerConfig` に反映する。
 fn planner_config(start: Point, sleep: SleepConfig, settings: &SettingsRow) -> PlannerConfig {
     PlannerConfig {
-        workload: parse_workload(settings),
+        workload: settings.workload_config(),
         solver: settings.solver.into(),
         time_budget: settings
             .time_budget_ms
@@ -859,10 +528,7 @@ impl TakusuApp {
     }
 
     pub async fn update_settings(&self, body: &UpdateSettings) -> Result<SettingsRow, AppError> {
-        if let Some(tz) = &body.tz {
-            validate_timezone(tz)?;
-        }
-        // sleep_start/sleep_end are Option<TimeOfDay>, already validated by deserialization.
+        body.validate()?;
         let row = self
             .storage
             .update_settings(body)
@@ -878,7 +544,7 @@ impl TakusuApp {
     // ── Skills ────────────────────────────────────────────
 
     pub async fn create_skill(&self, body: &CreateSkill) -> Result<SkillRow, AppError> {
-        validate_skill(body)?;
+        body.validate()?;
         if let Ok(existing) = self.storage.get_skill(&body.slug).await {
             if existing.built_in {
                 return Err(AppError::Conflict(ConflictKind::BuiltInSkill {
@@ -962,7 +628,7 @@ impl TakusuApp {
         body: &CreateMemory,
         operation_id: Option<&str>,
     ) -> Result<MemoryRow, AppError> {
-        validate_memory(body)?;
+        body.validate()?;
         let mut body = body.clone();
         if body.kind == MemoryKind::TaskNote {
             let task_id = body.subject_id.as_deref().unwrap_or("");
@@ -1052,17 +718,7 @@ impl TakusuApp {
     // ── Tasks ─────────────────────────────────────────────
 
     pub async fn create_task(&self, body: &CreateTask) -> Result<TaskRow, AppError> {
-        validate_minutes(body.avg_minutes, body.sigma_minutes)?;
-        validate_title(&body.title)?;
-        let settings = self.get_settings_or_default().await?;
-        let tz = parse_settings_timezone(&settings.tz)?;
-        validate_task_datetimes(
-            Some(body.start_at.as_ref()),
-            Some(&body.end_at),
-            &tz,
-            None,
-            None,
-        )?;
+        body.validate()?;
         let mut body = body.clone();
         // Timestamps are already normalized (RFC 3339 UTC) by deserialization.
         if let Some(ref dep_ids) = body.depends
@@ -1102,22 +758,11 @@ impl TakusuApp {
             return Ok(Vec::new());
         }
 
-        let settings = self.get_settings_or_default().await?;
-        let tz = parse_settings_timezone(&settings.tz)?;
-
         // Validate/normalize each item and build a map from client_id to local index.
         let mut items: Vec<CreateTaskBatchItem> = Vec::with_capacity(body.tasks.len());
         let mut client_to_local: HashMap<String, usize> = HashMap::new();
         for (i, item) in body.tasks.iter().enumerate() {
-            validate_minutes(item.task.avg_minutes, item.task.sigma_minutes)?;
-            validate_title(&item.task.title)?;
-            validate_task_datetimes(
-                Some(item.task.start_at.as_ref()),
-                Some(&item.task.end_at),
-                &tz,
-                None,
-                None,
-            )?;
+            item.task.validate()?;
             if let Some(ref cid) = item.client_id {
                 if cid.is_empty() {
                     return Err(AppError::BadRequest(BadRequestKind::Other(
@@ -1269,18 +914,7 @@ impl TakusuApp {
     }
 
     pub async fn update_task(&self, id: &str, body: &UpdateTask) -> Result<TaskRow, AppError> {
-        // Validate minutes if provided. avg_minutes is required to be present
-        // only when it is actually set in the update body.
-        if let Some(avg) = body.avg_minutes {
-            validate_minutes(avg, body.sigma_minutes)?;
-        } else if let Some(sigma) = body.sigma_minutes {
-            validate_minutes(0, Some(sigma))?;
-        }
-        if let Some(ref t) = body.title {
-            validate_title(t)?;
-        }
-        let settings = self.get_settings_or_default().await?;
-        let tz = parse_settings_timezone(&settings.tz)?;
+        body.validate()?;
         let mut body = body.clone();
 
         // Fetch the existing task once if any downstream logic needs it.
@@ -1295,12 +929,12 @@ impl TakusuApp {
         };
 
         // Validate datetime fields and their logical ordering (#934).
+        // Context-dependent: needs the existing row, so not part of Validate.
         if body.start_at.is_some() || body.end_at.is_some() {
             let existing = existing.as_ref().unwrap();
             validate_task_datetimes(
                 body.start_at.as_ref().map(|o| o.as_ref()),
                 body.end_at.as_ref(),
-                &tz,
                 existing.start_at.as_ref(),
                 Some(&existing.end_at),
             )?;
@@ -1371,17 +1005,7 @@ impl TakusuApp {
     }
 
     pub async fn replace_task(&self, id: &str, body: &CreateTask) -> Result<TaskRow, AppError> {
-        validate_minutes(body.avg_minutes, body.sigma_minutes)?;
-        validate_title(&body.title)?;
-        let settings = self.get_settings_or_default().await?;
-        let tz = parse_settings_timezone(&settings.tz)?;
-        validate_task_datetimes(
-            Some(body.start_at.as_ref()),
-            Some(&body.end_at),
-            &tz,
-            None,
-            None,
-        )?;
+        body.validate()?;
         let mut body = body.clone();
         // Timestamps are already normalized (RFC 3339 UTC) by deserialization.
         if let Some(ref dep_ids) = body.depends
@@ -1491,13 +1115,10 @@ impl TakusuApp {
         operation_id: Option<&str>,
     ) -> Result<SplitResult, AppError> {
         if body.end_at.is_some() {
-            let settings = self.get_settings_or_default().await?;
-            let tz = parse_settings_timezone(&settings.tz)?;
             let original = self.storage.get_task(id).await.map_err(storage_to_app)?;
             validate_task_datetimes(
                 None,
                 body.end_at.as_ref(),
-                &tz,
                 original.start_at.as_ref(),
                 None,
             )?;
@@ -1565,8 +1186,7 @@ impl TakusuApp {
     // ── Habits ────────────────────────────────────────────
 
     pub async fn create_habit(&self, body: &CreateHabit) -> Result<HabitRow, AppError> {
-        validate_minutes(body.avg_minutes, body.sigma_minutes)?;
-        validate_recurrence(&body.recurrence)?;
+        body.validate()?;
 
         self.storage
             .create_habit(body)
@@ -1614,9 +1234,7 @@ impl TakusuApp {
         &self,
         request: &HabitPreviewRequest,
     ) -> Result<Vec<HabitPreviewTask>, AppError> {
-        validate_minutes(request.avg_minutes, request.sigma_minutes)?;
-        validate_recurrence(&request.recurrence)?;
-        validate_steps(&request.steps)?;
+        request.validate()?;
 
         let settings = self.get_settings_or_default().await?;
         let tz = parse_settings_timezone(&settings.tz)?;
@@ -1927,14 +1545,7 @@ impl TakusuApp {
     }
 
     pub async fn update_habit(&self, id: &str, body: &UpdateHabit) -> Result<HabitRow, AppError> {
-        if let Some(avg) = body.avg_minutes {
-            validate_minutes(avg, body.sigma_minutes)?;
-        } else if let Some(sigma) = body.sigma_minutes {
-            validate_minutes(0, Some(sigma))?;
-        }
-        if let Some(recurrence) = &body.recurrence {
-            validate_recurrence(recurrence)?;
-        }
+        body.validate()?;
 
         self.storage
             .update_habit(id, body)
@@ -1943,8 +1554,7 @@ impl TakusuApp {
     }
 
     pub async fn replace_habit(&self, id: &str, body: &CreateHabit) -> Result<HabitRow, AppError> {
-        validate_minutes(body.avg_minutes, body.sigma_minutes)?;
-        validate_recurrence(&body.recurrence)?;
+        body.validate()?;
 
         self.storage
             .replace_habit(id, body)
@@ -1982,8 +1592,7 @@ impl TakusuApp {
         id: &str,
         body: &CreateHabitScheduledSpan,
     ) -> Result<HabitScheduledSpanRow, AppError> {
-        validate_scheduled_span_dates(&body.start_date, &body.end_date)
-            .map_err(|msg| AppError::BadRequest(BadRequestKind::Other(msg)))?;
+        body.validate()?;
         self.storage
             .create_habit_scheduled_span(id, body)
             .await
@@ -2022,7 +1631,7 @@ impl TakusuApp {
         id: &str,
         steps: &[HabitStepInput],
     ) -> Result<Vec<HabitStepRow>, AppError> {
-        validate_steps(steps)?;
+        steps.validate()?;
         self.storage
             .replace_habit_steps(id, steps)
             .await
@@ -2136,7 +1745,7 @@ impl TakusuApp {
     ) -> Result<ScheduleRow, AppError> {
         let settings = self.get_settings_or_default().await?;
         let tz = parse_settings_timezone(&settings.tz)?;
-        let sleep = parse_sleep(&input.sleep, &settings, &tz)?;
+        let sleep = settings.sleep_config(&input.sleep, &tz)?;
         let from_point = Point::from_timestamp(Timestamp::now(), 5);
 
         let habit_rows = self.sync_habit_tasks(&tz).await?;
@@ -2206,7 +1815,7 @@ impl TakusuApp {
     ) -> Result<SchedulePreviewOutput, AppError> {
         let settings = self.get_settings_or_default().await?;
         let tz = parse_settings_timezone(&settings.tz)?;
-        let sleep = parse_sleep(&input.sleep, &settings, &tz)?;
+        let sleep = settings.sleep_config(&input.sleep, &tz)?;
         let from_point = Point::from_timestamp(Timestamp::now(), 5);
         let habit_rows = self.sync_habit_tasks(&tz).await?;
         let task_rows = self.load_task_rows(input.task_ids.as_ref()).await?;
@@ -2329,7 +1938,7 @@ impl TakusuApp {
     pub async fn reschedule(&self, input: &RescheduleInput) -> Result<ScheduleRow, AppError> {
         let settings = self.get_settings_or_default().await?;
         let tz = parse_settings_timezone(&settings.tz)?;
-        let sleep = parse_sleep(&input.sleep, &settings, &tz)?;
+        let sleep = settings.sleep_config(&input.sleep, &tz)?;
         let now_point = Point::from_timestamp(Timestamp::now(), 5);
 
         let schedule_row = self
@@ -3579,6 +3188,7 @@ impl TakusuApp {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use takusu_util::parse_timezone;
 
     #[test]
     fn iso_to_point_with_offset() {
@@ -3716,25 +3326,26 @@ mod tests {
         assert!(point_to_local_date(i64::MIN, &tz).is_err());
     }
 
-    // Regression (#780): parse_sleep must reject invalid HH:MM strings.
+    // Regression (#780): sleep_config must reject invalid HH:MM strings.
     // parse_hhmm currently swallows parse errors and does not validate ranges,
     // so custom sleep strings like "22:70-06:00" are accepted silently.
     #[test]
     fn regression_parse_sleep_rejects_invalid_hhmm() {
+        use crate::validate::SettingsPlannerExt;
         let tz = jiff::tz::TimeZone::UTC;
         let settings = default_settings_row();
 
         // Minutes out of range and hours out of range should both error.
         assert!(
-            parse_sleep("22:70-06:00", &settings, &tz).is_err(),
+            settings.sleep_config("22:70-06:00", &tz).is_err(),
             "custom sleep with invalid minutes should be rejected"
         );
         assert!(
-            parse_sleep("22:00-25:00", &settings, &tz).is_err(),
+            settings.sleep_config("22:00-25:00", &tz).is_err(),
             "custom sleep with invalid hours should be rejected"
         );
         assert!(
-            parse_sleep("22:00-06:00", &settings, &tz).is_ok(),
+            settings.sleep_config("22:00-06:00", &tz).is_ok(),
             "valid custom sleep should still be accepted"
         );
     }
@@ -3743,28 +3354,25 @@ mod tests {
 
     #[test]
     fn validate_task_datetimes_accepts_valid_range() {
-        let tz = jiff::tz::TimeZone::UTC;
         let s: takusu_util::Timestamp = "2026-07-22T10:00:00Z".parse().unwrap();
         let e: takusu_util::Timestamp = "2026-07-22T12:00:00Z".parse().unwrap();
-        assert!(validate_task_datetimes(Some(Some(&s)), Some(&e), &tz, None, None,).is_ok());
+        assert!(validate_task_datetimes(Some(Some(&s)), Some(&e), None, None).is_ok());
     }
 
     #[test]
     fn validate_task_datetimes_rejects_reversed() {
-        let tz = jiff::tz::TimeZone::UTC;
         let s: takusu_util::Timestamp = "2026-07-22T12:00:00Z".parse().unwrap();
         let e: takusu_util::Timestamp = "2026-07-22T10:00:00Z".parse().unwrap();
-        assert!(validate_task_datetimes(Some(Some(&s)), Some(&e), &tz, None, None,).is_err());
+        assert!(validate_task_datetimes(Some(Some(&s)), Some(&e), None, None).is_err());
     }
 
     #[test]
     fn validate_task_datetimes_fills_existing_for_partial_update() {
-        let tz = jiff::tz::TimeZone::UTC;
         let e: takusu_util::Timestamp = "2026-07-22T10:00:00Z".parse().unwrap();
         let existing: takusu_util::Timestamp = "2026-07-22T08:00:00Z".parse().unwrap();
-        assert!(validate_task_datetimes(None, Some(&e), &tz, Some(&existing), None,).is_ok());
+        assert!(validate_task_datetimes(None, Some(&e), Some(&existing), None).is_ok());
         let e2: takusu_util::Timestamp = "2026-07-22T07:00:00Z".parse().unwrap();
-        assert!(validate_task_datetimes(None, Some(&e2), &tz, Some(&existing), None,).is_err());
+        assert!(validate_task_datetimes(None, Some(&e2), Some(&existing), None).is_err());
     }
 
     #[test]
@@ -3772,8 +3380,7 @@ mod tests {
         // With typed Timestamp, invalid strings cannot be constructed.
         // This test now verifies that a None existing value with a Some end
         // still works (no existing to compare against).
-        let tz = jiff::tz::TimeZone::UTC;
         let e: takusu_util::Timestamp = "2026-07-22T10:00:00Z".parse().unwrap();
-        assert!(validate_task_datetimes(None, Some(&e), &tz, None, None,).is_ok());
+        assert!(validate_task_datetimes(None, Some(&e), None, None).is_ok());
     }
 }
