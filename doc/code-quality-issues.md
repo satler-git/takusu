@@ -135,7 +135,7 @@
 
 ---
 
-## 7. `RepairMode` の 7 バリアントが巨大 `match` で分岐している（`takusu-core`）
+## ~~7. `RepairMode` の 7 バリアントが巨大 `match` で分岐している（`takusu-core`）~~ FIXED
 
 - **問題の要約**: `decoder.rs` の `RepairMode` は 7 バリアント（`EarliestFit` / `LatestFit` / `DeadlineFit` 等）を持ち、デコーダが `match mode { ... }` で各配置戦略の関数に分岐している。各戦略はシグネチャが同じだが trait で抽象化されておらず、戦略の追加は `match` アームの追加を意味する。
 - **現在の型**: `match` on `RepairMode` enum
@@ -147,6 +147,7 @@
   - `crates/takusu-core/src/decoder.rs:15-28`（`RepairMode` enum）
   - `crates/takusu-core/src/decoder.rs:647-668`（`match` 分岐）
   - `crates/takusu-core/src/decoder.rs:288-421`（各配置戦略関数）
+- **修正**: `PlacementStrategy` trait (`select_and_place -> (usize, Point, Point, Option<PlacementFailure>)`) を定義し、7 つの unit struct (`EarliestStrategy` 等) で実装。`RepairMode::strategy()` が `&'static dyn PlacementStrategy` を返し、`decode` のループ本体は単一の `select_and_place` + `record_placement` に統一。戦略の追加は `PlacementStrategy` impl の追加のみで済む。
 
 ---
 
