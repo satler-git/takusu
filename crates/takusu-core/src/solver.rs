@@ -3,8 +3,15 @@
 //! `Planner.solver` / `time_budget` / `seed` / `warm_start` をもとに、
 //! SA (`sa_lns`) または priority decoder + ALNS (`alns_search`) を選択する。
 //! full / partial / range は pinned 集合の違いとして統一し、同じ dispatch 経路で解く。
+//!
+//! 実際の分岐は [`SolverStrategy`] trait にくくり出されている。組み込みの
+//! [`SaSolver`] / [`PrioritySolver`] / [`AutoSolver`] は [`Solver`] enum の
+//! [`Solver::strategy`] 経由で選ばれるほか、[`Planner::set_solver_strategy`] で
+//! 外から差し込んだ独自実装に切り替えることもできる。新しい solver を追加する
+//! には enum や本モジュールの分岐を触らず `SolverStrategy` を impl するだけでよい。
 
 use std::cmp::Ordering;
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
 use rand::SeedableRng;
@@ -23,13 +30,84 @@ fn base_seed(planner: &Planner, override_seed: Option<u64>) -> u64 {
     override_seed.or(planner.seed).unwrap_or(DEFAULT_SEED)
 }
 
-/// full solve: `Planner` の設定に従って solver を選択する。
-pub fn solve(planner: &Planner) -> Plan {
-    match planner.solver {
-        Solver::Sa => solve_sa(planner, None),
-        Solver::Priority => solve_priority(planner, &[], None),
-        Solver::Auto => solve_auto(planner, &[]),
+// ── SolverStrategy trait ───────────────────────────────────────────────
+
+/// ソルバーの振る舞いを抽象化する trait。
+///
+/// `pinned` が空のとき full solve、そうでないとき partial solve として振る舞う。
+/// 組み込み実装は [`SaSolver`] / [`PrioritySolver`] / [`AutoSolver`]。独自実装を
+/// [`Planner::set_solver_strategy`] で渡せば enum 設定を上書きできる。
+///
+/// `Send + Sync` は [`Planner`] が rayon の並列イテレータ内で `&Planner` 経由で
+/// 戦略オブジェクトを参照するために必要。
+pub trait SolverStrategy: Send + Sync + std::fmt::Debug {
+    /// `pinned` を固定した上でスケジュールを計算して返す。
+    fn solve(&self, planner: &Planner, pinned: &[TaskPlacement]) -> Plan;
+}
+
+/// SA (`sa_lns`) で解くソルバー。[`Solver::Sa`] に対応する。
+#[derive(Debug, Default, Clone, Copy)]
+pub struct SaSolver;
+
+impl SolverStrategy for SaSolver {
+    fn solve(&self, planner: &Planner, pinned: &[TaskPlacement]) -> Plan {
+        if pinned.is_empty() {
+            solve_sa(planner, None)
+        } else {
+            solve_sa_partial(planner, pinned)
+        }
     }
+}
+
+/// priority decoder + ALNS で解くソルバー。[`Solver::Priority`] に対応する。
+#[derive(Debug, Default, Clone, Copy)]
+pub struct PrioritySolver;
+
+impl SolverStrategy for PrioritySolver {
+    fn solve(&self, planner: &Planner, pinned: &[TaskPlacement]) -> Plan {
+        solve_priority(planner, pinned, None)
+    }
+}
+
+/// まず priority/ALNS を試し、実行不可能または制約緩和なら SA に fallback する
+/// ソルバー。[`Solver::Auto`] に対応する。fallback ロジックはこの実装内に閉じる。
+#[derive(Debug, Default, Clone, Copy)]
+pub struct AutoSolver;
+
+impl SolverStrategy for AutoSolver {
+    fn solve(&self, planner: &Planner, pinned: &[TaskPlacement]) -> Plan {
+        solve_auto(planner, pinned)
+    }
+}
+
+// 組み込み戦略のグローバルキャッシュ。`Arc::new` は初回のみで、以降は
+// `Arc::clone` (refcount bump) で済むため `plan()` / `plan_partial()` の
+// 呼び出しごとのヒープ確保を回避する。solve 本体のコストに比べれば無視できるが、
+// `plan_in_range` が高頻度に呼ばれるパスでも無駄な allocation を減らせる。
+static SA_STRATEGY: OnceLock<Arc<dyn SolverStrategy>> = OnceLock::new();
+static PRIORITY_STRATEGY: OnceLock<Arc<dyn SolverStrategy>> = OnceLock::new();
+static AUTO_STRATEGY: OnceLock<Arc<dyn SolverStrategy>> = OnceLock::new();
+
+impl Solver {
+    /// この enum 値に対応する組み込み [`SolverStrategy`] を返す。
+    /// 組み込み戦略は `OnceLock` でキャッシュされるため、2 回目以降は
+    /// `Arc` の refcount bump のみでヒープ確保は発生しない。
+    pub fn strategy(self) -> Arc<dyn SolverStrategy> {
+        match self {
+            Solver::Sa => SA_STRATEGY.get_or_init(|| Arc::new(SaSolver)).clone(),
+            Solver::Priority => PRIORITY_STRATEGY
+                .get_or_init(|| Arc::new(PrioritySolver))
+                .clone(),
+            Solver::Auto => AUTO_STRATEGY.get_or_init(|| Arc::new(AutoSolver)).clone(),
+        }
+    }
+}
+
+/// full solve: `Planner` の設定に従って solver を選択する。
+/// `Planner` に独自 [`SolverStrategy`] が差し込まれていればそれを、そうでなければ
+/// `Planner.solver` enum から対応する組み込み戦略を選ぶ。
+pub fn solve(planner: &Planner) -> Plan {
+    planner.solver_strategy().solve(planner, &[])
 }
 
 /// 単一 seed で SA full solve を実行する（solver 設定に関わらず SA）。
@@ -45,11 +123,7 @@ pub fn solve_alns_with_seed(planner: &Planner, seed: u64) -> Plan {
 /// partial / range solve: pinned 集合を固定して再スケジュールする。
 pub fn solve_partial(planner: &Planner, pinned: &[TaskPlacement]) -> Plan {
     let pinned = validate_pinned(planner, pinned);
-    match planner.solver {
-        Solver::Sa => solve_sa_partial(planner, &pinned),
-        Solver::Priority => solve_priority(planner, &pinned, None),
-        Solver::Auto => solve_auto(planner, &pinned),
-    }
+    planner.solver_strategy().solve(planner, &pinned)
 }
 
 /// 単一 seed で SA partial solve を実行する（solver 設定に関わらず SA）。
@@ -208,6 +282,33 @@ mod tests {
         planner
     }
 
+    /// 呼び出し回数を記録する戦略。本体は `SaSolver` に委譲する。
+    /// `plan()` / `plan_partial()` の両経路で戦略が実際に呼ばれることを検証するために使う。
+    #[derive(Debug)]
+    struct CountingSolver {
+        calls: std::sync::atomic::AtomicUsize,
+    }
+
+    impl CountingSolver {
+        fn new() -> Self {
+            Self {
+                calls: std::sync::atomic::AtomicUsize::new(0),
+            }
+        }
+
+        fn calls(&self) -> usize {
+            self.calls.load(std::sync::atomic::Ordering::Relaxed)
+        }
+    }
+
+    impl SolverStrategy for CountingSolver {
+        fn solve(&self, planner: &Planner, pinned: &[TaskPlacement]) -> Plan {
+            self.calls
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            SaSolver.solve(planner, pinned)
+        }
+    }
+
     #[test]
     fn solve_produces_valid_plan() {
         let planner = make_planner(5);
@@ -328,5 +429,67 @@ mod tests {
         planner.set_time_budget(Some(Duration::ZERO));
         let plan = planner.plan();
         assert_eq!(plan.schedules.len(), planner.tasks.len());
+    }
+
+    #[test]
+    fn solver_strategy_overrides_enum_setting() {
+        // enum 設定に関わらず差し込んだ戦略が使われること。
+        let mut planner = make_planner(3);
+        planner.set_seed(Some(42));
+        planner.set_solver(Solver::Sa);
+
+        let sa_plan = planner.plan();
+        // 同じ SA を独自戦略として差し込んでも結果は一致するはず。
+        planner.set_solver_strategy(Some(std::sync::Arc::new(SaSolver)));
+        let strategy_plan = planner.plan();
+        assert_eq!(sa_plan, strategy_plan);
+    }
+
+    #[test]
+    fn custom_solver_strategy_is_used() {
+        // 独自戦略が実際に呼ばれることを検出するため、呼び出しを記録する戦略。
+        let strategy = std::sync::Arc::new(CountingSolver::new());
+        let mut planner = make_planner(3);
+        planner.set_solver(Solver::Priority);
+        planner.set_solver_strategy(Some(strategy.clone()));
+
+        let _ = planner.plan();
+        assert_eq!(strategy.calls(), 1);
+
+        // enum 設定に戻すと独自戦略は呼ばれない。
+        planner.set_solver_strategy(None);
+        let _ = planner.plan();
+        assert_eq!(strategy.calls(), 1);
+    }
+
+    #[test]
+    fn custom_solver_strategy_used_by_plan_partial() {
+        // plan_partial / plan_in_range は solve_partial 経由で戦略を呼ぶ。
+        // pinned 渡しの経路も戦略ディスパッチが保証されることを確認する。
+        let strategy = std::sync::Arc::new(CountingSolver::new());
+        let mut planner = make_planner(5);
+        planner.set_seed(Some(42));
+        planner.set_solver(Solver::Priority);
+        planner.set_solver_strategy(Some(strategy.clone()));
+
+        let full_plan = planner.plan();
+        assert_eq!(strategy.calls(), 1);
+
+        // pinned を1件渡して partial。戦略がもう1回呼ばれるはず。
+        let pinned: Vec<_> = full_plan.schedules.get(0..1).unwrap_or(&[]).to_vec();
+        let _ = planner.plan_partial(&pinned);
+        assert_eq!(strategy.calls(), 2);
+    }
+
+    #[test]
+    fn solver_strategy_survives_planner_clone() {
+        // Planner は Clone なので、戦略を差し込んだ状態のクローンが壊れないこと。
+        let mut planner = make_planner(3);
+        planner.set_seed(Some(42));
+        planner.set_solver_strategy(Some(std::sync::Arc::new(PrioritySolver)));
+        let cloned = planner.clone();
+        let a = planner.plan();
+        let b = cloned.plan();
+        assert_eq!(a, b);
     }
 }
