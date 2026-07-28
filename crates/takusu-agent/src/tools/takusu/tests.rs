@@ -11,7 +11,7 @@ use takusu_client::{
     TaskRow,
 };
 use takusu_util::{Quantity, TaskStatus};
-use crate::{ChangeOperation, Tool};
+use crate::{ChangeOperation, Tool, TypedTool};
 
     fn task_row(
         id: &str,
@@ -889,7 +889,7 @@ use crate::{ChangeOperation, Tool};
 
         let client = Client::new(&format!("http://{addr}"), "");
         let tz_cache = TimeZoneCache::new(client.clone());
-        let tool = HabitScheduledSpans { client, tz_cache };
+        let tool = crate::tool::Typed(HabitScheduledSpans { client, tz_cache });
 
         // list
         let output = tool

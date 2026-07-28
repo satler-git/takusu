@@ -34,10 +34,10 @@ pub fn register_tools(
     crate::tools::rrule::register_tools(registry, tz_cache.clone());
     crate::tools::day_details::register_tools(registry, client.clone(), tz_cache.clone());
     crate::tools::memory::register_tools(registry, client.clone());
-    registry.register(Box::new(PreviewScheduleTool {
+    registry.register(Box::new(crate::tool::Typed(PreviewScheduleTool {
         client: client.clone(),
         tz_cache: tz_cache.clone(),
-    }));
+    })));
     registry.register(Box::new(MoveTaskTool {
         client: client.clone(),
         tz_cache,
