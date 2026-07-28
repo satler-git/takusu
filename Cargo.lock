@@ -5192,6 +5192,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sherpa-onnx",
+ "takusu-util",
  "tar",
  "thiserror 2.0.18",
  "tokio",
