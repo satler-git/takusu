@@ -3056,7 +3056,7 @@ mod tests {
                     id: "sched-1".to_string(),
                     created_at: "2026-07-18T00:00:00Z".parse().unwrap(),
                     updated_at: "2026-07-18T00:00:00Z".parse().unwrap(),
-                    schedule: "{}".to_string(),
+                    schedule: Vec::new().into(),
                 })
             }),
         );
@@ -3120,7 +3120,7 @@ mod tests {
                     id: "sched-1".to_string(),
                     created_at: "2026-07-18T00:00:00Z".parse().unwrap(),
                     updated_at: "2026-07-18T00:00:00Z".parse().unwrap(),
-                    schedule: "{}".to_string(),
+                    schedule: Vec::new().into(),
                 })
             }),
         );
@@ -3187,7 +3187,7 @@ mod tests {
                     id: "sched-1".to_string(),
                     created_at: "2026-07-18T00:00:00Z".parse().unwrap(),
                     updated_at: "2026-07-18T00:00:00Z".parse().unwrap(),
-                    schedule: "{}".to_string(),
+                    schedule: Vec::new().into(),
                 })
             }),
         );
@@ -3823,7 +3823,7 @@ mod tests {
             allows_parallel: false,
             abandonability: 0.5.into(),
             fixed: false,
-            depends_on: "[]".into(),
+            depends_on: Vec::new().into(),
             created_at: "2026-01-01T00:00:00Z".parse().unwrap(),
         }
     }

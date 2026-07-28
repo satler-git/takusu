@@ -101,8 +101,7 @@ impl TypedTool for DayDetails {
                 },)
                 .map_err(client_error)?;
 
-            let entries: Vec<ScheduleEntry> = serde_json::from_str(&schedule_row.schedule)
-                .map_err(|e| ToolError::Other(Box::new(e)))?;
+            let entries: Vec<ScheduleEntry> = schedule_row.schedule.as_inner().clone();
             let task_by_id: HashMap<String, &TaskRow> =
                 tasks.iter().map(|t| (t.id.clone(), t)).collect();
 

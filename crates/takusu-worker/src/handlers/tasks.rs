@@ -144,11 +144,7 @@ async fn filter_rows_with_query(
         let rows = safe_all::<ScheduleRow>(&stmt).await?;
         rows.into_iter()
             .next()
-            .map(|r| {
-                serde_json::from_str(&r.schedule)
-                    .map_err(|e| WorkerError::Internal(format!("schedule json: {e}")))
-            })
-            .transpose()?
+            .map(|r| r.schedule.into_inner())
             .unwrap_or_default()
     };
 
@@ -180,8 +176,8 @@ pub async fn create(mut req: Request, env: Env) -> Result<Response, WorkerError>
     )?;
     let id = uuid::Uuid::now_v7().to_string();
     let resolved_depends = resolve_depends(&database, body.depends.as_deref()).await?;
-    let depends_json =
-        serde_json::to_string(&resolved_depends).unwrap_or_else(|_| "[]".to_string());
+    let depends = crate::models::DependencyList::new(resolved_depends);
+    let depends_json = depends.to_json_string();
     let sigma = body
         .sigma_minutes
         .unwrap_or(Minutes(body.avg_minutes).to_slots().0.max(1));
@@ -339,7 +335,7 @@ pub async fn update(mut req: Request, env: Env, id: &str) -> Result<Response, Wo
 
     let depends_json = if let Some(ref deps) = body.depends {
         let resolved = resolve_depends(&database, Some(deps)).await?;
-        Some(serde_json::to_string(&resolved).unwrap_or_else(|_| "[]".into()))
+        Some(crate::models::DependencyList::new(resolved).to_json_string())
     } else {
         None
     };
@@ -483,7 +479,7 @@ pub async fn replace(mut req: Request, env: Env, id: &str) -> Result<Response, W
     )?;
     let full = resolve_task_id(&database, id).await?;
     let resolved_depends = resolve_depends(&database, body.depends.as_deref()).await?;
-    let depends_json = serde_json::to_string(&resolved_depends).unwrap_or_else(|_| "[]".into());
+    let depends_json = crate::models::DependencyList::new(resolved_depends).to_json_string();
     let sigma = body
         .sigma_minutes
         .unwrap_or(Minutes(body.avg_minutes).to_slots().0.max(1));

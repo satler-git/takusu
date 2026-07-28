@@ -422,7 +422,7 @@ pub(crate) fn task_json(
 }
 
 fn task_dependency_ids(task: &TaskRow) -> Vec<String> {
-    serde_json::from_str::<Vec<String>>(&task.depends).unwrap_or_default()
+    task.depends.to_vec()
 }
 
 /// Collect all transitive dependency tasks for `requested` from the full `all_tasks` list.
@@ -535,8 +535,8 @@ pub(super) fn habit_json(habit: &HabitDetail) -> Value {
 }
 
 fn step_json(step: &HabitStepRow, id_to_display_position: &HashMap<String, i64>) -> Value {
-    let depends_on: Vec<i64> = serde_json::from_str::<Vec<String>>(&step.depends_on)
-        .unwrap_or_default()
+    let depends_on: Vec<i64> = step.depends_on
+        .to_vec()
         .iter()
         .filter_map(|id| id_to_display_position.get(id).copied())
         .collect();

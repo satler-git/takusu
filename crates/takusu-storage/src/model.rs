@@ -1,5 +1,8 @@
 use serde::{Deserialize, Serialize};
-use takusu_util::{Abandonability, Date, Quantity, Similarity, TaskStatusFilter, TimeOfDay, Timestamp};
+use takusu_util::{
+    Abandonability, Date, DependencyList, JsonString, Quantity, Similarity, TaskStatusFilter,
+    TimeOfDay, Timestamp,
+};
 
 #[allow(dead_code)]
 fn default_sleep() -> String {
@@ -17,7 +20,8 @@ pub struct TaskRow {
     pub end_at: Timestamp,
     pub avg_minutes: i64,
     pub sigma_minutes: i64,
-    pub depends: String,
+    #[serde(default)]
+    pub depends: DependencyList,
     #[serde(with = "takusu_util::bool_compat", default)]
     pub parallelizable: bool,
     #[serde(with = "takusu_util::bool_compat", default)]
@@ -352,7 +356,8 @@ pub struct HabitStepRow {
     #[serde(with = "takusu_util::bool_compat", default)]
     pub fixed: bool,
     /// JSON array of step ids this step depends on (within the same habit).
-    pub depends_on: String,
+    #[serde(default)]
+    pub depends_on: DependencyList,
     pub created_at: Timestamp,
 }
 
@@ -463,7 +468,8 @@ pub struct ScheduleRow {
     pub id: String,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
-    pub schedule: String,
+    #[serde(default)]
+    pub schedule: ScheduleData,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -472,6 +478,10 @@ pub struct ScheduleEntry {
     pub start_at: Timestamp,
     pub end_at: Timestamp,
 }
+
+/// Type alias for the JSON-string-encoded schedule entries stored in
+/// `ScheduleRow.schedule` (#1252).
+pub type ScheduleData = JsonString<Vec<ScheduleEntry>>;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SaveScheduleRequest {

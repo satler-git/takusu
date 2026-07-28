@@ -45,7 +45,7 @@ fn topo_sort_steps(steps: &[HabitStepRow]) -> Result<Vec<usize>, AppError> {
     }
     let mut adj: Vec<Vec<usize>> = vec![Vec::new(); steps.len()];
     for (i, s) in steps.iter().enumerate() {
-        let deps: Vec<String> = serde_json::from_str(&s.depends_on).unwrap_or_default();
+        let deps: Vec<String> = s.depends_on.to_vec();
         for dep in &deps {
             if let Some(&dep_idx) = id_to_idx.get(dep) {
                 // edge dep_idx → i (dep must come before i)
@@ -145,7 +145,7 @@ fn step_input_to_preview_row(input: &HabitStepInput) -> HabitStepRow {
         allows_parallel: input.allows_parallel.unwrap_or(false),
         abandonability: input.abandonability.unwrap_or(0.5.into()),
         fixed: input.fixed.unwrap_or(false),
-        depends_on: serde_json::to_string(&input.depends_on).unwrap_or_default(),
+        depends_on: takusu_util::DependencyList::new(input.depends_on.clone()),
         created_at: takusu_util::Timestamp::default(),
     }
 }
@@ -271,7 +271,7 @@ fn build_dep_graph(
     let mut adj = vec![Vec::new(); tasks.len()];
     for t in tasks {
         let idx = id_to_idx[&t.id];
-        let deps: Vec<String> = serde_json::from_str(&t.depends).unwrap_or_default();
+        let deps: Vec<String> = t.depends.to_vec();
         for dep_id in &deps {
             if let Some(&dep_idx) = id_to_idx.get(dep_id) {
                 adj[idx].push(dep_idx);
@@ -1662,7 +1662,7 @@ impl TakusuApp {
         }
         let mut adj = vec![Vec::new(); active.len()];
         for (i, t) in active.iter().enumerate() {
-            let deps: Vec<String> = serde_json::from_str(&t.depends).unwrap_or_default();
+            let deps: Vec<String> = t.depends.to_vec();
             for dep_id in &deps {
                 if let Some(&dep_idx) = id_to_idx.get(dep_id) {
                     adj[i].push(dep_idx);
@@ -1703,7 +1703,7 @@ impl TakusuApp {
         }
         let mut adj = vec![Vec::new(); steps.len()];
         for (i, s) in steps.iter().enumerate() {
-            let deps: Vec<String> = serde_json::from_str(&s.depends_on).unwrap_or_default();
+            let deps: Vec<String> = s.depends_on.to_vec();
             for dep_id in &deps {
                 if let Some(&dep_idx) = id_to_idx.get(dep_id) {
                     adj[i].push(dep_idx);
@@ -1762,14 +1762,14 @@ impl TakusuApp {
         // ペナルティを課す（pinではなく軟制約）。SAは必要なら動かせるが、
         // 直近のタスクは前回位置を維持する方が高スコアになる。
         let existing_schedule = self.storage.get_schedule().await.map_err(storage_to_app)?;
-        // unwrap_or_default: if the schedule JSON is corrupt, fall back to
+        // unwrap_or_default: if the schedule is empty, fall back to
         // an empty vec which disables the stability penalty rather than
         // crashing. This is intentionally more forgiving than reschedule
         // (which returns an error on parse failure) because generate is a
         // full regenerate — the user just wants a new schedule.
         let existing_entries: Vec<ScheduleEntry> = existing_schedule
             .as_ref()
-            .and_then(|row| serde_json::from_str(&row.schedule).ok())
+            .map(|row| row.schedule.as_inner().clone())
             .unwrap_or_default();
         if !existing_entries.is_empty() {
             let prev: Vec<TaskPlacement> = existing_entries
@@ -1829,7 +1829,7 @@ impl TakusuApp {
             .get_schedule()
             .await
             .map_err(storage_to_app)?
-            .and_then(|row| serde_json::from_str::<Vec<ScheduleEntry>>(&row.schedule).ok())
+            .map(|row| row.schedule.as_inner().clone())
             .unwrap_or_default();
         let current_schedule = existing_entries
             .iter()
@@ -1942,8 +1942,7 @@ impl TakusuApp {
             .await
             .map_err(storage_to_app)?
             .ok_or_else(|| AppError::NotFound("no active schedule".into()))?;
-        let entries: Vec<ScheduleEntry> = serde_json::from_str(&schedule_row.schedule)
-            .map_err(|e| AppError::Internal(e.to_string()))?;
+        let entries: Vec<ScheduleEntry> = schedule_row.schedule.as_inner().clone();
 
         let habit_rows = self.sync_habit_tasks(&tz).await?;
         // Load active tasks after sync to avoid stale rows deleted by sync.
@@ -2061,8 +2060,7 @@ impl TakusuApp {
             .await
             .map_err(storage_to_app)?
             .ok_or_else(|| AppError::NotFound("no active schedule".into()))?;
-        let mut entries: Vec<ScheduleEntry> = serde_json::from_str(&schedule_row.schedule)
-            .map_err(|e| AppError::Internal(e.to_string()))?;
+        let mut entries: Vec<ScheduleEntry> = schedule_row.schedule.as_inner().clone();
         let idx = entries
             .iter()
             .position(|e| e.task_id == full_task_id)
@@ -2274,10 +2272,7 @@ impl TakusuApp {
             .get_schedule()
             .await
             .map_err(|e| e.to_string())?;
-        let entries: Option<Vec<ScheduleEntry>> = match schedule_row {
-            Some(s) => serde_json::from_str(&s.schedule).ok(),
-            None => None,
-        };
+        let entries: Option<Vec<ScheduleEntry>> = schedule_row.map(|s| s.schedule.as_inner().clone());
 
         let client = google_cal::Client::new(client_id, client_secret, refresh_token, calendar_id)
             .map_err(|e| e.to_string())?;
@@ -2928,7 +2923,7 @@ impl TakusuApp {
                 let Some(task_id) = step_to_task.get(&step.id) else {
                     continue;
                 };
-                let deps: Vec<String> = serde_json::from_str(&step.depends_on).unwrap_or_default();
+                let deps: Vec<String> = step.depends_on.to_vec();
                 if deps.is_empty() {
                     continue;
                 }
@@ -3019,7 +3014,7 @@ impl TakusuApp {
 
         let mut all_depends: Vec<Vec<usize>> = Vec::with_capacity(task_rows.len());
         for row in task_rows {
-            let dep_ids: Vec<String> = serde_json::from_str(&row.depends).unwrap_or_default();
+            let dep_ids: Vec<String> = row.depends.to_vec();
             let mut resolved = Vec::new();
             for dep_id in &dep_ids {
                 if let Some(&idx) = id_to_idx.get(dep_id) {

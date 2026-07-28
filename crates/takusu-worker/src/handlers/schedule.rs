@@ -23,8 +23,7 @@ pub async fn get(_req: worker::Request, env: Env) -> Result<Response, WorkerErro
 pub async fn save(mut req: worker::Request, env: Env) -> Result<Response, WorkerError> {
     let body: SaveScheduleRequest = parse_json(&mut req).await?;
     let database = db(&env)?;
-    let schedule_json = serde_json::to_string(&body.entries)
-        .map_err(|e| WorkerError::Internal(format!("serialize schedule: {e}")))?;
+    let schedule_json = crate::models::ScheduleData::new(body.entries.clone()).to_json_string();
 
     let mut stmts: Vec<D1PreparedStatement> =
         Vec::with_capacity(1 + body.mark_scheduled_task_ids.len());

@@ -965,8 +965,12 @@ impl TypedTool for MoveTaskTool {
         .map_err(client_error)?;
 
         let schedule_row = self.client.get_schedule().await.map_err(client_error)?;
-        let entries: Vec<Value> = serde_json::from_str(&schedule_row.schedule)
-            .map_err(|error| ToolError::Other(Box::new(error)))?;
+        let entries: Vec<Value> = schedule_row
+            .schedule
+            .as_inner()
+            .iter()
+            .map(|entry| serde_json::to_value(entry).map_err(|error| ToolError::Other(Box::new(error))))
+            .collect::<Result<_, _>>()?;
         let current_entry = entries
             .into_iter()
             .find(|e| e.get("task_id").and_then(Value::as_str) == Some(&task.id));

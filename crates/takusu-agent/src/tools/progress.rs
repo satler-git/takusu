@@ -1028,7 +1028,7 @@ mod tests {
             end_at: "2025-01-02T00:00:00Z".parse().unwrap(),
             avg_minutes: 60,
             sigma_minutes: 10,
-            depends: "[]".to_string(),
+            depends: Vec::new().into(),
             parallelizable: false,
             allows_parallel: false,
             abandonability: 0.5.into(),
