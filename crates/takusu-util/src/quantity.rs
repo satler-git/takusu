@@ -145,22 +145,13 @@ impl<'de> Deserialize<'de> for Quantity {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum QuantityError {
+    #[error("quantity cannot be negative: {0}")]
     Negative(i64),
+    #[error("quantity overflow")]
     Overflow,
 }
-
-impl fmt::Display for QuantityError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            QuantityError::Negative(v) => write!(f, "quantity cannot be negative: {v}"),
-            QuantityError::Overflow => write!(f, "quantity overflow"),
-        }
-    }
-}
-
-impl std::error::Error for QuantityError {}
 
 impl FromStr for Quantity {
     type Err = String;

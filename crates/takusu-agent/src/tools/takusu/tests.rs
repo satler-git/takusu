@@ -1083,7 +1083,7 @@ fn validate_rejects_habit_ref_on_create_task() {
         "habit_ref": "h1",
     }));
     let err = tool.validate_args(&args).unwrap_err();
-    assert_eq!(err.field.as_deref(), Some("habit_ref"));
+    assert_eq!(err.field(), Some("habit_ref"));
 }
 
 #[test]
@@ -1094,7 +1094,7 @@ fn validate_rejects_steps_on_update_task() {
         "steps": [{"position": 1, "title": "s", "start_time": "09:00", "end_time": "10:00", "avg_minutes": 60}],
     }));
     let err = tool.validate_args(&args).unwrap_err();
-    assert_eq!(err.field.as_deref(), Some("steps"));
+    assert_eq!(err.field(), Some("steps"));
 }
 
 #[test]
@@ -1107,7 +1107,7 @@ fn validate_rejects_status_on_create_task() {
         "status": "completed",
     }));
     let err = tool.validate_args(&args).unwrap_err();
-    assert_eq!(err.field.as_deref(), Some("status"));
+    assert_eq!(err.field(), Some("status"));
 }
 
 #[test]
@@ -1122,7 +1122,7 @@ fn validate_rejects_task_fields_on_create_habit() {
         "task_ref": "#1",
     }));
     let err = tool.validate_args(&args).unwrap_err();
-    assert_eq!(err.field.as_deref(), Some("task_ref"));
+    assert_eq!(err.field(), Some("task_ref"));
 }
 
 #[test]
@@ -1133,7 +1133,7 @@ fn validate_rejects_schedule_fields_on_delete_task() {
         "mode": "full",
     }));
     let err = tool.validate_args(&args).unwrap_err();
-    assert_eq!(err.field.as_deref(), Some("mode"));
+    assert_eq!(err.field(), Some("mode"));
 }
 
 #[test]
