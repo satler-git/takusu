@@ -4,7 +4,6 @@
 //! (Cloudflare Workers). No `jsonwebtoken`/`ring` dependency, avoiding WASM
 //! compatibility issues.
 
-use std::fmt;
 use web_time::{SystemTime, UNIX_EPOCH};
 
 use base64::Engine;
@@ -69,44 +68,31 @@ struct Header {
 }
 
 /// Errors that can occur during JWT signing or verification.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum JwtError {
+    #[error("invalid JWT format")]
     InvalidFormat,
+    #[error("invalid base64 encoding")]
     InvalidBase64,
+    #[error("invalid JSON: {0}")]
     InvalidJson(String),
+    #[error("unsupported JWT algorithm")]
     UnsupportedAlgorithm,
+    #[error("invalid JWT signature")]
     InvalidSignature,
+    #[error("JWT expired")]
     Expired,
+    #[error("JWT issued-at is in the future")]
     IssuedAtFuture,
+    #[error("system clock error")]
     ClockError,
+    #[error("invalid audience: expected {expected}, got {actual}")]
     InvalidAudience { expected: String, actual: String },
+    #[error("invalid issuer: expected {expected}, got {actual}")]
     InvalidIssuer { expected: String, actual: String },
+    #[error("missing scope claim")]
     MissingScope,
 }
-
-impl fmt::Display for JwtError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            JwtError::InvalidFormat => write!(f, "invalid JWT format"),
-            JwtError::InvalidBase64 => write!(f, "invalid base64 encoding"),
-            JwtError::InvalidJson(msg) => write!(f, "invalid JSON: {msg}"),
-            JwtError::UnsupportedAlgorithm => write!(f, "unsupported JWT algorithm"),
-            JwtError::InvalidSignature => write!(f, "invalid JWT signature"),
-            JwtError::Expired => write!(f, "JWT expired"),
-            JwtError::IssuedAtFuture => write!(f, "JWT issued-at is in the future"),
-            JwtError::ClockError => write!(f, "system clock error"),
-            JwtError::InvalidAudience { expected, actual } => {
-                write!(f, "invalid audience: expected {expected}, got {actual}")
-            }
-            JwtError::InvalidIssuer { expected, actual } => {
-                write!(f, "invalid issuer: expected {expected}, got {actual}")
-            }
-            JwtError::MissingScope => write!(f, "missing scope claim"),
-        }
-    }
-}
-
-impl std::error::Error for JwtError {}
 
 fn now_seconds() -> Result<i64, JwtError> {
     SystemTime::now()

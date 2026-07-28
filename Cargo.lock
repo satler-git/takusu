@@ -5246,6 +5246,7 @@ dependencies = [
  "serde",
  "serde_json",
  "takusu-util",
+ "thiserror 2.0.18",
  "tokio",
  "webpki-root-certs",
 ]

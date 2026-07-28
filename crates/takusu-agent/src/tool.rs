@@ -11,42 +11,45 @@ use takusu_util::{UnknownLabel, enum_label};
 ///
 /// Carrying the field separately from the reason lets the agent format
 /// clearer retry guidance without exposing the entire argument object.
-#[derive(Debug)]
-pub struct InvalidArgsError {
-    /// Name of the argument or field that is invalid, if known.
-    pub field: Option<String>,
-    /// Human-readable explanation of what is wrong.
-    pub reason: String,
+#[derive(Debug, thiserror::Error)]
+pub enum InvalidArgsError {
+    #[error("field '{field}': {reason}")]
+    Field { field: String, reason: String },
+    #[error("{reason}")]
+    NoField { reason: String },
 }
 
 impl InvalidArgsError {
     /// Create an error for a specific field.
     pub fn new(field: impl Into<String>, reason: impl Into<String>) -> Self {
-        Self {
-            field: Some(field.into()),
+        Self::Field {
+            field: field.into(),
             reason: reason.into(),
         }
     }
 
     /// Create an error without naming a specific field.
     pub fn no_field(reason: impl Into<String>) -> Self {
-        Self {
-            field: None,
+        Self::NoField {
             reason: reason.into(),
         }
     }
-}
 
-impl fmt::Display for InvalidArgsError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match &self.field {
-            Some(field) => write!(f, "field '{field}': {reason}", reason = self.reason),
-            None => write!(f, "{}", self.reason),
+    /// Name of the invalid argument/field, if known.
+    pub fn field(&self) -> Option<&str> {
+        match self {
+            Self::Field { field, .. } => Some(field),
+            Self::NoField { .. } => None,
+        }
+    }
+
+    /// Human-readable explanation of what is wrong.
+    pub fn reason(&self) -> &str {
+        match self {
+            Self::Field { reason, .. } | Self::NoField { reason } => reason,
         }
     }
 }
-
-impl std::error::Error for InvalidArgsError {}
 
 /// Converts a `String` into an `InvalidArgsError` without a field name.
 ///

@@ -9,28 +9,13 @@ use serde::{Deserialize, Serialize};
 use takusu_util::{Date, TimeOfDay, Timestamp, url_encode};
 use tokio::sync::RwLock;
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum ClientError {
-    Http(reqwest::Error),
+    #[error("HTTP error: {0}")]
+    Http(#[from] reqwest::Error),
+    #[error("API error {status}: {body}")]
     Api { status: u16, body: String },
 }
-
-impl std::fmt::Display for ClientError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ClientError::Http(e) => write!(f, "HTTP error: {e}"),
-            ClientError::Api { status, body } => write!(f, "API error {status}: {body}"),
-        }
-    }
-}
-
-impl From<reqwest::Error> for ClientError {
-    fn from(e: reqwest::Error) -> Self {
-        ClientError::Http(e)
-    }
-}
-
-impl std::error::Error for ClientError {}
 
 #[derive(Clone)]
 pub struct Client {
