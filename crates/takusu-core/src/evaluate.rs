@@ -284,6 +284,95 @@ pub(crate) fn sorted_revert(sorted: &mut Vec<Placement>, undo: &[(Placement, usi
     }
 }
 
+/// SA ループなどで繰り返し評価を呼ぶ際の scratch バッファを所有するコンテキスト。
+///
+/// `sorted` / `index` / `habit_entries` の 3 つの mutable バッファを呼び出し元で
+/// 管理する boilerplate を隠す。`EvaluationContext::new(capacity)` で一度確保し、
+/// ループ内で `evaluate` / `evaluate_presorted` を再利用呼び出しする。
+///
+/// `sorted` への差分更新は `sorted_apply` / `sorted_revert` 経由で行う。
+pub(crate) struct EvaluationContext {
+    /// start 順ソート済みのスケジュール列。
+    /// `evaluate_presorted` はこの列がソート済みであることを前提とする。
+    sorted: Vec<Placement>,
+    index: Vec<Option<TimeWindow>>,
+    habit_entries: Vec<HabitGroupAnchor>,
+}
+
+impl EvaluationContext {
+    /// `capacity` をヒントに 3 つのバッファを一度確保する。
+    pub(crate) fn new(capacity: usize) -> Self {
+        Self {
+            sorted: Vec::with_capacity(capacity),
+            index: Vec::with_capacity(capacity),
+            habit_entries: Vec::with_capacity(capacity),
+        }
+    }
+
+    /// sort を含むフル評価。`sorted` を `schedules` で上書きソートしてから評価する。
+    /// [`evaluate_with_scratch`] のバッファ管理を包んだエントリポイント。
+    pub(crate) fn evaluate(
+        &mut self,
+        planner: &Planner,
+        schedules: &[Placement],
+        temperature: f64,
+        t0: f64,
+    ) -> f64 {
+        evaluate_with_scratch(
+            planner,
+            schedules,
+            temperature,
+            t0,
+            &mut self.sorted,
+            &mut self.index,
+            &mut self.habit_entries,
+        )
+    }
+
+    /// `sorted` が start 順ソート済みであることを前提とする評価。
+    /// SA ホットループで `sorted_apply` / `sorted_revert` と組み合わせて使う。
+    pub(crate) fn evaluate_presorted(
+        &mut self,
+        planner: &Planner,
+        schedules: &[Placement],
+        temperature: f64,
+        t0: f64,
+    ) -> f64 {
+        evaluate_presorted(
+            planner,
+            schedules,
+            temperature,
+            t0,
+            &self.sorted,
+            &mut self.index,
+            &mut self.habit_entries,
+        )
+    }
+
+    /// `sorted` を `schedules` の start ソート済み状態で初期化する。
+    /// SA ループ突入前に一度呼ぶ。
+    pub(crate) fn init_sorted(&mut self, schedules: &[Placement]) {
+        self.sorted.clear();
+        self.sorted.extend_from_slice(schedules);
+        self.sorted.sort_unstable_by_key(|p| p.start);
+    }
+
+    /// `sorted` を `old_scheds` → `new_scheds` の差分で更新し、undo を返す。
+    /// [`sorted_incremental_apply`] のバッファ管理を包んだもの。
+    pub(crate) fn sorted_apply(
+        &mut self,
+        old_scheds: &[Placement],
+        new_scheds: &[Placement],
+    ) -> Vec<(Placement, usize)> {
+        sorted_incremental_apply(&mut self.sorted, old_scheds, new_scheds)
+    }
+
+    /// [`sorted_apply`] の逆操作。`sorted` を apply 前の状態に戻す。
+    pub(crate) fn sorted_revert(&mut self, undo: &[(Placement, usize)]) {
+        sorted_revert(&mut self.sorted, undo);
+    }
+}
+
 /// task_id → (start, end) の索引。O(n) で構築し、各スコア関数の探索を O(1) にする。
 /// 同時にスケジュール全体の [plan_start, plan_end) も返す。
 fn build_index_into(
