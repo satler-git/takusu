@@ -55,8 +55,10 @@ pub use decoder::{
 pub use placement::{Placement, PlacementFailure, TaskPlacement, TimeWindow};
 pub use anneal::{NeighborWeights, SaConfig};
 pub use evaluate::EvaluationWeights;
+pub use solver::{AutoSolver, PrioritySolver, SaSolver, SolverStrategy};
 
 use jiff::Timestamp;
+use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error;
 
@@ -506,6 +508,9 @@ pub struct Planner {
 
     /// 使用するソルバー。デフォルトは `Solver::Sa`。
     solver: Solver,
+    /// `solver` enum を上書きする独自 [`SolverStrategy`]。`None` のときは
+    /// `solver` enum から組み込み戦略を選ぶ。外部から solver を差し込む経路。
+    solver_strategy: Option<Arc<dyn SolverStrategy>>,
     /// 求解時間の上限。`None` の場合は既存の反復数で完了する。
     time_budget: Option<Duration>,
     /// 乱数シード。`None` の場合は決定的なデフォルトシードを使用する。
@@ -532,6 +537,7 @@ impl Planner {
             workload: WorkloadConfig::default(),
             previous_schedule: vec![],
             solver: Solver::default(),
+            solver_strategy: None,
             time_budget: None,
             seed: None,
             warm_start: false,
@@ -621,6 +627,21 @@ impl Planner {
     /// 使用するソルバーを設定する。
     pub fn set_solver(&mut self, solver: Solver) {
         self.solver = solver;
+    }
+
+    /// 独自の [`SolverStrategy`] を差し込む。`set_solver` の enum 設定より優先され、
+    /// `plan()` / `plan_partial()` はこの戦略を使う。`None` を渡すと enum 設定に戻る。
+    pub fn set_solver_strategy(&mut self, strategy: Option<Arc<dyn SolverStrategy>>) {
+        self.solver_strategy = strategy;
+    }
+
+    /// `plan()` 時に実際に使う [`SolverStrategy`] を返す。
+    /// 独自戦略が差し込まれていればそれを、そうでなければ `solver` enum の
+    /// 組み込み戦略を返す。
+    pub fn solver_strategy(&self) -> Arc<dyn SolverStrategy> {
+        self.solver_strategy
+            .clone()
+            .unwrap_or_else(|| self.solver.strategy())
     }
 
     /// 求解時間の上限を設定する。`None` で制限なし。
