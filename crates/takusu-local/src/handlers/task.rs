@@ -2,11 +2,13 @@ use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use serde::Deserialize;
+use std::str::FromStr;
 use takusu_storage::{
     CreateTask, CreateTaskBatch, CreateTaskBatchResult, ProgressResult, RecordProgress,
     SplitResult, SplitTask, TaskProgress, TaskQuery, TaskRow, UpdateTask,
 };
 use takusu_util::search::Completion;
+use takusu_util::{TaskStatusFilter, Timestamp, parse_datetime_to_timestamp};
 
 use crate::error::HttpError;
 use crate::state::AppState;
@@ -50,10 +52,23 @@ pub async fn list_tasks(
     State(state): State<AppState>,
     Query(query): Query<TaskQueryParams>,
 ) -> Result<Json<Vec<TaskRow>>, HttpError> {
+    let tz = state.app.server_timezone().await?;
     let q = TaskQuery {
-        status: query.status,
-        from: query.from,
-        until: query.until,
+        status: query
+            .status
+            .map(|s| TaskStatusFilter::from_str(&s))
+            .transpose()
+            .map_err(|e| HttpError(takusu_local_lib::error::AppError::BadRequest(e.to_string())))?,
+        from: query
+            .from
+            .map(|s| parse_datetime_to_timestamp(&s, &tz).map(Timestamp::from))
+            .transpose()
+            .map_err(|e| HttpError(takusu_local_lib::error::AppError::BadRequest(e)))?,
+        until: query
+            .until
+            .map(|s| parse_datetime_to_timestamp(&s, &tz).map(Timestamp::from))
+            .transpose()
+            .map_err(|e| HttpError(takusu_local_lib::error::AppError::BadRequest(e)))?,
         no_overdue: query.no_overdue,
         habit_id: query.habit_id,
         ical_uid: query.ical_uid,

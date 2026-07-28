@@ -8,7 +8,7 @@ use std::collections::HashSet;
 use takusu_client::{
     Client, HabitDetail, HabitScheduledSpanRow, SchedulePreviewRequest, TaskQuery,
 };
-use takusu_util::{parse_date_expression, parse_datetime_tz};
+use takusu_util::{parse_date_expression, parse_datetime_to_timestamp, parse_datetime_tz};
 
 use crate::{
     ChangeOperation, InferredField, InvalidArgsError, ProposedChange, Target, TargetKind,
@@ -173,17 +173,30 @@ impl TypedTool for ListTasks {
         };
         let tz = server_timezone(&self.tz_cache).await;
         let query = TaskQuery {
-            status: args.status.map(|s| normalize_status(&s)),
+            status: args
+                .status
+                .map(|s| {
+                    let normalized = normalize_status(&s);
+                    normalized
+                        .parse::<takusu_util::TaskStatusFilter>()
+                        .map_err(|e| {
+                            ToolError::InvalidArgs(InvalidArgsError::new(
+                                "status",
+                                format!("invalid: {e}"),
+                            ))
+                        })
+                })
+                .transpose()?,
             from: args
                 .from
-                .map(|s| parse_datetime_tz(&s, &tz))
+                .map(|s| parse_datetime_to_timestamp(&s, &tz).map(takusu_util::Timestamp::from))
                 .transpose()
                 .map_err(|e| {
                     ToolError::InvalidArgs(InvalidArgsError::new("from", format!("invalid: {e}")))
                 })?,
             until: args
                 .until
-                .map(|s| parse_datetime_tz(&s, &tz))
+                .map(|s| parse_datetime_to_timestamp(&s, &tz).map(takusu_util::Timestamp::from))
                 .transpose()
                 .map_err(|e| {
                     ToolError::InvalidArgs(InvalidArgsError::new("until", format!("invalid: {e}")))

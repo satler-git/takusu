@@ -108,31 +108,30 @@ impl Client {
         let url = format!("{}/api/tasks", self.base_url);
         let token = self.token().await;
         let mut req = self.http.get(&url).bearer_auth(&*token);
-        let mut params: Vec<(&str, &str)> = Vec::new();
-        let limit_string = query.limit.map(|n| n.to_string());
-        if let Some(ref s) = query.status {
-            params.push(("status", s));
+        let mut params: Vec<(&str, String)> = Vec::new();
+        if let Some(s) = query.status {
+            params.push(("status", s.to_string()));
         }
-        if let Some(ref v) = query.from {
-            params.push(("from", v));
+        if let Some(v) = query.from {
+            params.push(("from", v.to_string()));
         }
-        if let Some(ref v) = query.until {
-            params.push(("until", v));
+        if let Some(v) = query.until {
+            params.push(("until", v.to_string()));
         }
         if let Some(v) = query.no_overdue {
-            params.push(("no_overdue", if v { "true" } else { "false" }));
+            params.push(("no_overdue", v.to_string()));
         }
         if let Some(ref v) = query.habit_id {
-            params.push(("habit_id", v));
+            params.push(("habit_id", v.clone()));
         }
         if let Some(ref v) = query.ical_uid {
-            params.push(("ical_uid", v));
+            params.push(("ical_uid", v.clone()));
         }
         if let Some(ref v) = query.q {
-            params.push(("q", v));
+            params.push(("q", v.clone()));
         }
-        if let Some(ref s) = limit_string {
-            params.push(("limit", s));
+        if let Some(n) = query.limit {
+            params.push(("limit", n.to_string()));
         }
         if !params.is_empty() {
             req = req.query(&params);
@@ -1343,9 +1342,9 @@ pub struct UpdateTask {
 
 #[derive(Debug, Default)]
 pub struct TaskQuery {
-    pub status: Option<String>,
-    pub from: Option<String>,
-    pub until: Option<String>,
+    pub status: Option<takusu_util::TaskStatusFilter>,
+    pub from: Option<takusu_util::Timestamp>,
+    pub until: Option<takusu_util::Timestamp>,
     pub no_overdue: Option<bool>,
     pub habit_id: Option<String>,
     pub ical_uid: Option<String>,
