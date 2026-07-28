@@ -111,6 +111,15 @@ const makeStyles = (colors: ColorSet) =>
       alignItems: 'flex-start',
       paddingLeft: 20,
     },
+    // #1170: full-width background behind the action panel so over-sliding
+    // left never reveals a gap between the card edge and the panel.
+    actionPanelBg: {
+      position: 'absolute',
+      left: 0,
+      right: 0,
+      top: 0,
+      bottom: 0,
+    },
     // #1044: revealed skip/delete action panel behind the card
     actionPanel: {
       position: 'absolute',
@@ -307,6 +316,14 @@ function TaskCardImpl({
     opacity: Math.min(1, Math.max(0, translateX.value / REVEAL_THRESHOLD)),
   }));
 
+  // #1170: action panel background only visible while sliding left
+  // (translateX < 0). Keeping it transparent during the right-swipe done
+  // transition prevents the skip/delete color from bleeding through the
+  // partial-opacity doneBg.
+  const actionPanelBgStyle = useAnimatedStyle(() => ({
+    opacity: Math.min(1, Math.max(0, -translateX.value / REVEAL_THRESHOLD)),
+  }));
+
   const bgColor = taskCardColor(
     task.abandonability,
     task.habit_id,
@@ -365,6 +382,20 @@ function TaskCardImpl({
 
   return (
     <View style={[styles.container, containerStyle]}>
+      {/* #1170: full-width background behind the action panel so over-sliding
+          left never reveals a gap. Opacity animates with translateX so it is
+          only visible while sliding left — the right-swipe done transition
+          is unaffected. */}
+      {ACTION_PANEL_WIDTH > 0 && (
+        <Reanimated.View
+          style={[
+            styles.actionPanelBg,
+            { backgroundColor: skipVisible ? colors.gray : colors.red },
+            actionPanelBgStyle,
+          ]}
+          pointerEvents="none"
+        />
+      )}
       {/* Slide-right done preview background (#170) */}
       <Reanimated.View
         style={[styles.doneBg, { backgroundColor: doneColor }, doneBgStyle]}
