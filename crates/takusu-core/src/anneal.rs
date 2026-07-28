@@ -209,7 +209,7 @@ fn push_fallback(
 ) -> Point {
     let start = last_end.max(planner.now).max(earliest);
     let end = Point(start.0 + dur);
-    schedules.push((start, end, task_id));
+    schedules.push(TaskPlacement::new(start, end, task_id));
     end
 }
 
@@ -237,7 +237,7 @@ fn build_initial(planner: &Planner) -> Plan {
             && let Some(start) = task.start
         {
             let end = Point(start.0 + dur);
-            schedules.push((start, end, task_id));
+            schedules.push(TaskPlacement::new(start, end, task_id));
             last_end = last_end.max(end);
         }
     }
@@ -252,9 +252,10 @@ fn build_initial(planner: &Planner) -> Plan {
         }
 
         let earliest = compute_earliest(planner, &schedules, task);
-        if let Ok((start, end)) = try_place::<false>(planner, &schedules, task, earliest, dur, None)
-        {
-            schedules.push((start, end, task_id));
+        if let Ok(tw) = try_place::<false>(planner, &schedules, task, earliest, dur, None) {
+            let start = tw.start;
+            let end = tw.end;
+            schedules.push(TaskPlacement::new(start, end, task_id));
             last_end = last_end.max(end);
         } else {
             last_end = push_fallback(planner, &mut schedules, earliest, dur, task_id, last_end);
@@ -477,14 +478,14 @@ fn sa_polish_inner(
     let mut neighbor_scheds: Vec<Placement> = Vec::with_capacity(n);
 
     let mut sorted: Vec<Placement> = current.schedules.clone();
-    sorted.sort_unstable_by_key(|(s, _, _)| s.0);
+    sorted.sort_unstable_by_key(|p| p.start.0);
 
     let unpinned_positions: Vec<usize> = if has_pinned {
         current
             .schedules
             .iter()
             .enumerate()
-            .filter(|(_, (_, _, id))| !pinned_ids.contains(id))
+            .filter(|(_, p)| !pinned_ids.contains(&p.task_id))
             .map(|(i, _)| i)
             .collect()
     } else {
@@ -580,7 +581,7 @@ pub(crate) fn alns_search_pinned(
     let config = AlnsConfig::default();
     let n = planner.tasks.len();
 
-    let pinned_ids: FxHashSet<usize> = pinned.iter().map(|(_, _, id)| *id).collect();
+    let pinned_ids: FxHashSet<usize> = pinned.iter().map(|p| p.task_id).collect();
 
     // 初期 priority: warm start 時は前回スケジュールの開始時刻順、そうでなければ freeness 昇順
     let mut priority: Vec<_> = (0..n).collect();
@@ -591,7 +592,7 @@ pub(crate) fn alns_search_pinned(
                     .previous_schedule
                     .get(*id)
                     .and_then(|x| *x)
-                    .map(|(s, _)| s.0)
+                    .map(|tw| tw.start.0)
                     .unwrap_or(i64::MAX)
             };
             anchor(a).cmp(&anchor(b))
@@ -781,8 +782,8 @@ pub(crate) fn alns_search_pinned(
     // 最終 plan に対して status/diagnostics を再計算。
     // decode() を pinned として検証し、capacity は別途チェックする。
     let mut sorted_scheds = best_result.plan.schedules.clone();
-    sorted_scheds.sort_unstable_by_key(|(s, _, _)| s.0);
-    let final_priority: Vec<usize> = sorted_scheds.iter().map(|(_, _, id)| *id).collect();
+    sorted_scheds.sort_unstable_by_key(|p| p.start.0);
+    let final_priority: Vec<usize> = sorted_scheds.iter().map(|p| p.task_id).collect();
     let final_input = DecodeInput {
         priority: &final_priority,
         duration_choices: &[],
@@ -794,7 +795,7 @@ pub(crate) fn alns_search_pinned(
         .plan
         .schedules
         .iter()
-        .any(|(s, e, _)| capacity_exceeded_for(planner, &best_result.plan.schedules, *s, *e))
+        .any(|p| capacity_exceeded_for(planner, &best_result.plan.schedules, p.start, p.end))
     {
         final_result
             .diagnostics
@@ -813,22 +814,26 @@ pub(crate) fn alns_search_pinned(
 
 fn has_dependency_violation(planner: &Planner, plan: &Plan, pinned_ids: &FxHashSet<usize>) -> bool {
     let n = planner.tasks.len();
-    let mut pos_index: Vec<Option<(Point, Point)>> = vec![None; n];
-    for (s, e, id) in &plan.schedules {
-        if *id < n {
-            pos_index[*id] = Some((*s, *e));
+    let mut pos_index: Vec<Option<TimeWindow>> = vec![None; n];
+    for p in &plan.schedules {
+        let s = p.start;
+        let e = p.end;
+        let id = p.task_id;
+        if id < n {
+            pos_index[id] = Some(TimeWindow::new(s, e));
         }
     }
     for task in &planner.tasks {
         if pinned_ids.contains(&task.id) || task.fixed {
             continue;
         }
-        let Some((start, _)) = pos_index[task.id] else {
+        let Some(tw) = pos_index[task.id] else {
             continue;
         };
+        let start = tw.start;
         for dep_id in &task.depends {
-            if let Some(Some((_, dep_end))) = pos_index.get(*dep_id)
-                && *dep_end > start
+            if let Some(Some(dep_tw)) = pos_index.get(*dep_id)
+                && dep_tw.end > start
             {
                 return true;
             }
@@ -843,10 +848,13 @@ fn force_fix_dependencies(planner: &Planner, plan: Plan, pinned_ids: &FxHashSet<
     let n = planner.tasks.len();
     let mut schedules = plan.schedules;
 
-    let mut pos_index: Vec<Option<(Point, Point)>> = vec![None; n];
-    for (s, e, id) in &schedules {
-        if *id < n {
-            pos_index[*id] = Some((*s, *e));
+    let mut pos_index: Vec<Option<TimeWindow>> = vec![None; n];
+    for p in &schedules {
+        let s = p.start;
+        let e = p.end;
+        let id = p.task_id;
+        if id < n {
+            pos_index[id] = Some(TimeWindow::new(s, e));
         }
     }
 
@@ -857,25 +865,26 @@ fn force_fix_dependencies(planner: &Planner, plan: Plan, pinned_ids: &FxHashSet<
             if pinned_ids.contains(&task.id) || task.fixed {
                 continue;
             }
-            let Some((start, _)) = pos_index[task.id] else {
+            let Some(tw) = pos_index[task.id] else {
                 continue;
             };
+            let start = tw.start;
             let mut latest_dep_end: Option<Point> = None;
             for dep_id in &task.depends {
-                if let Some(Some((_, dep_end))) = pos_index.get(*dep_id)
-                    && *dep_end > start
+                if let Some(Some(dep_tw)) = pos_index.get(*dep_id)
+                    && dep_tw.end > start
                 {
-                    latest_dep_end = Some(latest_dep_end.map_or(*dep_end, |m| m.max(*dep_end)));
+                    latest_dep_end = Some(latest_dep_end.map_or(dep_tw.end, |m| m.max(dep_tw.end)));
                 }
             }
             let Some(dep_end) = latest_dep_end else {
                 continue;
             };
 
-            if let Some(pos) = schedules.iter().position(|(_, _, id)| *id == task.id) {
-                let dur = schedules[pos].1.0 - schedules[pos].0.0;
-                schedules[pos] = (dep_end, Point(dep_end.0 + dur), task.id);
-                pos_index[task.id] = Some((dep_end, Point(dep_end.0 + dur)));
+            if let Some(pos) = schedules.iter().position(|p| p.task_id == task.id) {
+                let dur = schedules[pos].end.0 - schedules[pos].start.0;
+                schedules[pos] = TaskPlacement::new(dep_end, Point(dep_end.0 + dur), task.id);
+                pos_index[task.id] = Some(TimeWindow::new(dep_end, Point(dep_end.0 + dur)));
                 any_fixed = true;
             }
         }
@@ -973,13 +982,17 @@ pub(crate) fn destroy_priority(
     let count = count.min(movable.len());
 
     let n = planner.tasks.len();
-    let mut pos_index: Vec<Option<(Point, Point)>> = vec![None; n];
-    for (s, e, id) in &plan.schedules {
-        if *id < n {
-            pos_index[*id] = Some((*s, *e));
+    let mut pos_index: Vec<Option<TimeWindow>> = vec![None; n];
+    for p in &plan.schedules {
+        let s = p.start;
+        let e = p.end;
+        let id = p.task_id;
+        if id < n {
+            pos_index[id] = Some(TimeWindow::new(s, e));
         }
     }
-    let scheduled = |id: usize| -> (Point, Point) { pos_index[id].unwrap_or((Point(0), Point(0))) };
+    let scheduled =
+        |id: usize| -> TimeWindow { pos_index[id].unwrap_or(TimeWindow::new(Point(0), Point(0))) };
 
     match op {
         DestroyOperator::Random => {
@@ -992,12 +1005,14 @@ pub(crate) fn destroy_priority(
         }
         DestroyOperator::Worst => {
             let mut sorted_scheds: Vec<&Placement> = plan.schedules.iter().collect();
-            sorted_scheds.sort_unstable_by_key(|(s, _, _)| s.0);
+            sorted_scheds.sort_unstable_by_key(|p| p.start.0);
 
             let mut badness: Vec<(usize, i64)> = movable
                 .iter()
                 .map(|&id| {
-                    let (s, e) = scheduled(id);
+                    let tw = scheduled(id);
+                    let s = tw.start;
+                    let e = tw.end;
                     let task = &planner.tasks[id];
                     let mut bad = 0i64;
                     if e.0 > task.end.0 {
@@ -1008,19 +1023,19 @@ pub(crate) fn destroy_priority(
                     {
                         bad += min_start.0 - s.0;
                     }
-                    let end_pos = sorted_scheds.partition_point(|(s2, _, _)| s2.0 < e.0);
-                    for (s2, e2, id2) in &sorted_scheds[..end_pos] {
-                        if *id2 == id {
+                    let end_pos = sorted_scheds.partition_point(|p| p.start.0 < e.0);
+                    for other_p in &sorted_scheds[..end_pos] {
+                        if other_p.task_id == id {
                             continue;
                         }
-                        if e2.0 <= s.0 {
+                        if other_p.end.0 <= s.0 {
                             continue;
                         }
-                        let other = &planner.tasks[*id2];
+                        let other = &planner.tasks[other_p.task_id];
                         if !(task.parallelizable && other.allows_parallel
                             || task.allows_parallel && other.parallelizable)
                         {
-                            bad += e2.0.min(e.0) - s2.0.max(s.0);
+                            bad += other_p.end.0.min(e.0) - other_p.start.0.max(s.0);
                         }
                     }
                     (id, bad)
@@ -1035,7 +1050,9 @@ pub(crate) fn destroy_priority(
             }
             let seed_idx = rng.random_range(0..movable.len());
             let seed = movable[seed_idx];
-            let (seed_s, seed_e) = scheduled(seed);
+            let seed_tw = scheduled(seed);
+            let seed_s = seed_tw.start;
+            let seed_e = seed_tw.end;
             let window = (planner.tasks[seed].cost_estimate.avg as i64).max(5);
 
             let mut scored: Vec<(usize, i64)> = movable
@@ -1045,7 +1062,9 @@ pub(crate) fn destroy_priority(
                         return (id, 1);
                     }
                     let task = &planner.tasks[id];
-                    let (s, e) = scheduled(id);
+                    let tw = scheduled(id);
+                    let s = tw.start;
+                    let e = tw.end;
                     let time_dist = if e.0 <= seed_s.0 {
                         seed_s.0 - e.0
                     } else if s.0 >= seed_e.0 {
@@ -1204,8 +1223,8 @@ const LONG_SHIFT_ONE_IN: u32 = 5;
 
 /// プラン全体の時間スパン。長距離 shift の移動幅に使う。
 fn plan_span(plan: &Plan) -> i64 {
-    let min_s = plan.schedules.iter().map(|(s, _, _)| s.0).min();
-    let max_e = plan.schedules.iter().map(|(_, e, _)| e.0).max();
+    let min_s = plan.schedules.iter().map(|p| p.start.0).min();
+    let max_e = plan.schedules.iter().map(|p| p.end.0).max();
     match (min_s, max_e) {
         (Some(a), Some(b)) => (b - a).max(1),
         _ => 1,
@@ -1367,7 +1386,7 @@ pub fn sa_lns_partial(planner: &Planner, pinned: &[Placement], rng: &mut impl Rn
         return sa_lns(planner, rng);
     }
 
-    let pinned_ids: FxHashSet<usize> = pinned.iter().map(|(_, _, id)| *id).collect();
+    let pinned_ids: FxHashSet<usize> = pinned.iter().map(|p| p.task_id).collect();
 
     let unpinned_count = planner
         .tasks
@@ -1390,7 +1409,7 @@ pub fn sa_lns_partial(planner: &Planner, pinned: &[Placement], rng: &mut impl Rn
         .schedules
         .iter()
         .enumerate()
-        .filter(|(_, (_, _, id))| !pinned_ids.contains(id))
+        .filter(|(_, p)| !pinned_ids.contains(&p.task_id))
         .map(|(i, _)| i)
         .collect();
 
@@ -1539,10 +1558,13 @@ pub fn sa_lns_partial(planner: &Planner, pinned: &[Placement], rng: &mut impl Rn
 /// SA 後の仕上げ: 依存違反中のタスクを取り除いて貪欲に再配置し、
 /// T=0 の評価が改善する場合のみ採用する。
 fn repair_polish(planner: &Planner, best: Plan, pinned_ids: Option<&FxHashSet<usize>>) -> Plan {
-    let mut index: Vec<Option<(Point, Point)>> = vec![None; planner.tasks.len()];
-    for (s, e, id) in &best.schedules {
-        if *id < index.len() {
-            index[*id] = Some((*s, *e));
+    let mut index: Vec<Option<TimeWindow>> = vec![None; planner.tasks.len()];
+    for p in &best.schedules {
+        let s = p.start;
+        let e = p.end;
+        let id = p.task_id;
+        if id < index.len() {
+            index[id] = Some(TimeWindow::new(s, e));
         }
     }
 
@@ -1553,12 +1575,13 @@ fn repair_polish(planner: &Planner, best: Plan, pinned_ids: Option<&FxHashSet<us
         {
             continue;
         }
-        let Some((start, _)) = index[task.id] else {
+        let Some(tw) = index[task.id] else {
             continue;
         };
+        let start = tw.start;
         for dep_id in &task.depends {
-            if let Some(Some((_, dep_end))) = index.get(*dep_id)
-                && *dep_end > start
+            if let Some(Some(dep_tw)) = index.get(*dep_id)
+                && dep_tw.end > start
             {
                 violators.insert(task.id);
             }
@@ -1594,8 +1617,8 @@ fn repair_polish(planner: &Planner, best: Plan, pinned_ids: Option<&FxHashSet<us
     let mut remaining = Vec::new();
     let mut destroyed: Vec<usize> = Vec::new();
     for sched in &best.schedules {
-        if violators.contains(&sched.2) {
-            destroyed.push(sched.2);
+        if violators.contains(&sched.task_id) {
+            destroyed.push(sched.task_id);
         } else {
             remaining.push(*sched);
         }
@@ -1632,7 +1655,7 @@ fn repair_polish(planner: &Planner, best: Plan, pinned_ids: Option<&FxHashSet<us
 }
 
 fn build_initial_partial(planner: &Planner, pinned: &[Placement]) -> Plan {
-    let pinned_ids: FxHashSet<usize> = pinned.iter().map(|(_, _, id)| *id).collect();
+    let pinned_ids: FxHashSet<usize> = pinned.iter().map(|p| p.task_id).collect();
 
     let unpinned_ids: FxHashSet<usize> = planner
         .tasks
@@ -1654,7 +1677,7 @@ fn build_initial_partial(planner: &Planner, pinned: &[Placement]) -> Plan {
             && let Some(start) = task.start
         {
             let end = Point(start.0 + dur);
-            schedules.push((start, end, task_id));
+            schedules.push(TaskPlacement::new(start, end, task_id));
         }
     }
 
@@ -1668,13 +1691,14 @@ fn build_initial_partial(planner: &Planner, pinned: &[Placement]) -> Plan {
         }
 
         let earliest = compute_earliest(planner, &schedules, task);
-        if let Ok((start, end)) = try_place::<false>(planner, &schedules, task, earliest, dur, None)
-        {
-            schedules.push((start, end, task_id));
+        if let Ok(tw) = try_place::<false>(planner, &schedules, task, earliest, dur, None) {
+            let start = tw.start;
+            let end = tw.end;
+            schedules.push(TaskPlacement::new(start, end, task_id));
         } else {
             let last_end = schedules
                 .iter()
-                .map(|(_, e, _)| e.0)
+                .map(|p| p.end.0)
                 .max()
                 .unwrap_or(planner.now.0);
             let _ = push_fallback(
@@ -1694,7 +1718,7 @@ fn build_initial_partial(planner: &Planner, pinned: &[Placement]) -> Plan {
 fn is_tabu_scheds(tabu: &TabuList, schedules: &[Placement]) -> bool {
     schedules
         .iter()
-        .any(|(s, e, id)| tabu.contains(*id, *s, e.0 - s.0))
+        .any(|p| tabu.contains(p.task_id, p.start, p.end.0 - p.start.0))
 }
 
 /// O(n) tabu marking: scratch buffer を再利用して allocation を避ける。
@@ -1707,21 +1731,27 @@ fn mark_tabu_scheds(
     let max_id = current
         .iter()
         .chain(neighbor.iter())
-        .map(|(_, _, id)| *id)
+        .map(|p| p.task_id)
         .max()
         .unwrap_or(0);
     scratch.clear();
     scratch.resize(max_id + 1, None);
-    for (s, e, id) in current {
-        scratch[*id] = Some((s.0, e.0));
+    for p in current {
+        let s = p.start;
+        let e = p.end;
+        let id = p.task_id;
+        scratch[id] = Some((s.0, e.0));
     }
-    for (s, e, id) in neighbor {
-        let changed = match scratch[*id] {
+    for p in neighbor {
+        let s = p.start;
+        let e = p.end;
+        let id = p.task_id;
+        let changed = match scratch[id] {
             Some((cs, ce)) => cs != s.0 || ce != e.0,
             None => true,
         };
         if changed {
-            tabu.push(*id, *s, e.0 - s.0);
+            tabu.push(id, s, e.0 - s.0);
         }
     }
 }
@@ -1848,7 +1878,10 @@ fn neighbor_shift_into(
         return false;
     }
     let idx = rng.random_range(0..scheds.len());
-    let (start, end, task_id) = scheds[idx];
+    let p = scheds[idx];
+    let start = p.start;
+    let end = p.end;
+    let task_id = p.task_id;
     if planner.tasks[task_id].fixed {
         return false;
     }
@@ -1856,7 +1889,7 @@ fn neighbor_shift_into(
     let range = shift_range_from_span(dur, rng, span);
     let k = rand_range(rng, -range, range + 1);
     let new_start_0 = (start.0 + k).max(planner.now.0);
-    scheds[idx] = (Point(new_start_0), Point(new_start_0 + dur), task_id);
+    scheds[idx] = TaskPlacement::new(Point(new_start_0), Point(new_start_0 + dur), task_id);
     true
 }
 
@@ -1867,7 +1900,10 @@ fn neighbor_shift_at_into(
     rng: &mut impl Rng,
     span: i64,
 ) -> bool {
-    let (start, end, task_id) = scheds[idx];
+    let p = scheds[idx];
+    let start = p.start;
+    let end = p.end;
+    let task_id = p.task_id;
     if planner.tasks[task_id].fixed {
         return false;
     }
@@ -1875,7 +1911,7 @@ fn neighbor_shift_at_into(
     let range = shift_range_from_span(dur, rng, span);
     let k = rand_range(rng, -range, range + 1);
     let new_start_0 = (start.0 + k).max(planner.now.0);
-    scheds[idx] = (Point(new_start_0), Point(new_start_0 + dur), task_id);
+    scheds[idx] = TaskPlacement::new(Point(new_start_0), Point(new_start_0 + dur), task_id);
     true
 }
 
@@ -1888,15 +1924,21 @@ fn neighbor_swap_into(planner: &Planner, scheds: &mut [Placement], rng: &mut imp
     if b == a {
         b = (a + 1) % scheds.len();
     }
-    let (a_s, a_e, a_id) = scheds[a];
-    let (b_s, b_e, b_id) = scheds[b];
+    let a_p = scheds[a];
+    let a_s = a_p.start;
+    let a_e = a_p.end;
+    let a_id = a_p.task_id;
+    let b_p = scheds[b];
+    let b_s = b_p.start;
+    let b_e = b_p.end;
+    let b_id = b_p.task_id;
     if planner.tasks[a_id].fixed || planner.tasks[b_id].fixed {
         return false;
     }
     let a_dur = a_e.0 - a_s.0;
     let b_dur = b_e.0 - b_s.0;
-    scheds[a] = (b_s, Point(b_s.0 + a_dur), a_id);
-    scheds[b] = (a_s, Point(a_s.0 + b_dur), b_id);
+    scheds[a] = TaskPlacement::new(b_s, Point(b_s.0 + a_dur), a_id);
+    scheds[b] = TaskPlacement::new(a_s, Point(a_s.0 + b_dur), b_id);
     true
 }
 
@@ -1904,15 +1946,21 @@ fn neighbor_swap_at_into(planner: &Planner, scheds: &mut [Placement], a: usize, 
     if a == b {
         return false;
     }
-    let (a_s, a_e, a_id) = scheds[a];
-    let (b_s, b_e, b_id) = scheds[b];
+    let a_p = scheds[a];
+    let a_s = a_p.start;
+    let a_e = a_p.end;
+    let a_id = a_p.task_id;
+    let b_p = scheds[b];
+    let b_s = b_p.start;
+    let b_e = b_p.end;
+    let b_id = b_p.task_id;
     if planner.tasks[a_id].fixed || planner.tasks[b_id].fixed {
         return false;
     }
     let a_dur = a_e.0 - a_s.0;
     let b_dur = b_e.0 - b_s.0;
-    scheds[a] = (b_s, Point(b_s.0 + a_dur), a_id);
-    scheds[b] = (a_s, Point(a_s.0 + b_dur), b_id);
+    scheds[a] = TaskPlacement::new(b_s, Point(b_s.0 + a_dur), a_id);
+    scheds[b] = TaskPlacement::new(a_s, Point(a_s.0 + b_dur), b_id);
     true
 }
 
@@ -1921,7 +1969,10 @@ fn neighbor_duration_into(planner: &Planner, scheds: &mut [Placement], rng: &mut
         return false;
     }
     let idx = rng.random_range(0..scheds.len());
-    let (start, end, task_id) = scheds[idx];
+    let p = scheds[idx];
+    let start = p.start;
+    let end = p.end;
+    let task_id = p.task_id;
     if planner.tasks[task_id].fixed {
         return false;
     }
@@ -1934,7 +1985,7 @@ fn neighbor_duration_into(planner: &Planner, scheds: &mut [Placement], rng: &mut
     if new_dur < 1 {
         return false;
     }
-    scheds[idx] = (start, Point(start.0 + new_dur), task_id);
+    scheds[idx] = TaskPlacement::new(start, Point(start.0 + new_dur), task_id);
     true
 }
 
@@ -1944,7 +1995,10 @@ fn neighbor_duration_at_into(
     idx: usize,
     rng: &mut impl Rng,
 ) -> bool {
-    let (start, end, task_id) = scheds[idx];
+    let p = scheds[idx];
+    let start = p.start;
+    let end = p.end;
+    let task_id = p.task_id;
     if planner.tasks[task_id].fixed {
         return false;
     }
@@ -1957,7 +2011,7 @@ fn neighbor_duration_at_into(
     if new_dur < 1 {
         return false;
     }
-    scheds[idx] = (start, Point(start.0 + new_dur), task_id);
+    scheds[idx] = TaskPlacement::new(start, Point(start.0 + new_dur), task_id);
     true
 }
 
@@ -1970,20 +2024,24 @@ fn neighbor_reorder_into(planner: &Planner, scheds: &mut [Placement], rng: &mut 
     if b == a {
         b = (a + 1) % scheds.len();
     }
-    let (a_s, _, a_id) = scheds[a];
-    let (b_s, _, b_id) = scheds[b];
+    let a_p = scheds[a];
+    let b_p = scheds[b];
+    let a_s = a_p.start;
+    let a_id = a_p.task_id;
+    let b_s = b_p.start;
+    let b_id = b_p.task_id;
     if planner.tasks[a_id].fixed || planner.tasks[b_id].fixed {
         return false;
     }
     let (first, second) = if a_s.0 <= b_s.0 { (a, b) } else { (b, a) };
-    let f_s = scheds[first].0;
-    let f_e = scheds[first].1;
+    let f_s = scheds[first].start;
+    let f_e = scheds[first].end;
     let f_dur = f_e.0 - f_s.0;
-    let s_s = scheds[second].0;
-    let s_e = scheds[second].1;
+    let s_s = scheds[second].start;
+    let s_e = scheds[second].end;
     let s_dur = s_e.0 - s_s.0;
-    scheds[first] = (s_s, Point(s_s.0 + f_dur), scheds[first].2);
-    scheds[second] = (f_s, Point(f_s.0 + s_dur), scheds[second].2);
+    scheds[first] = TaskPlacement::new(s_s, Point(s_s.0 + f_dur), scheds[first].task_id);
+    scheds[second] = TaskPlacement::new(f_s, Point(f_s.0 + s_dur), scheds[second].task_id);
     true
 }
 
@@ -2001,23 +2059,25 @@ fn neighbor_reorder_partial_into(
     }
     let b = unpinned_positions[b_idx];
 
-    let (_, _, a_id) = scheds[a];
-    let (_, _, b_id) = scheds[b];
+    let a_p = scheds[a];
+    let b_p = scheds[b];
+    let a_id = a_p.task_id;
+    let b_id = b_p.task_id;
     if planner.tasks[a_id].fixed || planner.tasks[b_id].fixed {
         return false;
     }
 
-    let (a_s, _, _) = scheds[a];
-    let (b_s, _, _) = scheds[b];
+    let a_s = a_p.start;
+    let b_s = b_p.start;
     let (first, second) = if a_s.0 <= b_s.0 { (a, b) } else { (b, a) };
-    let f_s = scheds[first].0;
-    let f_e = scheds[first].1;
+    let f_s = scheds[first].start;
+    let f_e = scheds[first].end;
     let f_dur = f_e.0 - f_s.0;
-    let s_s = scheds[second].0;
-    let s_e = scheds[second].1;
+    let s_s = scheds[second].start;
+    let s_e = scheds[second].end;
     let s_dur = s_e.0 - s_s.0;
-    scheds[first] = (s_s, Point(s_s.0 + f_dur), scheds[first].2);
-    scheds[second] = (f_s, Point(f_s.0 + s_dur), scheds[second].2);
+    scheds[first] = TaskPlacement::new(s_s, Point(s_s.0 + f_dur), scheds[first].task_id);
+    scheds[second] = TaskPlacement::new(f_s, Point(f_s.0 + s_dur), scheds[second].task_id);
     true
 }
 
@@ -2028,10 +2088,13 @@ fn neighbor_repair_depend_into(
     pinned_ids: Option<&FxHashSet<usize>>,
 ) -> bool {
     let n = planner.tasks.len();
-    let mut index: Vec<Option<(Point, Point)>> = vec![None; n];
-    for (s, e, id) in scheds.iter() {
-        if *id < n {
-            index[*id] = Some((*s, *e));
+    let mut index: Vec<Option<TimeWindow>> = vec![None; n];
+    for p in scheds.iter() {
+        let s = p.start;
+        let e = p.end;
+        let id = p.task_id;
+        if id < n {
+            index[id] = Some(TimeWindow::new(s, e));
         }
     }
 
@@ -2045,15 +2108,16 @@ fn neighbor_repair_depend_into(
         if task.fixed {
             continue;
         }
-        let Some((start, _)) = index[task.id] else {
+        let Some(tw) = index[task.id] else {
             continue;
         };
+        let start = tw.start;
         let mut latest_dep_end: Option<Point> = None;
         for dep_id in &task.depends {
-            if let Some(Some((_, dep_end))) = index.get(*dep_id)
-                && *dep_end > start
+            if let Some(Some(dep_tw)) = index.get(*dep_id)
+                && dep_tw.end > start
             {
-                latest_dep_end = Some(latest_dep_end.map_or(*dep_end, |m| m.max(*dep_end)));
+                latest_dep_end = Some(latest_dep_end.map_or(dep_tw.end, |m| m.max(dep_tw.end)));
             }
         }
         if let Some(dep_end) = latest_dep_end {
@@ -2066,12 +2130,14 @@ fn neighbor_repair_depend_into(
     }
 
     let (task_id, new_start) = violations[rng.random_range(0..violations.len())];
-    let Some(pos) = scheds.iter().position(|(_, _, id)| *id == task_id) else {
+    let Some(pos) = scheds.iter().position(|p| p.task_id == task_id) else {
         return false;
     };
-    let (start, end, _) = scheds[pos];
+    let p = scheds[pos];
+    let start = p.start;
+    let end = p.end;
     let dur = end.0 - start.0;
-    scheds[pos] = (new_start, Point(new_start.0 + dur), task_id);
+    scheds[pos] = TaskPlacement::new(new_start, Point(new_start.0 + dur), task_id);
     true
 }
 
@@ -2140,8 +2206,8 @@ fn neighbor_habit_exception_into(
     let member = movable[rng.random_range(0..movable.len())];
     let dur = scheds
         .iter()
-        .find(|(_, _, id)| *id == member)
-        .map(|(s, e, _)| e.0 - s.0)
+        .find(|p| p.task_id == member)
+        .map(|p| p.end.0 - p.start.0)
         .unwrap_or(1);
     let span = plan_span_scheds(scheds);
     let range = shift_range_from_span(dur, rng, span);
@@ -2171,9 +2237,11 @@ fn neighbor_lns_into(planner: &Planner, scheds: &mut Vec<Placement>, rng: &mut i
     }
 
     let pivot_idx = rng.random_range(0..scheds.len());
-    let (pivot_start, pivot_end, _) = scheds[pivot_idx];
+    let pivot_p = scheds[pivot_idx];
+    let pivot_start = pivot_p.start;
+    let pivot_end = pivot_p.end;
 
-    let total_dur: i64 = scheds.iter().map(|(s, e, _)| e.0 - s.0).sum();
+    let total_dur: i64 = scheds.iter().map(|p| p.end.0 - p.start.0).sum();
     let window_size = ((pivot_end.0 - pivot_start.0) * 2)
         .max(4)
         .min(total_dur / 3 + 1);
@@ -2184,10 +2252,10 @@ fn neighbor_lns_into(planner: &Planner, scheds: &mut Vec<Placement>, rng: &mut i
     let mut destroyed_ids = Vec::new();
     let mut remaining = Vec::new();
     for sched in scheds.iter() {
-        if planner.tasks[sched.2].fixed {
+        if planner.tasks[sched.task_id].fixed {
             remaining.push(*sched);
-        } else if sched.0.0 >= window_start && sched.0.0 < window_end {
-            destroyed_ids.push(sched.2);
+        } else if sched.start.0 >= window_start && sched.start.0 < window_end {
+            destroyed_ids.push(sched.task_id);
         } else {
             remaining.push(*sched);
         }
@@ -2209,9 +2277,11 @@ fn neighbor_lns_partial_into(
     }
 
     let pivot_idx = rng.random_range(0..scheds.len());
-    let (pivot_start, pivot_end, _) = scheds[pivot_idx];
+    let pivot_p = scheds[pivot_idx];
+    let pivot_start = pivot_p.start;
+    let pivot_end = pivot_p.end;
 
-    let total_dur: i64 = scheds.iter().map(|(s, e, _)| e.0 - s.0).sum();
+    let total_dur: i64 = scheds.iter().map(|p| p.end.0 - p.start.0).sum();
     let window_size = ((pivot_end.0 - pivot_start.0) * 2)
         .max(4)
         .min(total_dur / 3 + 1);
@@ -2222,10 +2292,10 @@ fn neighbor_lns_partial_into(
     let mut destroyed_ids = Vec::new();
     let mut remaining = Vec::new();
     for sched in scheds.iter() {
-        if planner.tasks[sched.2].fixed || pinned_ids.contains(&sched.2) {
+        if planner.tasks[sched.task_id].fixed || pinned_ids.contains(&sched.task_id) {
             remaining.push(*sched);
-        } else if sched.0.0 >= window_start && sched.0.0 < window_end {
-            destroyed_ids.push(sched.2);
+        } else if sched.start.0 >= window_start && sched.start.0 < window_end {
+            destroyed_ids.push(sched.task_id);
         } else {
             remaining.push(*sched);
         }
@@ -2238,8 +2308,8 @@ fn neighbor_lns_partial_into(
 
 /// Cached plan_span that works on a slice.
 fn plan_span_scheds(schedules: &[Placement]) -> i64 {
-    let min_s = schedules.iter().map(|(s, _, _)| s.0).min();
-    let max_e = schedules.iter().map(|(_, e, _)| e.0).max();
+    let min_s = schedules.iter().map(|p| p.start.0).min();
+    let max_e = schedules.iter().map(|p| p.end.0).max();
     match (min_s, max_e) {
         (Some(a), Some(b)) => (b - a).max(1),
         _ => 1,
@@ -2276,19 +2346,22 @@ fn incremental_decode(
     // 生存タスクの配置を維持
     let mut scheds: Vec<Placement> = current_schedules
         .iter()
-        .filter(|(_, _, id)| !removed_set.contains(id))
+        .filter(|p| !removed_set.contains(&p.task_id))
         .copied()
         .collect();
 
     // 生存タスクの index (latest_end 計算用)
-    let mut pos_index: Vec<Option<(Point, Point)>> = vec![None; n];
-    for (s, e, id) in &scheds {
-        if *id < n {
-            pos_index[*id] = Some((*s, *e));
+    let mut pos_index: Vec<Option<TimeWindow>> = vec![None; n];
+    for p in &scheds {
+        let s = p.start;
+        let e = p.end;
+        let id = p.task_id;
+        if id < n {
+            pos_index[id] = Some(TimeWindow::new(s, e));
         }
     }
 
-    let mut placed: FxHashSet<usize> = scheds.iter().map(|(_, _, id)| *id).collect();
+    let mut placed: FxHashSet<usize> = scheds.iter().map(|p| p.task_id).collect();
     let mut pending: Vec<usize> = removed.to_vec();
 
     while !pending.is_empty() {
@@ -2310,18 +2383,16 @@ fn incremental_decode(
             let earliest = compute_earliest_indexed(planner, &pos_index, task);
             let latest_end = dependents[task_id]
                 .iter()
-                .filter_map(|&d| pos_index[d].map(|(s, _)| s))
+                .filter_map(|&d| pos_index[d].map(|tw| tw.start))
                 .min();
-            if let Ok((start, end)) =
-                try_place::<false>(planner, &scheds, task, earliest, dur, latest_end)
-            {
-                scheds.push((start, end, task_id));
-                pos_index[task_id] = Some((start, end));
+            if let Ok(tw) = try_place::<false>(planner, &scheds, task, earliest, dur, latest_end) {
+                scheds.push(TaskPlacement::new(tw.start, tw.end, task_id));
+                pos_index[task_id] = Some(tw);
             } else {
                 let (start, end, _err) =
                     fallback_for::<false>(planner, &scheds, earliest, dur, latest_end, task);
-                scheds.push((start, end, task_id));
-                pos_index[task_id] = Some((start, end));
+                scheds.push(TaskPlacement::new(start, end, task_id));
+                pos_index[task_id] = Some(TimeWindow::new(start, end));
             }
             placed.insert(task_id);
             progressed = true;
@@ -2334,12 +2405,12 @@ fn incremental_decode(
                 let earliest = compute_earliest_indexed(planner, &pos_index, task);
                 let latest_end = dependents[task_id]
                     .iter()
-                    .filter_map(|&d| pos_index[d].map(|(s, _)| s))
+                    .filter_map(|&d| pos_index[d].map(|tw| tw.start))
                     .min();
                 let (start, end, _err) =
                     fallback_for::<false>(planner, &scheds, earliest, dur, latest_end, task);
-                scheds.push((start, end, task_id));
-                pos_index[task_id] = Some((start, end));
+                scheds.push(TaskPlacement::new(start, end, task_id));
+                pos_index[task_id] = Some(TimeWindow::new(start, end));
             }
             break;
         }
@@ -2418,17 +2489,19 @@ fn place_one(planner: &Planner, scheds: &mut Vec<Placement>, task_id: usize) {
         && let Some(start) = task.start
     {
         let end = Point(start.0 + dur);
-        scheds.push((start, end, task_id));
+        scheds.push(TaskPlacement::new(start, end, task_id));
         return;
     }
     let earliest = compute_earliest(planner, scheds, task);
-    if let Ok((start, end)) = try_place::<false>(planner, scheds, task, earliest, dur, None) {
-        scheds.push((start, end, task_id));
+    if let Ok(tw) = try_place::<false>(planner, scheds, task, earliest, dur, None) {
+        let start = tw.start;
+        let end = tw.end;
+        scheds.push(TaskPlacement::new(start, end, task_id));
     } else {
         // build_initial と同様、配置できない場合は末尾に fallback してタスクを落とさない。
         let last_end = scheds
             .iter()
-            .map(|(_, e, _)| e.0)
+            .map(|p| p.end.0)
             .max()
             .unwrap_or(planner.now.0);
         let _ = push_fallback(planner, scheds, earliest, dur, task_id, Point(last_end));
@@ -2487,7 +2560,7 @@ mod tests {
                 .zip(offsets.iter())
                 .map(|(t, off)| {
                     let s = Point(t.start.unwrap().0 + off);
-                    (s, Point(s.0 + 6), t.id)
+                    TaskPlacement::new(s, Point(s.0 + 6), t.id)
                 })
                 .collect(),
         };
@@ -2500,8 +2573,7 @@ mod tests {
             let mut buf = current.schedules.clone();
             if neighbor_habit_anchor_into(&planner, &mut buf, &mut rng, &habit_index, &pinned) {
                 saw_some = true;
-                let tods_after: Vec<i64> =
-                    buf.iter().map(|(s, _, _)| s.0.rem_euclid(spd)).collect();
+                let tods_after: Vec<i64> = buf.iter().map(|p| p.start.0.rem_euclid(spd)).collect();
                 let first = tods_after[0];
                 assert!(
                     tods_after.iter().all(|t| *t == first),
@@ -2554,7 +2626,7 @@ mod tests {
                 .iter()
                 .map(|t| {
                     let s = t.start.unwrap();
-                    (s, Point(s.0 + 6), t.id)
+                    TaskPlacement::new(s, Point(s.0 + 6), t.id)
                 })
                 .collect(),
         };
@@ -2604,7 +2676,7 @@ mod tests {
             .plan
             .schedules
             .iter()
-            .map(|(s, _, _)| s.0.rem_euclid(spd))
+            .map(|p| p.start.0.rem_euclid(spd))
             .collect();
         let first = tods[0];
         assert!(
@@ -2676,10 +2748,10 @@ mod tests {
         let p = test_planner(vec![t0, t1]);
         let plan = build_initial(&p);
         assert_eq!(plan.schedules.len(), 2, "both tasks should be scheduled");
-        let t0_entry = plan.schedules.iter().find(|(_, _, id)| *id == 0).unwrap();
-        let t1_entry = plan.schedules.iter().find(|(_, _, id)| *id == 1).unwrap();
+        let t0_entry = plan.schedules.iter().find(|p| p.task_id == 0).unwrap();
+        let t1_entry = plan.schedules.iter().find(|p| p.task_id == 1).unwrap();
         assert!(
-            t0_entry.1.0 <= t1_entry.0.0,
+            t0_entry.end.0 <= t1_entry.start.0,
             "task 0 must end before task 1 starts"
         );
     }
@@ -2747,14 +2819,14 @@ mod tests {
 
         assert_eq!(plan.schedules.len(), 2, "both tasks should be scheduled");
 
-        let b_entry = plan.schedules.iter().find(|(_, _, id)| *id == 1).unwrap();
-        let a_entry = plan.schedules.iter().find(|(_, _, id)| *id == 0).unwrap();
+        let b_entry = plan.schedules.iter().find(|p| p.task_id == 1).unwrap();
+        let a_entry = plan.schedules.iter().find(|p| p.task_id == 0).unwrap();
 
         let b_score = evaluate(&p, &plan, 0.0, 1.0);
         let swapped = Plan {
             schedules: vec![
-                (a_entry.0, a_entry.1, b_entry.2),
-                (b_entry.0, b_entry.1, a_entry.2),
+                TaskPlacement::new(a_entry.start, a_entry.end, b_entry.task_id),
+                TaskPlacement::new(b_entry.start, b_entry.end, a_entry.task_id),
             ],
         };
         let swapped_score = evaluate(&p, &swapped, 0.0, 1.0);
@@ -2795,9 +2867,12 @@ mod tests {
         let mut rng = rng();
         let plan = sa_lns(&p, &mut rng);
 
-        let t0_entry = plan.schedules.iter().find(|(_, _, id)| *id == 0).unwrap();
-        let t1_entry = plan.schedules.iter().find(|(_, _, id)| *id == 1).unwrap();
-        assert!(t0_entry.1.0 <= t1_entry.0.0, "SA must respect dependencies");
+        let t0_entry = plan.schedules.iter().find(|p| p.task_id == 0).unwrap();
+        let t1_entry = plan.schedules.iter().find(|p| p.task_id == 1).unwrap();
+        assert!(
+            t0_entry.end.0 <= t1_entry.start.0,
+            "SA must respect dependencies"
+        );
     }
 
     // Regression: zero-avg tasks (e.g. iCal imports with avg_minutes=0) must
@@ -2838,7 +2913,7 @@ mod tests {
             2,
             "zero-avg task must not be dropped by greedy_rebuild: {rebuilt:?}"
         );
-        assert!(rebuilt.iter().any(|(_, _, id)| *id == 0));
+        assert!(rebuilt.iter().any(|p| p.task_id == 0));
     }
 
     // Regression (#391): fixed-time tasks must not overlap with normal tasks.
@@ -2876,21 +2951,21 @@ mod tests {
         let plan = build_initial(&p);
         assert_eq!(plan.schedules.len(), 2);
 
-        let f = plan.schedules.iter().find(|(_, _, id)| *id == 0).unwrap();
-        let n = plan.schedules.iter().find(|(_, _, id)| *id == 1).unwrap();
+        let f = plan.schedules.iter().find(|p| p.task_id == 0).unwrap();
+        let n = plan.schedules.iter().find(|p| p.task_id == 1).unwrap();
 
         // Fixed task must be at its start time.
-        assert_eq!(f.0.0, 2, "fixed task must be at its start time");
-        assert_eq!(f.1.0, 4, "fixed task end");
+        assert_eq!(f.start.0, 2, "fixed task must be at its start time");
+        assert_eq!(f.end.0, 4, "fixed task end");
 
         // Normal task must not overlap with the fixed task.
         assert!(
-            n.1.0 <= f.0.0 || n.0.0 >= f.1.0,
+            n.end.0 <= f.start.0 || n.start.0 >= f.end.0,
             "normal task [{}, {}) must not overlap fixed task [{}, {})",
-            n.0.0,
-            n.1.0,
-            f.0.0,
-            f.1.0
+            n.start.0,
+            n.end.0,
+            f.start.0,
+            f.end.0
         );
     }
 
@@ -2924,17 +2999,17 @@ mod tests {
         let p = test_planner(vec![fixed, normal]);
         let plan = build_initial_partial(&p, &[]);
 
-        let f = plan.schedules.iter().find(|(_, _, id)| *id == 0).unwrap();
-        let n = plan.schedules.iter().find(|(_, _, id)| *id == 1).unwrap();
+        let f = plan.schedules.iter().find(|p| p.task_id == 0).unwrap();
+        let n = plan.schedules.iter().find(|p| p.task_id == 1).unwrap();
 
-        assert_eq!(f.0.0, 2, "fixed task must be at its start time");
+        assert_eq!(f.start.0, 2, "fixed task must be at its start time");
         assert!(
-            n.1.0 <= f.0.0 || n.0.0 >= f.1.0,
+            n.end.0 <= f.start.0 || n.start.0 >= f.end.0,
             "normal task [{}, {}) must not overlap fixed task [{}, {})",
-            n.0.0,
-            n.1.0,
-            f.0.0,
-            f.1.0
+            n.start.0,
+            n.end.0,
+            f.start.0,
+            f.end.0
         );
     }
 
@@ -2971,16 +3046,16 @@ mod tests {
         let p = test_planner(vec![dep, dependent]);
         let plan = build_initial_partial(&p, &[]);
 
-        let dep_entry = plan.schedules.iter().find(|(_, _, id)| *id == 0).unwrap();
-        let dependent_entry = plan.schedules.iter().find(|(_, _, id)| *id == 1).unwrap();
+        let dep_entry = plan.schedules.iter().find(|p| p.task_id == 0).unwrap();
+        let dependent_entry = plan.schedules.iter().find(|p| p.task_id == 1).unwrap();
 
         assert!(
-            dependent_entry.0.0 >= dep_entry.1.0,
+            dependent_entry.start.0 >= dep_entry.end.0,
             "dependent task [{}, {}) must start after dependency [{}, {}) ends",
-            dependent_entry.0.0,
-            dependent_entry.1.0,
-            dep_entry.0.0,
-            dep_entry.1.0
+            dependent_entry.start.0,
+            dependent_entry.end.0,
+            dep_entry.start.0,
+            dep_entry.end.0
         );
     }
 
@@ -3014,17 +3089,17 @@ mod tests {
         let p = test_planner(vec![fixed, normal]);
         let rebuilt = greedy_rebuild(&p, &[], &[0, 1]);
 
-        let f = rebuilt.iter().find(|(_, _, id)| *id == 0).unwrap();
-        let n = rebuilt.iter().find(|(_, _, id)| *id == 1).unwrap();
+        let f = rebuilt.iter().find(|p| p.task_id == 0).unwrap();
+        let n = rebuilt.iter().find(|p| p.task_id == 1).unwrap();
 
-        assert_eq!(f.0.0, 2, "fixed task must be at its start time");
+        assert_eq!(f.start.0, 2, "fixed task must be at its start time");
         assert!(
-            n.1.0 <= f.0.0 || n.0.0 >= f.1.0,
+            n.end.0 <= f.start.0 || n.start.0 >= f.end.0,
             "normal task [{}, {}) must not overlap fixed task [{}, {})",
-            n.0.0,
-            n.1.0,
-            f.0.0,
-            f.1.0
+            n.start.0,
+            n.end.0,
+            f.start.0,
+            f.end.0
         );
     }
 
@@ -3060,7 +3135,10 @@ mod tests {
         let p = test_planner(vec![dep, violator]);
         // Force a dependency violation: dep ends at 5, violator starts at 0.
         let bad = Plan {
-            schedules: vec![(Point(0), Point(5), 0), (Point(0), Point(1), 1)],
+            schedules: vec![
+                TaskPlacement::new(Point(0), Point(5), 0),
+                TaskPlacement::new(Point(0), Point(1), 1),
+            ],
         };
         let polished = repair_polish(&p, bad, None);
         assert_eq!(
@@ -3069,7 +3147,7 @@ mod tests {
             "zero-avg violator must not be dropped by repair_polish: {:?}",
             polished.schedules
         );
-        assert!(polished.schedules.iter().any(|(_, _, id)| *id == 1));
+        assert!(polished.schedules.iter().any(|p| p.task_id == 1));
     }
 
     mod alns_tests {
@@ -3175,7 +3253,7 @@ mod tests {
             };
             let mut planner = test_planner(vec![task]);
             planner.set_warm_start(true);
-            planner.set_previous_schedule(&[(Point(42), Point(43), 0)]);
+            planner.set_previous_schedule(&[TaskPlacement::new(Point(42), Point(43), 0)]);
             let mut rng = StdRng::seed_from_u64(1);
             let result = alns_search_pinned(&planner, &[], &mut rng);
             assert_eq!(result.plan.task_start(0), Some(Point(42)));

@@ -294,27 +294,27 @@ fn report(
 fn metrics(planner: &takusu_core::Planner, plan: &takusu_core::Plan) -> Metrics {
     let mut by_id = vec![None; planner.tasks().len()];
     let mut duplicates = 0;
-    for (start, end, id) in &plan.schedules {
-        if let Some(slot) = by_id.get_mut(*id) {
+    for p in &plan.schedules {
+        if let Some(slot) = by_id.get_mut(p.task_id) {
             if slot.is_some() {
                 duplicates += 1;
             }
-            *slot = Some((*start, *end));
+            *slot = Some((p.start, p.end));
         }
     }
 
     let missing = by_id.iter().filter(|slot| slot.is_none()).count();
     let mut overlap_slots = 0;
-    for (i, (a_start, a_end, a_id)) in plan.schedules.iter().enumerate() {
-        for (b_start, b_end, b_id) in plan.schedules.iter().skip(i + 1) {
-            if a_start.0 >= b_end.0 || b_start.0 >= a_end.0 {
+    for (i, a_p) in plan.schedules.iter().enumerate() {
+        for b_p in plan.schedules.iter().skip(i + 1) {
+            if a_p.start.0 >= b_p.end.0 || b_p.start.0 >= a_p.end.0 {
                 continue;
             }
-            let a = &planner.tasks()[*a_id];
-            let b = &planner.tasks()[*b_id];
+            let a = &planner.tasks()[a_p.task_id];
+            let b = &planner.tasks()[b_p.task_id];
             if !((a.allows_parallel && b.parallelizable) || (b.allows_parallel && a.parallelizable))
             {
-                overlap_slots += a_end.0.min(b_end.0) - a_start.0.max(b_start.0);
+                overlap_slots += a_p.end.0.min(b_p.end.0) - a_p.start.0.max(b_p.start.0);
             }
         }
     }
@@ -357,18 +357,8 @@ fn sleep_shortage(planner: &takusu_core::Planner, plan: &takusu_core::Plan) -> (
         return (0, 0);
     }
     let slots_per_day = 288;
-    let plan_start = plan
-        .schedules
-        .iter()
-        .map(|(start, _, _)| start.0)
-        .min()
-        .unwrap();
-    let plan_end = plan
-        .schedules
-        .iter()
-        .map(|(_, end, _)| end.0)
-        .max()
-        .unwrap();
+    let plan_start = plan.schedules.iter().map(|p| p.start.0).min().unwrap();
+    let plan_end = plan.schedules.iter().map(|p| p.end.0).max().unwrap();
     let first_day = sleep.day_start
         + (plan_start - sleep.day_start).div_euclid(slots_per_day) * slots_per_day
         - slots_per_day;
@@ -382,7 +372,7 @@ fn sleep_shortage(planner: &takusu_core::Planner, plan: &takusu_core::Plan) -> (
         let occupied = plan
             .schedules
             .iter()
-            .map(|(start, end, _)| (start.0.max(window_start), end.0.min(window_end)))
+            .map(|p| (p.start.0.max(window_start), p.end.0.min(window_end)))
             .filter(|(start, end)| start < end)
             .collect::<Vec<_>>();
         let got = (sleep_len - union_length(&occupied)).max(0);
@@ -397,12 +387,12 @@ fn sleep_shortage(planner: &takusu_core::Planner, plan: &takusu_core::Plan) -> (
 
 fn daily_maximum_excess(planner: &takusu_core::Planner, plan: &takusu_core::Plan) -> i64 {
     let mut loads = std::collections::BTreeMap::<i64, Vec<(i64, i64)>>::new();
-    for (start, end, _) in &plan.schedules {
-        let mut cursor = start.0;
-        while cursor < end.0 {
+    for p in &plan.schedules {
+        let mut cursor = p.start.0;
+        while cursor < p.end.0 {
             let day = cursor.div_euclid(288);
             let day_end = (day + 1) * 288;
-            let segment_end = end.0.min(day_end);
+            let segment_end = p.end.0.min(day_end);
             loads.entry(day).or_default().push((cursor, segment_end));
             cursor = segment_end;
         }

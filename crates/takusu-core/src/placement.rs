@@ -4,20 +4,64 @@ use std::cell::RefCell;
 
 use super::*;
 
-pub type Placement = (Point, Point, usize);
+/// タスクの配置。`(start, end, task_id)` を意味付きで表現する。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct TaskPlacement {
+    pub start: Point,
+    pub end: Point,
+    pub task_id: usize,
+}
+
+impl TaskPlacement {
+    #[inline]
+    pub const fn new(start: Point, end: Point, task_id: usize) -> Self {
+        Self {
+            start,
+            end,
+            task_id,
+        }
+    }
+}
+
+/// 時間窓 `(start, end)`。`previous_schedule` や index の要素。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct TimeWindow {
+    pub start: Point,
+    pub end: Point,
+}
+
+impl TimeWindow {
+    #[inline]
+    pub const fn new(start: Point, end: Point) -> Self {
+        Self { start, end }
+    }
+}
+
+/// #306: habit グループの anchor エントリ。
+/// `group` は `Task.habit_group`、`tod` は開始スロットの日付成分を除去した時刻帯
+/// (`start_slot % slots_per_day`)。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HabitGroupAnchor {
+    pub group: usize,
+    pub tod: i64,
+}
+
+/// 後方互換用 alias。既存コードで `Placement` を使っている箇所の移行期間中に
+/// 使用する。最終的には `TaskPlacement` に統一する。
+pub type Placement = TaskPlacement;
 
 thread_local! {
     /// `day_load_with_candidate` 用の scratch buffer。
     /// 1 日あたりの区間をマージする際の allocate を避ける。
-    static DAY_INTERVALS: RefCell<Vec<(Point, Point)>> = RefCell::new(Vec::with_capacity(64));
+    static DAY_INTERVALS: RefCell<Vec<TimeWindow>> = RefCell::new(Vec::with_capacity(64));
     /// `evaluate_insertion` 用の scratch buffer。
     /// 候補スケジュールを `evaluate` に渡す際の allocate を避ける。
     pub static INSERTION_PLAN: RefCell<Vec<Placement>> = RefCell::new(Vec::with_capacity(64));
     /// `evaluate_insertion` 用の `evaluate_with_scratch` buffer。
     /// 候補評価のたびに sorted / index / habit_entries を allocate するのを避ける。
     pub static INSERTION_SORTED: RefCell<Vec<Placement>> = RefCell::new(Vec::with_capacity(64));
-    pub static INSERTION_INDEX: RefCell<Vec<Option<(Point, Point)>>> = RefCell::new(Vec::with_capacity(64));
-    pub static INSERTION_HABIT: RefCell<Vec<(usize, i64)>> = RefCell::new(Vec::with_capacity(64));
+    pub static INSERTION_INDEX: RefCell<Vec<Option<TimeWindow>>> = RefCell::new(Vec::with_capacity(64));
+    pub static INSERTION_HABIT: RefCell<Vec<HabitGroupAnchor>> = RefCell::new(Vec::with_capacity(64));
 }
 
 // ── placement primitives (shared with anneal.rs) ───────────────────────
@@ -34,8 +78,8 @@ pub(crate) fn compute_earliest(planner: &Planner, schedules: &[Placement], task:
         earliest = earliest.max(start);
     }
     for dep_id in &task.depends {
-        if let Some((_, dep_end, _)) = schedules.iter().find(|(_, _, id)| id == dep_id) {
-            earliest = earliest.max(*dep_end);
+        if let Some(p) = schedules.iter().find(|p| p.task_id == *dep_id) {
+            earliest = earliest.max(p.end);
         }
     }
     earliest
@@ -45,7 +89,7 @@ pub(crate) fn compute_earliest(planner: &Planner, schedules: &[Placement], task:
 /// decode のホットパスで schedules の線形走査を避ける。
 pub(crate) fn compute_earliest_indexed(
     planner: &Planner,
-    index: &[Option<(Point, Point)>],
+    index: &[Option<TimeWindow>],
     task: &Task,
 ) -> Point {
     let mut earliest = if task.fixed && task.start.is_some() {
@@ -57,8 +101,8 @@ pub(crate) fn compute_earliest_indexed(
         earliest = earliest.max(start);
     }
     for dep_id in &task.depends {
-        if let Some(Some((_, dep_end))) = index.get(*dep_id) {
-            earliest = earliest.max(*dep_end);
+        if let Some(Some(tw)) = index.get(*dep_id) {
+            earliest = earliest.max(tw.end);
         }
     }
     earliest
@@ -103,36 +147,39 @@ pub(crate) fn next_day_start(planner: &Planner, p: Point) -> Point {
 /// 並列タスクの二重加算を避けるため、interval の merge を行う。
 fn day_load_with_candidate(
     schedules: &[Placement],
-    candidate: (Point, Point),
+    candidate: TimeWindow,
     day_start: Point,
     day_end: Point,
 ) -> i64 {
     DAY_INTERVALS.with(|v| {
         let mut intervals = v.borrow_mut();
         intervals.clear();
-        intervals.push((candidate.0.max(day_start), candidate.1.min(day_end)));
-        for (s, e, _) in schedules {
-            if s.0 < day_end.0 && e.0 > day_start.0 {
-                intervals.push((*s.max(&day_start), *e.min(&day_end)));
+        intervals.push(TimeWindow::new(
+            candidate.start.max(day_start),
+            candidate.end.min(day_end),
+        ));
+        for p in schedules {
+            if p.start.0 < day_end.0 && p.end.0 > day_start.0 {
+                intervals.push(TimeWindow::new(p.start.max(day_start), p.end.min(day_end)));
             }
         }
-        intervals.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
+        intervals.sort_by(|a, b| a.start.cmp(&b.start).then(a.end.cmp(&b.end)));
         let mut total = 0i64;
-        let mut cur: Option<(Point, Point)> = None;
-        for (s, e) in intervals.iter().copied() {
-            if let Some((cs, ce)) = cur {
-                if s.0 <= ce.0 {
-                    cur = Some((cs, Point(ce.0.max(e.0))));
+        let mut cur: Option<TimeWindow> = None;
+        for tw in intervals.iter().copied() {
+            if let Some(c) = cur {
+                if tw.start.0 <= c.end.0 {
+                    cur = Some(TimeWindow::new(c.start, Point(c.end.0.max(tw.end.0))));
                 } else {
-                    total += ce.0 - cs.0;
-                    cur = Some((s, e));
+                    total += c.end.0 - c.start.0;
+                    cur = Some(tw);
                 }
             } else {
-                cur = Some((s, e));
+                cur = Some(tw);
             }
         }
-        if let Some((cs, ce)) = cur {
-            total += ce.0 - cs.0;
+        if let Some(c) = cur {
+            total += c.end.0 - c.start.0;
         }
         total
     })
@@ -146,8 +193,8 @@ pub(crate) fn max_end_in_day(planner: &Planner, schedules: &[Placement], cursor:
     let day_end = day_start + spd;
     let max_end = schedules
         .iter()
-        .filter(|(s, e, _)| s.0 < day_end.0 && e.0 > day_start.0 && e.0 > cursor.0)
-        .map(|(_, e, _)| e.0)
+        .filter(|p| p.start.0 < day_end.0 && p.end.0 > day_start.0 && p.end.0 > cursor.0)
+        .map(|p| p.end.0)
         .max()
         .unwrap_or(cursor.0);
     Point(max_end)
@@ -167,7 +214,7 @@ pub(crate) fn capacity_exceeded_for(
     let mut day = day_start_for(planner, start);
     while day.0 < end.0 {
         let day_end = day + spd;
-        let load = day_load_with_candidate(schedules, (start, end), day, day_end);
+        let load = day_load_with_candidate(schedules, TimeWindow::new(start, end), day, day_end);
         if load > max {
             return true;
         }
@@ -183,7 +230,7 @@ pub(crate) fn try_place<const CHECK_CAPACITY: bool>(
     earliest: Point,
     dur: i64,
     latest_end: Option<Point>,
-) -> Result<(Point, Point), PlacementFailure> {
+) -> Result<TimeWindow, PlacementFailure> {
     if dur <= 0 {
         return Err(PlacementFailure::NoLegalSlot);
     }
@@ -242,33 +289,33 @@ pub(crate) fn try_place<const CHECK_CAPACITY: bool>(
         let mut all_guesting = true;
         let mut next_start = cursor.0;
 
-        for (s, e, oid) in schedules {
-            if s.0 < candidate_end.0 && e.0 > cursor.0 {
+        for p in schedules {
+            if p.start.0 < candidate_end.0 && p.end.0 > cursor.0 {
                 has_overlap = true;
-                if can_parallel && !planner.tasks[*oid].allows_parallel {
+                if can_parallel && !planner.tasks[p.task_id].allows_parallel {
                     all_hosting = false;
                 }
-                if can_host && !planner.tasks[*oid].parallelizable {
+                if can_host && !planner.tasks[p.task_id].parallelizable {
                     all_guesting = false;
                 }
-                if e.0 > next_start {
-                    next_start = e.0;
+                if p.end.0 > next_start {
+                    next_start = p.end.0;
                 }
             }
         }
 
         if !has_overlap {
-            return Ok((cursor, candidate_end));
+            return Ok(TimeWindow::new(cursor, candidate_end));
         }
 
         if can_parallel && all_hosting {
-            return Ok((cursor, candidate_end));
+            return Ok(TimeWindow::new(cursor, candidate_end));
         }
         if can_host && all_guesting {
-            return Ok((cursor, candidate_end));
+            return Ok(TimeWindow::new(cursor, candidate_end));
         }
 
-        // 重複区間があれば e.0 > cursor.0 なので next_start は cursor より大きい。
+        // 重複区間があれば p.end.0 > cursor.0 なので next_start は cursor より大きい。
         debug_assert!(next_start > cursor.0);
         if let Some(limit) = latest_end
             && next_start >= limit.0

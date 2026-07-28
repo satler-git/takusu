@@ -13,7 +13,7 @@ mod common;
 use std::collections::BTreeMap;
 use std::time::Instant;
 
-use takusu_core::{Plan, Planner, Point, Slots, Task};
+use takusu_core::{Plan, Planner, Point, Slots, Task, TaskPlacement};
 
 fn env_or(key: &str, default: &str) -> String {
     std::env::var(key).unwrap_or_else(|_| default.to_string())
@@ -147,32 +147,32 @@ fn build_fixture(name: &str) -> Planner {
 fn metrics(planner: &Planner, plan: &Plan) -> Metrics {
     let mut by_id = vec![None; planner.tasks().len()];
     let mut duplicates = 0;
-    for (start, end, id) in &plan.schedules {
-        if let Some(slot) = by_id.get_mut(*id) {
+    for p in &plan.schedules {
+        if let Some(slot) = by_id.get_mut(p.task_id) {
             if slot.is_some() {
                 duplicates += 1;
             }
-            *slot = Some((*start, *end));
+            *slot = Some((p.start, p.end));
         }
     }
 
     let missing = by_id.iter().filter(|slot| slot.is_none()).count();
 
     let mut overlap_slots = 0;
-    for (i, (a_start, a_end, a_id)) in plan.schedules.iter().enumerate() {
-        for (b_start, b_end, b_id) in plan.schedules.iter().skip(i + 1) {
-            if a_start.0 >= b_end.0 || b_start.0 >= a_end.0 {
+    for (i, a_p) in plan.schedules.iter().enumerate() {
+        for b_p in plan.schedules.iter().skip(i + 1) {
+            if a_p.start.0 >= b_p.end.0 || b_p.start.0 >= a_p.end.0 {
                 continue;
             }
-            let Some(a) = planner.tasks().get(*a_id) else {
+            let Some(a) = planner.tasks().get(a_p.task_id) else {
                 continue;
             };
-            let Some(b) = planner.tasks().get(*b_id) else {
+            let Some(b) = planner.tasks().get(b_p.task_id) else {
                 continue;
             };
             if !((a.allows_parallel && b.parallelizable) || (b.allows_parallel && a.parallelizable))
             {
-                overlap_slots += a_end.0.min(b_end.0) - a_start.0.max(b_start.0);
+                overlap_slots += a_p.end.0.min(b_p.end.0) - a_p.start.0.max(b_p.start.0);
             }
         }
     }
@@ -215,8 +215,8 @@ fn sleep_shortage(planner: &Planner, plan: &Plan) -> (usize, i64) {
     if !sleep.enabled || plan.schedules.is_empty() {
         return (0, 0);
     }
-    let plan_start = plan.schedules.iter().map(|(s, _, _)| s.0).min().unwrap();
-    let plan_end = plan.schedules.iter().map(|(_, e, _)| e.0).max().unwrap();
+    let plan_start = plan.schedules.iter().map(|p| p.start.0).min().unwrap();
+    let plan_end = plan.schedules.iter().map(|p| p.end.0).max().unwrap();
     let first_day = sleep.day_start
         + (plan_start - sleep.day_start).div_euclid(slots_per_day) * slots_per_day
         - slots_per_day;
@@ -230,7 +230,7 @@ fn sleep_shortage(planner: &Planner, plan: &Plan) -> (usize, i64) {
         let occupied: Vec<_> = plan
             .schedules
             .iter()
-            .map(|(s, e, _)| (s.0.max(window_start), e.0.min(window_end)))
+            .map(|p| (p.start.0.max(window_start), p.end.0.min(window_end)))
             .filter(|(s, e)| s < e)
             .collect();
         let got = (sleep_len - union_length(&occupied)).max(0);
@@ -246,12 +246,12 @@ fn sleep_shortage(planner: &Planner, plan: &Plan) -> (usize, i64) {
 fn daily_maximum_excess(planner: &Planner, plan: &Plan) -> i64 {
     let slots_per_day = 24 * 60 / planner.per() as i64;
     let mut loads = BTreeMap::<i64, Vec<(i64, i64)>>::new();
-    for (start, end, _) in &plan.schedules {
-        let mut cursor = start.0;
-        while cursor < end.0 {
+    for p in &plan.schedules {
+        let mut cursor = p.start.0;
+        while cursor < p.end.0 {
             let day = cursor.div_euclid(slots_per_day);
             let day_end = (day + 1) * slots_per_day;
-            let segment_end = end.0.min(day_end);
+            let segment_end = p.end.0.min(day_end);
             loads.entry(day).or_default().push((cursor, segment_end));
             cursor = segment_end;
         }
@@ -287,13 +287,13 @@ fn global_range(plans: &[&Plan]) -> (i64, i64) {
     let min = plans
         .iter()
         .filter(|p| !p.schedules.is_empty())
-        .map(|p| p.schedules.iter().map(|(s, _, _)| s.0).min().unwrap())
+        .map(|p| p.schedules.iter().map(|p| p.start.0).min().unwrap())
         .min()
         .unwrap_or(0);
     let max = plans
         .iter()
         .filter(|p| !p.schedules.is_empty())
-        .map(|p| p.schedules.iter().map(|(_, e, _)| e.0).max().unwrap())
+        .map(|p| p.schedules.iter().map(|p| p.end.0).max().unwrap())
         .max()
         .unwrap_or(min + 1);
     (min, max)
@@ -487,16 +487,12 @@ fn render_html(
     out.push_str("</tr>\n");
 
     for task in planner.tasks() {
-        let sa = best_sa
-            .plan
-            .schedules
-            .iter()
-            .find(|(_, _, id)| *id == task.id);
+        let sa = best_sa.plan.schedules.iter().find(|p| p.task_id == task.id);
         let pr = best_alns
             .plan
             .schedules
             .iter()
-            .find(|(_, _, id)| *id == task.id);
+            .find(|p| p.task_id == task.id);
         let deadline_label = fmt_relative(task.end.0, global_min);
         out.push_str("<tr>");
         out.push_str(&format!("<td>{}</td>", task.id));
@@ -540,24 +536,24 @@ fn timeline(out: &mut String, planner: &Planner, label: &str, plan: &Plan, min: 
     let day_interval = ((max - min) / slots_per_day / 30 + 1).max(1);
 
     let mut sorted: Vec<_> = plan.schedules.to_vec();
-    sorted.sort_by(|a, b| a.0.0.cmp(&b.0.0).then(b.1.0.cmp(&a.1.0)));
+    sorted.sort_by(|a, b| a.start.0.cmp(&b.start.0).then(b.end.0.cmp(&a.end.0)));
 
     let mut lanes: Vec<Vec<usize>> = Vec::new();
     let mut lane_ends: Vec<i64> = Vec::new();
     for (i, item) in sorted.iter().enumerate() {
-        let start = item.0.0;
+        let start = item.start.0;
         let mut placed = false;
         for (lane_idx, last_end) in lane_ends.iter_mut().enumerate() {
             if *last_end <= start {
                 lanes[lane_idx].push(i);
-                *last_end = item.1.0;
+                *last_end = item.end.0;
                 placed = true;
                 break;
             }
         }
         if !placed {
             lanes.push(vec![i]);
-            lane_ends.push(item.1.0);
+            lane_ends.push(item.end.0);
         }
     }
 
@@ -587,30 +583,30 @@ fn timeline(out: &mut String, planner: &Planner, label: &str, plan: &Plan, min: 
 
     for (lane_idx, lane) in lanes.iter().enumerate() {
         for &sched_idx in lane {
-            let (start, end, id) = sorted[sched_idx];
-            let task = &planner.tasks()[id];
-            let left = (start.0 - min) as f64 / span * 100.0;
-            let width = ((end.0 - start.0) as f64 / span * 100.0).max(0.3);
+            let p = sorted[sched_idx];
+            let task = &planner.tasks()[p.task_id];
+            let left = (p.start.0 - min) as f64 / span * 100.0;
+            let width = ((p.end.0 - p.start.0) as f64 / span * 100.0).max(0.3);
             let top = lane_idx as i64 * lane_height + 24;
-            let color = task_color(id);
+            let color = task_color(p.task_id);
             let show_label = width > 2.0;
             let label = if show_label {
                 format!(
                     "{} {}–{}",
-                    id,
-                    fmt_relative(start.0, min),
-                    fmt_relative(end.0, min)
+                    p.task_id,
+                    fmt_relative(p.start.0, min),
+                    fmt_relative(p.end.0, min)
                 )
             } else {
                 String::new()
             };
             let title = format!(
                 "task {}: {} – {} (avg {} dur {})",
-                id,
-                fmt_relative(start.0, min),
-                fmt_relative(end.0, min),
+                p.task_id,
+                fmt_relative(p.start.0, min),
+                fmt_relative(p.end.0, min),
                 fmt_duration(task.cost_estimate.avg as i64),
-                fmt_duration(end.0 - start.0)
+                fmt_duration(p.end.0 - p.start.0)
             );
             let border = if task.fixed {
                 "1px solid #111827"
@@ -637,24 +633,24 @@ fn task_cells(
     out: &mut String,
     planner: &Planner,
     task: &Task,
-    sched: Option<&(Point, Point, usize)>,
+    sched: Option<&TaskPlacement>,
     plan: &Plan,
     origin: i64,
 ) {
     let mut by_id: Vec<Option<(Point, Point)>> = vec![None; planner.tasks().len()];
-    for (s, e, id) in &plan.schedules {
-        if let Some(slot) = by_id.get_mut(*id) {
-            *slot = Some((*s, *e));
+    for p in &plan.schedules {
+        if let Some(slot) = by_id.get_mut(p.task_id) {
+            *slot = Some((p.start, p.end));
         }
     }
 
     match sched {
-        Some((s, e, _)) => {
-            let on_time = e.0 <= task.end.0;
+        Some(sp) => {
+            let on_time = sp.end.0 <= task.end.0;
             let mut deps_ok = true;
             for dep in &task.depends {
                 if let Some((_, dep_end)) = by_id.get(*dep).and_then(|slot| *slot) {
-                    if dep_end.0 > s.0 {
+                    if dep_end.0 > sp.start.0 {
                         deps_ok = false;
                         break;
                     }
@@ -665,15 +661,15 @@ fn task_cells(
             }
             let start_ok = task
                 .start
-                .map(|min_start| s.0 >= min_start.0)
+                .map(|min_start| sp.start.0 >= min_start.0)
                 .unwrap_or(true);
             if !start_ok {
                 deps_ok = false;
             }
             out.push_str(&format!(
                 "<td>{}</td><td>{}</td><td class=\"{}\">{}</td><td class=\"{}\">{}</td>",
-                fmt_relative(s.0, origin),
-                fmt_relative(e.0, origin),
+                fmt_relative(sp.start.0, origin),
+                fmt_relative(sp.end.0, origin),
                 if on_time { "ok" } else { "bad" },
                 if on_time { "✓" } else { "✗" },
                 if deps_ok { "ok" } else { "bad" },

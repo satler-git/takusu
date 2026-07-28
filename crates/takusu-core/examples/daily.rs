@@ -247,15 +247,15 @@ fn main() {
     println!();
 
     let mut sorted: Vec<_> = plan.schedules.iter().collect();
-    sorted.sort_by_key(|(s, _, _)| s.0);
+    sorted.sort_by_key(|p| p.start.0);
 
-    for (start, end, id) in &sorted {
-        let name = name_of(&ids, id);
-        let task = &tasks[*id];
-        let dur = end.0 - start.0;
+    for p in &sorted {
+        let name = name_of(&ids, &p.task_id);
+        let task = &tasks[p.task_id];
+        let dur = p.end.0 - p.start.0;
         let sigma = task.cost_estimate.sigma;
 
-        let deadline_flag = if *end > task.end { " ⚠ over" } else { "" };
+        let deadline_flag = if p.end > task.end { " ⚠ over" } else { "" };
         let sigma_str = if sigma > 0 {
             format!(" σ={}", sigma)
         } else {
@@ -276,10 +276,10 @@ fn main() {
 
         println!(
             "  {}  {:>6}  {:>5} → {:<5}  (推定 {}){}{}{}",
-            if *end <= task.end { "✓" } else { "△" },
+            if p.end <= task.end { "✓" } else { "△" },
             name,
-            fmt_time(start.0),
-            fmt_time(end.0),
+            fmt_time(p.start.0),
+            fmt_time(p.end.0),
             fmt_duration(dur),
             sigma_str,
             parallel,
@@ -316,15 +316,15 @@ fn main() {
     println!();
     println!("時間重複 (並列実行):");
     for i in 0..sorted.len() {
-        let (a_s, a_e, a_id) = sorted[i];
-        for (b_s, b_e, b_id) in sorted.iter().skip(i + 1) {
-            if *a_e <= *b_s || *b_e <= *a_s {
+        let a_p = sorted[i];
+        for b_p in sorted.iter().skip(i + 1) {
+            if a_p.end <= b_p.start || b_p.end <= a_p.start {
                 continue;
             }
-            let a_name = name_of(&ids, a_id);
-            let b_name = name_of(&ids, b_id);
-            let task_a = &tasks[*a_id];
-            let task_b = &tasks[*b_id];
+            let a_name = name_of(&ids, &a_p.task_id);
+            let b_name = name_of(&ids, &b_p.task_id);
+            let task_a = &tasks[a_p.task_id];
+            let task_b = &tasks[b_p.task_id];
             let parallel_ok = (task_a.allows_parallel && task_b.parallelizable)
                 || (task_b.allows_parallel && task_a.parallelizable);
             let mark = if parallel_ok { "✓" } else { "⚠" };
@@ -333,10 +333,10 @@ fn main() {
                 mark,
                 a_name,
                 b_name,
-                fmt_time(a_s.0),
-                fmt_time(a_e.0),
-                fmt_time(b_s.0),
-                fmt_time(b_e.0),
+                fmt_time(a_p.start.0),
+                fmt_time(a_p.end.0),
+                fmt_time(b_p.start.0),
+                fmt_time(b_p.end.0),
             );
         }
     }
