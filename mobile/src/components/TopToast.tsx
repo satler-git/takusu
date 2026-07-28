@@ -1,7 +1,7 @@
 // Top toast — auto-dismissing banner from the top of the screen.
-// Multiple toasts stack downward from a fixed top corner: new toasts append
-// to the bottom of the stack and slide up into their slot, while earlier
-// toasts keep their positions. Swiping any toast sideways dismisses it.
+// Multiple toasts stack downward from a fixed top corner: new toasts slide
+// in from the right edge into their slot, while earlier toasts keep their
+// positions. Swiping any toast sideways dismisses it.
 // Implemented with react-native-reanimated and react-native-gesture-handler
 // so all animation and pan handling runs on the native thread.
 
@@ -219,10 +219,13 @@ function ToastItem({
   onUnregisterDismiss,
 }: ToastItemProps) {
   const { width: screenWidth } = useWindowDimensions();
-  const offsetY = useSharedValue(offset + ESTIMATED_HEIGHT);
+  const offsetY = useSharedValue(offset);
   const offsetYTarget = useSharedValue(offset);
   const panY = useSharedValue(0);
   const panX = useSharedValue(0);
+  // Enter from the right edge so the toast slides in horizontally instead of
+  // appearing from the middle of the screen (#1176).
+  const enterX = useSharedValue(screenWidth);
   const dismissing = useSharedValue(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -262,6 +265,8 @@ function ToastItem({
     dismissing.value = true;
     clearDismissTimer();
     cancelAnimation(panX);
+    cancelAnimation(enterX);
+    enterX.value = 0;
     panX.value = 0;
     const target =
       -offsetRef.current - heightRef.current - insetsTop - OFFSCREEN_MARGIN;
@@ -273,7 +278,15 @@ function ToastItem({
         if (finished) runOnJS(notifyDismissed)();
       },
     );
-  }, [clearDismissTimer, dismissing, insetsTop, notifyDismissed, panX, panY]);
+  }, [
+    clearDismissTimer,
+    dismissing,
+    enterX,
+    insetsTop,
+    notifyDismissed,
+    panX,
+    panY,
+  ]);
 
   const dismissHorizontal = useCallback(
     (direction: 'left' | 'right') => {
@@ -328,6 +341,15 @@ function ToastItem({
     });
   }, [dismissing, offset, offsetY, offsetYTarget]);
 
+  // Slide in from the right edge on mount (#1176).
+  useEffect(() => {
+    enterX.value = withTiming(0, {
+      duration: 250,
+      easing: Easing.out(Easing.ease),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Start the auto-dismiss timer on mount; clear it on unmount.
   useEffect(() => {
     startDismissTimer();
@@ -358,6 +380,8 @@ function ToastItem({
           cancelAnimation(panX);
           cancelAnimation(panY);
           cancelAnimation(offsetY);
+          cancelAnimation(enterX);
+          enterX.value = 0;
           panX.value = 0;
           panY.value = 0;
           dismissing.value = false;
@@ -390,6 +414,7 @@ function ToastItem({
       clearDismissTimer,
       dismissing,
       dismissHorizontal,
+      enterX,
       offsetY,
       panX,
       panY,
@@ -401,7 +426,7 @@ function ToastItem({
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [
       { translateY: offsetY.value + panY.value },
-      { translateX: panX.value },
+      { translateX: panX.value + enterX.value },
     ],
   }));
 
