@@ -15,10 +15,10 @@ pub use permissions::Permissions;
 
 pub use crate::llm::CompactionSettings;
 pub use tool::{
-    ChangeOperation, ChangeReceipt, InferredField, InvalidArgsError, ProposedChange, ReceiptTarget,
-    Target, TargetKind, Tool, ToolError, ToolExposure, ToolOutput, ToolRegistry, Typed, TypedTool,
-    deserialize_trimmed_optional, deserialize_trimmed_required, inferred_field_schema,
-    inferred_fields_schema,
+    ChangeOperation, ChangeReceipt, InferredField, InvalidArgsError, OpenAITool,
+    OpenAIToolFunction, ProposedChange, ReceiptTarget, Target, TargetKind, Tool, ToolError,
+    ToolExposure, ToolOutput, ToolRegistry, Typed, TypedTool, deserialize_trimmed_optional,
+    deserialize_trimmed_required, inferred_field_schema, inferred_fields_schema,
 };
 pub use user_input::{
     StubUserInputProvider, UserInputAnswer, UserInputProvider, UserInputQuestion,
@@ -2959,7 +2959,7 @@ mod tests {
     }
 
     struct MockLlm {
-        calls: Mutex<Vec<(Vec<llm::Message>, Vec<Value>)>>,
+        calls: Mutex<Vec<(Vec<llm::Message>, Vec<tool::OpenAITool>)>>,
         responses: Mutex<Vec<llm::LlmResponse>>,
     }
 
@@ -2968,7 +2968,7 @@ mod tests {
         async fn chat(
             &self,
             messages: &[llm::Message],
-            tools: &[Value],
+            tools: &[tool::OpenAITool],
         ) -> Result<llm::LlmResponse, llm::LlmError> {
             self.calls
                 .lock()
@@ -2980,7 +2980,7 @@ mod tests {
     }
 
     struct MockStreamingLlm {
-        calls: Mutex<Vec<(Vec<llm::Message>, Vec<Value>)>>,
+        calls: Mutex<Vec<(Vec<llm::Message>, Vec<tool::OpenAITool>)>>,
         events: Mutex<Vec<Vec<llm::LlmStreamEvent>>>,
     }
 
@@ -2989,7 +2989,7 @@ mod tests {
         async fn chat(
             &self,
             _messages: &[llm::Message],
-            _tools: &[Value],
+            _tools: &[tool::OpenAITool],
         ) -> Result<llm::LlmResponse, llm::LlmError> {
             Err(llm::LlmError::Request("chat not supported".into()))
         }
@@ -2997,7 +2997,7 @@ mod tests {
         async fn chat_stream(
             &self,
             messages: &[llm::Message],
-            tools: &[Value],
+            tools: &[tool::OpenAITool],
         ) -> Result<
             Pin<
                 Box<

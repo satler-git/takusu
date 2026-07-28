@@ -3,7 +3,7 @@ use std::sync::Weak;
 use async_trait::async_trait;
 use schemars::JsonSchema;
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::json;
 
 use crate::{InvalidArgsError, ToolError, ToolExposure, ToolOutput, ToolRegistry, TypedTool};
 
@@ -60,7 +60,8 @@ impl TypedTool for ToolSearch {
         let limit = args.limit.map(|n| (n as usize).clamp(1, 20)).unwrap_or(5);
 
         let entries = registry.search(&args.query, Some(limit));
-        let definitions: Vec<Value> = entries.iter().map(|e| e.definition.clone()).collect();
+        let definitions: Vec<crate::tool::OpenAITool> =
+            entries.iter().map(|e| e.definition.clone()).collect();
         let discovered: Vec<String> = entries.iter().map(|e| e.name.clone()).collect();
 
         Ok(ToolOutput {
