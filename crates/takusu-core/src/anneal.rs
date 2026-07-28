@@ -56,9 +56,7 @@ use crate::placement::{
 };
 #[cfg(test)]
 use evaluate::evaluate;
-use evaluate::{
-    evaluate_presorted, evaluate_with_scratch, sorted_incremental_apply, sorted_revert,
-};
+use evaluate::EvaluationContext;
 
 /// タブーリストのキー。`(task_id, start, duration)` の各要素を型付きで保持し、
 /// `start` と `duration` の取り違えを型レベルで防ぐ。
@@ -287,9 +285,7 @@ pub(crate) fn priority_order_search(planner: &Planner, rng: &mut impl Rng) -> Pl
     let mut priority: Vec<_> = planner.tasks.iter().map(|task| task.id).collect();
     priority.sort_by(|a, b| planner.freeness(*a).total_cmp(&planner.freeness(*b)));
 
-    let mut sorted = Vec::with_capacity(planner.tasks.len());
-    let mut index = Vec::with_capacity(planner.tasks.len());
-    let mut habit_entries = Vec::with_capacity(planner.tasks.len());
+    let mut ctx = EvaluationContext::new(planner.tasks.len());
     let mut current = decode(
         planner,
         DecodeInput {
@@ -300,15 +296,7 @@ pub(crate) fn priority_order_search(planner: &Planner, rng: &mut impl Rng) -> Pl
         },
     )
     .plan;
-    let mut current_score = evaluate_with_scratch(
-        planner,
-        &current.schedules,
-        0.0,
-        1.0,
-        &mut sorted,
-        &mut index,
-        &mut habit_entries,
-    );
+    let mut current_score = ctx.evaluate(planner, &current.schedules, 0.0, 1.0);
     let mut best = current.clone();
     let mut best_score = current_score;
     let movable: Vec<_> = priority
@@ -342,15 +330,7 @@ pub(crate) fn priority_order_search(planner: &Planner, rng: &mut impl Rng) -> Pl
             },
         )
         .plan;
-        let candidate_score = evaluate_with_scratch(
-            planner,
-            &candidate.schedules,
-            0.0,
-            1.0,
-            &mut sorted,
-            &mut index,
-            &mut habit_entries,
-        );
+        let candidate_score = ctx.evaluate(planner, &candidate.schedules, 0.0, 1.0);
         let temperature = initial_temperature * (1.0 - iteration as f64 / iterations as f64);
         let delta = candidate_score - current_score;
         if delta > 0.0 || rng.random::<f64>() < (delta / temperature.max(0.01)).exp() {
@@ -465,8 +445,7 @@ fn sa_polish_inner(
         return plan;
     }
 
-    let mut index = Vec::with_capacity(n);
-    let mut habit_entries = Vec::with_capacity(n);
+    let mut ctx = EvaluationContext::new(n);
     let habit_index = habit::build_index(planner);
 
     let total_avg: i64 = planner
@@ -494,8 +473,7 @@ fn sa_polish_inner(
     let mut best = current.clone();
     let mut neighbor_scheds: Vec<Placement> = Vec::with_capacity(n);
 
-    let mut sorted: Vec<Placement> = current.schedules.clone();
-    sorted.sort_unstable_by_key(|p| p.start.0);
+    ctx.init_sorted(&current.schedules);
 
     let unpinned_positions: Vec<usize> = if has_pinned {
         current
@@ -509,15 +487,7 @@ fn sa_polish_inner(
         Vec::new()
     };
 
-    let mut eval_current = evaluate_presorted(
-        planner,
-        &current.schedules,
-        0.0,
-        1.0,
-        &sorted,
-        &mut index,
-        &mut habit_entries,
-    );
+    let mut eval_current = ctx.evaluate_presorted(planner, &current.schedules, 0.0, 1.0);
     let mut eval_best = eval_current;
 
     let mut temperature = t0;
@@ -558,17 +528,9 @@ fn sa_polish_inner(
                 continue;
             }
 
-            let undo = sorted_incremental_apply(&mut sorted, &current.schedules, &neighbor_scheds);
+            let undo = ctx.sorted_apply(&current.schedules, &neighbor_scheds);
 
-            let eval_neighbor = evaluate_presorted(
-                planner,
-                &neighbor_scheds,
-                0.0,
-                1.0,
-                &sorted,
-                &mut index,
-                &mut habit_entries,
-            );
+            let eval_neighbor = ctx.evaluate_presorted(planner, &neighbor_scheds, 0.0, 1.0);
 
             let delta = eval_neighbor - eval_current;
             if delta > 0.0 || rng.random::<f64>() < (delta / temperature).exp() {
@@ -579,7 +541,7 @@ fn sa_polish_inner(
                     eval_best = eval_current;
                 }
             } else {
-                sorted_revert(&mut sorted, &undo);
+                ctx.sorted_revert(&undo);
             }
         }
 
@@ -624,9 +586,7 @@ pub(crate) fn alns_search_pinned(
         RepairMode::Earliest
     };
 
-    let mut sorted = Vec::with_capacity(n);
-    let mut index = Vec::with_capacity(n);
-    let mut habit_entries = Vec::with_capacity(n);
+    let mut ctx = EvaluationContext::new(n);
 
     let decode_result = |priority: &[usize], mode: RepairMode| {
         decode(
@@ -643,15 +603,7 @@ pub(crate) fn alns_search_pinned(
     let deadline = deadline_from(planner.time_budget);
 
     let mut current_result = decode_result(&priority, initial_mode);
-    let mut current_score = evaluate_with_scratch(
-        planner,
-        &current_result.plan.schedules,
-        0.0,
-        1.0,
-        &mut sorted,
-        &mut index,
-        &mut habit_entries,
-    );
+    let mut current_score = ctx.evaluate(planner, &current_result.plan.schedules, 0.0, 1.0);
     let mut best_result = current_result.clone();
     let mut best_score = current_score;
 
@@ -731,15 +683,7 @@ pub(crate) fn alns_search_pinned(
             &removed_in_order,
             &dependents,
         );
-        let candidate_score = evaluate_with_scratch(
-            planner,
-            &candidate_scheds,
-            0.0,
-            1.0,
-            &mut sorted,
-            &mut index,
-            &mut habit_entries,
-        );
+        let candidate_score = ctx.evaluate(planner, &candidate_scheds, 0.0, 1.0);
 
         let temperature = config.initial_temperature * (1.0 - iteration as f64 / iterations as f64);
         let delta = candidate_score - current_score;
@@ -1322,9 +1266,7 @@ pub fn sa_lns(planner: &Planner, rng: &mut impl Rng) -> Plan {
     let mut current = build_initial(planner);
     let mut best = current.clone();
 
-    let mut sorted = Vec::with_capacity(task_count);
-    let mut index = Vec::with_capacity(task_count);
-    let mut habit_entries = Vec::with_capacity(task_count);
+    let mut ctx = EvaluationContext::new(task_count);
     let habit_index = habit::build_index(planner);
 
     let mut neighbor_scheds: Vec<Placement> = Vec::with_capacity(task_count);
@@ -1344,15 +1286,7 @@ pub fn sa_lns(planner: &Planner, rng: &mut impl Rng) -> Plan {
     let mut tabu_scratch: Vec<Option<(i64, i64)>> = Vec::with_capacity(task_count);
     let mut temperature = t0;
 
-    let mut eval_current = evaluate_with_scratch(
-        planner,
-        &current.schedules,
-        temperature,
-        t0,
-        &mut sorted,
-        &mut index,
-        &mut habit_entries,
-    );
+    let mut eval_current = ctx.evaluate(planner, &current.schedules, temperature, t0);
     let mut eval_best = eval_current;
 
     let mut stagnant_levels = 0u32;
@@ -1381,15 +1315,7 @@ pub fn sa_lns(planner: &Planner, rng: &mut impl Rng) -> Plan {
                 continue;
             }
 
-            let eval_neighbor = evaluate_with_scratch(
-                planner,
-                &neighbor_scheds,
-                temperature,
-                t0,
-                &mut sorted,
-                &mut index,
-                &mut habit_entries,
-            );
+            let eval_neighbor = ctx.evaluate(planner, &neighbor_scheds, temperature, t0);
 
             if is_tabu_scheds(&tabu, &neighbor_scheds) && eval_neighbor <= eval_best {
                 continue;
@@ -1408,23 +1334,9 @@ pub fn sa_lns(planner: &Planner, rng: &mut impl Rng) -> Plan {
                 eval_current = eval_neighbor;
 
                 if eval_current > eval_best {
-                    if evaluate_with_scratch(
-                        planner,
-                        &current.schedules,
-                        0.0,
-                        t0,
-                        &mut sorted,
-                        &mut index,
-                        &mut habit_entries,
-                    ) > evaluate_with_scratch(
-                        planner,
-                        &best.schedules,
-                        0.0,
-                        t0,
-                        &mut sorted,
-                        &mut index,
-                        &mut habit_entries,
-                    ) {
+                    if ctx.evaluate(planner, &current.schedules, 0.0, t0)
+                        > ctx.evaluate(planner, &best.schedules, 0.0, t0)
+                    {
                         best.schedules.clone_from(&current.schedules);
                         eval_best = eval_current;
                         improved = true;
@@ -1446,24 +1358,8 @@ pub fn sa_lns(planner: &Planner, rng: &mut impl Rng) -> Plan {
         }
 
         temperature *= alpha;
-        eval_current = evaluate_with_scratch(
-            planner,
-            &current.schedules,
-            temperature,
-            t0,
-            &mut sorted,
-            &mut index,
-            &mut habit_entries,
-        );
-        eval_best = evaluate_with_scratch(
-            planner,
-            &best.schedules,
-            temperature,
-            t0,
-            &mut sorted,
-            &mut index,
-            &mut habit_entries,
-        );
+        eval_current = ctx.evaluate(planner, &current.schedules, temperature, t0);
+        eval_best = ctx.evaluate(planner, &best.schedules, temperature, t0);
     }
 
     repair_polish(planner, best, None)
@@ -1485,9 +1381,7 @@ pub fn sa_lns_partial(planner: &Planner, pinned: &[Placement], rng: &mut impl Rn
     let mut current = build_initial_partial(planner, pinned);
     let mut best = current.clone();
 
-    let mut sorted = Vec::with_capacity(task_count);
-    let mut index = Vec::with_capacity(task_count);
-    let mut habit_entries = Vec::with_capacity(task_count);
+    let mut ctx = EvaluationContext::new(task_count);
     let habit_index = habit::build_index(planner);
 
     let mut neighbor_scheds: Vec<Placement> = Vec::with_capacity(task_count);
@@ -1516,15 +1410,7 @@ pub fn sa_lns_partial(planner: &Planner, pinned: &[Placement], rng: &mut impl Rn
     let mut tabu_scratch: Vec<Option<(i64, i64)>> = Vec::with_capacity(task_count);
     let mut temperature = t0;
 
-    let mut eval_current = evaluate_with_scratch(
-        planner,
-        &current.schedules,
-        temperature,
-        t0,
-        &mut sorted,
-        &mut index,
-        &mut habit_entries,
-    );
+    let mut eval_current = ctx.evaluate(planner, &current.schedules, temperature, t0);
     let mut eval_best = eval_current;
 
     let mut stagnant_levels = 0u32;
@@ -1555,15 +1441,7 @@ pub fn sa_lns_partial(planner: &Planner, pinned: &[Placement], rng: &mut impl Rn
                 continue;
             }
 
-            let eval_neighbor = evaluate_with_scratch(
-                planner,
-                &neighbor_scheds,
-                temperature,
-                t0,
-                &mut sorted,
-                &mut index,
-                &mut habit_entries,
-            );
+            let eval_neighbor = ctx.evaluate(planner, &neighbor_scheds, temperature, t0);
 
             if is_tabu_scheds(&tabu, &neighbor_scheds) && eval_neighbor <= eval_best {
                 continue;
@@ -1582,23 +1460,9 @@ pub fn sa_lns_partial(planner: &Planner, pinned: &[Placement], rng: &mut impl Rn
                 eval_current = eval_neighbor;
 
                 if eval_current > eval_best {
-                    if evaluate_with_scratch(
-                        planner,
-                        &current.schedules,
-                        0.0,
-                        t0,
-                        &mut sorted,
-                        &mut index,
-                        &mut habit_entries,
-                    ) > evaluate_with_scratch(
-                        planner,
-                        &best.schedules,
-                        0.0,
-                        t0,
-                        &mut sorted,
-                        &mut index,
-                        &mut habit_entries,
-                    ) {
+                    if ctx.evaluate(planner, &current.schedules, 0.0, t0)
+                        > ctx.evaluate(planner, &best.schedules, 0.0, t0)
+                    {
                         best.schedules.clone_from(&current.schedules);
                         eval_best = eval_current;
                         improved = true;
@@ -1620,24 +1484,8 @@ pub fn sa_lns_partial(planner: &Planner, pinned: &[Placement], rng: &mut impl Rn
         }
 
         temperature *= alpha;
-        eval_current = evaluate_with_scratch(
-            planner,
-            &current.schedules,
-            temperature,
-            t0,
-            &mut sorted,
-            &mut index,
-            &mut habit_entries,
-        );
-        eval_best = evaluate_with_scratch(
-            planner,
-            &best.schedules,
-            temperature,
-            t0,
-            &mut sorted,
-            &mut index,
-            &mut habit_entries,
-        );
+        eval_current = ctx.evaluate(planner, &current.schedules, temperature, t0);
+        eval_best = ctx.evaluate(planner, &best.schedules, temperature, t0);
     }
 
     repair_polish(planner, best, Some(&pinned_ids))
@@ -1716,26 +1564,10 @@ fn repair_polish(planner: &Planner, best: Plan, pinned_ids: Option<&FxHashSet<us
         schedules: greedy_rebuild(planner, &remaining, &destroyed),
     };
 
-    let mut eval_sorted = Vec::with_capacity(planner.tasks.len());
-    let mut eval_index = Vec::with_capacity(planner.tasks.len());
-    let mut eval_habit = Vec::with_capacity(planner.tasks.len());
-    if evaluate_with_scratch(
-        planner,
-        &rebuilt.schedules,
-        0.0,
-        1.0,
-        &mut eval_sorted,
-        &mut eval_index,
-        &mut eval_habit,
-    ) > evaluate_with_scratch(
-        planner,
-        &best.schedules,
-        0.0,
-        1.0,
-        &mut eval_sorted,
-        &mut eval_index,
-        &mut eval_habit,
-    ) {
+    let mut ctx = EvaluationContext::new(planner.tasks.len());
+    if ctx.evaluate(planner, &rebuilt.schedules, 0.0, 1.0)
+        > ctx.evaluate(planner, &best.schedules, 0.0, 1.0)
+    {
         rebuilt
     } else {
         best
