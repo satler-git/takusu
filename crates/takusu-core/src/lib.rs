@@ -54,6 +54,8 @@ pub use decoder::{
     RepairMode,
 };
 pub use placement::{Placement, PlacementFailure, TaskPlacement, TimeWindow};
+pub use anneal::{NeighborWeights, SaConfig};
+pub use evaluate::EvaluationWeights;
 
 use jiff::Timestamp;
 use std::time::Duration;
@@ -457,6 +459,10 @@ pub struct Planner {
     seed: Option<u64>,
     /// 前回スケジュールから priority/ALNS の初期解を warm start するか。
     warm_start: bool,
+    /// 評価関数の重み。`EvaluationWeights::default()` から差し替え可能。
+    weights: EvaluationWeights,
+    /// SA（焼きなまし）のパラメータ。`SaConfig::default()` から差し替え可能。
+    sa_config: SaConfig,
 }
 
 impl Planner {
@@ -476,6 +482,8 @@ impl Planner {
             time_budget: None,
             seed: None,
             warm_start: false,
+            weights: EvaluationWeights::default(),
+            sa_config: SaConfig::default(),
         }
     }
 
@@ -575,6 +583,32 @@ impl Planner {
     /// 前回スケジュールからの warm start を有効/無効にする。
     pub fn set_warm_start(&mut self, warm_start: bool) {
         self.warm_start = warm_start;
+    }
+
+    /// 評価関数の重みを取得する。
+    pub fn weights(&self) -> &EvaluationWeights {
+        &self.weights
+    }
+
+    /// 評価関数の重みを上書きする。
+    ///
+    /// 指定しない場合は `EvaluationWeights::default()` が使われる。
+    /// チューニング実験等で重みを差し替えたい場合に使用する。
+    pub fn set_weights(&mut self, weights: EvaluationWeights) {
+        self.weights = weights;
+    }
+
+    /// SA（焼きなまし）のパラメータを取得する。
+    pub fn sa_config(&self) -> &SaConfig {
+        &self.sa_config
+    }
+
+    /// SA（焼きなまし）のパラメータを上書きする。
+    ///
+    /// 指定しない場合は `SaConfig::default()` が使われる。
+    /// 温度スケジュール・反復数・近傍確率を調整したい場合に使用する。
+    pub fn set_sa_config(&mut self, config: SaConfig) {
+        self.sa_config = config;
     }
 
     /// 固定タスクを保持したまま未固定タスクをスケジュール。
