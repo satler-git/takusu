@@ -24,8 +24,6 @@ pub enum AudioError {
     Record(String),
     #[error("transcription failed: {0}")]
     Transcribe(String),
-    #[error("agent turn failed: {0}")]
-    Agent(#[from] AgentError),
     #[error("tts failed: {0}")]
     Tts(String),
     #[error("playback failed: {0}")]
@@ -81,7 +79,7 @@ impl AudioAdapter {
     }
 
     /// Run the push-to-talk loop until interrupted or an unrecoverable error occurs.
-    pub async fn run(&mut self, no_tts: bool) -> Result<(), AudioError> {
+    pub async fn run(&mut self, no_tts: bool) -> Result<(), AgentError> {
         loop {
             self.reconfigure_if_needed().await?;
 
@@ -145,7 +143,7 @@ impl AudioAdapter {
                 Err(e) => {
                     drop(tts_tx);
                     tts_player.abort();
-                    return Err(e.into());
+                    return Err(e);
                 }
             };
 
