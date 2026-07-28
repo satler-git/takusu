@@ -133,10 +133,32 @@ jobs:
           PR_NUMBER: ${{ needs.create-pr.outputs.pr_number }}
           TAG: ${{ needs.validate.outputs.tag }}
         run: |
-          if ! gh pr merge "$PR_NUMBER" --merge --subject "release ${TAG}" --delete-branch; then
+          # Merge queue is enabled on main, so --delete-branch cannot be
+          # passed to `gh pr merge`, and the merge is asynchronous: the PR is
+          # queued, not merged, when the command returns. Poll until the PR
+          # is actually merged before deleting the branch and tagging main.
+          if ! gh pr merge "$PR_NUMBER" --merge --subject "release ${TAG}"; then
             echo "standard merge failed, retrying with admin override"
-            gh pr merge "$PR_NUMBER" --merge --admin --subject "release ${TAG}" --delete-branch
+            gh pr merge "$PR_NUMBER" --merge --admin --subject "release ${TAG}"
           fi
+
+          echo "waiting for PR ${PR_NUMBER} to be merged by the merge queue..."
+          for i in $(seq 1 120); do
+            state=$(gh pr view "$PR_NUMBER" --json state --jq '.state')
+            merged=$(gh pr view "$PR_NUMBER" --json merged --jq '.merged')
+            if [ "$state" = "CLOSED" ] && [ "$merged" = "true" ]; then
+              echo "PR merged after ${i} polls"
+              break
+            fi
+            sleep 10
+          done
+
+          if [ "$state" != "CLOSED" ] || [ "$merged" != "true" ]; then
+            echo "PR ${PR_NUMBER} was not merged within the polling window" >&2
+            exit 1
+          fi
+
+          git push origin --delete "${{ github.ref_name }}" || true
           git fetch origin main
           git checkout -B main origin/main
           git tag "$TAG"
@@ -168,7 +190,6 @@ jobs:
         run: |
           number=$(gh pr list --head "$BRANCH" --base main --json number --jq '.[0].number')
           if [ -n "$number" ]; then
-            gh pr close "$number" --delete-branch || true
-          else
-            git push origin --delete "$BRANCH" || true
+            gh pr close "$number" || true
           fi
+          git push origin --delete "$BRANCH" || true
