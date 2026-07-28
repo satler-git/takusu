@@ -86,6 +86,17 @@ impl Client {
             .bearer_auth(&*token)
     }
 
+    /// Convert an HTTP response into either a successful `Response` or an
+    /// `ClientError::Api` when the status code indicates failure (>= 400).
+    async fn handle_response(resp: reqwest::Response) -> Result<reqwest::Response, ClientError> {
+        let status = resp.status().as_u16();
+        if status >= 400 {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(ClientError::Api { status, body });
+        }
+        Ok(resp)
+    }
+
     // ── Health ──
 
     pub async fn health(&self) -> Result<String, ClientError> {
@@ -94,11 +105,7 @@ impl Client {
             .get(format!("{}/health", self.base_url))
             .send()
             .await?;
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ClientError::Api { status, body });
-        }
+        let resp = Self::handle_response(resp).await?;
         Ok(resp.text().await?)
     }
 
@@ -137,11 +144,7 @@ impl Client {
             req = req.query(&params);
         }
         let resp = req.send().await?;
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ClientError::Api { status, body });
-        }
+        let resp = Self::handle_response(resp).await?;
         Ok(resp.json().await?)
     }
 
@@ -152,11 +155,7 @@ impl Client {
             .await
             .send()
             .await?;
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ClientError::Api { status, body });
-        }
+        let resp = Self::handle_response(resp).await?;
         Ok(resp.json().await?)
     }
 
@@ -167,11 +166,7 @@ impl Client {
             .json(body)
             .send()
             .await?;
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ClientError::Api { status, body });
-        }
+        let resp = Self::handle_response(resp).await?;
         Ok(resp.json().await?)
     }
 
@@ -183,11 +178,7 @@ impl Client {
             .json(body)
             .send()
             .await?;
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ClientError::Api { status, body });
-        }
+        let resp = Self::handle_response(resp).await?;
         Ok(resp.json().await?)
     }
 
@@ -199,11 +190,7 @@ impl Client {
             .json(body)
             .send()
             .await?;
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ClientError::Api { status, body });
-        }
+        let resp = Self::handle_response(resp).await?;
         Ok(resp.json().await?)
     }
 
@@ -214,11 +201,7 @@ impl Client {
             .await
             .send()
             .await?;
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ClientError::Api { status, body });
-        }
+        Self::handle_response(resp).await?;
         Ok(())
     }
 
@@ -239,11 +222,7 @@ impl Client {
             req = req.header("Idempotency-Key", op_id);
         }
         let resp = req.send().await?;
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ClientError::Api { status, body });
-        }
+        let resp = Self::handle_response(resp).await?;
         Ok(resp.json().await?)
     }
 
@@ -264,11 +243,7 @@ impl Client {
             req = req.header("Idempotency-Key", op_id);
         }
         let resp = req.send().await?;
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ClientError::Api { status, body });
-        }
+        let resp = Self::handle_response(resp).await?;
         Ok(resp.json().await?)
     }
 
@@ -290,11 +265,7 @@ impl Client {
             req = req.header("Idempotency-Key", op_id);
         }
         let resp = req.send().await?;
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ClientError::Api { status, body });
-        }
+        let resp = Self::handle_response(resp).await?;
         Ok(resp.json().await?)
     }
 
@@ -315,11 +286,7 @@ impl Client {
             req = req.header("Idempotency-Key", op_id);
         }
         let resp = req.send().await?;
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ClientError::Api { status, body });
-        }
+        let resp = Self::handle_response(resp).await?;
         Ok(resp.json().await?)
     }
 
@@ -333,11 +300,7 @@ impl Client {
             .await
             .send()
             .await?;
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ClientError::Api { status, body });
-        }
+        let resp = Self::handle_response(resp).await?;
         Ok(resp.json().await?)
     }
 
@@ -359,11 +322,7 @@ impl Client {
             req = req.header("Idempotency-Key", op_id);
         }
         let resp = req.send().await?;
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ClientError::Api { status, body });
-        }
+        let resp = Self::handle_response(resp).await?;
         Ok(resp.json().await?)
     }
 
@@ -375,11 +334,7 @@ impl Client {
             .await
             .send()
             .await?;
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ClientError::Api { status, body });
-        }
+        let resp = Self::handle_response(resp).await?;
         Ok(resp.json().await?)
     }
 
@@ -391,11 +346,7 @@ impl Client {
             .await
             .send()
             .await?;
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ClientError::Api { status, body });
-        }
+        let resp = Self::handle_response(resp).await?;
         Ok(resp.json().await?)
     }
 
@@ -408,11 +359,7 @@ impl Client {
             .await
             .send()
             .await?;
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ClientError::Api { status, body });
-        }
+        let resp = Self::handle_response(resp).await?;
         Ok(resp.json().await?)
     }
 
@@ -427,11 +374,7 @@ impl Client {
             .json(body)
             .send()
             .await?;
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ClientError::Api { status, body });
-        }
+        let resp = Self::handle_response(resp).await?;
         Ok(resp.json().await?)
     }
 
@@ -442,11 +385,7 @@ impl Client {
             .json(body)
             .send()
             .await?;
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ClientError::Api { status, body });
-        }
+        let resp = Self::handle_response(resp).await?;
         Ok(resp.json().await?)
     }
 
@@ -464,11 +403,7 @@ impl Client {
             .json(body)
             .send()
             .await?;
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ClientError::Api { status, body });
-        }
+        let resp = Self::handle_response(resp).await?;
         Ok(resp.json().await?)
     }
 
@@ -486,11 +421,7 @@ impl Client {
             .json(body)
             .send()
             .await?;
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ClientError::Api { status, body });
-        }
+        let resp = Self::handle_response(resp).await?;
         Ok(resp.json().await?)
     }
 
@@ -503,11 +434,7 @@ impl Client {
             .await
             .send()
             .await?;
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ClientError::Api { status, body });
-        }
+        Self::handle_response(resp).await?;
         Ok(())
     }
 
@@ -525,11 +452,7 @@ impl Client {
             .await
             .send()
             .await?;
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ClientError::Api { status, body });
-        }
+        let resp = Self::handle_response(resp).await?;
         Ok(resp.json().await?)
     }
 
@@ -541,11 +464,7 @@ impl Client {
             .await
             .send()
             .await?;
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ClientError::Api { status, body });
-        }
+        let resp = Self::handle_response(resp).await?;
         Ok(resp.json().await?)
     }
 
@@ -563,11 +482,7 @@ impl Client {
             .json(body)
             .send()
             .await?;
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ClientError::Api { status, body });
-        }
+        let resp = Self::handle_response(resp).await?;
         Ok(resp.json().await?)
     }
 
@@ -588,11 +503,7 @@ impl Client {
             .await
             .send()
             .await?;
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ClientError::Api { status, body });
-        }
+        Self::handle_response(resp).await?;
         Ok(())
     }
 
@@ -607,11 +518,7 @@ impl Client {
             .await
             .send()
             .await?;
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ClientError::Api { status, body });
-        }
+        let resp = Self::handle_response(resp).await?;
         Ok(resp.json().await?)
     }
 
@@ -621,11 +528,7 @@ impl Client {
             .await
             .send()
             .await?;
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ClientError::Api { status, body });
-        }
+        let resp = Self::handle_response(resp).await?;
         Ok(resp.json().await?)
     }
 
@@ -643,11 +546,7 @@ impl Client {
             .json(steps)
             .send()
             .await?;
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ClientError::Api { status, body });
-        }
+        let resp = Self::handle_response(resp).await?;
         Ok(resp.json().await?)
     }
 
@@ -666,11 +565,7 @@ impl Client {
             .await
             .send()
             .await?;
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ClientError::Api { status, body });
-        }
+        let resp = Self::handle_response(resp).await?;
         Ok(resp.json().await?)
     }
 
@@ -686,11 +581,7 @@ impl Client {
             .json(body)
             .send()
             .await?;
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ClientError::Api { status, body });
-        }
+        let resp = Self::handle_response(resp).await?;
         Ok(resp.json().await?)
     }
 
@@ -704,11 +595,7 @@ impl Client {
             .json(body)
             .send()
             .await?;
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ClientError::Api { status, body });
-        }
+        let resp = Self::handle_response(resp).await?;
         Ok(resp.json().await?)
     }
 
@@ -718,11 +605,7 @@ impl Client {
             .await
             .send()
             .await?;
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ClientError::Api { status, body });
-        }
+        let resp = Self::handle_response(resp).await?;
         Ok(resp.json().await?)
     }
 
@@ -736,11 +619,7 @@ impl Client {
             .json(body)
             .send()
             .await?;
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ClientError::Api { status, body });
-        }
+        let resp = Self::handle_response(resp).await?;
         Ok(resp.json().await?)
     }
 
@@ -751,11 +630,7 @@ impl Client {
             .json(body)
             .send()
             .await?;
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ClientError::Api { status, body });
-        }
+        let resp = Self::handle_response(resp).await?;
         Ok(resp.json().await?)
     }
 
@@ -773,12 +648,8 @@ impl Client {
             .json(body)
             .send()
             .await?;
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ClientError::Api { status, body });
-        }
-        resp.json().await.map_err(ClientError::Http)
+        let resp = Self::handle_response(resp).await?;
+        Ok(resp.json().await?)
     }
 
     pub async fn clear_schedule(&self) -> Result<(), ClientError> {
@@ -787,11 +658,7 @@ impl Client {
             .await
             .send()
             .await?;
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ClientError::Api { status, body });
-        }
+        Self::handle_response(resp).await?;
         Ok(())
     }
 
@@ -808,11 +675,7 @@ impl Client {
             .json(&body)
             .send()
             .await?;
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ClientError::Api { status, body });
-        }
+        let resp = Self::handle_response(resp).await?;
         Ok(resp.json().await?)
     }
 
@@ -822,11 +685,7 @@ impl Client {
             .await
             .send()
             .await?;
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ClientError::Api { status, body });
-        }
+        let resp = Self::handle_response(resp).await?;
         Ok(resp.json().await?)
     }
 
@@ -839,11 +698,7 @@ impl Client {
             .await
             .send()
             .await?;
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ClientError::Api { status, body });
-        }
+        Self::handle_response(resp).await?;
         Ok(())
     }
 
@@ -855,11 +710,7 @@ impl Client {
             .await
             .send()
             .await?;
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ClientError::Api { status, body });
-        }
+        let resp = Self::handle_response(resp).await?;
         Ok(resp.json().await?)
     }
 
@@ -873,11 +724,7 @@ impl Client {
             .json(body)
             .send()
             .await?;
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ClientError::Api { status, body });
-        }
+        let resp = Self::handle_response(resp).await?;
         Ok(resp.json().await?)
     }
 
@@ -892,11 +739,7 @@ impl Client {
             .json(&body)
             .send()
             .await?;
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ClientError::Api { status, body });
-        }
+        let resp = Self::handle_response(resp).await?;
         Ok(resp.json().await?)
     }
 
@@ -916,11 +759,7 @@ impl Client {
             .json(&body)
             .send()
             .await?;
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ClientError::Api { status, body });
-        }
+        let resp = Self::handle_response(resp).await?;
         Ok(resp.json().await?)
     }
 
@@ -930,11 +769,7 @@ impl Client {
             .await
             .send()
             .await?;
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ClientError::Api { status, body });
-        }
+        let resp = Self::handle_response(resp).await?;
         Ok(resp.json().await?)
     }
 
@@ -944,11 +779,7 @@ impl Client {
             .await
             .send()
             .await?;
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ClientError::Api { status, body });
-        }
+        let resp = Self::handle_response(resp).await?;
         Ok(resp.json().await?)
     }
 
@@ -960,11 +791,7 @@ impl Client {
             .await
             .send()
             .await?;
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ClientError::Api { status, body });
-        }
+        let resp = Self::handle_response(resp).await?;
         Ok(resp.json().await?)
     }
 
@@ -978,11 +805,7 @@ impl Client {
             .json(body)
             .send()
             .await?;
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ClientError::Api { status, body });
-        }
+        let resp = Self::handle_response(resp).await?;
         Ok(resp.json().await?)
     }
 
@@ -994,11 +817,7 @@ impl Client {
             .await
             .send()
             .await?;
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ClientError::Api { status, body });
-        }
+        let resp = Self::handle_response(resp).await?;
         Ok(resp.json().await?)
     }
 
@@ -1011,11 +830,7 @@ impl Client {
             .await
             .send()
             .await?;
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ClientError::Api { status, body });
-        }
+        let resp = Self::handle_response(resp).await?;
         Ok(resp.json().await?)
     }
 
@@ -1026,11 +841,7 @@ impl Client {
             .json(body)
             .send()
             .await?;
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ClientError::Api { status, body });
-        }
+        let resp = Self::handle_response(resp).await?;
         Ok(resp.json().await?)
     }
 
@@ -1048,11 +859,7 @@ impl Client {
             .json(body)
             .send()
             .await?;
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ClientError::Api { status, body });
-        }
+        let resp = Self::handle_response(resp).await?;
         Ok(resp.json().await?)
     }
 
@@ -1065,11 +872,7 @@ impl Client {
             .await
             .send()
             .await?;
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ClientError::Api { status, body });
-        }
+        Self::handle_response(resp).await?;
         Ok(())
     }
 
@@ -1088,11 +891,7 @@ impl Client {
             req = req.header("Idempotency-Key", op_id);
         }
         let resp = req.send().await?;
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ClientError::Api { status, body });
-        }
+        let resp = Self::handle_response(resp).await?;
         Ok(resp.json().await?)
     }
 
@@ -1105,11 +904,7 @@ impl Client {
             .await
             .send()
             .await?;
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ClientError::Api { status, body });
-        }
+        let resp = Self::handle_response(resp).await?;
         Ok(resp.json().await?)
     }
 
@@ -1130,11 +925,7 @@ impl Client {
             req = req.header("Idempotency-Key", op_id);
         }
         let resp = req.send().await?;
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ClientError::Api { status, body });
-        }
+        let resp = Self::handle_response(resp).await?;
         Ok(resp.json().await?)
     }
 
@@ -1154,11 +945,7 @@ impl Client {
             req = req.header("Idempotency-Key", op_id);
         }
         let resp = req.send().await?;
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ClientError::Api { status, body });
-        }
+        Self::handle_response(resp).await?;
         Ok(())
     }
 
@@ -1187,11 +974,7 @@ impl Client {
             req = req.query(&params);
         }
         let resp = req.send().await?;
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ClientError::Api { status, body });
-        }
+        let resp = Self::handle_response(resp).await?;
         Ok(resp.json().await?)
     }
 
@@ -1205,11 +988,7 @@ impl Client {
             .await;
         req = req.query(&[("q", query.title.as_str()), ("limit", limit.as_str())]);
         let resp = req.send().await?;
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ClientError::Api { status, body });
-        }
+        let resp = Self::handle_response(resp).await?;
         Ok(resp.json().await?)
     }
 }
