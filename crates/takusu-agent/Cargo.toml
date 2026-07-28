@@ -23,6 +23,7 @@ axum = { workspace = true }
 clap = { version = "4", features = ["derive"] }
 config = { workspace = true }
 futures-util = { workspace = true }
+inventory = { workspace = true }
 jiff = { workspace = true }
 jpholiday = "0.2.0"
 rand = { workspace = true }

@@ -3,6 +3,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use std::sync::Arc;
 
+use crate::tools::{ToolContext, ToolModule};
 use crate::{
     InvalidArgsError, ToolError, ToolName, ToolOutput, ToolRegistry, TypedTool,
     UserInputProvider, UserInputQuestion,
@@ -72,10 +73,19 @@ impl TypedTool for CorrectAsr {
     }
 }
 
-/// Registers the `correct_asr` user-input tool.
-pub fn register_user_input_tool(registry: &mut ToolRegistry, provider: Arc<dyn UserInputProvider>) {
-    registry.register(Box::new(crate::tool::Typed(CorrectAsr::new(provider))));
+struct UserInputModule;
+
+impl ToolModule for UserInputModule {
+    fn register(&self, registry: &mut ToolRegistry, ctx: &ToolContext) {
+        registry.register(Box::new(crate::tool::Typed(CorrectAsr::new(
+            ctx.user_input_provider.clone(),
+        ))));
+    }
 }
+
+static USER_INPUT_MODULE: &dyn ToolModule = &UserInputModule;
+
+inventory::submit!(USER_INPUT_MODULE);
 
 #[cfg(test)]
 mod tests {

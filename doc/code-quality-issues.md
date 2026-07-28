@@ -378,7 +378,7 @@
 
 ---
 
-## 23. ツール登録が中央関数で手動登録（`takusu-agent`）
+## ~~23. ツール登録が中央関数で手動登録（`takusu-agent`）~~ FIXED
 
 - **問題の要約**: `tools/takusu/mod.rs` の `register_tools` が各ツールを `registry.register(Box::new(...))` で個別に登録している。新しいツールを追加するにはこの中央関数を書き換える必要があり、モジュールごとの自己登録ができない。ツールの追加忘れもコンパイラが検出しない。
 - **現在の型**: 中央 `fn register_tools(registry: &mut ToolRegistry)`

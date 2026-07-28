@@ -8,31 +8,42 @@ use takusu_util::{Quantity, TaskStatus};
 use crate::tools::takusu::{
     TaskContext, TimeZoneCache, client_error, server_timezone, strip_leading_hash, task_json,
 };
+use crate::tools::{ToolContext, ToolModule};
 use crate::{
     ChangeOperation, InvalidArgsError, ProposedChange, Target, TargetKind, ToolError, ToolExposure,
     ToolName, ToolOutput, ToolRegistry, TypedTool, deserialize_trimmed_optional,
 };
 
-/// Register the active-session progress tools.
-pub fn register_tools(registry: &mut ToolRegistry, client: Client, tz_cache: TimeZoneCache) {
-    registry.register(Box::new(crate::tool::Typed(TaskStart {
-        client: client.clone(),
-        tz_cache: tz_cache.clone(),
-    })));
-    registry.register(Box::new(crate::tool::Typed(TaskPause {
-        client: client.clone(),
-        tz_cache: tz_cache.clone(),
-    })));
-    registry.register(Box::new(crate::tool::Typed(TaskProgress {
-        client: client.clone(),
-        tz_cache: tz_cache.clone(),
-    })));
-    registry.register(Box::new(crate::tool::Typed(TaskComplete {
-        client: client.clone(),
-        tz_cache: tz_cache.clone(),
-    })));
-    registry.register(Box::new(crate::tool::Typed(TaskSplit { client, tz_cache })));
+struct ProgressModule;
+
+impl ToolModule for ProgressModule {
+    fn register(&self, registry: &mut ToolRegistry, ctx: &ToolContext) {
+        registry.register(Box::new(crate::tool::Typed(TaskStart {
+            client: ctx.client.clone(),
+            tz_cache: ctx.tz_cache.clone(),
+        })));
+        registry.register(Box::new(crate::tool::Typed(TaskPause {
+            client: ctx.client.clone(),
+            tz_cache: ctx.tz_cache.clone(),
+        })));
+        registry.register(Box::new(crate::tool::Typed(TaskProgress {
+            client: ctx.client.clone(),
+            tz_cache: ctx.tz_cache.clone(),
+        })));
+        registry.register(Box::new(crate::tool::Typed(TaskComplete {
+            client: ctx.client.clone(),
+            tz_cache: ctx.tz_cache.clone(),
+        })));
+        registry.register(Box::new(crate::tool::Typed(TaskSplit {
+            client: ctx.client.clone(),
+            tz_cache: ctx.tz_cache.clone(),
+        })));
+    }
 }
+
+static PROGRESS_MODULE: &dyn ToolModule = &ProgressModule;
+
+inventory::submit!(PROGRESS_MODULE);
 
 async fn load_task_context(
     client: &Client,

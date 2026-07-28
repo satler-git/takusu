@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use takusu_client::Client;
 
+use crate::tools::{ToolContext, ToolModule};
 use crate::{
     ChangeOperation, InferredField, InvalidArgsError, ProposedChange, Target, TargetKind,
     ToolError, ToolExposure, ToolName, ToolOutput, ToolRegistry, TypedTool,
@@ -98,18 +99,28 @@ pub async fn sync_built_in_skills(client: &Client) -> Result<(), takusu_client::
     Ok(())
 }
 
-pub fn register_tools(registry: &mut ToolRegistry, client: Client) {
-    registry.register(Box::new(crate::tool::Typed(SkillsList {
-        client: client.clone(),
-    })));
-    registry.register(Box::new(crate::tool::Typed(SkillsRead {
-        client: client.clone(),
-    })));
-    registry.register(Box::new(crate::tool::Typed(SkillsProposeAdd {
-        client: client.clone(),
-    })));
-    registry.register(Box::new(crate::tool::Typed(SkillsProposeEdit { client })));
+struct SkillsModule;
+
+impl ToolModule for SkillsModule {
+    fn register(&self, registry: &mut ToolRegistry, ctx: &ToolContext) {
+        registry.register(Box::new(crate::tool::Typed(SkillsList {
+            client: ctx.client.clone(),
+        })));
+        registry.register(Box::new(crate::tool::Typed(SkillsRead {
+            client: ctx.client.clone(),
+        })));
+        registry.register(Box::new(crate::tool::Typed(SkillsProposeAdd {
+            client: ctx.client.clone(),
+        })));
+        registry.register(Box::new(crate::tool::Typed(SkillsProposeEdit {
+            client: ctx.client.clone(),
+        })));
+    }
 }
+
+static SKILLS_MODULE: &dyn ToolModule = &SkillsModule;
+
+inventory::submit!(SKILLS_MODULE);
 
 fn client_error(error: takusu_client::ClientError) -> ToolError {
     match error {
