@@ -17,13 +17,24 @@ use takusu_habit::{
 
 use crate::tools::other_error;
 use crate::tools::takusu::TimeZoneCache;
+use crate::tools::{ToolContext, ToolModule};
 use crate::{
     InvalidArgsError, ToolError, ToolExposure, ToolName, ToolOutput, ToolRegistry, TypedTool,
 };
 
-pub fn register_tools(registry: &mut ToolRegistry, tz_cache: TimeZoneCache) {
-    registry.register(Box::new(crate::tool::Typed(ExpandRRule { tz_cache })));
+struct RruleModule;
+
+impl ToolModule for RruleModule {
+    fn register(&self, registry: &mut ToolRegistry, ctx: &ToolContext) {
+        registry.register(Box::new(crate::tool::Typed(ExpandRRule {
+            tz_cache: ctx.tz_cache.clone(),
+        })));
+    }
 }
+
+static RRULE_MODULE: &dyn ToolModule = &RruleModule;
+
+inventory::submit!(RRULE_MODULE);
 
 struct ExpandRRule {
     tz_cache: TimeZoneCache,

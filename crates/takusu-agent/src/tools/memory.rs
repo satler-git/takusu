@@ -5,6 +5,7 @@ use serde_json::{Value, json};
 use takusu_client::{Client, CreateMemory, MemoryQuery, MemoryRow, SimilarTaskQuery, UpdateMemory};
 use takusu_util::{MemoryKind, SubjectType};
 
+use crate::tools::{ToolContext, ToolModule};
 use crate::{
     ChangeOperation, InferredField, InvalidArgsError, ProposedChange, Target, TargetKind,
     ToolError, ToolExposure, ToolName, ToolOutput, ToolRegistry, TypedTool,
@@ -81,19 +82,29 @@ fn make_proposal(
     }
 }
 
-pub fn register_tools(registry: &mut ToolRegistry, client: Client) {
-    registry.register(Box::new(crate::tool::Typed(MemorySearch {
-        client: client.clone(),
-    })));
-    registry.register(Box::new(crate::tool::Typed(SimilarTasks {
-        client: client.clone(),
-    })));
-    registry.register(Box::new(crate::tool::Typed(MemorySave)));
-    registry.register(Box::new(crate::tool::Typed(MemoryUpdate {
-        client: client.clone(),
-    })));
-    registry.register(Box::new(crate::tool::Typed(MemoryDelete { client })));
+struct MemoryModule;
+
+impl ToolModule for MemoryModule {
+    fn register(&self, registry: &mut ToolRegistry, ctx: &ToolContext) {
+        registry.register(Box::new(crate::tool::Typed(MemorySearch {
+            client: ctx.client.clone(),
+        })));
+        registry.register(Box::new(crate::tool::Typed(SimilarTasks {
+            client: ctx.client.clone(),
+        })));
+        registry.register(Box::new(crate::tool::Typed(MemorySave)));
+        registry.register(Box::new(crate::tool::Typed(MemoryUpdate {
+            client: ctx.client.clone(),
+        })));
+        registry.register(Box::new(crate::tool::Typed(MemoryDelete {
+            client: ctx.client.clone(),
+        })));
+    }
 }
+
+static MEMORY_MODULE: &dyn ToolModule = &MemoryModule;
+
+inventory::submit!(MEMORY_MODULE);
 
 #[derive(Clone)]
 struct MemorySearch {

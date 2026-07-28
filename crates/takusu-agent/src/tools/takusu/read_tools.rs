@@ -45,9 +45,15 @@ pub(super) fn register_read_tools(
     })));
     registry.register(Box::new(crate::tool::Typed(GetSchedule {
         client: client.clone(),
+        tz_cache: tz_cache.clone(),
+    })));
+    registry.register(Box::new(crate::tool::Typed(GetSettings {
+        client: client.clone(),
+    })));
+    registry.register(Box::new(crate::tool::Typed(PreviewScheduleTool {
+        client,
         tz_cache,
     })));
-    registry.register(Box::new(crate::tool::Typed(GetSettings { client })));
 }
 
 // ── shared types ────────────────────────────────────────────────────────

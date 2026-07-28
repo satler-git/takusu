@@ -5,9 +5,24 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::json;
 
+use crate::tools::{ToolContext, ToolModule};
 use crate::{
     InvalidArgsError, ToolError, ToolExposure, ToolName, ToolOutput, ToolRegistry, TypedTool,
 };
+
+struct ToolSearchModule;
+
+impl ToolModule for ToolSearchModule {
+    fn register(&self, registry: &mut ToolRegistry, ctx: &ToolContext) {
+        registry.register(Box::new(crate::tool::Typed(ToolSearch::from_registry(
+            ctx.registry_ref.clone(),
+        ))));
+    }
+}
+
+static TOOL_SEARCH_MODULE: &dyn ToolModule = &ToolSearchModule;
+
+inventory::submit!(TOOL_SEARCH_MODULE);
 
 /// Search tool for discovering deferred tools.
 ///

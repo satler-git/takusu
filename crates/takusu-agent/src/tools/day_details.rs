@@ -18,16 +18,25 @@ use takusu_util::parse_date_expression;
 
 use crate::tools::takusu::TimeZoneCache;
 use crate::tools::takusu::client_error;
+use crate::tools::{ToolContext, ToolModule};
 use crate::{
     InvalidArgsError, ToolError, ToolName, ToolOutput, ToolRegistry, TypedTool,
 };
 
-pub fn register_tools(registry: &mut ToolRegistry, client: Client, tz_cache: TimeZoneCache) {
-    registry.register(Box::new(crate::tool::Typed(DayDetails {
-        client,
-        tz_cache,
-    })));
+struct DayDetailsModule;
+
+impl ToolModule for DayDetailsModule {
+    fn register(&self, registry: &mut ToolRegistry, ctx: &ToolContext) {
+        registry.register(Box::new(crate::tool::Typed(DayDetails {
+            client: ctx.client.clone(),
+            tz_cache: ctx.tz_cache.clone(),
+        })));
+    }
 }
+
+static DAY_DETAILS_MODULE: &dyn ToolModule = &DayDetailsModule;
+
+inventory::submit!(DAY_DETAILS_MODULE);
 
 struct DayDetails {
     client: Client,

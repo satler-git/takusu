@@ -43,6 +43,10 @@ pub(super) fn register_mutation_tools(
         })));
     }
     registry.register(Box::new(crate::tool::Typed(HabitScheduledSpans {
+        client: client.clone(),
+        tz_cache: tz_cache.clone(),
+    })));
+    registry.register(Box::new(crate::tool::Typed(MoveTaskTool {
         client,
         tz_cache,
     })));
