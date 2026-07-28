@@ -35,7 +35,7 @@ pub(super) fn register_mutation_tools(
             kind,
         }));
     }
-    registry.register(Box::new(HabitScheduledSpans { client, tz_cache }));
+    registry.register(Box::new(crate::tool::Typed(HabitScheduledSpans { client, tz_cache })));
 }
 
 /// JSON schema for a single habit step input used in create/update habit.

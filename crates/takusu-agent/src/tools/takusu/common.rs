@@ -60,6 +60,7 @@ pub(crate) fn optional_bool(
     }
 }
 
+#[allow(dead_code)]
 pub(crate) fn optional_i64(
     args: &serde_json::Map<String, Value>,
     name: &str,
@@ -82,6 +83,7 @@ pub(super) fn summary_string(args: &serde_json::Map<String, Value>, name: &str) 
 
 /// Parse `key` as either a single string or an array of display references.
 /// Strips leading `#` characters and deduplicates while preserving order.
+#[allow(dead_code)]
 pub(super) fn refs_from_args(
     args: &serde_json::Map<String, Value>,
     key: &str,
@@ -203,6 +205,7 @@ pub(crate) async fn server_timezone(cache: &TimeZoneCache) -> jiff::tz::TimeZone
     cache.get_with_fallback().await
 }
 
+#[allow(dead_code)]
 pub(super) fn normalize_datetime(
     value: Option<String>,
     tz: &jiff::tz::TimeZone,
