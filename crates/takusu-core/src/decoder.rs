@@ -2240,7 +2240,7 @@ mod tests {
             habit_group: None,
         };
         let mut planner = test_planner(vec![]);
-        planner.set_workload(WorkloadConfig::new(8, 10));
+        planner.workload = WorkloadConfig::new(8, 10);
         // 1 日の最大容量 10 に対し、既存 [0,8) + 候補 [7,12) は union で 12 を超える。
         let schedules = vec![TaskPlacement::new(Point(0), Point(8), 0)];
         let err = try_place::<true>(&planner, &schedules, &task, Point(7), 5, None).unwrap_err();

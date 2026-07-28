@@ -2,21 +2,32 @@ use criterion::{Criterion, criterion_group, criterion_main};
 use rand::rngs::StdRng;
 use rand::{Rng, RngExt, SeedableRng};
 use std::hint::black_box;
-use takusu_core::{NormalDist, ParallelMode, Planner, Point, SleepConfig, Solver, Task};
+use takusu_core::{
+    NormalDist, ParallelMode, Planner, PlannerConfig, Point, SleepConfig, Solver, Task,
+};
 
 fn generate_tasks(rng: &mut impl Rng, count: usize) -> Planner {
-    generate_tasks_with(rng, count, 0.2, 0.2, false, 2)
+    generate_tasks_with(
+        rng,
+        count,
+        PlannerConfig::new(Point(0), SleepConfig::disabled()),
+        0.2,
+        0.2,
+        false,
+        2,
+    )
 }
 
 fn generate_tasks_with(
     rng: &mut impl Rng,
     count: usize,
+    config: PlannerConfig,
     parallelizable_prob: f64,
     allows_parallel_prob: f64,
     fixed: bool,
     max_deps: usize,
 ) -> Planner {
-    let mut planner = Planner::new(Point(0), SleepConfig::disabled());
+    let mut planner = Planner::new(config);
 
     for i in 0..count {
         let start_slot = rng.random_range(0..=500);
@@ -154,7 +165,15 @@ fn bench_plan_range_25(c: &mut Criterion) {
 
 fn bench_plan_many_parallel(c: &mut Criterion) {
     let mut rng = StdRng::seed_from_u64(46);
-    let planner = generate_tasks_with(&mut rng, 100, 0.9, 0.1, false, 2);
+    let planner = generate_tasks_with(
+        &mut rng,
+        100,
+        PlannerConfig::new(Point(0), SleepConfig::disabled()),
+        0.9,
+        0.1,
+        false,
+        2,
+    );
 
     let mut group = c.benchmark_group("plan");
     group.sample_size(10);
@@ -171,7 +190,15 @@ fn bench_plan_many_parallel(c: &mut Criterion) {
 
 fn bench_plan_many_fixed(c: &mut Criterion) {
     let mut rng = StdRng::seed_from_u64(47);
-    let planner = generate_tasks_with(&mut rng, 100, 0.2, 0.2, true, 2);
+    let planner = generate_tasks_with(
+        &mut rng,
+        100,
+        PlannerConfig::new(Point(0), SleepConfig::disabled()),
+        0.2,
+        0.2,
+        true,
+        2,
+    );
 
     let mut group = c.benchmark_group("plan");
     group.sample_size(10);
@@ -188,7 +215,15 @@ fn bench_plan_many_fixed(c: &mut Criterion) {
 
 fn bench_plan_many_dependencies(c: &mut Criterion) {
     let mut rng = StdRng::seed_from_u64(48);
-    let planner = generate_tasks_with(&mut rng, 100, 0.2, 0.2, false, 8);
+    let planner = generate_tasks_with(
+        &mut rng,
+        100,
+        PlannerConfig::new(Point(0), SleepConfig::disabled()),
+        0.2,
+        0.2,
+        false,
+        8,
+    );
 
     let mut group = c.benchmark_group("plan");
     group.sample_size(10);
@@ -205,9 +240,19 @@ fn bench_plan_many_dependencies(c: &mut Criterion) {
 
 fn bench_alns_25(c: &mut Criterion) {
     let mut rng = StdRng::seed_from_u64(42);
-    let mut planner = generate_tasks(&mut rng, 25);
-    planner.set_solver(Solver::Priority);
-    planner.set_seed(Some(42));
+    let planner = generate_tasks_with(
+        &mut rng,
+        25,
+        PlannerConfig {
+            solver: Solver::Priority,
+            seed: Some(42),
+            ..PlannerConfig::new(Point(0), SleepConfig::disabled())
+        },
+        0.2,
+        0.2,
+        false,
+        2,
+    );
 
     let mut group = c.benchmark_group("alns");
     group.sample_size(10);
@@ -224,9 +269,19 @@ fn bench_alns_25(c: &mut Criterion) {
 
 fn bench_alns_100(c: &mut Criterion) {
     let mut rng = StdRng::seed_from_u64(44);
-    let mut planner = generate_tasks(&mut rng, 100);
-    planner.set_solver(Solver::Priority);
-    planner.set_seed(Some(44));
+    let planner = generate_tasks_with(
+        &mut rng,
+        100,
+        PlannerConfig {
+            solver: Solver::Priority,
+            seed: Some(44),
+            ..PlannerConfig::new(Point(0), SleepConfig::disabled())
+        },
+        0.2,
+        0.2,
+        false,
+        2,
+    );
 
     let mut group = c.benchmark_group("alns");
     group.sample_size(10);

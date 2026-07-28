@@ -6,10 +6,10 @@
 //! ## 概要
 //!
 //! ```no_run
-//! use takusu_core::{Planner, NormalDist, ParallelMode, Point, SleepConfig, Task};
+//! use takusu_core::{Planner, PlannerConfig, NormalDist, ParallelMode, Point, SleepConfig, Task};
 //! use jiff::Timestamp;
 //!
-//! let mut planner = Planner::new(Point::now(5), SleepConfig::disabled());
+//! let mut planner = Planner::new(PlannerConfig::new(Point::now(5), SleepConfig::disabled()));
 //!
 //! // 軽量なタスク追加
 //! let task_id = planner.add(Task {
@@ -245,7 +245,7 @@ impl Default for SleepConfig {
 ///
 /// ユーザーの「1 日にどれくらいのタスクを入れたいか」を表す。
 /// デフォルトでは内部で決定された値を使い、詳細を指定したい場合だけ
-/// `Planner::set_workload` で上書きする。
+/// `PlannerConfig` 経由で上書きする。
 #[derive(Debug, Clone, Copy)]
 pub struct WorkloadConfig {
     /// 快適な 1 日あたりの作業スロット数（5 分単位）。
@@ -465,6 +465,67 @@ pub enum Error {
 
 type ResultE<T> = Result<T, Error>;
 
+// ── PlannerConfig ─────────────────────────────────────────────────────
+
+/// `Planner` の生成設定。`Planner::new` に一度に渡すことで、setter の呼び忘れを
+/// コンパイル時に防ぐ。
+///
+/// 必須フィールド (`now` / `sleep`) は [`PlannerConfig::new`] で指定し、
+/// 残りの任意フィールドは構造体更新構文 (`..PlannerConfig::new(..)`) で上書きする。
+///
+/// ## 使用例
+///
+/// ```
+/// use takusu_core::{Planner, PlannerConfig, Point, SleepConfig, Solver};
+/// use std::time::Duration;
+///
+/// let config = PlannerConfig {
+///     solver: Solver::Priority,
+///     time_budget: Some(Duration::from_millis(500)),
+///     ..PlannerConfig::new(Point::from_raw(0), SleepConfig::disabled())
+/// };
+/// let mut p = Planner::new(config);
+/// ```
+#[derive(Debug, Clone, Copy)]
+pub struct PlannerConfig {
+    /// 現在時刻 (これより前にタスクを配置しない)。
+    pub now: Point,
+    /// 睡眠設定。`SleepConfig::recommended()` または `SleepConfig::disabled()`。
+    pub sleep: SleepConfig,
+    /// 使用するソルバー。デフォルトは `Solver::Sa`。
+    pub solver: Solver,
+    /// 求解時間の上限。`None` の場合は既存の反復数で完了する。
+    pub time_budget: Option<Duration>,
+    /// 乱数シード。`None` の場合は決定的なデフォルトシードを使用する。
+    pub seed: Option<u64>,
+    /// 前回スケジュールから priority/ALNS の初期解を warm start するか。
+    pub warm_start: bool,
+    /// #459: 1 日あたりの作業負荷設定。デフォルトは `WorkloadConfig::default()`。
+    pub workload: WorkloadConfig,
+    /// 評価関数の重み。デフォルトは `EvaluationWeights::default()`。
+    pub weights: EvaluationWeights,
+    /// SA（焼きなまし）のパラメータ。デフォルトは `SaConfig::default()`。
+    pub sa_config: SaConfig,
+}
+
+impl PlannerConfig {
+    /// 必須フィールド (`now` / `sleep`) を指定して設定を作成。
+    /// 残りのフィールドはデフォルト値で初期化される。
+    pub fn new(now: Point, sleep: SleepConfig) -> Self {
+        Self {
+            now,
+            sleep,
+            solver: Solver::default(),
+            time_budget: None,
+            seed: None,
+            warm_start: false,
+            workload: WorkloadConfig::default(),
+            weights: EvaluationWeights::default(),
+            sa_config: SaConfig::default(),
+        }
+    }
+}
+
 // ── Planner ───────────────────────────────────────────────────────────
 
 /// スケジュールプランナー。タスクを登録して `plan()` でスケジュールを得る。
@@ -472,9 +533,9 @@ type ResultE<T> = Result<T, Error>;
 /// ## 使用例
 ///
 /// ```
-/// use takusu_core::{Planner, Task, NormalDist, ParallelMode, Point, SleepConfig};
+/// use takusu_core::{Planner, PlannerConfig, Task, NormalDist, ParallelMode, Point, SleepConfig};
 ///
-/// let mut p = Planner::new(Point::from_raw(0), SleepConfig::disabled());
+/// let mut p = Planner::new(PlannerConfig::new(Point::from_raw(0), SleepConfig::disabled()));
 ///
 /// p.add(Task {
 ///     id: 0,
@@ -498,8 +559,7 @@ pub struct Planner {
     per: u16,
     sleep: SleepConfig,
     /// #459: 1 日あたりの作業負荷設定。
-    /// デフォルトは `WorkloadConfig::default()` で、詳細を指定したい場合は
-    /// `set_workload` で上書きする。
+    /// `PlannerConfig` 経由で設定する。
     workload: WorkloadConfig,
     /// #211: 前回スケジュールの参照（安定性ペナルティ用）。
     /// 各タスクの (start, end) で、SAが移動を嫌うようにする。
@@ -517,32 +577,37 @@ pub struct Planner {
     seed: Option<u64>,
     /// 前回スケジュールから priority/ALNS の初期解を warm start するか。
     warm_start: bool,
-    /// 評価関数の重み。`EvaluationWeights::default()` から差し替え可能。
+    /// 評価関数の重み。`PlannerConfig` 経由で差し替え可能。
     weights: EvaluationWeights,
-    /// SA（焼きなまし）のパラメータ。`SaConfig::default()` から差し替え可能。
+    /// SA（焼きなまし）のパラメータ。`PlannerConfig` 経由で差し替え可能。
     sa_config: SaConfig,
 }
 
 impl Planner {
     /// 新しいプランナーを作成。
     ///
-    /// - `now`: 現在時刻 (これより前にタスクを配置しない)
-    /// - `sleep`: 睡眠設定。`SleepConfig::recommended()` または `SleepConfig::disabled()`
-    pub fn new(now: Point, sleep: SleepConfig) -> Self {
+    /// 設定は [`PlannerConfig`] にまとめて渡す。必須フィールドのみ指定する
+    /// 簡易ケースでは [`PlannerConfig::new`] を使う:
+    ///
+    /// ```
+    /// use takusu_core::{Planner, PlannerConfig, Point, SleepConfig};
+    /// let mut p = Planner::new(PlannerConfig::new(Point::from_raw(0), SleepConfig::disabled()));
+    /// ```
+    pub fn new(config: PlannerConfig) -> Self {
         Self {
             tasks: vec![],
-            now,
+            now: config.now,
             per: 5,
-            sleep,
-            workload: WorkloadConfig::default(),
+            sleep: config.sleep,
+            workload: config.workload,
             previous_schedule: vec![],
-            solver: Solver::default(),
+            solver: config.solver,
             solver_strategy: None,
-            time_budget: None,
-            seed: None,
-            warm_start: false,
-            weights: EvaluationWeights::default(),
-            sa_config: SaConfig::default(),
+            time_budget: config.time_budget,
+            seed: config.seed,
+            warm_start: config.warm_start,
+            weights: config.weights,
+            sa_config: config.sa_config,
         }
     }
 
@@ -617,19 +682,7 @@ impl Planner {
         self.sleep
     }
 
-    /// #459: 1 日あたりの作業負荷設定を上書きする。
-    ///
-    /// 指定しない場合は `WorkloadConfig::default()` が使われる。
-    pub fn set_workload(&mut self, workload: WorkloadConfig) {
-        self.workload = workload;
-    }
-
-    /// 使用するソルバーを設定する。
-    pub fn set_solver(&mut self, solver: Solver) {
-        self.solver = solver;
-    }
-
-    /// 独自の [`SolverStrategy`] を差し込む。`set_solver` の enum 設定より優先され、
+    /// 独自の [`SolverStrategy`] を差し込む。`solver` enum 設定より優先され、
     /// `plan()` / `plan_partial()` はこの戦略を使う。`None` を渡すと enum 設定に戻る。
     pub fn set_solver_strategy(&mut self, strategy: Option<Arc<dyn SolverStrategy>>) {
         self.solver_strategy = strategy;
@@ -644,45 +697,14 @@ impl Planner {
             .unwrap_or_else(|| self.solver.strategy())
     }
 
-    /// 求解時間の上限を設定する。`None` で制限なし。
-    pub fn set_time_budget(&mut self, budget: Option<Duration>) {
-        self.time_budget = budget;
-    }
-
-    /// 乱数シードを設定する。`None` で決定的なデフォルト。
-    pub fn set_seed(&mut self, seed: Option<u64>) {
-        self.seed = seed;
-    }
-
-    /// 前回スケジュールからの warm start を有効/無効にする。
-    pub fn set_warm_start(&mut self, warm_start: bool) {
-        self.warm_start = warm_start;
-    }
-
     /// 評価関数の重みを取得する。
     pub fn weights(&self) -> &EvaluationWeights {
         &self.weights
     }
 
-    /// 評価関数の重みを上書きする。
-    ///
-    /// 指定しない場合は `EvaluationWeights::default()` が使われる。
-    /// チューニング実験等で重みを差し替えたい場合に使用する。
-    pub fn set_weights(&mut self, weights: EvaluationWeights) {
-        self.weights = weights;
-    }
-
     /// SA（焼きなまし）のパラメータを取得する。
     pub fn sa_config(&self) -> &SaConfig {
         &self.sa_config
-    }
-
-    /// SA（焼きなまし）のパラメータを上書きする。
-    ///
-    /// 指定しない場合は `SaConfig::default()` が使われる。
-    /// 温度スケジュール・反復数・近傍確率を調整したい場合に使用する。
-    pub fn set_sa_config(&mut self, config: SaConfig) {
-        self.sa_config = config;
     }
 
     /// 固定タスクを保持したまま未固定タスクをスケジュール。
@@ -785,7 +807,7 @@ impl Planner {
 
 impl Default for Planner {
     fn default() -> Self {
-        Self::new(Point(0), SleepConfig::disabled())
+        Self::new(PlannerConfig::new(Point(0), SleepConfig::disabled()))
     }
 }
 
@@ -835,7 +857,7 @@ mod tests {
 
     #[test]
     fn planner_sleep_avoided() {
-        let mut p = Planner::new(
+        let mut p = Planner::new(PlannerConfig::new(
             Point(0),
             SleepConfig {
                 day_start: 0,
@@ -843,7 +865,7 @@ mod tests {
                 end: 96,
                 enabled: true,
             },
-        );
+        ));
         p.add(Task {
             id: 0,
             start: Some(Point(0)),
@@ -1274,7 +1296,7 @@ mod tests {
 
     #[test]
     fn task_add_assigns_id() {
-        let mut planner = Planner::new(Point(0), SleepConfig::disabled());
+        let mut planner = Planner::new(PlannerConfig::new(Point(0), SleepConfig::disabled()));
         let id1 = planner
             .add(Task {
                 id: 0,
@@ -1307,7 +1329,7 @@ mod tests {
 
     #[test]
     fn task_add_updates_depend_indices() {
-        let mut planner = Planner::new(Point(0), SleepConfig::disabled());
+        let mut planner = Planner::new(PlannerConfig::new(Point(0), SleepConfig::disabled()));
         planner
             .add(Task {
                 id: 0,
@@ -1339,7 +1361,7 @@ mod tests {
 
     #[test]
     fn freeness_returns_valid_range() {
-        let mut planner = Planner::new(Point(0), SleepConfig::disabled());
+        let mut planner = Planner::new(PlannerConfig::new(Point(0), SleepConfig::disabled()));
         planner
             .add(Task {
                 id: 0,
@@ -1363,7 +1385,7 @@ mod tests {
     // into a positive number and deprioritizes the task.
     #[test]
     fn regression_780_freeness_past_deadline_priority() {
-        let mut planner = Planner::new(Point(100), SleepConfig::disabled());
+        let mut planner = Planner::new(PlannerConfig::new(Point(100), SleepConfig::disabled()));
         let late = planner
             .add(Task {
                 id: 0,
@@ -1449,7 +1471,7 @@ mod tests {
 
     #[test]
     fn plan_in_range_avoids_pinned_overlap() {
-        let mut p = Planner::new(Point(0), SleepConfig::disabled());
+        let mut p = Planner::new(PlannerConfig::new(Point(0), SleepConfig::disabled()));
         let a = p
             .add(Task {
                 id: 0,
@@ -1500,7 +1522,7 @@ mod tests {
 
     #[test]
     fn plan_in_range_respects_pinned_dependency() {
-        let mut p = Planner::new(Point(0), SleepConfig::disabled());
+        let mut p = Planner::new(PlannerConfig::new(Point(0), SleepConfig::disabled()));
         let a = p
             .add(Task {
                 id: 0,
@@ -1551,7 +1573,7 @@ mod tests {
 
     #[test]
     fn plan_in_range_keeps_extra_pinned_position() {
-        let mut p = Planner::new(Point(0), SleepConfig::disabled());
+        let mut p = Planner::new(PlannerConfig::new(Point(0), SleepConfig::disabled()));
         let a = p
             .add(Task {
                 id: 0,
@@ -1598,7 +1620,7 @@ mod tests {
 
     #[test]
     fn plan_in_range_pinned_depends_on_rescheduled() {
-        let mut p = Planner::new(Point(0), SleepConfig::disabled());
+        let mut p = Planner::new(PlannerConfig::new(Point(0), SleepConfig::disabled()));
         let a = p
             .add(Task {
                 id: 0,
@@ -1653,7 +1675,7 @@ mod tests {
     // preserved.
     #[test]
     fn regression_plan_in_range_pins_left_overlap() {
-        let mut p = Planner::new(Point(100), SleepConfig::disabled());
+        let mut p = Planner::new(PlannerConfig::new(Point(100), SleepConfig::disabled()));
         let a = p
             .add(Task {
                 id: 0,
@@ -1691,7 +1713,7 @@ mod tests {
     }
 
     fn simple_two_task_planner() -> Planner {
-        let mut planner = Planner::new(Point(0), SleepConfig::disabled());
+        let mut planner = Planner::new(PlannerConfig::new(Point(0), SleepConfig::disabled()));
         planner
             .add(Task {
                 id: 0,

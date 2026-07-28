@@ -1233,7 +1233,7 @@ pub(crate) fn repair_priority(
 
 /// SA（焼きなまし）のパラメータを集約した構造体。
 ///
-/// `Planner::sa_config` で保持し、`set_sa_config` で差し替え可能。
+/// `Planner::sa_config` で保持し、`PlannerConfig` 経由で差し替え可能。
 /// タスク規模や要件に合わせて温度スケジュール・反復数・近傍確率を調整できる。
 #[derive(Debug, Clone, Copy)]
 pub struct SaConfig {
@@ -3461,7 +3461,7 @@ mod tests {
                 habit_group: None,
             };
             let mut planner = test_planner(vec![task]);
-            planner.set_warm_start(true);
+            planner.warm_start = true;
             planner.set_previous_schedule(&[TaskPlacement::new(Point(42), Point(43), 0)]);
             let mut rng = StdRng::seed_from_u64(1);
             let result = alns_search_pinned(&planner, &[], &mut rng);
