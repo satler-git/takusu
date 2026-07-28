@@ -4,14 +4,8 @@ use axum::http::{HeaderMap, StatusCode};
 use takusu_storage::{CreateMemory, MemoryQuery, SimilarTaskQuery, UpdateMemory};
 
 use crate::error::HttpError;
+use crate::handlers::common::operation_id;
 use crate::state::AppState;
-
-fn operation_id(headers: &HeaderMap) -> Option<&str> {
-    headers
-        .get("idempotency-key")
-        .or_else(|| headers.get("Idempotency-Key"))
-        .and_then(|v| v.to_str().ok())
-}
 
 pub async fn create_memory(
     State(state): State<AppState>,

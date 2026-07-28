@@ -11,14 +11,8 @@ use takusu_util::search::Completion;
 use takusu_util::{TaskStatusFilter, Timestamp, parse_datetime_to_timestamp};
 
 use crate::error::HttpError;
+use crate::handlers::common::operation_id;
 use crate::state::AppState;
-
-fn operation_id(headers: &HeaderMap) -> Option<&str> {
-    headers
-        .get("idempotency-key")
-        .or_else(|| headers.get("Idempotency-Key"))
-        .and_then(|v| v.to_str().ok())
-}
 
 #[derive(Debug, Deserialize)]
 pub struct TaskQueryParams {
