@@ -36,7 +36,7 @@ use takusu_storage::{
     UpdateMemory, UpdateSettings,
 };
 use takusu_util::{
-    Abandonability, Date, MemoryKind, Quantity, ScheduleMode, SubjectType, TaskStatus,
+    Abandonability, Date, MemoryKind, Quantity, ScheduleMode, SleepInput, SubjectType, TaskStatus,
     TaskStatusFilter, TimeOfDay, Timestamp, WindowMode, parse_datetime_to_timestamp,
     parse_duration,
 };
@@ -73,6 +73,25 @@ fn parse_date(s: &str) -> Result<Date, AppError> {
     s.parse::<Date>().map_err(|e| {
         AppError::BadRequest(BadRequestKind::Other(format!("invalid date '{s}': {e}")))
     })
+}
+
+/// Parse `--mode` for `reschedule`, rejecting `full` at parse time.
+///
+/// `full` regenerates the entire schedule and is only valid for
+/// `generate_schedule`; `reschedule` is a partial reconfiguration. Rejecting
+/// here keeps the error at clap parse time rather than deferring it to a
+/// 400 from the app layer.
+fn parse_reschedule_mode(s: &str) -> Result<ScheduleMode, String> {
+    let mode: ScheduleMode = s
+        .parse()
+        .map_err(|e: takusu_util::UnknownLabel| format!("invalid mode '{s}': {e}"))?;
+    if matches!(mode, ScheduleMode::Full) {
+        return Err(
+            "full mode is not supported for reschedule; use `takusu schedule generate` instead"
+                .to_string(),
+        );
+    }
+    Ok(mode)
 }
 
 #[derive(Parser)]
@@ -860,12 +879,12 @@ enum ScheduleCommands {
         #[arg(long)]
         task_ids: Option<Vec<String>>,
         #[arg(long, default_value = "recommended")]
-        sleep: String,
+        sleep: SleepInput,
     },
 
     /// Reschedule (partial)
     Reschedule {
-        #[arg(long)]
+        #[arg(long, value_parser = parse_reschedule_mode)]
         mode: ScheduleMode,
         #[arg(long, help = "Start time (e.g. 2025-06-05, 2025-06-05T06:00Z)")]
         from: Option<String>,
@@ -876,7 +895,7 @@ enum ScheduleCommands {
         #[arg(long)]
         pinned: Option<Vec<String>>,
         #[arg(long, default_value = "recommended")]
-        sleep: String,
+        sleep: SleepInput,
     },
 
     /// Move a schedule entry

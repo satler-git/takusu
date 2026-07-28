@@ -988,12 +988,29 @@ impl TypedTool for PreviewScheduleTool {
             .collect::<Vec<_>>();
 
         let request = SchedulePreviewRequest {
-            mode: args.mode.unwrap_or_else(|| "full".to_string()),
+            mode: args
+                .mode
+                .as_deref()
+                .unwrap_or("full")
+                .parse()
+                .map_err(|e| {
+                    ToolError::InvalidArgs(InvalidArgsError::new("mode", format!("invalid: {e}")))
+                })?,
             from,
             until,
             task_ids,
             pinned,
-            sleep: args.sleep.unwrap_or_else(|| "recommended".to_string()),
+            sleep: args
+                .sleep
+                .as_deref()
+                .unwrap_or("recommended")
+                .parse()
+                .map_err(|e| {
+                    ToolError::InvalidArgs(InvalidArgsError::new(
+                        "sleep",
+                        format!("invalid: {e}"),
+                    ))
+                })?,
         };
 
         let default_query = TaskQuery::default();

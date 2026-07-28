@@ -1,6 +1,6 @@
 use serde_json::json;
 use takusu_client::*;
-use takusu_util::TaskStatus;
+use takusu_util::{ScheduleMode, SleepInput, TaskStatus};
 
 #[test]
 fn create_task_serialization() {
@@ -94,7 +94,7 @@ fn update_task_default_is_empty() {
 fn generate_schedule_serialization() {
     let gs = GenerateSchedule {
         task_ids: None,
-        sleep: "recommended".to_string(),
+        sleep: SleepInput::Recommended,
     };
 
     let json = serde_json::to_value(&gs).unwrap();
@@ -106,12 +106,12 @@ fn generate_schedule_serialization() {
 #[test]
 fn reschedule_serialization() {
     let rs = Reschedule {
-        mode: "range".to_string(),
+        mode: ScheduleMode::Range,
         from: Some("2025-06-05T08:00:00Z".to_string()),
         until: Some("2025-06-05T18:00:00Z".to_string()),
         task_ids: None,
         pinned: vec![],
-        sleep: "recommended".to_string(),
+        sleep: SleepInput::Recommended,
     };
 
     let json = serde_json::to_value(&rs).unwrap();

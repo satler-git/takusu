@@ -355,11 +355,13 @@ enum_label! {
     /// Reschedule / preview mode for schedule operations.
     ///
     /// `Range` replans tasks within a time window; `Tasks` replans a specific
-    /// set of task IDs. Used by `RescheduleInput` and the CLI's
-    /// `ScheduleCommands::Reschedule`.
+    /// set of task IDs; `Full` regenerates the entire schedule (only valid for
+    /// preview — `reschedule` rejects it). Used by `RescheduleInput`,
+    /// `SchedulePreviewInput`, and the CLI's `ScheduleCommands::Reschedule`.
     pub enum ScheduleMode {
         #[default] Range = "range",
         Tasks = "tasks",
+        Full = "full",
     }
 }
 

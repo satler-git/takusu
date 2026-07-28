@@ -6,7 +6,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use takusu_util::{Date, Similarity, TimeOfDay, Timestamp, url_encode};
+use takusu_util::{
+    Date, ScheduleMode, Similarity, SleepInput, TimeOfDay, Timestamp, url_encode,
+};
 use tokio::sync::RwLock;
 
 #[derive(Debug, thiserror::Error)]
@@ -1363,7 +1365,7 @@ pub struct DependencyAnalysisResponse {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SchedulePreviewRequest {
-    pub mode: String,
+    pub mode: ScheduleMode,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub from: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1373,7 +1375,7 @@ pub struct SchedulePreviewRequest {
     #[serde(default)]
     pub pinned: Vec<String>,
     #[serde(default = "default_sleep")]
-    pub sleep: String,
+    pub sleep: SleepInput,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -1403,17 +1405,17 @@ pub struct GenerateSchedule {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub task_ids: Option<Vec<String>>,
     #[serde(default = "default_sleep")]
-    pub sleep: String,
+    pub sleep: SleepInput,
 }
 
 #[allow(dead_code)]
-fn default_sleep() -> String {
-    "recommended".to_string()
+fn default_sleep() -> SleepInput {
+    SleepInput::Recommended
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Reschedule {
-    pub mode: String,
+    pub mode: ScheduleMode,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub from: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1423,7 +1425,7 @@ pub struct Reschedule {
     #[serde(default)]
     pub pinned: Vec<String>,
     #[serde(default = "default_sleep")]
-    pub sleep: String,
+    pub sleep: SleepInput,
 }
 
 #[derive(Debug, Serialize)]
