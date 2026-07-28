@@ -44,11 +44,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .ok()
             .filter(|s| !s.is_empty());
 
-        let workers_url = std::env::var("TAKUSU_WORKERS_URL")
-            .ok()
-            .filter(|s| !s.is_empty())
-            .or_else(|| cfg.workers_url().split('|').next().map(|s| s.to_string()))
-            .unwrap_or_default();
+        let workers_url = cfg.workers_url().to_string();
         let workers_token = std::env::var("TAKUSU_WORKERS_TOKEN")
             .ok()
             .filter(|s| !s.is_empty())

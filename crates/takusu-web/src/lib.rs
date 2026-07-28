@@ -27,7 +27,7 @@ async fn build_storage(
     cfg: &LocalConfig,
     workers_token: &str,
 ) -> Result<Arc<dyn Storage>, Box<dyn std::error::Error>> {
-    let workers_url = cfg.workers_url().split('|').next().unwrap_or_default();
+    let workers_url = cfg.workers_url();
     let storage: Arc<dyn Storage> = match cfg.storage_kind() {
         #[cfg(feature = "sqlite")]
         StorageKind::Sqlite => {

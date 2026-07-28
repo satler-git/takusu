@@ -1123,11 +1123,7 @@ fn main() {
 
         let storage: Arc<dyn takusu_storage::Storage> = match local_cfg.storage_kind() {
             StorageKind::Workers => {
-                let url = std::env::var("TAKUSU_WORKERS_URL")
-                    .ok()
-                    .filter(|s| !s.is_empty())
-                    .or_else(|| local_cfg.worker_url.split('|').next().map(|s| s.to_string()))
-                    .unwrap_or_default();
+                let url = local_cfg.workers_url().to_string();
                 if url.is_empty() {
                     eprintln!("Error: worker_url is required for the workers backend");
                     process::exit(1);
