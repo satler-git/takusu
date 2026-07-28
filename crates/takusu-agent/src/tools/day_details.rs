@@ -21,7 +21,10 @@ use crate::tools::takusu::client_error;
 use crate::{InvalidArgsError, ToolError, ToolOutput, ToolRegistry, TypedTool};
 
 pub fn register_tools(registry: &mut ToolRegistry, client: Client, tz_cache: TimeZoneCache) {
-    registry.register(Box::new(crate::tool::Typed(DayDetails { client, tz_cache })));
+    registry.register(Box::new(crate::tool::Typed(DayDetails {
+        client,
+        tz_cache,
+    })));
 }
 
 struct DayDetails {

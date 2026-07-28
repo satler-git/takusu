@@ -6,8 +6,8 @@ use takusu_client::Client;
 
 use crate::{
     ChangeOperation, InferredField, InvalidArgsError, ProposedChange, Target, TargetKind,
-    ToolError, ToolExposure, ToolOutput, ToolRegistry, TypedTool,
-    deserialize_trimmed_optional, deserialize_trimmed_required, inferred_fields_schema,
+    ToolError, ToolExposure, ToolOutput, ToolRegistry, TypedTool, deserialize_trimmed_optional,
+    deserialize_trimmed_required, inferred_fields_schema,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -339,10 +339,7 @@ impl TypedTool for SkillsProposeAdd {
         let mut schema = self.default_parameters_schema();
         // Replace inferred_fields with the hand-written schema that carries
         // the custom description.
-        if let Some(props) = schema
-            .get_mut("properties")
-            .and_then(Value::as_object_mut)
-        {
+        if let Some(props) = schema.get_mut("properties").and_then(Value::as_object_mut) {
             props.insert(
                 "inferred_fields".into(),
                 inferred_fields_schema("Fields inferred from user input."),
@@ -456,10 +453,7 @@ impl TypedTool for SkillsProposeEdit {
 
     fn parameters_schema(&self) -> Value {
         let mut schema = self.default_parameters_schema();
-        if let Some(props) = schema
-            .get_mut("properties")
-            .and_then(Value::as_object_mut)
-        {
+        if let Some(props) = schema.get_mut("properties").and_then(Value::as_object_mut) {
             props.insert(
                 "inferred_fields".into(),
                 inferred_fields_schema("Fields inferred from user input."),

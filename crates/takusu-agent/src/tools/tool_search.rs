@@ -57,10 +57,7 @@ impl TypedTool for ToolSearch {
         let registry = self.registry.upgrade().ok_or_else(|| {
             ToolError::InvalidArgs(InvalidArgsError::new("tool_search", "registry unavailable"))
         })?;
-        let limit = args
-            .limit
-            .map(|n| (n as usize).clamp(1, 20))
-            .unwrap_or(5);
+        let limit = args.limit.map(|n| (n as usize).clamp(1, 20)).unwrap_or(5);
 
         let entries = registry.search(&args.query, Some(limit));
         let definitions: Vec<Value> = entries.iter().map(|e| e.definition.clone()).collect();

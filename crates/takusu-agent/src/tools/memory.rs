@@ -7,8 +7,8 @@ use takusu_util::{MemoryKind, SubjectType};
 
 use crate::{
     ChangeOperation, InferredField, InvalidArgsError, ProposedChange, Target, TargetKind,
-    ToolError, ToolExposure, ToolOutput, ToolRegistry, TypedTool,
-    deserialize_trimmed_optional, deserialize_trimmed_required, inferred_fields_schema,
+    ToolError, ToolExposure, ToolOutput, ToolRegistry, TypedTool, deserialize_trimmed_optional,
+    deserialize_trimmed_required, inferred_fields_schema,
 };
 
 pub fn client_error(error: takusu_client::ClientError) -> ToolError {
@@ -139,10 +139,7 @@ impl TypedTool for MemorySearch {
     async fn call_typed(&self, args: Self::Params) -> Result<ToolOutput, ToolError> {
         let query = MemoryQuery {
             q: args.q,
-            kind: args
-                .kind
-                .map(|s| s.parse::<MemoryKind>())
-                .transpose()?,
+            kind: args.kind.map(|s| s.parse::<MemoryKind>()).transpose()?,
             subject_type: args
                 .subject_type
                 .map(|s| s.parse::<SubjectType>())
@@ -263,10 +260,7 @@ impl TypedTool for MemorySave {
 
     fn parameters_schema(&self) -> Value {
         let mut schema = self.default_parameters_schema();
-        if let Some(props) = schema
-            .get_mut("properties")
-            .and_then(Value::as_object_mut)
-        {
+        if let Some(props) = schema.get_mut("properties").and_then(Value::as_object_mut) {
             props.insert(
                 "inferred_fields".into(),
                 inferred_fields_schema("Fields inferred from user input."),
@@ -400,10 +394,7 @@ impl TypedTool for MemoryUpdate {
 
     fn parameters_schema(&self) -> Value {
         let mut schema = self.default_parameters_schema();
-        if let Some(props) = schema
-            .get_mut("properties")
-            .and_then(Value::as_object_mut)
-        {
+        if let Some(props) = schema.get_mut("properties").and_then(Value::as_object_mut) {
             props.insert(
                 "inferred_fields".into(),
                 inferred_fields_schema("Fields inferred from user input."),
@@ -431,10 +422,7 @@ impl TypedTool for MemoryUpdate {
         if let Value::Object(map) = body {
             execution_args.extend(map);
         }
-        execution_args.insert(
-            "memory_ref".into(),
-            Value::String(args.memory_ref.clone()),
-        );
+        execution_args.insert("memory_ref".into(), Value::String(args.memory_ref.clone()));
 
         let description = format!("update memory \"{}\"", current.key);
         let mut after = memory_json(&current);
@@ -500,10 +488,7 @@ impl TypedTool for MemoryDelete {
 
     fn parameters_schema(&self) -> Value {
         let mut schema = self.default_parameters_schema();
-        if let Some(props) = schema
-            .get_mut("properties")
-            .and_then(Value::as_object_mut)
-        {
+        if let Some(props) = schema.get_mut("properties").and_then(Value::as_object_mut) {
             props.insert(
                 "inferred_fields".into(),
                 inferred_fields_schema("Fields inferred from user input."),
@@ -520,10 +505,7 @@ impl TypedTool for MemoryDelete {
             .map_err(client_error)?;
 
         let mut execution_args = serde_json::Map::new();
-        execution_args.insert(
-            "memory_ref".into(),
-            Value::String(args.memory_ref.clone()),
-        );
+        execution_args.insert("memory_ref".into(), Value::String(args.memory_ref.clone()));
         execution_args.insert(
             "observed_revision".into(),
             Value::Number(serde_json::Number::from(args.observed_revision)),

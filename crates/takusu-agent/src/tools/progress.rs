@@ -9,8 +9,8 @@ use crate::tools::takusu::{
     TaskContext, TimeZoneCache, client_error, server_timezone, strip_leading_hash, task_json,
 };
 use crate::{
-    ChangeOperation, InvalidArgsError, ProposedChange, Target, TargetKind, ToolError,
-    ToolExposure, ToolOutput, ToolRegistry, TypedTool, deserialize_trimmed_optional,
+    ChangeOperation, InvalidArgsError, ProposedChange, Target, TargetKind, ToolError, ToolExposure,
+    ToolOutput, ToolRegistry, TypedTool, deserialize_trimmed_optional,
 };
 
 /// Register the active-session progress tools.
@@ -418,16 +418,15 @@ impl TypedTool for TaskProgress {
     }
 
     fn validate_args(&self, args: &Self::Params) -> Result<(), InvalidArgsError> {
-        Quantity::new(args.quantity_done).map_err(|_| {
-            InvalidArgsError::new("quantity_done", "cannot be negative")
-        })?;
+        Quantity::new(args.quantity_done)
+            .map_err(|_| InvalidArgsError::new("quantity_done", "cannot be negative"))?;
         Ok(())
     }
 
     async fn call_typed(&self, args: Self::Params) -> Result<ToolOutput, ToolError> {
         let task_ref = args.task_ref.map(|s| strip_leading_hash(&s).to_string());
-        let quantity_done = Quantity::new(args.quantity_done)
-            .expect("validate_args ensures quantity_done >= 0");
+        let quantity_done =
+            Quantity::new(args.quantity_done).expect("validate_args ensures quantity_done >= 0");
         let note = args.note;
 
         let tz = server_timezone(&self.tz_cache).await;
