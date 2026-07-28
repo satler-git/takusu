@@ -8,7 +8,8 @@ use crate::error::WorkerError;
 use crate::handlers::auth::db;
 use crate::handlers::d1::safe_all;
 use crate::handlers::settings::get_timezone;
-use crate::handlers::tasks::{allocate_display_id, resolve_task_id, select_one};
+use crate::handlers::id_resolver::resolve_task_id;
+use crate::handlers::tasks::{allocate_display_id, select_one};
 use crate::handlers::tokens::{json_ok, parse_json};
 use crate::models::{
     ProgressEventRow, ProgressResult, Quantity, RecordProgress, SplitResult, SplitTask,

@@ -6,6 +6,7 @@ use crate::auth;
 use crate::error::WorkerError;
 use crate::handlers::auth::db;
 use crate::handlers::d1::safe_all;
+use crate::handlers::id_resolver::resolve_task_id;
 use crate::handlers::tokens::{json_created, json_ok, parse_json};
 use crate::memory;
 use crate::models::{CreateMemory, MemoryRow, SimilarTaskRow, UpdateMemory};
@@ -42,66 +43,6 @@ fn request_hash_delete(id: &str, observed_revision: i64, operation_id: Option<&s
         "delete:{id}:{observed_revision}:{}",
         operation_id.unwrap_or("")
     ))
-}
-
-async fn resolve_task_id_for_memory(
-    database: &worker::D1Database,
-    id: &str,
-) -> Result<String, WorkerError> {
-    #[derive(serde::Deserialize)]
-    struct TaskIdRow {
-        id: String,
-    }
-
-    // Allow agents to pass display ids with a leading `#`, e.g. `#42`.
-    let stripped = id.strip_prefix('#').unwrap_or(id);
-
-    // `h{habit_display_id}#{task_display_id}` → habit task lookup (#380).
-    if let Some(rest) = stripped.strip_prefix(['h', 'H'])
-        && let Some((hdisp, tdisp)) = rest.split_once('#')
-        && let (Ok(hnum), Ok(tnum)) = (hdisp.parse::<i64>(), tdisp.parse::<i64>())
-    {
-        let stmt = database.prepare(
-            "SELECT t.id FROM tasks t JOIN habits h ON t.habit_id = h.id WHERE h.display_id = ?1 AND t.display_id = ?2",
-        );
-        let rows: Vec<TaskIdRow> = safe_all(&stmt.bind(&[
-            JsValue::from_f64(hnum as f64),
-            JsValue::from_f64(tnum as f64),
-        ])?)
-        .await?;
-        return rows
-            .into_iter()
-            .next()
-            .map(|r| r.id)
-            .ok_or_else(|| WorkerError::BadRequest(format!("task {id} not found")));
-    }
-
-    // Numeric input → display_id lookup for non-habit tasks only (#380).
-    if let Ok(num) = stripped.parse::<i64>() {
-        let stmt =
-            database.prepare("SELECT id FROM tasks WHERE display_id = ?1 AND habit_id IS NULL");
-        let rows: Vec<TaskIdRow> =
-            safe_all(&stmt.bind(&[JsValue::from_f64(num as f64)])?).await?;
-        return rows
-            .into_iter()
-            .next()
-            .map(|r| r.id)
-            .ok_or_else(|| WorkerError::BadRequest(format!("task {id} not found")));
-    }
-
-    // Full UUID — verify it exists. UUID prefixes are not accepted (#1251).
-    if id.contains('-') {
-        let stmt = database.prepare("SELECT id FROM tasks WHERE id = ?1");
-        let rows: Vec<TaskIdRow> = safe_all(&stmt.bind(&[JsValue::from_str(id)])?).await?;
-        return rows
-            .into_iter()
-            .next()
-            .map(|r| r.id)
-            .ok_or_else(|| WorkerError::BadRequest(format!("task {id} not found")));
-    }
-
-    // Anything else (e.g. a UUID prefix) is not a valid reference (#1251).
-    Err(WorkerError::BadRequest(format!("task {id} not found")))
 }
 
 async fn select_one(database: &worker::D1Database, id: &str) -> Result<MemoryRow, WorkerError> {
@@ -223,7 +164,12 @@ pub async fn create(mut req: Request, env: Env) -> Result<Response, WorkerError>
         .map_err(|e| WorkerError::BadRequest(format!("invalid content: {e}")))?;
     let subject_type = body.subject_type.unwrap_or_default();
     let subject_id = if body.kind == takusu_util::MemoryKind::TaskNote {
-        resolve_task_id_for_memory(&database, &body.subject_id.clone().unwrap_or_default()).await?
+        resolve_task_id(&database, &body.subject_id.clone().unwrap_or_default())
+            .await
+            .map_err(|e| match e {
+                WorkerError::NotFound(msg) => WorkerError::BadRequest(msg),
+                other => other,
+            })?
     } else {
         body.subject_id.clone().unwrap_or_default()
     };
