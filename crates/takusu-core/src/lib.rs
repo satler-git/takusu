@@ -74,7 +74,7 @@ pub use takusu_util::{Abandonability, Minutes, SLOT_MINUTES, Slots};
 ///
 /// `Point(i64)` で、`i64` はエポックからの 5 分スロット数。
 /// `Point(0)` が Timestamp(0) = UNIX エポック。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Point(pub i64);
 
 impl Point {

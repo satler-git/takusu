@@ -34,7 +34,7 @@ pub const SLOT_MINUTES: i64 = 5;
 pub struct Minutes(pub i64);
 
 /// 5 分スロット数。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Slots(pub i64);
 
 impl Minutes {
