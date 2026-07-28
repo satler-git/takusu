@@ -324,12 +324,13 @@ pub async fn update(mut req: Request, env: Env, id: &str) -> Result<Response, Wo
             Some(&existing.end_at),
         )?;
     }
-    // Treat quantity_total / original_quantity_total 0 as unset (same as None) server-side.
-    let quantity_total = body.quantity_total.filter(|t| *t != 0);
+    // Treat original_quantity_total 0 as unset (same as None) server-side.
+    // quantity_total 0 is a clear sentinel handled by the CASE WHEN in the
+    // UPDATE below (matches the SQLite backend — #1250).
     let existing_total = existing.quantity_total.filter(|t| *t != 0);
     let original_quantity_total = body.original_quantity_total.filter(|t| *t != 0);
     validate_quantity(
-        quantity_total.or(existing_total),
+        body.quantity_total.or(existing_total),
         body.quantity_done.or(Some(existing.quantity_done)),
         original_quantity_total,
     )?;
@@ -360,7 +361,7 @@ pub async fn update(mut req: Request, env: Env, id: &str) -> Result<Response, Wo
     };
 
     let main_stmt = database.prepare(
-        "UPDATE tasks SET title=COALESCE(?1,title), description=COALESCE(?2,description), start_at=CASE WHEN ?3=0 THEN start_at ELSE ?4 END, end_at=COALESCE(?5,end_at), avg_minutes=COALESCE(?6,avg_minutes), sigma_minutes=COALESCE(?7,sigma_minutes), depends=COALESCE(?8,depends), parallelizable=COALESCE(?9,parallelizable), allows_parallel=COALESCE(?10,allows_parallel), abandonability=COALESCE(?11,abandonability), status=?12, habit_id=COALESCE(?14,habit_id), user_edited=COALESCE(?15,user_edited), fixed=COALESCE(?16,fixed), habit_step_id=COALESCE(?17,habit_step_id), quantity_total=COALESCE(?18,quantity_total), quantity_done=COALESCE(?19,quantity_done), quantity_unit=COALESCE(?20,quantity_unit), original_quantity_total=COALESCE(?21,original_quantity_total), normalized_title=COALESCE(?22,normalized_title), updated_at=strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?13"
+        "UPDATE tasks SET title=COALESCE(?1,title), description=CASE WHEN ?2='' THEN NULL ELSE COALESCE(?2,description) END, start_at=CASE WHEN ?3=0 THEN start_at ELSE ?4 END, end_at=COALESCE(?5,end_at), avg_minutes=COALESCE(?6,avg_minutes), sigma_minutes=COALESCE(?7,sigma_minutes), depends=COALESCE(?8,depends), parallelizable=COALESCE(?9,parallelizable), allows_parallel=COALESCE(?10,allows_parallel), abandonability=COALESCE(?11,abandonability), status=?12, habit_id=COALESCE(?14,habit_id), user_edited=COALESCE(?15,user_edited), fixed=COALESCE(?16,fixed), habit_step_id=COALESCE(?17,habit_step_id), quantity_total=CASE WHEN ?18=0 THEN NULL ELSE COALESCE(?18,quantity_total) END, quantity_done=COALESCE(?19,quantity_done), quantity_unit=CASE WHEN ?20='' THEN NULL ELSE COALESCE(?20,quantity_unit) END, original_quantity_total=COALESCE(?21,original_quantity_total), normalized_title=COALESCE(?22,normalized_title), updated_at=strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?13"
     );
     let main_stmt = main_stmt.bind(&[
         body.title
@@ -409,7 +410,7 @@ pub async fn update(mut req: Request, env: Env, id: &str) -> Result<Response, Wo
             .as_deref()
             .map(JsValue::from_str)
             .unwrap_or(JsValue::NULL),
-        quantity_total
+        body.quantity_total
             .map(|n| JsValue::from_f64(f64::from(n)))
             .unwrap_or(JsValue::NULL),
         body.quantity_done
