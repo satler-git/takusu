@@ -111,16 +111,16 @@ pub(crate) fn compute_earliest_indexed(
 /// `[start, end)` と重なる睡眠窓があれば、その窓の終端スロットを返す。
 fn sleep_window_conflict(planner: &Planner, start: i64, end: i64) -> Option<i64> {
     let sleep = &planner.sleep;
-    if !sleep.enabled {
+    if !sleep.enabled() {
         return None;
     }
     let slots_per_day: i64 = (24 * 60) / planner.per as i64;
-    let mut day = sleep.day_start
-        + (start - sleep.day_start).div_euclid(slots_per_day) * slots_per_day
+    let mut day = sleep.day_start()
+        + (start - sleep.day_start()).div_euclid(slots_per_day) * slots_per_day
         - slots_per_day;
-    while day + sleep.start < end {
-        let w_start = day + sleep.start;
-        let w_end = day + sleep.end;
+    while day + sleep.start() < end {
+        let w_start = day + sleep.start();
+        let w_end = day + sleep.end();
         if w_start < end && w_end > start {
             return Some(w_end);
         }
@@ -135,7 +135,7 @@ fn slots_per_day(planner: &Planner) -> i64 {
 
 fn day_start_for(planner: &Planner, p: Point) -> Point {
     let spd = slots_per_day(planner);
-    let base = planner.sleep.day_start;
+    let base = planner.sleep.day_start();
     Point(base + (p.0 - base).div_euclid(spd) * spd)
 }
 
@@ -206,7 +206,7 @@ pub(crate) fn capacity_exceeded_for(
     start: Point,
     end: Point,
 ) -> bool {
-    let max = planner.workload.maximum_slots_per_day;
+    let max = planner.workload.maximum_slots_per_day();
     if max == 0 {
         return false;
     }
@@ -234,8 +234,8 @@ pub(crate) fn try_place<const CHECK_CAPACITY: bool>(
     if dur <= 0 {
         return Err(PlacementFailure::NoLegalSlot);
     }
-    let awake_len = if planner.sleep.enabled {
-        (24 * 60) / planner.per as i64 - (planner.sleep.end - planner.sleep.start)
+    let awake_len = if planner.sleep.enabled() {
+        (24 * 60) / planner.per as i64 - (planner.sleep.end() - planner.sleep.start())
     } else {
         i64::MAX
     };

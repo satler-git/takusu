@@ -451,7 +451,7 @@ fn task_and_depend_scores(
 
         // duration_score
         let actual = Point::delta(sched_end, sched_start);
-        let deficit = task.cost_estimate.avg as i64 - actual;
+        let deficit = task.cost_estimate.avg() as i64 - actual;
         if deficit > 0 {
             score += -(deficit * deficit) as f64 * w.w_short;
         } else if deficit < 0 {
@@ -484,7 +484,7 @@ fn buffer_score(planner: &Planner, index: &[Option<TimeWindow>], sorted: &[Place
             continue;
         };
         let sched_end = tw.end;
-        if task.cost_estimate.sigma == 0 {
+        if task.cost_estimate.sigma() == 0 {
             continue;
         }
         let mut buffer_end = task.end;
@@ -507,7 +507,7 @@ fn buffer_score(planner: &Planner, index: &[Option<TimeWindow>], sorted: &[Place
             }
         }
         let actual = (buffer_end.0 - sched_end.0).max(0);
-        score += task.cost_estimate.sigma as f64 * actual as f64 * w.w_buffer;
+        score += task.cost_estimate.sigma() as f64 * actual as f64 * w.w_buffer;
     }
     score
 }
@@ -562,14 +562,14 @@ fn sleep_score(
     sorted: &[Placement],
     (plan_start, plan_end): (Point, Point),
 ) -> f64 {
-    if !planner.sleep.enabled {
+    if !planner.sleep.enabled() {
         return 0.0;
     }
     let slots_per_day: i64 = (24 * 60) / planner.per as i64;
     let (day_start_epoch, sleep_start_rel, sleep_end_rel) = (
-        planner.sleep.day_start,
-        planner.sleep.start,
-        planner.sleep.end,
+        planner.sleep.day_start(),
+        planner.sleep.start(),
+        planner.sleep.end(),
     );
     let sleep_len = sleep_end_rel - sleep_start_rel;
 
@@ -624,14 +624,14 @@ fn daily_load_score(
     sorted: &[Placement],
     (plan_start, plan_end): (Point, Point),
 ) -> f64 {
-    if planner.workload.comfortable_slots_per_day == 0
-        && planner.workload.maximum_slots_per_day == 0
+    if planner.workload.comfortable_slots_per_day() == 0
+        && planner.workload.maximum_slots_per_day() == 0
     {
         return 0.0;
     }
 
     let slots_per_day = (24 * 60) / planner.per as i64;
-    let day_start_epoch = planner.sleep.day_start;
+    let day_start_epoch = planner.sleep.day_start();
 
     if plan_start >= plan_end {
         return 0.0;
@@ -650,9 +650,9 @@ fn daily_load_score(
         let load = union_length_in_window(sorted, day_start, day_end, &mut start_idx);
 
         let normal_penalty = (load * load) as f64 * w.w_daily_normal;
-        let comfortable_excess = (load - planner.workload.comfortable_slots_per_day).max(0);
+        let comfortable_excess = (load - planner.workload.comfortable_slots_per_day()).max(0);
         let overload_penalty = (comfortable_excess * comfortable_excess) as f64 * w.w_daily_overload;
-        let maximum_excess = (load - planner.workload.maximum_slots_per_day).max(0);
+        let maximum_excess = (load - planner.workload.maximum_slots_per_day()).max(0);
         let maximum_penalty = (maximum_excess * maximum_excess) as f64 * w.w_daily_maximum;
         score -= normal_penalty + overload_penalty + maximum_penalty;
 
@@ -1123,12 +1123,7 @@ mod tests {
     fn sleep_three_hour_threshold() {
         let mut p = make_planner();
 
-        p.sleep = SleepConfig {
-            day_start: 0,
-            start: 0,
-            end: 96,
-            enabled: true,
-        };
+        p.sleep = SleepConfig::new(0, 0, 96, true);
 
         let task_id = add_simple_task(&mut p, 24, 0, 200);
         let plan_4h_lost = plan_with(vec![TaskPlacement::new(Point(0), Point(48), task_id)]);
@@ -1315,12 +1310,7 @@ mod tests {
     #[test]
     fn sleep_parallel_tasks_not_double_counted() {
         let mut p = make_planner();
-        p.sleep = SleepConfig {
-            day_start: 0,
-            start: 0,
-            end: 96,
-            enabled: true,
-        };
+        p.sleep = SleepConfig::new(0, 0, 96, true);
 
         let host = p
             .add(Task {
@@ -1367,12 +1357,7 @@ mod tests {
     #[test]
     fn sleep_overlapping_intervals_union() {
         let mut p = make_planner();
-        p.sleep = SleepConfig {
-            day_start: 0,
-            start: 0,
-            end: 96,
-            enabled: true,
-        };
+        p.sleep = SleepConfig::new(0, 0, 96, true);
 
         let host = p
             .add(Task {
@@ -1432,12 +1417,7 @@ mod tests {
     #[test]
     fn sleep_got_is_not_negative() {
         let mut p = make_planner();
-        p.sleep = SleepConfig {
-            day_start: 0,
-            start: 0,
-            end: 96,
-            enabled: true,
-        };
+        p.sleep = SleepConfig::new(0, 0, 96, true);
 
         let host = p
             .add(Task {

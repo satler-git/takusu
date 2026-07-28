@@ -611,8 +611,8 @@ mod tests {
         assert!(t.parallel_mode.is_guest());
         assert!(t.parallel_mode.is_host());
         assert!((t.abandonability.get() - 0.7).abs() < 1e-10);
-        assert_eq!(t.cost_estimate.avg, 6);
-        assert_eq!(t.cost_estimate.sigma, 1);
+        assert_eq!(t.cost_estimate.avg(), 6);
+        assert_eq!(t.cost_estimate.sigma(), 1);
         assert!(t.depends.is_empty());
     }
 

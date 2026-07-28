@@ -97,12 +97,12 @@ pub fn build_stress_90d() -> Planner {
 pub fn build_planner_from_str(input: &str) -> Planner {
     let fixture: Fixture = serde_json::from_str(input).unwrap();
 
-    let sleep = SleepConfig {
-        day_start: fixture.sleep.day_start,
-        start: fixture.sleep.start,
-        end: fixture.sleep.end,
-        enabled: fixture.sleep.enabled,
-    };
+    let sleep = SleepConfig::new(
+        fixture.sleep.day_start,
+        fixture.sleep.start,
+        fixture.sleep.end,
+        fixture.sleep.enabled,
+    );
 
     let mut planner = Planner::new(PlannerConfig::new(Point(fixture.now), sleep));
     for t in fixture.tasks {
