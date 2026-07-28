@@ -6,8 +6,8 @@ use std::time::Duration;
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use takusu_core::{
-    Minutes, NormalDist, ParallelMode, Planner, PlannerConfig, Point, RescheduleRange,
-    SleepConfig, Slots, Task as CoreTask, TaskPlacement, WorkloadConfig,
+    Minutes, NormalDist, ParallelMode, Planner, PlannerConfig, Point, RescheduleRange, SleepConfig,
+    Slots, Task as CoreTask, TaskPlacement, WorkloadConfig,
 };
 use takusu_storage::{
     CreateHabit, CreateHabitBatch, CreateHabitBatchResult, CreateHabitScheduledSpan, CreateMemory,
@@ -26,24 +26,28 @@ use takusu_util::{
     Abandonability, EnumLabel, MemoryKind, ScheduleMode, TaskStatus, TaskStatusFilter, WindowMode,
 };
 
-use crate::error::AppError;
 use crate::error::storage_to_app;
+use crate::error::{AppError, BadRequestKind, ConflictKind, SkillOp};
 use crate::token_cache::TokenCache;
 use takusu_util::parse_timezone;
 
 fn parse_hhmm(s: &str) -> Result<(u8, u8), AppError> {
     let parts: Vec<&str> = s.split(':').collect();
     if parts.len() != 2 {
-        return Err(AppError::BadRequest(format!("invalid time: {s}")));
+        return Err(AppError::BadRequest(BadRequestKind::InvalidTime(format!(
+            "invalid time: {s}"
+        ))));
     }
-    let h: u8 = parts[0]
-        .parse()
-        .map_err(|_| AppError::BadRequest(format!("invalid time: {s}")))?;
-    let m: u8 = parts[1]
-        .parse()
-        .map_err(|_| AppError::BadRequest(format!("invalid time: {s}")))?;
+    let h: u8 = parts[0].parse().map_err(|_| {
+        AppError::BadRequest(BadRequestKind::InvalidTime(format!("invalid time: {s}")))
+    })?;
+    let m: u8 = parts[1].parse().map_err(|_| {
+        AppError::BadRequest(BadRequestKind::InvalidTime(format!("invalid time: {s}")))
+    })?;
     if h > 23 || m > 59 {
-        return Err(AppError::BadRequest(format!("invalid time: {s}")));
+        return Err(AppError::BadRequest(BadRequestKind::InvalidTime(format!(
+            "invalid time: {s}"
+        ))));
     }
     Ok((h, m))
 }
@@ -58,28 +62,28 @@ fn validate_minutes(avg: i64, sigma: Option<i64>) -> Result<(), AppError> {
     const MAX_MINUTES: i64 = 60 * 24 * 365;
 
     if avg < 0 {
-        return Err(AppError::BadRequest(format!(
+        return Err(AppError::BadRequest(BadRequestKind::Other(format!(
             "avg_minutes must be >= 0 (got {avg})"
-        )));
+        ))));
     }
     if avg > MAX_MINUTES {
-        return Err(AppError::BadRequest(format!(
+        return Err(AppError::BadRequest(BadRequestKind::Other(format!(
             "avg_minutes must be at most {MAX_MINUTES} (got {avg})"
-        )));
+        ))));
     }
     if let Some(s) = sigma
         && s < 0
     {
-        return Err(AppError::BadRequest(format!(
+        return Err(AppError::BadRequest(BadRequestKind::Other(format!(
             "sigma_minutes must be >= 0 (got {s})"
-        )));
+        ))));
     }
     if let Some(s) = sigma
         && s > MAX_MINUTES
     {
-        return Err(AppError::BadRequest(format!(
+        return Err(AppError::BadRequest(BadRequestKind::Other(format!(
             "sigma_minutes must be at most {MAX_MINUTES} (got {s})"
-        )));
+        ))));
     }
     Ok(())
 }
@@ -91,7 +95,7 @@ fn validate_minutes(avg: i64, sigma: Option<i64>) -> Result<(), AppError> {
 /// (#942).
 fn validate_title(title: &str) -> Result<(), AppError> {
     takusu_util::memory::normalize_text(title, Some(takusu_util::memory::MAX_CONTENT_SCALARS))
-        .map_err(|e| AppError::BadRequest(format!("invalid title: {e}")))?;
+        .map_err(|e| AppError::BadRequest(BadRequestKind::Other(format!("invalid title: {e}"))))?;
     Ok(())
 }
 
@@ -100,8 +104,9 @@ fn validate_title(title: &str) -> Result<(), AppError> {
 /// become `takusu_habit` types (see `doc/type-safety-issues.md` §3.4 / §8.6).
 /// `takusu-worker` validates recurrences separately without converting to `takusu_habit`.
 fn parse_recurrence(recurrence: &str) -> Result<takusu_habit::RecurrenceRule, AppError> {
-    serde_json::from_str::<takusu_habit::RecurrenceRule>(recurrence)
-        .map_err(|e| AppError::BadRequest(format!("invalid recurrence: {e}")))
+    serde_json::from_str::<takusu_habit::RecurrenceRule>(recurrence).map_err(|e| {
+        AppError::BadRequest(BadRequestKind::Other(format!("invalid recurrence: {e}")))
+    })
 }
 
 /// Verify the recurrence string parses as a `RecurrenceRule` so that bad JSON
@@ -118,38 +123,38 @@ fn validate_skill(create: &CreateSkill) -> Result<(), AppError> {
     const MAX_BODY_LEN: usize = 64 * 1024;
 
     if create.slug.is_empty() || create.slug.len() > MAX_SLUG_LEN {
-        return Err(AppError::BadRequest(format!(
+        return Err(AppError::BadRequest(BadRequestKind::Other(format!(
             "slug must be 1..{MAX_SLUG_LEN} characters"
-        )));
+        ))));
     }
     if create.slug.starts_with('.') || create.slug.contains('/') || create.slug.contains("..") {
-        return Err(AppError::BadRequest(
+        return Err(AppError::BadRequest(BadRequestKind::Other(
             "slug must not contain path components".into(),
-        ));
+        )));
     }
     if !create
         .slug
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
     {
-        return Err(AppError::BadRequest(
+        return Err(AppError::BadRequest(BadRequestKind::Other(
             "slug must contain only ASCII letters, digits, '-', '_'".into(),
-        ));
+        )));
     }
     if create.name.is_empty() || create.name.len() > MAX_NAME_LEN {
-        return Err(AppError::BadRequest(format!(
+        return Err(AppError::BadRequest(BadRequestKind::Other(format!(
             "name must be 1..{MAX_NAME_LEN} characters"
-        )));
+        ))));
     }
     if create.description.len() > MAX_DESC_LEN {
-        return Err(AppError::BadRequest(format!(
+        return Err(AppError::BadRequest(BadRequestKind::Other(format!(
             "description must be at most {MAX_DESC_LEN} characters"
-        )));
+        ))));
     }
     if create.body.is_empty() || create.body.len() > MAX_BODY_LEN {
-        return Err(AppError::BadRequest(format!(
+        return Err(AppError::BadRequest(BadRequestKind::Other(format!(
             "body must be 1..{MAX_BODY_LEN} characters"
-        )));
+        ))));
     }
     Ok(())
 }
@@ -162,34 +167,44 @@ fn validate_memory(create: &CreateMemory) -> Result<(), AppError> {
             | takusu_util::MemoryKind::Fact
             | takusu_util::MemoryKind::TaskNote
     ) {
-        return Err(AppError::BadRequest(
+        return Err(AppError::BadRequest(BadRequestKind::Other(
             "kind must be 'proper_noun', 'fact', or 'task_note'".into(),
-        ));
+        )));
     }
     if takusu_util::memory::normalize_key(&create.key).is_err() {
-        return Err(AppError::BadRequest("invalid key".into()));
+        return Err(AppError::BadRequest(BadRequestKind::Other(
+            "invalid key".into(),
+        )));
     }
     if takusu_util::memory::normalize_content(&create.content).is_err() {
-        return Err(AppError::BadRequest("invalid content".into()));
+        return Err(AppError::BadRequest(BadRequestKind::Other(
+            "invalid content".into(),
+        )));
     }
     if create
         .subject_type
         .as_ref()
         .is_some_and(|s| s.as_str().len() > 64)
     {
-        return Err(AppError::BadRequest("subject_type too long".into()));
+        return Err(AppError::BadRequest(BadRequestKind::Other(
+            "subject_type too long".into(),
+        )));
     }
     if create.subject_id.as_ref().is_some_and(|s| s.len() > 64) {
-        return Err(AppError::BadRequest("subject_id too long".into()));
+        return Err(AppError::BadRequest(BadRequestKind::Other(
+            "subject_id too long".into(),
+        )));
     }
     if create.kind == takusu_util::MemoryKind::TaskNote {
         if create.subject_type != Some(takusu_util::SubjectType::Task) {
-            return Err(AppError::BadRequest(
+            return Err(AppError::BadRequest(BadRequestKind::Other(
                 "task_note requires subject_type='task'".into(),
-            ));
+            )));
         }
         if create.subject_id.as_ref().is_none_or(|s| s.is_empty()) {
-            return Err(AppError::BadRequest("task_note requires subject_id".into()));
+            return Err(AppError::BadRequest(BadRequestKind::Other(
+                "task_note requires subject_id".into(),
+            )));
         }
     }
     Ok(())
@@ -225,16 +240,16 @@ fn validate_steps(steps: &[HabitStepInput]) -> Result<(), AppError> {
     for (i, s) in steps.iter().enumerate() {
         for dep in &s.depends_on {
             let Some(&dep_idx) = id_to_idx.get(dep) else {
-                return Err(AppError::BadRequest(format!(
+                return Err(AppError::BadRequest(BadRequestKind::Other(format!(
                     "step depends_on references unknown step id: {dep}"
-                )));
+                ))));
             };
             adj[i].push(dep_idx);
         }
     }
 
     crate::graph::detect_cycle(&adj)
-        .map_err(|_| AppError::BadRequest("循環依存が検出されました".into()))?;
+        .map_err(|_| AppError::BadRequest(BadRequestKind::CycleDetected))?;
     Ok(())
 }
 
@@ -256,15 +271,16 @@ fn topo_sort_steps(steps: &[HabitStepRow]) -> Result<Vec<usize>, AppError> {
             }
         }
     }
-    crate::graph::topo_sort(&adj)
-        .map_err(|_| AppError::BadRequest("habit steps に循環依存が検出されました".into()))
+    crate::graph::topo_sort(&adj).map_err(|_| AppError::BadRequest(BadRequestKind::CycleDetected))
 }
 
 /// Verify the timezone string resolves to a real `jiff::tz::TimeZone` so that
 /// typos don't silently fall back to UTC (#277). User-supplied timezones are
 /// reported as BadRequest.
 fn validate_timezone(tz: &str) -> Result<(), AppError> {
-    parse_timezone(tz).map_err(AppError::BadRequest).map(|_| ())
+    parse_timezone(tz)
+        .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))
+        .map(|_| ())
 }
 
 /// Parse the timezone stored in settings. A corrupt stored timezone is a
@@ -299,9 +315,9 @@ fn validate_task_datetimes(
     if let (Some(s), Some(e)) = (effective_start, effective_end)
         && s > e
     {
-        return Err(AppError::BadRequest(format!(
+        return Err(AppError::BadRequest(BadRequestKind::Other(format!(
             "start_at must be <= end_at ({s} > {e})"
-        )));
+        ))));
     }
     Ok(())
 }
@@ -319,7 +335,10 @@ fn step_to_core_task(
         .ok_or_else(|| AppError::Internal("occurrence date out of range".into()))?;
     let (sh, sm) = (step.start_time.hour(), step.start_time.minute());
     let start_time = takusu_habit::TimeOfDay::new(sh, sm).ok_or_else(|| {
-        AppError::BadRequest(format!("invalid step start_time: {}", step.start_time))
+        AppError::BadRequest(BadRequestKind::InvalidTime(format!(
+            "invalid step start_time: {}",
+            step.start_time
+        )))
     })?;
     let start_pt = takusu_habit::date_time_to_point(date, &start_time, tz)
         .ok_or_else(|| AppError::Internal("step start point out of range".into()))?;
@@ -427,9 +446,9 @@ fn validate_scheduled_span_dates(
     end: &takusu_util::Date,
 ) -> Result<(), AppError> {
     if start > end {
-        return Err(AppError::BadRequest(format!(
+        return Err(AppError::BadRequest(BadRequestKind::Other(format!(
             "start_date ({start}) must be <= end_date ({end})"
-        )));
+        ))));
     }
     Ok(())
 }
@@ -558,8 +577,11 @@ fn planner_config(start: Point, sleep: SleepConfig, settings: &SettingsRow) -> P
 /// タイムゾーン。過去にモバイルアプリがオフセットを削除した文字列を保存して
 /// しまった場合などに救済する。
 fn iso_to_point(iso: &str, tz: &jiff::tz::TimeZone) -> Result<Point, AppError> {
-    let ts = takusu_util::parse_datetime_to_timestamp(iso, tz)
-        .map_err(|e| AppError::BadRequest(format!("invalid datetime: {e}")))?;
+    let ts = takusu_util::parse_datetime_to_timestamp(iso, tz).map_err(|e| {
+        AppError::BadRequest(BadRequestKind::InvalidTime(format!(
+            "invalid datetime: {e}"
+        )))
+    })?;
     Ok(Point::from_timestamp(ts, 5))
 }
 
@@ -568,8 +590,11 @@ fn iso_to_point(iso: &str, tz: &jiff::tz::TimeZone) -> Result<Point, AppError> {
 /// naive な文字列は設定タイムゾーンで解釈して絶対時刻にする。
 #[allow(dead_code)]
 fn normalize_iso_datetime(iso: &str, tz: &jiff::tz::TimeZone) -> Result<String, AppError> {
-    let ts = takusu_util::parse_datetime_to_timestamp(iso, tz)
-        .map_err(|e| AppError::BadRequest(format!("invalid datetime: {e}")))?;
+    let ts = takusu_util::parse_datetime_to_timestamp(iso, tz).map_err(|e| {
+        AppError::BadRequest(BadRequestKind::InvalidTime(format!(
+            "invalid datetime: {e}"
+        )))
+    })?;
     Ok(ts.to_string())
 }
 
@@ -685,8 +710,11 @@ fn build_habit_core(
 ) -> Result<takusu_habit::Habit, AppError> {
     let recurrence = parse_recurrence(recurrence)?;
     let (sh, sm) = (start_time.hour(), start_time.minute());
-    let start_time = takusu_habit::TimeOfDay::new(sh, sm)
-        .ok_or_else(|| AppError::BadRequest(format!("invalid start_time: {start_time}")))?;
+    let start_time = takusu_habit::TimeOfDay::new(sh, sm).ok_or_else(|| {
+        AppError::BadRequest(BadRequestKind::InvalidTime(format!(
+            "invalid start_time: {start_time}"
+        )))
+    })?;
     let duration = NormalDist::from_minutes(Minutes(avg_minutes), Minutes(sigma_minutes));
     let (eh, em) = (end_time.hour(), end_time.minute());
     let deadline_slots = if fixed {
@@ -901,13 +929,14 @@ impl TakusuApp {
         validate_skill(body)?;
         if let Ok(existing) = self.storage.get_skill(&body.slug).await {
             if existing.built_in {
-                return Err(AppError::Conflict {
-                    message: format!("built-in skill {} cannot be overwritten", body.slug),
-                });
+                return Err(AppError::Conflict(ConflictKind::BuiltInSkill {
+                    slug: body.slug.clone(),
+                    op: SkillOp::Overwrite,
+                }));
             }
-            return Err(AppError::Conflict {
-                message: format!("skill {} already exists", body.slug),
-            });
+            return Err(AppError::Conflict(ConflictKind::AlreadyExists(
+                body.slug.clone(),
+            )));
         }
         self.storage
             .create_skill(body)
@@ -926,30 +955,33 @@ impl TakusuApp {
     pub async fn update_skill(&self, slug: &str, body: &UpdateSkill) -> Result<SkillRow, AppError> {
         let existing = self.storage.get_skill(slug).await.map_err(storage_to_app)?;
         if existing.built_in {
-            return Err(AppError::Conflict {
-                message: format!("built-in skill {slug} cannot be edited"),
-            });
+            return Err(AppError::Conflict(ConflictKind::BuiltInSkill {
+                slug: slug.to_string(),
+                op: SkillOp::Edit,
+            }));
         }
         if body
             .name
             .as_ref()
             .is_some_and(|n| n.is_empty() || n.len() > 100)
         {
-            return Err(AppError::BadRequest(
+            return Err(AppError::BadRequest(BadRequestKind::Other(
                 "name must be 1..100 characters".into(),
-            ));
+            )));
         }
         if body.description.as_ref().is_some_and(|d| d.len() > 500) {
-            return Err(AppError::BadRequest(
+            return Err(AppError::BadRequest(BadRequestKind::Other(
                 "description must be at most 500 characters".into(),
-            ));
+            )));
         }
         if body
             .body
             .as_ref()
             .is_some_and(|b| b.is_empty() || b.len() > 64 * 1024)
         {
-            return Err(AppError::BadRequest("body length is invalid".into()));
+            return Err(AppError::BadRequest(BadRequestKind::Other(
+                "body length is invalid".into(),
+            )));
         }
         self.storage
             .update_skill(slug, body)
@@ -960,9 +992,10 @@ impl TakusuApp {
     pub async fn delete_skill(&self, slug: &str) -> Result<(), AppError> {
         let existing = self.storage.get_skill(slug).await.map_err(storage_to_app)?;
         if existing.built_in {
-            return Err(AppError::Conflict {
-                message: format!("built-in skill {slug} cannot be deleted"),
-            });
+            return Err(AppError::Conflict(ConflictKind::BuiltInSkill {
+                slug: slug.to_string(),
+                op: SkillOp::Delete,
+            }));
         }
         self.storage
             .delete_skill(slug)
@@ -1005,10 +1038,14 @@ impl TakusuApp {
         operation_id: Option<&str>,
     ) -> Result<MemoryRow, AppError> {
         if body.content.as_ref().is_none_or(|c| c.is_empty()) {
-            return Err(AppError::BadRequest("content is required".into()));
+            return Err(AppError::BadRequest(BadRequestKind::Other(
+                "content is required".into(),
+            )));
         }
         if takusu_util::memory::normalize_content(body.content.as_deref().unwrap_or("")).is_err() {
-            return Err(AppError::BadRequest("invalid content".into()));
+            return Err(AppError::BadRequest(BadRequestKind::Other(
+                "invalid content".into(),
+            )));
         }
         self.storage
             .update_memory(id, body, operation_id)
@@ -1030,7 +1067,9 @@ impl TakusuApp {
 
     pub async fn search_memories(&self, query: &MemoryQuery) -> Result<Vec<MemoryRow>, AppError> {
         if takusu_util::memory::normalize_query(&query.q).is_err() {
-            return Err(AppError::BadRequest("invalid query".into()));
+            return Err(AppError::BadRequest(BadRequestKind::Other(
+                "invalid query".into(),
+            )));
         }
         self.storage
             .search_memories(query)
@@ -1048,7 +1087,9 @@ impl TakusuApp {
         )
         .is_err()
         {
-            return Err(AppError::BadRequest("invalid title".into()));
+            return Err(AppError::BadRequest(BadRequestKind::Other(
+                "invalid title".into(),
+            )));
         }
         self.storage
             .find_similar_tasks(query)
@@ -1087,9 +1128,9 @@ impl TakusuApp {
             for did in dep_ids {
                 let full = self.storage.get_task(did).await.map_err(storage_to_app)?.id;
                 if !id_to_idx.contains_key(&full) {
-                    return Err(AppError::BadRequest(format!(
+                    return Err(AppError::BadRequest(BadRequestKind::Other(format!(
                         "depends on unknown task: {did}"
-                    )));
+                    ))));
                 }
                 resolved.push(full);
             }
@@ -1127,10 +1168,14 @@ impl TakusuApp {
             )?;
             if let Some(ref cid) = item.client_id {
                 if cid.is_empty() {
-                    return Err(AppError::BadRequest("client_id must not be empty".into()));
+                    return Err(AppError::BadRequest(BadRequestKind::Other(
+                        "client_id must not be empty".into(),
+                    )));
                 }
                 if client_to_local.insert(cid.clone(), i).is_some() {
-                    return Err(AppError::BadRequest(format!("duplicate client_id: {cid}")));
+                    return Err(AppError::BadRequest(BadRequestKind::Other(format!(
+                        "duplicate client_id: {cid}"
+                    ))));
                 }
             }
             let task = item.task.clone();
@@ -1162,7 +1207,9 @@ impl TakusuApp {
                     } else {
                         let full = self.storage.get_task(did).await.map_err(storage_to_app)?.id;
                         let &idx = existing_id_to_idx.get(&full).ok_or_else(|| {
-                            AppError::BadRequest(format!("depends on unknown task: {did}"))
+                            AppError::BadRequest(BadRequestKind::Other(format!(
+                                "depends on unknown task: {did}"
+                            )))
                         })?;
                         dep_indices.push(idx);
                     }
@@ -1174,12 +1221,12 @@ impl TakusuApp {
         }
 
         crate::graph::detect_cycle(&adj)
-            .map_err(|_| AppError::BadRequest("循環依存が検出されました".into()))?;
+            .map_err(|_| AppError::BadRequest(BadRequestKind::CycleDetected))?;
 
         // Topologically sort and then reverse so dependencies are created
         // before dependents (the graph edges point from dependent to dependency).
         let mut order = crate::graph::topo_sort(&adj)
-            .map_err(|_| AppError::BadRequest("循環依存が検出されました".into()))?;
+            .map_err(|_| AppError::BadRequest(BadRequestKind::CycleDetected))?;
         order.reverse();
         let mut created_ids: Vec<Option<String>> = vec![None; items.len()];
         let mut results: Vec<Option<CreateTaskBatchResult>> = vec![None; items.len()];
@@ -1236,14 +1283,14 @@ impl TakusuApp {
         let limit = match limit {
             None => DEFAULT_COMPLETION_LIMIT,
             Some(0) => {
-                return Err(AppError::BadRequest(
+                return Err(AppError::BadRequest(BadRequestKind::Other(
                     "completion limit must be at least 1".to_string(),
-                ));
+                )));
             }
             Some(n) if n > MAX_COMPLETION_LIMIT => {
-                return Err(AppError::BadRequest(format!(
+                return Err(AppError::BadRequest(BadRequestKind::Other(format!(
                     "completion limit must be at most {MAX_COMPLETION_LIMIT}"
-                )));
+                ))));
             }
             Some(n) => n,
         };
@@ -1328,9 +1375,9 @@ impl TakusuApp {
             for did in dep_ids {
                 let full = self.storage.get_task(did).await.map_err(storage_to_app)?.id;
                 if !id_to_idx.contains_key(&full) {
-                    return Err(AppError::BadRequest(format!(
+                    return Err(AppError::BadRequest(BadRequestKind::Other(format!(
                         "depends on unknown task: {did}"
-                    )));
+                    ))));
                 }
                 resolved.push(full);
             }
@@ -1339,7 +1386,7 @@ impl TakusuApp {
                 .filter_map(|did| id_to_idx.get(did).copied())
                 .collect();
             crate::graph::detect_cycle(&adj)
-                .map_err(|_| AppError::BadRequest("循環依存が検出されました".into()))?;
+                .map_err(|_| AppError::BadRequest(BadRequestKind::CycleDetected))?;
             body.depends = Some(resolved);
         }
 
@@ -1404,9 +1451,9 @@ impl TakusuApp {
             for did in dep_ids {
                 let full = self.storage.get_task(did).await.map_err(storage_to_app)?.id;
                 if !id_to_idx.contains_key(&full) {
-                    return Err(AppError::BadRequest(format!(
+                    return Err(AppError::BadRequest(BadRequestKind::Other(format!(
                         "depends on unknown task: {did}"
-                    )));
+                    ))));
                 }
                 resolved.push(full);
             }
@@ -1415,7 +1462,7 @@ impl TakusuApp {
                 .filter_map(|did| id_to_idx.get(did).copied())
                 .collect();
             crate::graph::detect_cycle(&adj)
-                .map_err(|_| AppError::BadRequest("循環依存が検出されました".into()))?;
+                .map_err(|_| AppError::BadRequest(BadRequestKind::CycleDetected))?;
             body.depends = Some(resolved);
             return self
                 .storage
@@ -1513,7 +1560,7 @@ impl TakusuApp {
         let settings = self.get_settings_or_default().await?;
         let tz = parse_settings_timezone(&settings.tz)?;
         let events = takusu_ical::parse_ical(ical_body, &tz)
-            .map_err(|e| AppError::BadRequest(e.to_string()))?;
+            .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
         let mut imported = 0usize;
         let mut task_ids = Vec::new();
         for event in &events {
@@ -1586,10 +1633,14 @@ impl TakusuApp {
         for item in &body.habits {
             if let Some(ref cid) = item.client_id {
                 if cid.is_empty() {
-                    return Err(AppError::BadRequest("client_id must not be empty".into()));
+                    return Err(AppError::BadRequest(BadRequestKind::Other(
+                        "client_id must not be empty".into(),
+                    )));
                 }
                 if !seen_client_ids.insert(cid.clone()) {
-                    return Err(AppError::BadRequest(format!("duplicate client_id: {cid}")));
+                    return Err(AppError::BadRequest(BadRequestKind::Other(format!(
+                        "duplicate client_id: {cid}"
+                    ))));
                 }
             }
         }
@@ -1754,9 +1805,9 @@ impl TakusuApp {
     ) -> Result<HabitEstimateResult, AppError> {
         let habit = self.storage.get_habit(id).await.map_err(storage_to_app)?;
         if habit.fixed {
-            return Err(AppError::BadRequest(
+            return Err(AppError::BadRequest(BadRequestKind::Other(
                 "cannot estimate fixed habit from actuals".into(),
-            ));
+            )));
         }
 
         let completed = self
@@ -2056,7 +2107,7 @@ impl TakusuApp {
             }
         }
         let redundant = crate::graph::find_redundant_edges(&adj)
-            .map_err(|_| AppError::BadRequest("循環依存が検出されました".into()))?;
+            .map_err(|_| AppError::BadRequest(BadRequestKind::CycleDetected))?;
         let node = |idx: usize| DependencyNode {
             id: active[idx].id.clone(),
             title: active[idx].title.clone(),
@@ -2097,7 +2148,7 @@ impl TakusuApp {
             }
         }
         let redundant = crate::graph::find_redundant_edges(&adj)
-            .map_err(|_| AppError::BadRequest("循環依存が検出されました".into()))?;
+            .map_err(|_| AppError::BadRequest(BadRequestKind::CycleDetected))?;
         let node = |idx: usize| DependencyNode {
             id: steps[idx].id.clone(),
             title: steps[idx].title.clone(),
@@ -2239,7 +2290,9 @@ impl TakusuApp {
                     planner.set_previous_schedule(&current_schedule);
                 }
                 let task_ids = input.task_ids.as_ref().ok_or_else(|| {
-                    AppError::BadRequest("task_ids is required for tasks mode".into())
+                    AppError::BadRequest(BadRequestKind::Other(
+                        "task_ids is required for tasks mode".into(),
+                    ))
                 })?;
                 let pinned = current_schedule
                     .iter()
@@ -2253,10 +2306,14 @@ impl TakusuApp {
             }
             "range" => {
                 let from_str = input.from.as_ref().ok_or_else(|| {
-                    AppError::BadRequest("from is required for range mode".into())
+                    AppError::BadRequest(BadRequestKind::Other(
+                        "from is required for range mode".into(),
+                    ))
                 })?;
                 let until_str = input.until.as_ref().ok_or_else(|| {
-                    AppError::BadRequest("until is required for range mode".into())
+                    AppError::BadRequest(BadRequestKind::Other(
+                        "until is required for range mode".into(),
+                    ))
                 })?;
                 let range = RescheduleRange {
                     from: iso_to_point(from_str, &tz)?,
@@ -2270,10 +2327,10 @@ impl TakusuApp {
                 planner.plan_in_range(&range, &current_schedule, &extra_pinned)
             }
             _ => {
-                return Err(AppError::BadRequest(format!(
+                return Err(AppError::BadRequest(BadRequestKind::Other(format!(
                     "unknown mode: {}",
                     input.mode
-                )));
+                ))));
             }
         };
         let entries = self.plan_to_entries(&plan, &id_map)?;
@@ -2358,10 +2415,14 @@ impl TakusuApp {
         let plan = match input.mode {
             ScheduleMode::Range => {
                 let from_str = input.from.as_ref().ok_or_else(|| {
-                    AppError::BadRequest("from is required for range mode".into())
+                    AppError::BadRequest(BadRequestKind::Other(
+                        "from is required for range mode".into(),
+                    ))
                 })?;
                 let until_str = input.until.as_ref().ok_or_else(|| {
-                    AppError::BadRequest("until is required for range mode".into())
+                    AppError::BadRequest(BadRequestKind::Other(
+                        "until is required for range mode".into(),
+                    ))
                 })?;
                 let range = RescheduleRange {
                     from: iso_to_point(from_str, &tz)?,
@@ -2376,7 +2437,9 @@ impl TakusuApp {
             }
             ScheduleMode::Tasks => {
                 let task_ids = input.task_ids.as_ref().ok_or_else(|| {
-                    AppError::BadRequest("task_ids is required for tasks mode".into())
+                    AppError::BadRequest(BadRequestKind::Other(
+                        "task_ids is required for tasks mode".into(),
+                    ))
                 })?;
                 // pinned 条件: task_ids に含まれない (再スケジュール対象外) または
                 // 明示的に pinned 指定されたタスクは固定。残りが再配置される。
@@ -2470,9 +2533,7 @@ impl TakusuApp {
             warnings.push("deadline_violation".to_string());
         }
         if !warnings.is_empty() && !force {
-            return Err(AppError::Conflict {
-                message: "schedule violations detected".into(),
-            });
+            return Err(AppError::Conflict(ConflictKind::ScheduleViolation));
         }
         entries[idx] = new_entry;
         self.storage
@@ -2573,9 +2634,9 @@ impl TakusuApp {
             .await
             .map_err(storage_to_app)?;
         if row.client_id.is_empty() {
-            return Err(AppError::BadRequest(
+            return Err(AppError::BadRequest(BadRequestKind::Other(
                 "google calendar settings not configured".into(),
-            ));
+            )));
         }
         Ok(google_cal::oauth_url(&row.client_id, redirect_uri))
     }
@@ -2591,9 +2652,9 @@ impl TakusuApp {
             .await
             .map_err(storage_to_app)?;
         if row.client_id.is_empty() || row.client_secret.is_empty() {
-            return Err(AppError::BadRequest(
+            return Err(AppError::BadRequest(BadRequestKind::Other(
                 "google calendar settings not configured".into(),
-            ));
+            )));
         }
         let tokens =
             google_cal::exchange_code(&row.client_id, &row.client_secret, code, redirect_uri)
@@ -2789,21 +2850,23 @@ impl TakusuApp {
         settings: &GoogleCalSettingsRow,
     ) -> Result<DeleteAllGcalResult, AppError> {
         if settings.client_id.is_empty() {
-            return Err(AppError::BadRequest(
+            return Err(AppError::BadRequest(BadRequestKind::Other(
                 "google calendar client_id not configured".into(),
-            ));
+            )));
         }
         if settings.client_secret.is_empty() {
-            return Err(AppError::BadRequest(
+            return Err(AppError::BadRequest(BadRequestKind::Other(
                 "google calendar client_secret not configured".into(),
-            ));
+            )));
         }
         let refresh_token = settings
             .refresh_token
             .as_deref()
             .filter(|t| !t.is_empty())
             .ok_or_else(|| {
-                AppError::BadRequest("google calendar refresh token not configured".into())
+                AppError::BadRequest(BadRequestKind::Other(
+                    "google calendar refresh token not configured".into(),
+                ))
             })?;
 
         let mappings = self
@@ -3217,7 +3280,9 @@ impl TakusuApp {
                         end_at: Some(point_to_iso(core_task.end.0)?),
                         title: Some(title),
                         description: habit_desc.clone(),
-                        avg_minutes: Some(Slots(core_task.cost_estimate.avg() as i64).to_minutes().0),
+                        avg_minutes: Some(
+                            Slots(core_task.cost_estimate.avg() as i64).to_minutes().0,
+                        ),
                         sigma_minutes: Some(
                             Slots(core_task.cost_estimate.sigma() as i64).to_minutes().0,
                         ),
@@ -3256,7 +3321,9 @@ impl TakusuApp {
                     start_at: core_task.start.map(|p| point_to_iso(p.0)).transpose()?,
                     end_at: point_to_iso(core_task.end.0)?,
                     avg_minutes: Slots(core_task.cost_estimate.avg() as i64).to_minutes().0,
-                    sigma_minutes: Some(Slots(core_task.cost_estimate.sigma() as i64).to_minutes().0),
+                    sigma_minutes: Some(
+                        Slots(core_task.cost_estimate.sigma() as i64).to_minutes().0,
+                    ),
                     depends: Some(vec![]),
                     parallelizable: Some(core_task.parallel_mode.is_guest()),
                     allows_parallel: Some(core_task.parallel_mode.is_host()),
@@ -3407,7 +3474,7 @@ impl TakusuApp {
         }
 
         crate::graph::detect_cycle(&all_depends)
-            .map_err(|_| AppError::BadRequest("循環依存が検出されました".into()))?;
+            .map_err(|_| AppError::BadRequest(BadRequestKind::CycleDetected))?;
 
         // #306: Build habit_id → group index map so that tasks from the same
         // habit share a habit_group index, enabling the consistency bonus.
@@ -3486,7 +3553,7 @@ impl TakusuApp {
             };
             planner
                 .add(core_task)
-                .map_err(|e| AppError::BadRequest(e.to_string()))?;
+                .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
             id_map.push(row.id.clone());
             id_to_idx.insert(row.id.clone(), planner.tasks().len() - 1);
         }

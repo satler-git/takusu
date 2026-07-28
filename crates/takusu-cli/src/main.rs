@@ -25,7 +25,7 @@ use axum::routing::get;
 use takusu_local_lib::{
     app::TakusuApp,
     config::{LocalConfig, StorageKind},
-    error::AppError,
+    error::{AppError, BadRequestKind},
     storage_sqlite::SqliteStorage,
     storage_workers::WorkersStorage,
     token_cache::TokenCache,
@@ -60,17 +60,19 @@ fn is_interactive() -> bool {
 fn parse_dt(s: &str, tz: &jiff::tz::TimeZone) -> Result<Timestamp, AppError> {
     parse_datetime_to_timestamp(s, tz)
         .map(Timestamp::from)
-        .map_err(AppError::BadRequest)
+        .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))
 }
 
 fn parse_time(s: &str) -> Result<TimeOfDay, AppError> {
-    s.parse::<TimeOfDay>()
-        .map_err(|e| AppError::BadRequest(format!("invalid time '{s}': {e}")))
+    s.parse::<TimeOfDay>().map_err(|e| {
+        AppError::BadRequest(BadRequestKind::Other(format!("invalid time '{s}': {e}")))
+    })
 }
 
 fn parse_date(s: &str) -> Result<Date, AppError> {
-    s.parse::<Date>()
-        .map_err(|e| AppError::BadRequest(format!("invalid date '{s}': {e}")))
+    s.parse::<Date>().map_err(|e| {
+        AppError::BadRequest(BadRequestKind::Other(format!("invalid date '{s}': {e}")))
+    })
 }
 
 #[derive(Parser)]
@@ -1345,20 +1347,22 @@ async fn run_task(
             } else {
                 (title, end_at)
             };
-            let avg_minutes = parse_duration(&avg_time).map_err(AppError::BadRequest)?;
-            let sigma_minutes: i64 = parse_duration(&sigma_time).map_err(AppError::BadRequest)?;
+            let avg_minutes = parse_duration(&avg_time)
+                .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
+            let sigma_minutes: i64 = parse_duration(&sigma_time)
+                .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
             let quantity_total = quantity_total
                 .map(Quantity::new)
                 .transpose()
-                .map_err(|e| AppError::BadRequest(e.to_string()))?;
+                .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
             let quantity_done = quantity_done
                 .map(Quantity::new)
                 .transpose()
-                .map_err(|e| AppError::BadRequest(e.to_string()))?;
+                .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
             let original_quantity_total = original_quantity_total
                 .map(Quantity::new)
                 .transpose()
-                .map_err(|e| AppError::BadRequest(e.to_string()))?;
+                .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
             let body = CreateTask {
                 title: title.unwrap_or_default(),
                 end_at: parse_dt(&end_at.unwrap_or_default(), tz)?,
@@ -1391,8 +1395,9 @@ async fn run_task(
             let all_tasks = app.list_tasks(&Default::default()).await?;
             let original = editor::format_task_for_editing(&task, &all_tasks, &habit_map, tz);
             let edited = editor::open_editor(&original, &task.id)
-                .map_err(|e| AppError::BadRequest(e.to_string()))?;
-            let update = editor::parse_edited_task(&edited, tz).map_err(AppError::BadRequest)?;
+                .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
+            let update = editor::parse_edited_task(&edited, tz)
+                .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
             let updated = app.update_task(&id, &update).await?;
             mode.formatter().display_tasks(&[updated], tz, &habit_map);
         }
@@ -1419,25 +1424,25 @@ async fn run_task(
                 .as_ref()
                 .map(|s| parse_duration(s))
                 .transpose()
-                .map_err(AppError::BadRequest)?;
+                .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
             let sigma_minutes = sigma_time
                 .as_ref()
                 .map(|s| parse_duration(s))
                 .transpose()
-                .map_err(AppError::BadRequest)?;
+                .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
             let abandonability = abandonability.map(Abandonability::new);
             let quantity_total = quantity_total
                 .map(Quantity::new)
                 .transpose()
-                .map_err(|e| AppError::BadRequest(e.to_string()))?;
+                .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
             let quantity_done = quantity_done
                 .map(Quantity::new)
                 .transpose()
-                .map_err(|e| AppError::BadRequest(e.to_string()))?;
+                .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
             let original_quantity_total = original_quantity_total
                 .map(Quantity::new)
                 .transpose()
-                .map_err(|e| AppError::BadRequest(e.to_string()))?;
+                .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
             let body = takusu_storage::UpdateTask {
                 title,
                 description,
@@ -1480,20 +1485,22 @@ async fn run_task(
             quantity_unit,
             original_quantity_total,
         } => {
-            let avg_minutes = parse_duration(&avg_time).map_err(AppError::BadRequest)?;
-            let sigma_minutes: i64 = parse_duration(&sigma_time).map_err(AppError::BadRequest)?;
+            let avg_minutes = parse_duration(&avg_time)
+                .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
+            let sigma_minutes: i64 = parse_duration(&sigma_time)
+                .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
             let quantity_total = quantity_total
                 .map(Quantity::new)
                 .transpose()
-                .map_err(|e| AppError::BadRequest(e.to_string()))?;
+                .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
             let quantity_done = quantity_done
                 .map(Quantity::new)
                 .transpose()
-                .map_err(|e| AppError::BadRequest(e.to_string()))?;
+                .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
             let original_quantity_total = original_quantity_total
                 .map(Quantity::new)
                 .transpose()
-                .map_err(|e| AppError::BadRequest(e.to_string()))?;
+                .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
             let body = CreateTask {
                 title,
                 end_at: parse_dt(&end_at, tz)?,
@@ -1580,8 +1587,8 @@ async fn run_work(
             mode.formatter().display_tasks(&[task], tz, habit_map);
         }
         WorkCommands::Progress { id, quantity, note } => {
-            let quantity_done =
-                Quantity::new(quantity).map_err(|e| AppError::BadRequest(e.to_string()))?;
+            let quantity_done = Quantity::new(quantity)
+                .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
             let body = RecordProgress {
                 quantity_done,
                 note,
@@ -1616,7 +1623,7 @@ async fn run_work(
             end_at,
         } => {
             let retained_quantity = Quantity::new(retained_quantity)
-                .map_err(|e| AppError::BadRequest(e.to_string()))?;
+                .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
             let end_at = end_at.map(|s| parse_dt(&s, tz)).transpose()?;
             let body = SplitTask {
                 retained_quantity,
@@ -1715,8 +1722,10 @@ async fn run_habit(mode: DisplayMode, app: &TakusuApp, cmd: HabitCommands) -> Re
             } else {
                 (title, recurrence, start_time, end_time)
             };
-            let avg_minutes = parse_duration(&avg_time).map_err(AppError::BadRequest)?;
-            let sigma_minutes: i64 = parse_duration(&sigma_time).map_err(AppError::BadRequest)?;
+            let avg_minutes = parse_duration(&avg_time)
+                .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
+            let sigma_minutes: i64 = parse_duration(&sigma_time)
+                .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
             let body = CreateHabit {
                 title: title.unwrap_or_default(),
                 recurrence: recurrence.unwrap_or_default(),
@@ -1743,8 +1752,9 @@ async fn run_habit(mode: DisplayMode, app: &TakusuApp, cmd: HabitCommands) -> Re
             let habit = &detail.habit;
             let original = editor::format_habit_for_editing(habit);
             let edited = editor::open_editor(&original, &habit.id)
-                .map_err(|e| AppError::BadRequest(e.to_string()))?;
-            let update = editor::parse_edited_habit(&edited).map_err(AppError::BadRequest)?;
+                .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
+            let update = editor::parse_edited_habit(&edited)
+                .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
             let updated = app.update_habit(&id, &update).await?;
             mode.formatter().display_habit_detail(&updated);
         }
@@ -1768,12 +1778,12 @@ async fn run_habit(mode: DisplayMode, app: &TakusuApp, cmd: HabitCommands) -> Re
                 .as_ref()
                 .map(|s| parse_duration(s))
                 .transpose()
-                .map_err(AppError::BadRequest)?;
+                .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
             let sigma_minutes = sigma_time
                 .as_ref()
                 .map(|s| parse_duration(s))
                 .transpose()
-                .map_err(AppError::BadRequest)?;
+                .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
             let abandonability = abandonability.map(Abandonability::new);
             let body = UpdateHabit {
                 title,
@@ -1808,8 +1818,10 @@ async fn run_habit(mode: DisplayMode, app: &TakusuApp, cmd: HabitCommands) -> Re
             fixed,
             window,
         } => {
-            let avg_minutes = parse_duration(&avg_time).map_err(AppError::BadRequest)?;
-            let sigma_minutes: i64 = parse_duration(&sigma_time).map_err(AppError::BadRequest)?;
+            let avg_minutes = parse_duration(&avg_time)
+                .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
+            let sigma_minutes: i64 = parse_duration(&sigma_time)
+                .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
             let body = CreateHabit {
                 title,
                 recurrence,
@@ -1862,18 +1874,20 @@ async fn run_habit_steps(
         }
         StepsCommands::Edit { id } => {
             let steps = app.list_habit_steps(&id).await?;
-            let original =
-                editor::format_steps_for_editing(&steps).map_err(AppError::BadRequest)?;
+            let original = editor::format_steps_for_editing(&steps)
+                .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
             let suffix = format!("{}", uuid::Uuid::now_v7());
             let edited = editor::open_editor(&original, &suffix)
-                .map_err(|e| AppError::BadRequest(e.to_string()))?;
-            let inputs = editor::parse_edited_steps(&edited).map_err(AppError::BadRequest)?;
+                .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
+            let inputs = editor::parse_edited_steps(&edited)
+                .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
             let replaced = app.replace_habit_steps(&id, &inputs).await?;
             mode.formatter().display_habit_steps(&replaced);
         }
         StepsCommands::Set { id, file } => {
             let content = read_text_file(&file).await?;
-            let inputs = editor::parse_edited_steps(&content).map_err(AppError::BadRequest)?;
+            let inputs = editor::parse_edited_steps(&content)
+                .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
             let replaced = app.replace_habit_steps(&id, &inputs).await?;
             mode.formatter().display_habit_steps(&replaced);
         }
@@ -1885,14 +1899,14 @@ async fn read_text_file(path: &str) -> Result<String, AppError> {
     match path {
         "-" => {
             let mut buf = String::new();
-            std::io::stdin()
-                .read_to_string(&mut buf)
-                .map_err(|e| AppError::BadRequest(format!("failed to read stdin: {e}")))?;
+            std::io::stdin().read_to_string(&mut buf).map_err(|e| {
+                AppError::BadRequest(BadRequestKind::Other(format!("failed to read stdin: {e}")))
+            })?;
             Ok(buf)
         }
-        path => tokio::fs::read_to_string(path)
-            .await
-            .map_err(|e| AppError::BadRequest(format!("failed to read {path}: {e}"))),
+        path => tokio::fs::read_to_string(path).await.map_err(|e| {
+            AppError::BadRequest(BadRequestKind::Other(format!("failed to read {path}: {e}")))
+        }),
     }
 }
 
@@ -1926,11 +1940,17 @@ async fn run_skill(mode: DisplayMode, app: &TakusuApp, cmd: SkillCommands) -> Re
             } else {
                 (slug, name, description, body)
             };
-            let slug = slug.ok_or_else(|| AppError::BadRequest("slug is required".into()))?;
-            let name = name.ok_or_else(|| AppError::BadRequest("name is required".into()))?;
+            let slug = slug.ok_or_else(|| {
+                AppError::BadRequest(BadRequestKind::Other("slug is required".into()))
+            })?;
+            let name = name.ok_or_else(|| {
+                AppError::BadRequest(BadRequestKind::Other("name is required".into()))
+            })?;
             let description = description.unwrap_or_default();
             let body = read_skill_body(body).await?;
-            let body = body.ok_or_else(|| AppError::BadRequest("body is required".into()))?;
+            let body = body.ok_or_else(|| {
+                AppError::BadRequest(BadRequestKind::Other("body is required".into()))
+            })?;
             let created = app
                 .create_skill(&CreateSkill {
                     slug,
@@ -1950,9 +1970,9 @@ async fn run_skill(mode: DisplayMode, app: &TakusuApp, cmd: SkillCommands) -> Re
         } => {
             let body = read_skill_body(body).await?;
             if name.is_none() && description.is_none() && body.is_none() {
-                return Err(AppError::BadRequest(
+                return Err(AppError::BadRequest(BadRequestKind::Other(
                     "at least one of name, description, or body is required".into(),
-                ));
+                )));
             }
             let updated = app
                 .update_skill(
@@ -2048,15 +2068,17 @@ async fn read_skill_body(path: Option<String>) -> Result<Option<String>, AppErro
         None => Ok(None),
         Some("-") => {
             let mut buf = String::new();
-            std::io::stdin()
-                .read_to_string(&mut buf)
-                .map_err(|e| AppError::BadRequest(format!("failed to read stdin: {e}")))?;
+            std::io::stdin().read_to_string(&mut buf).map_err(|e| {
+                AppError::BadRequest(BadRequestKind::Other(format!("failed to read stdin: {e}")))
+            })?;
             Ok(Some(buf))
         }
         Some(path) => tokio::fs::read_to_string(path)
             .await
             .map(Some)
-            .map_err(|e| AppError::BadRequest(format!("failed to read {path}: {e}"))),
+            .map_err(|e| {
+                AppError::BadRequest(BadRequestKind::Other(format!("failed to read {path}: {e}")))
+            }),
     }
 }
 
@@ -2451,7 +2473,9 @@ async fn oauth_login(
 
     let client_id = if let Some(id) = client_id {
         if id.is_empty() {
-            return Err(AppError::BadRequest("client_id must not be empty".into()));
+            return Err(AppError::BadRequest(BadRequestKind::Other(
+                "client_id must not be empty".into(),
+            )));
         }
         id
     } else if !settings.client_id.is_empty() {
@@ -2459,18 +2483,22 @@ async fn oauth_login(
     } else if is_interactive() {
         let id = prompt("Google OAuth client_id")?;
         if id.is_empty() {
-            return Err(AppError::BadRequest("client_id is required".into()));
+            return Err(AppError::BadRequest(BadRequestKind::Other(
+                "client_id is required".into(),
+            )));
         }
         id
     } else {
-        return Err(AppError::BadRequest("client_id is required".into()));
+        return Err(AppError::BadRequest(BadRequestKind::Other(
+            "client_id is required".into(),
+        )));
     };
 
     let client_secret_opt = if let Some(secret) = client_secret {
         if secret.is_empty() {
-            return Err(AppError::BadRequest(
+            return Err(AppError::BadRequest(BadRequestKind::Other(
                 "client_secret must not be empty".into(),
-            ));
+            )));
         }
         Some(secret)
     } else if settings.has_client_secret {
@@ -2478,11 +2506,15 @@ async fn oauth_login(
     } else if is_interactive() {
         let secret = prompt_secret("Google OAuth client_secret")?;
         if secret.is_empty() {
-            return Err(AppError::BadRequest("client_secret is required".into()));
+            return Err(AppError::BadRequest(BadRequestKind::Other(
+                "client_secret is required".into(),
+            )));
         }
         Some(secret)
     } else {
-        return Err(AppError::BadRequest("client_secret is required".into()));
+        return Err(AppError::BadRequest(BadRequestKind::Other(
+            "client_secret is required".into(),
+        )));
     };
 
     let calendar_id = if let Some(id) = calendar_id {
