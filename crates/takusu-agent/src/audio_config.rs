@@ -1,4 +1,5 @@
 use serde::Deserialize;
+use takusu_audio::SHERPA_SAMPLE_RATE;
 
 #[derive(Debug, Clone, Default, Deserialize, PartialEq)]
 #[serde(default)]
@@ -62,7 +63,7 @@ fn default_stt_provider() -> String {
     "cpu".into()
 }
 fn default_stt_sample_rate() -> i32 {
-    16000
+    SHERPA_SAMPLE_RATE as i32
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]

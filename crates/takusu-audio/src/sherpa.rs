@@ -7,6 +7,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::stt::{SpeechToText, SttError};
+use crate::wav::SHERPA_SAMPLE_RATE;
 use sherpa_onnx::{
     OfflineFunASRNanoModelConfig, OfflineRecognizer, OfflineRecognizerConfig,
     OfflineSenseVoiceModelConfig,
@@ -129,7 +130,7 @@ impl SherpaOnnxAsr {
         let sample_rate = if config.sample_rate > 0 {
             config.sample_rate
         } else {
-            16000
+            SHERPA_SAMPLE_RATE as i32
         };
         Self::with_config(offline_config, sample_rate)
     }

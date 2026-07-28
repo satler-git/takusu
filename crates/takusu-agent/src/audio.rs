@@ -300,6 +300,7 @@ async fn record_with_timeout(timeout: Duration) -> Result<Vec<f32>, AudioError> 
     let samples = tokio::task::spawn_blocking(move || {
         let config = RecordConfig {
             max_duration: timeout,
+            ..Default::default()
         };
         record(&config)
     })

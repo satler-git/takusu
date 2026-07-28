@@ -16,6 +16,8 @@ use ort::session::Session;
 use ort::value::Tensor;
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 
+use crate::wav::SHERPA_SAMPLE_RATE;
+
 #[derive(Debug, thiserror::Error)]
 pub enum HushError {
     #[error("ONNX runtime error: {0}")]
@@ -55,7 +57,7 @@ pub struct HushConfig {
 impl Default for HushConfig {
     fn default() -> Self {
         Self {
-            sr: 16000,
+            sr: SHERPA_SAMPLE_RATE as usize,
             fft_size: 320,
             hop_size: 160,
             nb_erb: 32,

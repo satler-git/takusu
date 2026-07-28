@@ -21,6 +21,7 @@ use futures_util::StreamExt;
 use thiserror::Error;
 
 use crate::tts::{TtsError, TtsStream};
+use crate::wav::I16_MAX_F32;
 
 #[derive(Debug, Error)]
 pub enum PlayError {
@@ -89,7 +90,7 @@ impl AudioClip {
 
         let samples: Vec<f32> = reader
             .samples::<i16>()
-            .map(|s| Ok(s? as f32 / 32768.0))
+            .map(|s| Ok(s? as f32 / I16_MAX_F32))
             .collect::<Result<_, hound::Error>>()?;
 
         Ok(Self {
@@ -478,7 +479,7 @@ fn decode_sample(bytes: &[u8], format: PcmFormat) -> Result<f32, PlayError> {
             if bytes.len() < 2 {
                 return Err(PlayError::UnsupportedFormat("short i16 sample".into()));
             }
-            i16::from_le_bytes([bytes[0], bytes[1]]) as f32 / 32768.0
+            i16::from_le_bytes([bytes[0], bytes[1]]) as f32 / I16_MAX_F32
         }
         PcmFormat::F32 => {
             if bytes.len() < 4 {

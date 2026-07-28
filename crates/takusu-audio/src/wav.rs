@@ -11,8 +11,14 @@ use std::path::Path;
 
 use thiserror::Error;
 
-/// Sample rate used by all ASR backends in this crate.
-const ASR_SAMPLE_RATE: u32 = 16000;
+/// Sample rate required by Sherpa-ONNX and used by all ASR backends in this
+/// crate. Every recording, transcription, and denoising path operates at this
+/// rate.
+pub const SHERPA_SAMPLE_RATE: u32 = 16000;
+
+/// Divisor for normalizing `i16` PCM samples to the `[-1.0, 1.0]` f32 range.
+/// `i16::MAX + 1` as a float.
+pub const I16_MAX_F32: f32 = 32768.0;
 
 #[derive(Debug, Error)]
 pub enum AudioError {
@@ -74,8 +80,8 @@ pub fn read_wav(path: &Path) -> Result<Vec<f32>, AudioError> {
         samples
     };
 
-    if spec.sample_rate != ASR_SAMPLE_RATE {
-        Ok(resample(&samples, spec.sample_rate, ASR_SAMPLE_RATE))
+    if spec.sample_rate != SHERPA_SAMPLE_RATE {
+        Ok(resample(&samples, spec.sample_rate, SHERPA_SAMPLE_RATE))
     } else {
         Ok(samples)
     }
@@ -101,7 +107,7 @@ pub fn write_wav(path: &Path, samples: &[f32], sample_rate: u32) -> Result<(), A
     let scale = if max > 1.0 { 32767.0 / max } else { 32767.0 };
 
     for &s in samples {
-        let clamped = (s * scale).clamp(-32768.0, 32767.0);
+        let clamped = (s * scale).clamp(-I16_MAX_F32, 32767.0);
         writer.write_sample(clamped as i16)?;
     }
 
@@ -179,7 +185,7 @@ mod tests {
     fn write_wav_int(path: &std::path::Path, bits: u16, samples: &[f32]) {
         let spec = hound::WavSpec {
             channels: 1,
-            sample_rate: ASR_SAMPLE_RATE,
+            sample_rate: SHERPA_SAMPLE_RATE,
             bits_per_sample: bits,
             sample_format: hound::SampleFormat::Int,
         };
@@ -261,7 +267,7 @@ mod tests {
         let dir = std::env::temp_dir();
         let path = dir.join("takusu-wav-write.wav");
         let samples = vec![0.0, 0.25, -0.25, 0.9];
-        write_wav(&path, &samples, ASR_SAMPLE_RATE).unwrap();
+        write_wav(&path, &samples, SHERPA_SAMPLE_RATE).unwrap();
         let out = read_wav(&path).unwrap();
         assert_eq!(out.len(), samples.len());
         for (a, b) in samples.iter().zip(out.iter()) {
@@ -276,7 +282,7 @@ mod tests {
         let path = dir.join("takusu-wav-overscale.wav");
         // Samples beyond [-1, 1] must not panic; the whole buffer is
         // normalized to fit so relative amplitude is preserved.
-        write_wav(&path, &[2.0, -2.0, 1.0], ASR_SAMPLE_RATE).unwrap();
+        write_wav(&path, &[2.0, -2.0, 1.0], SHERPA_SAMPLE_RATE).unwrap();
         let out = read_wav(&path).unwrap();
         assert_eq!(out.len(), 3);
         assert!((out[0] - 1.0).abs() < 1e-3);
