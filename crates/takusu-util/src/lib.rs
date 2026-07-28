@@ -15,8 +15,8 @@ pub mod time_types;
 pub use abandonability::Abandonability;
 pub use enum_label::enum_serde::option as enum_option_serde;
 pub use enum_label::{
-    EnumLabel, MemoryKind, ScheduleMode, SimilarityMetric, Solver, SubjectType, TaskStatus,
-    TaskStatusFilter, TokenScope, UnknownLabel, WindowMode, enum_serde,
+    EnumLabel, MemoryKind, MemorySource, ScheduleMode, SimilarityMetric, Solver, SubjectType,
+    TaskStatus, TaskStatusFilter, TokenScope, UnknownLabel, WindowMode, enum_serde,
 };
 pub use json_string::{DependencyList, JsonString};
 pub use quantity::{Quantity, QuantityError};

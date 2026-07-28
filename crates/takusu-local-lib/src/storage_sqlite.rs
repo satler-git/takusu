@@ -1629,7 +1629,7 @@ impl Storage for SqliteStorage {
         }
 
         let id = uuid::Uuid::now_v7().to_string();
-        let source = "user_confirmed";
+        let source = takusu_util::MemorySource::UserConfirmed;
         sqlx::query(
             "INSERT INTO memories (id, kind, key, normalized_key, content, normalized_content, subject_type, subject_id, source, revision, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))",
         )
@@ -1641,7 +1641,7 @@ impl Storage for SqliteStorage {
         .bind(&normalized_content)
         .bind(subject_type.as_str())
         .bind(&subject_id)
-        .bind(source)
+        .bind(source.as_str())
         .execute(&mut *tx)
         .await
         .map_err(map_err)?;
