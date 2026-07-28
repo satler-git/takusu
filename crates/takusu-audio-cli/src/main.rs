@@ -4,7 +4,7 @@ use std::time::Duration;
 use clap::{Parser, Subcommand, ValueEnum};
 #[cfg(feature = "hush")]
 use takusu_audio::hush::Hush;
-use takusu_audio::{RecordConfig, record};
+use takusu_audio::{RecordConfig, read_wav, record, write_wav};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum SherpaModel {
@@ -151,7 +151,10 @@ async fn main() {
                 samples.len(),
                 samples.len() as f64 / 16000.0
             );
-            write_wav(&output, &samples, 16000);
+            write_wav(&output, &samples, 16000).unwrap_or_else(|e| {
+                eprintln!("Failed to write WAV: {e}");
+                std::process::exit(1);
+            });
             eprintln!("Saved to {}", output.display());
         }
 
@@ -164,7 +167,10 @@ async fn main() {
             sherpa_num_threads,
             sherpa_provider,
         } => {
-            let samples = read_wav(&audio);
+            let samples = read_wav(&audio).unwrap_or_else(|e| {
+                eprintln!("Failed to read WAV: {e}");
+                std::process::exit(1);
+            });
             eprintln!("Loaded {} samples from {}", samples.len(), audio.display());
 
             let text = transcribe_sherpa(
@@ -212,7 +218,10 @@ async fn main() {
                 samples.len(),
                 samples.len() as f64 / 16000.0
             );
-            write_wav(&output, &samples, 16000);
+            write_wav(&output, &samples, 16000).unwrap_or_else(|e| {
+                eprintln!("Failed to write WAV: {e}");
+                std::process::exit(1);
+            });
             eprintln!("Saved to {}", output.display());
 
             let text = transcribe_sherpa(
@@ -236,7 +245,10 @@ async fn main() {
             target_rms,
             no_restore,
         } => {
-            let samples = read_wav(&input);
+            let samples = read_wav(&input).unwrap_or_else(|e| {
+                eprintln!("Failed to read WAV: {e}");
+                std::process::exit(1);
+            });
             eprintln!("Loaded {} samples from {}", samples.len(), input.display());
 
             let model_dir = match model_dir {
@@ -280,7 +292,10 @@ async fn main() {
                 std::process::exit(1);
             });
             eprintln!("Done in {:.1}s.", start.elapsed().as_secs_f64());
-            write_wav(&output, &enhanced, 16000);
+            write_wav(&output, &enhanced, 16000).unwrap_or_else(|e| {
+                eprintln!("Failed to write WAV: {e}");
+                std::process::exit(1);
+            });
             eprintln!("Saved to {}", output.display());
         }
     }
@@ -398,192 +413,5 @@ async fn transcribe_sherpa(
             eprintln!("Transcription task failed: {e}");
             std::process::exit(1)
         })
-    }
-}
-
-fn write_wav(path: &std::path::Path, samples: &[f32], sample_rate: u32) {
-    let spec = hound::WavSpec {
-        channels: 1,
-        sample_rate,
-        bits_per_sample: 16,
-        sample_format: hound::SampleFormat::Int,
-    };
-
-    let mut writer = hound::WavWriter::create(path, spec).unwrap_or_else(|e| {
-        eprintln!("Failed to create WAV file: {e}");
-        std::process::exit(1);
-    });
-
-    let max = samples.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
-    let scale = if max > 1.0 { 32767.0 / max } else { 32767.0 };
-
-    for &s in samples {
-        let clamped = (s * scale).clamp(-32768.0, 32767.0);
-        writer.write_sample(clamped as i16).unwrap_or_else(|e| {
-            eprintln!("Failed to write sample: {e}");
-            std::process::exit(1);
-        });
-    }
-
-    writer.finalize().unwrap_or_else(|e| {
-        eprintln!("Failed to finalize WAV: {e}");
-        std::process::exit(1);
-    });
-}
-
-fn read_wav(path: &std::path::Path) -> Vec<f32> {
-    let mut reader = hound::WavReader::open(path).unwrap_or_else(|e| {
-        eprintln!("Failed to open WAV file: {e}");
-        std::process::exit(1);
-    });
-
-    let spec = reader.spec();
-    let samples: Vec<f32> = match spec.sample_format {
-        hound::SampleFormat::Int => {
-            let bits = spec.bits_per_sample;
-            if bits == 0 || bits > 32 {
-                eprintln!("Unsupported WAV bit depth: {bits}");
-                std::process::exit(1);
-            }
-            // Use the matching hound sample type per bit depth. hound decodes
-            // 8/16-bit integer WAVs as i16 and 24/32-bit as i32, so decoding
-            // with the wrong type produces garbage or errors. Compute the
-            // normalization divisor via u64 to avoid u32 overflow for >16-bit.
-            if bits <= 16 {
-                let max_val = (1u32 << (bits - 1)) as f32;
-                reader
-                    .samples::<i16>()
-                    .map(|s| s.unwrap() as f32 / max_val)
-                    .collect()
-            } else {
-                let max_val = (1u64 << (bits - 1)) as f32;
-                reader
-                    .samples::<i32>()
-                    .map(|s| s.unwrap() as f32 / max_val)
-                    .collect()
-            }
-        }
-        hound::SampleFormat::Float => reader.samples::<f32>().map(|s| s.unwrap()).collect(),
-    };
-
-    let samples = if spec.channels > 1 {
-        to_mono(&samples, spec.channels)
-    } else {
-        samples
-    };
-
-    if spec.sample_rate != 16000 {
-        let ratio = 16000.0 / spec.sample_rate as f64;
-        let output_len = ((samples.len() as f64) * ratio).ceil() as usize;
-        let mut resampled = Vec::with_capacity(output_len);
-        for i in 0..output_len {
-            let src = i as f64 / ratio;
-            let idx = src.floor() as usize;
-            let frac = src - idx as f64;
-            let s0 = samples.get(idx).copied().unwrap_or(0.0);
-            let s1 = samples.get(idx + 1).copied().unwrap_or(s0);
-            resampled.push((s0 as f64 + (s1 as f64 - s0 as f64) * frac) as f32);
-        }
-        return resampled;
-    }
-
-    samples
-}
-
-fn to_mono(samples: &[f32], channels: u16) -> Vec<f32> {
-    let channels = channels as usize;
-    if channels <= 1 {
-        return samples.to_vec();
-    }
-    let mut mono = Vec::with_capacity(samples.len() / channels);
-    for frame in samples.chunks_exact(channels) {
-        let sum: f32 = frame.iter().sum();
-        mono.push(sum / channels as f32);
-    }
-    mono
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn write_wav(path: &std::path::Path, bits: u16, samples: &[f32]) {
-        let spec = hound::WavSpec {
-            channels: 1,
-            sample_rate: 16000,
-            bits_per_sample: bits,
-            sample_format: hound::SampleFormat::Int,
-        };
-        let mut writer = hound::WavWriter::create(path, spec).unwrap();
-        let max_val = (1u64 << (bits - 1)) as f32;
-        for &s in samples {
-            let scaled = (s * max_val) as i32;
-            if bits <= 16 {
-                writer.write_sample(scaled as i16).unwrap();
-            } else {
-                writer.write_sample(scaled).unwrap();
-            }
-        }
-        writer.finalize().unwrap();
-    }
-
-    #[test]
-    fn read_wav_16bit_normalizes_correctly() {
-        let dir = std::env::temp_dir();
-        let path = dir.join("takusu-read-wav-16.wav");
-        // Avoid full-scale 1.0 which overflows i16 on write.
-        write_wav(&path, 16, &[0.0, 0.5, -0.5, 0.9]);
-        let out = read_wav(&path);
-        assert_eq!(out.len(), 4);
-        assert!((out[0]).abs() < 1e-4);
-        assert!((out[1] - 0.5).abs() < 1e-3);
-        assert!((out[2] + 0.5).abs() < 1e-3);
-        assert!((out[3] - 0.9).abs() < 1e-3);
-        std::fs::remove_file(&path).ok();
-    }
-
-    #[test]
-    fn read_wav_32bit_normalizes_correctly() {
-        let dir = std::env::temp_dir();
-        let path = dir.join("takusu-read-wav-32.wav");
-        write_wav(&path, 32, &[0.0, 0.25, -0.25, 0.9]);
-        let out = read_wav(&path);
-        assert_eq!(out.len(), 4);
-        assert!((out[0]).abs() < 1e-5);
-        assert!((out[1] - 0.25).abs() < 1e-4);
-        assert!((out[2] + 0.25).abs() < 1e-4);
-        assert!((out[3] - 0.9).abs() < 1e-4);
-        std::fs::remove_file(&path).ok();
-    }
-
-    #[test]
-    fn read_wav_8bit_normalizes_correctly() {
-        let dir = std::env::temp_dir();
-        let path = dir.join("takusu-read-wav-8.wav");
-        // hound sign-extends (not left-shifts) 8-bit samples into i16, so the
-        // 2^(bits-1)=128 divisor is correct. This test documents that.
-        write_wav(&path, 8, &[0.0, 0.5, -0.5, 0.9]);
-        let out = read_wav(&path);
-        assert_eq!(out.len(), 4);
-        assert!((out[0]).abs() < 1e-2);
-        assert!((out[1] - 0.5).abs() < 2e-2);
-        assert!((out[2] + 0.5).abs() < 2e-2);
-        assert!((out[3] - 0.9).abs() < 2e-2);
-        std::fs::remove_file(&path).ok();
-    }
-
-    #[test]
-    fn read_wav_24bit_normalizes_correctly() {
-        let dir = std::env::temp_dir();
-        let path = dir.join("takusu-read-wav-24.wav");
-        // hound sign-extends 24-bit samples into i32, so 2^(bits-1) is correct.
-        write_wav(&path, 24, &[0.0, 0.25, -0.25, 0.9]);
-        let out = read_wav(&path);
-        assert_eq!(out.len(), 4);
-        assert!((out[0]).abs() < 1e-5);
-        assert!((out[1] - 0.25).abs() < 1e-4);
-        assert!((out[2] + 0.25).abs() < 1e-4);
-        assert!((out[3] - 0.9).abs() < 1e-4);
-        std::fs::remove_file(&path).ok();
     }
 }

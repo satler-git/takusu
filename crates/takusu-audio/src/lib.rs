@@ -7,6 +7,7 @@ pub mod record;
 pub mod stt;
 pub mod tts;
 pub mod tts_normalize;
+pub mod wav;
 
 #[cfg(feature = "hush")]
 pub mod hush;
@@ -31,3 +32,4 @@ pub use record::{RecordConfig, RecorderError, record};
 pub use stt::{SpeechToText, SttError};
 pub use tts::{TextToSpeech, TtsBackend, TtsConfig, TtsError, TtsOptions, TtsRequest, TtsStream};
 pub use tts_normalize::normalize_for_tts;
+pub use wav::{AudioError, mix_to_mono, normalize, read_wav, resample, write_wav};

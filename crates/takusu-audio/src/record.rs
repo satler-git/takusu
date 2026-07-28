@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
+use crate::wav::{mix_to_mono, normalize, resample};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -138,50 +139,4 @@ pub fn record(config: &RecordConfig) -> Result<Vec<f32>, RecorderError> {
     raw = normalize(&raw, 0.1);
 
     Ok(raw)
-}
-
-fn mix_to_mono(input: &[f32], channels: usize) -> Vec<f32> {
-    let len = input.len() / channels;
-    let mut mono = Vec::with_capacity(len);
-    for i in 0..len {
-        let mut sum = 0.0f32;
-        for c in 0..channels {
-            sum += input[i * channels + c];
-        }
-        mono.push(sum / channels as f32);
-    }
-    mono
-}
-
-fn resample(input: &[f32], from_rate: u32, to_rate: u32) -> Vec<f32> {
-    if input.is_empty() || from_rate == to_rate {
-        return input.to_vec();
-    }
-    let ratio = to_rate as f64 / from_rate as f64;
-    let output_len = ((input.len() as f64) * ratio).ceil() as usize;
-    let mut output = Vec::with_capacity(output_len);
-    for i in 0..output_len {
-        let src = i as f64 / ratio;
-        let idx = src.floor() as usize;
-        let frac = src - idx as f64;
-        let s0 = input.get(idx).copied().unwrap_or(0.0);
-        let s1 = input.get(idx + 1).copied().unwrap_or(s0);
-        output.push((s0 as f64 + (s1 as f64 - s0 as f64) * frac) as f32);
-    }
-    output
-}
-
-fn normalize(input: &[f32], target_rms: f32) -> Vec<f32> {
-    if input.is_empty() {
-        return input.to_vec();
-    }
-    let rms = {
-        let sum_sq: f32 = input.iter().map(|&x| x * x).sum();
-        (sum_sq / input.len() as f32).sqrt()
-    };
-    if rms < 1e-10 {
-        return input.to_vec();
-    }
-    let scale = target_rms / rms;
-    input.iter().map(|&x| x * scale).collect()
 }

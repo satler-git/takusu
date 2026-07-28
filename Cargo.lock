@@ -5204,7 +5204,6 @@ name = "takusu-audio-cli"
 version = "0.20260728.1"
 dependencies = [
  "clap",
- "hound",
  "takusu-audio",
  "tokio",
 ]
