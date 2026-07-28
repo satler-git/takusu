@@ -8,6 +8,7 @@ use futures_util::TryStreamExt;
 use serde::{Deserialize, Serialize};
 use takusu_util::enum_label;
 
+use crate::secrets::{ApiKey, EndpointUrl};
 use crate::tts::{TextToSpeech, TtsError, TtsRequest, TtsStream};
 
 const DEFAULT_URL: &str = "https://api.cartesia.ai/tts/bytes";
@@ -132,8 +133,8 @@ pub struct CartesiaGenerationConfig {
 /// Configuration for the Cartesia Sonic TTS backend.
 #[derive(Debug, Clone)]
 pub struct CartesiaSonicConfig {
-    pub api_key: String,
-    pub url: String,
+    pub api_key: ApiKey,
+    pub url: EndpointUrl,
     pub version: String,
     pub model_id: String,
     pub voice_id: String,
@@ -146,8 +147,8 @@ pub struct CartesiaSonicConfig {
 impl Default for CartesiaSonicConfig {
     fn default() -> Self {
         Self {
-            api_key: String::new(),
-            url: DEFAULT_URL.to_string(),
+            api_key: ApiKey::default(),
+            url: EndpointUrl::new(DEFAULT_URL).expect("DEFAULT_URL is a valid URL"),
             version: DEFAULT_VERSION.to_string(),
             model_id: DEFAULT_MODEL_ID.to_string(),
             voice_id: DEFAULT_VOICE_ID.to_string(),
@@ -161,7 +162,7 @@ impl Default for CartesiaSonicConfig {
 
 impl CartesiaSonicConfig {
     /// Create a config with the given API key and otherwise default settings.
-    pub fn new(api_key: impl Into<String>) -> Self {
+    pub fn new(api_key: impl Into<ApiKey>) -> Self {
         Self {
             api_key: api_key.into(),
             ..Self::default()
@@ -259,7 +260,7 @@ impl TextToSpeech for CartesiaSonic {
         let json = serde_json::to_vec(&body)?;
         let response = self
             .client
-            .post(&self.config.url)
+            .post(self.config.url.as_str())
             .header("Authorization", format!("Bearer {}", self.config.api_key))
             .header("Cartesia-Version", &self.config.version)
             .header("Content-Type", "application/json")

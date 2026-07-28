@@ -33,6 +33,7 @@ bzip2 = "0.4"
 
 bytes = "1"
 futures-util = { workspace = true }
+url = "2.5"
 
 hound = "3.5"
 
