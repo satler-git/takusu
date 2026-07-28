@@ -22,7 +22,9 @@ use takusu_storage::{
     UpdateTask,
 };
 use takusu_util::search::{Completion, complete};
-use takusu_util::{Abandonability, EnumLabel, MemoryKind, TaskStatus, TaskStatusFilter, WindowMode};
+use takusu_util::{
+    Abandonability, EnumLabel, MemoryKind, ScheduleMode, TaskStatus, TaskStatusFilter, WindowMode,
+};
 
 use crate::error::AppError;
 use crate::error::storage_to_app;
@@ -726,7 +728,7 @@ pub struct GenerateScheduleInput {
 
 #[derive(Debug, Clone)]
 pub struct RescheduleInput {
-    pub mode: String,
+    pub mode: ScheduleMode,
     pub from: Option<String>,
     pub until: Option<String>,
     pub task_ids: Option<Vec<String>>,
@@ -2353,8 +2355,8 @@ impl TakusuApp {
             })
             .collect();
 
-        let plan = match input.mode.as_str() {
-            "range" => {
+        let plan = match input.mode {
+            ScheduleMode::Range => {
                 let from_str = input.from.as_ref().ok_or_else(|| {
                     AppError::BadRequest("from is required for range mode".into())
                 })?;
@@ -2372,7 +2374,7 @@ impl TakusuApp {
                     .collect();
                 planner.plan_in_range(&range, &current_schedule, &extra_pinned)
             }
-            "tasks" => {
+            ScheduleMode::Tasks => {
                 let task_ids = input.task_ids.as_ref().ok_or_else(|| {
                     AppError::BadRequest("task_ids is required for tasks mode".into())
                 })?;
@@ -2388,12 +2390,6 @@ impl TakusuApp {
                     .copied()
                     .collect();
                 planner.plan_partial(&pinned_entries)
-            }
-            _ => {
-                return Err(AppError::BadRequest(format!(
-                    "unknown mode: {}",
-                    input.mode
-                )));
             }
         };
 

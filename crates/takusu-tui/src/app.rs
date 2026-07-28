@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use takusu_local_lib::app::{GenerateScheduleInput, RescheduleInput, TakusuApp};
 use takusu_storage::{HabitRow, ScheduleEntry, SettingsRow, TaskRow};
-use takusu_util::EnumLabel;
+use takusu_util::{EnumLabel, ScheduleMode};
 
 use crate::tabs::{habits, schedule, settings, tasks};
 use crate::widgets::list::StatefulList;
@@ -149,7 +149,7 @@ impl App {
 
     pub async fn do_reschedule(&mut self) {
         let input = RescheduleInput {
-            mode: "range".to_string(),
+            mode: ScheduleMode::Range,
             from: None,
             until: None,
             task_ids: None,

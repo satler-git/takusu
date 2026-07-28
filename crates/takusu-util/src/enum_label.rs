@@ -200,11 +200,14 @@ macro_rules! enum_label {
     ) => {
         $(#[$meta])*
         #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+        #[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
         $vis enum $name {
             #[serde(rename = $first_s)]
+            #[cfg_attr(feature = "clap", value(name = $first_s))]
             $first,
             $(
                 #[serde(rename = $s)]
+                #[cfg_attr(feature = "clap", value(name = $s))]
                 $variant
             ),*
         }
@@ -345,6 +348,18 @@ enum_label! {
         #[default] Sa = "sa",
         Priority = "priority",
         Auto = "auto",
+    }
+}
+
+enum_label! {
+    /// Reschedule / preview mode for schedule operations.
+    ///
+    /// `Range` replans tasks within a time window; `Tasks` replans a specific
+    /// set of task IDs. Used by `RescheduleInput` and the CLI's
+    /// `ScheduleCommands::Reschedule`.
+    pub enum ScheduleMode {
+        #[default] Range = "range",
+        Tasks = "tasks",
     }
 }
 

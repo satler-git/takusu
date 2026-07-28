@@ -5391,6 +5391,7 @@ name = "takusu-util"
 version = "0.20260728.1"
 dependencies = [
  "base64",
+ "clap",
  "getrandom 0.4.3",
  "hmac",
  "jiff",
