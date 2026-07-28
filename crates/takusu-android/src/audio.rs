@@ -81,6 +81,30 @@ impl MobileAudio {
         }
         Ok(guard.as_ref().unwrap().clone())
     }
+
+    /// Normalize `text` for TTS using the runtime's blocking thread pool.
+    ///
+    /// Uses `runtime.spawn_blocking` (the method on the `Runtime` instance)
+    /// rather than the `tokio::task::spawn_blocking` free function so it works
+    /// even when called from outside a tokio runtime context.
+    fn normalize_text(
+        &self,
+        runtime: Arc<Runtime>,
+        text: String,
+        language: &str,
+    ) -> Result<String, TakusuError> {
+        let language = language.to_string();
+        // `spawn_blocking` returns a `JoinHandle` immediately without needing
+        // a current runtime context; `block_on` then awaits it on the calling
+        // thread.
+        let handle =
+            runtime.spawn_blocking(move || normalize_for_tts(&text, &language).into_owned());
+        runtime
+            .block_on(handle)
+            .map_err(|error| TakusuError::Audio {
+                detail: format!("TTS normalization failed: {error}"),
+            })
+    }
 }
 
 #[uniffi::export]
@@ -217,15 +241,16 @@ impl MobileAudio {
         })?;
         // Lindera dictionary initialization can block on first use, so run
         // the normalization off the runtime worker threads.
+        //
+        // `runtime.spawn_blocking` (the method on the `Runtime` instance) is
+        // used instead of the `tokio::task::spawn_blocking` free function.
+        // The free function looks up the *current* runtime via
+        // `Handle::current()`, which panics with "there is no reactor running"
+        // when `synthesize` is called from outside a tokio runtime context —
+        // e.g. from Kotlin's `Dispatchers.IO` on Android (issue #1175).
         let runtime = self.ensure_runtime()?;
         let language = self.language.clone();
-        let text = runtime
-            .block_on(tokio::task::spawn_blocking(move || {
-                normalize_for_tts(&text, &language).into_owned()
-            }))
-            .map_err(|error| TakusuError::Audio {
-                detail: format!("TTS normalization failed: {error}"),
-            })?;
+        let text = self.normalize_text(runtime.clone(), text, &language)?;
         let request = TtsRequest {
             text,
             voice: Some(self.voice_id.clone()),
@@ -380,6 +405,45 @@ mod tests {
         assert!(
             matches!(err, TakusuError::Audio { ref detail } if detail == "audio runtime has been shut down"),
             "ensure_runtime should fail after shutdown: {err:?}"
+        );
+    }
+
+    #[test]
+    fn normalize_text_works_outside_runtime_context() {
+        // Reproduces issue #1175: synthesize is called from Kotlin's
+        // Dispatchers.IO on Android, which is a plain thread with no tokio
+        // runtime. The previous implementation used the
+        // `tokio::task::spawn_blocking` free function, which looks up the
+        // *current* runtime via `Handle::current()` and panics with
+        // "there is no reactor running" when no runtime is active.
+        let model_dir = std::env::temp_dir()
+            .join("takusu_normalize_text_no_runtime_test")
+            .to_string_lossy()
+            .to_string();
+        let audio = MobileAudio::new(
+            model_dir,
+            String::new(),
+            String::new(),
+            "ja".to_string(),
+            44100,
+            Some(1.0),
+            false,
+        )
+        .unwrap();
+        let runtime = audio.ensure_runtime().unwrap();
+
+        // Call from a plain thread with no tokio runtime context, mimicking
+        // the Android call path.
+        let handle = std::thread::spawn(move || {
+            audio.normalize_text(runtime, "7月8日(火)の予定".to_string(), "ja")
+        });
+        let result = handle.join().unwrap_or_else(|panic| {
+            panic!("normalize_text panicked outside a runtime context: {panic:?}")
+        });
+        let normalized = result.expect("normalize_text should succeed");
+        assert!(
+            normalized.contains("7月8日火曜日"),
+            "expected weekday normalization, got: {normalized}"
         );
     }
 }
