@@ -1026,8 +1026,10 @@ impl TypedTool for PreviewScheduleTool {
         .map_err(client_error)?;
 
         let ctx = TaskContext::new(&tasks, &habits);
+        let preview_value = serde_json::to_value(&preview).unwrap();
         Ok(ToolOutput {
-            content: serde_json::to_string(&transform_preview(preview, &ctx, Some(&tz))).unwrap(),
+            content: serde_json::to_string(&transform_preview(preview_value, &ctx, Some(&tz)))
+                .unwrap(),
             ..Default::default()
         })
     }

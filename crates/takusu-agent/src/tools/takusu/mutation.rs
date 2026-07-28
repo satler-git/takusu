@@ -820,15 +820,12 @@ impl TypedTool for MutationTool {
             .map_err(client_error)?;
 
             let ctx = TaskContext::new(&all_tasks, &habits);
-            let entries = preview.get("entries").cloned().ok_or_else(|| {
-                ToolError::InvalidArgs(InvalidArgsError::no_field(
-                    "schedule preview did not return entries",
-                ))
-            })?;
+            let entries = serde_json::to_value(&preview.entries).unwrap();
             execution_args.insert("_preview_entries".into(), entries);
+            let preview_value = serde_json::to_value(&preview).unwrap();
             display_args.insert(
                 "_preview".into(),
-                transform_preview(preview, &ctx, Some(&tz)),
+                transform_preview(preview_value, &ctx, Some(&tz)),
             );
         }
 

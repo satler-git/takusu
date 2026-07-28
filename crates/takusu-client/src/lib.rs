@@ -576,7 +576,7 @@ impl Client {
     pub async fn preview_schedule(
         &self,
         body: &SchedulePreviewRequest,
-    ) -> Result<serde_json::Value, ClientError> {
+    ) -> Result<SchedulePreviewResponse, ClientError> {
         let resp = self
             .request(reqwest::Method::POST, "/api/schedule/preview")
             .await
@@ -733,7 +733,7 @@ impl Client {
     pub async fn get_oauth_url(
         &self,
         redirect_uri: &str,
-    ) -> Result<serde_json::Value, ClientError> {
+    ) -> Result<OAuthUrlResponse, ClientError> {
         let body = serde_json::json!({ "redirect_uri": redirect_uri });
         let resp = self
             .request(reqwest::Method::POST, "/api/sync/oauth/url")
@@ -749,7 +749,7 @@ impl Client {
         &self,
         code: &str,
         redirect_uri: Option<&str>,
-    ) -> Result<serde_json::Value, ClientError> {
+    ) -> Result<OAuthCallbackResponse, ClientError> {
         let body = if let Some(uri) = redirect_uri {
             serde_json::json!({ "code": code, "redirect_uri": uri })
         } else {
@@ -765,7 +765,7 @@ impl Client {
         Ok(resp.json().await?)
     }
 
-    pub async fn trigger_sync(&self) -> Result<serde_json::Value, ClientError> {
+    pub async fn trigger_sync(&self) -> Result<TriggerSyncResponse, ClientError> {
         let resp = self
             .request(reqwest::Method::POST, "/api/sync/trigger")
             .await
@@ -1378,6 +1378,21 @@ pub struct SchedulePreviewRequest {
     pub sleep: SleepInput,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SchedulePreviewResponse {
+    pub entries: Vec<ScheduleEntry>,
+    #[serde(default)]
+    pub unscheduled_task_ids: Vec<String>,
+    #[serde(default)]
+    pub displaced_task_ids: Vec<String>,
+    #[serde(default)]
+    pub sleep_minutes_before: i64,
+    #[serde(default)]
+    pub sleep_minutes_after: i64,
+    #[serde(default)]
+    pub warnings: Vec<String>,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SaveScheduleRequest {
     pub entries: Vec<ScheduleEntry>,
@@ -1492,6 +1507,22 @@ pub struct DeleteAllGcalResponse {
 pub struct DeleteAllGcalFailure {
     pub task_id: String,
     pub error: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OAuthUrlResponse {
+    pub url: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OAuthCallbackResponse {
+    #[serde(with = "takusu_util::bool_compat", default)]
+    pub refresh_token_set: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TriggerSyncResponse {
+    pub status: String,
 }
 
 #[derive(Debug, Serialize)]

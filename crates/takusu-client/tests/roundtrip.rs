@@ -581,3 +581,69 @@ fn skill_row_deserializes_integer_built_in() {
     let sr: SkillRow = serde_json::from_value(json).unwrap();
     assert!(sr.built_in);
 }
+
+#[test]
+fn schedule_preview_response_deserialization() {
+    let json = json!({
+        "entries": [{
+            "task_id": "t1",
+            "start_at": "2025-06-05T10:00:00Z",
+            "end_at": "2025-06-05T11:00:00Z"
+        }],
+        "unscheduled_task_ids": ["t2"],
+        "displaced_task_ids": ["t3"],
+        "sleep_minutes_before": 480,
+        "sleep_minutes_after": 240,
+        "warnings": ["could not place t2"]
+    });
+    let resp: SchedulePreviewResponse = serde_json::from_value(json).unwrap();
+    assert_eq!(resp.entries.len(), 1);
+    assert_eq!(resp.entries[0].task_id, "t1");
+    assert_eq!(resp.unscheduled_task_ids, vec!["t2"]);
+    assert_eq!(resp.displaced_task_ids, vec!["t3"]);
+    assert_eq!(resp.sleep_minutes_before, 480);
+    assert_eq!(resp.sleep_minutes_after, 240);
+    assert_eq!(resp.warnings, vec!["could not place t2"]);
+}
+
+#[test]
+fn schedule_preview_response_defaults_when_optional_fields_missing() {
+    let json = json!({
+        "entries": []
+    });
+    let resp: SchedulePreviewResponse = serde_json::from_value(json).unwrap();
+    assert!(resp.entries.is_empty());
+    assert!(resp.unscheduled_task_ids.is_empty());
+    assert!(resp.displaced_task_ids.is_empty());
+    assert_eq!(resp.sleep_minutes_before, 0);
+    assert_eq!(resp.sleep_minutes_after, 0);
+    assert!(resp.warnings.is_empty());
+}
+
+#[test]
+fn oauth_url_response_deserialization() {
+    let json = json!({ "url": "https://accounts.google.com/o/oauth2/auth?scope=calendar" });
+    let resp: OAuthUrlResponse = serde_json::from_value(json).unwrap();
+    assert_eq!(resp.url, "https://accounts.google.com/o/oauth2/auth?scope=calendar");
+}
+
+#[test]
+fn oauth_callback_response_deserialization() {
+    let json = json!({ "refresh_token_set": true });
+    let resp: OAuthCallbackResponse = serde_json::from_value(json).unwrap();
+    assert!(resp.refresh_token_set);
+}
+
+#[test]
+fn oauth_callback_response_accepts_integer_bool() {
+    let json = json!({ "refresh_token_set": 1 });
+    let resp: OAuthCallbackResponse = serde_json::from_value(json).unwrap();
+    assert!(resp.refresh_token_set);
+}
+
+#[test]
+fn trigger_sync_response_deserialization() {
+    let json = json!({ "status": "sync_triggered" });
+    let resp: TriggerSyncResponse = serde_json::from_value(json).unwrap();
+    assert_eq!(resp.status, "sync_triggered");
+}
