@@ -1,20 +1,22 @@
 use async_trait::async_trait;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::ToolError;
 
 /// A single ambiguous ASR snippet the agent wants the user to correct.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct UserInputQuestion {
-    /// The text recognized by ASR that may be wrong.
+    /// The ASR-recognized text that may be wrong
     pub text: String,
-    /// What the text is used for and why it is ambiguous.
+    /// What this text is used for and why it is ambiguous
     #[serde(rename = "for")]
     pub purpose: String,
 }
 
 /// A user-supplied correction for one `UserInputQuestion`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct UserInputAnswer {
     /// The corrected text.
     pub text: String,

@@ -360,10 +360,19 @@ pub trait TypedTool: Send + Sync {
     }
 
     /// JSON Schema for the arguments object. Defaults to a schemars-generated
-    /// schema for [`Self::Params`]. Override to post-process the generated
-    /// schema (e.g. strip `title`/`$schema`, attach descriptions).
+    /// schema for [`Self::Params`], normalized to match the hand-written
+    /// schema style used by the existing tools (no `$schema`, no `title`,
+    /// no `format`, `Option<T>` rendered as `T` with `default: null`).
+    ///
+    /// Override to post-process further (e.g. attach descriptions that cannot
+    /// be expressed via doc comments).
     fn parameters_schema(&self) -> Value {
-        schemars::schema_for!(Self::Params).to_value()
+        use schemars::generate::{SchemaGenerator, SchemaSettings};
+        let mut settings = SchemaSettings::default();
+        settings.inline_subschemas = true;
+        let mut generator = SchemaGenerator::new(settings);
+        let schema = <Self::Params as schemars::JsonSchema>::json_schema(&mut generator);
+        normalize_schema(schema.to_value())
     }
 
     /// Cross-field validation that serde cannot express (e.g. non-empty
@@ -381,6 +390,69 @@ pub trait TypedTool: Send + Sync {
         args: Self::Params,
     ) -> Result<ToolOutput, ToolError> {
         self.call_typed(args).await
+    }
+}
+
+/// Normalize a schemars-generated schema to match the hand-written style.
+///
+/// Strips:
+/// - `$schema` (the agent doesn't use a JSON Schema dialect URL)
+/// - `title` (struct name — not useful to the LLM and adds tokens)
+/// - `format` (e.g. `int64` — OpenAI function-calling ignores it)
+/// - `assertionLine` / `description` on the root object when it is just the
+///   doc-comment of the params struct (the per-field descriptions are kept)
+/// - `default` (schemars emits it for `#[serde(default)]` fields; the
+///   hand-written schemas never carried it)
+///
+/// Converts `Option<T>` rendered as `["T", "null"]` back to just `"T"`,
+/// matching the previous hand-written schemas where optional fields were
+/// typed as their inner type.
+pub fn normalize_schema(mut schema: Value) -> Value {
+    normalize_value(&mut schema);
+    schema
+}
+
+fn normalize_value(value: &mut Value) {
+    if let Some(obj) = value.as_object_mut() {
+        // Strip keys that are not present in the hand-written schemas.
+        obj.remove("$schema");
+        obj.remove("title");
+        obj.remove("format");
+        obj.remove("assertionLine");
+        // schemars emits `default` for `#[serde(default)]` fields; the
+        // hand-written schemas never carried it.
+        obj.remove("default");
+        // schemars adds `description` from the struct doc comment; the
+        // hand-written schemas never had a top-level params description.
+        // Keep field-level descriptions (those live inside `properties`).
+        if obj.contains_key("properties") {
+            obj.remove("description");
+        }
+
+        // Collapse `["integer", "null"]` / `["string", "null"]` etc. back to
+        // the non-null variant so the LLM sees the same shape as before.
+        // schemars renders `Option<T>` as a `type` array containing the
+        // string `"null"`, not `Value::Null`. We do NOT add `default: null`
+        // because the hand-written schemas never had it.
+        if let Some(t) = obj.get_mut("type").and_then(Value::as_array_mut) {
+            let has_null = t.iter().any(|v| v.as_str() == Some("null"));
+            if t.len() == 2 && has_null {
+                let non_null = t.iter().find(|v| v.as_str() != Some("null")).cloned();
+                if let Some(inner) = non_null {
+                    obj.insert("type".into(), inner);
+                }
+            }
+        }
+
+        // Recurse into every child value. `properties` is a map of
+        // field-name → schema, so we must walk each field's schema too.
+        for child in obj.values_mut() {
+            normalize_value(child);
+        }
+    } else if let Some(arr) = value.as_array_mut() {
+        for item in arr.iter_mut() {
+            normalize_value(item);
+        }
     }
 }
 
@@ -989,11 +1061,11 @@ mod tests {
                     exposure: ToolExposure::Deferred,
                 }));
             }
-            registry.register(Box::new(ToolSearch::from_registry(weak.clone())));
+            registry.register(Box::new(Typed(ToolSearch::from_registry(weak.clone()))));
             registry
         });
 
-        let tool_search = ToolSearch::from_registry(Arc::downgrade(&registry));
+        let tool_search = Typed(ToolSearch::from_registry(Arc::downgrade(&registry)));
         let output = tool_search.call(json!({"query": "tool"})).await.unwrap();
 
         assert_eq!(output.discovered_tools.len(), 5);
@@ -1011,11 +1083,11 @@ mod tests {
                     exposure: ToolExposure::Deferred,
                 }));
             }
-            registry.register(Box::new(ToolSearch::from_registry(weak.clone())));
+            registry.register(Box::new(Typed(ToolSearch::from_registry(weak.clone()))));
             registry
         });
 
-        let tool_search = ToolSearch::from_registry(Arc::downgrade(&registry));
+        let tool_search = Typed(ToolSearch::from_registry(Arc::downgrade(&registry)));
         let output = tool_search
             .call(json!({"query": "tool", "limit": 3}))
             .await
