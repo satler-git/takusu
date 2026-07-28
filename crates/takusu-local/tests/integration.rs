@@ -5345,3 +5345,70 @@ async fn create_habit_batch_rejects_duplicate_client_id() {
     let res = app.oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::BAD_REQUEST);
 }
+
+#[tokio::test]
+async fn task_update_clears_nullable_fields_via_sentinel() {
+    // Regression test for #1250: PATCH with description="" and
+    // quantity_unit="" must clear those columns to NULL, matching the
+    // D1 (takusu-worker) backend. quantity_total=0 is rejected by
+    // validation on both backends (the CASE WHEN 0 in the SQL is a
+    // safety net, not the primary path).
+    let (state, pool) = setup().await;
+    let app = build_router(state);
+
+    let create = auth_req_body(
+        Method::POST,
+        "/api/tasks",
+        json!({
+            "title": "study",
+            "end_at": "2026-07-22T18:00:00+09:00",
+            "avg_minutes": 30,
+            "description": "read chapter 3",
+            "quantity_total": 10,
+            "quantity_unit": "pages"
+        }),
+    );
+    let res = app.clone().oneshot(create).await.unwrap();
+    assert_eq!(res.status(), StatusCode::CREATED);
+    let task: serde_json::Value = serde_json::from_str(&body_str(res.into_body()).await).unwrap();
+    let id = task["id"].as_str().unwrap();
+    assert_eq!(task["description"], "read chapter 3");
+    assert_eq!(task["quantity_total"], 10);
+    assert_eq!(task["quantity_unit"], "pages");
+
+    // Clear description and quantity_unit via empty-string sentinels.
+    let patch = auth_req_body(
+        Method::PATCH,
+        &format!("/api/tasks/{id}"),
+        json!({ "description": "", "quantity_unit": "" }),
+    );
+    let res = app.clone().oneshot(patch).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let updated: serde_json::Value = serde_json::from_str(&body_str(res.into_body()).await).unwrap();
+    assert!(updated["description"].is_null(), "description should be null");
+    assert!(
+        updated.get("quantity_unit").is_none() || updated["quantity_unit"].is_null(),
+        "quantity_unit should be absent or null"
+    );
+    // quantity_total was not touched.
+    assert_eq!(updated["quantity_total"], 10);
+
+    // Verify directly in the database that the columns are NULL.
+    let (db_desc, db_unit): (Option<String>, Option<String>) =
+        sqlx::query_as("SELECT description, quantity_unit FROM tasks WHERE id = ?")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(db_desc.is_none(), "DB description should be NULL, got {db_desc:?}");
+    assert!(db_unit.is_none(), "DB quantity_unit should be NULL, got {db_unit:?}");
+
+    // quantity_total=0 is rejected by validation on both backends.
+    let patch_zero = auth_req_body(
+        Method::PATCH,
+        &format!("/api/tasks/{id}"),
+        json!({ "quantity_total": 0 }),
+    );
+    let res = app.clone().oneshot(patch_zero).await.unwrap();
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+}
