@@ -5,6 +5,7 @@ pub mod enum_label;
 pub mod jwt;
 pub mod option_bool_compat;
 pub mod quantity;
+pub mod similarity;
 #[cfg(feature = "sqlx")]
 pub mod sqlx_impl;
 pub mod time_types;
@@ -12,10 +13,11 @@ pub mod time_types;
 pub use abandonability::Abandonability;
 pub use enum_label::enum_serde::option as enum_option_serde;
 pub use enum_label::{
-    EnumLabel, MemoryKind, ScheduleMode, Solver, SubjectType, TaskStatus, TaskStatusFilter,
-    TokenScope, UnknownLabel, WindowMode, enum_serde,
+    EnumLabel, MemoryKind, ScheduleMode, SimilarityMetric, Solver, SubjectType, TaskStatus,
+    TaskStatusFilter, TokenScope, UnknownLabel, WindowMode, enum_serde,
 };
 pub use quantity::{Quantity, QuantityError};
+pub use similarity::Similarity;
 pub use time_types::{Date, TimeOfDay, TimeParseError, Timestamp, minutes_between_ts};
 
 pub use takusu_search::date::{

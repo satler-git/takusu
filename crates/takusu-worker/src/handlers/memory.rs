@@ -618,7 +618,7 @@ pub async fn similar_tasks(req: Request, env: Env) -> Result<Response, WorkerErr
     let filter = clauses.join(" OR ");
     let cap = memory::SIMILAR_TASK_CANDIDATE_CAP;
     let sql = format!(
-        "SELECT t.id AS task_id, t.display_id, t.title, t.avg_minutes, t.sigma_minutes, tam.actual_minutes, t.completed_at, t.updated_at, '' AS similarity FROM tasks t LEFT JOIN task_actual_minutes tam ON tam.task_id = t.id WHERE t.status = 'completed' AND ((t.normalized_title IS NOT NULL AND ({filter})) OR t.normalized_title IS NULL) ORDER BY t.updated_at DESC LIMIT {cap}"
+        "SELECT t.id AS task_id, t.display_id, t.title, t.avg_minutes, t.sigma_minutes, tam.actual_minutes, t.completed_at, t.updated_at FROM tasks t LEFT JOIN task_actual_minutes tam ON tam.task_id = t.id WHERE t.status = 'completed' AND ((t.normalized_title IS NOT NULL AND ({filter})) OR t.normalized_title IS NULL) ORDER BY t.updated_at DESC LIMIT {cap}"
     );
     let stmt = database.prepare(sql).bind(&bindings)?;
     let rows: Vec<SimilarTaskRow> = safe_all(&stmt).await?;
@@ -646,7 +646,7 @@ pub async fn similar_tasks(req: Request, env: Env) -> Result<Response, WorkerErr
     let mut out: Vec<SimilarTaskRow> = scored
         .into_iter()
         .map(|(score, mut row)| {
-            row.similarity = format!("dice:{score:.3}");
+            row.similarity = takusu_util::Similarity::dice(score);
             row
         })
         .collect();

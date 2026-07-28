@@ -363,6 +363,17 @@ enum_label! {
     }
 }
 
+enum_label! {
+    /// Similarity metric used by `Similarity` (see `doc/code-quality-issues.md` #33).
+    ///
+    /// Kept in `takusu-util` so `takusu-storage`, `takusu-client`, and
+    /// `takusu-worker` can all use it without changing the crate dependency
+    /// graph.
+    pub enum SimilarityMetric {
+        #[default] Dice = "dice",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -3962,10 +3962,10 @@ async fn find_similar_tasks_orders_completed_tasks() {
         serde_json::from_str(&body_str(res.into_body()).await).unwrap();
     assert!(!similar.is_empty());
     assert_eq!(similar[0]["title"], "数学の演習問題");
-    // similarity now carries the real Dice score, not a hardcoded label (#942).
-    let sim = similar[0]["similarity"].as_str().unwrap();
-    assert!(sim.starts_with("dice:"), "unexpected similarity: {sim}");
-    assert!(sim["dice:".len()..].parse::<f64>().is_ok());
+    // similarity is a structured object with metric and score (#942, #1253).
+    let sim = &similar[0]["similarity"];
+    assert_eq!(sim["metric"], "dice");
+    assert!(sim["score"].as_f64().is_some(), "unexpected similarity: {sim}");
 }
 
 #[tokio::test]

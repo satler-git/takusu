@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use takusu_util::{Abandonability, Date, Quantity, TaskStatusFilter, TimeOfDay, Timestamp};
+use takusu_util::{Abandonability, Date, Quantity, Similarity, TaskStatusFilter, TimeOfDay, Timestamp};
 
 #[allow(dead_code)]
 fn default_sleep() -> String {
@@ -687,7 +687,9 @@ pub struct SimilarTaskRow {
     pub completed_at: Option<Timestamp>,
     #[serde(default, skip_serializing)]
     pub updated_at: Timestamp,
-    pub similarity: String,
+    #[serde(default)]
+    #[sqlx(skip)]
+    pub similarity: Similarity,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]

@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use takusu_util::{Date, TimeOfDay, Timestamp, url_encode};
+use takusu_util::{Date, Similarity, TimeOfDay, Timestamp, url_encode};
 use tokio::sync::RwLock;
 
 #[derive(Debug, thiserror::Error)]
@@ -1606,7 +1606,8 @@ pub struct SimilarTaskRow {
     pub sigma_minutes: i64,
     pub actual_minutes: Option<i64>,
     pub completed_at: Option<Timestamp>,
-    pub similarity: String,
+    #[serde(default)]
+    pub similarity: Similarity,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]

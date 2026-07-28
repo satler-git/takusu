@@ -3,7 +3,7 @@
 //! `FromRow` derive the storage crate uses) into the WASM bundle.
 
 use serde::{Deserialize, Serialize};
-pub use takusu_util::{Abandonability, Date, Quantity, TimeOfDay, Timestamp};
+pub use takusu_util::{Abandonability, Date, Quantity, Similarity, TimeOfDay, Timestamp};
 
 use crate::memory;
 
@@ -517,7 +517,8 @@ pub struct SimilarTaskRow {
     pub completed_at: Option<Timestamp>,
     #[serde(skip_serializing)]
     pub updated_at: Timestamp,
-    pub similarity: String,
+    #[serde(default)]
+    pub similarity: Similarity,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
