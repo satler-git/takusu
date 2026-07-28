@@ -1,0 +1,35 @@
+---
+source: crates/takusu-agent/tests/schema_snapshots.rs
+expression: def
+---
+{
+  "function": {
+    "description": "Get one or more habits by display reference. habit_ref may be a single h<id> or an array of such references. Returns an object with `habits`.",
+    "name": "get_habit",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "habit_ref": {
+          "anyOf": [
+            {
+              "description": "Habit reference such as h1",
+              "type": "string"
+            },
+            {
+              "description": "Array of habit references such as [\"h1\", \"h2\"]",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          ]
+        }
+      },
+      "required": [
+        "habit_ref"
+      ],
+      "type": "object"
+    }
+  },
+  "type": "function"
+}

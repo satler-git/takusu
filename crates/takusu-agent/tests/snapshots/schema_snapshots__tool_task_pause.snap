@@ -1,0 +1,22 @@
+---
+source: crates/takusu-agent/tests/schema_snapshots.rs
+expression: def
+---
+{
+  "function": {
+    "description": "Propose pausing work on a task. Closes the open work session and records active minutes. If task_ref is omitted, asks for clarification. Requires approval before writing.",
+    "name": "task_pause",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "task_ref": {
+          "description": "Task reference such as #42 or h1#3. Omit if the user did not specify a task; a focused clarification will be returned.",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "type": "object"
+    }
+  },
+  "type": "function"
+}

@@ -88,6 +88,12 @@ impl From<UnknownLabel> for ToolError {
     }
 }
 
+impl From<InvalidArgsError> for ToolError {
+    fn from(err: InvalidArgsError) -> Self {
+        ToolError::InvalidArgs(err)
+    }
+}
+
 /// How a tool is exposed to the model.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToolExposure {
@@ -330,6 +336,99 @@ pub trait Tool: Send + Sync {
     }
 }
 
+/// Type-safe tool trait with a compile-time-known argument shape.
+///
+/// `TypedTool` is **not** object-safe (it has an associated type), so the
+/// [`ToolRegistry`] cannot hold `Box<dyn TypedTool>`. Instead, wrap a
+/// `TypedTool` in [`Typed`] and register that as `Box<dyn Tool>`:
+///
+/// ```ignore
+/// registry.register(Box::new(Typed(MyTool { client })));
+/// ```
+///
+/// The wrapper deserializes the incoming `Value` into `Self::Params`, runs
+/// [`TypedTool::validate_args`], and forwards the typed value to `call_typed`.
+#[async_trait::async_trait]
+pub trait TypedTool: Send + Sync {
+    type Params: serde::de::DeserializeOwned + schemars::JsonSchema + Send + Sync;
+
+    fn name(&self) -> &'static str;
+    fn description(&self) -> &'static str;
+
+    fn exposure(&self) -> ToolExposure {
+        ToolExposure::Direct
+    }
+
+    /// JSON Schema for the arguments object. Defaults to a schemars-generated
+    /// schema for [`Self::Params`]. Override to post-process the generated
+    /// schema (e.g. strip `title`/`$schema`, attach descriptions).
+    fn parameters_schema(&self) -> Value {
+        schemars::schema_for!(Self::Params).to_value()
+    }
+
+    /// Cross-field validation that serde cannot express (e.g. non-empty
+    /// strings, value ranges). Defaults to no extra checks. Runs after
+    /// deserialization and before `call_typed`.
+    fn validate_args(&self, _args: &Self::Params) -> Result<(), InvalidArgsError> {
+        Ok(())
+    }
+
+    async fn call_typed(&self, args: Self::Params) -> Result<ToolOutput, ToolError>;
+
+    async fn call_typed_with_id(
+        &self,
+        _id: &str,
+        args: Self::Params,
+    ) -> Result<ToolOutput, ToolError> {
+        self.call_typed(args).await
+    }
+}
+
+/// Wrapper that adapts a [`TypedTool`] into the object-safe [`Tool`] trait.
+///
+/// Registered tools should be `Box::new(Typed(tool))` so the registry can keep
+/// using `Box<dyn Tool>`. This allows migrating tools one at a time without a
+/// blanket `impl` that would collide with hand-written `impl Tool` blocks.
+pub struct Typed<T: TypedTool>(pub T);
+
+#[async_trait::async_trait]
+impl<T: TypedTool> Tool for Typed<T> {
+    fn name(&self) -> &'static str {
+        TypedTool::name(&self.0)
+    }
+
+    fn description(&self) -> &'static str {
+        TypedTool::description(&self.0)
+    }
+
+    fn exposure(&self) -> ToolExposure {
+        TypedTool::exposure(&self.0)
+    }
+
+    fn parameters_schema(&self) -> Value {
+        TypedTool::parameters_schema(&self.0)
+    }
+
+    async fn call(&self, args: Value) -> Result<ToolOutput, ToolError> {
+        let params = self.parse_params(args)?;
+        self.0.call_typed(params).await
+    }
+
+    async fn call_with_id(&self, id: &str, args: Value) -> Result<ToolOutput, ToolError> {
+        let params = self.parse_params(args)?;
+        self.0.call_typed_with_id(id, params).await
+    }
+}
+
+impl<T: TypedTool> Typed<T> {
+    fn parse_params(&self, args: Value) -> Result<T::Params, ToolError> {
+        let params: T::Params = serde_json::from_value(args)
+            .map_err(|e| ToolError::InvalidArgs(InvalidArgsError::no_field(e.to_string())))?;
+        self.0.validate_args(&params)?;
+        Ok(params)
+    }
+}
+
 fn estimate_tool_tokens(defs: &[Value]) -> usize {
     defs.iter()
         .map(|d| crate::llm::estimate_text_tokens(&serde_json::to_string(d).unwrap_or_default()))
@@ -430,6 +529,39 @@ impl ToolRegistry {
         self.tools.insert(tool.name().to_string(), tool);
         *self.definitions_cache.lock().unwrap() = None;
         *self.search_index.lock().unwrap() = None;
+    }
+
+    /// Names of all registered tools, sorted alphabetically (including
+    /// `Hidden` tools). Use [`ToolRegistry::exposed_tool_names`] when you
+    /// need only the tools visible to the model.
+    pub fn tool_names(&self) -> Vec<String> {
+        let mut names: Vec<String> = self.tools.keys().cloned().collect();
+        names.sort();
+        names
+    }
+
+    /// Names of tools that are exposed to the model (i.e. not `Hidden`),
+    /// sorted alphabetically.
+    pub fn exposed_tool_names(&self) -> Vec<String> {
+        let mut names: Vec<String> = self
+            .tools
+            .iter()
+            .filter(|(_, t)| !matches!(t.exposure(), ToolExposure::Hidden))
+            .map(|(n, _)| n.clone())
+            .collect();
+        names.sort();
+        names
+    }
+
+    /// OpenAI function-calling definition for a single tool by name.
+    ///
+    /// Returns `None` for unknown names and for `Hidden` tools (which are never
+    /// exposed to the model).
+    pub fn definition_for_name(&self, name: &str) -> Option<Value> {
+        self.tools
+            .get(name)
+            .filter(|t| !matches!(t.exposure(), ToolExposure::Hidden))
+            .map(|t| t.to_openai_definition())
     }
 
     fn build_definitions(&self, active_names: Option<&BTreeSet<String>>) -> Vec<Value> {

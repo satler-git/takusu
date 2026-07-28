@@ -1,0 +1,63 @@
+---
+source: crates/takusu-agent/tests/schema_snapshots.rs
+expression: def
+---
+{
+  "function": {
+    "description": "Propose deleting a memory. Generates an approval request; does not write immediately.",
+    "name": "memory_delete",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "inferred_fields": {
+          "description": "Fields inferred from user input.",
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "field": {
+                "description": "Name of the inferred field.",
+                "type": "string"
+              },
+              "reason": {
+                "description": "Reason the field was inferred.",
+                "type": "string"
+              },
+              "value": {
+                "description": "Inferred value for the field."
+              }
+            },
+            "required": [
+              "field",
+              "value",
+              "reason"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "memory_ref": {
+          "description": "Memory ID (from memory_search).",
+          "type": "string"
+        },
+        "observed_revision": {
+          "type": "integer"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "why": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "memory_ref",
+        "observed_revision"
+      ],
+      "type": "object"
+    }
+  },
+  "type": "function"
+}

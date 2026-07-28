@@ -1,0 +1,30 @@
+---
+source: crates/takusu-agent/tests/schema_snapshots.rs
+expression: def
+---
+{
+  "function": {
+    "description": "Search for less-frequently used tools by name, description, or parameters. When a task needs a tool not in the current list, call this first with relevant keywords (e.g. 'memory', 'skill', 'progress', 'reschedule') to discover it.",
+    "name": "tool_search",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "limit": {
+          "description": "Maximum number of tools to return (default 5).",
+          "maximum": 20,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "query": {
+          "description": "Keywords describing the tool or task. Include tool names, nouns, or verbs. Examples: 'skill list', 'memory search', 'task progress', 'reschedule schedule'.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    }
+  },
+  "type": "function"
+}

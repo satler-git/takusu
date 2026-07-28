@@ -1,0 +1,72 @@
+---
+source: crates/takusu-agent/tests/schema_snapshots.rs
+expression: def
+---
+{
+  "function": {
+    "description": "Propose adding a new skill. Requires user approval before it is written.",
+    "name": "skills_propose_add",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "body": {
+          "description": "Skill instructions (markdown)",
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "inferred_fields": {
+          "description": "Fields inferred from user input.",
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "field": {
+                "description": "Name of the inferred field.",
+                "type": "string"
+              },
+              "reason": {
+                "description": "Reason the field was inferred.",
+                "type": "string"
+              },
+              "value": {
+                "description": "Inferred value for the field."
+              }
+            },
+            "required": [
+              "field",
+              "value",
+              "reason"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "name": {
+          "type": "string"
+        },
+        "slug": {
+          "description": "URL-safe identifier",
+          "type": "string"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "why": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "slug",
+        "name",
+        "description",
+        "body"
+      ],
+      "type": "object"
+    }
+  },
+  "type": "function"
+}

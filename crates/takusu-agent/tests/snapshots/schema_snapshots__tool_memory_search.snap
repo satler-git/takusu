@@ -1,0 +1,38 @@
+---
+source: crates/takusu-agent/tests/schema_snapshots.rs
+expression: def
+---
+{
+  "function": {
+    "description": "Search saved memory by key or content. Returns a list of matching memory entries.",
+    "name": "memory_search",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "description": "Filter by kind. Values: proper_noun, fact, task_note.",
+          "type": "string"
+        },
+        "limit": {
+          "description": "Maximum results (default 10, max 50).",
+          "type": "integer"
+        },
+        "q": {
+          "description": "Search query. Multiple keywords are ANDed. * is a wildcard matching any sequence of characters. Example: 研究室 大学, 研究*大学.",
+          "type": "string"
+        },
+        "subject_id": {
+          "type": "string"
+        },
+        "subject_type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "q"
+      ],
+      "type": "object"
+    }
+  },
+  "type": "function"
+}

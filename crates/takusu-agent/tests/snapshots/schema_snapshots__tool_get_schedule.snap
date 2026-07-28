@@ -1,0 +1,29 @@
+---
+source: crates/takusu-agent/tests/schema_snapshots.rs
+expression: def
+---
+{
+  "function": {
+    "description": "Get the current generated schedule with absolute timestamps. Optionally filter by a date range using from/to (e.g. 2026-07-20, 7d, today, now). Includes overdue tasks by default.",
+    "name": "get_schedule",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "from": {
+          "description": "Start of the range; omitted means unbounded. Accepts absolute date (YYYY-MM-DD), relative days (e.g. '7d' for 7 days from now), 'today', or 'now'.",
+          "type": "string"
+        },
+        "no_overdue": {
+          "description": "If true, omit the overdue tasks section from the response.",
+          "type": "boolean"
+        },
+        "to": {
+          "description": "End of the range; omitted means unbounded. Accepts absolute date (YYYY-MM-DD), relative days (e.g. '7d' for 7 days from now), 'today', or 'now'.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "type": "function"
+}

@@ -1,0 +1,43 @@
+---
+source: crates/takusu-agent/tests/schema_snapshots.rs
+expression: def
+---
+{
+  "function": {
+    "description": "Preview a schedule without replacing the active schedule; reports moved, unscheduled, and sleep impact.",
+    "name": "preview_schedule",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "from": {
+          "description": "Start of range; interpreted in server timezone.",
+          "type": "string"
+        },
+        "mode": {
+          "type": "string"
+        },
+        "pinned": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "sleep": {
+          "type": "string"
+        },
+        "task_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "until": {
+          "description": "End of range; interpreted in server timezone.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "type": "function"
+}

@@ -1,0 +1,31 @@
+---
+source: crates/takusu-agent/tests/schema_snapshots.rs
+expression: def
+---
+{
+  "function": {
+    "description": "Expand an RFC 5545 RRULE into a list of n start datetimes. Supports DTSTART, FREQ, INTERVAL, COUNT, UNTIL, BYDAY, BYMONTH, BYMONTHDAY and EXDATE. Times are returned in the timezone specified by DTSTART, or the server timezone when DTSTART is absent.",
+    "name": "expand_rrule",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "description": "Number of datetimes to return.",
+          "maximum": 1000,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "rrule": {
+          "description": "RFC 5545 recurrence rule. May include a DTSTART line and/or EXDATE lines. Example: 'DTSTART:20260727T090000Z\nRRULE:FREQ=DAILY;COUNT=4;BYDAY=MO,TU,WE,TH,FR'",
+          "type": "string"
+        }
+      },
+      "required": [
+        "rrule",
+        "count"
+      ],
+      "type": "object"
+    }
+  },
+  "type": "function"
+}

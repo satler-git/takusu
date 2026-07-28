@@ -29,6 +29,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 sentry = { version = "0.48.4", default-features = false, features = ["backtrace", "contexts", "debug-images", "panic", "rustls", "tracing", "ureq"] }
 config = "0.15"
 async-trait = "0.1"
+schemars = "1"
+insta = "1"
 reqwest = { version = "0.13", features = [
   "json",
   "form",

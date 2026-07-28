@@ -1,0 +1,44 @@
+---
+source: crates/takusu-agent/tests/schema_snapshots.rs
+expression: def
+---
+{
+  "function": {
+    "description": "Propose splitting a task into an original (retained quantity) and a new remainder task. Preserves history and optionally sets a dependency. If task_ref is omitted, asks for clarification. Requires approval before writing.",
+    "name": "task_split",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "description": "Optional description for the remainder task.",
+          "type": "string"
+        },
+        "end_at": {
+          "description": "Optional deadline for the remainder task; interpreted in server timezone.",
+          "type": "string"
+        },
+        "retained_quantity": {
+          "description": "Quantity to keep on the original task.",
+          "type": "integer"
+        },
+        "set_dependency": {
+          "description": "If true, the remainder depends on the original task. Defaults to true.",
+          "type": "boolean"
+        },
+        "task_ref": {
+          "description": "Task reference such as #42 or h1#3. Omit if the user did not specify a task; a focused clarification will be returned.",
+          "type": "string"
+        },
+        "title": {
+          "description": "Optional title for the remainder task.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "retained_quantity"
+      ],
+      "type": "object"
+    }
+  },
+  "type": "function"
+}

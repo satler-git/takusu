@@ -1,0 +1,32 @@
+---
+source: crates/takusu-agent/tests/schema_snapshots.rs
+expression: def
+---
+{
+  "function": {
+    "description": "Return weekday, Japanese public holiday information, and optionally the schedule for one or more dates. Dates can be absolute (YYYY-MM-DD) or relative (today, tomorrow, 7d, -3d).",
+    "name": "day_details",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "dates": {
+          "description": "Date expressions such as '2026-07-27', 'today', or '3d'.",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "include_schedule": {
+          "description": "If true, include schedule entries for each day. Default false.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "dates"
+      ],
+      "type": "object"
+    }
+  },
+  "type": "function"
+}

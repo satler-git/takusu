@@ -1,0 +1,28 @@
+---
+source: crates/takusu-agent/tests/schema_snapshots.rs
+expression: def
+---
+{
+  "function": {
+    "description": "Find completed tasks with titles similar to the given title. Useful for estimating durations before creating a task.",
+    "name": "similar_tasks",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "limit": {
+          "description": "Maximum results (default 10, max 50).",
+          "type": "integer"
+        },
+        "title": {
+          "description": "Title to compare against completed tasks.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "title"
+      ],
+      "type": "object"
+    }
+  },
+  "type": "function"
+}
