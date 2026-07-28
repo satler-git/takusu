@@ -51,9 +51,6 @@ pub struct HabitGroupAnchor {
 pub type Placement = TaskPlacement;
 
 thread_local! {
-    /// `day_load_with_candidate` 用の scratch buffer。
-    /// 1 日あたりの区間をマージする際の allocate を避ける。
-    static DAY_INTERVALS: RefCell<Vec<TimeWindow>> = RefCell::new(Vec::with_capacity(64));
     /// `evaluate_insertion` 用の scratch buffer。
     /// 候補スケジュールを `evaluate` に渡す際の allocate を避ける。
     pub static INSERTION_PLAN: RefCell<Vec<Placement>> = RefCell::new(Vec::with_capacity(64));
@@ -62,6 +59,18 @@ thread_local! {
     pub static INSERTION_SORTED: RefCell<Vec<Placement>> = RefCell::new(Vec::with_capacity(64));
     pub static INSERTION_INDEX: RefCell<Vec<Option<TimeWindow>>> = RefCell::new(Vec::with_capacity(64));
     pub static INSERTION_HABIT: RefCell<Vec<HabitGroupAnchor>> = RefCell::new(Vec::with_capacity(64));
+}
+
+// ── capacity-check mode ────────────────────────────────────────────────
+
+/// 容量チェックモード。
+///
+/// - `True(scratch)` — 容量チェックあり。`scratch` は呼び出し側が所有し、
+///   `day_load_with_candidate` の区間マージ用に再利用される。
+/// - `False` — 容量チェックなし。バッファ不要（アロケーションなし）。
+pub(crate) enum CapacityMode<'a> {
+    True(&'a mut Vec<TimeWindow>),
+    False,
 }
 
 // ── placement primitives (shared with anneal.rs) ───────────────────────
@@ -145,44 +154,45 @@ pub(crate) fn next_day_start(planner: &Planner, p: Point) -> Point {
 
 /// 指定日に candidate を追加した場合の union 負荷を計算する。
 /// 並列タスクの二重加算を避けるため、interval の merge を行う。
+///
+/// `scratch` は呼び出し側が管理する再利用バッファ（`evaluate_with_scratch` と同じ方針）。
+/// 関数内で clear → push → sort して使う。
 fn day_load_with_candidate(
     schedules: &[Placement],
     candidate: TimeWindow,
     day_start: Point,
     day_end: Point,
+    scratch: &mut Vec<TimeWindow>,
 ) -> i64 {
-    DAY_INTERVALS.with(|v| {
-        let mut intervals = v.borrow_mut();
-        intervals.clear();
-        intervals.push(TimeWindow::new(
-            candidate.start.max(day_start),
-            candidate.end.min(day_end),
-        ));
-        for p in schedules {
-            if p.start.0 < day_end.0 && p.end.0 > day_start.0 {
-                intervals.push(TimeWindow::new(p.start.max(day_start), p.end.min(day_end)));
-            }
+    scratch.clear();
+    scratch.push(TimeWindow::new(
+        candidate.start.max(day_start),
+        candidate.end.min(day_end),
+    ));
+    for p in schedules {
+        if p.start.0 < day_end.0 && p.end.0 > day_start.0 {
+            scratch.push(TimeWindow::new(p.start.max(day_start), p.end.min(day_end)));
         }
-        intervals.sort_by(|a, b| a.start.cmp(&b.start).then(a.end.cmp(&b.end)));
-        let mut total = 0i64;
-        let mut cur: Option<TimeWindow> = None;
-        for tw in intervals.iter().copied() {
-            if let Some(c) = cur {
-                if tw.start.0 <= c.end.0 {
-                    cur = Some(TimeWindow::new(c.start, Point(c.end.0.max(tw.end.0))));
-                } else {
-                    total += c.end.0 - c.start.0;
-                    cur = Some(tw);
-                }
+    }
+    scratch.sort_by(|a, b| a.start.cmp(&b.start).then(a.end.cmp(&b.end)));
+    let mut total = 0i64;
+    let mut cur: Option<TimeWindow> = None;
+    for tw in scratch.iter().copied() {
+        if let Some(c) = cur {
+            if tw.start.0 <= c.end.0 {
+                cur = Some(TimeWindow::new(c.start, Point(c.end.0.max(tw.end.0))));
             } else {
+                total += c.end.0 - c.start.0;
                 cur = Some(tw);
             }
+        } else {
+            cur = Some(tw);
         }
-        if let Some(c) = cur {
-            total += c.end.0 - c.start.0;
-        }
-        total
-    })
+    }
+    if let Some(c) = cur {
+        total += c.end.0 - c.start.0;
+    }
+    total
 }
 
 /// 与えられた時刻が属する日の、既存スケジュールの最大終了時刻を返す。
@@ -205,6 +215,7 @@ pub(crate) fn capacity_exceeded_for(
     schedules: &[Placement],
     start: Point,
     end: Point,
+    scratch: &mut Vec<TimeWindow>,
 ) -> bool {
     let max = planner.workload.maximum_slots_per_day();
     if max == 0 {
@@ -214,7 +225,8 @@ pub(crate) fn capacity_exceeded_for(
     let mut day = day_start_for(planner, start);
     while day.0 < end.0 {
         let day_end = day + spd;
-        let load = day_load_with_candidate(schedules, TimeWindow::new(start, end), day, day_end);
+        let load =
+            day_load_with_candidate(schedules, TimeWindow::new(start, end), day, day_end, scratch);
         if load > max {
             return true;
         }
@@ -223,13 +235,14 @@ pub(crate) fn capacity_exceeded_for(
     false
 }
 
-pub(crate) fn try_place<const CHECK_CAPACITY: bool>(
+pub(crate) fn try_place(
     planner: &Planner,
     schedules: &[Placement],
     task: &Task,
     earliest: Point,
     dur: i64,
     latest_end: Option<Point>,
+    capacity: CapacityMode<'_>,
 ) -> Result<TimeWindow, PlacementFailure> {
     if dur <= 0 {
         return Err(PlacementFailure::NoLegalSlot);
@@ -242,6 +255,7 @@ pub(crate) fn try_place<const CHECK_CAPACITY: bool>(
     let avoid_sleep = dur <= awake_len;
     let mut cursor = earliest;
     let mut guard = 0u32;
+    let mut capacity = capacity;
 
     loop {
         guard += 1;
@@ -260,7 +274,9 @@ pub(crate) fn try_place<const CHECK_CAPACITY: bool>(
             return Err(PlacementFailure::LatestEndExceeded);
         }
 
-        if CHECK_CAPACITY && capacity_exceeded_for(planner, schedules, cursor, candidate_end) {
+        if let CapacityMode::True(scratch) = &mut capacity
+            && capacity_exceeded_for(planner, schedules, cursor, candidate_end, scratch)
+        {
             return Err(PlacementFailure::DailyCapacityExceeded);
         }
 

@@ -52,7 +52,8 @@ use super::*;
 use crate::decoder::{DecodeInput, RepairMode, decode, decode_status, fallback_for};
 use crate::habit;
 use crate::placement::{
-    Placement, capacity_exceeded_for, compute_earliest, compute_earliest_indexed, try_place,
+    CapacityMode, Placement, capacity_exceeded_for, compute_earliest, compute_earliest_indexed,
+    try_place,
 };
 #[cfg(test)]
 use evaluate::evaluate;
@@ -267,7 +268,7 @@ fn build_initial(planner: &Planner) -> Plan {
         }
 
         let earliest = compute_earliest(planner, &schedules, task);
-        if let Ok(tw) = try_place::<false>(planner, &schedules, task, earliest, dur, None) {
+        if let Ok(tw) = try_place(planner, &schedules, task, earliest, dur, None, CapacityMode::False) {
             let start = tw.start;
             let end = tw.end;
             schedules.push(TaskPlacement::new(start, end, task_id));
@@ -752,11 +753,14 @@ pub(crate) fn alns_search_pinned(
         repair_mode: RepairMode::Earliest,
     };
     let mut final_result = decode(planner, final_input);
+    let mut cap_buf: Vec<TimeWindow> = Vec::new();
     if best_result
         .plan
         .schedules
         .iter()
-        .any(|p| capacity_exceeded_for(planner, &best_result.plan.schedules, p.start, p.end))
+        .any(|p| {
+            capacity_exceeded_for(planner, &best_result.plan.schedules, p.start, p.end, &mut cap_buf)
+        })
     {
         final_result
             .diagnostics
@@ -1611,7 +1615,7 @@ fn build_initial_partial(planner: &Planner, pinned: &[Placement]) -> Plan {
         }
 
         let earliest = compute_earliest(planner, &schedules, task);
-        if let Ok(tw) = try_place::<false>(planner, &schedules, task, earliest, dur, None) {
+        if let Ok(tw) = try_place(planner, &schedules, task, earliest, dur, None, CapacityMode::False) {
             let start = tw.start;
             let end = tw.end;
             schedules.push(TaskPlacement::new(start, end, task_id));
@@ -2312,12 +2316,13 @@ fn incremental_decode(
                 .iter()
                 .filter_map(|&d| pos_index[d].map(|tw| tw.start))
                 .min();
-            if let Ok(tw) = try_place::<false>(planner, &scheds, task, earliest, dur, latest_end) {
+            if let Ok(tw) = try_place(planner, &scheds, task, earliest, dur, latest_end, CapacityMode::False)
+            {
                 scheds.push(TaskPlacement::new(tw.start, tw.end, task_id));
                 pos_index[task_id] = Some(tw);
             } else {
                 let (start, end, _err) =
-                    fallback_for::<false>(planner, &scheds, earliest, dur, latest_end, task);
+                    fallback_for(planner, &scheds, earliest, dur, latest_end, task, CapacityMode::False);
                 scheds.push(TaskPlacement::new(start, end, task_id));
                 pos_index[task_id] = Some(TimeWindow::new(start, end));
             }
@@ -2335,7 +2340,7 @@ fn incremental_decode(
                     .filter_map(|&d| pos_index[d].map(|tw| tw.start))
                     .min();
                 let (start, end, _err) =
-                    fallback_for::<false>(planner, &scheds, earliest, dur, latest_end, task);
+                    fallback_for(planner, &scheds, earliest, dur, latest_end, task, CapacityMode::False);
                 scheds.push(TaskPlacement::new(start, end, task_id));
                 pos_index[task_id] = Some(TimeWindow::new(start, end));
             }
@@ -2420,7 +2425,7 @@ fn place_one(planner: &Planner, scheds: &mut Vec<Placement>, task_id: usize) {
         return;
     }
     let earliest = compute_earliest(planner, scheds, task);
-    if let Ok(tw) = try_place::<false>(planner, scheds, task, earliest, dur, None) {
+    if let Ok(tw) = try_place(planner, scheds, task, earliest, dur, None, CapacityMode::False) {
         let start = tw.start;
         let end = tw.end;
         scheds.push(TaskPlacement::new(start, end, task_id));

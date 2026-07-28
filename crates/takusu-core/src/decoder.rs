@@ -258,13 +258,14 @@ fn latest_end_for(
     }
 }
 
-pub(crate) fn fallback_for<const CHECK_CAPACITY: bool>(
+pub(crate) fn fallback_for(
     planner: &Planner,
     schedules: &[Placement],
     earliest: Point,
     dur: i64,
     latest_end: Option<Point>,
     task: &Task,
+    capacity: CapacityMode<'_>,
 ) -> (Point, Point, Option<PlacementFailure>) {
     let max_end = schedules
         .iter()
@@ -275,7 +276,7 @@ pub(crate) fn fallback_for<const CHECK_CAPACITY: bool>(
 
     // try_place を使い、latest_end / 容量 / deadline を尊重できるスロットを探す。
     // 見つからなければ最後尾にフォールバックし、失敗理由を返す。
-    match try_place::<CHECK_CAPACITY>(planner, schedules, task, start, dur, latest_end) {
+    match try_place(planner, schedules, task, start, dur, latest_end, capacity) {
         Ok(tw) => (tw.start, tw.end, None),
         Err(err) => {
             let end = Point(start.0 + dur);
@@ -291,6 +292,7 @@ fn place_task_earliest(
     task_id: usize,
     index: &[Option<TimeWindow>],
     dependents: &[Vec<usize>],
+    scratch: &mut Vec<TimeWindow>,
 ) -> (Point, Point, Option<PlacementFailure>) {
     let task = &planner.tasks[task_id];
     let earliest = compute_earliest_indexed(planner, index, task);
@@ -298,7 +300,8 @@ fn place_task_earliest(
     let mut first_err = None;
 
     for dur in duration_candidates(task, input.duration_choices.get(task_id)) {
-        let (slots, err) = feasible_slots(planner, schedules, task, earliest, dur, latest_end, 1);
+        let (slots, err) =
+            feasible_slots(planner, schedules, task, earliest, dur, latest_end, 1, scratch);
         if let Some(tw) = slots.into_iter().next() {
             return (tw.start, tw.end, None);
         }
@@ -309,7 +312,7 @@ fn place_task_earliest(
 
     let dur = duration_for(task, input.duration_choices.get(task_id));
     let (start, end, fallback_err) =
-        fallback_for::<true>(planner, schedules, earliest, dur, latest_end, task);
+        fallback_for(planner, schedules, earliest, dur, latest_end, task, CapacityMode::True(&mut *scratch));
     (
         start,
         end,
@@ -319,6 +322,7 @@ fn place_task_earliest(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn place_task_near_anchor(
     planner: &Planner,
     schedules: &[Placement],
@@ -327,6 +331,7 @@ fn place_task_near_anchor(
     index: &[Option<TimeWindow>],
     dependents: &[Vec<usize>],
     anchor: i64,
+    scratch: &mut Vec<TimeWindow>,
 ) -> (Point, Point, Option<PlacementFailure>) {
     let task = &planner.tasks[task_id];
     let earliest = compute_earliest_indexed(planner, index, task);
@@ -342,6 +347,7 @@ fn place_task_near_anchor(
             dur,
             latest_end,
             usize::MAX,
+            scratch,
         );
         for tw in slots {
             let dist = (tw.start.0 - anchor).abs();
@@ -357,7 +363,7 @@ fn place_task_near_anchor(
 
     let dur = duration_for(task, input.duration_choices.get(task_id));
     let (start, end, fallback_err) =
-        fallback_for::<true>(planner, schedules, earliest, dur, latest_end, task);
+        fallback_for(planner, schedules, earliest, dur, latest_end, task, CapacityMode::True(&mut *scratch));
     (
         start,
         end,
@@ -372,6 +378,7 @@ fn place_task_lowest_delta(
     task_id: usize,
     index: &[Option<TimeWindow>],
     dependents: &[Vec<usize>],
+    scratch: &mut Vec<TimeWindow>,
 ) -> (Point, Point, Option<PlacementFailure>) {
     let task = &planner.tasks[task_id];
     let earliest = compute_earliest_indexed(planner, index, task);
@@ -388,6 +395,7 @@ fn place_task_lowest_delta(
             dur,
             latest_end,
             usize::MAX,
+            scratch,
         );
         if slots.is_empty() {
             if first_err.is_none() {
@@ -409,7 +417,7 @@ fn place_task_lowest_delta(
 
     let dur = duration_for(task, input.duration_choices.get(task_id));
     let (s, e, fallback_err) =
-        fallback_for::<true>(planner, schedules, earliest, dur, latest_end, task);
+        fallback_for(planner, schedules, earliest, dur, latest_end, task, CapacityMode::True(&mut *scratch));
     (
         s,
         e,
@@ -426,6 +434,7 @@ fn place_regret2(
     ready: &[usize],
     index: &[Option<TimeWindow>],
     dependents: &[Vec<usize>],
+    scratch: &mut Vec<TimeWindow>,
 ) -> Option<(usize, Point, Point, Option<PlacementFailure>)> {
     #[derive(Clone, Copy)]
     struct Candidate {
@@ -455,6 +464,7 @@ fn place_regret2(
                 dur,
                 latest_end,
                 usize::MAX,
+                scratch,
             );
             for tw in slots {
                 let score = evaluate_insertion(planner, schedules, task_id, tw.start, tw.end);
@@ -465,7 +475,7 @@ fn place_regret2(
         if scores.is_empty() {
             let dur = (task.cost_estimate.avg() as i64).max(1);
             let (s, e, fallback_err) =
-                fallback_for::<true>(planner, schedules, earliest, dur, latest_end, task);
+                fallback_for(planner, schedules, earliest, dur, latest_end, task, CapacityMode::True(&mut *scratch));
             let score = evaluate_insertion(planner, schedules, task_id, s, e);
             if fallback.is_none_or(|c| score > c.score) {
                 fallback = Some(Candidate {
@@ -589,10 +599,13 @@ trait PlacementStrategy {
     /// 未配置タスク = forced フォールバック先)。戦略はこれを無視して別の
     /// ready タスクを選んでもよい。戻り値は
     /// `(chosen_id, start, end, placement_err)`。
+    ///
+    /// `scratch` は `day_load_with_candidate` 用の再利用バッファ。
     fn select_and_place(
         &self,
         ctx: &PlacementCtx<'_>,
         task_id: usize,
+        scratch: &mut Vec<TimeWindow>,
     ) -> (usize, Point, Point, Option<PlacementFailure>);
 }
 
@@ -603,6 +616,7 @@ impl PlacementStrategy for EarliestStrategy {
         &self,
         ctx: &PlacementCtx<'_>,
         task_id: usize,
+        scratch: &mut Vec<TimeWindow>,
     ) -> (usize, Point, Point, Option<PlacementFailure>) {
         let (s, e, err) = place_task_earliest(
             ctx.planner,
@@ -611,6 +625,7 @@ impl PlacementStrategy for EarliestStrategy {
             task_id,
             ctx.index,
             ctx.dependents,
+            scratch,
         );
         (task_id, s, e, err)
     }
@@ -623,6 +638,7 @@ impl PlacementStrategy for LowestDeltaStrategy {
         &self,
         ctx: &PlacementCtx<'_>,
         task_id: usize,
+        scratch: &mut Vec<TimeWindow>,
     ) -> (usize, Point, Point, Option<PlacementFailure>) {
         let (s, e, err) = place_task_lowest_delta(
             ctx.planner,
@@ -631,6 +647,7 @@ impl PlacementStrategy for LowestDeltaStrategy {
             task_id,
             ctx.index,
             ctx.dependents,
+            scratch,
         );
         (task_id, s, e, err)
     }
@@ -644,6 +661,7 @@ impl PlacementStrategy for Regret2Strategy {
         &self,
         ctx: &PlacementCtx<'_>,
         task_id: usize,
+        scratch: &mut Vec<TimeWindow>,
     ) -> (usize, Point, Point, Option<PlacementFailure>) {
         let ready: Vec<usize> = ctx
             .priority
@@ -658,6 +676,7 @@ impl PlacementStrategy for Regret2Strategy {
             &ready,
             ctx.index,
             ctx.dependents,
+            scratch,
         ) {
             (id, s, e, err)
         } else {
@@ -668,6 +687,7 @@ impl PlacementStrategy for Regret2Strategy {
                 task_id,
                 ctx.index,
                 ctx.dependents,
+                scratch,
             );
             (task_id, s, e, err)
         }
@@ -681,6 +701,7 @@ impl PlacementStrategy for DeadlineStrategy {
         &self,
         ctx: &PlacementCtx<'_>,
         task_id: usize,
+        scratch: &mut Vec<TimeWindow>,
     ) -> (usize, Point, Point, Option<PlacementFailure>) {
         let mut best_id = task_id;
         for &id in ctx.priority.iter() {
@@ -698,6 +719,7 @@ impl PlacementStrategy for DeadlineStrategy {
             best_id,
             ctx.index,
             ctx.dependents,
+            scratch,
         );
         (best_id, s, e, err)
     }
@@ -711,6 +733,7 @@ impl PlacementStrategy for HabitStrategy {
         &self,
         ctx: &PlacementCtx<'_>,
         task_id: usize,
+        scratch: &mut Vec<TimeWindow>,
     ) -> (usize, Point, Point, Option<PlacementFailure>) {
         let previous = ctx.planner.previous_schedule();
         let mut best_id = task_id;
@@ -748,6 +771,7 @@ impl PlacementStrategy for HabitStrategy {
             ctx.index,
             ctx.dependents,
             anchor,
+            scratch,
         );
         (best_id, s, e, err)
     }
@@ -760,6 +784,7 @@ impl PlacementStrategy for StabilityStrategy {
         &self,
         ctx: &PlacementCtx<'_>,
         task_id: usize,
+        scratch: &mut Vec<TimeWindow>,
     ) -> (usize, Point, Point, Option<PlacementFailure>) {
         let previous = ctx.planner.previous_schedule();
         let mut best_id = task_id;
@@ -791,6 +816,7 @@ impl PlacementStrategy for StabilityStrategy {
             ctx.index,
             ctx.dependents,
             anchor,
+            scratch,
         );
         (best_id, s, e, err)
     }
@@ -805,6 +831,7 @@ impl PlacementStrategy for HabitAnchorStrategy {
         &self,
         ctx: &PlacementCtx<'_>,
         task_id: usize,
+        scratch: &mut Vec<TimeWindow>,
     ) -> (usize, Point, Point, Option<PlacementFailure>) {
         let mut best_id = task_id;
         let mut best_is_habit = ctx.planner.tasks[task_id].habit_group.is_some();
@@ -828,6 +855,7 @@ impl PlacementStrategy for HabitAnchorStrategy {
                 ctx.index,
                 ctx.dependents,
                 pref.0,
+                scratch,
             );
             (best_id, s, e, err)
         } else {
@@ -838,6 +866,7 @@ impl PlacementStrategy for HabitAnchorStrategy {
                 best_id,
                 ctx.index,
                 ctx.dependents,
+                scratch,
             );
             (best_id, s, e, err)
         }
@@ -922,6 +951,9 @@ pub fn decode(planner: &Planner, input: DecodeInput<'_>) -> DecodeResult {
     }
 
     // 3. priority 順に依存が解決済みのタスクを配置
+    // `day_load_with_candidate` 用の scratch バッファ。ループ全体で再利用し、
+    // 反復ごとの allocate を避ける（evaluate_with_scratch と同じ方針）。
+    let mut day_scratch: Vec<TimeWindow> = Vec::with_capacity(64);
     while remaining > 0 {
         // priority 順で最初の ready (in_degree == 0) タスクを探す
         let mut task_id_opt = None;
@@ -959,7 +991,7 @@ pub fn decode(planner: &Planner, input: DecodeInput<'_>) -> DecodeResult {
             in_degree: &in_degree,
         };
         let (chosen_id, start, end, placement_err) =
-            input.repair_mode.strategy().select_and_place(&ctx, task_id);
+            input.repair_mode.strategy().select_and_place(&ctx, task_id, &mut day_scratch);
 
         record_placement(
             chosen_id,
@@ -1012,6 +1044,7 @@ fn duration_candidates(task: &Task, choice: Option<&i64>) -> Vec<i64> {
     candidates
 }
 
+#[allow(clippy::too_many_arguments)]
 fn feasible_slots(
     planner: &Planner,
     schedules: &[Placement],
@@ -1020,6 +1053,7 @@ fn feasible_slots(
     dur: i64,
     latest_end: Option<Point>,
     max_count: usize,
+    scratch: &mut Vec<TimeWindow>,
 ) -> (Vec<TimeWindow>, Option<PlacementFailure>) {
     let mut slots = Vec::new();
     let mut cursor = earliest;
@@ -1033,7 +1067,7 @@ fn feasible_slots(
         if slots.len() >= max_count {
             break;
         }
-        match try_place::<true>(planner, schedules, task, cursor, dur, latest_end) {
+        match try_place(planner, schedules, task, cursor, dur, latest_end, CapacityMode::True(&mut *scratch)) {
             Ok(tw) => {
                 if slots.last() == Some(&tw) {
                     break;
@@ -1733,7 +1767,8 @@ mod tests {
             habit_group: None,
         };
         let planner = test_planner(vec![task.clone()]);
-        let err = try_place::<true>(&planner, &[], &task, Point(1), 10, None).unwrap_err();
+        let err = try_place(&planner, &[], &task, Point(1), 10, None, CapacityMode::True(&mut Vec::new()))
+            .unwrap_err();
         assert_eq!(err, PlacementFailure::DeadlineExceeded);
     }
 
@@ -1752,7 +1787,8 @@ mod tests {
         };
         let planner = test_planner(vec![task.clone()]);
         let err =
-            try_place::<true>(&planner, &[], &task, Point(0), 10, Some(Point(5))).unwrap_err();
+            try_place(&planner, &[], &task, Point(0), 10, Some(Point(5)), CapacityMode::True(&mut Vec::new()))
+                .unwrap_err();
         assert_eq!(err, PlacementFailure::LatestEndExceeded);
     }
 
@@ -1775,7 +1811,8 @@ mod tests {
         // この場合、sleep そのものではなく deadline 超過が根本原因なので
         // DeadlineExceeded を優先して報告する。
         planner.sleep = SleepConfig::new(0, 20, 25, true);
-        let err = try_place::<true>(&planner, &[], &task, Point(20), 10, None).unwrap_err();
+        let err = try_place(&planner, &[], &task, Point(20), 10, None, CapacityMode::True(&mut Vec::new()))
+            .unwrap_err();
         assert_eq!(err, PlacementFailure::DeadlineExceeded);
     }
 
@@ -1807,7 +1844,9 @@ mod tests {
         let planner = test_planner(vec![host.clone(), guest.clone()]);
         let schedules = vec![TaskPlacement::new(Point(0), Point(5), 0)];
         // guest は [0,3) で host と重なり、並行不可かつ [5,8) では deadline=7 を超える
-        let err = try_place::<true>(&planner, &schedules, &guest, Point(0), 3, None).unwrap_err();
+        let err =
+            try_place(&planner, &schedules, &guest, Point(0), 3, None, CapacityMode::True(&mut Vec::new()))
+                .unwrap_err();
         assert_eq!(err, PlacementFailure::DeadlineExceeded);
     }
 
@@ -2280,6 +2319,7 @@ mod tests {
             &[],
             &[],
             &[],
+            &mut Vec::new(),
         );
 
         assert!(result.is_none());
@@ -2302,7 +2342,9 @@ mod tests {
         planner.workload = WorkloadConfig::new(8, 10);
         // 1 日の最大容量 10 に対し、既存 [0,8) + 候補 [7,12) は union で 12 を超える。
         let schedules = vec![TaskPlacement::new(Point(0), Point(8), 0)];
-        let err = try_place::<true>(&planner, &schedules, &task, Point(7), 5, None).unwrap_err();
+        let err =
+            try_place(&planner, &schedules, &task, Point(7), 5, None, CapacityMode::True(&mut Vec::new()))
+                .unwrap_err();
         assert_eq!(err, PlacementFailure::DailyCapacityExceeded);
     }
 
