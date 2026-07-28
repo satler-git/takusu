@@ -321,6 +321,8 @@ fn map_agent_error(e: AgentError) -> McpError {
         AgentError::TooManyToolCalls => {
             McpError::internal_error("too many tool calls".to_string(), None)
         }
+        #[cfg(feature = "audio-device")]
+        AgentError::Audio(e) => McpError::internal_error(e.to_string(), None),
     }
 }
 

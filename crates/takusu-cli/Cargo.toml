@@ -10,9 +10,10 @@ name = "takusu"
 path = "src/main.rs"
 
 [features]
-default = ["mcp", "web"]
+default = ["mcp", "web", "audio-device"]
 mcp = ["dep:rmcp"]
 web = ["dep:takusu-web"]
+audio-device = ["takusu-agent/audio-device"]
 
 [dependencies]
 async-trait = { workspace = true }

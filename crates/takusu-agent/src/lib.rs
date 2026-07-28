@@ -160,6 +160,9 @@ pub enum AgentError {
     Client(#[from] ClientError),
     #[error("too many tool calls")]
     TooManyToolCalls,
+    #[cfg(feature = "audio-device")]
+    #[error("audio error: {0}")]
+    Audio(#[from] audio::AudioError),
 }
 
 #[derive(Debug, Clone, Serialize)]
