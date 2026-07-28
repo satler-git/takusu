@@ -118,9 +118,9 @@ fn circular_mean_nearest(tods: &[i64], spd: i64) -> i64 {
 /// 配置済み member が 2 件未満なら `None`。
 fn current_anchor_tod(current: &Plan, group: &HabitGroup, spd: i64) -> Option<i64> {
     let mut tods: Vec<i64> = Vec::with_capacity(group.members.len());
-    for (s, _, id) in &current.schedules {
-        if group.set.contains(id) {
-            tods.push(tod_of(*s, spd));
+    for p in &current.schedules {
+        if group.set.contains(&p.task_id) {
+            tods.push(tod_of(p.start, spd));
         }
     }
     (tods.len() >= 2).then(|| circular_mean_nearest(&tods, spd))
@@ -144,7 +144,9 @@ pub(crate) fn apply_anchor_shift(
     let mut new_scheds = current.schedules.clone();
     let mut changed = false;
     for entry in new_scheds.iter_mut() {
-        let (s, e, id) = *entry;
+        let s = entry.start;
+        let e = entry.end;
+        let id = entry.task_id;
         if !group.set.contains(&id) {
             continue;
         }
@@ -171,7 +173,7 @@ pub(crate) fn apply_anchor_shift(
             new_start = ts.0;
         }
         if new_start != s.0 {
-            *entry = (Point(new_start), Point(new_start + dur), id);
+            *entry = TaskPlacement::new(Point(new_start), Point(new_start + dur), id);
             changed = true;
         }
     }
@@ -194,7 +196,9 @@ pub(crate) fn apply_member_shift(
     }
     let mut new_scheds = current.schedules.clone();
     for entry in new_scheds.iter_mut() {
-        let (s, e, id) = *entry;
+        let s = entry.start;
+        let e = entry.end;
+        let id = entry.task_id;
         if id != member {
             continue;
         }
@@ -211,7 +215,7 @@ pub(crate) fn apply_member_shift(
         if new_start == s.0 {
             return None;
         }
-        *entry = (Point(new_start), Point(new_start + dur), member);
+        *entry = TaskPlacement::new(Point(new_start), Point(new_start + dur), member);
         return Some(Plan {
             schedules: new_scheds,
         });
@@ -265,7 +269,7 @@ mod tests {
                 .iter()
                 .map(|&id| {
                     let s = p.tasks()[id].start.unwrap();
-                    (s, Point(s.0 + dur), id)
+                    TaskPlacement::new(s, Point(s.0 + dur), id)
                 })
                 .collect(),
         }
@@ -331,8 +335,10 @@ mod tests {
         let plan = plan_at_starts(&p, &ids, 6);
 
         let moved = apply_anchor_shift(&p, &plan, &group(&ids), 5, &empty_pinned()).unwrap();
-        for (s, e, _id) in &moved.schedules {
-            assert_eq!(tod_of(*s, SPD), 113, "all members should sit at new tod");
+        for p in &moved.schedules {
+            let s = p.start;
+            let e = p.end;
+            assert_eq!(tod_of(s, SPD), 113, "all members should sit at new tod");
             assert_eq!(e.0 - s.0, 6, "duration preserved");
         }
     }
@@ -346,12 +352,12 @@ mod tests {
         let mut before: Vec<i64> = plan
             .schedules
             .iter()
-            .map(|(s, _, _)| s.0 - s.0 % SPD)
+            .map(|p| p.start.0 - p.start.0 % SPD)
             .collect();
         let mut after: Vec<i64> = moved
             .schedules
             .iter()
-            .map(|(s, _, _)| s.0 - s.0 % SPD)
+            .map(|p| p.start.0 - p.start.0 % SPD)
             .collect();
         before.sort_unstable();
         after.sort_unstable();
@@ -366,10 +372,14 @@ mod tests {
         let plan = plan_at_starts(&p, &[a, b], 6);
 
         let moved = apply_anchor_shift(&p, &plan, &group(&[a, b]), 5, &empty_pinned()).unwrap();
-        let b_after = moved.schedules.iter().find(|(_, _, id)| *id == b).unwrap();
-        assert_eq!(b_after.0, Point(2 * SPD + 108), "fixed member unchanged");
-        let a_after = moved.schedules.iter().find(|(_, _, id)| *id == a).unwrap();
-        assert_eq!(tod_of(a_after.0, SPD), 113, "movable member shifted");
+        let b_after = moved.schedules.iter().find(|p| p.task_id == b).unwrap();
+        assert_eq!(
+            b_after.start,
+            Point(2 * SPD + 108),
+            "fixed member unchanged"
+        );
+        let a_after = moved.schedules.iter().find(|p| p.task_id == a).unwrap();
+        assert_eq!(tod_of(a_after.start, SPD), 113, "movable member shifted");
     }
 
     #[test]
@@ -383,10 +393,10 @@ mod tests {
         let pinned_after = moved
             .schedules
             .iter()
-            .find(|(_, _, id)| *id == ids[1])
+            .find(|p| p.task_id == ids[1])
             .unwrap();
         assert_eq!(
-            pinned_after.0,
+            pinned_after.start,
             Point(2 * SPD + 108),
             "pinned member unchanged"
         );
@@ -397,17 +407,17 @@ mod tests {
         let (p, ids) = habit_planner(4, 108, 6);
         let mut plan = plan_at_starts(&p, &ids, 6);
         // deviate one member far from the anchor -> becomes an exception
-        plan.schedules[2].0 = Point(plan.schedules[2].0.0 + 100);
-        plan.schedules[2].1 = Point(plan.schedules[2].1.0 + 100);
+        plan.schedules[2].start = Point(plan.schedules[2].start.0 + 100);
+        plan.schedules[2].end = Point(plan.schedules[2].end.0 + 100);
 
         let moved = apply_anchor_shift(&p, &plan, &group(&ids), 5, &empty_pinned()).unwrap();
         let exc_after = moved
             .schedules
             .iter()
-            .find(|(_, _, id)| *id == ids[2])
+            .find(|p| p.task_id == ids[2])
             .unwrap();
         assert_eq!(
-            exc_after.0,
+            exc_after.start,
             Point(3 * SPD + 108 + 100),
             "exception member is not yanked back to the anchor"
         );
@@ -421,8 +431,8 @@ mod tests {
         let plan = plan_at_starts(&p, &[a, b], 6);
 
         let moved = apply_anchor_shift(&p, &plan, &group(&[a, b]), -50, &empty_pinned()).unwrap();
-        let a_after = moved.schedules.iter().find(|(_, _, id)| *id == a).unwrap();
-        assert!(a_after.0.0 >= p.now.0, "clamp to now respected");
+        let a_after = moved.schedules.iter().find(|p| p.task_id == a).unwrap();
+        assert!(a_after.start.0 >= p.now.0, "clamp to now respected");
     }
 
     #[test]
@@ -437,15 +447,15 @@ mod tests {
         let exc_after = again
             .schedules
             .iter()
-            .find(|(_, _, id)| *id == ids[1])
+            .find(|p| p.task_id == ids[1])
             .unwrap();
         let moved_after = moved
             .schedules
             .iter()
-            .find(|(_, _, id)| *id == ids[1])
+            .find(|p| p.task_id == ids[1])
             .unwrap();
         assert_eq!(
-            exc_after.0, moved_after.0,
+            exc_after.start, moved_after.start,
             "individually moved member stays an exception"
         );
     }

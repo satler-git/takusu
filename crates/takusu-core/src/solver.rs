@@ -43,7 +43,7 @@ pub fn solve_alns_with_seed(planner: &Planner, seed: u64) -> Plan {
 }
 
 /// partial / range solve: pinned 集合を固定して再スケジュールする。
-pub fn solve_partial(planner: &Planner, pinned: &[(Point, Point, usize)]) -> Plan {
+pub fn solve_partial(planner: &Planner, pinned: &[TaskPlacement]) -> Plan {
     let pinned = validate_pinned(planner, pinned);
     match planner.solver {
         Solver::Sa => solve_sa_partial(planner, &pinned),
@@ -53,25 +53,18 @@ pub fn solve_partial(planner: &Planner, pinned: &[(Point, Point, usize)]) -> Pla
 }
 
 /// 単一 seed で SA partial solve を実行する（solver 設定に関わらず SA）。
-pub fn solve_partial_with_seed(
-    planner: &Planner,
-    pinned: &[(Point, Point, usize)],
-    seed: u64,
-) -> Plan {
+pub fn solve_partial_with_seed(planner: &Planner, pinned: &[TaskPlacement], seed: u64) -> Plan {
     let pinned = validate_pinned(planner, pinned);
     solve_sa_partial_with_seed(planner, &pinned, seed)
 }
 
-fn validate_pinned(
-    planner: &Planner,
-    pinned: &[(Point, Point, usize)],
-) -> Vec<(Point, Point, usize)> {
+fn validate_pinned(planner: &Planner, pinned: &[TaskPlacement]) -> Vec<TaskPlacement> {
     let mut seen = std::collections::HashSet::new();
     pinned
         .iter()
-        .filter(|(_, _, id)| *id < planner.tasks.len())
+        .filter(|p| p.task_id < planner.tasks.len())
         .copied()
-        .filter(|(_, _, id)| seen.insert(*id))
+        .filter(|p| seen.insert(p.task_id))
         .collect()
 }
 
@@ -94,7 +87,7 @@ fn solve_sa_with_seed(planner: &Planner, seed: u64) -> Plan {
     sa_lns(planner, &mut StdRng::seed_from_u64(seed))
 }
 
-fn solve_sa_partial(planner: &Planner, pinned: &[(Point, Point, usize)]) -> Plan {
+fn solve_sa_partial(planner: &Planner, pinned: &[TaskPlacement]) -> Plan {
     if pinned.is_empty() {
         return solve_sa(planner, None);
     }
@@ -113,11 +106,7 @@ fn solve_sa_partial(planner: &Planner, pinned: &[(Point, Point, usize)]) -> Plan
         .unwrap_or_else(|| Plan { schedules: vec![] })
 }
 
-fn solve_sa_partial_with_seed(
-    planner: &Planner,
-    pinned: &[(Point, Point, usize)],
-    seed: u64,
-) -> Plan {
+fn solve_sa_partial_with_seed(planner: &Planner, pinned: &[TaskPlacement], seed: u64) -> Plan {
     if pinned.is_empty() {
         return solve_sa_with_seed(planner, seed);
     }
@@ -130,7 +119,7 @@ const PARALLEL_ALNS_MIN_TASKS: usize = 50;
 
 fn solve_priority_result(
     planner: &Planner,
-    pinned: &[(Point, Point, usize)],
+    pinned: &[TaskPlacement],
     override_seed: Option<u64>,
 ) -> DecodeResult {
     let base = base_seed(planner, override_seed);
@@ -156,18 +145,14 @@ fn solve_priority_result(
         })
 }
 
-fn solve_priority(
-    planner: &Planner,
-    pinned: &[(Point, Point, usize)],
-    override_seed: Option<u64>,
-) -> Plan {
+fn solve_priority(planner: &Planner, pinned: &[TaskPlacement], override_seed: Option<u64>) -> Plan {
     solve_priority_result(planner, pinned, override_seed).plan
 }
 
 /// Auto: まず priority/ALNS を試し、実行不可能または制約緩和（Relaxed）なら SA に fallback する。
 /// time budget を超えないよう priority 実行後の残り時間を SA に渡す。
 /// priority が time budget を使い切した場合は SA fallback を実行しない。
-fn solve_auto(planner: &Planner, pinned: &[(Point, Point, usize)]) -> Plan {
+fn solve_auto(planner: &Planner, pinned: &[TaskPlacement]) -> Plan {
     let start = Instant::now();
     let priority_result = solve_priority_result(planner, pinned, None);
     if priority_result.status == DecodeStatus::Feasible {
@@ -229,8 +214,8 @@ mod tests {
         let planner = make_planner(5);
         let plan = solve(&planner);
         assert!(!plan.schedules.is_empty());
-        for (s, e, _) in &plan.schedules {
-            assert!(e.0 >= s.0);
+        for p in &plan.schedules {
+            assert!(p.end.0 >= p.start.0);
         }
     }
 
@@ -260,9 +245,9 @@ mod tests {
         let planner = make_planner(3);
         let plan = solve(&planner);
         let mut pinned: Vec<_> = plan.schedules.get(0..1).unwrap_or(&[]).to_vec();
-        pinned.push((Point(0), Point(1), 99));
+        pinned.push(TaskPlacement::new(Point(0), Point(1), 99));
         let partial = solve_partial(&planner, &pinned);
-        assert!(!partial.schedules.iter().any(|(_, _, id)| *id == 99));
+        assert!(!partial.schedules.iter().any(|p| p.task_id == 99));
     }
 
     #[test]
@@ -292,8 +277,8 @@ mod tests {
                 .unwrap();
         }
         let plan = solve(&planner);
-        for (_s, e, _) in &plan.schedules {
-            assert!(e.0 <= 10000);
+        for p in &plan.schedules {
+            assert!(p.end.0 <= 10000);
         }
     }
 

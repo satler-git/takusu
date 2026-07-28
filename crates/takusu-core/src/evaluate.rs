@@ -81,7 +81,7 @@
 //! - W_INCLUSION=10: タスクをスケジュールから外さない誘因十分。
 
 use super::*;
-use crate::placement::Placement;
+use crate::placement::{HabitGroupAnchor, Placement};
 
 const W_EARLY: f64 = 1.0;
 const W_LATE: f64 = 20.0;
@@ -138,12 +138,12 @@ pub(crate) fn evaluate_with_scratch(
     temperature: f64,
     t0: f64,
     sorted: &mut Vec<Placement>,
-    index: &mut Vec<Option<(Point, Point)>>,
-    habit_entries: &mut Vec<(usize, i64)>,
+    index: &mut Vec<Option<TimeWindow>>,
+    habit_entries: &mut Vec<HabitGroupAnchor>,
 ) -> f64 {
     sorted.clear();
     sorted.extend_from_slice(schedules);
-    sorted.sort_unstable_by_key(|(s, _, _)| s.0);
+    sorted.sort_unstable_by_key(|p| p.start);
     evaluate_presorted(
         planner,
         schedules,
@@ -163,8 +163,8 @@ pub(crate) fn evaluate_presorted(
     temperature: f64,
     t0: f64,
     sorted: &[Placement],
-    index: &mut Vec<Option<(Point, Point)>>,
-    habit_entries: &mut Vec<(usize, i64)>,
+    index: &mut Vec<Option<TimeWindow>>,
+    habit_entries: &mut Vec<HabitGroupAnchor>,
 ) -> f64 {
     let (plan_start, plan_end) = build_index_into(planner, schedules, index);
 
@@ -211,7 +211,7 @@ pub(crate) fn sorted_incremental_apply(
             sorted.remove(pos);
         }
 
-        let insert_pos = sorted.partition_point(|(s, _, _)| s.0 < new_entry.0.0);
+        let insert_pos = sorted.partition_point(|p| p.start.0 < new_entry.start.0);
         sorted.insert(insert_pos, new_entry);
     }
 
@@ -221,12 +221,12 @@ pub(crate) fn sorted_incremental_apply(
 /// `sorted_incremental_apply` の逆操作。apply 前の状態に戻す。
 pub(crate) fn sorted_revert(sorted: &mut Vec<Placement>, undo: &[(Placement, usize)]) {
     for &(old_entry, _old_pos) in undo.iter().rev() {
-        if let Some(pos) = sorted.iter().position(|e| e.2 == old_entry.2) {
+        if let Some(pos) = sorted.iter().position(|e| e.task_id == old_entry.task_id) {
             sorted.remove(pos);
         }
     }
     for &(old_entry, _) in undo.iter().rev() {
-        let insert_pos = sorted.partition_point(|(s, _, _)| s.0 < old_entry.0.0);
+        let insert_pos = sorted.partition_point(|p| p.start.0 < old_entry.start.0);
         sorted.insert(insert_pos, old_entry);
     }
 }
@@ -236,27 +236,27 @@ pub(crate) fn sorted_revert(sorted: &mut Vec<Placement>, undo: &[(Placement, usi
 fn build_index_into(
     planner: &Planner,
     schedules: &[Placement],
-    index: &mut Vec<Option<(Point, Point)>>,
+    index: &mut Vec<Option<TimeWindow>>,
 ) -> (Point, Point) {
     index.clear();
     index.resize(planner.tasks.len(), None);
     let mut plan_start = Point(0);
     let mut plan_end = Point(0);
     let mut first = true;
-    for (s, e, id) in schedules {
-        if *id < index.len() {
-            index[*id] = Some((*s, *e));
+    for p in schedules {
+        if p.task_id < index.len() {
+            index[p.task_id] = Some(TimeWindow::new(p.start, p.end));
         }
         if first {
-            plan_start = *s;
-            plan_end = *e;
+            plan_start = p.start;
+            plan_end = p.end;
             first = false;
         } else {
-            if s.0 < plan_start.0 {
-                plan_start = *s;
+            if p.start.0 < plan_start.0 {
+                plan_start = p.start;
             }
-            if e.0 > plan_end.0 {
-                plan_end = *e;
+            if p.end.0 > plan_end.0 {
+                plan_end = p.end;
             }
         }
     }
@@ -268,7 +268,7 @@ fn build_index_into(
 }
 
 #[cfg(test)]
-fn build_index(planner: &Planner, schedules: &[Placement]) -> Vec<Option<(Point, Point)>> {
+fn build_index(planner: &Planner, schedules: &[Placement]) -> Vec<Option<TimeWindow>> {
     let mut index = Vec::with_capacity(planner.tasks.len());
     build_index_into(planner, schedules, &mut index);
     index
@@ -276,7 +276,7 @@ fn build_index(planner: &Planner, schedules: &[Placement]) -> Vec<Option<(Point,
 
 fn task_and_depend_scores(
     planner: &Planner,
-    index: &[Option<(Point, Point)>],
+    index: &[Option<TimeWindow>],
     temperature: f64,
     t0: f64,
 ) -> f64 {
@@ -284,9 +284,11 @@ fn task_and_depend_scores(
     let mut score = 0.0;
     let mut depend_penalty_slots = 0i64;
     for task in &planner.tasks {
-        let Some((sched_start, sched_end)) = index[task.id] else {
+        let Some(tw) = index[task.id] else {
             continue;
         };
+        let sched_start = tw.start;
+        let sched_end = tw.end;
 
         // deadline_score
         let slack = Point::delta(task.end, sched_end);
@@ -315,10 +317,10 @@ fn task_and_depend_scores(
 
         // depend_score (merged into the same loop)
         for dep_id in &task.depends {
-            if let Some(Some((_, dep_end))) = index.get(*dep_id)
-                && *dep_end > sched_start
+            if let Some(Some(dep_tw)) = index.get(*dep_id)
+                && dep_tw.end > sched_start
             {
-                let violation_end = dep_end.0.min(sched_end.0);
+                let violation_end = dep_tw.end.0.min(sched_end.0);
                 depend_penalty_slots += violation_end - sched_start.0;
             }
         }
@@ -331,34 +333,35 @@ fn task_and_depend_scores(
 /// 条件: other_start < task.end かつ other_end > sched_end のタスクがバッファを遮る。
 /// sched_end より前に開始しても sched_end を超えて終了するタスクがバッファを遮るため、
 /// 走査は sorted[..end_pos] (start < task.end) 全体を対象とし、end > sched_end で絞る。
-fn buffer_score(planner: &Planner, index: &[Option<(Point, Point)>], sorted: &[Placement]) -> f64 {
+fn buffer_score(planner: &Planner, index: &[Option<TimeWindow>], sorted: &[Placement]) -> f64 {
     let mut score = 0.0;
     for task in &planner.tasks {
-        let Some((_start, sched_end)) = index[task.id] else {
+        let Some(tw) = index[task.id] else {
             continue;
         };
+        let sched_end = tw.end;
         if task.cost_estimate.sigma == 0 {
             continue;
         }
         let mut buffer_end = task.end;
         // start < task.end の範囲を走査 (それ以降はバッファを遮らない)
-        let end_pos = sorted.partition_point(|(s, _, _)| s.0 < task.end.0);
-        for (other_start, other_end, other_id) in &sorted[..end_pos] {
-            if *other_id == task.id {
+        let end_pos = sorted.partition_point(|p| p.start.0 < task.end.0);
+        for other in &sorted[..end_pos] {
+            if other.task_id == task.id {
                 continue;
             }
             // sched_end を超えて終了するタスクのみバッファを遮る
-            if other_end.0 <= sched_end.0 {
+            if other.end.0 <= sched_end.0 {
                 continue;
             }
-            let other = &planner.tasks[*other_id];
-            if (task.allows_parallel && other.parallelizable)
-                || (other.allows_parallel && task.parallelizable)
+            let other_task = &planner.tasks[other.task_id];
+            if (task.allows_parallel && other_task.parallelizable)
+                || (other_task.allows_parallel && task.parallelizable)
             {
                 continue;
             }
-            if other_start.0 < buffer_end.0 {
-                buffer_end = *other_start;
+            if other.start.0 < buffer_end.0 {
+                buffer_end = other.start;
             }
         }
         let actual = (buffer_end.0 - sched_end.0).max(0);
@@ -380,7 +383,7 @@ fn union_length_in_window(
 ) -> i64 {
     let n = sorted.len();
     // ウィンドウ開始以前に終わる区間はスキップ
-    while *start_idx < n && sorted[*start_idx].1.0 <= window_start.0 {
+    while *start_idx < n && sorted[*start_idx].end.0 <= window_start.0 {
         *start_idx += 1;
     }
 
@@ -388,12 +391,12 @@ fn union_length_in_window(
     let mut cur_start = 0i64;
     let mut cur_end = 0i64;
     let mut in_union = false;
-    for (s, e, _) in &sorted[*start_idx..n] {
-        if s.0 >= window_end.0 {
+    for p in &sorted[*start_idx..n] {
+        if p.start.0 >= window_end.0 {
             break;
         }
-        let clip_start = s.0.max(window_start.0);
-        let clip_end = e.0.min(window_end.0);
+        let clip_start = p.start.0.max(window_start.0);
+        let clip_end = p.end.0.min(window_end.0);
         if !in_union {
             cur_start = clip_start;
             cur_end = clip_end;
@@ -517,20 +520,21 @@ fn daily_load_score(
 
 /// 区間列の union の長さを返す。区間は `(start, end)` で `start < end` 前提。
 #[cfg(test)]
-fn union_length(intervals: &mut [(Point, Point)]) -> i64 {
+fn union_length(intervals: &mut [TimeWindow]) -> i64 {
     if intervals.is_empty() {
         return 0;
     }
-    intervals.sort_unstable_by_key(|(s, _)| s.0);
+    intervals.sort_unstable_by_key(|tw| tw.start);
     let mut total = 0i64;
-    let (mut cur_start, mut cur_end) = intervals[0];
-    for (s, e) in intervals.iter().skip(1) {
-        if s.0 > cur_end.0 {
+    let mut cur_start = intervals[0].start;
+    let mut cur_end = intervals[0].end;
+    for tw in intervals.iter().skip(1) {
+        if tw.start.0 > cur_end.0 {
             total += cur_end.0 - cur_start.0;
-            cur_start = *s;
-            cur_end = *e;
-        } else if e.0 > cur_end.0 {
-            cur_end = *e;
+            cur_start = tw.start;
+            cur_end = tw.end;
+        } else if tw.end.0 > cur_end.0 {
+            cur_end = tw.end;
         }
     }
     total += cur_end.0 - cur_start.0;
@@ -542,25 +546,25 @@ fn parallel_violation_score(planner: &Planner, sorted: &[Placement]) -> f64 {
     let n = sorted.len();
     let tasks = &planner.tasks;
     for i in 0..n {
-        let (a_start, a_end, a_id) = sorted[i];
-        if a_id >= tasks.len() {
+        let a = sorted[i];
+        if a.task_id >= tasks.len() {
             continue;
         }
-        let task_a = &tasks[a_id];
+        let task_a = &tasks[a.task_id];
         let a_allows = task_a.allows_parallel;
         let a_parallelizable = task_a.parallelizable;
-        for (b_start, b_end, b_id) in &sorted[(i + 1)..n] {
-            if b_start.0 >= a_end.0 {
+        for b in &sorted[(i + 1)..n] {
+            if b.start.0 >= a.end.0 {
                 break;
             }
-            if *b_id >= tasks.len() {
+            if b.task_id >= tasks.len() {
                 continue;
             }
-            let task_b = &tasks[*b_id];
+            let task_b = &tasks[b.task_id];
             if !((a_allows && task_b.parallelizable)
                 || (task_b.allows_parallel && a_parallelizable))
             {
-                let overlap = a_end.0.min(b_end.0) - a_start.0.max(b_start.0);
+                let overlap = a.end.0.min(b.end.0) - a.start.0.max(b.start.0);
                 penalty_slots += overlap;
             }
         }
@@ -576,7 +580,7 @@ fn inclusion_bonus(_planner: &Planner, schedules: &[Placement]) -> f64 {
 /// 直近（now に近い）ほど大きなペナルティを課す。
 /// 前回位置との開始時刻の差分スロット × W_STABILITY × 減衰係数。
 /// 減衰係数 = max(0, 1 - distance_from_now / STABILITY_RANGE)² （二次減衰）
-fn stability_score(planner: &Planner, index: &[Option<(Point, Point)>]) -> f64 {
+fn stability_score(planner: &Planner, index: &[Option<TimeWindow>]) -> f64 {
     let prev = planner.previous_schedule();
     if prev.is_empty() {
         return 0.0;
@@ -584,12 +588,14 @@ fn stability_score(planner: &Planner, index: &[Option<(Point, Point)>]) -> f64 {
     let now = planner.now;
     let mut penalty = 0.0;
     for task in &planner.tasks {
-        let Some((sched_start, _)) = index[task.id] else {
+        let Some(tw) = index[task.id] else {
             continue;
         };
-        let Some(Some((prev_start, _))) = prev.get(task.id) else {
+        let sched_start = tw.start;
+        let Some(Some(prev_tw)) = prev.get(task.id) else {
             continue;
         };
+        let prev_start = prev_tw.start;
         // 過去位置のタスクは前方に移動すべきなのでペナルティなし
         if prev_start.0 < now.0 {
             continue;
@@ -617,8 +623,8 @@ fn stability_score(planner: &Planner, index: &[Option<(Point, Point)>]) -> f64 {
 /// - 2タスク未満のグループは評価しない (分散が意味を持たない)
 fn habit_consistency_score(
     planner: &Planner,
-    index: &[Option<(Point, Point)>],
-    entries: &mut Vec<(usize, i64)>,
+    index: &[Option<TimeWindow>],
+    entries: &mut Vec<HabitGroupAnchor>,
 ) -> f64 {
     let slots_per_day = 24 * 60 / planner.per() as i64;
     entries.clear();
@@ -626,13 +632,14 @@ fn habit_consistency_score(
         let Some(group) = task.habit_group else {
             continue;
         };
-        let Some((sched_start, _)) = index[task.id] else {
+        let Some(tw) = index[task.id] else {
             continue;
         };
+        let sched_start = tw.start;
         // 日付成分を除去: 時刻帯のみのスロット値。
         // スケジュールされた時刻は非負なので通常の `%` で十分。
         let tod = sched_start.0 % slots_per_day;
-        entries.push((group, tod));
+        entries.push(HabitGroupAnchor { group, tod });
     }
 
     if entries.len() < 2 {
@@ -642,15 +649,15 @@ fn habit_consistency_score(
     // 1 つの共有バッファで habit グループを扱い、FxHashMap や各グループごとの
     // Vec 割り当てを避ける。まず group だけでソートし、グループ内は小さな
     // スライスを時刻帯でソートして隣接差分を計算する。
-    entries.sort_unstable_by_key(|e| e.0);
+    entries.sort_unstable_by_key(|e| e.group);
 
     let mut bonus = 0.0;
     let mut i = 0;
     while i < entries.len() {
-        let group = entries[i].0;
+        let group = entries[i].group;
         let start = i;
         i += 1;
-        while i < entries.len() && entries[i].0 == group {
+        while i < entries.len() && entries[i].group == group {
             i += 1;
         }
         let count = i - start;
@@ -658,13 +665,13 @@ fn habit_consistency_score(
             continue;
         }
 
-        entries[start..i].sort_unstable_by_key(|e| e.1);
+        entries[start..i].sort_unstable_by_key(|e| e.tod);
         let times = &entries[start..i];
         let n = count as f64;
         let mut sum_sq_diff = 0.0;
         for k in 0..times.len() {
             let next = (k + 1) % times.len();
-            let raw = (times[next].1 - times[k].1).abs();
+            let raw = (times[next].tod - times[k].tod).abs();
             let diff = raw.min(slots_per_day - raw);
             sum_sq_diff += diff as f64 * diff as f64;
         }
@@ -719,8 +726,8 @@ mod tests {
     fn evaluate_deadline_violation() {
         let mut p = make_planner();
         let id = add_simple_task(&mut p, 3, 0, 5);
-        let ok = plan_with(vec![(Point(0), Point(3), id)]);
-        let late = plan_with(vec![(Point(0), Point(6), id)]);
+        let ok = plan_with(vec![TaskPlacement::new(Point(0), Point(3), id)]);
+        let late = plan_with(vec![TaskPlacement::new(Point(0), Point(6), id)]);
 
         let score_ok = evaluate(&p, &ok, 0.0, 1.0);
         let score_late = evaluate(&p, &late, 0.0, 1.0);
@@ -745,8 +752,8 @@ mod tests {
             })
             .unwrap();
 
-        let ok = plan_with(vec![(Point(10), Point(13), id)]);
-        let early = plan_with(vec![(Point(5), Point(8), id)]);
+        let ok = plan_with(vec![TaskPlacement::new(Point(10), Point(13), id)]);
+        let early = plan_with(vec![TaskPlacement::new(Point(5), Point(8), id)]);
 
         let score_ok = evaluate(&p, &ok, 0.0, 1.0);
         let score_early = evaluate(&p, &early, 0.0, 1.0);
@@ -772,8 +779,14 @@ mod tests {
             })
             .unwrap();
 
-        let ok = plan_with(vec![(Point(0), Point(2), a), (Point(2), Point(4), b_id)]);
-        let violated = plan_with(vec![(Point(0), Point(2), b_id), (Point(2), Point(4), a)]);
+        let ok = plan_with(vec![
+            TaskPlacement::new(Point(0), Point(2), a),
+            TaskPlacement::new(Point(2), Point(4), b_id),
+        ]);
+        let violated = plan_with(vec![
+            TaskPlacement::new(Point(0), Point(2), b_id),
+            TaskPlacement::new(Point(2), Point(4), a),
+        ]);
 
         let score_ok = evaluate(&p, &ok, 0.0, 1.0);
         let score_bad = evaluate(&p, &violated, 0.0, 1.0);
@@ -820,11 +833,17 @@ mod tests {
             .unwrap();
 
         // Valid: B starts exactly when A finishes.
-        let valid = plan_with(vec![(Point(0), Point(10), a), (Point(10), Point(11), b)]);
+        let valid = plan_with(vec![
+            TaskPlacement::new(Point(0), Point(10), a),
+            TaskPlacement::new(Point(10), Point(11), b),
+        ]);
         // Invalid: B starts before A ends and finishes before A even starts.
         // B runs for 1 slot while A is unfinished, so the dependency violation
         // should be 1 slot, not A's end time minus B's start (12 slots).
-        let invalid = plan_with(vec![(Point(2), Point(12), a), (Point(0), Point(1), b)]);
+        let invalid = plan_with(vec![
+            TaskPlacement::new(Point(2), Point(12), a),
+            TaskPlacement::new(Point(0), Point(1), b),
+        ]);
 
         let score_valid = evaluate(&p, &valid, 0.0, 1.0);
         let score_invalid = evaluate(&p, &invalid, 0.0, 1.0);
@@ -846,8 +865,14 @@ mod tests {
         let a = add_simple_task(&mut p, 1, 0, 5);
         let b = add_simple_task(&mut p, 1, 2, 5);
 
-        let ab = plan_with(vec![(Point(0), Point(1), a), (Point(1), Point(2), b)]);
-        let ba = plan_with(vec![(Point(0), Point(1), b), (Point(1), Point(2), a)]);
+        let ab = plan_with(vec![
+            TaskPlacement::new(Point(0), Point(1), a),
+            TaskPlacement::new(Point(1), Point(2), b),
+        ]);
+        let ba = plan_with(vec![
+            TaskPlacement::new(Point(0), Point(1), b),
+            TaskPlacement::new(Point(1), Point(2), a),
+        ]);
 
         let score_ab = evaluate(&p, &ab, 0.0, 1.0);
         let score_ba = evaluate(&p, &ba, 0.0, 1.0);
@@ -863,8 +888,14 @@ mod tests {
         let high = add_simple_task(&mut p, 1, 2, 10);
         let low = add_simple_task(&mut p, 1, 0, 100);
 
-        let short = plan_with(vec![(Point(0), Point(1), high), (Point(1), Point(2), low)]);
-        let long = plan_with(vec![(Point(0), Point(1), high), (Point(4), Point(5), low)]);
+        let short = plan_with(vec![
+            TaskPlacement::new(Point(0), Point(1), high),
+            TaskPlacement::new(Point(1), Point(2), low),
+        ]);
+        let long = plan_with(vec![
+            TaskPlacement::new(Point(0), Point(1), high),
+            TaskPlacement::new(Point(4), Point(5), low),
+        ]);
 
         let score_short = evaluate(&p, &short, 0.0, 1.0);
         let score_long = evaluate(&p, &long, 0.0, 1.0);
@@ -921,12 +952,12 @@ mod tests {
             .unwrap();
 
         let host_guest = plan_with(vec![
-            (Point(0), Point(1), host),
-            (Point(1), Point(2), guest),
+            TaskPlacement::new(Point(0), Point(1), host),
+            TaskPlacement::new(Point(1), Point(2), guest),
         ]);
         let host_plain = plan_with(vec![
-            (Point(0), Point(1), host),
-            (Point(1), Point(2), plain),
+            TaskPlacement::new(Point(0), Point(1), host),
+            TaskPlacement::new(Point(1), Point(2), plain),
         ]);
 
         let score_guest = evaluate(&p, &host_guest, 0.0, 1.0);
@@ -942,8 +973,8 @@ mod tests {
         let mut p = make_planner();
         let id = add_simple_task(&mut p, 5, 0, 10);
 
-        let full = plan_with(vec![(Point(0), Point(5), id)]);
-        let short = plan_with(vec![(Point(0), Point(2), id)]);
+        let full = plan_with(vec![TaskPlacement::new(Point(0), Point(5), id)]);
+        let short = plan_with(vec![TaskPlacement::new(Point(0), Point(2), id)]);
 
         let score_full = evaluate(&p, &full, 0.0, 1.0);
         let score_short = evaluate(&p, &short, 0.0, 1.0);
@@ -965,8 +996,8 @@ mod tests {
         };
 
         let task_id = add_simple_task(&mut p, 24, 0, 200);
-        let plan_4h_lost = plan_with(vec![(Point(0), Point(48), task_id)]);
-        let plan_6h_lost = plan_with(vec![(Point(0), Point(72), task_id)]);
+        let plan_4h_lost = plan_with(vec![TaskPlacement::new(Point(0), Point(48), task_id)]);
+        let plan_6h_lost = plan_with(vec![TaskPlacement::new(Point(0), Point(72), task_id)]);
 
         let score_4h = evaluate(&p, &plan_4h_lost, 0.0, 1.0);
         let score_6h = evaluate(&p, &plan_6h_lost, 0.0, 1.0);
@@ -1010,8 +1041,8 @@ mod tests {
             .unwrap();
 
         let overlapping = plan_with(vec![
-            (Point(0), Point(5), host),
-            (Point(0), Point(2), guest),
+            TaskPlacement::new(Point(0), Point(5), host),
+            TaskPlacement::new(Point(0), Point(2), guest),
         ]);
         let score = evaluate(&p, &overlapping, 0.0, 1.0);
         assert!(score.is_finite());
@@ -1023,8 +1054,14 @@ mod tests {
         let a = add_simple_task(&mut p, 3, 0, 100);
         let b = add_simple_task(&mut p, 3, 0, 100);
 
-        let overlapping = plan_with(vec![(Point(0), Point(3), a), (Point(0), Point(3), b)]);
-        let separate = plan_with(vec![(Point(0), Point(3), a), (Point(3), Point(6), b)]);
+        let overlapping = plan_with(vec![
+            TaskPlacement::new(Point(0), Point(3), a),
+            TaskPlacement::new(Point(0), Point(3), b),
+        ]);
+        let separate = plan_with(vec![
+            TaskPlacement::new(Point(0), Point(3), a),
+            TaskPlacement::new(Point(3), Point(6), b),
+        ]);
 
         let score_overlap = evaluate(&p, &overlapping, 0.0, 1.0);
         let score_separate = evaluate(&p, &separate, 0.0, 1.0);
@@ -1067,12 +1104,12 @@ mod tests {
             .unwrap();
 
         let overlapping = plan_with(vec![
-            (Point(0), Point(3), host),
-            (Point(0), Point(3), guest),
+            TaskPlacement::new(Point(0), Point(3), host),
+            TaskPlacement::new(Point(0), Point(3), guest),
         ]);
         let no_overlap = plan_with(vec![
-            (Point(0), Point(3), host),
-            (Point(3), Point(6), guest),
+            TaskPlacement::new(Point(0), Point(3), host),
+            TaskPlacement::new(Point(3), Point(6), guest),
         ]);
 
         let score_overlap = evaluate(&p, &overlapping, 0.0, 1.0);
@@ -1102,8 +1139,8 @@ mod tests {
             })
             .unwrap();
 
-        let day_plan = plan_with(vec![(Point(96), Point(108), id)]);
-        let night_plan = plan_with(vec![(Point(276), Point(288), id)]);
+        let day_plan = plan_with(vec![TaskPlacement::new(Point(96), Point(108), id)]);
+        let night_plan = plan_with(vec![TaskPlacement::new(Point(276), Point(288), id)]);
 
         let day_score = evaluate(&p, &day_plan, 0.0, 1.0);
         let night_score = evaluate(&p, &night_plan, 0.0, 1.0);
@@ -1133,8 +1170,8 @@ mod tests {
             })
             .unwrap();
 
-        let day2_plan = plan_with(vec![(Point(400), Point(420), id)]);
-        let night2_plan = plan_with(vec![(Point(552), Point(572), id)]);
+        let day2_plan = plan_with(vec![TaskPlacement::new(Point(400), Point(420), id)]);
+        let night2_plan = plan_with(vec![TaskPlacement::new(Point(552), Point(572), id)]);
 
         let day2_score = evaluate(&p, &day2_plan, 0.0, 1.0);
         let night2_score = evaluate(&p, &night2_plan, 0.0, 1.0);
@@ -1185,10 +1222,10 @@ mod tests {
             })
             .unwrap();
 
-        let one = plan_with(vec![(Point(0), Point(48), host)]);
+        let one = plan_with(vec![TaskPlacement::new(Point(0), Point(48), host)]);
         let two = plan_with(vec![
-            (Point(0), Point(48), host),
-            (Point(0), Point(48), guest),
+            TaskPlacement::new(Point(0), Point(48), host),
+            TaskPlacement::new(Point(0), Point(48), guest),
         ]);
 
         let score_one = evaluate(&p, &one, 0.0, 1.0);
@@ -1254,10 +1291,10 @@ mod tests {
             .unwrap();
 
         let overlapping = plan_with(vec![
-            (Point(0), Point(30), host),
-            (Point(20), Point(50), guest),
+            TaskPlacement::new(Point(0), Point(30), host),
+            TaskPlacement::new(Point(20), Point(50), guest),
         ]);
-        let union = plan_with(vec![(Point(0), Point(50), single)]);
+        let union = plan_with(vec![TaskPlacement::new(Point(0), Point(50), single)]);
 
         let score_overlapping = evaluate(&p, &overlapping, 0.0, 1.0);
         let score_union = evaluate(&p, &union, 0.0, 1.0);
@@ -1307,10 +1344,10 @@ mod tests {
             })
             .unwrap();
 
-        let one = plan_with(vec![(Point(0), Point(96), host)]);
+        let one = plan_with(vec![TaskPlacement::new(Point(0), Point(96), host)]);
         let two = plan_with(vec![
-            (Point(0), Point(96), host),
-            (Point(0), Point(96), guest),
+            TaskPlacement::new(Point(0), Point(96), host),
+            TaskPlacement::new(Point(0), Point(96), guest),
         ]);
 
         let score_one = evaluate(&p, &one, 0.0, 1.0);
@@ -1339,8 +1376,8 @@ mod tests {
                 habit_group: None,
             })
             .unwrap();
-        let on_time = plan_with(vec![(Point(0), Point(3), id)]);
-        let late = plan_with(vec![(Point(0), Point(6), id)]);
+        let on_time = plan_with(vec![TaskPlacement::new(Point(0), Point(3), id)]);
+        let late = plan_with(vec![TaskPlacement::new(Point(0), Point(6), id)]);
 
         let score_on = evaluate(&p, &on_time, 0.0, 1.0);
         let score_late = evaluate(&p, &late, 0.0, 1.0);
@@ -1379,8 +1416,8 @@ mod tests {
                 habit_group: None,
             })
             .unwrap();
-        let on_time = plan_with(vec![(Point(0), Point(3), id)]);
-        let late = plan_with(vec![(Point(0), Point(6), id)]);
+        let on_time = plan_with(vec![TaskPlacement::new(Point(0), Point(3), id)]);
+        let late = plan_with(vec![TaskPlacement::new(Point(0), Point(6), id)]);
 
         let score_on = evaluate(&p, &on_time, 0.0, 1.0);
         let score_late = evaluate(&p, &late, 0.0, 1.0);
@@ -1396,8 +1433,8 @@ mod tests {
     fn duration_over_assignment_is_light_linear() {
         let mut p = make_planner();
         let id = add_simple_task(&mut p, 3, 0, 100);
-        let exact = plan_with(vec![(Point(0), Point(3), id)]);
-        let over = plan_with(vec![(Point(0), Point(5), id)]);
+        let exact = plan_with(vec![TaskPlacement::new(Point(0), Point(3), id)]);
+        let over = plan_with(vec![TaskPlacement::new(Point(0), Point(5), id)]);
 
         let score_exact = evaluate(&p, &exact, 0.0, 1.0);
         let score_over = evaluate(&p, &over, 0.0, 1.0);
@@ -1431,7 +1468,10 @@ mod tests {
             })
             .unwrap();
         // b starts before a ends: 2-slot violation.
-        let violated = plan_with(vec![(Point(0), Point(2), a), (Point(0), Point(2), b)]);
+        let violated = plan_with(vec![
+            TaskPlacement::new(Point(0), Point(2), a),
+            TaskPlacement::new(Point(0), Point(2), b),
+        ]);
 
         let score_hot = evaluate(&p, &violated, 10.0, 10.0);
         let score_cold = evaluate(&p, &violated, 0.0, 10.0);
@@ -1456,8 +1496,11 @@ mod tests {
         let mut p = make_planner();
         let a = add_simple_task(&mut p, 1, 0, 100);
         let b = add_simple_task(&mut p, 1, 0, 100);
-        let one = plan_with(vec![(Point(0), Point(1), a)]);
-        let two = plan_with(vec![(Point(0), Point(1), a), (Point(1), Point(2), b)]);
+        let one = plan_with(vec![TaskPlacement::new(Point(0), Point(1), a)]);
+        let two = plan_with(vec![
+            TaskPlacement::new(Point(0), Point(1), a),
+            TaskPlacement::new(Point(1), Point(2), b),
+        ]);
 
         let score_one = evaluate(&p, &one, 0.0, 1.0);
         let score_two = evaluate(&p, &two, 0.0, 1.0);
@@ -1476,7 +1519,7 @@ mod tests {
         let mut p = make_planner();
         let _id = add_simple_task(&mut p, 2, 0, 10);
         // schedule references task id 99 which doesn't exist in planner.
-        let plan = plan_with(vec![(Point(0), Point(2), 99)]);
+        let plan = plan_with(vec![TaskPlacement::new(Point(0), Point(2), 99)]);
         // Should not panic; score is just inclusion_bonus for the bogus entry.
         let score = evaluate(&p, &plan, 0.0, 1.0);
         assert!(score.is_finite());
@@ -1488,7 +1531,10 @@ mod tests {
         // to panic when computing parallel violations.
         let mut p = make_planner();
         let _id = add_simple_task(&mut p, 2, 0, 10);
-        let plan = plan_with(vec![(Point(0), Point(2), 99), (Point(1), Point(3), 100)]);
+        let plan = plan_with(vec![
+            TaskPlacement::new(Point(0), Point(2), 99),
+            TaskPlacement::new(Point(1), Point(3), 100),
+        ]);
         let score = evaluate(&p, &plan, 0.0, 1.0);
         assert!(
             score.is_finite(),
@@ -1521,12 +1567,12 @@ mod tests {
         let t1 = add_habit_task(&mut p, 2, slots_per_day * 4, 0);
 
         let consistent = plan_with(vec![
-            (Point(100), Point(102), t0),
-            (Point(100 + slots_per_day), Point(102 + slots_per_day), t1),
+            TaskPlacement::new(Point(100), Point(102), t0),
+            TaskPlacement::new(Point(100 + slots_per_day), Point(102 + slots_per_day), t1),
         ]);
         let inconsistent = plan_with(vec![
-            (Point(100), Point(102), t0),
-            (Point(200 + slots_per_day), Point(202 + slots_per_day), t1),
+            TaskPlacement::new(Point(100), Point(102), t0),
+            TaskPlacement::new(Point(200 + slots_per_day), Point(202 + slots_per_day), t1),
         ]);
 
         let score_consistent = evaluate(&p, &consistent, 0.0, 1.0);
@@ -1545,12 +1591,12 @@ mod tests {
         let t1 = add_simple_task(&mut p, 2, 0, slots_per_day * 4);
 
         let same_time = plan_with(vec![
-            (Point(100), Point(102), t0),
-            (Point(100 + slots_per_day), Point(102 + slots_per_day), t1),
+            TaskPlacement::new(Point(100), Point(102), t0),
+            TaskPlacement::new(Point(100 + slots_per_day), Point(102 + slots_per_day), t1),
         ]);
         let diff_time = plan_with(vec![
-            (Point(100), Point(102), t0),
-            (Point(200 + slots_per_day), Point(202 + slots_per_day), t1),
+            TaskPlacement::new(Point(100), Point(102), t0),
+            TaskPlacement::new(Point(200 + slots_per_day), Point(202 + slots_per_day), t1),
         ]);
 
         let mut entries = Vec::new();
@@ -1568,7 +1614,7 @@ mod tests {
     fn habit_consistency_single_task_no_bonus() {
         let mut p = make_planner();
         let t0 = add_habit_task(&mut p, 2, 100, 0);
-        let plan = plan_with(vec![(Point(10), Point(12), t0)]);
+        let plan = plan_with(vec![TaskPlacement::new(Point(10), Point(12), t0)]);
         let mut entries = Vec::new();
         let score = habit_consistency_score(&p, &build_index(&p, &plan.schedules), &mut entries);
         assert_eq!(score, 0.0, "single-task habit group should get no bonus");
@@ -1577,23 +1623,35 @@ mod tests {
     // #462: union_length is the shared utility for interval union.
     #[test]
     fn union_length_combines_intervals_correctly() {
-        let mut empty: Vec<(Point, Point)> = Vec::new();
+        let mut empty: Vec<TimeWindow> = Vec::new();
         assert_eq!(union_length(&mut empty), 0);
 
         // disjoint intervals are summed
-        let mut intervals = vec![(Point(0), Point(10)), (Point(20), Point(30))];
+        let mut intervals = vec![
+            TimeWindow::new(Point(0), Point(10)),
+            TimeWindow::new(Point(20), Point(30)),
+        ];
         assert_eq!(union_length(&mut intervals), 20);
 
         // partial overlap merges into the full span
-        let mut intervals = vec![(Point(0), Point(20)), (Point(15), Point(35))];
+        let mut intervals = vec![
+            TimeWindow::new(Point(0), Point(20)),
+            TimeWindow::new(Point(15), Point(35)),
+        ];
         assert_eq!(union_length(&mut intervals), 35);
 
         // one interval contained inside another
-        let mut intervals = vec![(Point(5), Point(15)), (Point(0), Point(20))];
+        let mut intervals = vec![
+            TimeWindow::new(Point(5), Point(15)),
+            TimeWindow::new(Point(0), Point(20)),
+        ];
         assert_eq!(union_length(&mut intervals), 20);
 
         // touching intervals are merged
-        let mut intervals = vec![(Point(0), Point(10)), (Point(10), Point(20))];
+        let mut intervals = vec![
+            TimeWindow::new(Point(0), Point(10)),
+            TimeWindow::new(Point(10), Point(20)),
+        ];
         assert_eq!(union_length(&mut intervals), 20);
     }
 
@@ -1606,10 +1664,13 @@ mod tests {
         let a = add_simple_task(&mut p, 48, 0, slots_per_day * 3);
         let b = add_simple_task(&mut p, 48, 0, slots_per_day * 3);
 
-        let one_day = plan_with(vec![(Point(0), Point(48), a), (Point(48), Point(96), b)]);
+        let one_day = plan_with(vec![
+            TaskPlacement::new(Point(0), Point(48), a),
+            TaskPlacement::new(Point(48), Point(96), b),
+        ]);
         let two_days = plan_with(vec![
-            (Point(0), Point(48), a),
-            (Point(slots_per_day), Point(slots_per_day + 48), b),
+            TaskPlacement::new(Point(0), Point(48), a),
+            TaskPlacement::new(Point(slots_per_day), Point(slots_per_day + 48), b),
         ]);
 
         let score_one = evaluate(&p, &one_day, 0.0, 1.0);
@@ -1627,8 +1688,14 @@ mod tests {
         let a = add_simple_task(&mut p, 24, 0, 30);
         let b = add_simple_task(&mut p, 24, 0, 30);
 
-        let one_day = plan_with(vec![(Point(0), Point(24), a), (Point(24), Point(48), b)]);
-        let two_days = plan_with(vec![(Point(0), Point(24), a), (Point(288), Point(312), b)]);
+        let one_day = plan_with(vec![
+            TaskPlacement::new(Point(0), Point(24), a),
+            TaskPlacement::new(Point(24), Point(48), b),
+        ]);
+        let two_days = plan_with(vec![
+            TaskPlacement::new(Point(0), Point(24), a),
+            TaskPlacement::new(Point(288), Point(312), b),
+        ]);
 
         let score_one = evaluate(&p, &one_day, 0.0, 1.0);
         let score_two = evaluate(&p, &two_days, 0.0, 1.0);
@@ -1660,12 +1727,12 @@ mod tests {
         let free = add_simple_task(&mut p, 24, 0, slots_per_day * 2);
 
         let busy_day = plan_with(vec![
-            (Point(0), Point(24), fixed),
-            (Point(0), Point(24), free),
+            TaskPlacement::new(Point(0), Point(24), fixed),
+            TaskPlacement::new(Point(0), Point(24), free),
         ]);
         let free_day = plan_with(vec![
-            (Point(0), Point(24), fixed),
-            (Point(slots_per_day), Point(slots_per_day + 24), free),
+            TaskPlacement::new(Point(0), Point(24), fixed),
+            TaskPlacement::new(Point(slots_per_day), Point(slots_per_day + 24), free),
         ]);
 
         let score_busy = evaluate(&p, &busy_day, 0.0, 1.0);
@@ -1710,12 +1777,12 @@ mod tests {
             .unwrap();
 
         let overlapping = plan_with(vec![
-            (Point(0), Point(24), host),
-            (Point(0), Point(24), guest),
+            TaskPlacement::new(Point(0), Point(24), host),
+            TaskPlacement::new(Point(0), Point(24), guest),
         ]);
         let no_overlap = plan_with(vec![
-            (Point(0), Point(24), host),
-            (Point(24), Point(48), guest),
+            TaskPlacement::new(Point(0), Point(24), host),
+            TaskPlacement::new(Point(24), Point(48), guest),
         ]);
 
         let score_overlap = evaluate(&p, &overlapping, 0.0, 1.0);
@@ -1734,10 +1801,13 @@ mod tests {
         let a = add_simple_task(&mut p, 12, 0, slots_per_day * 3);
         let b = add_simple_task(&mut p, 12, 0, slots_per_day * 3);
 
-        let one_day = plan_with(vec![(Point(0), Point(12), a), (Point(12), Point(24), b)]);
+        let one_day = plan_with(vec![
+            TaskPlacement::new(Point(0), Point(12), a),
+            TaskPlacement::new(Point(12), Point(24), b),
+        ]);
         let two_days = plan_with(vec![
-            (Point(0), Point(12), a),
-            (Point(slots_per_day), Point(slots_per_day + 12), b),
+            TaskPlacement::new(Point(0), Point(12), a),
+            TaskPlacement::new(Point(slots_per_day), Point(slots_per_day + 12), b),
         ]);
 
         let score_one = evaluate(&p, &one_day, 0.0, 1.0);
@@ -1757,8 +1827,14 @@ mod tests {
         let a = add_simple_task(&mut p, 72, 0, 144);
         let b = add_simple_task(&mut p, 48, 0, 144);
 
-        let over_max = plan_with(vec![(Point(0), Point(72), a), (Point(72), Point(120), b)]);
-        let under_max = plan_with(vec![(Point(0), Point(72), a), (Point(288), Point(336), b)]);
+        let over_max = plan_with(vec![
+            TaskPlacement::new(Point(0), Point(72), a),
+            TaskPlacement::new(Point(72), Point(120), b),
+        ]);
+        let under_max = plan_with(vec![
+            TaskPlacement::new(Point(0), Point(72), a),
+            TaskPlacement::new(Point(288), Point(336), b),
+        ]);
 
         let score_over = evaluate(&p, &over_max, 0.0, 1.0);
         let score_under = evaluate(&p, &under_max, 0.0, 1.0);

@@ -98,7 +98,10 @@ fn validate_and_collect_fixed(
     let n = planner.tasks.len();
     let mut placements: Vec<Placement> = Vec::new();
 
-    for (s, e, id) in input.pinned {
+    for p in input.pinned {
+        let s = &p.start;
+        let e = &p.end;
+        let id = &p.task_id;
         if *id >= n {
             continue;
         }
@@ -137,14 +140,14 @@ fn validate_and_collect_fixed(
                 });
         }
 
-        if placements.iter().any(|(_, _, pid)| pid == id) {
+        if placements.iter().any(|p| &p.task_id == id) {
             diagnostics
                 .pinned_conflicts
                 .push(PinnedConflict::DuplicateId { task_id: *id });
             continue;
         }
 
-        placements.push((*s, *e, *id));
+        placements.push(TaskPlacement::new(*s, *e, *id));
     }
 
     for task in &planner.tasks {
@@ -155,7 +158,7 @@ fn validate_and_collect_fixed(
             let dur = duration_for(task, input.duration_choices.get(task.id));
             let end = Point(start.0 + dur);
 
-            if placements.iter().any(|(_, _, pid)| pid == &task.id) {
+            if placements.iter().any(|p| p.task_id == task.id) {
                 diagnostics
                     .pinned_conflicts
                     .push(PinnedConflict::DuplicateId { task_id: task.id });
@@ -172,22 +175,22 @@ fn validate_and_collect_fixed(
                     });
             }
 
-            placements.push((start, end, task.id));
+            placements.push(TaskPlacement::new(start, end, task.id));
         }
     }
 
     // pinned / fixed 同士の overlap
     for i in 0..placements.len() {
-        let (s1, e1, id1) = placements[i];
-        for (s2, e2, id2) in placements.iter().skip(i + 1).copied() {
-            if e1.0 > s2.0 && e2.0 > s1.0 {
-                let t1 = &planner.tasks[id1];
-                let t2 = &planner.tasks[id2];
+        let p1 = placements[i];
+        for p2 in placements.iter().skip(i + 1).copied() {
+            if p1.end.0 > p2.start.0 && p2.end.0 > p1.start.0 {
+                let t1 = &planner.tasks[p1.task_id];
+                let t2 = &planner.tasks[p2.task_id];
                 let can_parallel = (t1.parallelizable && t2.allows_parallel)
                     || (t1.allows_parallel && t2.parallelizable);
                 if !can_parallel {
-                    let a = id1.min(id2);
-                    let b = id1.max(id2);
+                    let a = p1.task_id.min(p2.task_id);
+                    let b = p1.task_id.max(p2.task_id);
                     diagnostics
                         .pinned_conflicts
                         .push(PinnedConflict::Overlap { a, b });
@@ -197,15 +200,15 @@ fn validate_and_collect_fixed(
     }
 
     // pinned / fixed 間の dependency 違反
-    for (s, _e, id) in &placements {
-        for dep in &planner.tasks[*id].depends {
-            if let Some((_, dep_e, _)) = placements.iter().find(|(_, _, pid)| pid == dep)
-                && s.0 < dep_e.0
+    for p in &placements {
+        for dep in &planner.tasks[p.task_id].depends {
+            if let Some(dep_p) = placements.iter().find(|p| &p.task_id == dep)
+                && p.start.0 < dep_p.end.0
             {
                 diagnostics
                     .pinned_conflicts
                     .push(PinnedConflict::DependencyViolation {
-                        task_id: *id,
+                        task_id: p.task_id,
                         dep_id: *dep,
                     });
             }
@@ -241,12 +244,12 @@ pub(crate) fn decode_status(diagnostics: &DecodeDiagnostics) -> DecodeStatus {
 /// 多くの場合 `None` を返す（それは意図通り）。
 fn latest_end_for(
     task_id: usize,
-    index: &[Option<(Point, Point)>],
+    index: &[Option<TimeWindow>],
     dependents: &[Vec<usize>],
 ) -> Option<Point> {
     let latest_start = dependents[task_id]
         .iter()
-        .filter_map(|&d| index[d].map(|(s, _)| s))
+        .filter_map(|&d| index[d].map(|tw| tw.start))
         .min()
         .unwrap_or(Point(i64::MAX));
     if latest_start.0 == i64::MAX {
@@ -266,7 +269,7 @@ pub(crate) fn fallback_for<const CHECK_CAPACITY: bool>(
 ) -> (Point, Point, Option<PlacementFailure>) {
     let max_end = schedules
         .iter()
-        .map(|(_, e, _)| e.0)
+        .map(|p| p.end.0)
         .max()
         .unwrap_or(planner.now.0);
     let start = Point(max_end).max(planner.now).max(earliest);
@@ -274,7 +277,7 @@ pub(crate) fn fallback_for<const CHECK_CAPACITY: bool>(
     // try_place を使い、latest_end / 容量 / deadline を尊重できるスロットを探す。
     // 見つからなければ最後尾にフォールバックし、失敗理由を返す。
     match try_place::<CHECK_CAPACITY>(planner, schedules, task, start, dur, latest_end) {
-        Ok((s, e)) => (s, e, None),
+        Ok(tw) => (tw.start, tw.end, None),
         Err(err) => {
             let end = Point(start.0 + dur);
             (start, end, Some(err))
@@ -287,7 +290,7 @@ fn place_task_earliest(
     schedules: &[Placement],
     input: &DecodeInput<'_>,
     task_id: usize,
-    index: &[Option<(Point, Point)>],
+    index: &[Option<TimeWindow>],
     dependents: &[Vec<usize>],
 ) -> (Point, Point, Option<PlacementFailure>) {
     let task = &planner.tasks[task_id];
@@ -297,8 +300,8 @@ fn place_task_earliest(
 
     for dur in duration_candidates(task, input.duration_choices.get(task_id)) {
         let (slots, err) = feasible_slots(planner, schedules, task, earliest, dur, latest_end, 1);
-        if let Some((s, e)) = slots.into_iter().next() {
-            return (s, e, None);
+        if let Some(tw) = slots.into_iter().next() {
+            return (tw.start, tw.end, None);
         }
         if first_err.is_none() {
             first_err = err;
@@ -322,7 +325,7 @@ fn place_task_near_anchor(
     schedules: &[Placement],
     input: &DecodeInput<'_>,
     task_id: usize,
-    index: &[Option<(Point, Point)>],
+    index: &[Option<TimeWindow>],
     dependents: &[Vec<usize>],
     anchor: i64,
 ) -> (Point, Point, Option<PlacementFailure>) {
@@ -341,10 +344,10 @@ fn place_task_near_anchor(
             latest_end,
             usize::MAX,
         );
-        for (s, e) in slots {
-            let dist = (s.0 - anchor).abs();
+        for tw in slots {
+            let dist = (tw.start.0 - anchor).abs();
             if best.is_none_or(|(_, _, d)| dist < d) {
-                best = Some((s, e, dist));
+                best = Some((tw.start, tw.end, dist));
             }
         }
     }
@@ -368,7 +371,7 @@ fn place_task_lowest_delta(
     schedules: &[Placement],
     input: &DecodeInput<'_>,
     task_id: usize,
-    index: &[Option<(Point, Point)>],
+    index: &[Option<TimeWindow>],
     dependents: &[Vec<usize>],
 ) -> (Point, Point, Option<PlacementFailure>) {
     let task = &planner.tasks[task_id];
@@ -393,10 +396,10 @@ fn place_task_lowest_delta(
             }
             continue;
         }
-        for (s, e) in slots {
-            let score = evaluate_insertion(planner, schedules, task_id, s, e);
+        for tw in slots {
+            let score = evaluate_insertion(planner, schedules, task_id, tw.start, tw.end);
             if best.is_none_or(|(_, _, b)| score > b) {
-                best = Some((s, e, score));
+                best = Some((tw.start, tw.end, score));
             }
         }
     }
@@ -422,7 +425,7 @@ fn place_regret2(
     schedules: &[Placement],
     input: &DecodeInput<'_>,
     ready: &[usize],
-    index: &[Option<(Point, Point)>],
+    index: &[Option<TimeWindow>],
     dependents: &[Vec<usize>],
 ) -> Option<(usize, Point, Point, Option<PlacementFailure>)> {
     #[derive(Clone, Copy)]
@@ -454,9 +457,9 @@ fn place_regret2(
                 latest_end,
                 usize::MAX,
             );
-            for (s, e) in slots {
-                let score = evaluate_insertion(planner, schedules, task_id, s, e);
-                scores.push((s, e, score));
+            for tw in slots {
+                let score = evaluate_insertion(planner, schedules, task_id, tw.start, tw.end);
+                scores.push((tw.start, tw.end, score));
             }
         }
 
@@ -516,7 +519,7 @@ fn record_placement(
     placement_err: Option<PlacementFailure>,
     forced: bool,
     schedules: &mut Vec<Placement>,
-    index: &mut [Option<(Point, Point)>],
+    index: &mut [Option<TimeWindow>],
     placed: &mut [bool],
     in_degree: &mut [usize],
     remaining: &mut usize,
@@ -544,8 +547,8 @@ fn record_placement(
         });
     }
 
-    schedules.push((start, end, chosen_id));
-    index[chosen_id] = Some((start, end));
+    schedules.push(TaskPlacement::new(start, end, chosen_id));
+    index[chosen_id] = Some(TimeWindow::new(start, end));
     placed[chosen_id] = true;
     *remaining -= 1;
 
@@ -592,15 +595,15 @@ pub fn decode(planner: &Planner, input: DecodeInput<'_>) -> DecodeResult {
     }
 
     // task_id -> (start, end) 配置済みタスクの index
-    let mut index: Vec<Option<(Point, Point)>> = vec![None; n];
+    let mut index: Vec<Option<TimeWindow>> = vec![None; n];
 
     // 1. pinned / fixed 配置を投入し、入力の矛盾を検証
     let fixed_placements = validate_and_collect_fixed(planner, &input, &mut diagnostics);
     let mut remaining = n - fixed_placements.len();
-    for (s, e, id) in &fixed_placements {
-        schedules.push((*s, *e, *id));
-        index[*id] = Some((*s, *e));
-        placed[*id] = true;
+    for p in &fixed_placements {
+        schedules.push(*p);
+        index[p.task_id] = Some(TimeWindow::new(p.start, p.end));
+        placed[p.task_id] = true;
     }
 
     // in-degree 管理: 未配置の依存先数。0 = ready。
@@ -731,7 +734,7 @@ pub fn decode(planner: &Planner, input: DecodeInput<'_>) -> DecodeResult {
                     planner.tasks[task_id].habit_group.is_none(),
                     previous
                         .get(task_id)
-                        .and_then(|x| x.map(|(s, _)| s.0))
+                        .and_then(|x| x.map(|tw| tw.start.0))
                         .unwrap_or(i64::MAX),
                 );
                 for &id in priority.iter() {
@@ -740,7 +743,7 @@ pub fn decode(planner: &Planner, input: DecodeInput<'_>) -> DecodeResult {
                             planner.tasks[id].habit_group.is_none(),
                             previous
                                 .get(id)
-                                .and_then(|x| x.map(|(s, _)| s.0))
+                                .and_then(|x| x.map(|tw| tw.start.0))
                                 .unwrap_or(i64::MAX),
                         );
                         if key < best_key {
@@ -751,7 +754,7 @@ pub fn decode(planner: &Planner, input: DecodeInput<'_>) -> DecodeResult {
                 }
                 let anchor = previous
                     .get(best_id)
-                    .and_then(|x| x.map(|(s, _)| s.0))
+                    .and_then(|x| x.map(|tw| tw.start.0))
                     .unwrap_or(planner.now.0);
                 let (s, e, err) = place_task_near_anchor(
                     planner,
@@ -784,13 +787,13 @@ pub fn decode(planner: &Planner, input: DecodeInput<'_>) -> DecodeResult {
                 let mut best_id = task_id;
                 let mut best_anchor = previous
                     .get(task_id)
-                    .and_then(|x| x.map(|(s, _)| s.0))
+                    .and_then(|x| x.map(|tw| tw.start.0))
                     .unwrap_or(i64::MAX);
                 for &id in priority.iter() {
                     if !placed[id] && in_degree[id] == 0 {
                         let anchor = previous
                             .get(id)
-                            .and_then(|x| x.map(|(s, _)| s.0))
+                            .and_then(|x| x.map(|tw| tw.start.0))
                             .unwrap_or(i64::MAX);
                         if anchor < best_anchor {
                             best_anchor = anchor;
@@ -800,7 +803,7 @@ pub fn decode(planner: &Planner, input: DecodeInput<'_>) -> DecodeResult {
                 }
                 let anchor = previous
                     .get(best_id)
-                    .and_then(|x| x.map(|(s, _)| s.0))
+                    .and_then(|x| x.map(|tw| tw.start.0))
                     .unwrap_or(planner.now.0);
                 let (s, e, err) = place_task_near_anchor(
                     planner,
@@ -954,7 +957,7 @@ fn feasible_slots(
     dur: i64,
     latest_end: Option<Point>,
     max_count: usize,
-) -> (Vec<(Point, Point)>, Option<PlacementFailure>) {
+) -> (Vec<TimeWindow>, Option<PlacementFailure>) {
     let mut slots = Vec::new();
     let mut cursor = earliest;
     let mut last_err = None;
@@ -968,12 +971,12 @@ fn feasible_slots(
             break;
         }
         match try_place::<true>(planner, schedules, task, cursor, dur, latest_end) {
-            Ok((s, e)) => {
-                if slots.last() == Some(&(s, e)) {
+            Ok(tw) => {
+                if slots.last() == Some(&tw) {
                     break;
                 }
-                slots.push((s, e));
-                cursor = e;
+                slots.push(tw);
+                cursor = tw.end;
             }
             Err(PlacementFailure::DailyCapacityExceeded) => {
                 // 同日の後続スロットを先に探し、なければ翌日へ進む。
@@ -1012,7 +1015,7 @@ fn evaluate_insertion(
                     let mut habit = habit_v.borrow_mut();
                     scratch.clear();
                     scratch.extend_from_slice(schedules);
-                    scratch.push((start, end, task_id));
+                    scratch.push(TaskPlacement::new(start, end, task_id));
 
                     let mut plan = Plan {
                         schedules: Vec::with_capacity(0),
@@ -1168,7 +1171,7 @@ mod tests {
             habit_group: None,
         };
         let planner = test_planner(vec![pinned, fixed, normal]);
-        let pinned_placement = (Point(5), Point(7), 0);
+        let pinned_placement = TaskPlacement::new(Point(5), Point(7), 0);
         let result = decode(&planner, input_with(&[2, 0, 1], &[pinned_placement]));
 
         assert_eq!(result.plan.task_start(1), Some(Point(20)));
@@ -1178,14 +1181,15 @@ mod tests {
             .plan
             .schedules
             .iter()
-            .find(|(_, _, id)| *id == 2)
+            .find(|p| p.task_id == 2)
             .unwrap();
         assert!(
-            normal_entry.1.0 <= pinned_placement.0.0 || normal_entry.0.0 >= pinned_placement.1.0,
+            normal_entry.end.0 <= pinned_placement.start.0
+                || normal_entry.start.0 >= pinned_placement.end.0,
             "normal task must not overlap pinned task"
         );
         assert!(
-            normal_entry.1.0 <= 20 || normal_entry.0.0 >= 22,
+            normal_entry.end.0 <= 20 || normal_entry.start.0 >= 22,
             "normal task must not overlap fixed task"
         );
     }
@@ -1210,7 +1214,7 @@ mod tests {
         let priority: Vec<_> = (0..5).collect();
         let result = decode(&planner, input_with(&priority, &[]));
         assert_eq!(result.plan.schedules.len(), 5);
-        let ids: Vec<_> = result.plan.schedules.iter().map(|(_, _, id)| *id).collect();
+        let ids: Vec<_> = result.plan.schedules.iter().map(|p| p.task_id).collect();
         assert_eq!(ids.len(), 5);
         for i in 0..5 {
             assert!(ids.contains(&i));
@@ -1299,7 +1303,10 @@ mod tests {
             habit_group: None,
         };
         let planner = test_planner(vec![a, b]);
-        let result = decode(&planner, input_with(&[0, 1], &[(Point(5), Point(7), 1)]));
+        let result = decode(
+            &planner,
+            input_with(&[0, 1], &[TaskPlacement::new(Point(5), Point(7), 1)]),
+        );
 
         let a_end = result.plan.task_end(0).unwrap().0;
         let b_start = result.plan.task_start(1).unwrap().0;
@@ -1411,7 +1418,10 @@ mod tests {
             habit_group: None,
         };
         let planner = test_planner(vec![a, b]);
-        let result = decode(&planner, input_with(&[0, 1], &[(Point(5), Point(7), 1)]));
+        let result = decode(
+            &planner,
+            input_with(&[0, 1], &[TaskPlacement::new(Point(5), Point(7), 1)]),
+        );
 
         assert!(
             result
@@ -1598,7 +1608,10 @@ mod tests {
             habit_group: None,
         };
         let planner = test_planner(vec![a, b]);
-        let result = decode(&planner, input_with(&[0, 1], &[(Point(5), Point(7), 1)]));
+        let result = decode(
+            &planner,
+            input_with(&[0, 1], &[TaskPlacement::new(Point(5), Point(7), 1)]),
+        );
 
         assert_eq!(result.status, DecodeStatus::Relaxed);
     }
@@ -1657,7 +1670,13 @@ mod tests {
         let planner = test_planner(vec![a, b]);
         let result = decode(
             &planner,
-            input_with(&[0, 1], &[(Point(0), Point(5), 0), (Point(3), Point(8), 1)]),
+            input_with(
+                &[0, 1],
+                &[
+                    TaskPlacement::new(Point(0), Point(5), 0),
+                    TaskPlacement::new(Point(3), Point(8), 1),
+                ],
+            ),
         );
 
         assert_eq!(result.status, DecodeStatus::Infeasible);
@@ -1761,7 +1780,7 @@ mod tests {
             habit_group: None,
         };
         let planner = test_planner(vec![host.clone(), guest.clone()]);
-        let schedules = vec![(Point(0), Point(5), 0)];
+        let schedules = vec![TaskPlacement::new(Point(0), Point(5), 0)];
         // guest は [0,3) で host と重なり、並行不可かつ [5,8) では deadline=7 を超える
         let err = try_place::<true>(&planner, &schedules, &guest, Point(0), 3, None).unwrap_err();
         assert_eq!(err, PlacementFailure::DeadlineExceeded);
@@ -1798,7 +1817,13 @@ mod tests {
         let planner = test_planner(vec![a, b]);
         let result = decode(
             &planner,
-            input_with(&[0, 1], &[(Point(0), Point(5), 0), (Point(3), Point(8), 1)]),
+            input_with(
+                &[0, 1],
+                &[
+                    TaskPlacement::new(Point(0), Point(5), 0),
+                    TaskPlacement::new(Point(3), Point(8), 1),
+                ],
+            ),
         );
 
         assert!(
@@ -1824,7 +1849,10 @@ mod tests {
             habit_group: None,
         };
         let planner = test_planner(vec![a]);
-        let result = decode(&planner, input_with(&[0], &[(Point(10), Point(5), 0)]));
+        let result = decode(
+            &planner,
+            input_with(&[0], &[TaskPlacement::new(Point(10), Point(5), 0)]),
+        );
 
         assert!(result.diagnostics.pinned_conflicts.iter().any(|c| matches!(
             c,
@@ -1848,7 +1876,10 @@ mod tests {
             habit_group: None,
         };
         let planner = test_planner(vec![a]);
-        let result = decode(&planner, input_with(&[0], &[(Point(5), Point(15), 0)]));
+        let result = decode(
+            &planner,
+            input_with(&[0], &[TaskPlacement::new(Point(5), Point(15), 0)]),
+        );
 
         assert!(result.diagnostics.pinned_conflicts.iter().any(|c| matches!(
             c,
@@ -1875,7 +1906,10 @@ mod tests {
             habit_group: None,
         };
         let planner = test_planner(vec![a]);
-        let result = decode(&planner, input_with(&[0], &[(Point(15), Point(25), 0)]));
+        let result = decode(
+            &planner,
+            input_with(&[0], &[TaskPlacement::new(Point(15), Point(25), 0)]),
+        );
 
         assert!(result.diagnostics.pinned_conflicts.iter().any(|c| matches!(
             c,
@@ -1904,7 +1938,13 @@ mod tests {
         let planner = test_planner(vec![a]);
         let result = decode(
             &planner,
-            input_with(&[0], &[(Point(0), Point(5), 0), (Point(10), Point(15), 0)]),
+            input_with(
+                &[0],
+                &[
+                    TaskPlacement::new(Point(0), Point(5), 0),
+                    TaskPlacement::new(Point(10), Point(15), 0),
+                ],
+            ),
         );
 
         assert!(
@@ -1947,7 +1987,10 @@ mod tests {
             &planner,
             input_with(
                 &[0, 1],
-                &[(Point(5), Point(10), 0), (Point(7), Point(12), 1)],
+                &[
+                    TaskPlacement::new(Point(5), Point(10), 0),
+                    TaskPlacement::new(Point(7), Point(12), 1),
+                ],
             ),
         );
 
@@ -2145,7 +2188,7 @@ mod tests {
             habit_group: None,
         };
         let mut planner = test_planner(vec![a, b]);
-        planner.set_previous_schedule(&[(Point(20), Point(25), 1)]);
+        planner.set_previous_schedule(&[TaskPlacement::new(Point(20), Point(25), 1)]);
 
         let result = decode(
             &planner,
@@ -2210,7 +2253,7 @@ mod tests {
             habit_group: Some(1),
         };
         let mut planner = test_planner(vec![non_habit, habit]);
-        planner.set_previous_schedule(&[(Point(20), Point(25), 1)]);
+        planner.set_previous_schedule(&[TaskPlacement::new(Point(20), Point(25), 1)]);
 
         let result = decode(&planner, input_with_mode(&[0, 1], &[], RepairMode::Habit));
 
@@ -2255,7 +2298,7 @@ mod tests {
         let mut planner = test_planner(vec![]);
         planner.set_workload(WorkloadConfig::new(8, 10));
         // 1 日の最大容量 10 に対し、既存 [0,8) + 候補 [7,12) は union で 12 を超える。
-        let schedules = vec![(Point(0), Point(8), 0)];
+        let schedules = vec![TaskPlacement::new(Point(0), Point(8), 0)];
         let err = try_place::<true>(&planner, &schedules, &task, Point(7), 5, None).unwrap_err();
         assert_eq!(err, PlacementFailure::DailyCapacityExceeded);
     }

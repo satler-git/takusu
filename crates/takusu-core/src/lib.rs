@@ -53,7 +53,7 @@ pub use decoder::{
     DecodeDiagnostics, DecodeInput, DecodeResult, DecodeStatus, PinnedConflict, RelaxedPlacement,
     RepairMode,
 };
-pub use placement::{Placement, PlacementFailure};
+pub use placement::{Placement, PlacementFailure, TaskPlacement, TimeWindow};
 
 use jiff::Timestamp;
 use std::time::Duration;
@@ -333,8 +333,8 @@ pub struct Task {
 /// `abandonability` が高いタスクは deadline 超過が許容されるが、諦められない。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Plan {
-    /// スケジュールされたタスク。各要素は `(開始slot, 終了slot, task_id)`。
-    pub schedules: Vec<(Point, Point, usize)>,
+    /// スケジュールされたタスク。各要素は `TaskPlacement { start, end, task_id }`。
+    pub schedules: Vec<TaskPlacement>,
 }
 
 impl Plan {
@@ -342,21 +342,21 @@ impl Plan {
     pub fn task_start(&self, task_id: usize) -> Option<Point> {
         self.schedules
             .iter()
-            .find(|(_, _, id)| *id == task_id)
-            .map(|(s, _, _)| *s)
+            .find(|p| p.task_id == task_id)
+            .map(|p| p.start)
     }
 
     /// タスクの終了時刻。
     pub fn task_end(&self, task_id: usize) -> Option<Point> {
         self.schedules
             .iter()
-            .find(|(_, _, id)| *id == task_id)
-            .map(|(_, e, _)| *e)
+            .find(|p| p.task_id == task_id)
+            .map(|p| p.end)
     }
 
     /// タスクがスケジュールされているか（常に true のはず）。
     pub fn is_scheduled(&self, task_id: usize) -> bool {
-        self.schedules.iter().any(|(_, _, id)| *id == task_id)
+        self.schedules.iter().any(|p| p.task_id == task_id)
     }
 }
 
@@ -447,7 +447,7 @@ pub struct Planner {
     /// #211: 前回スケジュールの参照（安定性ペナルティ用）。
     /// 各タスクの (start, end) で、SAが移動を嫌うようにする。
     /// 直近のタスクほど強いペナルティ。
-    previous_schedule: Vec<Option<(Point, Point)>>,
+    previous_schedule: Vec<Option<TimeWindow>>,
 
     /// 使用するソルバー。デフォルトは `Solver::Sa`。
     solver: Solver,
@@ -523,20 +523,20 @@ impl Planner {
     }
 
     /// #211: 前回スケジュールを設定し、安定性ペナルティを有効化する。
-    /// `schedule` は (start, end, task_id) のリスト。
+    /// `schedule` は `TaskPlacement` のリスト。
     /// 設定後、plan() は前回位置からの移動を嫌うようになる。
     /// 直近（now に近い）ほどペナルティが大きい。
-    pub fn set_previous_schedule(&mut self, schedule: &[(Point, Point, usize)]) {
+    pub fn set_previous_schedule(&mut self, schedule: &[TaskPlacement]) {
         self.previous_schedule = vec![None; self.tasks.len()];
-        for (s, e, id) in schedule {
-            if *id < self.previous_schedule.len() {
-                self.previous_schedule[*id] = Some((*s, *e));
+        for p in schedule {
+            if p.task_id < self.previous_schedule.len() {
+                self.previous_schedule[p.task_id] = Some(TimeWindow::new(p.start, p.end));
             }
         }
     }
 
     /// 前回スケジュールの参照（評価関数から使用）。
-    pub fn previous_schedule(&self) -> &[Option<(Point, Point)>] {
+    pub fn previous_schedule(&self) -> &[Option<TimeWindow>] {
         &self.previous_schedule
     }
 
@@ -581,13 +581,13 @@ impl Planner {
     ///
     /// `pinned` に含まれるタスクは指定位置に固定され、近傍操作の対象外。
     /// 未固定タスクのみが探索される。評価関数は固定・未固定両方を考慮する。
-    pub fn plan_partial(&self, pinned: &[(Point, Point, usize)]) -> Plan {
+    pub fn plan_partial(&self, pinned: &[TaskPlacement]) -> Plan {
         solver::solve_partial(self, pinned)
     }
 
     /// 指定した seed で SA partial を実行する（solver 設定に関わらず SA）。
     #[doc(hidden)]
-    pub fn plan_partial_with_seed(&self, pinned: &[(Point, Point, usize)], seed: u64) -> Plan {
+    pub fn plan_partial_with_seed(&self, pinned: &[TaskPlacement], seed: u64) -> Plan {
         solver::solve_partial_with_seed(self, pinned, seed)
     }
 
@@ -602,15 +602,15 @@ impl Planner {
     pub fn plan_in_range(
         &self,
         range: &RescheduleRange,
-        current_schedule: &[(Point, Point, usize)],
+        current_schedule: &[TaskPlacement],
         extra_pinned: &[usize],
     ) -> Plan {
-        let mut pinned: Vec<(Point, Point, usize)> = Vec::new();
+        let mut pinned: Vec<TaskPlacement> = Vec::new();
 
-        for (s, e, id) in current_schedule {
-            let in_range = s.0 >= range.from.0 && e.0 <= range.until.0;
-            if !in_range || extra_pinned.contains(id) {
-                pinned.push((*s, *e, *id));
+        for p in current_schedule {
+            let in_range = p.start.0 >= range.from.0 && p.end.0 <= range.until.0;
+            if !in_range || extra_pinned.contains(&p.task_id) {
+                pinned.push(*p);
             }
         }
 
@@ -622,14 +622,15 @@ impl Planner {
     pub fn plan_in_range_with_seed(
         &self,
         range: &RescheduleRange,
-        current_schedule: &[(Point, Point, usize)],
+        current_schedule: &[TaskPlacement],
         extra_pinned: &[usize],
         seed: u64,
     ) -> Plan {
         let pinned: Vec<_> = current_schedule
             .iter()
-            .filter(|(s, e, id)| {
-                !(s.0 >= range.from.0 && e.0 <= range.until.0) || extra_pinned.contains(id)
+            .filter(|p| {
+                !(p.start.0 >= range.from.0 && p.end.0 <= range.until.0)
+                    || extra_pinned.contains(&p.task_id)
             })
             .copied()
             .collect();
@@ -755,10 +756,10 @@ mod tests {
         let sleep_occupied: i64 = plan
             .schedules
             .iter()
-            .filter(|(s, e, _)| s.0 < 96 && e.0 > 0)
-            .map(|(s, e, _)| {
-                let o_start = s.0.max(0);
-                let o_end = e.0.min(96);
+            .filter(|p| p.start.0 < 96 && p.end.0 > 0)
+            .map(|p| {
+                let o_start = p.start.0.max(0);
+                let o_end = p.end.0.min(96);
                 (o_end - o_start).max(0)
             })
             .sum();
@@ -794,7 +795,7 @@ mod tests {
     #[test]
     fn plan_convenience_methods() {
         let plan = Plan {
-            schedules: vec![(Point(1), Point(3), 42)],
+            schedules: vec![TaskPlacement::new(Point(1), Point(3), 42)],
         };
         assert_eq!(plan.task_start(42), Some(Point(1)));
         assert_eq!(plan.task_end(42), Some(Point(3)));
@@ -834,7 +835,7 @@ mod tests {
             })
             .unwrap();
 
-        let pinned = vec![(Point(0), Point(3), a)];
+        let pinned = vec![TaskPlacement::new(Point(0), Point(3), a)];
         let plan = p.plan_partial(&pinned);
 
         let pinned_start = plan.task_start(a).unwrap();
@@ -966,9 +967,9 @@ mod tests {
             .unwrap();
 
         let current_schedule = vec![
-            (Point(0), Point(5), 0),
-            (Point(10), Point(15), 1),
-            (Point(50), Point(55), 2),
+            TaskPlacement::new(Point(0), Point(5), 0),
+            TaskPlacement::new(Point(10), Point(15), 1),
+            TaskPlacement::new(Point(50), Point(55), 2),
         ];
         let range = RescheduleRange {
             from: Point(5),
@@ -976,7 +977,7 @@ mod tests {
         };
         let replanned = p.plan_in_range(&range, &current_schedule, &[]);
         assert_eq!(replanned.schedules.len(), 3);
-        let ids: Vec<usize> = replanned.schedules.iter().map(|(_, _, id)| *id).collect();
+        let ids: Vec<usize> = replanned.schedules.iter().map(|p| p.task_id).collect();
         assert!(ids.contains(&0), "task 0 should be preserved");
         assert!(ids.contains(&1), "task 1 should be preserved");
         assert!(ids.contains(&2), "task 2 should be preserved");
@@ -1049,9 +1050,9 @@ mod tests {
             .unwrap();
 
         let current_schedule = vec![
-            (Point(20), Point(30), 0),
-            (Point(10), Point(20), 1),
-            (Point(30), Point(40), 2),
+            TaskPlacement::new(Point(20), Point(30), 0),
+            TaskPlacement::new(Point(10), Point(20), 1),
+            TaskPlacement::new(Point(30), Point(40), 2),
         ];
         let range = RescheduleRange {
             from: Point(0),
@@ -1064,13 +1065,9 @@ mod tests {
         // Task 1.depends = [0] (original), but 0 is pinned → filtered out, depends becomes [].
         let replanned = p.plan_in_range(&range, &current_schedule, &[]);
         assert_eq!(replanned.schedules.len(), 3);
-        let pinned_0 = replanned
-            .schedules
-            .iter()
-            .find(|(_, _, id)| *id == 0)
-            .unwrap();
-        assert_eq!(pinned_0.0, Point(20), "task 0 pinned start unchanged");
-        assert_eq!(pinned_0.1, Point(30), "task 0 pinned end unchanged");
+        let pinned_0 = replanned.schedules.iter().find(|p| p.task_id == 0).unwrap();
+        assert_eq!(pinned_0.start, Point(20), "task 0 pinned start unchanged");
+        assert_eq!(pinned_0.end, Point(30), "task 0 pinned end unchanged");
     }
 
     #[test]
@@ -1120,9 +1117,9 @@ mod tests {
             .unwrap();
 
         let current_schedule = vec![
-            (Point(0), Point(10), 0),
-            (Point(10), Point(20), 1),
-            (Point(50), Point(60), 2),
+            TaskPlacement::new(Point(0), Point(10), 0),
+            TaskPlacement::new(Point(10), Point(20), 1),
+            TaskPlacement::new(Point(50), Point(60), 2),
         ];
         let range = RescheduleRange {
             from: Point(0),
@@ -1133,12 +1130,8 @@ mod tests {
         // Sub-planner: [task 0, task 1]. Task 1.depends = [0] → remapped to [0]. Correct.
         let replanned = p.plan_in_range(&range, &current_schedule, &[]);
         assert_eq!(replanned.schedules.len(), 3);
-        let pinned_2 = replanned
-            .schedules
-            .iter()
-            .find(|(_, _, id)| *id == 2)
-            .unwrap();
-        assert_eq!(pinned_2.0, Point(50), "task 2 pinned start unchanged");
+        let pinned_2 = replanned.schedules.iter().find(|p| p.task_id == 2).unwrap();
+        assert_eq!(pinned_2.start, Point(50), "task 2 pinned start unchanged");
     }
 
     #[test]
@@ -1403,17 +1396,21 @@ mod tests {
             })
             .unwrap();
 
-        let current_schedule = vec![(Point(0), Point(3), a), (Point(0), Point(3), b)];
+        let current_schedule = vec![
+            TaskPlacement::new(Point(0), Point(3), a),
+            TaskPlacement::new(Point(0), Point(3), b),
+        ];
         let range = RescheduleRange {
             from: Point(0),
             until: Point(50),
         };
         let replanned = p.plan_in_range(&range, &current_schedule, &[a]);
-        let (b_start, _, _) = replanned
+        let b_start = replanned
             .schedules
             .iter()
-            .find(|(_, _, id)| *id == b)
-            .unwrap();
+            .find(|p| p.task_id == b)
+            .unwrap()
+            .start;
         assert!(
             b_start.0 >= 3,
             "rescheduled task should not overlap pinned task"
@@ -1452,17 +1449,21 @@ mod tests {
             })
             .unwrap();
 
-        let current_schedule = vec![(Point(0), Point(3), a), (Point(3), Point(6), b)];
+        let current_schedule = vec![
+            TaskPlacement::new(Point(0), Point(3), a),
+            TaskPlacement::new(Point(3), Point(6), b),
+        ];
         let range = RescheduleRange {
             from: Point(0),
             until: Point(50),
         };
         let replanned = p.plan_in_range(&range, &current_schedule, &[a]);
-        let (b_start, _, _) = replanned
+        let b_start = replanned
             .schedules
             .iter()
-            .find(|(_, _, id)| *id == b)
-            .unwrap();
+            .find(|p| p.task_id == b)
+            .unwrap()
+            .start;
         assert!(
             b_start.0 >= 3,
             "rescheduled task should start after pinned dependency"
@@ -1501,19 +1502,21 @@ mod tests {
             })
             .unwrap();
 
-        let current_schedule = vec![(Point(5), Point(8), a), (Point(0), Point(3), b)];
+        let current_schedule = vec![
+            TaskPlacement::new(Point(5), Point(8), a),
+            TaskPlacement::new(Point(0), Point(3), b),
+        ];
         let range = RescheduleRange {
             from: Point(0),
             until: Point(50),
         };
         let replanned = p.plan_in_range(&range, &current_schedule, &[a]);
-        let (a_start, a_end, _) = replanned
-            .schedules
-            .iter()
-            .find(|(_, _, id)| *id == a)
-            .unwrap();
-        assert_eq!(a_start.0, 5, "extra_pinned start should be unchanged");
-        assert_eq!(a_end.0, 8, "extra_pinned end should be unchanged");
+        let a_placement = replanned.schedules.iter().find(|p| p.task_id == a).unwrap();
+        assert_eq!(
+            a_placement.start.0, 5,
+            "extra_pinned start should be unchanged"
+        );
+        assert_eq!(a_placement.end.0, 8, "extra_pinned end should be unchanged");
     }
 
     #[test]
@@ -1548,23 +1551,22 @@ mod tests {
             })
             .unwrap();
 
-        let current_schedule = vec![(Point(0), Point(3), a), (Point(5), Point(8), b)];
+        let current_schedule = vec![
+            TaskPlacement::new(Point(0), Point(3), a),
+            TaskPlacement::new(Point(5), Point(8), b),
+        ];
         let range = RescheduleRange {
             from: Point(0),
             until: Point(5),
         };
         let replanned = p.plan_in_range(&range, &current_schedule, &[]);
-        let (a_start, a_end, _) = replanned
-            .schedules
-            .iter()
-            .find(|(_, _, id)| *id == a)
-            .unwrap();
+        let a_placement = replanned.schedules.iter().find(|p| p.task_id == a).unwrap();
         assert!(
-            a_end.0 <= 5,
+            a_placement.end.0 <= 5,
             "rescheduled task should finish before pinned dependent"
         );
         assert!(
-            a_start.0 >= 0,
+            a_placement.start.0 >= 0,
             "rescheduled task should not start before now"
         );
     }
@@ -1594,25 +1596,23 @@ mod tests {
 
         // Task a overlaps the range on the left: it starts before the range
         // and ends inside it, so it is not fully contained in [20, 80).
-        let current_schedule = vec![(Point(0), Point(30), a)];
+        let current_schedule = vec![TaskPlacement::new(Point(0), Point(30), a)];
         let range = RescheduleRange {
             from: Point(20),
             until: Point(80),
         };
 
         let replanned = p.plan_in_range(&range, &current_schedule, &[]);
-        let (s, e, _) = replanned
-            .schedules
-            .iter()
-            .find(|(_, _, id)| *id == a)
-            .unwrap();
+        let a_placement = replanned.schedules.iter().find(|p| p.task_id == a).unwrap();
         assert_eq!(
-            s.0, 0,
-            "left-overlapping task should keep its original start, got {s:?}"
+            a_placement.start.0, 0,
+            "left-overlapping task should keep its original start, got {:?}",
+            a_placement.start
         );
         assert_eq!(
-            e.0, 30,
-            "left-overlapping task should keep its original end, got {e:?}"
+            a_placement.end.0, 30,
+            "left-overlapping task should keep its original end, got {:?}",
+            a_placement.end
         );
     }
 

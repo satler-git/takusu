@@ -7,7 +7,7 @@ use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use takusu_core::{
     Minutes, NormalDist, Planner, Point, RescheduleRange, SleepConfig, Slots, Task as CoreTask,
-    WorkloadConfig,
+    TaskPlacement, WorkloadConfig,
 };
 use takusu_storage::{
     CreateHabit, CreateHabitBatch, CreateHabitBatchResult, CreateHabitScheduledSpan, CreateMemory,
@@ -2138,13 +2138,13 @@ impl TakusuApp {
             .and_then(|row| serde_json::from_str(&row.schedule).ok())
             .unwrap_or_default();
         if !existing_entries.is_empty() {
-            let prev: Vec<(Point, Point, usize)> = existing_entries
+            let prev: Vec<TaskPlacement> = existing_entries
                 .iter()
                 .filter_map(|entry| {
                     let idx = id_to_idx.get(&entry.task_id)?;
                     let s = iso_to_point(&entry.start_at.to_string(), &tz).ok()?;
                     let e = iso_to_point(&entry.end_at.to_string(), &tz).ok()?;
-                    Some((s, e, *idx))
+                    Some(TaskPlacement::new(s, e, *idx))
                 })
                 .collect();
             planner.set_previous_schedule(&prev);
@@ -2200,7 +2200,7 @@ impl TakusuApp {
         let current_schedule = existing_entries
             .iter()
             .filter_map(|entry| {
-                Some((
+                Some(TaskPlacement::new(
                     iso_to_point(&entry.start_at.to_string(), &tz).ok()?,
                     iso_to_point(&entry.end_at.to_string(), &tz).ok()?,
                     *id_to_idx.get(&entry.task_id)?,
@@ -2223,8 +2223,9 @@ impl TakusuApp {
                 })?;
                 let pinned = current_schedule
                     .iter()
-                    .filter(|(_, _, idx)| {
-                        !task_ids.contains(&id_map[*idx]) || input.pinned.contains(&id_map[*idx])
+                    .filter(|p| {
+                        !task_ids.contains(&id_map[p.task_id])
+                            || input.pinned.contains(&id_map[p.task_id])
                     })
                     .copied()
                     .collect::<Vec<_>>();
@@ -2324,13 +2325,13 @@ impl TakusuApp {
         // explicitly chose which tasks to move, so we don't want to resist
         // that movement. Stability is only for generate_schedule (full
         // regenerate) where the user hasn't expressed a preference.
-        let current_schedule: Vec<(Point, Point, usize)> = entries
+        let current_schedule: Vec<TaskPlacement> = entries
             .iter()
             .filter_map(|entry| {
                 let idx = *id_to_idx.get(&entry.task_id)?;
                 let s = iso_to_point(&entry.start_at.to_string(), &tz).ok()?;
                 let e = iso_to_point(&entry.end_at.to_string(), &tz).ok()?;
-                Some((s, e, idx))
+                Some(TaskPlacement::new(s, e, idx))
             })
             .collect();
 
@@ -2360,10 +2361,10 @@ impl TakusuApp {
                 // pinned 条件: task_ids に含まれない (再スケジュール対象外) または
                 // 明示的に pinned 指定されたタスクは固定。残りが再配置される。
                 // id_map[idx] で planner index → 文字列ID に変換している。
-                let pinned_entries: Vec<(Point, Point, usize)> = current_schedule
+                let pinned_entries: Vec<TaskPlacement> = current_schedule
                     .iter()
-                    .filter(|(_, _, idx)| {
-                        let tid = &id_map[*idx];
+                    .filter(|p| {
+                        let tid = &id_map[p.task_id];
                         !task_ids.contains(tid) || input.pinned.contains(tid)
                     })
                     .copied()
@@ -3486,11 +3487,11 @@ impl TakusuApp {
     ) -> Result<Vec<ScheduleEntry>, AppError> {
         plan.schedules
             .iter()
-            .map(|(s, e, idx)| {
+            .map(|p| {
                 Ok(ScheduleEntry {
-                    task_id: id_map.get(*idx).cloned().unwrap_or_default(),
-                    start_at: point_to_iso(s.0)?,
-                    end_at: point_to_iso(e.0)?,
+                    task_id: id_map.get(p.task_id).cloned().unwrap_or_default(),
+                    start_at: point_to_iso(p.start.0)?,
+                    end_at: point_to_iso(p.end.0)?,
                 })
             })
             .collect()
