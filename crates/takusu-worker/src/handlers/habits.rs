@@ -266,7 +266,8 @@ pub async fn select_one(database: &worker::D1Database, id: &str) -> Result<Habit
     row.ok_or_else(|| WorkerError::NotFound(format!("habit {id} not found")))
 }
 
-/// Resolve a habit reference (`h<N>`, full UUID, or UUID prefix) to a full UUID.
+/// Resolve a habit reference (`h<N>` or full UUID) to a full UUID. UUID
+/// prefixes are not accepted (#1251).
 async fn resolve_habit_id(database: &worker::D1Database, id: &str) -> Result<String, WorkerError> {
     // `h<N>` → habit display_id lookup (#305).
     if let Some(rest) = id.strip_prefix(['h', 'H'])
@@ -289,21 +290,8 @@ async fn resolve_habit_id(database: &worker::D1Database, id: &str) -> Result<Str
     if id.contains('-') {
         return Ok(id.to_string());
     }
-    // UUID prefix — fetch all and filter
-    let stmt = database.prepare(select_habits());
-    let all: Vec<HabitRow> = safe_all(&stmt).await?;
-    let matches: Vec<String> = all
-        .iter()
-        .filter(|h| h.id.starts_with(id))
-        .map(|h| h.id.clone())
-        .collect();
-    match matches.len() {
-        0 => Err(WorkerError::NotFound(format!("habit {id} not found"))),
-        1 => Ok(matches.into_iter().next().unwrap()),
-        _ => Err(WorkerError::BadRequest(format!(
-            "ambiguous habit id prefix: {id}"
-        ))),
-    }
+    // Anything else (e.g. a UUID prefix) is not a valid reference (#1251).
+    Err(WorkerError::NotFound(format!("habit {id} not found")))
 }
 
 #[derive(serde::Deserialize)]

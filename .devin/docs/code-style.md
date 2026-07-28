@@ -61,17 +61,16 @@ UPDATE tasks SET title=COALESCE(?1,title), ...
 to clear a field. Fixing this requires distinguishing "not provided" from
 "explicitly set to null".
 
-## `LIKE` prefix matching for short IDs
+## ~~`LIKE` prefix matching for short IDs~~ REMOVED
 
 **Files:** `takusu-local/src/handlers/task.rs`, `habit.rs`;
 `takusu-local-lib/src/storage_sqlite.rs`
 
-```sql
-SELECT id FROM tasks WHERE id LIKE ? || '%'
-```
-
-Forces a full table scan and is vulnerable to `_`/`%` pattern injection. The
-entire short-ID UX depends on this pattern.
+UUID prefix matching (`SELECT id FROM tasks WHERE id LIKE ? || '%'` and the
+client-side `starts_with` fallback) was removed in #1251. It forced a full
+table scan and was vulnerable to `_`/`%` pattern injection. Task/habit
+references now accept only display IDs (`#42`, `h1#3`, numeric) and full
+UUIDs.
 
 ## `point_to_iso` hardcoded 5-minute slots
 

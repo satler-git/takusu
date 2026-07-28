@@ -2935,28 +2935,14 @@ where
         if exists {
             return Ok(id.to_string());
         }
-    } else {
-        let matches: Vec<String> =
-            sqlx::query_scalar("SELECT id FROM tasks WHERE id LIKE ? || '%'")
-                .bind(id)
-                .fetch_all(executor)
-                .await
-                .map_err(map_err)?;
-        match matches.len() {
-            0 => {}
-            1 => return Ok(matches.into_iter().next().unwrap()),
-            _ => {
-                return Err(StorageError::BadRequest(format!(
-                    "ambiguous task id prefix: {id}"
-                )));
-            }
-        }
     }
+    // Anything else (e.g. a UUID prefix) is not a valid reference (#1251).
     Err(StorageError::NotFound(format!("task {id} not found")))
 }
 
 /// Resolve a habit reference to its full UUID.
-/// Accepts `h<N>` (habit display_id, e.g. `h1`), a full UUID, or a UUID prefix.
+/// Accepts `h<N>` (habit display_id, e.g. `h1`) or a full UUID. UUID prefixes
+/// are not accepted (#1251).
 async fn resolve_habit_id(pool: &SqlitePool, id: &str) -> StorageResult<String> {
     // `h<N>` → habit display_id lookup (#305).
     if let Some(rest) = id.strip_prefix(['h', 'H'])
@@ -2978,27 +2964,12 @@ async fn resolve_habit_id(pool: &SqlitePool, id: &str) -> StorageResult<String> 
         if exists {
             return Ok(id.to_string());
         }
-    } else {
-        let matches: Vec<String> =
-            sqlx::query_scalar("SELECT id FROM habits WHERE id LIKE ? || '%'")
-                .bind(id)
-                .fetch_all(pool)
-                .await
-                .map_err(map_err)?;
-        match matches.len() {
-            0 => {}
-            1 => return Ok(matches.into_iter().next().unwrap()),
-            _ => {
-                return Err(StorageError::BadRequest(format!(
-                    "ambiguous habit id prefix: {id}"
-                )));
-            }
-        }
     }
+    // Anything else (e.g. a UUID prefix) is not a valid reference (#1251).
     Err(StorageError::NotFound(format!("habit {id} not found")))
 }
 
-/// Resolve a list of dependency references (display_id numbers or UUIDs/prefixes)
+/// Resolve a list of dependency references (display_id numbers or full UUIDs)
 /// to full UUID strings. Entries that are already full UUIDs are passed through.
 async fn resolve_depends(pool: &SqlitePool, deps: Option<&[String]>) -> StorageResult<Vec<String>> {
     let Some(deps) = deps else {

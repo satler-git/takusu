@@ -586,8 +586,8 @@ pub async fn select_one(database: &worker::D1Database, id: &str) -> Result<TaskR
     row.ok_or_else(|| WorkerError::NotFound(format!("task {id} not found")))
 }
 
-/// Resolve a single task reference (display_id number, full UUID, or UUID prefix)
-/// to a full UUID string.
+/// Resolve a single task reference (display_id number or full UUID) to a full
+/// UUID string. UUID prefixes are not accepted (#1251).
 pub(crate) async fn resolve_task_id(
     database: &worker::D1Database,
     id: &str,
@@ -643,21 +643,8 @@ pub(crate) async fn resolve_task_id(
             .map(|r| r.id)
             .ok_or_else(|| WorkerError::NotFound(format!("task {id} not found")));
     }
-    // UUID prefix — fetch all and filter
-    let stmt = database.prepare(select_tasks());
-    let all: Vec<TaskRow> = safe_all(&stmt).await?;
-    let matches: Vec<String> = all
-        .iter()
-        .filter(|t| t.id.starts_with(id))
-        .map(|t| t.id.clone())
-        .collect();
-    match matches.len() {
-        0 => Err(WorkerError::NotFound(format!("task {id} not found"))),
-        1 => Ok(matches.into_iter().next().unwrap()),
-        _ => Err(WorkerError::BadRequest(format!(
-            "ambiguous task id prefix: {id}"
-        ))),
-    }
+    // Anything else (e.g. a UUID prefix) is not a valid reference (#1251).
+    Err(WorkerError::NotFound(format!("task {id} not found")))
 }
 
 /// Resolve a list of dependency references to full UUID strings.
