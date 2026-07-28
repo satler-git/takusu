@@ -6,6 +6,7 @@ use takusu_local_lib::app::{
     GenerateScheduleInput, MoveEntryOutput, RescheduleInput, SchedulePreviewInput,
 };
 use takusu_storage::{SaveScheduleRequest, ScheduleRow};
+use takusu_util::ScheduleMode;
 
 use crate::error::HttpError;
 use crate::state::AppState;
@@ -23,7 +24,7 @@ fn default_sleep() -> String {
 
 #[derive(Debug, Deserialize)]
 pub struct Reschedule {
-    pub mode: String,
+    pub mode: ScheduleMode,
     pub from: Option<String>,
     pub until: Option<String>,
     pub task_ids: Option<Vec<String>>,

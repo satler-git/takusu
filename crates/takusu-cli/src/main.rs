@@ -14,7 +14,6 @@ use clap::{CommandFactory, Parser, Subcommand};
 use config::CliConfig;
 use std::io::{self, Read, Write};
 use std::process;
-use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -37,8 +36,9 @@ use takusu_storage::{
     UpdateMemory, UpdateSettings,
 };
 use takusu_util::{
-    Abandonability, Date, MemoryKind, Quantity, SubjectType, TaskStatus, TaskStatusFilter,
-    TimeOfDay, Timestamp, WindowMode, parse_datetime_to_timestamp, parse_duration,
+    Abandonability, Date, MemoryKind, Quantity, ScheduleMode, SubjectType, TaskStatus,
+    TaskStatusFilter, TimeOfDay, Timestamp, WindowMode, parse_datetime_to_timestamp,
+    parse_duration,
 };
 
 fn prompt(label: &str) -> Result<String, AppError> {
@@ -90,6 +90,32 @@ struct Cli {
 enum DisplayMode {
     Rich,
     Simple,
+}
+
+/// CLI-facing subject type for `--subject-type`.
+///
+/// `SubjectType::Empty` has the label `""` (for DB backward compatibility),
+/// which renders as an awkward `""` entry in clap's `[possible values: ...]`
+/// help text. This wrapper omits the empty variant from the CLI surface;
+/// callers convert to `SubjectType` with `From`, where `None` maps to
+/// `SubjectType::Empty`.
+#[derive(Clone, clap::ValueEnum)]
+enum SubjectTypeArg {
+    Task,
+    Habit,
+    Skill,
+    Schedule,
+}
+
+impl From<SubjectTypeArg> for SubjectType {
+    fn from(value: SubjectTypeArg) -> Self {
+        match value {
+            SubjectTypeArg::Task => SubjectType::Task,
+            SubjectTypeArg::Habit => SubjectType::Habit,
+            SubjectTypeArg::Skill => SubjectType::Skill,
+            SubjectTypeArg::Schedule => SubjectType::Schedule,
+        }
+    }
 }
 
 impl DisplayMode {
@@ -250,11 +276,11 @@ enum MemoryCommands {
 
     /// Create a memory entry
     Create {
-        kind: String,
+        kind: MemoryKind,
         key: String,
         content: String,
         #[arg(long)]
-        subject_type: Option<String>,
+        subject_type: Option<SubjectTypeArg>,
         #[arg(long)]
         subject_id: Option<String>,
         #[arg(long)]
@@ -281,9 +307,9 @@ enum MemoryCommands {
     Search {
         q: String,
         #[arg(long)]
-        kind: Option<String>,
+        kind: Option<MemoryKind>,
         #[arg(long)]
-        subject_type: Option<String>,
+        subject_type: Option<SubjectTypeArg>,
         #[arg(long)]
         subject_id: Option<String>,
         #[arg(long)]
@@ -371,7 +397,7 @@ enum TaskCommands {
             long,
             help = "Filter by status (pending, scheduled, in_progress, completed, skipped, overdue)"
         )]
-        status: Option<String>,
+        status: Option<TaskStatusFilter>,
         #[arg(
             long,
             help = "Filter by start date (e.g. 2025-06-05, 2025-06-05T14:00)"
@@ -475,7 +501,7 @@ enum TaskCommands {
         #[arg(long)]
         abandonability: Option<f64>,
         #[arg(long)]
-        status: Option<String>,
+        status: Option<TaskStatus>,
         #[arg(long, help = "Lock start time (scheduler cannot move)")]
         fixed: Option<bool>,
         #[arg(long)]
@@ -536,7 +562,7 @@ enum TaskCommands {
     Delete { id: String },
 
     /// Change task status (pending, scheduled, in_progress, completed, skipped)
-    Status { id: String, status: String },
+    Status { id: String, status: TaskStatus },
 
     /// Detect and offer to remove redundant (composite) dependency edges
     #[command(visible_alias = "deps")]
@@ -640,7 +666,7 @@ enum HabitCommands {
             long,
             help = "Window mode: 'day' (occurrence day) or 'period' (until next occurrence)"
         )]
-        window: Option<String>,
+        window: Option<WindowMode>,
     },
 
     /// Edit a habit in $EDITOR
@@ -677,7 +703,7 @@ enum HabitCommands {
             long,
             help = "Window mode: 'day' (occurrence day) or 'period' (until next occurrence)"
         )]
-        window: Option<String>,
+        window: Option<WindowMode>,
     },
 
     /// Full replace a habit (PUT)
@@ -717,7 +743,7 @@ enum HabitCommands {
             long,
             help = "Window mode: 'day' (occurrence day) or 'period' (until next occurrence)"
         )]
-        window: Option<String>,
+        window: Option<WindowMode>,
     },
 
     /// Delete a habit
@@ -838,7 +864,7 @@ enum ScheduleCommands {
     /// Reschedule (partial)
     Reschedule {
         #[arg(long)]
-        mode: String,
+        mode: ScheduleMode,
         #[arg(long, help = "Start time (e.g. 2025-06-05, 2025-06-05T06:00Z)")]
         from: Option<String>,
         #[arg(long, help = "End time (e.g. 2025-06-06, 2025-06-06T06:00Z)")]
@@ -1270,10 +1296,7 @@ async fn run_task(
                 Some(query.join(" "))
             };
             let query = TaskQuery {
-                status: status
-                    .map(|s| TaskStatusFilter::from_str(&s))
-                    .transpose()
-                    .map_err(|e| AppError::BadRequest(e.to_string()))?,
+                status,
                 from: from.map(|s| parse_dt(&s, tz)).transpose()?,
                 until: until.map(|s| parse_dt(&s, tz)).transpose()?,
                 no_overdue: Some(no_overdue).filter(|x| *x),
@@ -1402,12 +1425,6 @@ async fn run_task(
                 .map(|s| parse_duration(s))
                 .transpose()
                 .map_err(AppError::BadRequest)?;
-            let status = status
-                .map(|s| {
-                    s.parse::<TaskStatus>()
-                        .map_err(|e| AppError::BadRequest(e.to_string()))
-                })
-                .transpose()?;
             let abandonability = abandonability.map(Abandonability::new);
             let quantity_total = quantity_total
                 .map(Quantity::new)
@@ -1509,9 +1526,6 @@ async fn run_task(
             println!("Task {id} deleted.");
         }
         TaskCommands::Status { id, status } => {
-            let status = status
-                .parse::<TaskStatus>()
-                .map_err(|e| AppError::BadRequest(e.to_string()))?;
             let body = takusu_storage::UpdateTask {
                 status: Some(status),
                 ..Default::default()
@@ -1703,12 +1717,6 @@ async fn run_habit(mode: DisplayMode, app: &TakusuApp, cmd: HabitCommands) -> Re
             };
             let avg_minutes = parse_duration(&avg_time).map_err(AppError::BadRequest)?;
             let sigma_minutes: i64 = parse_duration(&sigma_time).map_err(AppError::BadRequest)?;
-            let window = window
-                .map(|s| {
-                    s.parse::<WindowMode>()
-                        .map_err(|e| AppError::BadRequest(e.to_string()))
-                })
-                .transpose()?;
             let body = CreateHabit {
                 title: title.unwrap_or_default(),
                 recurrence: recurrence.unwrap_or_default(),
@@ -1766,12 +1774,6 @@ async fn run_habit(mode: DisplayMode, app: &TakusuApp, cmd: HabitCommands) -> Re
                 .map(|s| parse_duration(s))
                 .transpose()
                 .map_err(AppError::BadRequest)?;
-            let window = window
-                .map(|s| {
-                    s.parse::<WindowMode>()
-                        .map_err(|e| AppError::BadRequest(e.to_string()))
-                })
-                .transpose()?;
             let abandonability = abandonability.map(Abandonability::new);
             let body = UpdateHabit {
                 title,
@@ -1808,12 +1810,6 @@ async fn run_habit(mode: DisplayMode, app: &TakusuApp, cmd: HabitCommands) -> Re
         } => {
             let avg_minutes = parse_duration(&avg_time).map_err(AppError::BadRequest)?;
             let sigma_minutes: i64 = parse_duration(&sigma_time).map_err(AppError::BadRequest)?;
-            let window = window
-                .map(|s| {
-                    s.parse::<WindowMode>()
-                        .map_err(|e| AppError::BadRequest(e.to_string()))
-                })
-                .transpose()?;
             let body = CreateHabit {
                 title,
                 recurrence,
@@ -1992,15 +1988,7 @@ async fn run_memory(app: &TakusuApp, cmd: MemoryCommands) -> Result<(), AppError
             subject_id,
             upsert,
         } => {
-            let kind = kind
-                .parse::<MemoryKind>()
-                .map_err(|e| AppError::BadRequest(e.to_string()))?;
-            let subject_type = subject_type
-                .map(|s| {
-                    s.parse::<SubjectType>()
-                        .map_err(|e| AppError::BadRequest(e.to_string()))
-                })
-                .transpose()?;
+            let subject_type = subject_type.map(SubjectType::from);
             let body = CreateMemory {
                 kind,
                 key,
@@ -2035,18 +2023,7 @@ async fn run_memory(app: &TakusuApp, cmd: MemoryCommands) -> Result<(), AppError
             subject_id,
             limit,
         } => {
-            let kind = kind
-                .map(|s| {
-                    s.parse::<MemoryKind>()
-                        .map_err(|e| AppError::BadRequest(e.to_string()))
-                })
-                .transpose()?;
-            let subject_type = subject_type
-                .map(|s| {
-                    s.parse::<SubjectType>()
-                        .map_err(|e| AppError::BadRequest(e.to_string()))
-                })
-                .transpose()?;
+            let subject_type = subject_type.map(SubjectType::from);
             let query = MemoryQuery {
                 q,
                 kind,

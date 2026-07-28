@@ -25,7 +25,7 @@ takusu-local-lib = { workspace = true, features = ["sqlite"] }
 takusu-local = { workspace = true }
 takusu-agent = { workspace = true }
 takusu-client = { workspace = true }
-takusu-util = { workspace = true }
+takusu-util = { workspace = true, features = ["clap"] }
 takusu-storage = { workspace = true }
 takusu-habit = { workspace = true }
 takusu-tui = { workspace = true }

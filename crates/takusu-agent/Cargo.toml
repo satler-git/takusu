@@ -14,6 +14,9 @@ required-features = ["audio-device"]
 default = ["audio-device"]
 audio-device = ["takusu-audio/sherpa", "takusu-audio/record"]
 
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("clap"))'] }
+
 [dependencies]
 async-trait = { workspace = true }
 axum = { workspace = true }
