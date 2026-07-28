@@ -9,7 +9,7 @@ use takusu_agent::{
 };
 use takusu_client::Client;
 use takusu_local_lib::app::TakusuApp;
-use takusu_local_lib::error::AppError;
+use takusu_local_lib::error::{AppError, BadRequestKind};
 
 use crate::server::start_in_process;
 
@@ -61,19 +61,21 @@ fn parse_session_permissions(allow: &[String], deny: &[String]) -> Result<Permis
 
 fn parse_permission_key(key: &str) -> Result<(&str, &str), AppError> {
     if key.matches(':').count() != 1 {
-        return Err(AppError::BadRequest(format!(
+        return Err(AppError::BadRequest(BadRequestKind::Other(format!(
             "permission key must be 'target:operation' (got '{key}')"
-        )));
+        ))));
     }
     let mut parts = key.splitn(2, ':');
-    let target = parts
-        .next()
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| AppError::BadRequest(format!("invalid permission key '{key}'")))?;
-    let operation = parts
-        .next()
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| AppError::BadRequest(format!("invalid permission key '{key}'")))?;
+    let target = parts.next().filter(|s| !s.is_empty()).ok_or_else(|| {
+        AppError::BadRequest(BadRequestKind::Other(format!(
+            "invalid permission key '{key}'"
+        )))
+    })?;
+    let operation = parts.next().filter(|s| !s.is_empty()).ok_or_else(|| {
+        AppError::BadRequest(BadRequestKind::Other(format!(
+            "invalid permission key '{key}'"
+        )))
+    })?;
     Ok((target, operation))
 }
 
@@ -278,23 +280,24 @@ pub fn config_show() -> Result<(), AppError> {
 
 pub fn config_set(key: &str, value: &str) -> Result<(), AppError> {
     if key == "llm.permissions" || key.starts_with("llm.permissions.") {
-        return Err(AppError::BadRequest(
+        return Err(AppError::BadRequest(BadRequestKind::Other(
             "use 'takusu agent config permissions set' to manage permissions".into(),
-        ));
+        )));
     }
     let path = agent_config_path();
     let mut doc = if path.exists() {
         let content = std::fs::read_to_string(&path)
             .map_err(|e| AppError::Internal(format!("failed to read agent config: {e}")))?;
-        content
-            .parse::<toml_edit::DocumentMut>()
-            .map_err(|e| AppError::BadRequest(format!("invalid agent config: {e}")))?
+        content.parse::<toml_edit::DocumentMut>().map_err(|e| {
+            AppError::BadRequest(BadRequestKind::Other(format!("invalid agent config: {e}")))
+        })?
     } else {
         toml_edit::DocumentMut::new()
     };
 
-    set_toml_path(&mut doc, key, value)
-        .map_err(|e| AppError::BadRequest(format!("failed to set {key}: {e}")))?;
+    set_toml_path(&mut doc, key, value).map_err(|e| {
+        AppError::BadRequest(BadRequestKind::Other(format!("failed to set {key}: {e}")))
+    })?;
 
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
@@ -366,9 +369,9 @@ fn permissions_show_at(path: &std::path::Path) -> Result<(), AppError> {
     }
     let content = std::fs::read_to_string(path)
         .map_err(|e| AppError::Internal(format!("failed to read agent config: {e}")))?;
-    let doc = content
-        .parse::<toml_edit::DocumentMut>()
-        .map_err(|e| AppError::BadRequest(format!("invalid agent config: {e}")))?;
+    let doc = content.parse::<toml_edit::DocumentMut>().map_err(|e| {
+        AppError::BadRequest(BadRequestKind::Other(format!("invalid agent config: {e}")))
+    })?;
 
     let Some(llm) = doc.as_table().get("llm") else {
         println!("No permissions configured.");
@@ -376,14 +379,16 @@ fn permissions_show_at(path: &std::path::Path) -> Result<(), AppError> {
     };
     let llm_table = llm
         .as_table()
-        .ok_or_else(|| AppError::BadRequest("llm is not a table".into()))?;
+        .ok_or_else(|| AppError::BadRequest(BadRequestKind::Other("llm is not a table".into())))?;
     let Some(perms) = llm_table.get("permissions") else {
         println!("No permissions configured.");
         return Ok(());
     };
-    let table = perms
-        .as_table()
-        .ok_or_else(|| AppError::BadRequest("llm.permissions is not a table".into()))?;
+    let table = perms.as_table().ok_or_else(|| {
+        AppError::BadRequest(BadRequestKind::Other(
+            "llm.permissions is not a table".into(),
+        ))
+    })?;
     if table.is_empty() {
         println!("No permissions configured.");
         return Ok(());
@@ -409,9 +414,9 @@ fn permissions_set_at(path: &std::path::Path, key: &str, value: &str) -> Result<
     let mut doc = if path.exists() {
         let content = std::fs::read_to_string(path)
             .map_err(|e| AppError::Internal(format!("failed to read agent config: {e}")))?;
-        content
-            .parse::<toml_edit::DocumentMut>()
-            .map_err(|e| AppError::BadRequest(format!("invalid agent config: {e}")))?
+        content.parse::<toml_edit::DocumentMut>().map_err(|e| {
+            AppError::BadRequest(BadRequestKind::Other(format!("invalid agent config: {e}")))
+        })?
     } else {
         toml_edit::DocumentMut::new()
     };
@@ -442,9 +447,9 @@ fn permissions_unset_at(path: &std::path::Path, key: &str) -> Result<(), AppErro
     }
     let content = std::fs::read_to_string(path)
         .map_err(|e| AppError::Internal(format!("failed to read agent config: {e}")))?;
-    let mut doc = content
-        .parse::<toml_edit::DocumentMut>()
-        .map_err(|e| AppError::BadRequest(format!("invalid agent config: {e}")))?;
+    let mut doc = content.parse::<toml_edit::DocumentMut>().map_err(|e| {
+        AppError::BadRequest(BadRequestKind::Other(format!("invalid agent config: {e}")))
+    })?;
 
     let table = doc.as_table_mut();
     let Some(llm) = table.get_mut("llm") else {
@@ -453,14 +458,16 @@ fn permissions_unset_at(path: &std::path::Path, key: &str) -> Result<(), AppErro
     };
     let llm_table = llm
         .as_table_mut()
-        .ok_or_else(|| AppError::BadRequest("llm is not a table".into()))?;
+        .ok_or_else(|| AppError::BadRequest(BadRequestKind::Other("llm is not a table".into())))?;
     let Some(perms) = llm_table.get_mut("permissions") else {
         println!("Permission not found: {key}");
         return Ok(());
     };
-    let perms_table = perms
-        .as_table_mut()
-        .ok_or_else(|| AppError::BadRequest("llm.permissions is not a table".into()))?;
+    let perms_table = perms.as_table_mut().ok_or_else(|| {
+        AppError::BadRequest(BadRequestKind::Other(
+            "llm.permissions is not a table".into(),
+        ))
+    })?;
     if perms_table.remove(key).is_some() {
         std::fs::write(path, doc.to_string())
             .map_err(|e| AppError::Internal(format!("failed to write agent config: {e}")))?;
@@ -480,7 +487,9 @@ fn ensure_permissions_table(
     }
     let llm = table.get_mut("llm").unwrap();
     if !llm.is_table() {
-        return Err(AppError::BadRequest("llm is not a table".into()));
+        return Err(AppError::BadRequest(BadRequestKind::Other(
+            "llm is not a table".into(),
+        )));
     }
     let llm_table = llm.as_table_mut().unwrap();
     if !llm_table.contains_key("permissions") {
@@ -491,9 +500,9 @@ fn ensure_permissions_table(
     }
     let perms = llm_table.get_mut("permissions").unwrap();
     if !perms.is_table() {
-        return Err(AppError::BadRequest(
+        return Err(AppError::BadRequest(BadRequestKind::Other(
             "llm.permissions is not a table".into(),
-        ));
+        )));
     }
     Ok(perms.as_table_mut().unwrap())
 }
@@ -515,9 +524,9 @@ fn parse_permission_value(s: &str) -> Result<bool, AppError> {
     {
         Ok(false)
     } else {
-        Err(AppError::BadRequest(format!(
+        Err(AppError::BadRequest(BadRequestKind::Other(format!(
             "expected boolean value, got '{s}'"
-        )))
+        ))))
     }
 }
 

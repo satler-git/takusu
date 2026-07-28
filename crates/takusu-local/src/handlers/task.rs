@@ -52,17 +52,29 @@ pub async fn list_tasks(
             .status
             .map(|s| TaskStatusFilter::from_str(&s))
             .transpose()
-            .map_err(|e| HttpError(takusu_local_lib::error::AppError::BadRequest(e.to_string())))?,
+            .map_err(|e| {
+                HttpError(takusu_local_lib::error::AppError::BadRequest(
+                    takusu_local_lib::error::BadRequestKind::Other(e.to_string()),
+                ))
+            })?,
         from: query
             .from
             .map(|s| parse_datetime_to_timestamp(&s, &tz).map(Timestamp::from))
             .transpose()
-            .map_err(|e| HttpError(takusu_local_lib::error::AppError::BadRequest(e)))?,
+            .map_err(|e| {
+                HttpError(takusu_local_lib::error::AppError::BadRequest(
+                    takusu_local_lib::error::BadRequestKind::InvalidTime(e),
+                ))
+            })?,
         until: query
             .until
             .map(|s| parse_datetime_to_timestamp(&s, &tz).map(Timestamp::from))
             .transpose()
-            .map_err(|e| HttpError(takusu_local_lib::error::AppError::BadRequest(e)))?,
+            .map_err(|e| {
+                HttpError(takusu_local_lib::error::AppError::BadRequest(
+                    takusu_local_lib::error::BadRequestKind::InvalidTime(e),
+                ))
+            })?,
         no_overdue: query.no_overdue,
         habit_id: query.habit_id,
         ical_uid: query.ical_uid,

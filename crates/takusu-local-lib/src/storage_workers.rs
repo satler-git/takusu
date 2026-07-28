@@ -601,8 +601,13 @@ impl Storage for WorkersStorage {
     }
 
     async fn get_settings(&self) -> StorageResult<SettingsRow> {
-        self.send_json(reqwest::Method::GET, "/api/settings", RequestBody::None, None)
-            .await
+        self.send_json(
+            reqwest::Method::GET,
+            "/api/settings",
+            RequestBody::None,
+            None,
+        )
+        .await
     }
 
     async fn update_settings(&self, body: &UpdateSettings) -> StorageResult<SettingsRow> {
@@ -1013,12 +1018,7 @@ impl WorkersStorage {
         // UUID prefix — fetch all tasks and filter client-side (matches
         // SqliteStorage's `LIKE prefix%` behaviour).
         let tasks: Vec<TaskRow> = self
-            .send_json::<Vec<TaskRow>>(
-                reqwest::Method::GET,
-                "/api/tasks",
-                RequestBody::None,
-                None,
-            )
+            .send_json::<Vec<TaskRow>>(reqwest::Method::GET, "/api/tasks", RequestBody::None, None)
             .await?;
         let mut matches: Vec<String> = tasks
             .iter()
