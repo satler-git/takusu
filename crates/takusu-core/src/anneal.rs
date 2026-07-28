@@ -1773,21 +1773,21 @@ fn generate_neighbor_into(
     let r = rng.random_range(0..100u32) as i32;
 
     match r {
-        0..=16 => neighbor_shift_into(planner, buf, rng, span),
-        17..=33 => neighbor_swap_into(planner, buf, rng),
-        34..=47 => neighbor_duration_into(planner, buf, rng),
-        48..=61 => neighbor_reorder_into(planner, buf, rng),
+        0..=16 => ShiftOp.apply_full(planner, buf, rng, span),
+        17..=33 => SwapOp.apply_full(planner, buf, rng, span),
+        34..=47 => DurationOp.apply_full(planner, buf, rng, span),
+        48..=61 => ReorderOp.apply_full(planner, buf, rng, span),
         62..=75 => neighbor_repair_depend_into(planner, buf, rng, None),
         76..=85 => {
             if !neighbor_habit_anchor_into(planner, buf, rng, habit, &FxHashSet::default()) {
-                neighbor_shift_into(planner, buf, rng, span)
+                ShiftOp.apply_full(planner, buf, rng, span)
             } else {
                 true
             }
         }
         86..=91 => {
             if !neighbor_habit_exception_into(planner, buf, rng, habit, &FxHashSet::default()) {
-                neighbor_shift_into(planner, buf, rng, span)
+                ShiftOp.apply_full(planner, buf, rng, span)
             } else {
                 true
             }
@@ -1818,48 +1818,21 @@ fn generate_neighbor_partial_into(
     let r = rng.random_range(0..100u32) as i32;
 
     match r {
-        0..=16 => {
-            let idx = rng.random_range(0..unpinned_positions.len());
-            let pos = unpinned_positions[idx];
-            neighbor_shift_at_into(planner, buf, pos, rng, span)
-        }
-        17..=33 => {
-            if unpinned_positions.len() < 2 {
-                return false;
-            }
-            let a_idx = rng.random_range(0..unpinned_positions.len());
-            let a_pos = unpinned_positions[a_idx];
-            let mut b_idx = rng.random_range(0..unpinned_positions.len());
-            if b_idx == a_idx {
-                b_idx = (a_idx + 1) % unpinned_positions.len();
-            }
-            let b_pos = unpinned_positions[b_idx];
-            neighbor_swap_at_into(planner, buf, a_pos, b_pos)
-        }
-        34..=47 => {
-            let idx = rng.random_range(0..unpinned_positions.len());
-            let pos = unpinned_positions[idx];
-            neighbor_duration_at_into(planner, buf, pos, rng)
-        }
-        48..=61 => {
-            if unpinned_positions.len() < 2 {
-                return false;
-            }
-            neighbor_reorder_partial_into(planner, buf, unpinned_positions, rng)
-        }
+        0..=16 => ShiftOp.apply_partial(planner, buf, rng, span, unpinned_positions),
+        17..=33 => SwapOp.apply_partial(planner, buf, rng, span, unpinned_positions),
+        34..=47 => DurationOp.apply_partial(planner, buf, rng, span, unpinned_positions),
+        48..=61 => ReorderOp.apply_partial(planner, buf, rng, span, unpinned_positions),
         62..=75 => neighbor_repair_depend_into(planner, buf, rng, Some(pinned_ids)),
         76..=85 => {
             if !neighbor_habit_anchor_into(planner, buf, rng, habit, pinned_ids) {
-                let idx = rng.random_range(0..unpinned_positions.len());
-                neighbor_shift_at_into(planner, buf, unpinned_positions[idx], rng, span)
+                ShiftOp.apply_partial(planner, buf, rng, span, unpinned_positions)
             } else {
                 true
             }
         }
         86..=91 => {
             if !neighbor_habit_exception_into(planner, buf, rng, habit, pinned_ids) {
-                let idx = rng.random_range(0..unpinned_positions.len());
-                neighbor_shift_at_into(planner, buf, unpinned_positions[idx], rng, span)
+                ShiftOp.apply_partial(planner, buf, rng, span, unpinned_positions)
             } else {
                 true
             }
@@ -1868,217 +1841,227 @@ fn generate_neighbor_partial_into(
     }
 }
 
-fn neighbor_shift_into(
-    planner: &Planner,
-    scheds: &mut [Placement],
-    rng: &mut impl Rng,
-    span: i64,
-) -> bool {
-    if scheds.is_empty() {
-        return false;
+// ── Neighbor operators ──────────────────────────────────────────────
+//
+// The four simple neighbor types (shift, swap, duration, reorder) share a
+// common skeleton: pick position(s), skip fixed tasks, compute new placement.
+// `NeighborOp` abstracts the full/partial position picking so that adding a
+// new simple neighbor only requires implementing `apply_at`.
+
+/// Neighbor operator that mutates one or two schedule positions.
+trait NeighborOp {
+    /// Number of schedule positions this operator reads/mutates (1 or 2).
+    const ARITY: usize;
+
+    /// Core mutation at the given positions. Positions are distinct and in
+    /// range. Returns false if the move is rejected (e.g. fixed task).
+    fn apply_at(
+        &self,
+        planner: &Planner,
+        scheds: &mut [Placement],
+        positions: &[usize],
+        rng: &mut impl Rng,
+        span: i64,
+    ) -> bool;
+
+    /// Full mode: pick positions from the entire schedule.
+    fn apply_full(
+        &self,
+        planner: &Planner,
+        scheds: &mut [Placement],
+        rng: &mut impl Rng,
+        span: i64,
+    ) -> bool {
+        let n = scheds.len();
+        if n < Self::ARITY {
+            return false;
+        }
+        let positions = pick_positions_full(Self::ARITY, n, rng);
+        self.apply_at(planner, scheds, &positions[..Self::ARITY], rng, span)
     }
-    let idx = rng.random_range(0..scheds.len());
-    let p = scheds[idx];
-    let start = p.start;
-    let end = p.end;
-    let task_id = p.task_id;
-    if planner.tasks[task_id].fixed {
-        return false;
+
+    /// Partial mode: pick positions from the unpinned set.
+    fn apply_partial(
+        &self,
+        planner: &Planner,
+        scheds: &mut [Placement],
+        rng: &mut impl Rng,
+        span: i64,
+        unpinned: &[usize],
+    ) -> bool {
+        if unpinned.len() < Self::ARITY {
+            return false;
+        }
+        let positions = pick_positions_from(Self::ARITY, unpinned, rng);
+        self.apply_at(planner, scheds, &positions[..Self::ARITY], rng, span)
     }
-    let dur = end.0 - start.0;
-    let range = shift_range_from_span(dur, rng, span);
-    let k = rand_range(rng, -range, range + 1);
-    let new_start_0 = (start.0 + k).max(planner.now.0);
-    scheds[idx] = TaskPlacement::new(Point(new_start_0), Point(new_start_0 + dur), task_id);
-    true
 }
 
-fn neighbor_shift_at_into(
-    planner: &Planner,
-    scheds: &mut [Placement],
-    idx: usize,
-    rng: &mut impl Rng,
-    span: i64,
-) -> bool {
-    let p = scheds[idx];
-    let start = p.start;
-    let end = p.end;
-    let task_id = p.task_id;
-    if planner.tasks[task_id].fixed {
-        return false;
+/// Pick `arity` distinct positions from `0..n`. Returns a stack-allocated
+/// `[usize; 2]`; only the first `arity` elements are meaningful.
+fn pick_positions_full(arity: usize, n: usize, rng: &mut impl Rng) -> [usize; 2] {
+    match arity {
+        1 => [rng.random_range(0..n), 0],
+        2 => {
+            let a = rng.random_range(0..n);
+            let mut b = rng.random_range(0..n);
+            if b == a {
+                b = (a + 1) % n;
+            }
+            [a, b]
+        }
+        _ => unreachable!(),
     }
-    let dur = end.0 - start.0;
-    let range = shift_range_from_span(dur, rng, span);
-    let k = rand_range(rng, -range, range + 1);
-    let new_start_0 = (start.0 + k).max(planner.now.0);
-    scheds[idx] = TaskPlacement::new(Point(new_start_0), Point(new_start_0 + dur), task_id);
-    true
 }
 
-fn neighbor_swap_into(planner: &Planner, scheds: &mut [Placement], rng: &mut impl Rng) -> bool {
-    if scheds.len() < 2 {
-        return false;
+/// Pick `arity` distinct positions from a pool. Returns a stack-allocated
+/// `[usize; 2]`; only the first `arity` elements are meaningful.
+fn pick_positions_from(arity: usize, pool: &[usize], rng: &mut impl Rng) -> [usize; 2] {
+    match arity {
+        1 => [pool[rng.random_range(0..pool.len())], 0],
+        2 => {
+            let a_idx = rng.random_range(0..pool.len());
+            let mut b_idx = rng.random_range(0..pool.len());
+            if b_idx == a_idx {
+                b_idx = (a_idx + 1) % pool.len();
+            }
+            [pool[a_idx], pool[b_idx]]
+        }
+        _ => unreachable!(),
     }
-    let a = rng.random_range(0..scheds.len());
-    let mut b = rng.random_range(0..scheds.len());
-    if b == a {
-        b = (a + 1) % scheds.len();
-    }
-    let a_p = scheds[a];
-    let a_s = a_p.start;
-    let a_e = a_p.end;
-    let a_id = a_p.task_id;
-    let b_p = scheds[b];
-    let b_s = b_p.start;
-    let b_e = b_p.end;
-    let b_id = b_p.task_id;
-    if planner.tasks[a_id].fixed || planner.tasks[b_id].fixed {
-        return false;
-    }
-    let a_dur = a_e.0 - a_s.0;
-    let b_dur = b_e.0 - b_s.0;
-    scheds[a] = TaskPlacement::new(b_s, Point(b_s.0 + a_dur), a_id);
-    scheds[b] = TaskPlacement::new(a_s, Point(a_s.0 + b_dur), b_id);
-    true
 }
 
-fn neighbor_swap_at_into(planner: &Planner, scheds: &mut [Placement], a: usize, b: usize) -> bool {
-    if a == b {
-        return false;
+// --- Shift: move a single task to a nearby start time ---
+
+struct ShiftOp;
+
+impl NeighborOp for ShiftOp {
+    const ARITY: usize = 1;
+
+    fn apply_at(
+        &self,
+        planner: &Planner,
+        scheds: &mut [Placement],
+        positions: &[usize],
+        rng: &mut impl Rng,
+        span: i64,
+    ) -> bool {
+        let idx = positions[0];
+        let p = scheds[idx];
+        let task_id = p.task_id;
+        if planner.tasks[task_id].fixed {
+            return false;
+        }
+        let dur = p.end.0 - p.start.0;
+        let range = shift_range_from_span(dur, rng, span);
+        let k = rand_range(rng, -range, range + 1);
+        let new_start_0 = (p.start.0 + k).max(planner.now.0);
+        scheds[idx] = TaskPlacement::new(Point(new_start_0), Point(new_start_0 + dur), task_id);
+        true
     }
-    let a_p = scheds[a];
-    let a_s = a_p.start;
-    let a_e = a_p.end;
-    let a_id = a_p.task_id;
-    let b_p = scheds[b];
-    let b_s = b_p.start;
-    let b_e = b_p.end;
-    let b_id = b_p.task_id;
-    if planner.tasks[a_id].fixed || planner.tasks[b_id].fixed {
-        return false;
-    }
-    let a_dur = a_e.0 - a_s.0;
-    let b_dur = b_e.0 - b_s.0;
-    scheds[a] = TaskPlacement::new(b_s, Point(b_s.0 + a_dur), a_id);
-    scheds[b] = TaskPlacement::new(a_s, Point(a_s.0 + b_dur), b_id);
-    true
 }
 
-fn neighbor_duration_into(planner: &Planner, scheds: &mut [Placement], rng: &mut impl Rng) -> bool {
-    if scheds.is_empty() {
-        return false;
+// --- Swap: exchange start times of two tasks ---
+
+struct SwapOp;
+
+impl NeighborOp for SwapOp {
+    const ARITY: usize = 2;
+
+    fn apply_at(
+        &self,
+        planner: &Planner,
+        scheds: &mut [Placement],
+        positions: &[usize],
+        _rng: &mut impl Rng,
+        _span: i64,
+    ) -> bool {
+        let (a, b) = (positions[0], positions[1]);
+        if a == b {
+            return false;
+        }
+        let a_p = scheds[a];
+        let b_p = scheds[b];
+        if planner.tasks[a_p.task_id].fixed || planner.tasks[b_p.task_id].fixed {
+            return false;
+        }
+        let a_dur = a_p.end.0 - a_p.start.0;
+        let b_dur = b_p.end.0 - b_p.start.0;
+        scheds[a] = TaskPlacement::new(b_p.start, Point(b_p.start.0 + a_dur), a_p.task_id);
+        scheds[b] = TaskPlacement::new(a_p.start, Point(a_p.start.0 + b_dur), b_p.task_id);
+        true
     }
-    let idx = rng.random_range(0..scheds.len());
-    let p = scheds[idx];
-    let start = p.start;
-    let end = p.end;
-    let task_id = p.task_id;
-    if planner.tasks[task_id].fixed {
-        return false;
-    }
-    let dur = end.0 - start.0;
-    if dur <= 1 {
-        return false;
-    }
-    let delta: i64 = if rng.random::<bool>() { 1 } else { -1 };
-    let new_dur = dur + delta;
-    if new_dur < 1 {
-        return false;
-    }
-    scheds[idx] = TaskPlacement::new(start, Point(start.0 + new_dur), task_id);
-    true
 }
 
-fn neighbor_duration_at_into(
-    planner: &Planner,
-    scheds: &mut [Placement],
-    idx: usize,
-    rng: &mut impl Rng,
-) -> bool {
-    let p = scheds[idx];
-    let start = p.start;
-    let end = p.end;
-    let task_id = p.task_id;
-    if planner.tasks[task_id].fixed {
-        return false;
+// --- Duration: shrink or grow a task by one slot ---
+
+struct DurationOp;
+
+impl NeighborOp for DurationOp {
+    const ARITY: usize = 1;
+
+    fn apply_at(
+        &self,
+        planner: &Planner,
+        scheds: &mut [Placement],
+        positions: &[usize],
+        rng: &mut impl Rng,
+        _span: i64,
+    ) -> bool {
+        let idx = positions[0];
+        let p = scheds[idx];
+        let task_id = p.task_id;
+        if planner.tasks[task_id].fixed {
+            return false;
+        }
+        let dur = p.end.0 - p.start.0;
+        if dur <= 1 {
+            return false;
+        }
+        let delta: i64 = if rng.random::<bool>() { 1 } else { -1 };
+        let new_dur = dur + delta;
+        if new_dur < 1 {
+            return false;
+        }
+        scheds[idx] = TaskPlacement::new(p.start, Point(p.start.0 + new_dur), task_id);
+        true
     }
-    let dur = end.0 - start.0;
-    if dur <= 1 {
-        return false;
-    }
-    let delta: i64 = if rng.random::<bool>() { 1 } else { -1 };
-    let new_dur = dur + delta;
-    if new_dur < 1 {
-        return false;
-    }
-    scheds[idx] = TaskPlacement::new(start, Point(start.0 + new_dur), task_id);
-    true
 }
 
-fn neighbor_reorder_into(planner: &Planner, scheds: &mut [Placement], rng: &mut impl Rng) -> bool {
-    if scheds.len() < 2 {
-        return false;
-    }
-    let a = rng.random_range(0..scheds.len());
-    let mut b = rng.random_range(0..scheds.len());
-    if b == a {
-        b = (a + 1) % scheds.len();
-    }
-    let a_p = scheds[a];
-    let b_p = scheds[b];
-    let a_s = a_p.start;
-    let a_id = a_p.task_id;
-    let b_s = b_p.start;
-    let b_id = b_p.task_id;
-    if planner.tasks[a_id].fixed || planner.tasks[b_id].fixed {
-        return false;
-    }
-    let (first, second) = if a_s.0 <= b_s.0 { (a, b) } else { (b, a) };
-    let f_s = scheds[first].start;
-    let f_e = scheds[first].end;
-    let f_dur = f_e.0 - f_s.0;
-    let s_s = scheds[second].start;
-    let s_e = scheds[second].end;
-    let s_dur = s_e.0 - s_s.0;
-    scheds[first] = TaskPlacement::new(s_s, Point(s_s.0 + f_dur), scheds[first].task_id);
-    scheds[second] = TaskPlacement::new(f_s, Point(f_s.0 + s_dur), scheds[second].task_id);
-    true
-}
+// --- Reorder: swap start times of two tasks, keeping durations ---
 
-fn neighbor_reorder_partial_into(
-    planner: &Planner,
-    scheds: &mut [Placement],
-    unpinned_positions: &[usize],
-    rng: &mut impl Rng,
-) -> bool {
-    let a_idx = rng.random_range(0..unpinned_positions.len());
-    let a = unpinned_positions[a_idx];
-    let mut b_idx = rng.random_range(0..unpinned_positions.len());
-    if b_idx == a_idx {
-        b_idx = (a_idx + 1) % unpinned_positions.len();
-    }
-    let b = unpinned_positions[b_idx];
+struct ReorderOp;
 
-    let a_p = scheds[a];
-    let b_p = scheds[b];
-    let a_id = a_p.task_id;
-    let b_id = b_p.task_id;
-    if planner.tasks[a_id].fixed || planner.tasks[b_id].fixed {
-        return false;
-    }
+impl NeighborOp for ReorderOp {
+    const ARITY: usize = 2;
 
-    let a_s = a_p.start;
-    let b_s = b_p.start;
-    let (first, second) = if a_s.0 <= b_s.0 { (a, b) } else { (b, a) };
-    let f_s = scheds[first].start;
-    let f_e = scheds[first].end;
-    let f_dur = f_e.0 - f_s.0;
-    let s_s = scheds[second].start;
-    let s_e = scheds[second].end;
-    let s_dur = s_e.0 - s_s.0;
-    scheds[first] = TaskPlacement::new(s_s, Point(s_s.0 + f_dur), scheds[first].task_id);
-    scheds[second] = TaskPlacement::new(f_s, Point(f_s.0 + s_dur), scheds[second].task_id);
-    true
+    fn apply_at(
+        &self,
+        planner: &Planner,
+        scheds: &mut [Placement],
+        positions: &[usize],
+        _rng: &mut impl Rng,
+        _span: i64,
+    ) -> bool {
+        let (a, b) = (positions[0], positions[1]);
+        let a_p = scheds[a];
+        let b_p = scheds[b];
+        if planner.tasks[a_p.task_id].fixed || planner.tasks[b_p.task_id].fixed {
+            return false;
+        }
+        let (first, second) = if a_p.start.0 <= b_p.start.0 {
+            (a, b)
+        } else {
+            (b, a)
+        };
+        let f_s = scheds[first].start;
+        let f_dur = scheds[first].end.0 - f_s.0;
+        let s_s = scheds[second].start;
+        let s_dur = scheds[second].end.0 - s_s.0;
+        scheds[first] = TaskPlacement::new(s_s, Point(s_s.0 + f_dur), scheds[first].task_id);
+        scheds[second] = TaskPlacement::new(f_s, Point(f_s.0 + s_dur), scheds[second].task_id);
+        true
+    }
 }
 
 fn neighbor_repair_depend_into(
@@ -2523,6 +2506,149 @@ mod tests {
             previous_schedule: vec![],
             ..Planner::default()
         }
+    }
+
+    fn simple_task(id: usize, start: i64, dur: u64, fixed: bool) -> Task {
+        Task {
+            id,
+            start: Some(Point(start)),
+            end: Point(start + 100),
+            cost_estimate: NormalDist::new(dur, 0),
+            depends: vec![],
+            parallelizable: false,
+            allows_parallel: false,
+            abandonability: 0.5.into(),
+            fixed,
+            habit_group: None,
+        }
+    }
+
+    #[test]
+    fn shift_op_preserves_duration_and_rejects_fixed() {
+        use rand::SeedableRng;
+        use rand::rngs::StdRng;
+
+        let planner = test_planner(vec![simple_task(0, 10, 4, false)]);
+        let mut buf = vec![TaskPlacement::new(Point(10), Point(14), 0)];
+        let mut rng = StdRng::seed_from_u64(0);
+        let span = 100;
+
+        // Succeeds and preserves duration
+        assert!(ShiftOp.apply_full(&planner, &mut buf, &mut rng, span));
+        assert_eq!(buf[0].end.0 - buf[0].start.0, 4);
+        assert!(buf[0].start.0 >= planner.now.0);
+
+        // Fixed task is rejected
+        let planner_fixed = test_planner(vec![simple_task(0, 10, 4, true)]);
+        let mut buf2 = vec![TaskPlacement::new(Point(10), Point(14), 0)];
+        let positions = [0usize, 0];
+        assert!(!ShiftOp.apply_at(&planner_fixed, &mut buf2, &positions[..1], &mut rng, span));
+    }
+
+    #[test]
+    fn swap_op_exchanges_start_times() {
+        use rand::SeedableRng;
+        use rand::rngs::StdRng;
+
+        let planner = test_planner(vec![
+            simple_task(0, 10, 4, false),
+            simple_task(1, 20, 6, false),
+        ]);
+        let mut buf = vec![
+            TaskPlacement::new(Point(10), Point(14), 0),
+            TaskPlacement::new(Point(20), Point(26), 1),
+        ];
+        let mut rng = StdRng::seed_from_u64(0);
+
+        // Apply swap at explicit positions
+        let positions = [0usize, 1];
+        assert!(SwapOp.apply_at(&planner, &mut buf, &positions, &mut rng, 0));
+        // Task 0 should now start at 20 (task 1's old start), task 1 at 10
+        assert_eq!(buf[0].start.0, 20);
+        assert_eq!(buf[1].start.0, 10);
+        // Durations preserved
+        assert_eq!(buf[0].end.0 - buf[0].start.0, 4);
+        assert_eq!(buf[1].end.0 - buf[1].start.0, 6);
+    }
+
+    #[test]
+    fn duration_op_changes_by_one() {
+        use rand::SeedableRng;
+        use rand::rngs::StdRng;
+
+        let planner = test_planner(vec![simple_task(0, 10, 4, false)]);
+        let mut buf = vec![TaskPlacement::new(Point(10), Point(14), 0)];
+        let orig_dur = buf[0].end.0 - buf[0].start.0;
+        let mut rng = StdRng::seed_from_u64(0);
+
+        let positions = [0usize, 0];
+        assert!(DurationOp.apply_at(&planner, &mut buf, &positions[..1], &mut rng, 0));
+        let new_dur = buf[0].end.0 - buf[0].start.0;
+        assert!(
+            (new_dur - orig_dur).abs() == 1,
+            "duration should change by ±1, got {new_dur}"
+        );
+        assert_eq!(buf[0].start.0, 10, "start should not change");
+    }
+
+    #[test]
+    fn reorder_op_swaps_starts_keeping_durations() {
+        let planner = test_planner(vec![
+            simple_task(0, 10, 4, false),
+            simple_task(1, 20, 6, false),
+        ]);
+        let mut buf = vec![
+            TaskPlacement::new(Point(10), Point(14), 0),
+            TaskPlacement::new(Point(20), Point(26), 1),
+        ];
+        let mut rng = rand::rng();
+
+        let positions = [0usize, 1];
+        assert!(ReorderOp.apply_at(&planner, &mut buf, &positions, &mut rng, 0));
+        // First (earlier) position gets second's start, second gets first's start
+        assert_eq!(buf[0].start.0, 20);
+        assert_eq!(buf[1].start.0, 10);
+        // Durations preserved
+        assert_eq!(buf[0].end.0 - buf[0].start.0, 4);
+        assert_eq!(buf[1].end.0 - buf[1].start.0, 6);
+    }
+
+    #[test]
+    fn arity_guard_rejects_small_schedules() {
+        let planner = test_planner(vec![simple_task(0, 10, 4, false)]);
+        let mut buf = vec![TaskPlacement::new(Point(10), Point(14), 0)];
+        let mut rng = rand::rng();
+
+        // Swap needs 2 positions, only 1 available
+        assert!(!SwapOp.apply_full(&planner, &mut buf, &mut rng, 0));
+        // Reorder needs 2 positions, only 1 available
+        assert!(!ReorderOp.apply_full(&planner, &mut buf, &mut rng, 0));
+    }
+
+    #[test]
+    fn partial_mode_uses_unpinned_positions() {
+        use rand::SeedableRng;
+        use rand::rngs::StdRng;
+
+        let planner = test_planner(vec![
+            simple_task(0, 10, 4, false),
+            simple_task(1, 20, 6, false),
+            simple_task(2, 30, 4, true),
+        ]);
+        let mut buf = vec![
+            TaskPlacement::new(Point(10), Point(14), 0),
+            TaskPlacement::new(Point(20), Point(26), 1),
+            TaskPlacement::new(Point(30), Point(34), 2),
+        ];
+        let mut rng = StdRng::seed_from_u64(0);
+        // Only positions 0 and 1 are unpinned
+        let unpinned = [0usize, 1];
+
+        // Shift should only touch unpinned positions
+        assert!(ShiftOp.apply_partial(&planner, &mut buf, &mut rng, 100, &unpinned));
+        // Position 2 (fixed) should be unchanged
+        assert_eq!(buf[2].start.0, 30);
+        assert_eq!(buf[2].end.0, 34);
     }
 
     #[test]
