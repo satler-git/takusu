@@ -1,10 +1,11 @@
 use std::sync::Weak;
 
 use async_trait::async_trait;
+use schemars::JsonSchema;
+use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::tools::takusu::{object, optional_i64, required_string};
-use crate::{InvalidArgsError, Tool, ToolError, ToolExposure, ToolOutput, ToolRegistry};
+use crate::{InvalidArgsError, ToolError, ToolExposure, ToolOutput, ToolRegistry, TypedTool};
 
 /// Search tool for discovering deferred tools.
 ///
@@ -22,8 +23,22 @@ impl ToolSearch {
     }
 }
 
+/// Arguments for [`ToolSearch`].
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ToolSearchParams {
+    /// Keywords describing the tool or task. Include tool names, nouns, or verbs. Examples: 'skill list', 'memory search', 'task progress', 'reschedule schedule'.
+    pub query: String,
+    /// Maximum number of tools to return (default 5).
+    #[serde(default)]
+    #[schemars(range(min = 1, max = 20))]
+    pub limit: Option<i64>,
+}
+
 #[async_trait]
-impl Tool for ToolSearch {
+impl TypedTool for ToolSearch {
+    type Params = ToolSearchParams;
+
     fn name(&self) -> &'static str {
         "tool_search"
     }
@@ -38,37 +53,16 @@ impl Tool for ToolSearch {
          keywords (e.g. 'memory', 'skill', 'progress', 'reschedule') to discover it."
     }
 
-    fn parameters_schema(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "Keywords describing the tool or task. Include tool names, nouns, or verbs. Examples: 'skill list', 'memory search', 'task progress', 'reschedule schedule'."
-                },
-                "limit": {
-                    "type": "integer",
-                    "description": "Maximum number of tools to return (default 5).",
-                    "minimum": 1,
-                    "maximum": 20
-                }
-            },
-            "required": ["query"],
-            "additionalProperties": false
-        })
-    }
-
-    async fn call(&self, args: Value) -> Result<ToolOutput, ToolError> {
+    async fn call_typed(&self, args: Self::Params) -> Result<ToolOutput, ToolError> {
         let registry = self.registry.upgrade().ok_or_else(|| {
             ToolError::InvalidArgs(InvalidArgsError::new("tool_search", "registry unavailable"))
         })?;
-        let args = object(args)?;
-        let query = required_string(&args, "query")?;
-        let limit = optional_i64(&args, "limit")?
+        let limit = args
+            .limit
             .map(|n| (n as usize).clamp(1, 20))
             .unwrap_or(5);
 
-        let entries = registry.search(&query, Some(limit));
+        let entries = registry.search(&args.query, Some(limit));
         let definitions: Vec<Value> = entries.iter().map(|e| e.definition.clone()).collect();
         let discovered: Vec<String> = entries.iter().map(|e| e.name.clone()).collect();
 

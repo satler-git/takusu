@@ -1,10 +1,10 @@
 use async_trait::async_trait;
+use schemars::JsonSchema;
 use serde::Deserialize;
-use serde_json::{Value, json};
 use std::sync::Arc;
 
 use crate::{
-    InvalidArgsError, Tool, ToolError, ToolOutput, ToolRegistry, UserInputProvider,
+    InvalidArgsError, ToolError, ToolOutput, ToolRegistry, TypedTool, UserInputProvider,
     UserInputQuestion,
 };
 
@@ -23,13 +23,18 @@ impl CorrectAsr {
     }
 }
 
-#[derive(Debug, Deserialize)]
-struct CorrectAsrArgs {
-    questions: Vec<UserInputQuestion>,
+/// Arguments for [`CorrectAsr`].
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CorrectAsrArgs {
+    /// List of ambiguous ASR snippets to ask the user to correct. Group multiple questions into one call.
+    pub questions: Vec<UserInputQuestion>,
 }
 
 #[async_trait]
-impl Tool for CorrectAsr {
+impl TypedTool for CorrectAsr {
+    type Params = CorrectAsrArgs;
+
     fn name(&self) -> &'static str {
         "correct_asr"
     }
@@ -38,51 +43,25 @@ impl Tool for CorrectAsr {
         "Ask the user to correct ambiguous ASR text. First state your interpretation. Infer obvious ASR errors from context without asking; use this tool only when context is insufficient to disambiguate proper nouns, homonyms, numbers, dates, days of the week, or the action target. Group multiple questions into one call."
     }
 
-    fn parameters_schema(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "questions": {
-                    "type": "array",
-                    "description": "List of ambiguous ASR snippets to ask the user to correct. Group multiple questions into one call.",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "text": { "type": "string", "description": "The ASR-recognized text that may be wrong" },
-                            "for": { "type": "string", "description": "What this text is used for and why it is ambiguous" }
-                        },
-                        "required": ["text", "for"],
-                        "additionalProperties": false
-                    }
-                }
-            },
-            "required": ["questions"],
-            "additionalProperties": false
-        })
+    fn validate_args(&self, args: &Self::Params) -> Result<(), InvalidArgsError> {
+        if args.questions.is_empty() {
+            return Err(InvalidArgsError::new("questions", "must not be empty"));
+        }
+        Ok(())
     }
 
-    async fn call(&self, _args: Value) -> Result<ToolOutput, ToolError> {
+    async fn call_typed(&self, _args: Self::Params) -> Result<ToolOutput, ToolError> {
         Err(ToolError::InvalidArgs(InvalidArgsError::new(
             "call_id",
             "correct_asr requires a tool-call id; use call_with_id",
         )))
     }
 
-    async fn call_with_id(&self, call_id: &str, args: Value) -> Result<ToolOutput, ToolError> {
-        let args: CorrectAsrArgs = serde_json::from_value(args).map_err(|e| {
-            ToolError::InvalidArgs(InvalidArgsError::new(
-                "questions",
-                format!("invalid correct_asr arguments: {e}"),
-            ))
-        })?;
-
-        if args.questions.is_empty() {
-            return Err(ToolError::InvalidArgs(InvalidArgsError::new(
-                "questions",
-                "must not be empty",
-            )));
-        }
-
+    async fn call_typed_with_id(
+        &self,
+        call_id: &str,
+        args: Self::Params,
+    ) -> Result<ToolOutput, ToolError> {
         let answers = self.provider.request(call_id, args.questions).await?;
         let content = serde_json::to_string(&answers).map_err(|e| ToolError::Other(Box::new(e)))?;
 
@@ -95,13 +74,15 @@ impl Tool for CorrectAsr {
 
 /// Registers the `correct_asr` user-input tool.
 pub fn register_user_input_tool(registry: &mut ToolRegistry, provider: Arc<dyn UserInputProvider>) {
-    registry.register(Box::new(CorrectAsr::new(provider)));
+    registry.register(Box::new(crate::tool::Typed(CorrectAsr::new(provider))));
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tool::Typed;
     use crate::{StubUserInputProvider, Tool, UserInputAnswer, UserInputProvider};
+    use serde_json::json;
 
     #[derive(Debug)]
     struct TestProvider {
@@ -134,9 +115,9 @@ mod tests {
 
     #[tokio::test]
     async fn correct_asr_returns_provider_answers_as_json() {
-        let tool = CorrectAsr::new(Arc::new(TestProvider {
+        let tool = Typed(CorrectAsr::new(Arc::new(TestProvider {
             suffix: "fixed".into(),
-        }));
+        })));
         let args = json!({
             "questions": [
                 { "text": "kore", "for": "test" },
@@ -150,9 +131,9 @@ mod tests {
 
     #[tokio::test]
     async fn correct_asr_rejects_empty_questions() {
-        let tool = CorrectAsr::new(Arc::new(TestProvider {
+        let tool = Typed(CorrectAsr::new(Arc::new(TestProvider {
             suffix: "fixed".into(),
-        }));
+        })));
         let args = json!({ "questions": [] });
         let result = tool.call_with_id("call-1", args).await;
         assert!(matches!(result, Err(ToolError::InvalidArgs(_))));
@@ -160,9 +141,9 @@ mod tests {
 
     #[tokio::test]
     async fn correct_asr_rejects_missing_questions() {
-        let tool = CorrectAsr::new(Arc::new(TestProvider {
+        let tool = Typed(CorrectAsr::new(Arc::new(TestProvider {
             suffix: "fixed".into(),
-        }));
+        })));
         let result = tool.call_with_id("call-1", json!({})).await;
         assert!(matches!(result, Err(ToolError::InvalidArgs(_))));
     }

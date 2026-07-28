@@ -16,7 +16,7 @@ expression: def
           "type": "integer"
         },
         "rrule": {
-          "description": "RFC 5545 recurrence rule. May include a DTSTART line and/or EXDATE lines. Example: 'DTSTART:20260727T090000Z\nRRULE:FREQ=DAILY;COUNT=4;BYDAY=MO,TU,WE,TH,FR'",
+          "description": "RFC 5545 recurrence rule. May include a DTSTART line and/or EXDATE lines. Example: 'DTSTART:20260727T090000Z\\nRRULE:FREQ=DAILY;COUNT=4;BYDAY=MO,TU,WE,TH,FR'",
           "type": "string"
         }
       },

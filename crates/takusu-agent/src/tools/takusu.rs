@@ -45,9 +45,9 @@ pub fn register_tools(
     }));
     crate::tools::skills::register_tools(registry, client.clone());
     crate::tools::user_input::register_user_input_tool(registry, user_input_provider);
-    registry.register(Box::new(
+    registry.register(Box::new(crate::tool::Typed(
         crate::tools::tool_search::ToolSearch::from_registry(registry_ref),
-    ));
+    )));
 }
 
 /// Registers the read-only planner tools used by the agent.

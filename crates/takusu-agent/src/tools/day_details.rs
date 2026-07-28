@@ -10,16 +10,18 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use jiff::ToSpan;
+use schemars::JsonSchema;
+use serde::Deserialize;
 use serde_json::{Value, json};
 use takusu_client::{Client, ScheduleEntry, TaskQuery, TaskRow};
 use takusu_util::parse_date_expression;
 
 use crate::tools::takusu::TimeZoneCache;
 use crate::tools::takusu::client_error;
-use crate::{InvalidArgsError, Tool, ToolError, ToolOutput, ToolRegistry};
+use crate::{InvalidArgsError, ToolError, ToolOutput, ToolRegistry, TypedTool};
 
 pub fn register_tools(registry: &mut ToolRegistry, client: Client, tz_cache: TimeZoneCache) {
-    registry.register(Box::new(DayDetails { client, tz_cache }));
+    registry.register(Box::new(crate::tool::Typed(DayDetails { client, tz_cache })));
 }
 
 struct DayDetails {
@@ -27,8 +29,22 @@ struct DayDetails {
     tz_cache: TimeZoneCache,
 }
 
+/// Arguments for [`DayDetails`].
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct DayDetailsArgs {
+    /// Date expressions such as '2026-07-27', 'today', or '3d'.
+    #[schemars(length(min = 1))]
+    dates: Vec<String>,
+    /// If true, include schedule entries for each day. Default false.
+    #[serde(default)]
+    include_schedule: bool,
+}
+
 #[async_trait]
-impl Tool for DayDetails {
+impl TypedTool for DayDetails {
+    type Params = DayDetailsArgs;
+
     fn name(&self) -> &'static str {
         "day_details"
     }
@@ -39,49 +55,18 @@ impl Tool for DayDetails {
         or relative (today, tomorrow, 7d, -3d)."
     }
 
-    fn parameters_schema(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "dates": {
-                    "type": "array",
-                    "items": { "type": "string" },
-                    "minItems": 1,
-                    "description": "Date expressions such as '2026-07-27', 'today', or '3d'."
-                },
-                "include_schedule": {
-                    "type": "boolean",
-                    "description": "If true, include schedule entries for each day. Default false."
-                }
-            },
-            "required": ["dates"],
-            "additionalProperties": false
-        })
+    fn validate_args(&self, args: &Self::Params) -> Result<(), InvalidArgsError> {
+        if args.dates.is_empty() {
+            return Err(InvalidArgsError::new("dates", "must be a non-empty array"));
+        }
+        Ok(())
     }
 
-    async fn call(&self, args: Value) -> Result<ToolOutput, ToolError> {
-        let dates = args
-            .get("dates")
-            .and_then(Value::as_array)
-            .filter(|a| !a.is_empty())
-            .ok_or_else(|| {
-                ToolError::InvalidArgs(InvalidArgsError::new("dates", "must be a non-empty array"))
-            })?;
-        let include_schedule = args
-            .get("include_schedule")
-            .and_then(Value::as_bool)
-            .unwrap_or(false);
-
+    async fn call_typed(&self, args: Self::Params) -> Result<ToolOutput, ToolError> {
         let tz = self.tz_cache.get_with_fallback().await;
 
-        let mut parsed_dates = Vec::with_capacity(dates.len());
-        for (idx, v) in dates.iter().enumerate() {
-            let s = v.as_str().ok_or_else(|| {
-                ToolError::InvalidArgs(InvalidArgsError::new(
-                    "dates",
-                    format!("item {idx} must be a string"),
-                ))
-            })?;
+        let mut parsed_dates = Vec::with_capacity(args.dates.len());
+        for s in &args.dates {
             let ts = parse_date_expression(s, &tz, false).map_err(|e| {
                 ToolError::InvalidArgs(InvalidArgsError::new(
                     "dates",
@@ -95,7 +80,7 @@ impl Tool for DayDetails {
 
         let mut results = Vec::with_capacity(parsed_dates.len());
 
-        if include_schedule {
+        if args.include_schedule {
             let c1 = self.client.clone();
             let c2 = self.client.clone();
             let (schedule_row, tasks) =

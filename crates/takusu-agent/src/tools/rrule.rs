@@ -7,7 +7,8 @@
 
 use async_trait::async_trait;
 use jiff::{ToSpan, civil::Date};
-use serde_json::{Value, json};
+use schemars::JsonSchema;
+use serde::Deserialize;
 use takusu_core::{NormalDist, Point, SLOT_MINUTES};
 use takusu_habit::{
     Frequency, NWeekday, ParsedRule, RecurrenceGenerator, TimeOfDay, Until, Weekday,
@@ -16,18 +17,31 @@ use takusu_habit::{
 
 use crate::tools::other_error;
 use crate::tools::takusu::TimeZoneCache;
-use crate::{InvalidArgsError, Tool, ToolError, ToolExposure, ToolOutput, ToolRegistry};
+use crate::{InvalidArgsError, ToolError, ToolExposure, ToolOutput, ToolRegistry, TypedTool};
 
 pub fn register_tools(registry: &mut ToolRegistry, tz_cache: TimeZoneCache) {
-    registry.register(Box::new(ExpandRRule { tz_cache }));
+    registry.register(Box::new(crate::tool::Typed(ExpandRRule { tz_cache })));
 }
 
 struct ExpandRRule {
     tz_cache: TimeZoneCache,
 }
 
+/// Arguments for [`ExpandRRule`].
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct ExpandRRuleArgs {
+    /// RFC 5545 recurrence rule. May include a DTSTART line and/or EXDATE lines. Example: 'DTSTART:20260727T090000Z\nRRULE:FREQ=DAILY;COUNT=4;BYDAY=MO,TU,WE,TH,FR'
+    rrule: String,
+    /// Number of datetimes to return.
+    #[schemars(range(min = 1, max = 1000))]
+    count: u64,
+}
+
 #[async_trait]
-impl Tool for ExpandRRule {
+impl TypedTool for ExpandRRule {
+    type Params = ExpandRRuleArgs;
+
     fn name(&self) -> &'static str {
         "expand_rrule"
     }
@@ -43,50 +57,20 @@ impl Tool for ExpandRRule {
         ToolExposure::Deferred
     }
 
-    fn parameters_schema(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "rrule": {
-                    "type": "string",
-                    "description": "RFC 5545 recurrence rule. May include a DTSTART line and/or EXDATE lines. Example: 'DTSTART:20260727T090000Z\nRRULE:FREQ=DAILY;COUNT=4;BYDAY=MO,TU,WE,TH,FR'"
-                },
-                "count": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "maximum": 1000,
-                    "description": "Number of datetimes to return."
-                }
-            },
-            "required": ["rrule", "count"],
-            "additionalProperties": false
-        })
+    fn validate_args(&self, args: &Self::Params) -> Result<(), InvalidArgsError> {
+        if args.rrule.is_empty() {
+            return Err(InvalidArgsError::new("rrule", "missing or empty"));
+        }
+        if !(1..=1000).contains(&args.count) {
+            return Err(InvalidArgsError::new(
+                "count",
+                "must be an integer between 1 and 1000",
+            ));
+        }
+        Ok(())
     }
 
-    async fn call(&self, args: Value) -> Result<ToolOutput, ToolError> {
-        let args = args.as_object().ok_or_else(|| {
-            ToolError::InvalidArgs(InvalidArgsError::new("args", "must be an object"))
-        })?;
-
-        let rrule_str = args
-            .get("rrule")
-            .and_then(Value::as_str)
-            .filter(|s| !s.is_empty())
-            .ok_or_else(|| {
-                ToolError::InvalidArgs(InvalidArgsError::new("rrule", "missing or empty"))
-            })?;
-
-        let count = args
-            .get("count")
-            .and_then(Value::as_u64)
-            .and_then(|n| (1..=1000).contains(&n).then_some(n as usize))
-            .ok_or_else(|| {
-                ToolError::InvalidArgs(InvalidArgsError::new(
-                    "count",
-                    "must be an integer between 1 and 1000",
-                ))
-            })?;
-
+    async fn call_typed(&self, args: Self::Params) -> Result<ToolOutput, ToolError> {
         let tz = self.tz_cache.get_with_fallback().await;
 
         let default_start = jiff::Timestamp::now()
@@ -94,10 +78,10 @@ impl Tool for ExpandRRule {
             .start_of_day()
             .map_err(|e| ToolError::Other(Box::new(e)))?;
 
-        let parsed = parse_rrule(rrule_str, &default_start)
+        let parsed = parse_rrule(&args.rrule, &default_start)
             .map_err(|e| ToolError::InvalidArgs(InvalidArgsError::no_field(e.to_string())))?;
 
-        let dates = expand_dates(&parsed, count)?;
+        let dates = expand_dates(&parsed, args.count as usize)?;
 
         Ok(ToolOutput {
             content: serde_json::to_string(&dates).unwrap_or_default(),
