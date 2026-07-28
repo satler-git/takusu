@@ -16,7 +16,7 @@ pub use enum_label::{
     enum_serde,
 };
 pub use quantity::{Quantity, QuantityError};
-pub use time_types::{Date, TimeOfDay, TimeParseError, Timestamp};
+pub use time_types::{Date, TimeOfDay, TimeParseError, Timestamp, minutes_between_ts};
 
 pub use takusu_search::date::{
     later_timestamp, minutes_between, now_rfc3339, now_timestamp, parse_date_expression,

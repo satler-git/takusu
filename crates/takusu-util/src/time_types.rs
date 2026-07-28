@@ -260,6 +260,13 @@ impl Timestamp {
     }
 }
 
+/// Whole minutes between two timestamps, returning at least 1 to avoid
+/// degenerate speed observations (mirrors `takusu_search::date::minutes_between`
+/// but operates on typed `Timestamp` values instead of strings).
+pub fn minutes_between_ts(start: Timestamp, end: Timestamp) -> i64 {
+    ((end.as_second() - start.as_second()) / 60).max(1)
+}
+
 impl std::fmt::Display for Timestamp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // jiff::Timestamp displays as RFC 3339 (e.g. "2025-01-01T00:00:00Z")
@@ -532,5 +539,13 @@ mod tests {
         let jst = jiff::tz::TimeZone::get("Asia/Tokyo").unwrap();
         let ts = Timestamp::parse_with_tz("2025-01-01T00:00:00Z", &jst).unwrap();
         assert_eq!(ts.as_second(), 1735689600);
+    }
+
+    #[test]
+    fn minutes_between_ts_returns_whole_minutes() {
+        let a = Timestamp::from_second(1735689600).unwrap(); // 2025-01-01T00:00:00Z
+        let b = Timestamp::from_second(1735689660).unwrap(); // +60s
+        assert_eq!(minutes_between_ts(a, b), 1);
+        assert_eq!(minutes_between_ts(a, a), 1); // degenerate → at least 1
     }
 }

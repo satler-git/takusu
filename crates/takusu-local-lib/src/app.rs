@@ -1496,16 +1496,10 @@ impl TakusuApp {
             {
                 continue;
             }
-            let avg_minutes = takusu_util::minutes_between(&event.start_at, &event.end_at).max(1);
+            let start_at: takusu_util::Timestamp = event.start_at.into();
+            let end_at: takusu_util::Timestamp = event.end_at.into();
+            let avg_minutes = takusu_util::minutes_between_ts(start_at, end_at);
             validate_minutes(avg_minutes, Some(0))?;
-            let start_at: takusu_util::Timestamp = event
-                .start_at
-                .parse()
-                .map_err(|e| AppError::BadRequest(format!("invalid start_at: {e}")))?;
-            let end_at: takusu_util::Timestamp = event
-                .end_at
-                .parse()
-                .map_err(|e| AppError::BadRequest(format!("invalid end_at: {e}")))?;
             let task = self
                 .storage
                 .create_task(&CreateTask {
