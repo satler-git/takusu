@@ -30,17 +30,15 @@ verification. Safe today because all user values go through `?` bindings, but
 removes sqlx's guard against future accidental string interpolation. If
 refactoring, replace with `sqlx::query_builder` or array binding.
 
-## `TAKUSU_WORKERS_URL` `|` split hack
+## ~~`TAKUSU_WORKERS_URL` `|` split hack~~ FIXED
 
-**File:** `takusu-local/src/main.rs`
+**Files:** `takusu-local/src/main.rs`, `takusu-cli/src/main.rs`,
+`takusu-web/src/lib.rs`
 
-```rust
-cfg.workers_url().split('|').next()
-```
-
-The config crate's env separator collides with `TAKUSU_WORKERS_URL` containing
-`://`. The `|` split is a fragile workaround. The second segment (after `|`) is
-unused/undocumented.
+The `split('|').next()` workaround has been removed from all three call sites.
+`worker_url` is now treated as a single URL string. The 2nd+ `|`-separated
+segments were never used or documented, so dropping the split fixes URLs that
+contain `|` without losing any real functionality.
 
 ## ~~Fire-and-forget Google Calendar sync~~ FIXED
 
