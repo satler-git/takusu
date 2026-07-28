@@ -6,6 +6,7 @@
 
 use futures_util::TryStreamExt;
 use serde::{Deserialize, Serialize};
+use takusu_util::enum_label;
 
 use crate::tts::{TextToSpeech, TtsError, TtsRequest, TtsStream};
 
@@ -14,12 +15,61 @@ const DEFAULT_VERSION: &str = "2026-03-01";
 const DEFAULT_MODEL_ID: &str = "sonic-3.5";
 const DEFAULT_VOICE_ID: &str = "db6b0ed5-d5d3-463d-ae85-518a07d3c2b4";
 
+enum_label! {
+    /// Audio container format for Cartesia Sonic.
+    ///
+    /// See <https://docs.cartesia.ai/api-reference/tts/bytes> for the list of
+    /// supported containers.
+    pub enum CartesiaContainer {
+        #[default] Wav = "wav",
+        Raw = "raw",
+        Mp3 = "mp3",
+    }
+}
+
+enum_label! {
+    /// PCM encoding for Cartesia Sonic raw/wav output.
+    ///
+    /// Cartesia accepts a fixed set of PCM encodings; this enum prevents
+    /// arbitrary strings from reaching the API. The wire labels are defined
+    /// once via `enum_label!` and shared by `Display`, `FromStr`, and serde.
+    pub enum CartesiaEncoding {
+        #[default] PcmS16Le = "pcm_s16le",
+        PcmF32Le = "pcm_f32le",
+        PcmMulaw = "pcm_mulaw",
+        PcmAlaw = "pcm_alaw",
+    }
+}
+
+impl CartesiaEncoding {
+    /// Parse an encoding from its Cartesia wire string (case-insensitive).
+    ///
+    /// The `enum_label!`-generated `FromStr` is case-sensitive (labels are
+    /// lowercase), so we lower-case the input first.
+    pub fn from_wire_str(s: &str) -> Option<Self> {
+        s.to_lowercase().parse().ok()
+    }
+}
+
+enum_label! {
+    /// Emotion for Cartesia Sonic generation.
+    ///
+    /// Cartesia only accepts `neutral` / `happy` / `sad` / `angry`; this enum
+    /// prevents arbitrary strings from reaching the API.
+    pub enum CartesiaEmotion {
+        #[default] Neutral = "neutral",
+        Happy = "happy",
+        Sad = "sad",
+        Angry = "angry",
+    }
+}
+
 /// Audio output format for Cartesia Sonic.
 #[derive(Debug, Clone, Serialize)]
 pub struct CartesiaOutputFormat {
-    pub container: String,
-    #[serde(skip_serializing_if = "String::is_empty")]
-    pub encoding: String,
+    pub container: CartesiaContainer,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub encoding: Option<CartesiaEncoding>,
     pub sample_rate: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bit_rate: Option<u32>,
@@ -28,8 +78,8 @@ pub struct CartesiaOutputFormat {
 impl Default for CartesiaOutputFormat {
     fn default() -> Self {
         Self {
-            container: "wav".to_string(),
-            encoding: "pcm_s16le".to_string(),
+            container: CartesiaContainer::Wav,
+            encoding: Some(CartesiaEncoding::PcmS16Le),
             sample_rate: 44100,
             bit_rate: None,
         }
@@ -38,20 +88,20 @@ impl Default for CartesiaOutputFormat {
 
 impl CartesiaOutputFormat {
     /// Raw PCM output.
-    pub fn raw(encoding: impl Into<String>, sample_rate: u32) -> Self {
+    pub fn raw(encoding: CartesiaEncoding, sample_rate: u32) -> Self {
         Self {
-            container: "raw".to_string(),
-            encoding: encoding.into(),
+            container: CartesiaContainer::Raw,
+            encoding: Some(encoding),
             sample_rate,
             bit_rate: None,
         }
     }
 
     /// WAV output.
-    pub fn wav(encoding: impl Into<String>, sample_rate: u32) -> Self {
+    pub fn wav(encoding: CartesiaEncoding, sample_rate: u32) -> Self {
         Self {
-            container: "wav".to_string(),
-            encoding: encoding.into(),
+            container: CartesiaContainer::Wav,
+            encoding: Some(encoding),
             sample_rate,
             bit_rate: None,
         }
@@ -60,8 +110,8 @@ impl CartesiaOutputFormat {
     /// MP3 output.
     pub fn mp3(sample_rate: u32, bit_rate: u32) -> Self {
         Self {
-            container: "mp3".to_string(),
-            encoding: String::new(),
+            container: CartesiaContainer::Mp3,
+            encoding: None,
             sample_rate,
             bit_rate: Some(bit_rate),
         }
@@ -76,7 +126,7 @@ pub struct CartesiaGenerationConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub speed: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub emotion: Option<String>,
+    pub emotion: Option<CartesiaEmotion>,
 }
 
 /// Configuration for the Cartesia Sonic TTS backend.
@@ -284,14 +334,18 @@ fn output_format_for_request(
         return config_format.clone();
     };
 
-    match response_format.to_lowercase().as_str() {
-        "wav" => CartesiaOutputFormat::wav("pcm_s16le", config_format.sample_rate),
+    // The response_format comes from the provider-neutral `TtsOptions` which
+    // is shared across backends, so it stays a `String`. Here we map it to
+    // Cartesia's typed container/encoding enums.
+    let lower = response_format.to_lowercase();
+    if let Some(encoding) = CartesiaEncoding::from_wire_str(&lower) {
+        // Bare encoding names (pcm_s16le, pcm_f32le, ...) imply raw container.
+        return CartesiaOutputFormat::raw(encoding, config_format.sample_rate);
+    }
+    match lower.as_str() {
+        "wav" => CartesiaOutputFormat::wav(CartesiaEncoding::PcmS16Le, config_format.sample_rate),
         "mp3" => CartesiaOutputFormat::mp3(config_format.sample_rate, 128_000),
-        "raw" => CartesiaOutputFormat::raw("pcm_s16le", config_format.sample_rate),
-        "pcm_s16le" => CartesiaOutputFormat::raw("pcm_s16le", config_format.sample_rate),
-        "pcm_f32le" => CartesiaOutputFormat::raw("pcm_f32le", config_format.sample_rate),
-        "pcm_mulaw" => CartesiaOutputFormat::raw("pcm_mulaw", config_format.sample_rate),
-        "pcm_alaw" => CartesiaOutputFormat::raw("pcm_alaw", config_format.sample_rate),
+        "raw" => CartesiaOutputFormat::raw(CartesiaEncoding::PcmS16Le, config_format.sample_rate),
         _ => config_format.clone(),
     }
 }
@@ -338,20 +392,20 @@ mod tests {
         };
 
         let wav = output_format_for_request(&config, &request("wav"));
-        assert_eq!(wav.container, "wav");
-        assert_eq!(wav.encoding, "pcm_s16le");
+        assert_eq!(wav.container, CartesiaContainer::Wav);
+        assert_eq!(wav.encoding, Some(CartesiaEncoding::PcmS16Le));
 
         let raw = output_format_for_request(&config, &request("raw"));
-        assert_eq!(raw.container, "raw");
-        assert_eq!(raw.encoding, "pcm_s16le");
+        assert_eq!(raw.container, CartesiaContainer::Raw);
+        assert_eq!(raw.encoding, Some(CartesiaEncoding::PcmS16Le));
 
         let mp3 = output_format_for_request(&config, &request("mp3"));
-        assert_eq!(mp3.container, "mp3");
+        assert_eq!(mp3.container, CartesiaContainer::Mp3);
         assert_eq!(mp3.bit_rate, Some(128_000));
 
         let f32le = output_format_for_request(&config, &request("pcm_f32le"));
-        assert_eq!(f32le.container, "raw");
-        assert_eq!(f32le.encoding, "pcm_f32le");
+        assert_eq!(f32le.container, CartesiaContainer::Raw);
+        assert_eq!(f32le.encoding, Some(CartesiaEncoding::PcmF32Le));
     }
 
     #[tokio::test]
@@ -367,5 +421,183 @@ mod tests {
         };
         let audio = tts.synthesize(&request).await.unwrap();
         assert!(audio.is_empty());
+    }
+
+    // --- Characterization tests for JSON wire format ---
+    //
+    // These tests pin down the exact JSON sent to the Cartesia API so that
+    // refactoring `container` / `encoding` / `emotion` from `String` to enums
+    // does not change the on-the-wire representation.
+
+    #[test]
+    fn output_format_default_serializes_to_wav_pcm_s16le() {
+        let format = CartesiaOutputFormat::default();
+        let json = serde_json::to_value(&format).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "container": "wav",
+                "encoding": "pcm_s16le",
+                "sample_rate": 44100,
+            })
+        );
+    }
+
+    #[test]
+    fn output_format_mp3_skips_encoding_field() {
+        let format = CartesiaOutputFormat::mp3(44100, 128_000);
+        let json = serde_json::to_value(&format).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "container": "mp3",
+                "sample_rate": 44100,
+                "bit_rate": 128_000,
+            })
+        );
+        // encoding must not appear in the serialized output for mp3.
+        assert!(json.get("encoding").is_none());
+    }
+
+    #[test]
+    fn output_format_raw_serializes_encoding() {
+        let format = CartesiaOutputFormat::raw(CartesiaEncoding::PcmF32Le, 16_000);
+        let json = serde_json::to_value(&format).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "container": "raw",
+                "encoding": "pcm_f32le",
+                "sample_rate": 16000,
+            })
+        );
+        assert!(json.get("bit_rate").is_none());
+    }
+
+    #[test]
+    fn output_format_wav_serializes_encoding() {
+        let format = CartesiaOutputFormat::wav(CartesiaEncoding::PcmMulaw, 8_000);
+        let json = serde_json::to_value(&format).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "container": "wav",
+                "encoding": "pcm_mulaw",
+                "sample_rate": 8000,
+            })
+        );
+    }
+
+    #[test]
+    fn generation_config_emotion_serializes_as_string() {
+        let config = CartesiaGenerationConfig {
+            emotion: Some(CartesiaEmotion::Happy),
+            ..Default::default()
+        };
+        let json = serde_json::to_value(&config).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "emotion": "happy",
+            })
+        );
+    }
+
+    #[test]
+    fn generation_config_empty_skips_all_fields() {
+        let config = CartesiaGenerationConfig::default();
+        let json = serde_json::to_value(&config).unwrap();
+        assert_eq!(json, serde_json::json!({}));
+    }
+
+    #[test]
+    fn output_format_for_request_unknown_format_falls_back_to_config() {
+        let config = CartesiaOutputFormat::default();
+        let request = TtsRequest {
+            text: "hello".to_string(),
+            options: TtsOptions {
+                response_format: Some("ogg".to_string()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let result = output_format_for_request(&config, &request);
+        // Unknown formats fall back to the config format unchanged.
+        assert_eq!(result.container, config.container);
+        assert_eq!(result.encoding, config.encoding);
+    }
+
+    #[test]
+    fn output_format_for_request_is_case_insensitive() {
+        let config = CartesiaOutputFormat::default();
+        let request = |format: &str| TtsRequest {
+            text: "hello".to_string(),
+            options: TtsOptions {
+                response_format: Some(format.to_string()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let wav = output_format_for_request(&config, &request("WAV"));
+        assert_eq!(wav.container, CartesiaContainer::Wav);
+        assert_eq!(wav.encoding, Some(CartesiaEncoding::PcmS16Le));
+
+        let mp3 = output_format_for_request(&config, &request("MP3"));
+        assert_eq!(mp3.container, CartesiaContainer::Mp3);
+    }
+
+    #[test]
+    fn cartesia_encoding_from_wire_str_roundtrips() {
+        for encoding in [
+            CartesiaEncoding::PcmS16Le,
+            CartesiaEncoding::PcmF32Le,
+            CartesiaEncoding::PcmMulaw,
+            CartesiaEncoding::PcmAlaw,
+        ] {
+            let s = encoding.to_string();
+            assert_eq!(CartesiaEncoding::from_wire_str(&s), Some(encoding));
+            assert_eq!(
+                CartesiaEncoding::from_wire_str(&s.to_uppercase()),
+                Some(encoding),
+            );
+        }
+        assert_eq!(CartesiaEncoding::from_wire_str("unknown"), None);
+    }
+
+    #[test]
+    fn cartesia_emotion_serializes_to_lowercase() {
+        assert_eq!(
+            serde_json::to_value(CartesiaEmotion::Neutral).unwrap(),
+            serde_json::json!("neutral"),
+        );
+        assert_eq!(
+            serde_json::to_value(CartesiaEmotion::Happy).unwrap(),
+            serde_json::json!("happy"),
+        );
+        assert_eq!(
+            serde_json::to_value(CartesiaEmotion::Sad).unwrap(),
+            serde_json::json!("sad"),
+        );
+        assert_eq!(
+            serde_json::to_value(CartesiaEmotion::Angry).unwrap(),
+            serde_json::json!("angry"),
+        );
+    }
+
+    #[test]
+    fn cartesia_container_serializes_to_lowercase() {
+        assert_eq!(
+            serde_json::to_value(CartesiaContainer::Wav).unwrap(),
+            serde_json::json!("wav"),
+        );
+        assert_eq!(
+            serde_json::to_value(CartesiaContainer::Raw).unwrap(),
+            serde_json::json!("raw"),
+        );
+        assert_eq!(
+            serde_json::to_value(CartesiaContainer::Mp3).unwrap(),
+            serde_json::json!("mp3"),
+        );
     }
 }

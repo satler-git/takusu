@@ -21,7 +21,8 @@ pub use hush::Hush;
 pub use sherpa::{SherpaOnnxAsr, SherpaOnnxAsrConfig, SherpaOnnxModel};
 
 pub use cartesia::{
-    CartesiaGenerationConfig, CartesiaOutputFormat, CartesiaSonic, CartesiaSonicConfig,
+    CartesiaContainer, CartesiaEmotion, CartesiaEncoding, CartesiaGenerationConfig,
+    CartesiaOutputFormat, CartesiaSonic, CartesiaSonicConfig,
 };
 pub use models::{
     DownloadProgress, DownloadStage, ModelCache, ModelError, ModelRegistry, ModelSpec,
