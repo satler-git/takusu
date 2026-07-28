@@ -19,4 +19,3 @@ tokio = { workspace = true }
 takusu-audio = { workspace = true }
 
 clap = { version = "4", features = ["derive"] }
-hound = "3.5"
