@@ -15,7 +15,7 @@ use takusu_storage::{
 };
 use takusu_util::search::{EvalContext, filter_tasks};
 use takusu_util::{DEFAULT_AUD, SCOPE_READ_WRITE};
-use takusu_util::{EnumLabel, Quantity, TaskStatus, TaskStatusFilter, WindowMode};
+use takusu_util::{EnumLabel, Quantity, TaskStatus, TaskStatusFilter, Timestamp, WindowMode};
 
 use crate::config::LocalConfig;
 use crate::date_utils::validate_scheduled_span_dates;
@@ -673,130 +673,14 @@ impl Storage for SqliteStorage {
                 other => StorageError::Internal(other.to_string()),
             })?;
 
-        // Treat original_quantity_total 0 as unset (same as None) server-side.
-        // quantity_total 0 is a clear sentinel handled below.
-        let existing_total = existing.quantity_total.filter(|t| *t != 0);
-        let original_quantity_total = body.original_quantity_total.filter(|t| *t != 0);
-        validate_quantity(
-            body.quantity_total.or(existing_total),
-            body.quantity_done.or(Some(existing.quantity_done)),
-            original_quantity_total,
-        )?;
-
-        let status = body.status.unwrap_or(existing.status);
-        let validated = [
-            TaskStatus::Pending,
-            TaskStatus::Scheduled,
-            TaskStatus::InProgress,
-            TaskStatus::Completed,
-            TaskStatus::Skipped,
-        ];
-        if !validated.contains(&status) {
-            return Err(StorageError::BadRequest(format!(
-                "invalid status: {status}"
-            )));
-        }
-
-        // Recompute the normalized title only when the title actually changes;
-        // bind None otherwise (or when normalization fails) so COALESCE keeps the
-        // stored value (#942).
-        let normalized_title = body.title.as_ref().and_then(|t| {
-            takusu_util::memory::normalize_text(t, Some(takusu_util::memory::MAX_CONTENT_SCALARS))
-                .ok()
-        });
-
-        // Unpack Option<Option<Timestamp>> for start_at.
-        // None = no change, Some(None) = clear to NULL, Some(Some(ts)) = set value.
-        // end_at is NOT NULL so it stays Option<Timestamp> with COALESCE.
-        let (upd_start, start_val) = match body.start_at {
-            None => (0i64, None),
-            Some(inner) => (1i64, inner),
-        };
-
-        sqlx::query(
-            "UPDATE tasks SET \
-             title=COALESCE(?,title), \
-             normalized_title=COALESCE(?,normalized_title), \
-             description=CASE WHEN ?= '' THEN NULL ELSE COALESCE(?,description) END, \
-             start_at=CASE WHEN ?=0 THEN start_at ELSE ? END, \
-             end_at=COALESCE(?,end_at), \
-             avg_minutes=COALESCE(?,avg_minutes), \
-             sigma_minutes=COALESCE(?,sigma_minutes), \
-             depends=COALESCE(?,depends), \
-             parallelizable=COALESCE(?,parallelizable), \
-             allows_parallel=COALESCE(?,allows_parallel), \
-             abandonability=COALESCE(?,abandonability), \
-             status=?, \
-             habit_id=COALESCE(?,habit_id), \
-             user_edited=COALESCE(?,user_edited), \
-             fixed=COALESCE(?,fixed), \
-             habit_step_id=COALESCE(?,habit_step_id), \
-             quantity_total=CASE WHEN ?= 0 THEN NULL ELSE COALESCE(?,quantity_total) END, \
-             quantity_done=COALESCE(?,quantity_done), \
-             quantity_unit=CASE WHEN ?= '' THEN NULL ELSE COALESCE(?,quantity_unit) END, \
-             original_quantity_total=COALESCE(?,original_quantity_total), \
-             updated_at=strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?",
-        )
-        .bind(body.title.as_ref())
-        .bind(&normalized_title)
-        .bind(body.description.as_ref())
-        .bind(body.description.as_ref())
-        .bind(upd_start)
-        .bind(start_val)
-        .bind(body.end_at)
-        .bind(body.avg_minutes)
-        .bind(body.sigma_minutes)
-        .bind(depends_json.as_ref())
-        .bind(body.parallelizable)
-        .bind(body.allows_parallel)
-        .bind(body.abandonability)
-        .bind(status.to_string())
-        .bind(body.habit_id.as_ref())
-        .bind(body.user_edited)
-        .bind(body.fixed)
-        .bind(body.habit_step_id.as_ref())
-        .bind(body.quantity_total)
-        .bind(body.quantity_total)
-        .bind(body.quantity_done)
-        .bind(body.quantity_unit.as_ref())
-        .bind(body.quantity_unit.as_ref())
-        .bind(original_quantity_total)
-        .bind(&full)
-        .execute(&mut *tx)
-        .await
-        .map_err(map_err)?;
-
-        // completed_at must follow explicit status transitions: set on
-        // completion, clear when leaving completed.
+        let plan = validate_task_update(body, &existing)?;
+        update_task_fields(&mut *tx, &full, body, &plan, &depends_json).await?;
         if body.status.is_some() {
-            let completed_at = if status == TaskStatus::Completed {
-                existing
-                    .completed_at
-                    .or(Some(takusu_util::Timestamp::now()))
-            } else if existing.status == TaskStatus::Completed {
-                None
-            } else {
-                existing.completed_at
-            };
-            sqlx::query("UPDATE tasks SET completed_at = ? WHERE id = ?")
-                .bind(completed_at)
-                .bind(&full)
-                .execute(&mut *tx)
-                .await
-                .map_err(map_err)?;
-
+            handle_status_transition(&mut *tx, &full, &existing, plan.status).await?;
             // #1044: moving to a terminal status should close any open work
             // session so active time is not left dangling.
-            if status == TaskStatus::Skipped || status == TaskStatus::Completed {
-                let now = takusu_util::now_rfc3339();
-                sqlx::query(
-                    "UPDATE task_work_sessions SET ended_at = ? WHERE task_id = ? AND ended_at IS NULL",
-                )
-                .bind(&now)
-                .bind(&full)
-                .execute(&mut *tx)
-                .await
-                .map_err(map_err)?;
+            if plan.status == TaskStatus::Skipped || plan.status == TaskStatus::Completed {
+                cleanup_work_sessions(&mut *tx, &full).await?;
             }
         }
 
@@ -2675,13 +2559,13 @@ async fn filter_rows_with_query(
 }
 
 impl SqliteStorage {
-    async fn check_idempotency<'a, E, T: serde::de::DeserializeOwned>(
+    async fn check_idempotency<'c, E, T: serde::de::DeserializeOwned>(
         executor: E,
         operation_id: &str,
         request_hash: &str,
     ) -> StorageResult<Option<StorageResult<T>>>
     where
-        E: sqlx::Executor<'a, Database = sqlx::Sqlite>,
+        E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
     {
         #[derive(sqlx::FromRow)]
         struct OpRow {
@@ -2710,28 +2594,28 @@ impl SqliteStorage {
         Ok(None)
     }
 
-    async fn record_operation<'a, E, T: serde::Serialize>(
+    async fn record_operation<'c, E, T: serde::Serialize>(
         executor: E,
         operation_id: &str,
         request_hash: &str,
         value: &T,
     ) -> StorageResult<()>
     where
-        E: sqlx::Executor<'a, Database = sqlx::Sqlite>,
+        E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
     {
         let response_json = serde_json::to_string(value)
             .map_err(|e| StorageError::Internal(format!("serialize idempotency response: {e}")))?;
         Self::record_operation_raw(executor, operation_id, request_hash, &response_json).await
     }
 
-    async fn record_operation_raw<'a, E>(
+    async fn record_operation_raw<'c, E>(
         executor: E,
         operation_id: &str,
         request_hash: &str,
         response_json: &str,
     ) -> StorageResult<()>
     where
-        E: sqlx::Executor<'a, Database = sqlx::Sqlite>,
+        E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
     {
         sqlx::query(
             "INSERT INTO memory_operations (operation_id, request_hash, response_json, created_at) VALUES (?, ?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))",
@@ -2745,13 +2629,13 @@ impl SqliteStorage {
         Ok(())
     }
 
-    async fn check_progress_idempotency<'a, E, T: serde::de::DeserializeOwned>(
+    async fn check_progress_idempotency<'c, E, T: serde::de::DeserializeOwned>(
         executor: E,
         operation_id: &str,
         request_hash: &str,
     ) -> StorageResult<Option<StorageResult<T>>>
     where
-        E: sqlx::Executor<'a, Database = sqlx::Sqlite>,
+        E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
     {
         #[derive(sqlx::FromRow)]
         struct OpRow {
@@ -2780,14 +2664,14 @@ impl SqliteStorage {
         Ok(None)
     }
 
-    async fn record_progress_operation<'a, E, T: serde::Serialize>(
+    async fn record_progress_operation<'c, E, T: serde::Serialize>(
         executor: E,
         operation_id: &str,
         request_hash: &str,
         value: &T,
     ) -> StorageResult<()>
     where
-        E: sqlx::Executor<'a, Database = sqlx::Sqlite>,
+        E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
     {
         let response_json = serde_json::to_string(value)
             .map_err(|e| StorageError::Internal(format!("serialize idempotency response: {e}")))?;
@@ -2843,6 +2727,190 @@ fn validate_quantity(
     Ok(())
 }
 
+/// Computed, validated values needed to apply an `UpdateTask` to an existing
+/// row. Produced by `validate_task_update` so the pure validation step is
+/// independently testable without a database.
+#[derive(Debug)]
+struct TaskUpdatePlan {
+    original_quantity_total: Option<Quantity>,
+    status: TaskStatus,
+    /// Recomputed normalized title; `None` keeps the stored value via COALESCE.
+    normalized_title: Option<String>,
+    /// 0 = leave `start_at` unchanged, 1 = apply `start_val`.
+    upd_start: i64,
+    start_val: Option<Timestamp>,
+}
+
+/// Validate the mutable fields of an `UpdateTask` against the existing row and
+/// precompute everything the field/status update queries need. Pure: no DB
+/// access, so it can be unit-tested in isolation.
+fn validate_task_update(body: &UpdateTask, existing: &TaskRow) -> StorageResult<TaskUpdatePlan> {
+    // Treat original_quantity_total 0 as unset (same as None) server-side.
+    // quantity_total 0 is a clear sentinel handled below.
+    let existing_total = existing.quantity_total.filter(|t| *t != 0);
+    let original_quantity_total = body.original_quantity_total.filter(|t| *t != 0);
+    validate_quantity(
+        body.quantity_total.or(existing_total),
+        body.quantity_done.or(Some(existing.quantity_done)),
+        original_quantity_total,
+    )?;
+
+    let status = body.status.unwrap_or(existing.status);
+    let validated = [
+        TaskStatus::Pending,
+        TaskStatus::Scheduled,
+        TaskStatus::InProgress,
+        TaskStatus::Completed,
+        TaskStatus::Skipped,
+    ];
+    if !validated.contains(&status) {
+        return Err(StorageError::BadRequest(format!(
+            "invalid status: {status}"
+        )));
+    }
+
+    // Recompute the normalized title only when the title actually changes;
+    // bind None otherwise (or when normalization fails) so COALESCE keeps the
+    // stored value (#942).
+    let normalized_title = body.title.as_ref().and_then(|t| {
+        takusu_util::memory::normalize_text(t, Some(takusu_util::memory::MAX_CONTENT_SCALARS))
+            .ok()
+    });
+
+    // Unpack Option<Option<Timestamp>> for start_at.
+    // None = no change, Some(None) = clear to NULL, Some(Some(ts)) = set value.
+    // end_at is NOT NULL so it stays Option<Timestamp> with COALESCE.
+    let (upd_start, start_val) = match body.start_at {
+        None => (0i64, None),
+        Some(inner) => (1i64, inner),
+    };
+
+    Ok(TaskUpdatePlan {
+        original_quantity_total,
+        status,
+        normalized_title,
+        upd_start,
+        start_val,
+    })
+}
+
+/// Apply the field-level `UPDATE tasks SET ...` for an update. Binds every
+/// column from `body` plus the precomputed `plan`/`depends_json` values.
+async fn update_task_fields<'c, E>(
+    executor: E,
+    full: &str,
+    body: &UpdateTask,
+    plan: &TaskUpdatePlan,
+    depends_json: &Option<String>,
+) -> StorageResult<()>
+where
+    E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
+{
+    sqlx::query(
+        "UPDATE tasks SET \
+         title=COALESCE(?,title), \
+         normalized_title=COALESCE(?,normalized_title), \
+         description=CASE WHEN ?= '' THEN NULL ELSE COALESCE(?,description) END, \
+         start_at=CASE WHEN ?=0 THEN start_at ELSE ? END, \
+         end_at=COALESCE(?,end_at), \
+         avg_minutes=COALESCE(?,avg_minutes), \
+         sigma_minutes=COALESCE(?,sigma_minutes), \
+         depends=COALESCE(?,depends), \
+         parallelizable=COALESCE(?,parallelizable), \
+         allows_parallel=COALESCE(?,allows_parallel), \
+         abandonability=COALESCE(?,abandonability), \
+         status=?, \
+         habit_id=COALESCE(?,habit_id), \
+         user_edited=COALESCE(?,user_edited), \
+         fixed=COALESCE(?,fixed), \
+         habit_step_id=COALESCE(?,habit_step_id), \
+         quantity_total=CASE WHEN ?= 0 THEN NULL ELSE COALESCE(?,quantity_total) END, \
+         quantity_done=COALESCE(?,quantity_done), \
+         quantity_unit=CASE WHEN ?= '' THEN NULL ELSE COALESCE(?,quantity_unit) END, \
+         original_quantity_total=COALESCE(?,original_quantity_total), \
+         updated_at=strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?",
+    )
+    .bind(body.title.as_ref())
+    .bind(&plan.normalized_title)
+    .bind(body.description.as_ref())
+    .bind(body.description.as_ref())
+    .bind(plan.upd_start)
+    .bind(plan.start_val)
+    .bind(body.end_at)
+    .bind(body.avg_minutes)
+    .bind(body.sigma_minutes)
+    .bind(depends_json.as_ref())
+    .bind(body.parallelizable)
+    .bind(body.allows_parallel)
+    .bind(body.abandonability)
+    .bind(plan.status.to_string())
+    .bind(body.habit_id.as_ref())
+    .bind(body.user_edited)
+    .bind(body.fixed)
+    .bind(body.habit_step_id.as_ref())
+    .bind(body.quantity_total)
+    .bind(body.quantity_total)
+    .bind(body.quantity_done)
+    .bind(body.quantity_unit.as_ref())
+    .bind(body.quantity_unit.as_ref())
+    .bind(plan.original_quantity_total)
+    .bind(full)
+    .execute(executor)
+    .await
+    .map_err(map_err)?;
+    Ok(())
+}
+
+/// Drive `completed_at` for an explicit status transition: set on completion,
+/// cleared when leaving `Completed`, left untouched otherwise. Work-session
+/// cleanup on terminal transitions is handled by the caller via
+/// `cleanup_work_sessions` (#1044).
+async fn handle_status_transition<'c, E>(
+    executor: E,
+    full: &str,
+    existing: &TaskRow,
+    new_status: TaskStatus,
+) -> StorageResult<()>
+where
+    E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
+{
+    let completed_at = if new_status == TaskStatus::Completed {
+        existing.completed_at.or(Some(takusu_util::Timestamp::now()))
+    } else if existing.status == TaskStatus::Completed {
+        None
+    } else {
+        existing.completed_at
+    };
+    sqlx::query("UPDATE tasks SET completed_at = ? WHERE id = ?")
+        .bind(completed_at)
+        .bind(full)
+        .execute(executor)
+        .await
+        .map_err(map_err)?;
+    Ok(())
+}
+
+/// Close any open work session for `task_id` so active time is not left
+/// dangling when a task reaches a terminal status (#1044).
+async fn cleanup_work_sessions<'c, E>(
+    executor: E,
+    full: &str,
+) -> StorageResult<()>
+where
+    E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
+{
+    let now = takusu_util::now_rfc3339();
+    sqlx::query(
+        "UPDATE task_work_sessions SET ended_at = ? WHERE task_id = ? AND ended_at IS NULL",
+    )
+    .bind(&now)
+    .bind(full)
+    .execute(executor)
+    .await
+    .map_err(map_err)?;
+    Ok(())
+}
+
 /// Active minutes for a work session (closed or open).
 fn session_minutes(session: &TaskWorkSessionRow) -> i64 {
     match &session.ended_at {
@@ -2858,7 +2926,7 @@ fn session_minutes(session: &TaskWorkSessionRow) -> i64 {
 
 /// Compute updated avg_minutes / sigma_minutes from a new positive progress
 /// observation. See doc/proposal.typ WI-9 for the estimate-update formula.
-async fn compute_updated_estimate<'a, E>(
+async fn compute_updated_estimate<'c, E>(
     executor: E,
     task_id: &str,
     avg_minutes: i64,
@@ -2868,7 +2936,7 @@ async fn compute_updated_estimate<'a, E>(
     delta_quantity: i64,
 ) -> StorageResult<(i64, i64)>
 where
-    E: sqlx::Executor<'a, Database = sqlx::Sqlite>,
+    E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
 {
     // Collect all positive progress observations for this task.
     let events: Vec<ProgressEventRow> = sqlx::query_as(
@@ -2996,6 +3064,7 @@ fn token_expires_at(ttl_seconds: i64) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use takusu_util::Abandonability;
 
     #[tokio::test]
     async fn foreign_keys_are_enabled_after_init() {
@@ -3039,5 +3108,147 @@ mod tests {
 
         let result = compute_updated_estimate(&pool, "task-1", 60, 10, Some(10), 30, -5).await;
         assert_eq!(result.unwrap(), (60, 10));
+    }
+
+    /// Minimal `TaskRow` for `validate_task_update` unit tests. Only the
+    /// fields the validator inspects are populated meaningfully; the rest get
+    /// neutral defaults.
+    fn sample_task_row(status: TaskStatus) -> TaskRow {
+        let now = Timestamp::from_second(1_700_000_000).unwrap();
+        TaskRow {
+            id: "task-1".into(),
+            display_id: 1,
+            title: "sample".into(),
+            description: None,
+            start_at: None,
+            end_at: now,
+            avg_minutes: 30,
+            sigma_minutes: 5,
+            depends: "[]".into(),
+            parallelizable: false,
+            allows_parallel: false,
+            abandonability: Abandonability::default(),
+            status,
+            habit_id: None,
+            ical_uid: None,
+            user_edited: false,
+            fixed: false,
+            habit_step_id: None,
+            quantity_total: None,
+            quantity_done: Quantity::default(),
+            quantity_unit: None,
+            completed_at: None,
+            split_from_task_id: None,
+            original_quantity_total: None,
+            actual_minutes: None,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    #[test]
+    fn validate_task_update_keeps_existing_status_when_omitted() {
+        let existing = sample_task_row(TaskStatus::InProgress);
+        let body = UpdateTask::default();
+        let plan = validate_task_update(&body, &existing).unwrap();
+        assert_eq!(plan.status, TaskStatus::InProgress);
+        // No start_at change requested.
+        assert_eq!(plan.upd_start, 0);
+        assert!(plan.start_val.is_none());
+        // No title change → no normalized title recomputed.
+        assert!(plan.normalized_title.is_none());
+    }
+
+    #[test]
+    fn validate_task_update_rejects_done_exceeding_total() {
+        let mut existing = sample_task_row(TaskStatus::Pending);
+        existing.quantity_total = Some(Quantity::new(10).unwrap());
+        existing.quantity_done = Quantity::new(3).unwrap();
+        let body = UpdateTask {
+            quantity_done: Some(Quantity::new(11).unwrap()),
+            ..Default::default()
+        };
+        let err = validate_task_update(&body, &existing).unwrap_err();
+        assert!(matches!(err, StorageError::BadRequest(_)));
+    }
+
+    #[test]
+    fn validate_task_update_accepts_all_valid_statuses() {
+        // `UpdateTask.status` is typed (`Option<TaskStatus>` deserialized via
+        // `enum_serde::option`), so an out-of-range label is rejected at the
+        // serde boundary before reaching the validator. The `validated`
+        // allow-list inside `validate_task_update` is a defense-in-depth guard
+        // that is unreachable through the typed API; this test confirms the
+        // validator accepts every legitimate status value.
+        let existing = sample_task_row(TaskStatus::Pending);
+        for status in [
+            TaskStatus::Pending,
+            TaskStatus::Scheduled,
+            TaskStatus::InProgress,
+            TaskStatus::Completed,
+            TaskStatus::Skipped,
+        ] {
+            let body = UpdateTask {
+                status: Some(status),
+                ..Default::default()
+            };
+            let plan = validate_task_update(&body, &existing).unwrap();
+            assert_eq!(plan.status, status);
+        }
+    }
+
+    #[test]
+    fn validate_task_update_unpacks_start_at_clear() {
+        let existing = sample_task_row(TaskStatus::Pending);
+        // Some(None) = explicit clear to NULL.
+        let body = UpdateTask {
+            start_at: Some(None),
+            ..Default::default()
+        };
+        let plan = validate_task_update(&body, &existing).unwrap();
+        assert_eq!(plan.upd_start, 1);
+        assert!(plan.start_val.is_none());
+    }
+
+    #[test]
+    fn validate_task_update_unpacks_start_at_set() {
+        let existing = sample_task_row(TaskStatus::Pending);
+        let ts = Timestamp::from_second(1_700_000_500).unwrap();
+        let body = UpdateTask {
+            start_at: Some(Some(ts)),
+            ..Default::default()
+        };
+        let plan = validate_task_update(&body, &existing).unwrap();
+        assert_eq!(plan.upd_start, 1);
+        assert_eq!(plan.start_val, Some(ts));
+    }
+
+    #[test]
+    fn validate_task_update_recomputes_normalized_title() {
+        let existing = sample_task_row(TaskStatus::Pending);
+        let body = UpdateTask {
+            title: Some("  hello world  ".into()),
+            ..Default::default()
+        };
+        let plan = validate_task_update(&body, &existing).unwrap();
+        // Normalization trims and lower-cases (or similar); just assert it
+        // produced a non-empty value distinct from the raw input.
+        let normalized = plan.normalized_title.expect("title changed");
+        assert!(!normalized.is_empty());
+        assert_ne!(normalized, "  hello world  ");
+    }
+
+    #[test]
+    fn validate_task_update_treats_zero_original_as_unset() {
+        let mut existing = sample_task_row(TaskStatus::Pending);
+        existing.quantity_total = Some(Quantity::new(10).unwrap());
+        // original_quantity_total = 0 is a sentinel for "unset" and must not
+        // trip the `> 0` validation.
+        let body = UpdateTask {
+            original_quantity_total: Some(Quantity::default()),
+            ..Default::default()
+        };
+        let plan = validate_task_update(&body, &existing).unwrap();
+        assert!(plan.original_quantity_total.is_none());
     }
 }
