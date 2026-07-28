@@ -350,6 +350,21 @@ pub struct ToolOutput {
     pub is_error: bool,
 }
 
+/// OpenAI function-calling tool definition (what we send to the API).
+#[derive(Debug, Clone, Serialize)]
+pub struct OpenAITool {
+    pub function: OpenAIToolFunction,
+    #[serde(rename = "type")]
+    pub type_: &'static str,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct OpenAIToolFunction {
+    pub description: String,
+    pub name: String,
+    pub parameters: Value,
+}
+
 #[async_trait::async_trait]
 pub trait Tool: Send + Sync {
     fn name(&self) -> &'static str;
@@ -371,16 +386,16 @@ pub trait Tool: Send + Sync {
         self.call(args).await
     }
 
-    /// Returns the tool name in the OpenAI function-calling format.
-    fn to_openai_definition(&self) -> Value {
-        json!({
-            "type": "function",
-            "function": {
-                "name": self.name(),
-                "description": self.description(),
-                "parameters": self.parameters_schema(),
-            }
-        })
+    /// Returns the tool definition in the OpenAI function-calling format.
+    fn to_openai_definition(&self) -> OpenAITool {
+        OpenAITool {
+            type_: "function",
+            function: OpenAIToolFunction {
+                name: self.name().to_string(),
+                description: self.description().to_string(),
+                parameters: self.parameters_schema(),
+            },
+        }
     }
 }
 
@@ -568,7 +583,7 @@ impl<T: TypedTool> Typed<T> {
     }
 }
 
-fn estimate_tool_tokens(defs: &[Value]) -> usize {
+fn estimate_tool_tokens(defs: &[OpenAITool]) -> usize {
     defs.iter()
         .map(|d| crate::llm::estimate_text_tokens(&serde_json::to_string(d).unwrap_or_default()))
         .sum()
@@ -581,12 +596,12 @@ pub(crate) struct SearchEntry {
     pub(crate) name_lower: String,
     pub(crate) description_lower: String,
     pub(crate) param_names: Vec<String>,
-    pub(crate) definition: Value,
+    pub(crate) definition: OpenAITool,
 }
 
 pub struct ToolRegistry {
     tools: HashMap<String, Box<dyn Tool>>,
-    definitions_cache: Mutex<Option<(Vec<Value>, usize)>>,
+    definitions_cache: Mutex<Option<(Vec<OpenAITool>, usize)>>,
     search_index: Mutex<Option<Vec<SearchEntry>>>,
 }
 
@@ -696,14 +711,14 @@ impl ToolRegistry {
     ///
     /// Returns `None` for unknown names and for `Hidden` tools (which are never
     /// exposed to the model).
-    pub fn definition_for_name(&self, name: &str) -> Option<Value> {
+    pub fn definition_for_name(&self, name: &str) -> Option<OpenAITool> {
         self.tools
             .get(name)
             .filter(|t| !matches!(t.exposure(), ToolExposure::Hidden))
             .map(|t| t.to_openai_definition())
     }
 
-    fn build_definitions(&self, active_names: Option<&BTreeSet<String>>) -> Vec<Value> {
+    fn build_definitions(&self, active_names: Option<&BTreeSet<String>>) -> Vec<OpenAITool> {
         match active_names {
             Some(names) => names
                 .iter()
@@ -740,12 +755,12 @@ impl ToolRegistry {
     }
 
     /// Tool definitions in OpenAI function-calling format for the given active set.
-    pub fn definitions_for(&self, active_names: &BTreeSet<String>) -> Vec<Value> {
+    pub fn definitions_for(&self, active_names: &BTreeSet<String>) -> Vec<OpenAITool> {
         self.build_definitions(Some(active_names))
     }
 
     /// Tool definitions in OpenAI function-calling format for all registered tools.
-    pub fn definitions(&self) -> Vec<Value> {
+    pub fn definitions(&self) -> Vec<OpenAITool> {
         {
             let guard = self.definitions_cache.lock().unwrap();
             if let Some((defs, _)) = guard.as_ref() {
@@ -1051,10 +1066,7 @@ mod tests {
         }));
 
         let defs = registry.definitions();
-        let names: Vec<&str> = defs
-            .iter()
-            .map(|d| d["function"]["name"].as_str().unwrap())
-            .collect();
+        let names: Vec<&str> = defs.iter().map(|d| d.function.name.as_str()).collect();
         assert_eq!(names, vec!["aaa_tool", "mmm_tool", "zzz_tool"]);
     }
 
@@ -1080,10 +1092,7 @@ mod tests {
             "hidden_tool".to_string(),
         ]);
         let defs = registry.definitions_for(&active);
-        let names: Vec<&str> = defs
-            .iter()
-            .map(|d| d["function"]["name"].as_str().unwrap())
-            .collect();
+        let names: Vec<&str> = defs.iter().map(|d| d.function.name.as_str()).collect();
         assert_eq!(names, vec!["deferred_tool", "direct_tool"]);
     }
 

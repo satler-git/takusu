@@ -11,6 +11,7 @@ use serde_json::{Value, json};
 use thiserror::Error;
 
 use crate::Permissions;
+use crate::tool::OpenAITool;
 
 pub use crate::compact::CompactionSettings;
 
@@ -146,16 +147,31 @@ pub struct ToolCall {
     pub arguments: Value,
 }
 
+/// OpenAI tool-call format (what we send to the API).
+#[derive(Debug, Clone, Serialize)]
+pub struct OpenAIToolCall {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub type_: &'static str,
+    pub function: OpenAIToolCallFunction,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct OpenAIToolCallFunction {
+    pub name: String,
+    pub arguments: String,
+}
+
 impl ToolCall {
-    pub fn to_openai(&self) -> Value {
-        json!({
-            "id": self.id,
-            "type": "function",
-            "function": {
-                "name": self.name,
-                "arguments": self.arguments.to_string(),
-            }
-        })
+    pub fn to_openai(&self) -> OpenAIToolCall {
+        OpenAIToolCall {
+            id: self.id.clone(),
+            type_: "function",
+            function: OpenAIToolCallFunction {
+                name: self.name.clone(),
+                arguments: self.arguments.to_string(),
+            },
+        }
     }
 }
 
@@ -223,34 +239,65 @@ pub enum Message {
     },
 }
 
+/// OpenAI message format (what we send to the API).
+///
+/// `content` is always serialized (as `null` when absent) to match the
+/// behavior of the previous `json!`-based implementation and to stay
+/// compatible with OpenAI-compatible providers that expect the field.
+#[derive(Debug, Clone, Serialize)]
+pub struct OpenAIMessage {
+    pub role: &'static str,
+    pub content: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<Vec<OpenAIToolCall>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_error: Option<bool>,
+}
+
 impl Message {
-    pub fn to_openai(&self) -> Value {
+    pub fn to_openai(&self) -> OpenAIMessage {
         match self {
-            Message::System(c) => json!({"role": "system", "content": c}),
-            Message::User(c) => json!({"role": "user", "content": c}),
-            Message::Assistant(AssistantContent::Text(c)) => {
-                json!({"role": "assistant", "content": c})
-            }
-            Message::Assistant(AssistantContent::ToolCalls(calls)) => json!({
-                "role": "assistant",
-                "content": Value::Null,
-                "tool_calls": calls.iter().map(ToolCall::to_openai).collect::<Vec<_>>(),
-            }),
+            Message::System(c) => OpenAIMessage {
+                role: "system",
+                content: Some(c.clone()),
+                tool_calls: None,
+                tool_call_id: None,
+                is_error: None,
+            },
+            Message::User(c) => OpenAIMessage {
+                role: "user",
+                content: Some(c.clone()),
+                tool_calls: None,
+                tool_call_id: None,
+                is_error: None,
+            },
+            Message::Assistant(AssistantContent::Text(c)) => OpenAIMessage {
+                role: "assistant",
+                content: Some(c.clone()),
+                tool_calls: None,
+                tool_call_id: None,
+                is_error: None,
+            },
+            Message::Assistant(AssistantContent::ToolCalls(calls)) => OpenAIMessage {
+                role: "assistant",
+                content: None,
+                tool_calls: Some(calls.iter().map(ToolCall::to_openai).collect()),
+                tool_call_id: None,
+                is_error: None,
+            },
             Message::ToolResult {
                 call_id,
                 content,
                 is_error,
-            } => {
-                let mut obj = json!({
-                    "role": "tool",
-                    "tool_call_id": call_id,
-                    "content": content,
-                });
-                if *is_error {
-                    obj["is_error"] = json!(true);
-                }
-                obj
-            }
+            } => OpenAIMessage {
+                role: "tool",
+                content: Some(content.clone()),
+                tool_calls: None,
+                tool_call_id: Some(call_id.clone()),
+                is_error: if *is_error { Some(true) } else { None },
+            },
         }
     }
 
@@ -299,12 +346,16 @@ impl Message {
 
 #[async_trait]
 pub trait LlmClient: Send + Sync {
-    async fn chat(&self, messages: &[Message], tools: &[Value]) -> Result<LlmResponse, LlmError>;
+    async fn chat(
+        &self,
+        messages: &[Message],
+        tools: &[OpenAITool],
+    ) -> Result<LlmResponse, LlmError>;
 
     async fn chat_stream(
         &self,
         _messages: &[Message],
-        _tools: &[Value],
+        _tools: &[OpenAITool],
     ) -> Result<Pin<Box<dyn Stream<Item = Result<LlmStreamEvent, LlmError>> + Send>>, LlmError>
     {
         Err(LlmError::Request(
@@ -402,7 +453,7 @@ impl OpenAIClient {
     async fn send_request(
         &self,
         messages: &[Message],
-        tools: &[Value],
+        tools: &[OpenAITool],
         stream: bool,
     ) -> Result<reqwest::Response, LlmError> {
         let request = ChatCompletionRequest {
@@ -499,7 +550,11 @@ impl OpenAIClient {
 
 #[async_trait]
 impl LlmClient for OpenAIClient {
-    async fn chat(&self, messages: &[Message], tools: &[Value]) -> Result<LlmResponse, LlmError> {
+    async fn chat(
+        &self,
+        messages: &[Message],
+        tools: &[OpenAITool],
+    ) -> Result<LlmResponse, LlmError> {
         let mut attempt = 0;
         loop {
             let response = self.send_request(messages, tools, false).await;
@@ -517,7 +572,7 @@ impl LlmClient for OpenAIClient {
     async fn chat_stream(
         &self,
         messages: &[Message],
-        tools: &[Value],
+        tools: &[OpenAITool],
     ) -> Result<Pin<Box<dyn Stream<Item = Result<LlmStreamEvent, LlmError>> + Send>>, LlmError>
     {
         let mut attempt = 0;
@@ -551,9 +606,9 @@ struct ModelResponse {
 #[derive(Serialize, Debug)]
 struct ChatCompletionRequest {
     model: String,
-    messages: Vec<Value>,
+    messages: Vec<OpenAIMessage>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    tools: Vec<Value>,
+    tools: Vec<OpenAITool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     stream: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -966,7 +1021,7 @@ mod tests {
     #[test]
     fn message_serializes_to_openai_format() {
         let msg = Message::User("hello".into());
-        let value = msg.to_openai();
+        let value: Value = serde_json::to_value(msg.to_openai()).unwrap();
         assert_eq!(value["role"], "user");
         assert_eq!(value["content"], "hello");
 
@@ -976,9 +1031,12 @@ mod tests {
             arguments: json!({"message": "hi"}),
         };
         let msg = Message::Assistant(AssistantContent::ToolCalls(vec![tool_call]));
-        let value = msg.to_openai();
+        let value: Value = serde_json::to_value(msg.to_openai()).unwrap();
         assert_eq!(value["role"], "assistant");
-        assert!(value["content"].is_null());
+        // content must be explicitly present as null (not omitted) for
+        // compatibility with OpenAI-compatible providers that expect the
+        // field on assistant tool_calls messages.
+        assert_eq!(value.get("content"), Some(&Value::Null));
         assert_eq!(value["tool_calls"][0]["id"], "call_1");
         assert_eq!(value["tool_calls"][0]["function"]["name"], "echo");
     }

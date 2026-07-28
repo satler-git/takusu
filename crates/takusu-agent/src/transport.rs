@@ -1114,7 +1114,7 @@ mod tests {
         async fn chat(
             &self,
             _messages: &[crate::llm::Message],
-            _tools: &[serde_json::Value],
+            _tools: &[crate::tool::OpenAITool],
         ) -> Result<crate::llm::LlmResponse, crate::llm::LlmError> {
             Ok(crate::llm::LlmResponse {
                 content: crate::llm::LlmResponseContent::Text("ok".into()),
