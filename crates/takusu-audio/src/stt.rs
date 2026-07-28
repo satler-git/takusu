@@ -133,11 +133,8 @@ impl SttRuntimeConfig {
                                 "sherpa funasr-nano requires a model_dir".to_string(),
                             ));
                         }
-                        let cache = crate::ModelCache::default_dir()
-                            .map_err(|e| SttError::Other(e.to_string()))?;
-                        cache
-                            .ensure("sherpa-sense-voice-int8")
-                            .map_err(|e| SttError::Other(e.to_string()))?
+                        let cache = crate::ModelCache::default_dir()?;
+                        cache.ensure("sherpa-sense-voice-int8")?
                     }
                 };
 
@@ -160,10 +157,16 @@ impl SttRuntimeConfig {
 
 #[derive(Debug, Error)]
 pub enum SttError {
-    #[error("connection error: {0}")]
-    Connection(String),
-    #[error("server error: {0}")]
-    Server(String),
+    #[error("http error: {0}")]
+    Http(#[from] reqwest::Error),
+    #[error("api error {status}: {code}: {message}")]
+    Api {
+        status: u16,
+        code: String,
+        message: String,
+    },
+    #[error("model error: {0}")]
+    Model(#[from] crate::models::ModelError),
     #[error("no result received")]
     NoResult,
     #[error("other error: {0}")]
