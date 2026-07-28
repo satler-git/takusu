@@ -35,11 +35,37 @@ use takusu_client::{
     HabitStepInput, MoveEntry, RecordProgress, SaveScheduleRequest, ScheduleEntry, SplitTask,
     UpdateHabit, UpdateMemory, UpdateSkill, UpdateTask,
 };
-use takusu_util::{Abandonability, EnumLabel, Quantity, TimeOfDay};
+use takusu_util::{Abandonability, EnumLabel, TimeOfDay};
 use tools::memory::client_error;
 use uuid::Uuid;
 
 use jiff::Unit;
+use std::str::FromStr;
+
+/// Serde helper: deserialize a `Date` from a trimmed string.
+/// Mirrors the old `str::trim` applied before `Date::from_str`.
+fn deserialize_trimmed_date<'de, D>(deserializer: D) -> Result<takusu_util::Date, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let raw: String = String::deserialize(deserializer)?;
+    takusu_util::Date::from_str(raw.trim()).map_err(serde::de::Error::custom)
+}
+
+/// Serde helper: deserialize a required string, trim whitespace, and reject
+/// empty results. Mirrors the old `required_string` + trim behavior.
+fn deserialize_trimmed_required_string<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let raw: String = String::deserialize(deserializer)?;
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        Err(serde::de::Error::custom("missing or empty"))
+    } else {
+        Ok(trimmed.to_string())
+    }
+}
 
 /// Intermediate representation of a habit step submitted by the agent.
 /// Display positions are 1-indexed; storage uses 0-indexed positions.
@@ -57,6 +83,70 @@ struct PendingHabitStep {
     abandonability: Option<Abandonability>,
     fixed: Option<bool>,
     depends_on_positions: Vec<i64>,
+}
+
+/// Typed deserialization target for a single habit step argument.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HabitStepInputArgs {
+    position: i64,
+    title: String,
+    #[serde(default)]
+    description: Option<String>,
+    start_time: TimeOfDay,
+    end_time: TimeOfDay,
+    avg_minutes: i64,
+    #[serde(default)]
+    sigma_minutes: Option<i64>,
+    #[serde(default)]
+    parallelizable: Option<bool>,
+    #[serde(default)]
+    allows_parallel: Option<bool>,
+    #[serde(default)]
+    abandonability: Option<Abandonability>,
+    #[serde(default)]
+    fixed: Option<bool>,
+    #[serde(default)]
+    depends_on: Vec<i64>,
+}
+
+/// Typed extraction for `CreateScheduledSpan` arguments.
+#[derive(Debug, Deserialize)]
+struct ScheduledSpanArgs {
+    #[serde(deserialize_with = "deserialize_trimmed_date")]
+    start_date: takusu_util::Date,
+    #[serde(deserialize_with = "deserialize_trimmed_date")]
+    end_date: takusu_util::Date,
+    #[serde(default, deserialize_with = "deserialize_trimmed_optional")]
+    reason: Option<String>,
+}
+
+/// Typed extraction for `DeleteScheduledSpan` arguments.
+#[derive(Debug, Deserialize)]
+struct DeleteScheduledSpanArgs {
+    #[serde(deserialize_with = "deserialize_trimmed_required_string")]
+    span_id: String,
+}
+
+/// Typed extraction for memory-delete arguments.
+#[derive(Debug, Deserialize)]
+struct MemoryDeleteArgs {
+    observed_revision: i64,
+}
+
+/// Typed extraction for move arguments (includes `fixed` which is not part
+/// of `MoveEntry`).
+#[derive(Debug, Deserialize)]
+struct MoveArgs {
+    start_at: takusu_util::Timestamp,
+    #[serde(default)]
+    force: bool,
+    #[serde(default = "default_true")]
+    fixed: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -1523,187 +1613,30 @@ impl AgentSession {
     }
 
     fn parse_habit_step(value: &Value) -> Result<PendingHabitStep, AgentError> {
-        let obj = value.as_object().ok_or_else(|| {
+        let args: HabitStepInputArgs = serde_json::from_value(value.clone()).map_err(|e| {
             AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
                 "steps",
-                "must be an array of step objects",
+                e.to_string(),
             )))
         })?;
-
-        let field = |name| {
-            obj.get(name).cloned().ok_or_else(|| {
-                AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
-                    "steps",
-                    format!("{name} is required"),
-                )))
-            })
-        };
-
-        let require_i64 = |value: Value, name: &str| -> Result<i64, AgentError> {
-            value.as_i64().ok_or_else(|| {
-                AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
-                    "steps",
-                    format!("{name} must be an integer"),
-                )))
-            })
-        };
-
-        let position = require_i64(field("position")?, "position")?;
-        if position < 1 {
+        if args.position < 1 {
             return Err(AgentError::Tool(ToolError::InvalidArgs(
                 InvalidArgsError::new("steps", "position must be >= 1"),
             )));
         }
-        let title = field("title")?
-            .as_str()
-            .map(ToOwned::to_owned)
-            .ok_or_else(|| {
-                AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
-                    "steps",
-                    "title must be a string",
-                )))
-            })?;
-        let start_time = field("start_time")?
-            .as_str()
-            .ok_or_else(|| {
-                AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
-                    "steps",
-                    "start_time must be a string",
-                )))
-            })
-            .and_then(|s| {
-                s.parse::<TimeOfDay>().map_err(|_| {
-                    AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
-                        "steps",
-                        "start_time must be a valid HH:MM time",
-                    )))
-                })
-            })?;
-        let end_time = field("end_time")?
-            .as_str()
-            .ok_or_else(|| {
-                AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
-                    "steps",
-                    "end_time must be a string",
-                )))
-            })
-            .and_then(|s| {
-                s.parse::<TimeOfDay>().map_err(|_| {
-                    AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
-                        "steps",
-                        "end_time must be a valid HH:MM time",
-                    )))
-                })
-            })?;
-        let avg_minutes = require_i64(field("avg_minutes")?, "avg_minutes")?;
-
-        let require_optional_bool = |name: &str| -> Result<Option<bool>, AgentError> {
-            match obj.get(name) {
-                None | Some(Value::Null) => Ok(None),
-                Some(v) => v.as_bool().map(Some).ok_or_else(|| {
-                    AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
-                        "steps",
-                        format!("{name} must be a boolean"),
-                    )))
-                }),
-            }
-        };
-        let require_optional_f64 = |name: &str| -> Result<Option<f64>, AgentError> {
-            match obj.get(name) {
-                None | Some(Value::Null) => Ok(None),
-                Some(v) => v.as_f64().map(Some).ok_or_else(|| {
-                    AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
-                        "steps",
-                        format!("{name} must be a number"),
-                    )))
-                }),
-            }
-        };
-
-        let description = match obj.get("description") {
-            None | Some(Value::Null) => None,
-            Some(v) => Some(
-                v.as_str()
-                    .ok_or_else(|| {
-                        AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
-                            "steps",
-                            "description must be a string",
-                        )))
-                    })?
-                    .to_owned(),
-            ),
-        };
-        let sigma_minutes = match obj.get("sigma_minutes") {
-            None | Some(Value::Null) => None,
-            Some(v) => Some(v.as_i64().ok_or_else(|| {
-                AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
-                    "steps",
-                    "sigma_minutes must be an integer",
-                )))
-            })?),
-        };
-        let parallelizable = require_optional_bool("parallelizable")?;
-        let allows_parallel = require_optional_bool("allows_parallel")?;
-        let abandonability = require_optional_f64("abandonability")?.map(Abandonability::new);
-        let fixed = require_optional_bool("fixed")?;
-
-        let depends_on_positions = match obj.get("depends_on") {
-            None | Some(Value::Null) => Vec::new(),
-            Some(Value::Array(arr)) => arr
-                .iter()
-                .map(|v| {
-                    v.as_i64().ok_or_else(|| {
-                        AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
-                            "steps",
-                            "depends_on must contain integers",
-                        )))
-                    })
-                })
-                .collect::<Result<Vec<_>, _>>()?,
-            Some(_) => {
-                return Err(AgentError::Tool(ToolError::InvalidArgs(
-                    InvalidArgsError::new("steps", "depends_on must be an array"),
-                )));
-            }
-        };
-
-        // Reject keys not declared in the step schema to match
-        // `additionalProperties: false`.
-        const KNOWN_KEYS: &[&str] = &[
-            "position",
-            "title",
-            "description",
-            "start_time",
-            "end_time",
-            "avg_minutes",
-            "sigma_minutes",
-            "parallelizable",
-            "allows_parallel",
-            "abandonability",
-            "fixed",
-            "depends_on",
-        ];
-        for key in obj.keys() {
-            if !KNOWN_KEYS.contains(&key.as_str()) {
-                return Err(AgentError::Tool(ToolError::InvalidArgs(
-                    InvalidArgsError::new("steps", format!("unknown step field '{key}'")),
-                )));
-            }
-        }
-
         Ok(PendingHabitStep {
-            position,
-            title,
-            description,
-            start_time,
-            end_time,
-            avg_minutes,
-            sigma_minutes,
-            parallelizable,
-            allows_parallel,
-            abandonability,
-            fixed,
-            depends_on_positions,
+            position: args.position,
+            title: args.title,
+            description: args.description,
+            start_time: args.start_time,
+            end_time: args.end_time,
+            avg_minutes: args.avg_minutes,
+            sigma_minutes: args.sigma_minutes,
+            parallelizable: args.parallelizable,
+            allows_parallel: args.allows_parallel,
+            abandonability: args.abandonability,
+            fixed: args.fixed,
+            depends_on_positions: args.depends_on,
         })
     }
 
@@ -1920,9 +1853,11 @@ impl AgentSession {
         args: Value,
         operation_id: Option<&str>,
     ) -> Result<ChangeReceipt, AgentError> {
-        let mut args = args.as_object().cloned().unwrap_or_default();
+        let mut args = args;
         let steps_value = args.get("steps").cloned();
-        args.remove("steps");
+        if let Some(obj) = args.as_object_mut() {
+            obj.remove("steps");
+        }
         let (target_id, current_updated_at, existing_habit) =
             match (change.target.kind, change.operation) {
                 (_, ChangeOperation::Create) | (TargetKind::Schedule, _) => {
@@ -1976,481 +1911,347 @@ impl AgentSession {
                 "target changed after proposal".into(),
             )));
         }
-        let (result, before, after, target_revision) =
-            match (change.target.kind, change.operation) {
-                (TargetKind::Task, ChangeOperation::Create) => {
-                    let id =
-                        self.client
-                            .create_task(
-                                &serde_json::from_value::<CreateTask>(Value::Object(args))
-                                    .map_err(|e| {
-                                        AgentError::Tool(ToolError::InvalidArgs(
-                                            InvalidArgsError::no_field(e.to_string()),
-                                        ))
-                                    })?,
-                            )
-                            .await
-                            .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?
-                            .id;
-                    (id, None, None, None)
-                }
-                (TargetKind::Task, ChangeOperation::Update) => {
-                    let id =
-                        self.client
-                            .update_task(
-                                &target_id,
-                                &serde_json::from_value::<UpdateTask>(Value::Object(args))
-                                    .map_err(|e| {
-                                        AgentError::Tool(ToolError::InvalidArgs(
-                                            InvalidArgsError::no_field(e.to_string()),
-                                        ))
-                                    })?,
-                            )
-                            .await
-                            .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?
-                            .id;
-                    (id, None, None, None)
-                }
-                (TargetKind::Task, ChangeOperation::Delete) => {
-                    self.client
-                        .delete_task(&target_id)
-                        .await
-                        .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
-                    (target_id.clone(), None, None, None)
-                }
-                (TargetKind::Habit, ChangeOperation::Create) => {
-                    let id =
-                        self.client
-                            .create_habit(
-                                &serde_json::from_value::<CreateHabit>(Value::Object(args))
-                                    .map_err(|e| {
-                                        AgentError::Tool(ToolError::InvalidArgs(
-                                            InvalidArgsError::no_field(e.to_string()),
-                                        ))
-                                    })?,
-                            )
-                            .await
-                            .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?
-                            .id;
-                    if let Some(steps) = steps_value {
-                        self.replace_habit_steps_from_input(&id, steps, &[]).await?;
-                    }
-                    (id, None, None, None)
-                }
-                (TargetKind::Habit, ChangeOperation::Update) => {
-                    let id =
-                        self.client
-                            .update_habit(
-                                &target_id,
-                                &serde_json::from_value::<UpdateHabit>(Value::Object(args))
-                                    .map_err(|e| {
-                                        AgentError::Tool(ToolError::InvalidArgs(
-                                            InvalidArgsError::no_field(e.to_string()),
-                                        ))
-                                    })?,
-                            )
-                            .await
-                            .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?
-                            .id;
-                    if let Some(steps) = steps_value {
-                        let existing = existing_habit.map(|h| h.steps).unwrap_or_default();
-                        self.replace_habit_steps_from_input(&id, steps, &existing)
-                            .await?;
-                    }
-                    (id, None, None, None)
-                }
-                (TargetKind::Habit, ChangeOperation::Delete) => {
-                    self.client
-                        .delete_habit(&target_id)
-                        .await
-                        .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
-                    (target_id.clone(), None, None, None)
-                }
-                (TargetKind::Habit, ChangeOperation::CreateScheduledSpan) => {
-                    let start_date = args
-                        .get("start_date")
-                        .and_then(Value::as_str)
-                        .map(str::trim)
-                        .filter(|s| !s.is_empty())
-                        .ok_or_else(|| {
-                            AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
-                                "start_date",
-                                "missing",
+        let (result, before, after, target_revision) = match (change.target.kind, change.operation)
+        {
+            (TargetKind::Task, ChangeOperation::Create) => {
+                let id = self
+                    .client
+                    .create_task(&serde_json::from_value::<CreateTask>(args.clone()).map_err(
+                        |e| {
+                            AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::no_field(
+                                e.to_string(),
                             )))
-                        })
-                        .and_then(|s| {
-                            s.parse::<takusu_util::Date>().map_err(|_| {
-                                AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
-                                    "start_date",
-                                    "must be a valid YYYY-MM-DD date",
-                                )))
-                            })
-                        })?;
-                    let end_date = args
-                        .get("end_date")
-                        .and_then(Value::as_str)
-                        .map(str::trim)
-                        .filter(|s| !s.is_empty())
-                        .ok_or_else(|| {
-                            AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
-                                "end_date", "missing",
+                        },
+                    )?)
+                    .await
+                    .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?
+                    .id;
+                (id, None, None, None)
+            }
+            (TargetKind::Task, ChangeOperation::Update) => {
+                let id = self
+                    .client
+                    .update_task(
+                        &target_id,
+                        &serde_json::from_value::<UpdateTask>(args.clone()).map_err(|e| {
+                            AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::no_field(
+                                e.to_string(),
                             )))
-                        })
-                        .and_then(|s| {
-                            s.parse::<takusu_util::Date>().map_err(|_| {
-                                AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
-                                    "end_date",
-                                    "must be a valid YYYY-MM-DD date",
-                                )))
-                            })
-                        })?;
-                    let reason = args
-                        .get("reason")
-                        .and_then(Value::as_str)
-                        .map(str::trim)
-                        .filter(|s| !s.is_empty())
-                        .map(|s| s.to_owned());
-                    let row = self
-                        .client
-                        .create_habit_scheduled_span(
-                            &target_id,
-                            &CreateHabitScheduledSpan {
-                                start_date,
-                                end_date,
-                                reason,
-                            },
-                        )
-                        .await
-                        .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
-                    let after = serde_json::to_value(&row)
-                        .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
-                    (target_id.clone(), None, Some(after), None)
-                }
-                (TargetKind::Habit, ChangeOperation::DeleteScheduledSpan) => {
-                    let span_id = args
-                        .get("span_id")
-                        .and_then(Value::as_str)
-                        .map(str::trim)
-                        .filter(|s| !s.is_empty())
-                        .ok_or_else(|| {
-                            AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
-                                "span_id", "missing",
-                            )))
-                        })?;
-                    self.client
-                        .delete_habit_scheduled_span(&target_id, span_id)
-                        .await
-                        .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
-                    (target_id.clone(), change.before.clone(), None, None)
-                }
-                (TargetKind::Skill, ChangeOperation::Create) => {
-                    let slug =
-                        self.client
-                            .create_skill(
-                                &serde_json::from_value::<CreateSkill>(Value::Object(args))
-                                    .map_err(|e| {
-                                        AgentError::Tool(ToolError::InvalidArgs(
-                                            InvalidArgsError::no_field(e.to_string()),
-                                        ))
-                                    })?,
-                            )
-                            .await
-                            .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?
-                            .slug;
-                    (slug, None, None, None)
-                }
-                (TargetKind::Skill, ChangeOperation::Update) => {
-                    let slug =
-                        self.client
-                            .update_skill(
-                                &target_id,
-                                &serde_json::from_value::<UpdateSkill>(Value::Object(args))
-                                    .map_err(|e| {
-                                        AgentError::Tool(ToolError::InvalidArgs(
-                                            InvalidArgsError::no_field(e.to_string()),
-                                        ))
-                                    })?,
-                            )
-                            .await
-                            .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?
-                            .slug;
-                    (slug, None, None, None)
-                }
-                (TargetKind::Memory, ChangeOperation::Create) => {
-                    let row =
-                        self.client
-                            .create_memory(
-                                &serde_json::from_value::<CreateMemory>(Value::Object(args))
-                                    .map_err(|e| {
-                                        AgentError::Tool(ToolError::InvalidArgs(
-                                            InvalidArgsError::no_field(e.to_string()),
-                                        ))
-                                    })?,
-                                operation_id,
-                            )
-                            .await
-                            .map_err(|e| AgentError::Tool(client_error(e)))?;
-                    let after = serde_json::to_value(&row)
-                        .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
-                    (row.id, None, Some(after), Some(row.revision))
-                }
-                (TargetKind::Memory, ChangeOperation::Update) => {
-                    let observed_revision = args
-                        .get("observed_revision")
-                        .and_then(Value::as_i64)
-                        .ok_or_else(|| {
-                        AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
-                            "observed_revision",
-                            "missing",
-                        )))
-                    })?;
-                    let content = args
-                        .get("content")
-                        .and_then(Value::as_str)
-                        .map(|s| s.to_owned());
-                    let row = self
-                        .client
-                        .update_memory(
-                            &target_id,
-                            &UpdateMemory {
-                                observed_revision,
-                                content,
-                            },
-                            operation_id,
-                        )
-                        .await
-                        .map_err(|e| AgentError::Tool(client_error(e)))?;
-                    let after = serde_json::to_value(&row)
-                        .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
-                    (
-                        row.id,
-                        change.before.clone(),
-                        Some(after),
-                        Some(row.revision),
+                        })?,
                     )
+                    .await
+                    .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?
+                    .id;
+                (id, None, None, None)
+            }
+            (TargetKind::Task, ChangeOperation::Delete) => {
+                self.client
+                    .delete_task(&target_id)
+                    .await
+                    .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
+                (target_id.clone(), None, None, None)
+            }
+            (TargetKind::Habit, ChangeOperation::Create) => {
+                let id = self
+                    .client
+                    .create_habit(
+                        &serde_json::from_value::<CreateHabit>(args.clone()).map_err(|e| {
+                            AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::no_field(
+                                e.to_string(),
+                            )))
+                        })?,
+                    )
+                    .await
+                    .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?
+                    .id;
+                if let Some(steps) = steps_value {
+                    self.replace_habit_steps_from_input(&id, steps, &[]).await?;
                 }
-                (TargetKind::Memory, ChangeOperation::Delete) => {
-                    let observed_revision = args
-                        .get("observed_revision")
-                        .and_then(Value::as_i64)
-                        .ok_or_else(|| {
-                        AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
-                            "observed_revision",
-                            "missing",
+                (id, None, None, None)
+            }
+            (TargetKind::Habit, ChangeOperation::Update) => {
+                let id = self
+                    .client
+                    .update_habit(
+                        &target_id,
+                        &serde_json::from_value::<UpdateHabit>(args.clone()).map_err(|e| {
+                            AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::no_field(
+                                e.to_string(),
+                            )))
+                        })?,
+                    )
+                    .await
+                    .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?
+                    .id;
+                if let Some(steps) = steps_value {
+                    let existing = existing_habit.map(|h| h.steps).unwrap_or_default();
+                    self.replace_habit_steps_from_input(&id, steps, &existing)
+                        .await?;
+                }
+                (id, None, None, None)
+            }
+            (TargetKind::Habit, ChangeOperation::Delete) => {
+                self.client
+                    .delete_habit(&target_id)
+                    .await
+                    .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
+                (target_id.clone(), None, None, None)
+            }
+            (TargetKind::Habit, ChangeOperation::CreateScheduledSpan) => {
+                let span_args: ScheduledSpanArgs =
+                    serde_json::from_value(args.clone()).map_err(|e| {
+                        AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::no_field(
+                            e.to_string(),
                         )))
                     })?;
+                let row = self
+                    .client
+                    .create_habit_scheduled_span(
+                        &target_id,
+                        &CreateHabitScheduledSpan {
+                            start_date: span_args.start_date,
+                            end_date: span_args.end_date,
+                            reason: span_args.reason,
+                        },
+                    )
+                    .await
+                    .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
+                let after = serde_json::to_value(&row)
+                    .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
+                (target_id.clone(), None, Some(after), None)
+            }
+            (TargetKind::Habit, ChangeOperation::DeleteScheduledSpan) => {
+                let span_args: DeleteScheduledSpanArgs = serde_json::from_value(args.clone())
+                    .map_err(|e| {
+                        AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::no_field(
+                            e.to_string(),
+                        )))
+                    })?;
+                self.client
+                    .delete_habit_scheduled_span(&target_id, &span_args.span_id)
+                    .await
+                    .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
+                (target_id.clone(), change.before.clone(), None, None)
+            }
+            (TargetKind::Skill, ChangeOperation::Create) => {
+                let slug = self
+                    .client
+                    .create_skill(
+                        &serde_json::from_value::<CreateSkill>(args.clone()).map_err(|e| {
+                            AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::no_field(
+                                e.to_string(),
+                            )))
+                        })?,
+                    )
+                    .await
+                    .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?
+                    .slug;
+                (slug, None, None, None)
+            }
+            (TargetKind::Skill, ChangeOperation::Update) => {
+                let slug = self
+                    .client
+                    .update_skill(
+                        &target_id,
+                        &serde_json::from_value::<UpdateSkill>(args.clone()).map_err(|e| {
+                            AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::no_field(
+                                e.to_string(),
+                            )))
+                        })?,
+                    )
+                    .await
+                    .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?
+                    .slug;
+                (slug, None, None, None)
+            }
+            (TargetKind::Memory, ChangeOperation::Create) => {
+                let row = self
+                    .client
+                    .create_memory(
+                        &serde_json::from_value::<CreateMemory>(args.clone()).map_err(|e| {
+                            AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::no_field(
+                                e.to_string(),
+                            )))
+                        })?,
+                        operation_id,
+                    )
+                    .await
+                    .map_err(|e| AgentError::Tool(client_error(e)))?;
+                let after = serde_json::to_value(&row)
+                    .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
+                (row.id, None, Some(after), Some(row.revision))
+            }
+            (TargetKind::Memory, ChangeOperation::Update) => {
+                let update: UpdateMemory = serde_json::from_value(args.clone()).map_err(|e| {
+                    AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::no_field(
+                        e.to_string(),
+                    )))
+                })?;
+                let row = self
+                    .client
+                    .update_memory(&target_id, &update, operation_id)
+                    .await
+                    .map_err(|e| AgentError::Tool(client_error(e)))?;
+                let after = serde_json::to_value(&row)
+                    .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
+                (
+                    row.id,
+                    change.before.clone(),
+                    Some(after),
+                    Some(row.revision),
+                )
+            }
+            (TargetKind::Memory, ChangeOperation::Delete) => {
+                let del_args: MemoryDeleteArgs =
+                    serde_json::from_value(args.clone()).map_err(|e| {
+                        AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::no_field(
+                            e.to_string(),
+                        )))
+                    })?;
+                self.client
+                    .delete_memory(&target_id, del_args.observed_revision, operation_id)
+                    .await
+                    .map_err(|e| AgentError::Tool(client_error(e)))?;
+                (target_id.clone(), change.before.clone(), None, None)
+            }
+            (TargetKind::Task, ChangeOperation::Move) => {
+                let move_args: MoveArgs = serde_json::from_value(args.clone()).map_err(|e| {
+                    AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::no_field(
+                        e.to_string(),
+                    )))
+                })?;
+                let move_result = self
+                    .client
+                    .move_entry(
+                        &target_id,
+                        &MoveEntry {
+                            start_at: move_args.start_at,
+                            force: move_args.force,
+                        },
+                    )
+                    .await
+                    .map_err(|error| match error {
+                        takusu_client::ClientError::Api { status: 409, body } => {
+                            AgentError::Tool(ToolError::Conflict(body))
+                        }
+                        _ => AgentError::Tool(ToolError::Other(Box::new(error))),
+                    })?;
+                if move_args.fixed {
                     self.client
-                        .delete_memory(&target_id, observed_revision, operation_id)
+                        .update_task(
+                            &target_id,
+                            &UpdateTask {
+                                fixed: Some(true),
+                                ..Default::default()
+                            },
+                        )
                         .await
-                        .map_err(|e| AgentError::Tool(client_error(e)))?;
-                    (target_id.clone(), change.before.clone(), None, None)
+                        .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
                 }
-                (TargetKind::Task, ChangeOperation::Move) => {
-                    let start_at = args
-                        .get("start_at")
-                        .and_then(Value::as_str)
-                        .ok_or_else(|| {
-                            AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
-                                "start_at", "missing",
+                let after = serde_json::to_value(&move_result)
+                    .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
+                (target_id.clone(), change.before.clone(), Some(after), None)
+            }
+            (TargetKind::Task, ChangeOperation::Start) => {
+                let task = self
+                    .client
+                    .start_task_work(&target_id, operation_id)
+                    .await
+                    .map_err(|e| AgentError::Tool(tools::takusu::client_error(e)))?;
+                let after = serde_json::to_value(&task)
+                    .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
+                (target_id.clone(), change.before.clone(), Some(after), None)
+            }
+            (TargetKind::Task, ChangeOperation::Pause) => {
+                let task = self
+                    .client
+                    .pause_task_work(&target_id, operation_id)
+                    .await
+                    .map_err(|e| AgentError::Tool(tools::takusu::client_error(e)))?;
+                let after = serde_json::to_value(&task)
+                    .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
+                (target_id.clone(), change.before.clone(), Some(after), None)
+            }
+            (TargetKind::Task, ChangeOperation::Progress) => {
+                let record: RecordProgress = serde_json::from_value(args.clone()).map_err(|e| {
+                    AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::no_field(
+                        e.to_string(),
+                    )))
+                })?;
+                let result = self
+                    .client
+                    .record_progress(&target_id, &record, operation_id)
+                    .await
+                    .map_err(|e| AgentError::Tool(tools::takusu::client_error(e)))?;
+                let after = serde_json::to_value(&result)
+                    .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
+                (target_id.clone(), change.before.clone(), Some(after), None)
+            }
+            (TargetKind::Task, ChangeOperation::Complete) => {
+                let task = self
+                    .client
+                    .complete_task_work(&target_id, operation_id)
+                    .await
+                    .map_err(|e| AgentError::Tool(tools::takusu::client_error(e)))?;
+                let after = serde_json::to_value(&task)
+                    .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
+                (target_id.clone(), change.before.clone(), Some(after), None)
+            }
+            (TargetKind::Task, ChangeOperation::Split) => {
+                let split: SplitTask = serde_json::from_value(args.clone()).map_err(|e| {
+                    AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::no_field(
+                        e.to_string(),
+                    )))
+                })?;
+                let result = self
+                    .client
+                    .split_task(&target_id, &split, operation_id)
+                    .await
+                    .map_err(|e| AgentError::Tool(tools::takusu::client_error(e)))?;
+                let after = serde_json::to_value(&result)
+                    .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
+                (target_id.clone(), change.before.clone(), Some(after), None)
+            }
+            (TargetKind::Schedule, ChangeOperation::Generate)
+            | (TargetKind::Schedule, ChangeOperation::Reschedule) => {
+                let entries = args.get("_preview_entries").cloned().ok_or_else(|| {
+                    AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
+                        "_preview_entries",
+                        "schedule preview is missing",
+                    )))
+                })?;
+                let request = SaveScheduleRequest {
+                    entries: serde_json::from_value::<Vec<ScheduleEntry>>(entries.clone())
+                        .map_err(|e| {
+                            AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::no_field(
+                                e.to_string(),
                             )))
+                        })?,
+                    mark_scheduled_task_ids: entries
+                        .as_array()
+                        .map(|entries| {
+                            entries
+                                .iter()
+                                .filter_map(|entry| entry.get("task_id").and_then(Value::as_str))
+                                .map(ToOwned::to_owned)
+                                .collect()
                         })
-                        .and_then(|s| {
-                            s.parse::<takusu_util::Timestamp>().map_err(|_| {
-                                AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
-                                    "start_at",
-                                    "must be a valid RFC3339 timestamp",
-                                )))
-                            })
-                        })?;
-                    let force = args.get("force").and_then(Value::as_bool).unwrap_or(false);
-                    let fixed = args.get("fixed").and_then(Value::as_bool).unwrap_or(true);
-                    let move_result = self
-                        .client
-                        .move_entry(&target_id, &MoveEntry { start_at, force })
-                        .await
-                        .map_err(|error| match error {
-                            takusu_client::ClientError::Api { status: 409, body } => {
-                                AgentError::Tool(ToolError::Conflict(body))
-                            }
-                            _ => AgentError::Tool(ToolError::Other(Box::new(error))),
-                        })?;
-                    if fixed {
-                        self.client
-                            .update_task(
-                                &target_id,
-                                &UpdateTask {
-                                    fixed: Some(true),
-                                    ..Default::default()
-                                },
-                            )
-                            .await
-                            .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
-                    }
-                    let after = serde_json::to_value(&move_result)
-                        .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
-                    (target_id.clone(), change.before.clone(), Some(after), None)
-                }
-                (TargetKind::Task, ChangeOperation::Start) => {
-                    let task = self
-                        .client
-                        .start_task_work(&target_id, operation_id)
-                        .await
-                        .map_err(|e| AgentError::Tool(tools::takusu::client_error(e)))?;
-                    let after = serde_json::to_value(&task)
-                        .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
-                    (target_id.clone(), change.before.clone(), Some(after), None)
-                }
-                (TargetKind::Task, ChangeOperation::Pause) => {
-                    let task = self
-                        .client
-                        .pause_task_work(&target_id, operation_id)
-                        .await
-                        .map_err(|e| AgentError::Tool(tools::takusu::client_error(e)))?;
-                    let after = serde_json::to_value(&task)
-                        .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
-                    (target_id.clone(), change.before.clone(), Some(after), None)
-                }
-                (TargetKind::Task, ChangeOperation::Progress) => {
-                    let quantity_done = args
-                        .get("quantity_done")
-                        .and_then(Value::as_i64)
-                        .ok_or_else(|| {
-                            AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
-                                "quantity_done",
-                                "missing",
-                            )))
-                        })
-                        .and_then(|v| {
-                            Quantity::new(v).map_err(|_| {
-                                AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
-                                    "quantity_done",
-                                    "must be non-negative",
-                                )))
-                            })
-                        })?;
-                    let note = args
-                        .get("note")
-                        .and_then(Value::as_str)
-                        .map(|s| s.to_owned());
-                    let record = RecordProgress {
-                        quantity_done,
-                        note,
-                    };
-                    let result = self
-                        .client
-                        .record_progress(&target_id, &record, operation_id)
-                        .await
-                        .map_err(|e| AgentError::Tool(tools::takusu::client_error(e)))?;
-                    let after = serde_json::to_value(&result)
-                        .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
-                    (target_id.clone(), change.before.clone(), Some(after), None)
-                }
-                (TargetKind::Task, ChangeOperation::Complete) => {
-                    let task = self
-                        .client
-                        .complete_task_work(&target_id, operation_id)
-                        .await
-                        .map_err(|e| AgentError::Tool(tools::takusu::client_error(e)))?;
-                    let after = serde_json::to_value(&task)
-                        .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
-                    (target_id.clone(), change.before.clone(), Some(after), None)
-                }
-                (TargetKind::Task, ChangeOperation::Split) => {
-                    let retained_quantity = args
-                        .get("retained_quantity")
-                        .and_then(Value::as_i64)
-                        .ok_or_else(|| {
-                            AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
-                                "retained_quantity",
-                                "missing",
-                            )))
-                        })
-                        .and_then(|v| {
-                            Quantity::new(v).map_err(|_| {
-                                AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
-                                    "retained_quantity",
-                                    "must be non-negative",
-                                )))
-                            })
-                        })?;
-                    let set_dependency = args.get("set_dependency").and_then(Value::as_bool);
-                    let title = args
-                        .get("title")
-                        .and_then(Value::as_str)
-                        .map(|s| s.to_owned());
-                    let description = args
-                        .get("description")
-                        .and_then(Value::as_str)
-                        .map(|s| s.to_owned());
-                    let end_at = args
-                        .get("end_at")
-                        .and_then(Value::as_str)
-                        .map(|s| s.parse::<takusu_util::Timestamp>())
-                        .transpose()
-                        .map_err(|_| {
-                            AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
-                                "end_at",
-                                "must be a valid RFC3339 timestamp",
-                            )))
-                        })?;
-                    let split = SplitTask {
-                        retained_quantity,
-                        set_dependency,
-                        title,
-                        description,
-                        end_at,
-                    };
-                    let result = self
-                        .client
-                        .split_task(&target_id, &split, operation_id)
-                        .await
-                        .map_err(|e| AgentError::Tool(tools::takusu::client_error(e)))?;
-                    let after = serde_json::to_value(&result)
-                        .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
-                    (target_id.clone(), change.before.clone(), Some(after), None)
-                }
-                (TargetKind::Schedule, ChangeOperation::Generate)
-                | (TargetKind::Schedule, ChangeOperation::Reschedule) => {
-                    let entries = args.get("_preview_entries").cloned().ok_or_else(|| {
-                        AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
-                            "_preview_entries",
-                            "schedule preview is missing",
-                        )))
-                    })?;
-                    let request = SaveScheduleRequest {
-                        entries: serde_json::from_value::<Vec<ScheduleEntry>>(entries.clone())
-                            .map_err(|e| {
-                                AgentError::Tool(ToolError::InvalidArgs(
-                                    InvalidArgsError::no_field(e.to_string()),
-                                ))
-                            })?,
-                        mark_scheduled_task_ids: entries
-                            .as_array()
-                            .map(|entries| {
-                                entries
-                                    .iter()
-                                    .filter_map(|entry| {
-                                        entry.get("task_id").and_then(Value::as_str)
-                                    })
-                                    .map(ToOwned::to_owned)
-                                    .collect()
-                            })
-                            .unwrap_or_default(),
-                    };
-                    let id = self
-                        .client
-                        .replace_schedule(&request)
-                        .await
-                        .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?
-                        .id;
-                    (id, None, None, None)
-                }
-                _ => {
-                    return Err(AgentError::Tool(ToolError::InvalidArgs(
-                        InvalidArgsError::no_field("unsupported proposal"),
-                    )));
-                }
-            };
+                        .unwrap_or_default(),
+                };
+                let id = self
+                    .client
+                    .replace_schedule(&request)
+                    .await
+                    .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?
+                    .id;
+                (id, None, None, None)
+            }
+            _ => {
+                return Err(AgentError::Tool(ToolError::InvalidArgs(
+                    InvalidArgsError::no_field("unsupported proposal"),
+                )));
+            }
+        };
         if change.target.kind == TargetKind::Skill {
             self.clear_skills_index();
         }
@@ -4250,7 +4051,7 @@ mod tests {
             "parallelizable": "yes",
         });
         let err = AgentSession::parse_habit_step(&value).unwrap_err();
-        assert!(format!("{err}").contains("parallelizable must be a boolean"));
+        assert!(format!("{err}").contains("expected a boolean"));
     }
 
     #[test]
@@ -4369,7 +4170,7 @@ mod tests {
             "depends_on": "1",
         });
         let err = AgentSession::parse_habit_step(&value).unwrap_err();
-        assert!(format!("{err}").contains("depends_on must be an array"));
+        assert!(format!("{err}").contains("expected a sequence"));
     }
 
     #[test]
@@ -4383,7 +4184,7 @@ mod tests {
             "unknown_field": true,
         });
         let err = AgentSession::parse_habit_step(&value).unwrap_err();
-        assert!(format!("{err}").contains("unknown step field 'unknown_field'"));
+        assert!(format!("{err}").contains("unknown field `unknown_field`"));
     }
 
     fn habit_step_row(id: &str, position: i64) -> takusu_client::HabitStepRow {
