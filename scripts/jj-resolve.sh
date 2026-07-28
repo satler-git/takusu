@@ -19,18 +19,23 @@
 #
 # Requires: jj.
 #
-# Conflict marker styles: jj supports three `ui.conflict-marker-style` settings:
-#   diff (default) — <<<<<<< / +++++++ / ------- / >>>>>>>
-#   snapshot       — <<<<<<< / +++++++ / ------- / >>>>>>>
-#   git            — <<<<<<< / ||||||| / ======= / >>>>>>>
-# All styles share <<<<<<< and >>>>>>> as start/end. We match all known markers.
+# Conflict marker style: this repo sets `ui.conflict-marker-style = "git"` in
+# `.jj/repo/config.toml`, so conflicts use the git format:
+#   <<<<<<<  (side label)
+#   ...ours...
+#   |||||||  (base, optional)
+#   ...base...
+#   =======
+#   ...theirs...
+#   >>>>>>>  (side label)
+# We match these four markers (7+ chars of <, >, |, =).
 
 set -euo pipefail
 
 die() { echo "jj-resolve: $*" >&2; exit 1; }
 
-# Grep pattern matching all jj conflict marker styles (7+ chars of <, >, +, -, |, =).
-CONFLICT_MARKER_RE='^<{7}|^>{7}|^\+{7}|^-{7}|^\|{7}|^={7}'
+# Grep pattern matching git-style conflict markers (7+ chars of <, >, |, =).
+CONFLICT_MARKER_RE='^<{7}|^>{7}|^\|{7}|^={7}'
 
 usage() {
   sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'

@@ -20,9 +20,10 @@ Use the `scripts/jj-resolve.sh` helper when a `jj rebase`, `jj merge`, or
   - One-line summary: `N conflicted file(s)`.
 - `./scripts/jj-resolve.sh show [<file>]`
   - Prints conflict marker line numbers for one file (or all conflicted
-    files if no argument). Detects all jj conflict marker styles:
-    `diff` (default), `snapshot`, and `git`. Use this to understand the
-    conflict shape before editing.
+    files if no argument). This repo uses git-style conflict markers
+    (`<<<<<<<`, `|||||||`, `=======`, `>>>>>>>`), configured via
+    `ui.conflict-marker-style = "git"` in `.jj/repo/config.toml`. Use this
+    to understand the conflict shape before editing.
 - `./scripts/jj-resolve.sh edit <file>`
   - Opens `$EDITOR` on the file. After saving, run `mark` to verify the
     conflict is resolved.
