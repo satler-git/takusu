@@ -235,8 +235,9 @@ CLI: takusu schedule generate
          │    WHERE status IN       │
          │    ('pending','scheduled')│
          │                          │
-         │ 3. Planner::new(now,     │
-         │       sleep_config)      │
+         │ 3. Planner::new(          │
+         │       PlannerConfig::new( │
+         │         now, sleep))      │
          │    for each task:        │
          │      planner.add(task)   │
          │                          │

@@ -88,7 +88,7 @@ use crate::placement::{HabitGroupAnchor, Placement};
 
 /// 評価関数の全重みを集約した構造体。
 ///
-/// `Planner::weights` で保持し、`set_weights` で差し替え可能。
+/// `Planner::weights` で保持し、`PlannerConfig` 経由で差し替え可能。
 /// チューニング実験ごとにコードを書き換える必要をなくす。
 ///
 /// ## 重み設計
@@ -832,8 +832,8 @@ mod tests {
     use crate::placement::Placement;
 
     fn make_planner() -> Planner {
-        let mut p = Planner::new(Point(0), SleepConfig::disabled());
-        p.set_workload(WorkloadConfig::disabled());
+        let mut p = Planner::new(PlannerConfig::new(Point(0), SleepConfig::disabled()));
+        p.workload = WorkloadConfig::disabled();
         p
     }
 
@@ -1253,7 +1253,7 @@ mod tests {
 
     #[test]
     fn sleep_recommended_nighttime_penalized() {
-        let mut p = Planner::new(Point(0), SleepConfig::recommended());
+        let mut p = Planner::new(PlannerConfig::new(Point(0), SleepConfig::recommended()));
 
         let id = p
             .add(Task {
@@ -1283,7 +1283,7 @@ mod tests {
 
     #[test]
     fn sleep_recommended_second_day() {
-        let mut p = Planner::new(Point(0), SleepConfig::recommended());
+        let mut p = Planner::new(PlannerConfig::new(Point(0), SleepConfig::recommended()));
 
         let id = p
             .add(Task {
@@ -1777,7 +1777,7 @@ mod tests {
     #[test]
     fn daily_load_prefers_spread_over_one_day() {
         let mut p = make_planner();
-        p.set_workload(WorkloadConfig::new(48, 96)); // comfortable=4h, max=8h
+        p.workload = WorkloadConfig::new(48, 96); // comfortable=4h, max=8h
         let slots_per_day = 24 * 12;
         let a = add_simple_task(&mut p, 48, 0, slots_per_day * 3);
         let b = add_simple_task(&mut p, 48, 0, slots_per_day * 3);
@@ -1802,7 +1802,7 @@ mod tests {
     #[test]
     fn daily_load_allows_concentration_when_deadline_tight() {
         let mut p = make_planner();
-        p.set_workload(WorkloadConfig::new(48, 96)); // comfortable=4h, max=8h
+        p.workload = WorkloadConfig::new(48, 96); // comfortable=4h, max=8h
         let a = add_simple_task(&mut p, 24, 0, 30);
         let b = add_simple_task(&mut p, 24, 0, 30);
 
@@ -1826,7 +1826,7 @@ mod tests {
     #[test]
     fn daily_load_includes_fixed_tasks() {
         let mut p = make_planner();
-        p.set_workload(WorkloadConfig::new(36, 72)); // comfortable=3h, max=6h
+        p.workload = WorkloadConfig::new(36, 72); // comfortable=3h, max=6h
         let slots_per_day = 24 * 12;
         let fixed = p
             .add(Task {
@@ -1863,7 +1863,7 @@ mod tests {
     #[test]
     fn daily_load_no_double_count_for_parallel_tasks() {
         let mut p = make_planner();
-        p.set_workload(WorkloadConfig::new(48, 96)); // comfortable=4h, max=8h
+        p.workload = WorkloadConfig::new(48, 96); // comfortable=4h, max=8h
         let host = p
             .add(Task {
                 id: 0,
@@ -1911,7 +1911,7 @@ mod tests {
     #[test]
     fn daily_load_light_day_not_over_penalized() {
         let mut p = make_planner();
-        p.set_workload(WorkloadConfig::new(48, 96));
+        p.workload = WorkloadConfig::new(48, 96);
         let slots_per_day = 24 * 12;
         let a = add_simple_task(&mut p, 12, 0, slots_per_day * 3);
         let b = add_simple_task(&mut p, 12, 0, slots_per_day * 3);
@@ -1938,7 +1938,7 @@ mod tests {
     fn daily_load_respects_maximum_capacity() {
         let mut p = make_planner();
         // comfortable=4h, max=8h. 10h work exceeds maximum.
-        p.set_workload(WorkloadConfig::new(48, 96));
+        p.workload = WorkloadConfig::new(48, 96);
         let a = add_simple_task(&mut p, 72, 0, 144);
         let b = add_simple_task(&mut p, 48, 0, 144);
 

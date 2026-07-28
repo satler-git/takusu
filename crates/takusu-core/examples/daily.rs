@@ -9,7 +9,9 @@
 
 use std::collections::HashMap;
 
-use takusu_core::{NormalDist, ParallelMode, Planner, Point, SleepConfig, Slots, Task};
+use takusu_core::{
+    NormalDist, ParallelMode, Planner, PlannerConfig, Point, SleepConfig, Slots, Task,
+};
 
 fn fmt_time(slot: i64) -> String {
     let total_minutes = Slots(slot).to_minutes().0;
@@ -38,7 +40,7 @@ fn main() {
     // 06:00 起点 = slot 72 (6*12)
     let now = Point(72);
 
-    let mut planner = Planner::new(now, SleepConfig::recommended());
+    let mut planner = Planner::new(PlannerConfig::new(now, SleepConfig::recommended()));
 
     // ── タスク定義 ──────────────────────────────────────────────
     //

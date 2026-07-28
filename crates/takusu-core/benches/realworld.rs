@@ -1,7 +1,9 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 use std::time::Duration;
-use takusu_core::{NormalDist, ParallelMode, Planner, Point, RescheduleRange, SleepConfig, Task};
+use takusu_core::{
+    NormalDist, ParallelMode, Planner, PlannerConfig, Point, RescheduleRange, SleepConfig, Task,
+};
 
 #[derive(serde::Deserialize)]
 struct Fixture {
@@ -46,7 +48,7 @@ fn build_planner(fixture: &str) -> (Planner, i64) {
         enabled: fixture.sleep.enabled,
     };
 
-    let mut planner = Planner::new(Point(fixture.now), sleep);
+    let mut planner = Planner::new(PlannerConfig::new(Point(fixture.now), sleep));
 
     for t in fixture.tasks {
         planner

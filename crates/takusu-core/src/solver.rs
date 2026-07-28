@@ -241,7 +241,7 @@ fn solve_auto(planner: &Planner, pinned: &[TaskPlacement]) -> Plan {
     }
 
     let mut sa_planner = planner.clone();
-    sa_planner.set_time_budget(remaining);
+    sa_planner.time_budget = remaining;
     let sa_plan = if pinned.is_empty() {
         solve_sa(&sa_planner, None)
     } else {
@@ -260,10 +260,10 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
-    use crate::{NormalDist, Planner, SleepConfig, Solver, Task};
+    use crate::{NormalDist, Planner, PlannerConfig, SleepConfig, Solver, Task};
 
     fn make_planner(task_count: usize) -> Planner {
-        let mut planner = Planner::new(Point(0), SleepConfig::disabled());
+        let mut planner = Planner::new(PlannerConfig::new(Point(0), SleepConfig::disabled()));
         for i in 0..task_count {
             planner
                 .add(Task {
@@ -352,14 +352,14 @@ mod tests {
 
     #[test]
     fn solve_empty_planner() {
-        let planner = Planner::new(Point(0), SleepConfig::disabled());
+        let planner = Planner::new(PlannerConfig::new(Point(0), SleepConfig::disabled()));
         let plan = solve(&planner);
         assert!(plan.schedules.is_empty());
     }
 
     #[test]
     fn solve_no_deadline_violation_for_easy_tasks() {
-        let mut planner = Planner::new(Point(0), SleepConfig::disabled());
+        let mut planner = Planner::new(PlannerConfig::new(Point(0), SleepConfig::disabled()));
         for _i in 0..5 {
             planner
                 .add(Task {
@@ -384,10 +384,10 @@ mod tests {
     #[test]
     fn plan_with_seed_is_always_sa() {
         let mut planner = make_planner(3);
-        planner.set_seed(Some(42));
-        planner.set_solver(Solver::Priority);
+        planner.seed = Some(42);
+        planner.solver = Solver::Priority;
         let priority_solver_plan = planner.plan_with_seed(7);
-        planner.set_solver(Solver::Sa);
+        planner.solver = Solver::Sa;
         let sa_solver_plan = planner.plan_with_seed(7);
         assert_eq!(priority_solver_plan, sa_solver_plan);
     }
@@ -395,10 +395,10 @@ mod tests {
     #[test]
     fn plan_alns_with_seed_is_always_priority() {
         let mut planner = make_planner(3);
-        planner.set_seed(Some(42));
-        planner.set_solver(Solver::Sa);
+        planner.seed = Some(42);
+        planner.solver = Solver::Sa;
         let sa_solver_plan = planner.plan_alns_with_seed(7);
-        planner.set_solver(Solver::Priority);
+        planner.solver = Solver::Priority;
         let priority_solver_plan = planner.plan_alns_with_seed(7);
         assert_eq!(sa_solver_plan, priority_solver_plan);
     }
@@ -406,8 +406,8 @@ mod tests {
     #[test]
     fn solve_respects_solver_priority() {
         let mut planner = make_planner(3);
-        planner.set_seed(Some(42));
-        planner.set_solver(Solver::Priority);
+        planner.seed = Some(42);
+        planner.solver = Solver::Priority;
         let plan = planner.plan();
         let alns_plan = planner.plan_alns_with_seed(42);
         assert_eq!(plan, alns_plan);
@@ -416,8 +416,8 @@ mod tests {
     #[test]
     fn seed_is_deterministic() {
         let mut planner = make_planner(3);
-        planner.set_seed(Some(42));
-        planner.set_solver(Solver::Priority);
+        planner.seed = Some(42);
+        planner.solver = Solver::Priority;
         let plan1 = planner.plan();
         let plan2 = planner.plan();
         assert_eq!(plan1, plan2);
@@ -426,7 +426,7 @@ mod tests {
     #[test]
     fn time_budget_zero_returns_initial_plan() {
         let mut planner = make_planner(3);
-        planner.set_time_budget(Some(Duration::ZERO));
+        planner.time_budget = Some(Duration::ZERO);
         let plan = planner.plan();
         assert_eq!(plan.schedules.len(), planner.tasks.len());
     }
@@ -435,8 +435,8 @@ mod tests {
     fn solver_strategy_overrides_enum_setting() {
         // enum 設定に関わらず差し込んだ戦略が使われること。
         let mut planner = make_planner(3);
-        planner.set_seed(Some(42));
-        planner.set_solver(Solver::Sa);
+        planner.seed = Some(42);
+        planner.solver = Solver::Sa;
 
         let sa_plan = planner.plan();
         // 同じ SA を独自戦略として差し込んでも結果は一致するはず。
@@ -450,7 +450,7 @@ mod tests {
         // 独自戦略が実際に呼ばれることを検出するため、呼び出しを記録する戦略。
         let strategy = std::sync::Arc::new(CountingSolver::new());
         let mut planner = make_planner(3);
-        planner.set_solver(Solver::Priority);
+        planner.solver = Solver::Priority;
         planner.set_solver_strategy(Some(strategy.clone()));
 
         let _ = planner.plan();
@@ -468,8 +468,8 @@ mod tests {
         // pinned 渡しの経路も戦略ディスパッチが保証されることを確認する。
         let strategy = std::sync::Arc::new(CountingSolver::new());
         let mut planner = make_planner(5);
-        planner.set_seed(Some(42));
-        planner.set_solver(Solver::Priority);
+        planner.seed = Some(42);
+        planner.solver = Solver::Priority;
         planner.set_solver_strategy(Some(strategy.clone()));
 
         let full_plan = planner.plan();
@@ -485,7 +485,7 @@ mod tests {
     fn solver_strategy_survives_planner_clone() {
         // Planner は Clone なので、戦略を差し込んだ状態のクローンが壊れないこと。
         let mut planner = make_planner(3);
-        planner.set_seed(Some(42));
+        planner.seed = Some(42);
         planner.set_solver_strategy(Some(std::sync::Arc::new(PrioritySolver)));
         let cloned = planner.clone();
         let a = planner.plan();

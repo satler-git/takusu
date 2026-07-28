@@ -6,8 +6,8 @@ use std::time::Duration;
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use takusu_core::{
-    Minutes, NormalDist, ParallelMode, Planner, Point, RescheduleRange, SleepConfig, Slots,
-    Task as CoreTask, TaskPlacement, WorkloadConfig,
+    Minutes, NormalDist, ParallelMode, Planner, PlannerConfig, Point, RescheduleRange,
+    SleepConfig, Slots, Task as CoreTask, TaskPlacement, WorkloadConfig,
 };
 use takusu_storage::{
     CreateHabit, CreateHabitBatch, CreateHabitBatchResult, CreateHabitScheduledSpan, CreateMemory,
@@ -530,18 +530,20 @@ fn parse_workload(settings: &SettingsRow) -> WorkloadConfig {
     }
 }
 
-/// #772: `Planner` に settings の solver / time budget / seed / warm start を反映する。
-fn apply_planner_settings(planner: &mut Planner, settings: &SettingsRow) {
-    planner.set_workload(parse_workload(settings));
-    planner.set_solver(settings.solver.into());
-    planner.set_time_budget(
-        settings
+/// #772: settings の solver / time budget / seed / warm start / workload を
+/// `PlannerConfig` に反映する。
+fn planner_config(start: Point, sleep: SleepConfig, settings: &SettingsRow) -> PlannerConfig {
+    PlannerConfig {
+        workload: parse_workload(settings),
+        solver: settings.solver.into(),
+        time_budget: settings
             .time_budget_ms
             .filter(|&ms| ms > 0)
             .map(|ms| Duration::from_millis(ms as u64)),
-    );
-    planner.set_seed(settings.seed.filter(|&s| s >= 0).map(|s| s as u64));
-    planner.set_warm_start(settings.warm_start);
+        seed: settings.seed.filter(|&s| s >= 0).map(|s| s as u64),
+        warm_start: settings.warm_start,
+        ..PlannerConfig::new(start, sleep)
+    }
 }
 
 /// ISO文字列 → Point スロット値。`now` は現在時刻。
@@ -3437,8 +3439,7 @@ impl TakusuApp {
             }
         }
 
-        let mut planner = Planner::new(start, sleep);
-        apply_planner_settings(&mut planner, settings);
+        let mut planner = Planner::new(planner_config(start, sleep, settings));
         let mut id_map: Vec<String> = Vec::with_capacity(task_rows.len());
 
         for (i, row) in task_rows.iter().enumerate() {

@@ -1,4 +1,4 @@
-use takusu_core::{NormalDist, ParallelMode, Planner, Point, SleepConfig, Task};
+use takusu_core::{NormalDist, ParallelMode, Planner, PlannerConfig, Point, SleepConfig, Task};
 
 #[derive(serde::Deserialize)]
 struct Fixture {
@@ -104,7 +104,7 @@ pub fn build_planner_from_str(input: &str) -> Planner {
         enabled: fixture.sleep.enabled,
     };
 
-    let mut planner = Planner::new(Point(fixture.now), sleep);
+    let mut planner = Planner::new(PlannerConfig::new(Point(fixture.now), sleep));
     for t in fixture.tasks {
         planner
             .add(Task {

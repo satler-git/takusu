@@ -252,7 +252,7 @@ mod tests {
 
     /// `days` 日分の daily habit (tod, dur) を group 0 で作る。
     fn habit_planner(days: usize, tod: i64, dur: i64) -> (Planner, Vec<usize>) {
-        let mut p = Planner::new(Point(0), SleepConfig::disabled());
+        let mut p = Planner::new(PlannerConfig::new(Point(0), SleepConfig::disabled()));
         let mut ids = vec![];
         for d in 0..days {
             let day_start = (d as i64 + 1) * SPD;
@@ -280,7 +280,7 @@ mod tests {
 
     #[test]
     fn build_index_groups_by_habit_group() {
-        let mut p = Planner::new(Point(0), SleepConfig::disabled());
+        let mut p = Planner::new(PlannerConfig::new(Point(0), SleepConfig::disabled()));
         let a0 = p.add(habit_task(SPD, 100, 6, false)).unwrap();
         let a1 = p.add(habit_task(2 * SPD, 100, 6, false)).unwrap();
         let mut t = habit_task(SPD, 200, 6, false);
@@ -303,14 +303,14 @@ mod tests {
 
     #[test]
     fn build_index_single_member_skipped() {
-        let mut p = Planner::new(Point(0), SleepConfig::disabled());
+        let mut p = Planner::new(PlannerConfig::new(Point(0), SleepConfig::disabled()));
         let _a = p.add(habit_task(SPD, 100, 6, false)).unwrap();
         assert!(build_index(&p).groups.is_empty());
     }
 
     #[test]
     fn no_habit_returns_empty() {
-        let mut p = Planner::new(Point(0), SleepConfig::disabled());
+        let mut p = Planner::new(PlannerConfig::new(Point(0), SleepConfig::disabled()));
         let mut t = habit_task(SPD, 100, 6, false);
         t.habit_group = None;
         let _a = p.add(t).unwrap();
@@ -365,7 +365,7 @@ mod tests {
 
     #[test]
     fn apply_anchor_shift_skips_fixed() {
-        let mut p = Planner::new(Point(0), SleepConfig::disabled());
+        let mut p = Planner::new(PlannerConfig::new(Point(0), SleepConfig::disabled()));
         let a = p.add(habit_task(SPD, 108, 6, false)).unwrap();
         let b = p.add(habit_task(2 * SPD, 108, 6, true)).unwrap();
         let plan = plan_at_starts(&p, &[a, b], 6);
@@ -424,7 +424,7 @@ mod tests {
 
     #[test]
     fn apply_anchor_shift_respects_task_start() {
-        let mut p = Planner::new(Point(SPD + 110), SleepConfig::disabled());
+        let mut p = Planner::new(PlannerConfig::new(Point(SPD + 110), SleepConfig::disabled()));
         let a = p.add(habit_task(SPD, 108, 6, false)).unwrap();
         let b = p.add(habit_task(2 * SPD, 108, 6, false)).unwrap();
         let plan = plan_at_starts(&p, &[a, b], 6);
