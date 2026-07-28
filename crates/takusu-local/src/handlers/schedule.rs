@@ -6,7 +6,7 @@ use takusu_local_lib::app::{
     GenerateScheduleInput, MoveEntryOutput, RescheduleInput, SchedulePreviewInput,
 };
 use takusu_storage::{SaveScheduleRequest, ScheduleRow};
-use takusu_util::ScheduleMode;
+use takusu_util::{ScheduleMode, SleepInput};
 
 use crate::error::HttpError;
 use crate::state::AppState;
@@ -15,11 +15,11 @@ use crate::state::AppState;
 pub struct GenerateSchedule {
     pub task_ids: Option<Vec<String>>,
     #[serde(default = "default_sleep")]
-    pub sleep: String,
+    pub sleep: SleepInput,
 }
 
-fn default_sleep() -> String {
-    "recommended".to_string()
+fn default_sleep() -> SleepInput {
+    SleepInput::Recommended
 }
 
 #[derive(Debug, Deserialize)]
@@ -31,7 +31,7 @@ pub struct Reschedule {
     #[serde(default)]
     pub pinned: Vec<String>,
     #[serde(default = "default_sleep")]
-    pub sleep: String,
+    pub sleep: SleepInput,
 }
 
 #[derive(Debug, Deserialize)]
@@ -49,18 +49,18 @@ pub async fn get_schedule(State(state): State<AppState>) -> Result<Json<Schedule
 #[derive(Debug, Deserialize)]
 pub struct PreviewSchedule {
     #[serde(default = "default_mode")]
-    pub mode: String,
+    pub mode: ScheduleMode,
     pub from: Option<String>,
     pub until: Option<String>,
     pub task_ids: Option<Vec<String>>,
     #[serde(default)]
     pub pinned: Vec<String>,
     #[serde(default = "default_sleep")]
-    pub sleep: String,
+    pub sleep: SleepInput,
 }
 
-fn default_mode() -> String {
-    "full".to_string()
+fn default_mode() -> ScheduleMode {
+    ScheduleMode::Full
 }
 
 pub async fn preview_schedule(

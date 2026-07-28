@@ -21,33 +21,11 @@ use takusu_storage::{
     CreateHabit, CreateHabitScheduledSpan, CreateMemory, CreateSkill, CreateTask, HabitPreviewRequest,
     HabitStepInput, SettingsRow, UpdateHabit, UpdateSettings, UpdateTask,
 };
-use takusu_util::EnumLabel;
+use takusu_util::{EnumLabel, SleepInput};
 
 use crate::error::{AppError, BadRequestKind};
 
 // ── helper free functions ─────────────────────────────────────────────
-
-/// Parse a `HH:MM` string into `(hour, minute)`.
-pub(crate) fn parse_hhmm(s: &str) -> Result<(u8, u8), AppError> {
-    let parts: Vec<&str> = s.split(':').collect();
-    if parts.len() != 2 {
-        return Err(AppError::BadRequest(BadRequestKind::InvalidTime(format!(
-            "invalid time: {s}"
-        ))));
-    }
-    let h: u8 = parts[0].parse().map_err(|_| {
-        AppError::BadRequest(BadRequestKind::InvalidTime(format!("invalid time: {s}")))
-    })?;
-    let m: u8 = parts[1].parse().map_err(|_| {
-        AppError::BadRequest(BadRequestKind::InvalidTime(format!("invalid time: {s}")))
-    })?;
-    if h > 23 || m > 59 {
-        return Err(AppError::BadRequest(BadRequestKind::InvalidTime(format!(
-            "invalid time: {s}"
-        ))));
-    }
-    Ok((h, m))
-}
 
 /// Reject negative or unrealistically large `avg_minutes` / `sigma_minutes`,
 /// which would wrap to a huge `u64` slot count in the planner and break the
@@ -397,12 +375,11 @@ pub trait SettingsPlannerExt {
     /// 1 スロット = 5 分なので、`Minutes` からスロット数に変換する。
     fn workload_config(&self) -> WorkloadConfig;
 
-    /// Parse a sleep-mode string (`"recommended"` / `"disabled"` /
-    /// `"HH:MM-HH:MM"`) into a `SleepConfig` using the settings' sleep
+    /// Parse a [`SleepInput`] into a `SleepConfig` using the settings' sleep
     /// window and the supplied timezone.
     fn sleep_config(
         &self,
-        s: &str,
+        input: &SleepInput,
         tz: &jiff::tz::TimeZone,
     ) -> Result<SleepConfig, AppError>;
 }
@@ -446,25 +423,20 @@ impl SettingsPlannerExt for SettingsRow {
 
     fn sleep_config(
         &self,
-        s: &str,
+        input: &SleepInput,
         tz: &jiff::tz::TimeZone,
     ) -> Result<SleepConfig, AppError> {
-        match s {
-            "recommended" => {
+        match input {
+            SleepInput::Recommended => {
                 let (sh, sm) = (self.sleep_start.hour(), self.sleep_start.minute());
                 let (eh, em) = (self.sleep_end.hour(), self.sleep_end.minute());
                 Ok(SleepConfig::from_local(5, tz, sh, sm, eh, em))
             }
-            "disabled" => Ok(SleepConfig::disabled()),
-            custom => {
-                let parts: Vec<&str> = custom.splitn(2, '-').collect();
-                if parts.len() == 2 {
-                    let (sh, sm) = parse_hhmm(parts[0])?;
-                    let (eh, em) = parse_hhmm(parts[1])?;
-                    Ok(SleepConfig::from_local(5, tz, sh, sm, eh, em))
-                } else {
-                    Ok(SleepConfig::disabled())
-                }
+            SleepInput::Disabled => Ok(SleepConfig::disabled()),
+            SleepInput::Custom { start, end } => {
+                let (sh, sm) = (start.hour(), start.minute());
+                let (eh, em) = (end.hour(), end.minute());
+                Ok(SleepConfig::from_local(5, tz, sh, sm, eh, em))
             }
         }
     }

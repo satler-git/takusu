@@ -23,7 +23,8 @@ use takusu_storage::{
 };
 use takusu_util::search::{Completion, complete};
 use takusu_util::{
-    Abandonability, MemoryKind, ScheduleMode, TaskStatus, TaskStatusFilter, WindowMode,
+    Abandonability, MemoryKind, ScheduleMode, SleepInput, TaskStatus, TaskStatusFilter,
+    WindowMode,
 };
 
 use crate::error::storage_to_app;
@@ -372,7 +373,7 @@ pub struct IcalImportResult {
 #[derive(Debug, Clone)]
 pub struct GenerateScheduleInput {
     pub task_ids: Option<Vec<String>>,
-    pub sleep: String,
+    pub sleep: SleepInput,
 }
 
 #[derive(Debug, Clone)]
@@ -382,17 +383,17 @@ pub struct RescheduleInput {
     pub until: Option<String>,
     pub task_ids: Option<Vec<String>>,
     pub pinned: Vec<String>,
-    pub sleep: String,
+    pub sleep: SleepInput,
 }
 
 #[derive(Debug, Clone)]
 pub struct SchedulePreviewInput {
-    pub mode: String,
+    pub mode: ScheduleMode,
     pub from: Option<String>,
     pub until: Option<String>,
     pub task_ids: Option<Vec<String>>,
     pub pinned: Vec<String>,
-    pub sleep: String,
+    pub sleep: SleepInput,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1840,14 +1841,14 @@ impl TakusuApp {
                 ))
             })
             .collect::<Vec<_>>();
-        let plan = match input.mode.as_str() {
-            "full" => {
+        let plan = match input.mode {
+            ScheduleMode::Full => {
                 if !current_schedule.is_empty() {
                     planner.set_previous_schedule(&current_schedule);
                 }
                 planner.plan()
             }
-            "tasks" => {
+            ScheduleMode::Tasks => {
                 if !current_schedule.is_empty() {
                     planner.set_previous_schedule(&current_schedule);
                 }
@@ -1866,7 +1867,7 @@ impl TakusuApp {
                     .collect::<Vec<_>>();
                 planner.plan_partial(&pinned)
             }
-            "range" => {
+            ScheduleMode::Range => {
                 let from_str = input.from.as_ref().ok_or_else(|| {
                     AppError::BadRequest(BadRequestKind::Other(
                         "from is required for range mode".into(),
@@ -1887,12 +1888,6 @@ impl TakusuApp {
                     .filter_map(|pid| id_to_idx.get(pid).copied())
                     .collect();
                 planner.plan_in_range(&range, &current_schedule, &extra_pinned)
-            }
-            _ => {
-                return Err(AppError::BadRequest(BadRequestKind::Other(format!(
-                    "unknown mode: {}",
-                    input.mode
-                ))));
             }
         };
         let entries = self.plan_to_entries(&plan, &id_map)?;
@@ -1975,6 +1970,11 @@ impl TakusuApp {
             .collect();
 
         let plan = match input.mode {
+            ScheduleMode::Full => {
+                return Err(AppError::BadRequest(BadRequestKind::Other(
+                    "full mode is not supported for reschedule; use generate_schedule instead".into(),
+                )));
+            }
             ScheduleMode::Range => {
                 let from_str = input.from.as_ref().ok_or_else(|| {
                     AppError::BadRequest(BadRequestKind::Other(
@@ -3326,26 +3326,22 @@ mod tests {
         assert!(point_to_local_date(i64::MIN, &tz).is_err());
     }
 
-    // Regression (#780): sleep_config must reject invalid HH:MM strings.
-    // parse_hhmm currently swallows parse errors and does not validate ranges,
-    // so custom sleep strings like "22:70-06:00" are accepted silently.
+    // Regression (#780): SleepInput parsing must reject invalid HH:MM strings.
+    // TimeOfDay validates ranges, so custom sleep strings like "22:70-06:00"
+    // are rejected at the boundary rather than silently accepted.
     #[test]
-    fn regression_parse_sleep_rejects_invalid_hhmm() {
-        use crate::validate::SettingsPlannerExt;
-        let tz = jiff::tz::TimeZone::UTC;
-        let settings = default_settings_row();
-
+    fn regression_sleep_input_rejects_invalid_hhmm() {
         // Minutes out of range and hours out of range should both error.
         assert!(
-            settings.sleep_config("22:70-06:00", &tz).is_err(),
+            "22:70-06:00".parse::<SleepInput>().is_err(),
             "custom sleep with invalid minutes should be rejected"
         );
         assert!(
-            settings.sleep_config("22:00-25:00", &tz).is_err(),
+            "22:00-25:00".parse::<SleepInput>().is_err(),
             "custom sleep with invalid hours should be rejected"
         );
         assert!(
-            settings.sleep_config("22:00-06:00", &tz).is_ok(),
+            "22:00-06:00".parse::<SleepInput>().is_ok(),
             "valid custom sleep should still be accepted"
         );
     }
