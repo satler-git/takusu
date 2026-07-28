@@ -1,7 +1,7 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 use std::time::Duration;
-use takusu_core::{NormalDist, Planner, Point, RescheduleRange, SleepConfig, Task};
+use takusu_core::{NormalDist, ParallelMode, Planner, Point, RescheduleRange, SleepConfig, Task};
 
 #[derive(serde::Deserialize)]
 struct Fixture {
@@ -56,8 +56,7 @@ fn build_planner(fixture: &str) -> (Planner, i64) {
                 end: Point(t.end),
                 cost_estimate: NormalDist::new(t.avg, t.sigma),
                 depends: t.depends,
-                parallelizable: t.parallelizable,
-                allows_parallel: t.allows_parallel,
+                parallel_mode: ParallelMode::from_bools(t.parallelizable, t.allows_parallel),
                 abandonability: t.abandonability.into(),
                 fixed: t.fixed,
                 habit_group: t.habit_group,

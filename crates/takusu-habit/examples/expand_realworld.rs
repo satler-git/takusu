@@ -11,7 +11,7 @@ use jiff::tz::TimeZone;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
-use takusu_core::{Minutes, NormalDist, Point, SleepConfig, Task};
+use takusu_core::{Minutes, NormalDist, ParallelMode, Point, SleepConfig, Task};
 use takusu_habit::{
     Habit, HabitStore, RecurrenceRule, TimeOfDay, date_time_to_point, point_to_date,
 };
@@ -236,8 +236,10 @@ fn main() {
                             Minutes(step.sigma_minutes),
                         ),
                         depends,
-                        parallelizable: step.parallelizable,
-                        allows_parallel: step.allows_parallel,
+                        parallel_mode: ParallelMode::from_bools(
+                            step.parallelizable,
+                            step.allows_parallel,
+                        ),
                         abandonability: step.abandonability.into(),
                         fixed: step.fixed,
                         habit_group: Some(group_id),
@@ -256,8 +258,8 @@ fn main() {
             avg: t.cost_estimate.avg,
             sigma: t.cost_estimate.sigma,
             depends: t.depends,
-            parallelizable: t.parallelizable,
-            allows_parallel: t.allows_parallel,
+            parallelizable: t.parallel_mode.is_guest(),
+            allows_parallel: t.parallel_mode.is_host(),
             abandonability: t.abandonability.into(),
             fixed: t.fixed,
             habit_group: t.habit_group,

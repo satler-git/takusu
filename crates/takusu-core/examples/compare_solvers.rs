@@ -13,7 +13,7 @@ mod common;
 use std::collections::BTreeMap;
 use std::time::Instant;
 
-use takusu_core::{Plan, Planner, Point, Slots, Task, TaskPlacement};
+use takusu_core::{ParallelMode, Plan, Planner, Point, Slots, Task, TaskPlacement};
 
 fn env_or(key: &str, default: &str) -> String {
     std::env::var(key).unwrap_or_else(|_| default.to_string())
@@ -170,7 +170,7 @@ fn metrics(planner: &Planner, plan: &Plan) -> Metrics {
             let Some(b) = planner.tasks().get(b_p.task_id) else {
                 continue;
             };
-            if !((a.allows_parallel && b.parallelizable) || (b.allows_parallel && a.parallelizable))
+            if !ParallelMode::can_overlap(a.parallel_mode, b.parallel_mode)
             {
                 overlap_slots += a_p.end.0.min(b_p.end.0) - a_p.start.0.max(b_p.start.0);
             }
