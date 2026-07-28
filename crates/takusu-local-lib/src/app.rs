@@ -26,6 +26,7 @@ use takusu_util::{
     Abandonability, EnumLabel, MemoryKind, ScheduleMode, TaskStatus, TaskStatusFilter, WindowMode,
 };
 
+use crate::date_utils::validate_scheduled_span_dates;
 use crate::error::storage_to_app;
 use crate::error::{AppError, BadRequestKind, ConflictKind, SkillOp};
 use crate::token_cache::TokenCache;
@@ -437,55 +438,6 @@ fn freq_fallback_slots(rule: &takusu_habit::RecurrenceRule) -> i64 {
         takusu_habit::Frequency::Yearly => interval * 365,
     };
     days * 288 // 288 slots per day (5-min slots)
-}
-
-/// Validate that `start` and `end` are real `YYYY-MM-DD` calendar dates and
-/// that `start <= end` (#303).
-fn validate_scheduled_span_dates(
-    start: &takusu_util::Date,
-    end: &takusu_util::Date,
-) -> Result<(), AppError> {
-    if start > end {
-        return Err(AppError::BadRequest(BadRequestKind::Other(format!(
-            "start_date ({start}) must be <= end_date ({end})"
-        ))));
-    }
-    Ok(())
-}
-
-/// Parse a `YYYY-MM-DD` string into a `(year, month, day)` tuple if it is a
-/// real calendar date, else `None`.
-///
-/// Enforces zero-padded fields (4-digit year, 2-digit month/day) so that
-/// lexicographic comparison against `jiff`'s zero-padded `Date::to_string()`
-/// works correctly during pause matching (#303).
-#[allow(dead_code)]
-fn parse_calendar_date(s: &str) -> Option<(i64, u32, u32)> {
-    let parts: Vec<&str> = s.split('-').collect();
-    if parts.len() != 3 {
-        return None;
-    }
-    if parts[0].len() != 4 || parts[1].len() != 2 || parts[2].len() != 2 {
-        return None;
-    }
-    let y: i64 = parts[0].parse().ok()?;
-    let m: u32 = parts[1].parse().ok()?;
-    let d: u32 = parts[2].parse().ok()?;
-    if !(1..=12).contains(&m) {
-        return None;
-    }
-    let leap = (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
-    let max_day = match m {
-        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
-        4 | 6 | 9 | 11 => 30,
-        2 if leap => 29,
-        2 => 28,
-        _ => return None,
-    };
-    if !(1..=max_day).contains(&d) {
-        return None;
-    }
-    Some((y, m, d))
 }
 
 fn parse_sleep(
@@ -2030,7 +1982,8 @@ impl TakusuApp {
         id: &str,
         body: &CreateHabitScheduledSpan,
     ) -> Result<HabitScheduledSpanRow, AppError> {
-        validate_scheduled_span_dates(&body.start_date, &body.end_date)?;
+        validate_scheduled_span_dates(&body.start_date, &body.end_date)
+            .map_err(|msg| AppError::BadRequest(BadRequestKind::Other(msg)))?;
         self.storage
             .create_habit_scheduled_span(id, body)
             .await
