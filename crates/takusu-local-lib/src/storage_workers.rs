@@ -23,6 +23,91 @@ use tokio::sync::RwLock;
 const RETRY_STATUSES: &[u16] = &[429, 500, 502, 503, 504];
 const RETRY_DELAYS_MS: &[u64] = &[100, 200, 400];
 
+/// API path constants and builders for the workers backend.
+///
+/// All parameterised paths go through these helpers so that path shape lives
+/// in one place and URL encoding is applied uniformly.  Callers should never
+/// build the path portion (everything before the query string) of an
+/// `/api/...` URL with `format!` directly; query-string assembly is left to
+/// the call site for now.
+mod paths {
+    use takusu_util::url_encode;
+
+    // Fixed paths.
+    pub const TASKS: &str = "/api/tasks";
+    pub const HABITS: &str = "/api/habits";
+    pub const HABITS_STEPS: &str = "/api/habits/steps";
+    pub const HABITS_SCHEDULED_SPANS: &str = "/api/habits/scheduled-spans";
+    pub const SCHEDULE: &str = "/api/schedule";
+    pub const SCHEDULE_SAVE: &str = "/api/schedule/save";
+    pub const TOKENS: &str = "/api/tokens";
+    pub const SETTINGS: &str = "/api/settings";
+    pub const SYNC_SETTINGS: &str = "/api/sync/settings";
+    pub const SYNC_MAPPINGS: &str = "/api/sync/mappings";
+    pub const SYNC_MAPPINGS_ALL: &str = "/api/sync/mappings?all=1";
+    pub const SKILLS: &str = "/api/skills";
+    pub const MEMORY: &str = "/api/memory";
+    pub const MEMORY_SEARCH: &str = "/api/memory/search";
+    pub const TASKS_SIMILAR: &str = "/api/tasks/similar";
+    pub const AUTH_VERIFY: &str = "/api/auth/verify";
+    pub const HEALTH: &str = "/health";
+
+    // Parameterised paths.  `url_encode` is applied to every user-supplied
+    // segment so callers never need to remember it.
+    pub fn task_path(id: &str) -> String {
+        format!("/api/tasks/{}", url_encode(id))
+    }
+    pub fn task_work_start_path(id: &str) -> String {
+        format!("/api/tasks/{}/work/start", url_encode(id))
+    }
+    pub fn task_work_pause_path(id: &str) -> String {
+        format!("/api/tasks/{}/work/pause", url_encode(id))
+    }
+    pub fn task_work_complete_path(id: &str) -> String {
+        format!("/api/tasks/{}/work/complete", url_encode(id))
+    }
+    pub fn task_progress_path(id: &str) -> String {
+        format!("/api/tasks/{}/progress", url_encode(id))
+    }
+    pub fn task_split_path(id: &str) -> String {
+        format!("/api/tasks/{}/split", url_encode(id))
+    }
+    pub fn habit_path(id: &str) -> String {
+        format!("/api/habits/{}", url_encode(id))
+    }
+    pub fn habit_scheduled_spans_path(habit_id: &str) -> String {
+        format!("/api/habits/{}/scheduled-spans", url_encode(habit_id))
+    }
+    pub fn habit_scheduled_span_path(habit_id: &str, span_id: &str) -> String {
+        format!(
+            "/api/habits/{}/scheduled-spans/{}",
+            url_encode(habit_id),
+            url_encode(span_id)
+        )
+    }
+    pub fn habit_steps_path(habit_id: &str) -> String {
+        format!("/api/habits/{}/steps", url_encode(habit_id))
+    }
+    pub fn habit_estimate_path(habit_id: &str) -> String {
+        format!("/api/habits/{}/estimate", url_encode(habit_id))
+    }
+    pub fn token_path(id: i64) -> String {
+        format!("/api/tokens/{id}")
+    }
+    pub fn skill_path(slug: &str) -> String {
+        format!("/api/skills/{}", url_encode(slug))
+    }
+    pub fn memory_path(id: &str) -> String {
+        format!("/api/memory/{}", url_encode(id))
+    }
+    pub fn memory_delete_path(id: &str, observed_revision: i64) -> String {
+        format!(
+            "/api/memory/{}?observed_revision={observed_revision}",
+            url_encode(id)
+        )
+    }
+}
+
 #[derive(Clone)]
 struct Credentials {
     url: Arc<str>,
@@ -240,7 +325,7 @@ impl Storage for WorkersStorage {
         let resp = self
             .send_with_retry(move || async move {
                 let creds = self.credentials().await;
-                let url = format!("{}/api/auth/verify", creds.url.as_ref());
+                let url = format!("{}{}", creds.url.as_ref(), paths::AUTH_VERIFY);
                 self.http.get(&url).bearer_auth(token).build()
             })
             .await?;
@@ -261,7 +346,7 @@ impl Storage for WorkersStorage {
     }
 
     async fn list_tasks(&self, _query: &TaskQuery) -> StorageResult<Vec<TaskRow>> {
-        let mut path = String::from("/api/tasks");
+        let mut path = paths::TASKS.to_string();
         let q = _query;
         let mut parts: Vec<String> = Vec::new();
         if let Some(s) = q.status {
@@ -310,7 +395,7 @@ impl Storage for WorkersStorage {
         let full = self.resolve_task_id(id).await?;
         self.send_json(
             reqwest::Method::GET,
-            &format!("/api/tasks/{}", url_encode(&full)),
+            &paths::task_path(&full),
             RequestBody::None,
             None,
         )
@@ -320,7 +405,7 @@ impl Storage for WorkersStorage {
     async fn create_task(&self, body: &CreateTask) -> StorageResult<TaskRow> {
         self.send_json(
             reqwest::Method::POST,
-            "/api/tasks",
+            paths::TASKS,
             RequestBody::json(body)?,
             None,
         )
@@ -331,7 +416,7 @@ impl Storage for WorkersStorage {
         let full = self.resolve_task_id(id).await?;
         self.send_json(
             reqwest::Method::PATCH,
-            &format!("/api/tasks/{}", url_encode(&full)),
+            &paths::task_path(&full),
             RequestBody::json(body)?,
             None,
         )
@@ -342,7 +427,7 @@ impl Storage for WorkersStorage {
         let full = self.resolve_task_id(id).await?;
         self.send_json(
             reqwest::Method::PUT,
-            &format!("/api/tasks/{}", url_encode(&full)),
+            &paths::task_path(&full),
             RequestBody::json(body)?,
             None,
         )
@@ -353,7 +438,7 @@ impl Storage for WorkersStorage {
         let full = self.resolve_task_id(id).await?;
         self.send_empty(
             reqwest::Method::DELETE,
-            &format!("/api/tasks/{}", url_encode(&full)),
+            &paths::task_path(&full),
             RequestBody::None,
             None,
         )
@@ -361,14 +446,14 @@ impl Storage for WorkersStorage {
     }
 
     async fn list_habits(&self) -> StorageResult<Vec<HabitRow>> {
-        self.send_json(reqwest::Method::GET, "/api/habits", RequestBody::None, None)
+        self.send_json(reqwest::Method::GET, paths::HABITS, RequestBody::None, None)
             .await
     }
 
     async fn get_habit(&self, id: &str) -> StorageResult<HabitRow> {
         self.send_json(
             reqwest::Method::GET,
-            &format!("/api/habits/{}", url_encode(id)),
+            &paths::habit_path(id),
             RequestBody::None,
             None,
         )
@@ -378,7 +463,7 @@ impl Storage for WorkersStorage {
     async fn create_habit(&self, body: &CreateHabit) -> StorageResult<HabitRow> {
         self.send_json(
             reqwest::Method::POST,
-            "/api/habits",
+            paths::HABITS,
             RequestBody::json(body)?,
             None,
         )
@@ -388,7 +473,7 @@ impl Storage for WorkersStorage {
     async fn update_habit(&self, id: &str, body: &UpdateHabit) -> StorageResult<HabitRow> {
         self.send_json(
             reqwest::Method::PATCH,
-            &format!("/api/habits/{}", url_encode(id)),
+            &paths::habit_path(id),
             RequestBody::json(body)?,
             None,
         )
@@ -398,7 +483,7 @@ impl Storage for WorkersStorage {
     async fn replace_habit(&self, id: &str, body: &CreateHabit) -> StorageResult<HabitRow> {
         self.send_json(
             reqwest::Method::PUT,
-            &format!("/api/habits/{}", url_encode(id)),
+            &paths::habit_path(id),
             RequestBody::json(body)?,
             None,
         )
@@ -408,7 +493,7 @@ impl Storage for WorkersStorage {
     async fn delete_habit(&self, id: &str) -> StorageResult<()> {
         self.send_empty(
             reqwest::Method::DELETE,
-            &format!("/api/habits/{}", url_encode(id)),
+            &paths::habit_path(id),
             RequestBody::None,
             None,
         )
@@ -421,7 +506,7 @@ impl Storage for WorkersStorage {
     ) -> StorageResult<Vec<HabitScheduledSpanRow>> {
         self.send_json(
             reqwest::Method::GET,
-            &format!("/api/habits/{}/scheduled-spans", url_encode(habit_id)),
+            &paths::habit_scheduled_spans_path(habit_id),
             RequestBody::None,
             None,
         )
@@ -431,7 +516,7 @@ impl Storage for WorkersStorage {
     async fn list_all_habit_scheduled_spans(&self) -> StorageResult<Vec<HabitScheduledSpanRow>> {
         self.send_json(
             reqwest::Method::GET,
-            "/api/habits/scheduled-spans",
+            paths::HABITS_SCHEDULED_SPANS,
             RequestBody::None,
             None,
         )
@@ -445,7 +530,7 @@ impl Storage for WorkersStorage {
     ) -> StorageResult<HabitScheduledSpanRow> {
         self.send_json(
             reqwest::Method::POST,
-            &format!("/api/habits/{}/scheduled-spans", url_encode(habit_id)),
+            &paths::habit_scheduled_spans_path(habit_id),
             RequestBody::json(body)?,
             None,
         )
@@ -459,11 +544,7 @@ impl Storage for WorkersStorage {
     ) -> StorageResult<()> {
         self.send_empty(
             reqwest::Method::DELETE,
-            &format!(
-                "/api/habits/{}/scheduled-spans/{}",
-                url_encode(habit_id),
-                url_encode(span_id)
-            ),
+            &paths::habit_scheduled_span_path(habit_id, span_id),
             RequestBody::None,
             None,
         )
@@ -473,7 +554,7 @@ impl Storage for WorkersStorage {
     async fn list_habit_steps(&self, habit_id: &str) -> StorageResult<Vec<HabitStepRow>> {
         self.send_json(
             reqwest::Method::GET,
-            &format!("/api/habits/{}/steps", url_encode(habit_id)),
+            &paths::habit_steps_path(habit_id),
             RequestBody::None,
             None,
         )
@@ -483,7 +564,7 @@ impl Storage for WorkersStorage {
     async fn list_all_habit_steps(&self) -> StorageResult<Vec<HabitStepRow>> {
         self.send_json(
             reqwest::Method::GET,
-            "/api/habits/steps",
+            paths::HABITS_STEPS,
             RequestBody::None,
             None,
         )
@@ -497,7 +578,7 @@ impl Storage for WorkersStorage {
     ) -> StorageResult<Vec<HabitStepRow>> {
         self.send_json(
             reqwest::Method::PUT,
-            &format!("/api/habits/{}/steps", url_encode(habit_id)),
+            &paths::habit_steps_path(habit_id),
             RequestBody::json(&steps)?,
             None,
         )
@@ -518,7 +599,7 @@ impl Storage for WorkersStorage {
         };
         self.send_empty(
             reqwest::Method::POST,
-            &format!("/api/habits/{}/estimate", url_encode(habit_id)),
+            &paths::habit_estimate_path(habit_id),
             RequestBody::json(&body)?,
             None,
         )
@@ -530,7 +611,7 @@ impl Storage for WorkersStorage {
         let resp = self
             .send_with_retry(move || async move {
                 let creds = self.credentials().await;
-                let url = format!("{}/api/schedule", creds.url.as_ref());
+                let url = format!("{}{}", creds.url.as_ref(), paths::SCHEDULE);
                 self.http
                     .get(&url)
                     .bearer_auth(creds.token.as_ref())
@@ -558,7 +639,7 @@ impl Storage for WorkersStorage {
     async fn save_schedule(&self, req: &SaveScheduleRequest) -> StorageResult<ScheduleRow> {
         self.send_json(
             reqwest::Method::POST,
-            "/api/schedule/save",
+            paths::SCHEDULE_SAVE,
             RequestBody::json(req)?,
             None,
         )
@@ -568,7 +649,7 @@ impl Storage for WorkersStorage {
     async fn clear_schedule(&self) -> StorageResult<()> {
         self.send_empty(
             reqwest::Method::DELETE,
-            "/api/schedule",
+            paths::SCHEDULE,
             RequestBody::None,
             None,
         )
@@ -578,7 +659,7 @@ impl Storage for WorkersStorage {
     async fn create_token(&self, label: Option<&str>) -> StorageResult<TokenCreateResponse> {
         self.send_json(
             reqwest::Method::POST,
-            "/api/tokens",
+            paths::TOKENS,
             RequestBody::json(&json!({ "label": label }))?,
             None,
         )
@@ -586,14 +667,14 @@ impl Storage for WorkersStorage {
     }
 
     async fn list_tokens(&self) -> StorageResult<Vec<TokenRow>> {
-        self.send_json(reqwest::Method::GET, "/api/tokens", RequestBody::None, None)
+        self.send_json(reqwest::Method::GET, paths::TOKENS, RequestBody::None, None)
             .await
     }
 
     async fn revoke_token(&self, id: i64) -> StorageResult<()> {
         self.send_empty(
             reqwest::Method::DELETE,
-            &format!("/api/tokens/{id}"),
+            &paths::token_path(id),
             RequestBody::None,
             None,
         )
@@ -603,7 +684,7 @@ impl Storage for WorkersStorage {
     async fn get_settings(&self) -> StorageResult<SettingsRow> {
         self.send_json(
             reqwest::Method::GET,
-            "/api/settings",
+            paths::SETTINGS,
             RequestBody::None,
             None,
         )
@@ -613,7 +694,7 @@ impl Storage for WorkersStorage {
     async fn update_settings(&self, body: &UpdateSettings) -> StorageResult<SettingsRow> {
         self.send_json(
             reqwest::Method::PUT,
-            "/api/settings",
+            paths::SETTINGS,
             RequestBody::json(body)?,
             None,
         )
@@ -623,7 +704,7 @@ impl Storage for WorkersStorage {
     async fn get_gcal_settings(&self) -> StorageResult<GoogleCalSettingsRow> {
         self.send_json(
             reqwest::Method::GET,
-            "/api/sync/settings",
+            paths::SYNC_SETTINGS,
             RequestBody::None,
             None,
         )
@@ -636,7 +717,7 @@ impl Storage for WorkersStorage {
     ) -> StorageResult<GoogleCalSettingsRow> {
         self.send_json(
             reqwest::Method::PUT,
-            "/api/sync/settings",
+            paths::SYNC_SETTINGS,
             RequestBody::json(body)?,
             None,
         )
@@ -646,7 +727,7 @@ impl Storage for WorkersStorage {
     async fn list_gcal_mappings(&self) -> StorageResult<Vec<GoogleCalEventRow>> {
         self.send_json(
             reqwest::Method::GET,
-            "/api/sync/mappings",
+            paths::SYNC_MAPPINGS,
             RequestBody::None,
             None,
         )
@@ -662,7 +743,7 @@ impl Storage for WorkersStorage {
         });
         self.send_empty(
             reqwest::Method::POST,
-            "/api/sync/mappings",
+            paths::SYNC_MAPPINGS,
             RequestBody::json(&body)?,
             None,
         )
@@ -672,7 +753,7 @@ impl Storage for WorkersStorage {
     async fn delete_gcal_mappings(&self, task_ids: &[String]) -> StorageResult<()> {
         self.send_empty(
             reqwest::Method::DELETE,
-            "/api/sync/mappings",
+            paths::SYNC_MAPPINGS,
             RequestBody::json(&json!({ "task_ids": task_ids }))?,
             None,
         )
@@ -682,7 +763,7 @@ impl Storage for WorkersStorage {
     async fn clear_gcal_mappings(&self) -> StorageResult<()> {
         self.send_empty(
             reqwest::Method::DELETE,
-            "/api/sync/mappings?all=1",
+            paths::SYNC_MAPPINGS_ALL,
             RequestBody::None,
             None,
         )
@@ -690,14 +771,14 @@ impl Storage for WorkersStorage {
     }
 
     async fn list_skills(&self) -> StorageResult<Vec<SkillRow>> {
-        self.send_json(reqwest::Method::GET, "/api/skills", RequestBody::None, None)
+        self.send_json(reqwest::Method::GET, paths::SKILLS, RequestBody::None, None)
             .await
     }
 
     async fn get_skill(&self, slug: &str) -> StorageResult<SkillRow> {
         self.send_json(
             reqwest::Method::GET,
-            &format!("/api/skills/{}", url_encode(slug)),
+            &paths::skill_path(slug),
             RequestBody::None,
             None,
         )
@@ -707,7 +788,7 @@ impl Storage for WorkersStorage {
     async fn create_skill(&self, body: &CreateSkill) -> StorageResult<SkillRow> {
         self.send_json(
             reqwest::Method::POST,
-            "/api/skills",
+            paths::SKILLS,
             RequestBody::json(body)?,
             None,
         )
@@ -717,7 +798,7 @@ impl Storage for WorkersStorage {
     async fn update_skill(&self, slug: &str, body: &UpdateSkill) -> StorageResult<SkillRow> {
         self.send_json(
             reqwest::Method::PATCH,
-            &format!("/api/skills/{}", url_encode(slug)),
+            &paths::skill_path(slug),
             RequestBody::json(body)?,
             None,
         )
@@ -727,7 +808,7 @@ impl Storage for WorkersStorage {
     async fn delete_skill(&self, slug: &str) -> StorageResult<()> {
         self.send_empty(
             reqwest::Method::DELETE,
-            &format!("/api/skills/{}", url_encode(slug)),
+            &paths::skill_path(slug),
             RequestBody::None,
             None,
         )
@@ -737,7 +818,7 @@ impl Storage for WorkersStorage {
     async fn get_memory(&self, id: &str) -> StorageResult<MemoryRow> {
         self.send_json(
             reqwest::Method::GET,
-            &format!("/api/memory/{}", url_encode(id)),
+            &paths::memory_path(id),
             RequestBody::None,
             None,
         )
@@ -751,7 +832,7 @@ impl Storage for WorkersStorage {
     ) -> StorageResult<MemoryRow> {
         self.send_json(
             reqwest::Method::POST,
-            "/api/memory",
+            paths::MEMORY,
             RequestBody::json(body)?,
             operation_id,
         )
@@ -766,7 +847,7 @@ impl Storage for WorkersStorage {
     ) -> StorageResult<MemoryRow> {
         self.send_json(
             reqwest::Method::PATCH,
-            &format!("/api/memory/{}", url_encode(id)),
+            &paths::memory_path(id),
             RequestBody::json(body)?,
             operation_id,
         )
@@ -781,10 +862,7 @@ impl Storage for WorkersStorage {
     ) -> StorageResult<()> {
         self.send_empty(
             reqwest::Method::DELETE,
-            &format!(
-                "/api/memory/{}?observed_revision={observed_revision}",
-                url_encode(id)
-            ),
+            &paths::memory_delete_path(id, observed_revision),
             RequestBody::None,
             operation_id,
         )
@@ -792,7 +870,7 @@ impl Storage for WorkersStorage {
     }
 
     async fn search_memories(&self, query: &MemoryQuery) -> StorageResult<Vec<MemoryRow>> {
-        let mut path = String::from("/api/memory/search");
+        let mut path = paths::MEMORY_SEARCH.to_string();
         let mut parts: Vec<String> = Vec::new();
         parts.push(format!("q={}", url_encode(&query.q)));
         if let Some(ref kind) = query.kind {
@@ -820,8 +898,7 @@ impl Storage for WorkersStorage {
         &self,
         query: &SimilarTaskQuery,
     ) -> StorageResult<Vec<SimilarTaskRow>> {
-        let mut path = "/api/tasks/similar?".to_string();
-        path.push_str(&format!("q={}", url_encode(&query.title)));
+        let mut path = format!("{}?q={}", paths::TASKS_SIMILAR, url_encode(&query.title));
         if let Some(limit) = query.limit {
             path.push_str(&format!("&limit={limit}"));
         }
@@ -838,7 +915,7 @@ impl Storage for WorkersStorage {
         let body = json!({});
         self.send_json(
             reqwest::Method::POST,
-            &format!("/api/tasks/{full}/work/start"),
+            &paths::task_work_start_path(&full),
             RequestBody::json(&body)?,
             operation_id,
         )
@@ -854,7 +931,7 @@ impl Storage for WorkersStorage {
         let body = json!({});
         self.send_json(
             reqwest::Method::POST,
-            &format!("/api/tasks/{full}/work/pause"),
+            &paths::task_work_pause_path(&full),
             RequestBody::json(&body)?,
             operation_id,
         )
@@ -870,7 +947,7 @@ impl Storage for WorkersStorage {
         let full = self.resolve_task_id(id).await?;
         self.send_json(
             reqwest::Method::POST,
-            &format!("/api/tasks/{full}/progress"),
+            &paths::task_progress_path(&full),
             RequestBody::json(body)?,
             operation_id,
         )
@@ -886,7 +963,7 @@ impl Storage for WorkersStorage {
         let body = json!({});
         self.send_json(
             reqwest::Method::POST,
-            &format!("/api/tasks/{full}/work/complete"),
+            &paths::task_work_complete_path(&full),
             RequestBody::json(&body)?,
             operation_id,
         )
@@ -897,7 +974,7 @@ impl Storage for WorkersStorage {
         let full = self.resolve_task_id(id).await?;
         self.send_json(
             reqwest::Method::GET,
-            &format!("/api/tasks/{full}/progress"),
+            &paths::task_progress_path(&full),
             RequestBody::None,
             None,
         )
@@ -913,7 +990,7 @@ impl Storage for WorkersStorage {
         let full = self.resolve_task_id(id).await?;
         self.send_json(
             reqwest::Method::POST,
-            &format!("/api/tasks/{full}/split"),
+            &paths::task_split_path(&full),
             RequestBody::json(body)?,
             operation_id,
         )
@@ -925,7 +1002,7 @@ impl Storage for WorkersStorage {
         if creds.url.is_empty() || creds.token.is_empty() {
             return Ok("worker not configured".into());
         }
-        let url = format!("{}/health", creds.url.as_ref());
+        let url = format!("{}{}", creds.url.as_ref(), paths::HEALTH);
         // Per-request timeout so an unreachable worker fails fast instead of
         // hanging indefinitely (the shared client has no default timeout).
         let resp = self
@@ -968,7 +1045,7 @@ impl WorkersStorage {
             let tasks: Vec<TaskRow> = self
                 .send_json::<Vec<TaskRow>>(
                     reqwest::Method::GET,
-                    "/api/tasks",
+                    paths::TASKS,
                     RequestBody::None,
                     None,
                 )
@@ -976,7 +1053,7 @@ impl WorkersStorage {
             let habits: Vec<HabitRow> = self
                 .send_json::<Vec<HabitRow>>(
                     reqwest::Method::GET,
-                    "/api/habits",
+                    paths::HABITS,
                     RequestBody::None,
                     None,
                 )
@@ -999,7 +1076,7 @@ impl WorkersStorage {
             let tasks: Vec<TaskRow> = self
                 .send_json::<Vec<TaskRow>>(
                     reqwest::Method::GET,
-                    "/api/tasks",
+                    paths::TASKS,
                     RequestBody::None,
                     None,
                 )
@@ -1017,5 +1094,65 @@ impl WorkersStorage {
         }
         // Anything else (e.g. a UUID prefix) is not a valid reference (#1251).
         Err(StorageError::NotFound(format!("task {id} not found")))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::paths;
+
+    #[test]
+    fn fixed_paths_are_stable() {
+        assert_eq!(paths::TASKS, "/api/tasks");
+        assert_eq!(paths::HABITS, "/api/habits");
+        assert_eq!(paths::SCHEDULE_SAVE, "/api/schedule/save");
+        assert_eq!(paths::SYNC_MAPPINGS_ALL, "/api/sync/mappings?all=1");
+        assert_eq!(paths::MEMORY_SEARCH, "/api/memory/search");
+        assert_eq!(paths::AUTH_VERIFY, "/api/auth/verify");
+        assert_eq!(paths::HEALTH, "/health");
+    }
+
+    #[test]
+    fn parameterised_paths_url_encode_segments() {
+        assert_eq!(paths::task_path("abc"), "/api/tasks/abc");
+        assert_eq!(paths::task_path("h1#5"), "/api/tasks/h1%235");
+        assert_eq!(paths::habit_path("a/b"), "/api/habits/a%2Fb");
+        assert_eq!(
+            paths::habit_scheduled_span_path("h1", "s/p"),
+            "/api/habits/h1/scheduled-spans/s%2Fp"
+        );
+        assert_eq!(paths::skill_path("a b"), "/api/skills/a%20b");
+        assert_eq!(paths::memory_path("x?y"), "/api/memory/x%3Fy");
+    }
+
+    #[test]
+    fn task_work_paths_encode_id() {
+        assert_eq!(
+            paths::task_work_start_path("abc"),
+            "/api/tasks/abc/work/start"
+        );
+        assert_eq!(
+            paths::task_work_complete_path("abc"),
+            "/api/tasks/abc/work/complete"
+        );
+        assert_eq!(paths::task_progress_path("abc"), "/api/tasks/abc/progress");
+        assert_eq!(paths::task_split_path("abc"), "/api/tasks/abc/split");
+    }
+
+    #[test]
+    fn token_path_is_numeric() {
+        assert_eq!(paths::token_path(42), "/api/tokens/42");
+    }
+
+    #[test]
+    fn memory_delete_path_appends_revision() {
+        assert_eq!(
+            paths::memory_delete_path("abc", 7),
+            "/api/memory/abc?observed_revision=7"
+        );
+        assert_eq!(
+            paths::memory_delete_path("a/b", 3),
+            "/api/memory/a%2Fb?observed_revision=3"
+        );
     }
 }
