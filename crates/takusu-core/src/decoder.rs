@@ -558,6 +558,308 @@ fn record_placement(
     }
 }
 
+// ── PlacementStrategy ─────────────────────────────────────────────────
+//
+// `RepairMode` の各バリアントが巨大 `match` で分岐していた配置戦略を
+// trait で抽象化する。各戦略は `select_and_place` で「どのタスクを・どこに
+// 配置するか」を返し、呼び出し側が `record_placement` で状態に反映する。
+//
+// 戦略によっては priority が提示した `task_id` とは別の ready タスクを選ぶ
+// (Deadline / Habit / Stability / HabitAnchor / Regret2)。そのため戻り値は
+// `(chosen_id, start, end, err)` となり、`chosen_id` が `task_id` と異なる
+// ことがある。`task_id` は ready が空 (依存サイクル) で forced 配置になる
+// ときのフォールバック先として使われる。
+
+/// 配置戦略が読み取るデコードループの不変状態への参照束ね。
+/// 可変状態 (`schedules` / `index` / `placed` / `in_degree` / `remaining` /
+/// `diagnostics`) は戦略からは見えず、`record_placement` でのみ更新される。
+struct PlacementCtx<'a> {
+    planner: &'a Planner,
+    schedules: &'a [Placement],
+    input: &'a DecodeInput<'a>,
+    priority: &'a [usize],
+    index: &'a [Option<TimeWindow>],
+    dependents: &'a [Vec<usize>],
+    placed: &'a [bool],
+    in_degree: &'a [usize],
+}
+
+trait PlacementStrategy {
+    /// `task_id` は priority 順で最初の ready タスク (ready が無ければ最初の
+    /// 未配置タスク = forced フォールバック先)。戦略はこれを無視して別の
+    /// ready タスクを選んでもよい。戻り値は
+    /// `(chosen_id, start, end, placement_err)`。
+    fn select_and_place(
+        &self,
+        ctx: &PlacementCtx<'_>,
+        task_id: usize,
+    ) -> (usize, Point, Point, Option<PlacementFailure>);
+}
+
+/// Earliest: 最初の feasible スロットに配置する。タスク選択は priority に従う。
+struct EarliestStrategy;
+impl PlacementStrategy for EarliestStrategy {
+    fn select_and_place(
+        &self,
+        ctx: &PlacementCtx<'_>,
+        task_id: usize,
+    ) -> (usize, Point, Point, Option<PlacementFailure>) {
+        let (s, e, err) = place_task_earliest(
+            ctx.planner,
+            ctx.schedules,
+            ctx.input,
+            task_id,
+            ctx.index,
+            ctx.dependents,
+        );
+        (task_id, s, e, err)
+    }
+}
+
+/// LowestDelta: 挿入コストが最も低い feasible スロットを選ぶ。タスク選択は priority に従う。
+struct LowestDeltaStrategy;
+impl PlacementStrategy for LowestDeltaStrategy {
+    fn select_and_place(
+        &self,
+        ctx: &PlacementCtx<'_>,
+        task_id: usize,
+    ) -> (usize, Point, Point, Option<PlacementFailure>) {
+        let (s, e, err) = place_task_lowest_delta(
+            ctx.planner,
+            ctx.schedules,
+            ctx.input,
+            task_id,
+            ctx.index,
+            ctx.dependents,
+        );
+        (task_id, s, e, err)
+    }
+}
+
+/// Regret2: regret-2 挿入ヒューリスティックで ready タスク群から 1 つ選ぶ。
+/// regret 候補が無ければ priority の `task_id` を Earliest で配置する。
+struct Regret2Strategy;
+impl PlacementStrategy for Regret2Strategy {
+    fn select_and_place(
+        &self,
+        ctx: &PlacementCtx<'_>,
+        task_id: usize,
+    ) -> (usize, Point, Point, Option<PlacementFailure>) {
+        let ready: Vec<usize> = ctx
+            .priority
+            .iter()
+            .copied()
+            .filter(|&id| !ctx.placed[id] && ctx.in_degree[id] == 0)
+            .collect();
+        if let Some((id, s, e, err)) = place_regret2(
+            ctx.planner,
+            ctx.schedules,
+            ctx.input,
+            &ready,
+            ctx.index,
+            ctx.dependents,
+        ) {
+            (id, s, e, err)
+        } else {
+            let (s, e, err) = place_task_earliest(
+                ctx.planner,
+                ctx.schedules,
+                ctx.input,
+                task_id,
+                ctx.index,
+                ctx.dependents,
+            );
+            (task_id, s, e, err)
+        }
+    }
+}
+
+/// Deadline: 締切が最も厳しい ready タスクを優先し、Earliest で配置する。
+struct DeadlineStrategy;
+impl PlacementStrategy for DeadlineStrategy {
+    fn select_and_place(
+        &self,
+        ctx: &PlacementCtx<'_>,
+        task_id: usize,
+    ) -> (usize, Point, Point, Option<PlacementFailure>) {
+        let mut best_id = task_id;
+        for &id in ctx.priority.iter() {
+            if !ctx.placed[id]
+                && ctx.in_degree[id] == 0
+                && ctx.planner.tasks[id].end < ctx.planner.tasks[best_id].end
+            {
+                best_id = id;
+            }
+        }
+        let (s, e, err) = place_task_earliest(
+            ctx.planner,
+            ctx.schedules,
+            ctx.input,
+            best_id,
+            ctx.index,
+            ctx.dependents,
+        );
+        (best_id, s, e, err)
+    }
+}
+
+/// Habit: habit タスクを優先し、前回 anchor 昇順で ready タスクを選んで
+/// `place_task_near_anchor` で配置する。
+struct HabitStrategy;
+impl PlacementStrategy for HabitStrategy {
+    fn select_and_place(
+        &self,
+        ctx: &PlacementCtx<'_>,
+        task_id: usize,
+    ) -> (usize, Point, Point, Option<PlacementFailure>) {
+        let previous = ctx.planner.previous_schedule();
+        let mut best_id = task_id;
+        let mut best_key = (
+            ctx.planner.tasks[task_id].habit_group.is_none(),
+            previous
+                .get(task_id)
+                .and_then(|x| x.map(|tw| tw.start.0))
+                .unwrap_or(i64::MAX),
+        );
+        for &id in ctx.priority.iter() {
+            if !ctx.placed[id] && ctx.in_degree[id] == 0 {
+                let key = (
+                    ctx.planner.tasks[id].habit_group.is_none(),
+                    previous
+                        .get(id)
+                        .and_then(|x| x.map(|tw| tw.start.0))
+                        .unwrap_or(i64::MAX),
+                );
+                if key < best_key {
+                    best_key = key;
+                    best_id = id;
+                }
+            }
+        }
+        let anchor = previous
+            .get(best_id)
+            .and_then(|x| x.map(|tw| tw.start.0))
+            .unwrap_or(ctx.planner.now.0);
+        let (s, e, err) = place_task_near_anchor(
+            ctx.planner,
+            ctx.schedules,
+            ctx.input,
+            best_id,
+            ctx.index,
+            ctx.dependents,
+            anchor,
+        );
+        (best_id, s, e, err)
+    }
+}
+
+/// Stability: 前回 anchor 昇順で ready タスクを選んで `place_task_near_anchor` で配置する。
+struct StabilityStrategy;
+impl PlacementStrategy for StabilityStrategy {
+    fn select_and_place(
+        &self,
+        ctx: &PlacementCtx<'_>,
+        task_id: usize,
+    ) -> (usize, Point, Point, Option<PlacementFailure>) {
+        let previous = ctx.planner.previous_schedule();
+        let mut best_id = task_id;
+        let mut best_anchor = previous
+            .get(task_id)
+            .and_then(|x| x.map(|tw| tw.start.0))
+            .unwrap_or(i64::MAX);
+        for &id in ctx.priority.iter() {
+            if !ctx.placed[id] && ctx.in_degree[id] == 0 {
+                let anchor = previous
+                    .get(id)
+                    .and_then(|x| x.map(|tw| tw.start.0))
+                    .unwrap_or(i64::MAX);
+                if anchor < best_anchor {
+                    best_anchor = anchor;
+                    best_id = id;
+                }
+            }
+        }
+        let anchor = previous
+            .get(best_id)
+            .and_then(|x| x.map(|tw| tw.start.0))
+            .unwrap_or(ctx.planner.now.0);
+        let (s, e, err) = place_task_near_anchor(
+            ctx.planner,
+            ctx.schedules,
+            ctx.input,
+            best_id,
+            ctx.index,
+            ctx.dependents,
+            anchor,
+        );
+        (best_id, s, e, err)
+    }
+}
+
+/// HabitAnchor: habit タスクを優先して選び、habit かつ start 希望があれば
+/// その希望時刻を anchor として `place_task_near_anchor` で配置する。
+/// 非 habit または start 希望がない場合は Earliest に落ちる。
+struct HabitAnchorStrategy;
+impl PlacementStrategy for HabitAnchorStrategy {
+    fn select_and_place(
+        &self,
+        ctx: &PlacementCtx<'_>,
+        task_id: usize,
+    ) -> (usize, Point, Point, Option<PlacementFailure>) {
+        let mut best_id = task_id;
+        let mut best_is_habit = ctx.planner.tasks[task_id].habit_group.is_some();
+        for &id in ctx.priority.iter() {
+            if !ctx.placed[id] && ctx.in_degree[id] == 0 {
+                let is_habit = ctx.planner.tasks[id].habit_group.is_some();
+                if is_habit && !best_is_habit {
+                    best_is_habit = true;
+                    best_id = id;
+                }
+            }
+        }
+        if ctx.planner.tasks[best_id].habit_group.is_some()
+            && let Some(pref) = ctx.planner.tasks[best_id].start
+        {
+            let (s, e, err) = place_task_near_anchor(
+                ctx.planner,
+                ctx.schedules,
+                ctx.input,
+                best_id,
+                ctx.index,
+                ctx.dependents,
+                pref.0,
+            );
+            (best_id, s, e, err)
+        } else {
+            let (s, e, err) = place_task_earliest(
+                ctx.planner,
+                ctx.schedules,
+                ctx.input,
+                best_id,
+                ctx.index,
+                ctx.dependents,
+            );
+            (best_id, s, e, err)
+        }
+    }
+}
+
+impl RepairMode {
+    /// 対応する配置戦略を `&'static dyn PlacementStrategy` で返す。
+    /// 戦略はすべてゼロサイズの unit struct なので静的参照のコストはゼロ。
+    fn strategy(self) -> &'static dyn PlacementStrategy {
+        match self {
+            RepairMode::Earliest => &EarliestStrategy,
+            RepairMode::LowestDelta => &LowestDeltaStrategy,
+            RepairMode::Regret2 => &Regret2Strategy,
+            RepairMode::Deadline => &DeadlineStrategy,
+            RepairMode::Habit => &HabitStrategy,
+            RepairMode::Stability => &StabilityStrategy,
+            RepairMode::HabitAnchor => &HabitAnchorStrategy,
+        }
+    }
+}
+
 pub fn decode(planner: &Planner, input: DecodeInput<'_>) -> DecodeResult {
     let n = planner.tasks.len();
     let mut schedules: Vec<Placement> = Vec::with_capacity(n);
@@ -643,262 +945,24 @@ pub fn decode(planner: &Planner, input: DecodeInput<'_>) -> DecodeResult {
             }
         };
 
-        let (start, end, placement_err) = match input.repair_mode {
-            RepairMode::Earliest => {
-                let (s, e, err) =
-                    place_task_earliest(planner, &schedules, &input, task_id, &index, &dependents);
-                (s, e, err)
-            }
-            RepairMode::LowestDelta => {
-                let (s, e, err) = place_task_lowest_delta(
-                    planner,
-                    &schedules,
-                    &input,
-                    task_id,
-                    &index,
-                    &dependents,
-                );
-                (s, e, err)
-            }
-            RepairMode::Regret2 => {
-                let ready: Vec<usize> = priority
-                    .iter()
-                    .copied()
-                    .filter(|&id| !placed[id] && in_degree[id] == 0)
-                    .collect();
-                if let Some((id, s, e, err)) =
-                    place_regret2(planner, &schedules, &input, &ready, &index, &dependents)
-                {
-                    record_placement(
-                        id,
-                        s,
-                        e,
-                        err,
-                        forced,
-                        &mut schedules,
-                        &mut index,
-                        &mut placed,
-                        &mut in_degree,
-                        &mut remaining,
-                        &dependents,
-                        &mut diagnostics,
-                    );
-                    continue;
-                } else {
-                    let (s, e, err) = place_task_earliest(
-                        planner,
-                        &schedules,
-                        &input,
-                        task_id,
-                        &index,
-                        &dependents,
-                    );
-                    (s, e, err)
-                }
-            }
-            RepairMode::Deadline => {
-                // 締切が最も厳しい ready タスクを優先する
-                let mut best_id = task_id;
-                for &id in priority.iter() {
-                    if !placed[id]
-                        && in_degree[id] == 0
-                        && planner.tasks[id].end < planner.tasks[best_id].end
-                    {
-                        best_id = id;
-                    }
-                }
-                let (s, e, err) =
-                    place_task_earliest(planner, &schedules, &input, best_id, &index, &dependents);
-                record_placement(
-                    best_id,
-                    s,
-                    e,
-                    err,
-                    forced,
-                    &mut schedules,
-                    &mut index,
-                    &mut placed,
-                    &mut in_degree,
-                    &mut remaining,
-                    &dependents,
-                    &mut diagnostics,
-                );
-                continue;
-            }
-            RepairMode::Habit => {
-                // 習慣タスク優先 → 前回 anchor 昇順で ready タスクを選択
-                let previous = planner.previous_schedule();
-                let mut best_id = task_id;
-                let mut best_key = (
-                    planner.tasks[task_id].habit_group.is_none(),
-                    previous
-                        .get(task_id)
-                        .and_then(|x| x.map(|tw| tw.start.0))
-                        .unwrap_or(i64::MAX),
-                );
-                for &id in priority.iter() {
-                    if !placed[id] && in_degree[id] == 0 {
-                        let key = (
-                            planner.tasks[id].habit_group.is_none(),
-                            previous
-                                .get(id)
-                                .and_then(|x| x.map(|tw| tw.start.0))
-                                .unwrap_or(i64::MAX),
-                        );
-                        if key < best_key {
-                            best_key = key;
-                            best_id = id;
-                        }
-                    }
-                }
-                let anchor = previous
-                    .get(best_id)
-                    .and_then(|x| x.map(|tw| tw.start.0))
-                    .unwrap_or(planner.now.0);
-                let (s, e, err) = place_task_near_anchor(
-                    planner,
-                    &schedules,
-                    &input,
-                    best_id,
-                    &index,
-                    &dependents,
-                    anchor,
-                );
-                record_placement(
-                    best_id,
-                    s,
-                    e,
-                    err,
-                    forced,
-                    &mut schedules,
-                    &mut index,
-                    &mut placed,
-                    &mut in_degree,
-                    &mut remaining,
-                    &dependents,
-                    &mut diagnostics,
-                );
-                continue;
-            }
-            RepairMode::Stability => {
-                // 前回 anchor 昇順で ready タスクを選択
-                let previous = planner.previous_schedule();
-                let mut best_id = task_id;
-                let mut best_anchor = previous
-                    .get(task_id)
-                    .and_then(|x| x.map(|tw| tw.start.0))
-                    .unwrap_or(i64::MAX);
-                for &id in priority.iter() {
-                    if !placed[id] && in_degree[id] == 0 {
-                        let anchor = previous
-                            .get(id)
-                            .and_then(|x| x.map(|tw| tw.start.0))
-                            .unwrap_or(i64::MAX);
-                        if anchor < best_anchor {
-                            best_anchor = anchor;
-                            best_id = id;
-                        }
-                    }
-                }
-                let anchor = previous
-                    .get(best_id)
-                    .and_then(|x| x.map(|tw| tw.start.0))
-                    .unwrap_or(planner.now.0);
-                let (s, e, err) = place_task_near_anchor(
-                    planner,
-                    &schedules,
-                    &input,
-                    best_id,
-                    &index,
-                    &dependents,
-                    anchor,
-                );
-                record_placement(
-                    best_id,
-                    s,
-                    e,
-                    err,
-                    forced,
-                    &mut schedules,
-                    &mut index,
-                    &mut placed,
-                    &mut in_degree,
-                    &mut remaining,
-                    &dependents,
-                    &mut diagnostics,
-                );
-                continue;
-            }
-            RepairMode::HabitAnchor => {
-                // 習慣タスク優先で ready タスクを選択
-                let mut best_id = task_id;
-                let mut best_is_habit = planner.tasks[task_id].habit_group.is_some();
-                for &id in priority.iter() {
-                    if !placed[id] && in_degree[id] == 0 {
-                        let is_habit = planner.tasks[id].habit_group.is_some();
-                        if is_habit && !best_is_habit {
-                            best_is_habit = true;
-                            best_id = id;
-                        }
-                    }
-                }
-                if planner.tasks[best_id].habit_group.is_some()
-                    && let Some(pref) = planner.tasks[best_id].start
-                {
-                    let (s, e, err) = place_task_near_anchor(
-                        planner,
-                        &schedules,
-                        &input,
-                        best_id,
-                        &index,
-                        &dependents,
-                        pref.0,
-                    );
-                    record_placement(
-                        best_id,
-                        s,
-                        e,
-                        err,
-                        forced,
-                        &mut schedules,
-                        &mut index,
-                        &mut placed,
-                        &mut in_degree,
-                        &mut remaining,
-                        &dependents,
-                        &mut diagnostics,
-                    );
-                    continue;
-                } else {
-                    let (s, e, err) = place_task_earliest(
-                        planner,
-                        &schedules,
-                        &input,
-                        best_id,
-                        &index,
-                        &dependents,
-                    );
-                    record_placement(
-                        best_id,
-                        s,
-                        e,
-                        err,
-                        forced,
-                        &mut schedules,
-                        &mut index,
-                        &mut placed,
-                        &mut in_degree,
-                        &mut remaining,
-                        &dependents,
-                        &mut diagnostics,
-                    );
-                    continue;
-                }
-            }
+        // 戦略は priority が提示した task_id を起点に、必要なら別の ready
+        // タスクを選び直して配置する。戦略の追加は PlacementStrategy impl の
+        // 追加だけで済み、このループ本体は変更不要。
+        let ctx = PlacementCtx {
+            planner,
+            schedules: &schedules,
+            input: &input,
+            priority: &priority,
+            index: &index,
+            dependents: &dependents,
+            placed: &placed,
+            in_degree: &in_degree,
         };
+        let (chosen_id, start, end, placement_err) =
+            input.repair_mode.strategy().select_and_place(&ctx, task_id);
 
         record_placement(
-            task_id,
+            chosen_id,
             start,
             end,
             placement_err,
@@ -2245,5 +2309,438 @@ mod tests {
         let schedules = vec![TaskPlacement::new(Point(0), Point(8), 0)];
         let err = try_place::<true>(&planner, &schedules, &task, Point(7), 5, None).unwrap_err();
         assert_eq!(err, PlacementFailure::DailyCapacityExceeded);
+    }
+
+    // Pinning tests for RepairMode dispatch behavior. These lock down the
+    // per-iteration task selection + placement semantics so the
+    // PlacementStrategy trait refactor cannot silently change behavior.
+
+    #[test]
+    fn habit_anchor_places_habit_at_start_preference() {
+        // habit task に start 希望時刻 30 を与える。HabitAnchor は habit を
+        // 優先し、その start pref を anchor として place_task_near_anchor を呼ぶ。
+        // priority [non_habit, habit] でも habit が先に選ばれ、30 に配置される。
+        let non_habit = Task {
+            id: 0,
+            start: Some(Point(0)),
+            end: Point(100),
+            cost_estimate: NormalDist::new(5, 0),
+            depends: vec![],
+            parallel_mode: ParallelMode::Exclusive,
+            abandonability: 0.5.into(),
+            fixed: false,
+            habit_group: None,
+        };
+        let habit = Task {
+            id: 1,
+            start: Some(Point(30)),
+            end: Point(100),
+            cost_estimate: NormalDist::new(5, 0),
+            depends: vec![],
+            parallel_mode: ParallelMode::Exclusive,
+            abandonability: 0.5.into(),
+            fixed: false,
+            habit_group: Some(1),
+        };
+        let planner = test_planner(vec![non_habit, habit]);
+        let result = decode(
+            &planner,
+            input_with_mode(&[0, 1], &[], RepairMode::HabitAnchor),
+        );
+
+        assert_eq!(result.plan.task_start(1), Some(Point(30)));
+        assert_eq!(result.plan.task_start(0), Some(Point(0)));
+        assert_eq!(result.status, DecodeStatus::Feasible);
+    }
+
+    #[test]
+    fn habit_anchor_without_habit_falls_back_to_earliest() {
+        // habit タスクが一つもなければ HabitAnchor は Earliest と同挙動。
+        let a = Task {
+            id: 0,
+            start: Some(Point(0)),
+            end: Point(100),
+            cost_estimate: NormalDist::new(5, 0),
+            depends: vec![],
+            parallel_mode: ParallelMode::Exclusive,
+            abandonability: 0.5.into(),
+            fixed: false,
+            habit_group: None,
+        };
+        let b = Task {
+            id: 1,
+            start: Some(Point(0)),
+            end: Point(100),
+            cost_estimate: NormalDist::new(3, 0),
+            depends: vec![],
+            parallel_mode: ParallelMode::Exclusive,
+            abandonability: 0.5.into(),
+            fixed: false,
+            habit_group: None,
+        };
+        let planner = test_planner(vec![a, b]);
+        let earliest = decode(
+            &planner,
+            input_with_mode(&[0, 1], &[], RepairMode::Earliest),
+        );
+        let habit_anchor = decode(
+            &planner,
+            input_with_mode(&[0, 1], &[], RepairMode::HabitAnchor),
+        );
+
+        assert_eq!(earliest.plan.schedules, habit_anchor.plan.schedules);
+    }
+
+    #[test]
+    fn habit_anchor_habit_without_start_falls_back_to_earliest() {
+        // habit だが start 希望がない場合は place_task_earliest に落ちる。
+        let habit_no_pref = Task {
+            id: 0,
+            start: None,
+            end: Point(100),
+            cost_estimate: NormalDist::new(5, 0),
+            depends: vec![],
+            parallel_mode: ParallelMode::Exclusive,
+            abandonability: 0.5.into(),
+            fixed: false,
+            habit_group: Some(1),
+        };
+        let planner = test_planner(vec![habit_no_pref]);
+        let result = decode(
+            &planner,
+            input_with_mode(&[0], &[], RepairMode::HabitAnchor),
+        );
+
+        assert_eq!(result.plan.task_start(0), Some(Point(0)));
+    }
+
+    #[test]
+    fn all_repair_modes_schedule_every_task() {
+        // どの RepairMode でも全タスクが配置される (ドロップなし)。
+        let mut tasks = vec![];
+        for i in 0..4 {
+            tasks.push(Task {
+                id: i,
+                start: Some(Point(0)),
+                end: Point(100),
+                cost_estimate: NormalDist::new(3, 0),
+                depends: if i > 0 { vec![i - 1] } else { vec![] },
+                parallel_mode: ParallelMode::Exclusive,
+                abandonability: 0.5.into(),
+                fixed: false,
+                habit_group: if i == 2 { Some(7) } else { None },
+            });
+        }
+        let mut planner = test_planner(tasks);
+        planner.set_previous_schedule(&[TaskPlacement::new(Point(40), Point(43), 2)]);
+        let priority: Vec<_> = (0..4).collect();
+        let modes = [
+            RepairMode::Earliest,
+            RepairMode::LowestDelta,
+            RepairMode::Regret2,
+            RepairMode::Deadline,
+            RepairMode::Habit,
+            RepairMode::Stability,
+            RepairMode::HabitAnchor,
+        ];
+        for mode in modes {
+            let result = decode(&planner, input_with_mode(&priority, &[], mode));
+            assert_eq!(
+                result.plan.schedules.len(),
+                4,
+                "mode {mode:?} dropped a task"
+            );
+            let mut ids: Vec<_> = result.plan.schedules.iter().map(|p| p.task_id).collect();
+            ids.sort();
+            assert_eq!(ids, vec![0, 1, 2, 3], "mode {mode:?} missing task ids");
+        }
+    }
+
+    #[test]
+    fn regret2_with_cycle_falls_back_to_earliest_and_reports_cycle() {
+        // ready が空 (依存サイクル) のとき Regret2 は place_task_earliest に
+        // フォールバックし、forced フラグで DependencyCycle を報告する。
+        let a = Task {
+            id: 0,
+            start: Some(Point(0)),
+            end: Point(100),
+            cost_estimate: NormalDist::new(2, 0),
+            depends: vec![1],
+            parallel_mode: ParallelMode::Exclusive,
+            abandonability: 0.5.into(),
+            fixed: false,
+            habit_group: None,
+        };
+        let b = Task {
+            id: 1,
+            depends: vec![0],
+            ..a.clone()
+        };
+        let planner = test_planner(vec![a, b]);
+        let result = decode(&planner, input_with_mode(&[0, 1], &[], RepairMode::Regret2));
+
+        assert_eq!(result.plan.schedules.len(), 2);
+        assert!(
+            result
+                .diagnostics
+                .failures
+                .contains(&PlacementFailure::DependencyCycle),
+            "Regret2 fallback on cycle should report DependencyCycle"
+        );
+        assert_eq!(result.status, DecodeStatus::Infeasible);
+    }
+
+    #[test]
+    fn deadline_repair_with_cycle_falls_back_to_priority_task() {
+        // ready が空 (サイクル) のとき Deadline は best_id=task_id のまま
+        // place_task_earliest で forced 配置する。
+        let a = Task {
+            id: 0,
+            start: Some(Point(0)),
+            end: Point(100),
+            cost_estimate: NormalDist::new(2, 0),
+            depends: vec![1],
+            parallel_mode: ParallelMode::Exclusive,
+            abandonability: 0.5.into(),
+            fixed: false,
+            habit_group: None,
+        };
+        let b = Task {
+            id: 1,
+            depends: vec![0],
+            ..a.clone()
+        };
+        let planner = test_planner(vec![a, b]);
+        let result = decode(
+            &planner,
+            input_with_mode(&[0, 1], &[], RepairMode::Deadline),
+        );
+
+        assert_eq!(result.plan.schedules.len(), 2);
+        assert!(
+            result
+                .diagnostics
+                .failures
+                .contains(&PlacementFailure::DependencyCycle)
+        );
+    }
+
+    #[test]
+    fn habit_repair_with_cycle_falls_back_to_priority_task() {
+        let a = Task {
+            id: 0,
+            start: Some(Point(0)),
+            end: Point(100),
+            cost_estimate: NormalDist::new(2, 0),
+            depends: vec![1],
+            parallel_mode: ParallelMode::Exclusive,
+            abandonability: 0.5.into(),
+            fixed: false,
+            habit_group: None,
+        };
+        let b = Task {
+            id: 1,
+            depends: vec![0],
+            ..a.clone()
+        };
+        let planner = test_planner(vec![a, b]);
+        let result = decode(&planner, input_with_mode(&[0, 1], &[], RepairMode::Habit));
+
+        assert_eq!(result.plan.schedules.len(), 2);
+        assert!(
+            result
+                .diagnostics
+                .failures
+                .contains(&PlacementFailure::DependencyCycle)
+        );
+    }
+
+    #[test]
+    fn stability_repair_with_cycle_falls_back_to_priority_task() {
+        let a = Task {
+            id: 0,
+            start: Some(Point(0)),
+            end: Point(100),
+            cost_estimate: NormalDist::new(2, 0),
+            depends: vec![1],
+            parallel_mode: ParallelMode::Exclusive,
+            abandonability: 0.5.into(),
+            fixed: false,
+            habit_group: None,
+        };
+        let b = Task {
+            id: 1,
+            depends: vec![0],
+            ..a.clone()
+        };
+        let planner = test_planner(vec![a, b]);
+        let result = decode(
+            &planner,
+            input_with_mode(&[0, 1], &[], RepairMode::Stability),
+        );
+
+        assert_eq!(result.plan.schedules.len(), 2);
+        assert!(
+            result
+                .diagnostics
+                .failures
+                .contains(&PlacementFailure::DependencyCycle)
+        );
+    }
+
+    #[test]
+    fn habit_anchor_repair_with_cycle_falls_back_to_priority_task() {
+        let a = Task {
+            id: 0,
+            start: Some(Point(0)),
+            end: Point(100),
+            cost_estimate: NormalDist::new(2, 0),
+            depends: vec![1],
+            parallel_mode: ParallelMode::Exclusive,
+            abandonability: 0.5.into(),
+            fixed: false,
+            habit_group: None,
+        };
+        let b = Task {
+            id: 1,
+            depends: vec![0],
+            ..a.clone()
+        };
+        let planner = test_planner(vec![a, b]);
+        let result = decode(
+            &planner,
+            input_with_mode(&[0, 1], &[], RepairMode::HabitAnchor),
+        );
+
+        assert_eq!(result.plan.schedules.len(), 2);
+        assert!(
+            result
+                .diagnostics
+                .failures
+                .contains(&PlacementFailure::DependencyCycle)
+        );
+    }
+
+    #[test]
+    fn deadline_repair_picks_tightest_deadline_among_ready() {
+        // priority に依存せず deadline の最も厳しい ready タスクを先に置く。
+        // 3 つの ready タスクを用意し、priority 順序と deadline 厳しさを逆にする。
+        let loose = Task {
+            id: 0,
+            start: Some(Point(0)),
+            end: Point(100),
+            cost_estimate: NormalDist::new(5, 0),
+            depends: vec![],
+            parallel_mode: ParallelMode::Exclusive,
+            abandonability: 0.5.into(),
+            fixed: false,
+            habit_group: None,
+        };
+        let mid = Task {
+            id: 1,
+            start: Some(Point(0)),
+            end: Point(50),
+            cost_estimate: NormalDist::new(5, 0),
+            depends: vec![],
+            parallel_mode: ParallelMode::Exclusive,
+            abandonability: 0.5.into(),
+            fixed: false,
+            habit_group: None,
+        };
+        let tight = Task {
+            id: 2,
+            start: Some(Point(0)),
+            end: Point(10),
+            cost_estimate: NormalDist::new(5, 0),
+            depends: vec![],
+            parallel_mode: ParallelMode::Exclusive,
+            abandonability: 0.5.into(),
+            fixed: false,
+            habit_group: None,
+        };
+        let planner = test_planner(vec![loose, mid, tight]);
+        // priority [loose, mid, tight] でも tight が先に置かれる。
+        let result = decode(
+            &planner,
+            input_with_mode(&[0, 1, 2], &[], RepairMode::Deadline),
+        );
+
+        // tight (id=2) が最初に配置される = schedules[0] が task_id=2。
+        assert_eq!(result.plan.schedules[0].task_id, 2);
+        assert_eq!(result.plan.task_start(2), Some(Point(0)));
+    }
+
+    #[test]
+    fn habit_repair_prefers_habit_over_non_habit() {
+        // habit タスクを non-habit より先に、かつ前回 anchor 昇順で選ぶ。
+        let non_habit = Task {
+            id: 0,
+            start: Some(Point(0)),
+            end: Point(100),
+            cost_estimate: NormalDist::new(5, 0),
+            depends: vec![],
+            parallel_mode: ParallelMode::Exclusive,
+            abandonability: 0.5.into(),
+            fixed: false,
+            habit_group: None,
+        };
+        let habit = Task {
+            id: 1,
+            start: Some(Point(0)),
+            end: Point(100),
+            cost_estimate: NormalDist::new(5, 0),
+            depends: vec![],
+            parallel_mode: ParallelMode::Exclusive,
+            abandonability: 0.5.into(),
+            fixed: false,
+            habit_group: Some(1),
+        };
+        let mut planner = test_planner(vec![non_habit, habit]);
+        planner.set_previous_schedule(&[TaskPlacement::new(Point(20), Point(25), 1)]);
+        // priority [non_habit, habit] でも habit が先。
+        let result = decode(&planner, input_with_mode(&[0, 1], &[], RepairMode::Habit));
+
+        assert_eq!(result.plan.schedules[0].task_id, 1);
+        assert_eq!(result.plan.task_start(1), Some(Point(20)));
+    }
+
+    #[test]
+    fn stability_repair_picks_lowest_previous_anchor_first() {
+        // 前回 anchor が最も小さい ready タスクを先に置く。
+        let a = Task {
+            id: 0,
+            start: Some(Point(0)),
+            end: Point(100),
+            cost_estimate: NormalDist::new(5, 0),
+            depends: vec![],
+            parallel_mode: ParallelMode::Exclusive,
+            abandonability: 0.5.into(),
+            fixed: false,
+            habit_group: None,
+        };
+        let b = Task {
+            id: 1,
+            start: Some(Point(0)),
+            end: Point(100),
+            cost_estimate: NormalDist::new(5, 0),
+            depends: vec![],
+            parallel_mode: ParallelMode::Exclusive,
+            abandonability: 0.5.into(),
+            fixed: false,
+            habit_group: None,
+        };
+        let mut planner = test_planner(vec![a, b]);
+        // a の前回 anchor=60, b の前回 anchor=20。priority [a, b] でも b が先。
+        planner.set_previous_schedule(&[
+            TaskPlacement::new(Point(60), Point(65), 0),
+            TaskPlacement::new(Point(20), Point(25), 1),
+        ]);
+        let result = decode(
+            &planner,
+            input_with_mode(&[0, 1], &[], RepairMode::Stability),
+        );
+
+        assert_eq!(result.plan.schedules[0].task_id, 1);
+        assert_eq!(result.plan.task_start(1), Some(Point(20)));
     }
 }
