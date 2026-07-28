@@ -7,6 +7,7 @@ import {
   Switch,
   Text,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { ApprovalRequest, ProposedChange } from '@/src/api/agentTypes';
@@ -29,15 +30,10 @@ const makeStyles = (colors: ColorSet) =>
       margin: 12,
       borderWidth: 1,
       borderRadius: 12,
-      maxHeight: '70%',
-      overflow: 'hidden',
       padding: 12,
       gap: 12,
     },
     panelHeader: { gap: 12 },
-    panelBody: {
-      flex: 1,
-    },
     panelBodyContent: {
       flexGrow: 1,
     },
@@ -1818,6 +1814,7 @@ export function ApprovalPanel({
   permissions,
 }: ApprovalPanelProps) {
   const styles = useMemo(() => makeStyles(colors), [colors]);
+  const { height: windowHeight } = useWindowDimensions();
   const [permissionValue, setPermissionValue] =
     useState<PermissionSectionValue>({
       granted: {},
@@ -1862,7 +1859,7 @@ export function ApprovalPanel({
       </View>
 
       <ScrollView
-        style={styles.panelBody}
+        style={{ maxHeight: windowHeight * 0.6 }}
         contentContainerStyle={styles.panelBodyContent}
         keyboardShouldPersistTaps="handled"
       >
