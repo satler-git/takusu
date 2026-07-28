@@ -1,7 +1,9 @@
+use thiserror::Error;
 use takusu_local_lib::error::AppError;
 
-#[derive(Debug)]
-pub struct HttpError(pub AppError);
+#[derive(Debug, Error)]
+#[error(transparent)]
+pub struct HttpError(#[from] pub AppError);
 
 impl axum::response::IntoResponse for HttpError {
     fn into_response(self) -> axum::response::Response {
@@ -26,11 +28,5 @@ impl axum::response::IntoResponse for HttpError {
             ),
         };
         (status, Json(body)).into_response()
-    }
-}
-
-impl From<AppError> for HttpError {
-    fn from(e: AppError) -> Self {
-        HttpError(e)
     }
 }
