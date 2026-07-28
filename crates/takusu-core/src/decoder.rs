@@ -300,8 +300,9 @@ fn place_task_earliest(
     let mut first_err = None;
 
     for dur in duration_candidates(task, input.duration_choices.get(task_id)) {
-        let (slots, err) =
-            feasible_slots(planner, schedules, task, earliest, dur, latest_end, 1, scratch);
+        let (slots, err) = feasible_slots(
+            planner, schedules, task, earliest, dur, latest_end, 1, scratch,
+        );
         if let Some(tw) = slots.into_iter().next() {
             return (tw.start, tw.end, None);
         }
@@ -311,8 +312,15 @@ fn place_task_earliest(
     }
 
     let dur = duration_for(task, input.duration_choices.get(task_id));
-    let (start, end, fallback_err) =
-        fallback_for(planner, schedules, earliest, dur, latest_end, task, CapacityMode::True(&mut *scratch));
+    let (start, end, fallback_err) = fallback_for(
+        planner,
+        schedules,
+        earliest,
+        dur,
+        latest_end,
+        task,
+        CapacityMode::True(&mut *scratch),
+    );
     (
         start,
         end,
@@ -362,8 +370,15 @@ fn place_task_near_anchor(
     }
 
     let dur = duration_for(task, input.duration_choices.get(task_id));
-    let (start, end, fallback_err) =
-        fallback_for(planner, schedules, earliest, dur, latest_end, task, CapacityMode::True(&mut *scratch));
+    let (start, end, fallback_err) = fallback_for(
+        planner,
+        schedules,
+        earliest,
+        dur,
+        latest_end,
+        task,
+        CapacityMode::True(&mut *scratch),
+    );
     (
         start,
         end,
@@ -416,8 +431,15 @@ fn place_task_lowest_delta(
     }
 
     let dur = duration_for(task, input.duration_choices.get(task_id));
-    let (s, e, fallback_err) =
-        fallback_for(planner, schedules, earliest, dur, latest_end, task, CapacityMode::True(&mut *scratch));
+    let (s, e, fallback_err) = fallback_for(
+        planner,
+        schedules,
+        earliest,
+        dur,
+        latest_end,
+        task,
+        CapacityMode::True(&mut *scratch),
+    );
     (
         s,
         e,
@@ -474,8 +496,15 @@ fn place_regret2(
 
         if scores.is_empty() {
             let dur = (task.cost_estimate.avg() as i64).max(1);
-            let (s, e, fallback_err) =
-                fallback_for(planner, schedules, earliest, dur, latest_end, task, CapacityMode::True(&mut *scratch));
+            let (s, e, fallback_err) = fallback_for(
+                planner,
+                schedules,
+                earliest,
+                dur,
+                latest_end,
+                task,
+                CapacityMode::True(&mut *scratch),
+            );
             let score = evaluate_insertion(planner, schedules, task_id, s, e);
             if fallback.is_none_or(|c| score > c.score) {
                 fallback = Some(Candidate {
@@ -991,7 +1020,10 @@ pub fn decode(planner: &Planner, input: DecodeInput<'_>) -> DecodeResult {
             in_degree: &in_degree,
         };
         let (chosen_id, start, end, placement_err) =
-            input.repair_mode.strategy().select_and_place(&ctx, task_id, &mut day_scratch);
+            input
+                .repair_mode
+                .strategy()
+                .select_and_place(&ctx, task_id, &mut day_scratch);
 
         record_placement(
             chosen_id,
@@ -1067,7 +1099,15 @@ fn feasible_slots(
         if slots.len() >= max_count {
             break;
         }
-        match try_place(planner, schedules, task, cursor, dur, latest_end, CapacityMode::True(&mut *scratch)) {
+        match try_place(
+            planner,
+            schedules,
+            task,
+            cursor,
+            dur,
+            latest_end,
+            CapacityMode::True(&mut *scratch),
+        ) {
             Ok(tw) => {
                 if slots.last() == Some(&tw) {
                     break;
@@ -1767,8 +1807,16 @@ mod tests {
             habit_group: None,
         };
         let planner = test_planner(vec![task.clone()]);
-        let err = try_place(&planner, &[], &task, Point(1), 10, None, CapacityMode::True(&mut Vec::new()))
-            .unwrap_err();
+        let err = try_place(
+            &planner,
+            &[],
+            &task,
+            Point(1),
+            10,
+            None,
+            CapacityMode::True(&mut Vec::new()),
+        )
+        .unwrap_err();
         assert_eq!(err, PlacementFailure::DeadlineExceeded);
     }
 
@@ -1786,9 +1834,16 @@ mod tests {
             habit_group: None,
         };
         let planner = test_planner(vec![task.clone()]);
-        let err =
-            try_place(&planner, &[], &task, Point(0), 10, Some(Point(5)), CapacityMode::True(&mut Vec::new()))
-                .unwrap_err();
+        let err = try_place(
+            &planner,
+            &[],
+            &task,
+            Point(0),
+            10,
+            Some(Point(5)),
+            CapacityMode::True(&mut Vec::new()),
+        )
+        .unwrap_err();
         assert_eq!(err, PlacementFailure::LatestEndExceeded);
     }
 
@@ -1811,8 +1866,16 @@ mod tests {
         // この場合、sleep そのものではなく deadline 超過が根本原因なので
         // DeadlineExceeded を優先して報告する。
         planner.sleep = SleepConfig::new(0, 20, 25, true);
-        let err = try_place(&planner, &[], &task, Point(20), 10, None, CapacityMode::True(&mut Vec::new()))
-            .unwrap_err();
+        let err = try_place(
+            &planner,
+            &[],
+            &task,
+            Point(20),
+            10,
+            None,
+            CapacityMode::True(&mut Vec::new()),
+        )
+        .unwrap_err();
         assert_eq!(err, PlacementFailure::DeadlineExceeded);
     }
 
@@ -1844,9 +1907,16 @@ mod tests {
         let planner = test_planner(vec![host.clone(), guest.clone()]);
         let schedules = vec![TaskPlacement::new(Point(0), Point(5), 0)];
         // guest は [0,3) で host と重なり、並行不可かつ [5,8) では deadline=7 を超える
-        let err =
-            try_place(&planner, &schedules, &guest, Point(0), 3, None, CapacityMode::True(&mut Vec::new()))
-                .unwrap_err();
+        let err = try_place(
+            &planner,
+            &schedules,
+            &guest,
+            Point(0),
+            3,
+            None,
+            CapacityMode::True(&mut Vec::new()),
+        )
+        .unwrap_err();
         assert_eq!(err, PlacementFailure::DeadlineExceeded);
     }
 
@@ -2342,9 +2412,16 @@ mod tests {
         planner.workload = WorkloadConfig::new(8, 10);
         // 1 日の最大容量 10 に対し、既存 [0,8) + 候補 [7,12) は union で 12 を超える。
         let schedules = vec![TaskPlacement::new(Point(0), Point(8), 0)];
-        let err =
-            try_place(&planner, &schedules, &task, Point(7), 5, None, CapacityMode::True(&mut Vec::new()))
-                .unwrap_err();
+        let err = try_place(
+            &planner,
+            &schedules,
+            &task,
+            Point(7),
+            5,
+            None,
+            CapacityMode::True(&mut Vec::new()),
+        )
+        .unwrap_err();
         assert_eq!(err, PlacementFailure::DailyCapacityExceeded);
     }
 

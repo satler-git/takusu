@@ -160,15 +160,7 @@ pub enum ToolExposure {
 /// (`into()`, provided by strum's `IntoStaticStr`) is the wire format sent to
 /// the LLM; the enum variants give compile-time protection against typos at
 /// registration and call sites.
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    Hash,
-    strum::IntoStaticStr,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, strum::IntoStaticStr)]
 pub enum ToolName {
     #[strum(serialize = "correct_asr")]
     CorrectAsr,

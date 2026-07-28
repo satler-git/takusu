@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use crate::tools::{ToolContext, ToolModule};
 use crate::{
-    InvalidArgsError, ToolError, ToolName, ToolOutput, ToolRegistry, TypedTool,
-    UserInputProvider, UserInputQuestion,
+    InvalidArgsError, ToolError, ToolName, ToolOutput, ToolRegistry, TypedTool, UserInputProvider,
+    UserInputQuestion,
 };
 
 /// Ask the user to correct ambiguous ASR text.

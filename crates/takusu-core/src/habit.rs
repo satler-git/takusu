@@ -424,7 +424,10 @@ mod tests {
 
     #[test]
     fn apply_anchor_shift_respects_task_start() {
-        let mut p = Planner::new(PlannerConfig::new(Point(SPD + 110), SleepConfig::disabled()));
+        let mut p = Planner::new(PlannerConfig::new(
+            Point(SPD + 110),
+            SleepConfig::disabled(),
+        ));
         let a = p.add(habit_task(SPD, 108, 6, false)).unwrap();
         let b = p.add(habit_task(2 * SPD, 108, 6, false)).unwrap();
         let plan = plan_at_starts(&p, &[a, b], 6);

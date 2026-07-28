@@ -586,7 +586,10 @@ impl MutationTool {
             if is_set && !allowed.contains(&name) {
                 return Err(InvalidArgsError::new(
                     name,
-                    format!("not applicable to {}", <&'static str>::from(self.kind.tool_name())),
+                    format!(
+                        "not applicable to {}",
+                        <&'static str>::from(self.kind.tool_name())
+                    ),
                 ));
             }
         }

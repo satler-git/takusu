@@ -225,8 +225,13 @@ pub(crate) fn capacity_exceeded_for(
     let mut day = day_start_for(planner, start);
     while day.0 < end.0 {
         let day_end = day + spd;
-        let load =
-            day_load_with_candidate(schedules, TimeWindow::new(start, end), day, day_end, scratch);
+        let load = day_load_with_candidate(
+            schedules,
+            TimeWindow::new(start, end),
+            day,
+            day_end,
+            scratch,
+        );
         if load > max {
             return true;
         }

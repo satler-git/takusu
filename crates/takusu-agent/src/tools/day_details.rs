@@ -19,9 +19,7 @@ use takusu_util::parse_date_expression;
 use crate::tools::takusu::TimeZoneCache;
 use crate::tools::takusu::client_error;
 use crate::tools::{ToolContext, ToolModule};
-use crate::{
-    InvalidArgsError, ToolError, ToolName, ToolOutput, ToolRegistry, TypedTool,
-};
+use crate::{InvalidArgsError, ToolError, ToolName, ToolOutput, ToolRegistry, TypedTool};
 
 struct DayDetailsModule;
 

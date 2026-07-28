@@ -170,8 +170,7 @@ fn metrics(planner: &Planner, plan: &Plan) -> Metrics {
             let Some(b) = planner.tasks().get(b_p.task_id) else {
                 continue;
             };
-            if !ParallelMode::can_overlap(a.parallel_mode, b.parallel_mode)
-            {
+            if !ParallelMode::can_overlap(a.parallel_mode, b.parallel_mode) {
                 overlap_slots += a_p.end.0.min(b_p.end.0) - a_p.start.0.max(b_p.start.0);
             }
         }

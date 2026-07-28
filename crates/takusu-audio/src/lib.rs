@@ -31,8 +31,11 @@ pub use models::{
 };
 #[cfg(feature = "record")]
 pub use record::{RecordConfig, RecorderError, record};
+pub use secrets::{ApiKey, EndpointUrl, EndpointUrlError};
 pub use stt::{SpeechToText, SttError};
 pub use tts::{TextToSpeech, TtsBackend, TtsConfig, TtsError, TtsOptions, TtsRequest, TtsStream};
-pub use secrets::{ApiKey, EndpointUrl, EndpointUrlError};
 pub use tts_normalize::normalize_for_tts;
-pub use wav::{AudioError, I16_MAX_F32, SHERPA_SAMPLE_RATE, mix_to_mono, normalize, read_wav, resample, write_wav};
+pub use wav::{
+    AudioError, I16_MAX_F32, SHERPA_SAMPLE_RATE, mix_to_mono, normalize, read_wav, resample,
+    write_wav,
+};

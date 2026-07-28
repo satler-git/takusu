@@ -6,8 +6,8 @@ mod tests;
 
 use takusu_client::Client;
 
-use crate::tools::{ToolContext, ToolModule};
 use crate::ToolRegistry;
+use crate::tools::{ToolContext, ToolModule};
 
 // Re-export shared helpers so external modules (progress.rs, rrule.rs,
 // day_details.rs, runner.rs, lib.rs, takusu-android) can access them at

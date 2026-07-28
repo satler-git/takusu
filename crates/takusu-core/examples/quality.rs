@@ -314,8 +314,7 @@ fn metrics(planner: &takusu_core::Planner, plan: &takusu_core::Plan) -> Metrics 
             }
             let a = &planner.tasks()[a_p.task_id];
             let b = &planner.tasks()[b_p.task_id];
-            if !ParallelMode::can_overlap(a.parallel_mode, b.parallel_mode)
-            {
+            if !ParallelMode::can_overlap(a.parallel_mode, b.parallel_mode) {
                 overlap_slots += a_p.end.0.min(b_p.end.0) - a_p.start.0.max(b_p.start.0);
             }
         }

@@ -48,13 +48,13 @@ mod habit;
 mod placement;
 mod solver;
 
+pub use anneal::{NeighborWeights, SaConfig};
 pub use decoder::{
     DecodeDiagnostics, DecodeInput, DecodeResult, DecodeStatus, PinnedConflict, RelaxedPlacement,
     RepairMode,
 };
-pub use placement::{Placement, PlacementFailure, TaskPlacement, TimeWindow};
-pub use anneal::{NeighborWeights, SaConfig};
 pub use evaluate::EvaluationWeights;
+pub use placement::{Placement, PlacementFailure, TaskPlacement, TimeWindow};
 pub use solver::{AutoSolver, PrioritySolver, SaSolver, SolverStrategy};
 
 use jiff::Timestamp;
@@ -1349,7 +1349,10 @@ mod tests {
         assert_eq!(sc.start(), 264);
         assert_eq!(sc.end(), 360);
         assert!(sc.enabled());
-        assert!(sc.end() > sc.start(), "recommended sleep must have end > start");
+        assert!(
+            sc.end() > sc.start(),
+            "recommended sleep must have end > start"
+        );
     }
 
     #[test]

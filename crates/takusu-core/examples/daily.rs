@@ -97,7 +97,7 @@ fn main() {
                 cost_estimate: NormalDist::new(9, 2),
                 depends: vec![],
                 parallel_mode: ParallelMode::Guest, // 他のタスク中でも可
-                abandonability: 0.6.into(), // // まあできなくてもいい
+                abandonability: 0.6.into(),         // // まあできなくてもいい
                 fixed: false,
                 habit_group: None,
             })

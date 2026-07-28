@@ -651,7 +651,8 @@ fn daily_load_score(
 
         let normal_penalty = (load * load) as f64 * w.w_daily_normal;
         let comfortable_excess = (load - planner.workload.comfortable_slots_per_day()).max(0);
-        let overload_penalty = (comfortable_excess * comfortable_excess) as f64 * w.w_daily_overload;
+        let overload_penalty =
+            (comfortable_excess * comfortable_excess) as f64 * w.w_daily_overload;
         let maximum_excess = (load - planner.workload.maximum_slots_per_day()).max(0);
         let maximum_penalty = (maximum_excess * maximum_excess) as f64 * w.w_daily_maximum;
         score -= normal_penalty + overload_penalty + maximum_penalty;
