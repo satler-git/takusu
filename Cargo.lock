@@ -5189,6 +5189,7 @@ dependencies = [
  "async-trait",
  "bytes",
  "bzip2",
+ "clap",
  "cpal",
  "flate2",
  "futures-util",

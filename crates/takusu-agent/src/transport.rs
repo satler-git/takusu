@@ -288,7 +288,7 @@ pub struct UpdateAgentLlmSettings {
 
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct UpdateAgentTtsSettings {
-    pub backend: Option<String>,
+    pub backend: Option<takusu_audio::TtsBackend>,
     pub api_key: Option<String>,
     pub voice_id: Option<String>,
     pub language: Option<String>,

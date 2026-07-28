@@ -1,16 +1,13 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{Parser, Subcommand};
 #[cfg(feature = "hush")]
 use takusu_audio::hush::Hush;
-use takusu_audio::{RecordConfig, SHERPA_SAMPLE_RATE, read_wav, record, write_wav};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
-enum SherpaModel {
-    SenseVoice,
-    FunasrNano,
-}
+use takusu_audio::{
+    ExecutionProvider, SherpaOnnxModel, SHERPA_SAMPLE_RATE, SttBackend, SttRuntimeConfig, read_wav,
+    record, write_wav,
+};
 
 #[derive(Parser)]
 #[command(
@@ -47,7 +44,7 @@ enum Commands {
 
         /// Sherpa-ONNX model family (sense-voice or funasr-nano)
         #[arg(long, value_enum, default_value = "sense-voice")]
-        sherpa_model: SherpaModel,
+        sherpa_model: SherpaOnnxModel,
 
         /// SenseVoice language (auto, zh, en, ja, ko)
         #[arg(long, default_value = "auto")]
@@ -61,9 +58,9 @@ enum Commands {
         #[arg(long, default_value_t = 2)]
         sherpa_num_threads: i32,
 
-        /// ONNX provider for Sherpa-ONNX (cpu, cuda, etc.)
-        #[arg(long, default_value = "cpu")]
-        sherpa_provider: String,
+        /// ONNX provider for Sherpa-ONNX (cpu, cuda, coreml)
+        #[arg(long, value_enum, default_value = "cpu")]
+        sherpa_provider: ExecutionProvider,
     },
 
     /// Record from microphone and transcribe with Sherpa-ONNX (Press Enter to stop)
@@ -82,7 +79,7 @@ enum Commands {
 
         /// Sherpa-ONNX model family (sense-voice or funasr-nano)
         #[arg(long, value_enum, default_value = "sense-voice")]
-        sherpa_model: SherpaModel,
+        sherpa_model: SherpaOnnxModel,
 
         /// SenseVoice language (auto, zh, en, ja, ko)
         #[arg(long, default_value = "auto")]
@@ -96,9 +93,9 @@ enum Commands {
         #[arg(long, default_value_t = 2)]
         sherpa_num_threads: i32,
 
-        /// ONNX provider for Sherpa-ONNX (cpu, cuda, etc.)
-        #[arg(long, default_value = "cpu")]
-        sherpa_provider: String,
+        /// ONNX provider for Sherpa-ONNX (cpu, cuda, coreml)
+        #[arg(long, value_enum, default_value = "cpu")]
+        sherpa_provider: ExecutionProvider,
     },
 
     #[cfg(feature = "hush")]
@@ -134,7 +131,7 @@ async fn main() {
             output,
             max_duration,
         } => {
-            let config = RecordConfig {
+            let config = takusu_audio::RecordConfig {
                 max_duration: Duration::from_secs_f64(max_duration),
                 ..Default::default()
             };
@@ -174,16 +171,17 @@ async fn main() {
             });
             eprintln!("Loaded {} samples from {}", samples.len(), audio.display());
 
-            let text = transcribe_sherpa(
-                &samples,
-                sherpa_model_dir,
-                sherpa_model,
-                sherpa_language,
-                sherpa_use_itn,
-                sherpa_num_threads,
-                sherpa_provider,
-            )
-            .await;
+            let stt_config = SttRuntimeConfig {
+                backend: SttBackend::Sherpa,
+                model: sherpa_model,
+                model_dir: sherpa_model_dir,
+                language: sherpa_language,
+                use_itn: sherpa_use_itn,
+                num_threads: sherpa_num_threads,
+                provider: sherpa_provider,
+                sample_rate: SHERPA_SAMPLE_RATE as i32,
+            };
+            let text = transcribe(&samples, stt_config).await;
             println!("{text}");
         }
 
@@ -197,7 +195,7 @@ async fn main() {
             sherpa_num_threads,
             sherpa_provider,
         } => {
-            let config = RecordConfig {
+            let config = takusu_audio::RecordConfig {
                 max_duration: Duration::from_secs_f64(max_duration),
                 ..Default::default()
             };
@@ -226,16 +224,17 @@ async fn main() {
             });
             eprintln!("Saved to {}", output.display());
 
-            let text = transcribe_sherpa(
-                &samples,
-                sherpa_model_dir,
-                sherpa_model,
-                sherpa_language,
-                sherpa_use_itn,
-                sherpa_num_threads,
-                sherpa_provider,
-            )
-            .await;
+            let stt_config = SttRuntimeConfig {
+                backend: SttBackend::Sherpa,
+                model: sherpa_model,
+                model_dir: sherpa_model_dir,
+                language: sherpa_language,
+                use_itn: sherpa_use_itn,
+                num_threads: sherpa_num_threads,
+                provider: sherpa_provider,
+                sample_rate: SHERPA_SAMPLE_RATE as i32,
+            };
+            let text = transcribe(&samples, stt_config).await;
             println!("{text}");
         }
 
@@ -303,88 +302,21 @@ async fn main() {
     }
 }
 
-async fn transcribe_sherpa(
-    samples: &[f32],
-    sherpa_model_dir: Option<PathBuf>,
-    sherpa_model: SherpaModel,
-    sherpa_language: String,
-    sherpa_use_itn: bool,
-    sherpa_num_threads: i32,
-    sherpa_provider: String,
-) -> String {
+async fn transcribe(samples: &[f32], stt_config: SttRuntimeConfig) -> String {
     #[cfg(not(feature = "sherpa"))]
     {
-        let _ = (
-            samples,
-            sherpa_model_dir,
-            sherpa_model,
-            sherpa_language,
-            sherpa_use_itn,
-            sherpa_num_threads,
-            sherpa_provider,
-        );
+        let _ = (samples, stt_config);
         eprintln!("Sherpa-ONNX backend requires the 'sherpa' feature at compile time");
         std::process::exit(1);
     }
 
     #[cfg(feature = "sherpa")]
     {
-        use takusu_audio::{
-            ModelCache, SherpaOnnxAsr, SherpaOnnxAsrConfig, SherpaOnnxModel, SpeechToText,
-        };
-
-        let model = match sherpa_model {
-            SherpaModel::SenseVoice => SherpaOnnxModel::SenseVoice,
-            SherpaModel::FunasrNano => SherpaOnnxModel::FunasrNano,
-        };
-
-        let model_dir = match sherpa_model_dir {
-            Some(path) => path,
-            None => {
-                if matches!(model, SherpaOnnxModel::FunasrNano) {
-                    eprintln!("--sherpa-model-dir is required for funasr-nano");
-                    std::process::exit(1);
-                }
-                eprintln!("Downloading Sherpa-ONNX SenseVoice model on first run...");
-                let path = tokio::task::spawn_blocking(|| {
-                    let cache = ModelCache::default_dir().map_err(|e| e.to_string())?;
-                    cache
-                        .ensure("sherpa-sense-voice-int8")
-                        .map_err(|e| e.to_string())
-                })
-                .await
-                .unwrap_or_else(|e| {
-                    eprintln!("Model download join error: {e}");
-                    std::process::exit(1);
-                })
-                .unwrap_or_else(|e| {
-                    eprintln!("Model download error: {e}");
-                    std::process::exit(1);
-                });
-                eprintln!("Sherpa-ONNX model cached at {}", path.display());
-                path
-            }
-        };
-
-        let config = SherpaOnnxAsrConfig {
-            model_dir,
-            model,
-            tokens: None,
-            num_threads: sherpa_num_threads,
-            provider: sherpa_provider,
-            sample_rate: SHERPA_SAMPLE_RATE as i32,
-            language: Some(sherpa_language),
-            use_itn: sherpa_use_itn,
-        };
-
         let samples = samples.to_vec();
         tokio::task::spawn_blocking(move || {
-            eprintln!(
-                "Loading Sherpa-ONNX model from {}...",
-                config.model_dir.display()
-            );
+            eprintln!("Loading Sherpa-ONNX model...");
             let start = std::time::Instant::now();
-            let asr = SherpaOnnxAsr::from_config(&config).unwrap_or_else(|e| {
+            let asr = stt_config.build().unwrap_or_else(|e| {
                 eprintln!("Sherpa-ONNX model error: {e}");
                 std::process::exit(1);
             });

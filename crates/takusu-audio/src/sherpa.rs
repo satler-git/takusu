@@ -6,22 +6,15 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::stt::{SpeechToText, SttError};
+use crate::stt::{ExecutionProvider, SherpaOnnxModel, SpeechToText, SttError};
 use crate::wav::SHERPA_SAMPLE_RATE;
 use sherpa_onnx::{
     OfflineFunASRNanoModelConfig, OfflineRecognizer, OfflineRecognizerConfig,
     OfflineSenseVoiceModelConfig,
 };
 
-/// Model family to load.
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub enum SherpaOnnxModel {
-    /// SenseVoice (multilingual, smaller, faster).
-    #[default]
-    SenseVoice,
-    /// FunASR Nano (LLM-based, higher quality, larger).
-    FunasrNano,
-}
+// `SherpaOnnxModel` is imported from `stt` via the `use` above and is also
+// re-exported by `lib.rs` directly from `stt`, so no re-export is needed here.
 
 /// Configuration for [`SherpaOnnxAsr`].
 #[derive(Debug, Clone, Default)]
@@ -30,7 +23,7 @@ pub struct SherpaOnnxAsrConfig {
     pub model_dir: PathBuf,
     pub tokens: Option<PathBuf>,
     pub num_threads: i32,
-    pub provider: String,
+    pub provider: ExecutionProvider,
     pub sample_rate: i32,
     /// SenseVoice language, e.g. "auto", "zh", "en", "ja", "ko".
     pub language: Option<String>,
@@ -71,14 +64,7 @@ impl SherpaOnnxAsr {
         } else {
             2
         };
-        offline_config.model_config.provider = Some(
-            if config.provider.is_empty() {
-                "cpu"
-            } else {
-                &config.provider
-            }
-            .to_string(),
-        );
+        offline_config.model_config.provider = Some(config.provider.to_string());
 
         match config.model {
             SherpaOnnxModel::SenseVoice => {
