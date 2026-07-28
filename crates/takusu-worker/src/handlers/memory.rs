@@ -48,6 +48,11 @@ async fn resolve_task_id_for_memory(
     database: &worker::D1Database,
     id: &str,
 ) -> Result<String, WorkerError> {
+    #[derive(serde::Deserialize)]
+    struct TaskIdRow {
+        id: String,
+    }
+
     // Allow agents to pass display ids with a leading `#`, e.g. `#42`.
     let stripped = id.strip_prefix('#').unwrap_or(id);
 
@@ -59,7 +64,7 @@ async fn resolve_task_id_for_memory(
         let stmt = database.prepare(
             "SELECT t.id FROM tasks t JOIN habits h ON t.habit_id = h.id WHERE h.display_id = ?1 AND t.display_id = ?2",
         );
-        let rows: Vec<serde_json::Value> = safe_all(&stmt.bind(&[
+        let rows: Vec<TaskIdRow> = safe_all(&stmt.bind(&[
             JsValue::from_f64(hnum as f64),
             JsValue::from_f64(tnum as f64),
         ])?)
@@ -67,7 +72,7 @@ async fn resolve_task_id_for_memory(
         return rows
             .into_iter()
             .next()
-            .and_then(|v| v["id"].as_str().map(|s| s.to_owned()))
+            .map(|r| r.id)
             .ok_or_else(|| WorkerError::BadRequest(format!("task {id} not found")));
     }
 
@@ -75,23 +80,23 @@ async fn resolve_task_id_for_memory(
     if let Ok(num) = stripped.parse::<i64>() {
         let stmt =
             database.prepare("SELECT id FROM tasks WHERE display_id = ?1 AND habit_id IS NULL");
-        let rows: Vec<serde_json::Value> =
+        let rows: Vec<TaskIdRow> =
             safe_all(&stmt.bind(&[JsValue::from_f64(num as f64)])?).await?;
         return rows
             .into_iter()
             .next()
-            .and_then(|v| v["id"].as_str().map(|s| s.to_owned()))
+            .map(|r| r.id)
             .ok_or_else(|| WorkerError::BadRequest(format!("task {id} not found")));
     }
 
     // Full UUID — verify it exists. UUID prefixes are not accepted (#1251).
     if id.contains('-') {
         let stmt = database.prepare("SELECT id FROM tasks WHERE id = ?1");
-        let rows: Vec<serde_json::Value> = safe_all(&stmt.bind(&[JsValue::from_str(id)])?).await?;
+        let rows: Vec<TaskIdRow> = safe_all(&stmt.bind(&[JsValue::from_str(id)])?).await?;
         return rows
             .into_iter()
             .next()
-            .and_then(|v| v["id"].as_str().map(|s| s.to_owned()))
+            .map(|r| r.id)
             .ok_or_else(|| WorkerError::BadRequest(format!("task {id} not found")));
     }
 
