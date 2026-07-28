@@ -4,8 +4,8 @@ use serde::Deserialize;
 use std::sync::Arc;
 
 use crate::{
-    InvalidArgsError, ToolError, ToolOutput, ToolRegistry, TypedTool, UserInputProvider,
-    UserInputQuestion,
+    InvalidArgsError, ToolError, ToolName, ToolOutput, ToolRegistry, TypedTool,
+    UserInputProvider, UserInputQuestion,
 };
 
 /// Ask the user to correct ambiguous ASR text.
@@ -36,7 +36,7 @@ impl TypedTool for CorrectAsr {
     type Params = CorrectAsrArgs;
 
     fn name(&self) -> &'static str {
-        "correct_asr"
+        ToolName::CorrectAsr.into()
     }
 
     fn description(&self) -> &'static str {

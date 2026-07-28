@@ -31,6 +31,7 @@ sentry = { version = "0.48.4", default-features = false, features = ["backtrace"
 config = "0.15"
 async-trait = "0.1"
 schemars = "1"
+strum = { version = "0.28", features = ["derive"] }
 insta = "1"
 reqwest = { version = "0.13", features = [
   "json",

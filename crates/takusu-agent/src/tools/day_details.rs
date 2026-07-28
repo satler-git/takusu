@@ -18,7 +18,9 @@ use takusu_util::parse_date_expression;
 
 use crate::tools::takusu::TimeZoneCache;
 use crate::tools::takusu::client_error;
-use crate::{InvalidArgsError, ToolError, ToolOutput, ToolRegistry, TypedTool};
+use crate::{
+    InvalidArgsError, ToolError, ToolName, ToolOutput, ToolRegistry, TypedTool,
+};
 
 pub fn register_tools(registry: &mut ToolRegistry, client: Client, tz_cache: TimeZoneCache) {
     registry.register(Box::new(crate::tool::Typed(DayDetails {
@@ -49,7 +51,7 @@ impl TypedTool for DayDetails {
     type Params = DayDetailsArgs;
 
     fn name(&self) -> &'static str {
-        "day_details"
+        ToolName::DayDetails.into()
     }
 
     fn description(&self) -> &'static str {

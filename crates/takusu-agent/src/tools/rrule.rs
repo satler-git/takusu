@@ -17,7 +17,9 @@ use takusu_habit::{
 
 use crate::tools::other_error;
 use crate::tools::takusu::TimeZoneCache;
-use crate::{InvalidArgsError, ToolError, ToolExposure, ToolOutput, ToolRegistry, TypedTool};
+use crate::{
+    InvalidArgsError, ToolError, ToolExposure, ToolName, ToolOutput, ToolRegistry, TypedTool,
+};
 
 pub fn register_tools(registry: &mut ToolRegistry, tz_cache: TimeZoneCache) {
     registry.register(Box::new(crate::tool::Typed(ExpandRRule { tz_cache })));
@@ -43,7 +45,7 @@ impl TypedTool for ExpandRRule {
     type Params = ExpandRRuleArgs;
 
     fn name(&self) -> &'static str {
-        "expand_rrule"
+        ToolName::ExpandRrule.into()
     }
 
     fn description(&self) -> &'static str {

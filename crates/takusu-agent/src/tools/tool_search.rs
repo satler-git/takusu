@@ -5,7 +5,9 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::{InvalidArgsError, ToolError, ToolExposure, ToolOutput, ToolRegistry, TypedTool};
+use crate::{
+    InvalidArgsError, ToolError, ToolExposure, ToolName, ToolOutput, ToolRegistry, TypedTool,
+};
 
 /// Search tool for discovering deferred tools.
 ///
@@ -40,7 +42,7 @@ impl TypedTool for ToolSearch {
     type Params = ToolSearchParams;
 
     fn name(&self) -> &'static str {
-        "tool_search"
+        ToolName::ToolSearch.into()
     }
 
     fn exposure(&self) -> ToolExposure {

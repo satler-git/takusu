@@ -153,6 +153,103 @@ pub enum ToolExposure {
     Hidden,
 }
 
+/// Type-safe name for every tool registered with [`ToolRegistry`].
+///
+/// Replaces the scattered `&'static str` literals that were previously returned
+/// by `Tool::name()` / `MutationKind::name()`. The string representation
+/// (`into()`, provided by strum's `IntoStaticStr`) is the wire format sent to
+/// the LLM; the enum variants give compile-time protection against typos at
+/// registration and call sites.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    strum::IntoStaticStr,
+)]
+pub enum ToolName {
+    #[strum(serialize = "correct_asr")]
+    CorrectAsr,
+    #[strum(serialize = "tool_search")]
+    ToolSearch,
+
+    #[strum(serialize = "skills_list")]
+    SkillsList,
+    #[strum(serialize = "skills_read")]
+    SkillsRead,
+    #[strum(serialize = "skills_propose_add")]
+    SkillsProposeAdd,
+    #[strum(serialize = "skills_propose_edit")]
+    SkillsProposeEdit,
+
+    #[strum(serialize = "expand_rrule")]
+    ExpandRrule,
+
+    #[strum(serialize = "task_start")]
+    TaskStart,
+    #[strum(serialize = "task_pause")]
+    TaskPause,
+    #[strum(serialize = "task_progress")]
+    TaskProgress,
+    #[strum(serialize = "task_complete")]
+    TaskComplete,
+    #[strum(serialize = "task_split")]
+    TaskSplit,
+
+    #[strum(serialize = "memory_search")]
+    MemorySearch,
+    #[strum(serialize = "similar_tasks")]
+    SimilarTasks,
+    #[strum(serialize = "memory_save")]
+    MemorySave,
+    #[strum(serialize = "memory_update")]
+    MemoryUpdate,
+    #[strum(serialize = "memory_delete")]
+    MemoryDelete,
+
+    #[strum(serialize = "day_details")]
+    DayDetails,
+
+    #[strum(serialize = "list_tasks")]
+    ListTasks,
+    #[strum(serialize = "get_task")]
+    GetTask,
+    #[strum(serialize = "list_habits")]
+    ListHabits,
+    #[strum(serialize = "get_habit")]
+    GetHabit,
+    #[strum(serialize = "get_schedule")]
+    GetSchedule,
+    #[strum(serialize = "habit_scheduled_spans")]
+    HabitScheduledSpans,
+    #[strum(serialize = "get_settings")]
+    GetSettings,
+    #[strum(serialize = "preview_schedule")]
+    PreviewSchedule,
+
+    #[strum(serialize = "create_task")]
+    CreateTask,
+    #[strum(serialize = "update_task")]
+    UpdateTask,
+    #[strum(serialize = "delete_task")]
+    DeleteTask,
+    #[strum(serialize = "create_habit")]
+    CreateHabit,
+    #[strum(serialize = "update_habit")]
+    UpdateHabit,
+    #[strum(serialize = "delete_habit")]
+    DeleteHabit,
+    #[strum(serialize = "generate_schedule")]
+    GenerateSchedule,
+    #[strum(serialize = "reschedule")]
+    Reschedule,
+
+    #[strum(serialize = "move_task")]
+    MoveTask,
+}
+
 enum_label! {
     /// Operation kind for a proposed or applied change.
     pub enum ChangeOperation {

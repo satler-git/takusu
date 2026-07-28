@@ -8,8 +8,8 @@ use takusu_util::parse_datetime_tz;
 
 use crate::{
     ChangeOperation, InferredField, InvalidArgsError, ProposedChange, Target, TargetKind,
-    ToolError, ToolExposure, ToolOutput, ToolRegistry, TypedTool, deserialize_trimmed_optional,
-    deserialize_trimmed_required,
+    ToolError, ToolExposure, ToolName, ToolOutput, ToolRegistry, TypedTool,
+    deserialize_trimmed_optional, deserialize_trimmed_required,
 };
 
 use super::common::{
@@ -84,16 +84,16 @@ pub(super) enum MutationKind {
 }
 
 impl MutationKind {
-    fn name(self) -> &'static str {
+    pub(super) fn tool_name(self) -> ToolName {
         match self {
-            Self::CreateTask => "create_task",
-            Self::UpdateTask => "update_task",
-            Self::DeleteTask => "delete_task",
-            Self::CreateHabit => "create_habit",
-            Self::UpdateHabit => "update_habit",
-            Self::DeleteHabit => "delete_habit",
-            Self::GenerateSchedule => "generate_schedule",
-            Self::Reschedule => "reschedule",
+            Self::CreateTask => ToolName::CreateTask,
+            Self::UpdateTask => ToolName::UpdateTask,
+            Self::DeleteTask => ToolName::DeleteTask,
+            Self::CreateHabit => ToolName::CreateHabit,
+            Self::UpdateHabit => ToolName::UpdateHabit,
+            Self::DeleteHabit => ToolName::DeleteHabit,
+            Self::GenerateSchedule => ToolName::GenerateSchedule,
+            Self::Reschedule => ToolName::Reschedule,
         }
     }
 
@@ -582,7 +582,7 @@ impl MutationTool {
             if is_set && !allowed.contains(&name) {
                 return Err(InvalidArgsError::new(
                     name,
-                    format!("not applicable to {}", self.kind.name()),
+                    format!("not applicable to {}", <&'static str>::from(self.kind.tool_name())),
                 ));
             }
         }
@@ -595,7 +595,7 @@ impl TypedTool for MutationTool {
     type Params = MutationArgs;
 
     fn name(&self) -> &'static str {
-        self.kind.name()
+        self.kind.tool_name().into()
     }
     fn description(&self) -> &'static str {
         self.kind.description()
@@ -894,7 +894,7 @@ impl TypedTool for MoveTaskTool {
     type Params = MoveTaskArgs;
 
     fn name(&self) -> &'static str {
-        "move_task"
+        ToolName::MoveTask.into()
     }
 
     fn description(&self) -> &'static str {

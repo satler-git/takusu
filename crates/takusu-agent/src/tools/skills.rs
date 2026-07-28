@@ -6,8 +6,8 @@ use takusu_client::Client;
 
 use crate::{
     ChangeOperation, InferredField, InvalidArgsError, ProposedChange, Target, TargetKind,
-    ToolError, ToolExposure, ToolOutput, ToolRegistry, TypedTool, deserialize_trimmed_optional,
-    deserialize_trimmed_required, inferred_fields_schema,
+    ToolError, ToolExposure, ToolName, ToolOutput, ToolRegistry, TypedTool,
+    deserialize_trimmed_optional, deserialize_trimmed_required, inferred_fields_schema,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -220,7 +220,7 @@ impl TypedTool for SkillsList {
     type Params = SkillsListArgs;
 
     fn name(&self) -> &'static str {
-        "skills_list"
+        ToolName::SkillsList.into()
     }
 
     fn description(&self) -> &'static str {
@@ -259,7 +259,7 @@ impl TypedTool for SkillsRead {
     type Params = SkillsReadArgs;
 
     fn name(&self) -> &'static str {
-        "skills_read"
+        ToolName::SkillsRead.into()
     }
 
     fn description(&self) -> &'static str {
@@ -324,7 +324,7 @@ impl TypedTool for SkillsProposeAdd {
     type Params = SkillsProposeAddArgs;
 
     fn name(&self) -> &'static str {
-        "skills_propose_add"
+        ToolName::SkillsProposeAdd.into()
     }
 
     fn description(&self) -> &'static str {
@@ -440,7 +440,7 @@ impl TypedTool for SkillsProposeEdit {
     type Params = SkillsProposeEditArgs;
 
     fn name(&self) -> &'static str {
-        "skills_propose_edit"
+        ToolName::SkillsProposeEdit.into()
     }
 
     fn description(&self) -> &'static str {
