@@ -16,6 +16,6 @@ sherpa = ["takusu-audio/sherpa"]
 
 [dependencies]
 tokio = { workspace = true }
-takusu-audio = { workspace = true }
+takusu-audio = { workspace = true, features = ["clap"] }
 
 clap = { version = "4", features = ["derive"] }

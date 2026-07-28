@@ -10,6 +10,7 @@ default = ["record"]
 record = ["dep:cpal", "dep:tokio"]
 hush = ["dep:ort", "dep:realfft", "dep:num-complex", "dep:ndarray"]
 sherpa = ["dep:sherpa-onnx"]
+clap = ["dep:clap"]
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("clap"))'] }
@@ -50,6 +51,7 @@ realfft = { version = "3.5", optional = true }
 num-complex = { version = "0.4", optional = true }
 ndarray = { version = "0.17", optional = true }
 sherpa-onnx = { version = "1.13.4", default-features = false, features = ["shared"], optional = true }
+clap = { version = "4", optional = true, default-features = false, features = ["derive", "std"] }
 
 [dev-dependencies]
 tokio = { workspace = true }

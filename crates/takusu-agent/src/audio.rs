@@ -10,9 +10,8 @@ use std::time::Duration;
 
 use takusu_audio::play::{PcmFormat, PlayError, StreamedAudioFormat, play_stream};
 use takusu_audio::{
-    CartesiaSonic, CartesiaSonicConfig, ModelCache, RecordConfig, SherpaOnnxAsr,
-    SherpaOnnxAsrConfig, SherpaOnnxModel, SpeechToText, TextToSpeech, TtsOptions, TtsRequest,
-    normalize_for_tts, record,
+    CartesiaSonic, CartesiaSonicConfig, RecordConfig, SpeechToText, TextToSpeech, TtsBackend,
+    TtsOptions, TtsRequest, normalize_for_tts, record,
 };
 use thiserror::Error;
 
@@ -222,54 +221,30 @@ impl AudioAdapter {
 }
 
 fn build_stt(config: &SttConfig) -> Result<Arc<dyn SpeechToText>, AudioError> {
-    match config.backend.as_str() {
-        "sherpa" => {
-            let model = match config.model.as_str() {
-                "sense-voice" => SherpaOnnxModel::SenseVoice,
-                "funasr-nano" => SherpaOnnxModel::FunasrNano,
-                other => {
-                    return Err(AudioError::UnsupportedBackend(format!(
-                        "unknown sherpa model: {other}"
-                    )));
-                }
-            };
-            let model_dir = if config.model_dir.is_empty() {
-                if matches!(model, SherpaOnnxModel::FunasrNano) {
-                    return Err(AudioError::Transcribe(
-                        "sherpa funasr-nano requires a model_dir".into(),
-                    ));
-                }
-                let cache =
-                    ModelCache::default_dir().map_err(|e| AudioError::Transcribe(e.to_string()))?;
-                cache
-                    .ensure("sherpa-sense-voice-int8")
-                    .map_err(|e| AudioError::Transcribe(e.to_string()))?
-            } else {
-                PathBuf::from(&config.model_dir)
-            };
-            let asr_config = SherpaOnnxAsrConfig {
-                model_dir,
-                model,
-                tokens: None,
-                num_threads: config.num_threads,
-                provider: config.provider.clone(),
-                sample_rate: config.sample_rate,
-                language: Some(config.language.clone()),
-                use_itn: config.use_itn,
-            };
-            let asr = SherpaOnnxAsr::from_config(&asr_config)
-                .map_err(|e| AudioError::Transcribe(e.to_string()))?;
-            Ok(Arc::new(asr))
-        }
-        other => Err(AudioError::UnsupportedBackend(other.to_string())),
-    }
+    let runtime_config = takusu_audio::SttRuntimeConfig {
+        backend: config.backend,
+        model: config.model,
+        model_dir: if config.model_dir.is_empty() {
+            None
+        } else {
+            Some(PathBuf::from(&config.model_dir))
+        },
+        language: config.language.clone(),
+        use_itn: config.use_itn,
+        num_threads: config.num_threads,
+        provider: config.provider,
+        sample_rate: config.sample_rate,
+    };
+    runtime_config
+        .build()
+        .map_err(|e| AudioError::Transcribe(e.to_string()))
 }
 
 type TtsBuildResult = Result<(Arc<dyn TextToSpeech>, String, Option<f32>), AudioError>;
 
 fn build_tts(config: &TtsConfig, api_sample_rate: u32) -> TtsBuildResult {
-    match config.backend.as_str() {
-        "cartesia" => {
+    match config.backend {
+        TtsBackend::Cartesia => {
             let api_key = if config.api_key.is_empty() {
                 std::env::var(&config.api_key_env).unwrap_or_default()
             } else {
@@ -289,8 +264,7 @@ fn build_tts(config: &TtsConfig, api_sample_rate: u32) -> TtsBuildResult {
         }
         // Android TTS is handled by the native mobile module, not by the
         // generic tokio-based AudioAdapter used on desktop.
-        "android" => Err(AudioError::UnsupportedBackend("android".to_string())),
-        other => Err(AudioError::UnsupportedBackend(other.to_string())),
+        TtsBackend::Android => Err(AudioError::UnsupportedBackend("android".to_string())),
     }
 }
 
@@ -376,57 +350,75 @@ mod tests {
 
     #[test]
     fn stt_config_defaults_to_sherpa() {
+        use takusu_audio::{ExecutionProvider, SherpaOnnxModel, SttBackend};
+
         let config = SttConfig::default();
-        assert_eq!(config.backend, "sherpa");
+        assert_eq!(config.backend, SttBackend::Sherpa);
         assert_eq!(config.language, "ja");
-        assert_eq!(config.model, "sense-voice");
+        assert_eq!(config.model, SherpaOnnxModel::SenseVoice);
         assert!(config.use_itn);
         assert_eq!(config.num_threads, 2);
-        assert_eq!(config.provider, "cpu");
+        assert_eq!(config.provider, ExecutionProvider::Cpu);
         assert_eq!(config.sample_rate, 16000);
     }
 
     #[test]
     fn tts_config_defaults_to_cartesia() {
         let config = TtsConfig::default();
-        assert_eq!(config.backend, "cartesia");
+        assert_eq!(config.backend, TtsBackend::Cartesia);
         assert_eq!(config.api_key_env, "CARTESIA_API_KEY");
         assert_eq!(config.sample_rate, 44100);
         assert!(!config.mute);
     }
 
     #[test]
-    fn build_stt_rejects_unknown_backend() {
-        let config = SttConfig {
-            backend: "unknown".to_string(),
-            ..SttConfig::default()
-        };
-        assert!(build_stt(&config).is_err());
+    fn stt_config_rejects_unknown_backend_at_parse_time() {
+        // With enum-typed backend, unknown values are rejected by serde
+        // at config load time rather than at build time.
+        let toml = r#"
+[stt]
+backend = "unknown"
+"#;
+        let result: Result<AudioConfig, _> = toml::from_str(toml);
+        assert!(result.is_err());
     }
 
     #[test]
-    fn build_stt_rejects_unknown_sherpa_model() {
-        let config = SttConfig {
-            backend: "sherpa".to_string(),
-            model: "unknown".to_string(),
-            ..SttConfig::default()
-        };
-        assert!(build_stt(&config).is_err());
+    fn stt_config_rejects_unknown_model_at_parse_time() {
+        let toml = r#"
+[stt]
+backend = "sherpa"
+model = "unknown"
+"#;
+        let result: Result<AudioConfig, _> = toml::from_str(toml);
+        assert!(result.is_err());
     }
 
     #[test]
-    fn build_tts_rejects_unknown_backend() {
-        let config = TtsConfig {
-            backend: "unknown".to_string(),
-            ..TtsConfig::default()
-        };
-        assert!(build_tts(&config, 44100).is_err());
+    fn stt_config_rejects_unknown_provider_at_parse_time() {
+        let toml = r#"
+[stt]
+backend = "sherpa"
+provider = "unknown"
+"#;
+        let result: Result<AudioConfig, _> = toml::from_str(toml);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn tts_config_rejects_unknown_backend_at_parse_time() {
+        let toml = r#"
+[tts]
+backend = "unknown"
+"#;
+        let result: Result<AudioConfig, _> = toml::from_str(toml);
+        assert!(result.is_err());
     }
 
     #[test]
     fn build_tts_rejects_android_backend() {
         let config = TtsConfig {
-            backend: "android".to_string(),
+            backend: TtsBackend::Android,
             ..TtsConfig::default()
         };
         let result = build_tts(&config, 44100);

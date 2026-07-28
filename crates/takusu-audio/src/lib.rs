@@ -19,7 +19,7 @@ pub mod sherpa;
 #[cfg(feature = "hush")]
 pub use hush::Hush;
 #[cfg(feature = "sherpa")]
-pub use sherpa::{SherpaOnnxAsr, SherpaOnnxAsrConfig, SherpaOnnxModel};
+pub use sherpa::{SherpaOnnxAsr, SherpaOnnxAsrConfig};
 
 pub use cartesia::{
     CartesiaContainer, CartesiaEmotion, CartesiaEncoding, CartesiaGenerationConfig,
@@ -32,7 +32,9 @@ pub use models::{
 #[cfg(feature = "record")]
 pub use record::{RecordConfig, RecorderError, record};
 pub use secrets::{ApiKey, EndpointUrl, EndpointUrlError};
-pub use stt::{SpeechToText, SttError};
+pub use stt::{
+    ExecutionProvider, SherpaOnnxModel, SpeechToText, SttBackend, SttError, SttRuntimeConfig,
+};
 pub use tts::{TextToSpeech, TtsBackend, TtsConfig, TtsError, TtsOptions, TtsRequest, TtsStream};
 pub use tts_normalize::normalize_for_tts;
 pub use wav::{

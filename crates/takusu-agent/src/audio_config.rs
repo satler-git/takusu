@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use takusu_audio::SHERPA_SAMPLE_RATE;
+use takusu_audio::{ExecutionProvider, SherpaOnnxModel, SttBackend, SHERPA_SAMPLE_RATE, TtsBackend};
 
 #[derive(Debug, Clone, Default, Deserialize, PartialEq)]
 #[serde(default)]
@@ -12,19 +12,19 @@ pub struct AudioConfig {
 #[serde(default)]
 pub struct SttConfig {
     #[serde(default = "default_stt_backend")]
-    pub backend: String,
+    pub backend: SttBackend,
     #[serde(default = "default_stt_language")]
     pub language: String,
     #[serde(default)]
     pub model_dir: String,
     #[serde(default = "default_stt_model")]
-    pub model: String,
+    pub model: SherpaOnnxModel,
     #[serde(default = "default_stt_use_itn")]
     pub use_itn: bool,
     #[serde(default = "default_stt_num_threads")]
     pub num_threads: i32,
     #[serde(default = "default_stt_provider")]
-    pub provider: String,
+    pub provider: ExecutionProvider,
     #[serde(default = "default_stt_sample_rate")]
     pub sample_rate: i32,
 }
@@ -44,14 +44,14 @@ impl Default for SttConfig {
     }
 }
 
-fn default_stt_backend() -> String {
-    "sherpa".into()
+fn default_stt_backend() -> SttBackend {
+    SttBackend::Sherpa
 }
 fn default_stt_language() -> String {
     "ja".into()
 }
-fn default_stt_model() -> String {
-    "sense-voice".into()
+fn default_stt_model() -> SherpaOnnxModel {
+    SherpaOnnxModel::SenseVoice
 }
 fn default_stt_use_itn() -> bool {
     true
@@ -59,8 +59,8 @@ fn default_stt_use_itn() -> bool {
 fn default_stt_num_threads() -> i32 {
     2
 }
-fn default_stt_provider() -> String {
-    "cpu".into()
+fn default_stt_provider() -> ExecutionProvider {
+    ExecutionProvider::Cpu
 }
 fn default_stt_sample_rate() -> i32 {
     SHERPA_SAMPLE_RATE as i32
@@ -70,7 +70,7 @@ fn default_stt_sample_rate() -> i32 {
 #[serde(default)]
 pub struct TtsConfig {
     #[serde(default = "default_tts_backend")]
-    pub backend: String,
+    pub backend: TtsBackend,
     #[serde(default = "default_tts_api_key_env")]
     pub api_key_env: String,
     #[serde(default)]
@@ -101,8 +101,8 @@ impl Default for TtsConfig {
     }
 }
 
-fn default_tts_backend() -> String {
-    "cartesia".into()
+fn default_tts_backend() -> TtsBackend {
+    TtsBackend::Cartesia
 }
 fn default_tts_api_key_env() -> String {
     "CARTESIA_API_KEY".into()
