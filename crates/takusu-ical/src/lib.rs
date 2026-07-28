@@ -28,7 +28,6 @@
 
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::str::FromStr;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -39,15 +38,21 @@ pub enum IcalError {
     MissingProperty(String),
     #[error("invalid date format: {0}")]
     InvalidDate(String),
+    #[error("duration overflow: {0}")]
+    DurationOverflow(String),
 }
 
 /// iCalendarのVEVENTから変換されたタスク表現。
+///
+/// `start_at` / `end_at` は絶対時刻（`jiff::Timestamp`）を保持し、
+/// 呼び出し側で再parseする必要がない。JSON には RFC 3339 文字列として
+/// serializeされる（`jiff::Timestamp` の既定動作）。
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct IcalTask {
     pub title: String,
     pub description: Option<String>,
-    pub start_at: String,
-    pub end_at: String,
+    pub start_at: jiff::Timestamp,
+    pub end_at: jiff::Timestamp,
     pub uid: Option<String>,
 }
 
@@ -209,7 +214,7 @@ fn format_ical_date(
     raw: &str,
     params: &HashMap<String, String>,
     tz: &jiff::tz::TimeZone,
-) -> Result<String, IcalError> {
+) -> Result<jiff::Timestamp, IcalError> {
     let raw = raw.trim();
     if raw.len() < 8 {
         return Err(IcalError::InvalidDate(raw.to_string()));
@@ -230,39 +235,6 @@ fn format_ical_date(
             .ok_or_else(|| IcalError::InvalidDate(raw.to_string()))?;
         (&body[..t_idx], &body[t_idx + 1..])
     };
-
-    // Fast path for the common UTC case: avoid the jiff DateTime conversion.
-    if suffix == "Z" {
-        let (year, month, day) = parse_ymd_components(date_part)?;
-        let _date = jiff::civil::Date::new(year, month, day)
-            .map_err(|_| IcalError::InvalidDate(raw.to_string()))?;
-        if is_date {
-            let mut out = String::with_capacity(20);
-            out.push_str(&date_part[0..4]);
-            out.push('-');
-            out.push_str(&date_part[4..6]);
-            out.push('-');
-            out.push_str(&date_part[6..8]);
-            out.push_str("T00:00:00Z");
-            return Ok(out);
-        } else if time_part.len() >= 6 {
-            let _ = parse_hms_components(&time_part[..6])?;
-            let mut out = String::with_capacity(20);
-            out.push_str(&date_part[0..4]);
-            out.push('-');
-            out.push_str(&date_part[4..6]);
-            out.push('-');
-            out.push_str(&date_part[6..8]);
-            out.push('T');
-            out.push_str(&time_part[0..2]);
-            out.push(':');
-            out.push_str(&time_part[2..4]);
-            out.push(':');
-            out.push_str(&time_part[4..6]);
-            out.push('Z');
-            return Ok(out);
-        }
-    }
 
     let (year, month, day) = parse_ymd_components(date_part)?;
     let (hour, minute, second) = if time_part.len() >= 6 {
@@ -288,7 +260,7 @@ fn format_ical_date(
         .to_zoned(src_tz)
         .map_err(|_| IcalError::InvalidDate(raw.to_string()))?
         .timestamp();
-    Ok(ts.to_string())
+    Ok(ts)
 }
 
 /// Parse an RFC 5545 duration value and return its total seconds.
@@ -355,25 +327,22 @@ fn parse_duration_seconds(dur: &str) -> Result<i64, IcalError> {
     Ok(total * sign)
 }
 
-fn add_duration_to_formatted(start: &str, secs: i64) -> Result<String, IcalError> {
-    let ts =
-        jiff::Timestamp::from_str(start).map_err(|_| IcalError::InvalidDate(start.to_string()))?;
-    let ts = jiff::Timestamp::from_second(ts.as_second() + secs)
-        .map_err(|_| IcalError::InvalidDate(start.to_string()))?;
-    Ok(ts.to_string())
+fn add_duration_to_timestamp(
+    start: jiff::Timestamp,
+    secs: i64,
+) -> Result<jiff::Timestamp, IcalError> {
+    jiff::Timestamp::from_second(start.as_second() + secs)
+        .map_err(|_| IcalError::DurationOverflow(start.to_string()))
 }
 
-fn add_days_to_formatted(start: &str, days: i64) -> Result<String, IcalError> {
-    let ts =
-        jiff::Timestamp::from_str(start).map_err(|_| IcalError::InvalidDate(start.to_string()))?;
-    let ts = jiff::Timestamp::from_second(ts.as_second() + days * 86400)
-        .map_err(|_| IcalError::InvalidDate(start.to_string()))?;
-    Ok(ts.to_string())
+fn add_days_to_timestamp(start: jiff::Timestamp, days: i64) -> Result<jiff::Timestamp, IcalError> {
+    jiff::Timestamp::from_second(start.as_second() + days * 86400)
+        .map_err(|_| IcalError::DurationOverflow(start.to_string()))
 }
 
-fn add_ical_duration(start_at: &str, dur: &str) -> Result<String, IcalError> {
+fn add_ical_duration(start: jiff::Timestamp, dur: &str) -> Result<jiff::Timestamp, IcalError> {
     let secs = parse_duration_seconds(dur)?;
-    add_duration_to_formatted(start_at, secs)
+    add_duration_to_timestamp(start, secs)
 }
 
 /// iCalendar文字列をパースして`IcalTask`のリストを返す。
@@ -433,11 +402,11 @@ pub fn parse_ical(input: &str, tz: &jiff::tz::TimeZone) -> Result<Vec<IcalTask>,
                     let end_at = if let Some(end_raw) = properties.get("DTEND") {
                         format_ical_date(end_raw, end_params.as_ref().unwrap_or(&empty), tz)?
                     } else if let Some(dur) = properties.get("DURATION") {
-                        add_ical_duration(&start_at, dur)?
+                        add_ical_duration(start_at, dur)?
                     } else if !is_date_only(start_raw, start_params.as_ref().unwrap_or(&empty)) {
                         return Err(IcalError::MissingProperty("DTEND".to_string()));
                     } else {
-                        add_days_to_formatted(&start_at, 1)?
+                        add_days_to_timestamp(start_at, 1)?
                     };
 
                     tasks.push(IcalTask {
@@ -520,8 +489,8 @@ END:VCALENDAR";
         assert_eq!(tasks[0].title, "企画書作成");
         assert_eq!(tasks[0].description, Some("Q3企画書のドラフト".to_string()));
         assert_eq!(tasks[0].uid, Some("abc123@example.com".to_string()));
-        assert_eq!(tasks[0].start_at, "2026-06-05T09:00:00Z");
-        assert_eq!(tasks[0].end_at, "2026-06-05T11:00:00Z");
+        assert_eq!(tasks[0].start_at.to_string(), "2026-06-05T09:00:00Z");
+        assert_eq!(tasks[0].end_at.to_string(), "2026-06-05T11:00:00Z");
     }
 
     #[test]
@@ -560,8 +529,8 @@ END:VEVENT
 END:VCALENDAR";
 
         let tasks = parse_ical(ical, &utc()).unwrap();
-        assert_eq!(tasks[0].start_at, "2026-06-05T00:00:00Z");
-        assert_eq!(tasks[0].end_at, "2026-06-06T00:00:00Z");
+        assert_eq!(tasks[0].start_at.to_string(), "2026-06-05T00:00:00Z");
+        assert_eq!(tasks[0].end_at.to_string(), "2026-06-06T00:00:00Z");
     }
 
     #[test]
@@ -572,8 +541,8 @@ END:VCALENDAR";
 
         let tasks = parse_ical(ical, &utc()).unwrap();
         assert_eq!(tasks.len(), 1);
-        assert_eq!(tasks[0].start_at, "2026-06-05T00:00:00Z");
-        assert_eq!(tasks[0].end_at, "2026-06-06T00:00:00Z");
+        assert_eq!(tasks[0].start_at.to_string(), "2026-06-05T00:00:00Z");
+        assert_eq!(tasks[0].end_at.to_string(), "2026-06-06T00:00:00Z");
     }
 
     #[test]
@@ -698,8 +667,8 @@ END:VCALENDAR";
         let ical = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:tzid-test\r\nDTSTART;TZID=America/New_York:20250101T090000\r\nDTEND;TZID=America/New_York:20250101T100000\r\nSUMMARY:TZID event\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
         let result = parse_ical(ical, &utc()).unwrap();
         assert_eq!(result.len(), 1);
-        assert_eq!(result[0].start_at, "2025-01-01T14:00:00Z");
-        assert_eq!(result[0].end_at, "2025-01-01T15:00:00Z");
+        assert_eq!(result[0].start_at.to_string(), "2025-01-01T14:00:00Z");
+        assert_eq!(result[0].end_at.to_string(), "2025-01-01T15:00:00Z");
     }
 
     #[test]
@@ -808,23 +777,23 @@ END:VCALENDAR";
     fn parse_positive_offset() {
         let ical = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:t\r\nDTSTART:20250101T090000+0900\r\nDTEND:20250101T100000+0900\r\nSUMMARY:Test\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
         let tasks = parse_ical(ical, &utc()).unwrap();
-        assert_eq!(tasks[0].start_at, "2025-01-01T00:00:00Z");
-        assert_eq!(tasks[0].end_at, "2025-01-01T01:00:00Z");
+        assert_eq!(tasks[0].start_at.to_string(), "2025-01-01T00:00:00Z");
+        assert_eq!(tasks[0].end_at.to_string(), "2025-01-01T01:00:00Z");
     }
 
     #[test]
     fn parse_negative_offset() {
         let ical = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:t\r\nDTSTART:20250101T090000-0500\r\nDTEND:20250101T100000-0500\r\nSUMMARY:Test\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
         let tasks = parse_ical(ical, &utc()).unwrap();
-        assert_eq!(tasks[0].start_at, "2025-01-01T14:00:00Z");
-        assert_eq!(tasks[0].end_at, "2025-01-01T15:00:00Z");
+        assert_eq!(tasks[0].start_at.to_string(), "2025-01-01T14:00:00Z");
+        assert_eq!(tasks[0].end_at.to_string(), "2025-01-01T15:00:00Z");
     }
 
     #[test]
     fn parse_offset_zero() {
         let ical = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:t\r\nDTSTART:20250101T090000+0000\r\nDTEND:20250101T100000+0000\r\nSUMMARY:Test\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
         let tasks = parse_ical(ical, &utc()).unwrap();
-        assert_eq!(tasks[0].start_at, "2025-01-01T09:00:00Z");
+        assert_eq!(tasks[0].start_at.to_string(), "2025-01-01T09:00:00Z");
     }
 
     #[test]
@@ -833,33 +802,54 @@ END:VCALENDAR";
         let ical = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:dur\r\nDTSTART:20260605T090000Z\r\nDURATION:PT2H\r\nSUMMARY:Meeting with duration\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
         let tasks = parse_ical(ical, &utc()).unwrap();
         assert_eq!(tasks.len(), 1);
-        assert_eq!(tasks[0].start_at, "2026-06-05T09:00:00Z");
-        assert_eq!(tasks[0].end_at, "2026-06-05T11:00:00Z");
+        assert_eq!(tasks[0].start_at.to_string(), "2026-06-05T09:00:00Z");
+        assert_eq!(tasks[0].end_at.to_string(), "2026-06-05T11:00:00Z");
     }
 
     #[test]
     fn format_ical_date_offset_unit() {
         let no_params = HashMap::new();
         assert_eq!(
-            format_ical_date("20250101T090000+0900", &no_params, &utc()).unwrap(),
+            format_ical_date("20250101T090000+0900", &no_params, &utc())
+                .unwrap()
+                .to_string(),
             "2025-01-01T00:00:00Z"
         );
         assert_eq!(
-            format_ical_date("20250101T090000-0530", &no_params, &utc()).unwrap(),
+            format_ical_date("20250101T090000-0530", &no_params, &utc())
+                .unwrap()
+                .to_string(),
             "2025-01-01T14:30:00Z"
         );
         // UTC and naive are normalized to the target timezone.
         assert_eq!(
-            format_ical_date("20250101T090000Z", &no_params, &utc()).unwrap(),
+            format_ical_date("20250101T090000Z", &no_params, &utc())
+                .unwrap()
+                .to_string(),
             "2025-01-01T09:00:00Z"
         );
         assert_eq!(
-            format_ical_date("20250101T090000", &no_params, &utc()).unwrap(),
+            format_ical_date("20250101T090000", &no_params, &utc())
+                .unwrap()
+                .to_string(),
             "2025-01-01T09:00:00Z"
         );
         assert_eq!(
-            format_ical_date("20250101", &no_params, &utc()).unwrap(),
+            format_ical_date("20250101", &no_params, &utc())
+                .unwrap()
+                .to_string(),
             "2025-01-01T00:00:00Z"
         );
+    }
+
+    #[test]
+    fn duration_overflow_returns_duration_overflow_error() {
+        // A duration that pushes the start past the i64 second range
+        // (jiff::Timestamp::from_second rejects it). The error must be
+        // DurationOverflow, not InvalidDate.
+        let start = jiff::Timestamp::from_second(0).unwrap();
+        let huge_secs = i64::MAX;
+        let err = add_duration_to_timestamp(start, huge_secs).unwrap_err();
+        assert!(matches!(err, IcalError::DurationOverflow(_)));
     }
 }
