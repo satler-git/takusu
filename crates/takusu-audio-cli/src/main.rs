@@ -4,7 +4,7 @@ use std::time::Duration;
 use clap::{Parser, Subcommand, ValueEnum};
 #[cfg(feature = "hush")]
 use takusu_audio::hush::Hush;
-use takusu_audio::{RecordConfig, read_wav, record, write_wav};
+use takusu_audio::{RecordConfig, SHERPA_SAMPLE_RATE, read_wav, record, write_wav};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum SherpaModel {
@@ -136,6 +136,7 @@ async fn main() {
         } => {
             let config = RecordConfig {
                 max_duration: Duration::from_secs_f64(max_duration),
+                ..Default::default()
             };
 
             let samples = match record(&config) {
@@ -149,9 +150,9 @@ async fn main() {
             eprintln!(
                 "Recorded {} samples ({:.1}s)",
                 samples.len(),
-                samples.len() as f64 / 16000.0
+                samples.len() as f64 / SHERPA_SAMPLE_RATE as f64
             );
-            write_wav(&output, &samples, 16000).unwrap_or_else(|e| {
+            write_wav(&output, &samples, SHERPA_SAMPLE_RATE).unwrap_or_else(|e| {
                 eprintln!("Failed to write WAV: {e}");
                 std::process::exit(1);
             });
@@ -198,6 +199,7 @@ async fn main() {
         } => {
             let config = RecordConfig {
                 max_duration: Duration::from_secs_f64(max_duration),
+                ..Default::default()
             };
 
             let samples = match record(&config) {
@@ -216,9 +218,9 @@ async fn main() {
             eprintln!(
                 "Recorded {} samples ({:.1}s)",
                 samples.len(),
-                samples.len() as f64 / 16000.0
+                samples.len() as f64 / SHERPA_SAMPLE_RATE as f64
             );
-            write_wav(&output, &samples, 16000).unwrap_or_else(|e| {
+            write_wav(&output, &samples, SHERPA_SAMPLE_RATE).unwrap_or_else(|e| {
                 eprintln!("Failed to write WAV: {e}");
                 std::process::exit(1);
             });
@@ -292,7 +294,7 @@ async fn main() {
                 std::process::exit(1);
             });
             eprintln!("Done in {:.1}s.", start.elapsed().as_secs_f64());
-            write_wav(&output, &enhanced, 16000).unwrap_or_else(|e| {
+            write_wav(&output, &enhanced, SHERPA_SAMPLE_RATE).unwrap_or_else(|e| {
                 eprintln!("Failed to write WAV: {e}");
                 std::process::exit(1);
             });
@@ -370,7 +372,7 @@ async fn transcribe_sherpa(
             tokens: None,
             num_threads: sherpa_num_threads,
             provider: sherpa_provider,
-            sample_rate: 16000,
+            sample_rate: SHERPA_SAMPLE_RATE as i32,
             language: Some(sherpa_language),
             use_itn: sherpa_use_itn,
         };
@@ -396,7 +398,7 @@ async fn transcribe_sherpa(
             eprintln!(
                 "Transcribing ({} samples, {:.1}s) with Sherpa-ONNX...",
                 samples.len(),
-                samples.len() as f64 / 16000.0
+                samples.len() as f64 / SHERPA_SAMPLE_RATE as f64
             );
             let start = std::time::Instant::now();
             let text = handle

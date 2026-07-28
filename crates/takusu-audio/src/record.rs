@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
-use crate::wav::{mix_to_mono, normalize, resample};
+use crate::wav::{I16_MAX_F32, SHERPA_SAMPLE_RATE, mix_to_mono, normalize, resample};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -29,12 +29,20 @@ impl From<cpal::Error> for RecorderError {
 #[derive(Debug, Clone)]
 pub struct RecordConfig {
     pub max_duration: Duration,
+    /// Target sample rate for the recorded output. Defaults to
+    /// [`SHERPA_SAMPLE_RATE`]. Set to `None` to leave the device's native
+    /// sample rate unchanged. Note that downstream consumers (WAV writers,
+    /// Sherpa-ONNX transcription) assume 16 kHz, so `None` is only safe when
+    /// the caller handles resampling itself; use `Some(SHERPA_SAMPLE_RATE)`
+    /// in normal pipelines.
+    pub target_sample_rate: Option<u32>,
 }
 
 impl Default for RecordConfig {
     fn default() -> Self {
         Self {
             max_duration: Duration::from_secs(300),
+            target_sample_rate: Some(SHERPA_SAMPLE_RATE),
         }
     }
 }
@@ -88,7 +96,7 @@ pub fn record(config: &RecordConfig) -> Result<Vec<f32>, RecorderError> {
                     }
                     if let Ok(mut buf) = samples_c.try_lock() {
                         for &s in data {
-                            buf.push(s as f32 / 32768.0);
+                            buf.push(s as f32 / I16_MAX_F32);
                         }
                     }
                 },
@@ -132,8 +140,10 @@ pub fn record(config: &RecordConfig) -> Result<Vec<f32>, RecorderError> {
         raw = mix_to_mono(&raw, channels);
     }
 
-    if device_sample_rate != 16000 {
-        raw = resample(&raw, device_sample_rate, 16000);
+    if let Some(target) = config.target_sample_rate
+        && device_sample_rate != target
+    {
+        raw = resample(&raw, device_sample_rate, target);
     }
 
     raw = normalize(&raw, 0.1);
