@@ -12,8 +12,8 @@ use takusu_util::{parse_date_expression, parse_datetime_tz};
 
 use crate::{
     ChangeOperation, InferredField, InvalidArgsError, ProposedChange, Target, TargetKind,
-    ToolError, ToolExposure, ToolOutput, ToolRegistry, TypedTool, deserialize_trimmed_optional,
-    deserialize_trimmed_required, inferred_fields_schema,
+    ToolError, ToolExposure, ToolName, ToolOutput, ToolRegistry, TypedTool,
+    deserialize_trimmed_optional, deserialize_trimmed_required, inferred_fields_schema,
 };
 
 use super::common::{
@@ -155,7 +155,7 @@ impl TypedTool for ListTasks {
     type Params = ListTasksArgs;
 
     fn name(&self) -> &'static str {
-        "list_tasks"
+        ToolName::ListTasks.into()
     }
     fn description(&self) -> &'static str {
         "List tasks, optionally filtered by status, time range, or habit."
@@ -237,7 +237,7 @@ impl TypedTool for GetTask {
     type Params = GetTaskArgs;
 
     fn name(&self) -> &'static str {
-        "get_task"
+        ToolName::GetTask.into()
     }
     fn description(&self) -> &'static str {
         "Get one or more tasks by display reference. task_ref may be a single #id or h<habit>#<task>, or an array of such references. Returns an object with `tasks` (requested), `dependencies` (all transitive dependencies), and `missing_dependencies` (dependency IDs not found in the task list)."
@@ -331,7 +331,7 @@ impl TypedTool for ListHabits {
     type Params = ListHabitsArgs;
 
     fn name(&self) -> &'static str {
-        "list_habits"
+        ToolName::ListHabits.into()
     }
     fn description(&self) -> &'static str {
         "List all habits."
@@ -365,7 +365,7 @@ impl TypedTool for GetHabit {
     type Params = GetHabitArgs;
 
     fn name(&self) -> &'static str {
-        "get_habit"
+        ToolName::GetHabit.into()
     }
     fn description(&self) -> &'static str {
         "Get one or more habits by display reference. habit_ref may be a single h<id> or an array of such references. Returns an object with `habits`."
@@ -445,7 +445,7 @@ impl TypedTool for GetSchedule {
     type Params = GetScheduleArgs;
 
     fn name(&self) -> &'static str {
-        "get_schedule"
+        ToolName::GetSchedule.into()
     }
     fn description(&self) -> &'static str {
         "Get the current generated schedule with absolute timestamps. Optionally filter by a date range using from/to (e.g. 2026-07-20, 7d, today, now). Includes overdue tasks by default."
@@ -599,7 +599,7 @@ impl TypedTool for HabitScheduledSpans {
     type Params = HabitScheduledSpansArgs;
 
     fn name(&self) -> &'static str {
-        "habit_scheduled_spans"
+        ToolName::HabitScheduledSpans.into()
     }
 
     fn description(&self) -> &'static str {
@@ -880,7 +880,7 @@ impl TypedTool for GetSettings {
     type Params = GetSettingsArgs;
 
     fn name(&self) -> &'static str {
-        "get_settings"
+        ToolName::GetSettings.into()
     }
     fn description(&self) -> &'static str {
         "Get server timezone and sleep/work settings."
@@ -932,7 +932,7 @@ impl TypedTool for PreviewScheduleTool {
     type Params = PreviewScheduleArgs;
 
     fn name(&self) -> &'static str {
-        "preview_schedule"
+        ToolName::PreviewSchedule.into()
     }
     fn description(&self) -> &'static str {
         "Preview a schedule without replacing the active schedule; reports moved, unscheduled, and sleep impact."

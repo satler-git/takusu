@@ -10,7 +10,7 @@ use crate::tools::takusu::{
 };
 use crate::{
     ChangeOperation, InvalidArgsError, ProposedChange, Target, TargetKind, ToolError, ToolExposure,
-    ToolOutput, ToolRegistry, TypedTool, deserialize_trimmed_optional,
+    ToolName, ToolOutput, ToolRegistry, TypedTool, deserialize_trimmed_optional,
 };
 
 /// Register the active-session progress tools.
@@ -223,7 +223,7 @@ impl TypedTool for TaskStart {
     type Params = TaskStartArgs;
 
     fn name(&self) -> &'static str {
-        "task_start"
+        ToolName::TaskStart.into()
     }
 
     fn description(&self) -> &'static str {
@@ -314,7 +314,7 @@ impl TypedTool for TaskPause {
     type Params = TaskPauseArgs;
 
     fn name(&self) -> &'static str {
-        "task_pause"
+        ToolName::TaskPause.into()
     }
 
     fn description(&self) -> &'static str {
@@ -406,7 +406,7 @@ impl TypedTool for TaskProgress {
     type Params = TaskProgressArgs;
 
     fn name(&self) -> &'static str {
-        "task_progress"
+        ToolName::TaskProgress.into()
     }
 
     fn description(&self) -> &'static str {
@@ -600,7 +600,7 @@ impl TypedTool for TaskComplete {
     type Params = TaskCompleteArgs;
 
     fn name(&self) -> &'static str {
-        "task_complete"
+        ToolName::TaskComplete.into()
     }
 
     fn description(&self) -> &'static str {
@@ -746,7 +746,7 @@ impl TypedTool for TaskSplit {
     type Params = TaskSplitArgs;
 
     fn name(&self) -> &'static str {
-        "task_split"
+        ToolName::TaskSplit.into()
     }
 
     fn description(&self) -> &'static str {

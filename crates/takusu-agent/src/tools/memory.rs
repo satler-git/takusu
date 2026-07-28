@@ -7,8 +7,8 @@ use takusu_util::{MemoryKind, SubjectType};
 
 use crate::{
     ChangeOperation, InferredField, InvalidArgsError, ProposedChange, Target, TargetKind,
-    ToolError, ToolExposure, ToolOutput, ToolRegistry, TypedTool, deserialize_trimmed_optional,
-    deserialize_trimmed_required, inferred_fields_schema,
+    ToolError, ToolExposure, ToolName, ToolOutput, ToolRegistry, TypedTool,
+    deserialize_trimmed_optional, deserialize_trimmed_required, inferred_fields_schema,
 };
 
 pub fn client_error(error: takusu_client::ClientError) -> ToolError {
@@ -128,7 +128,7 @@ impl TypedTool for MemorySearch {
     type Params = MemorySearchArgs;
 
     fn name(&self) -> &'static str {
-        "memory_search"
+        ToolName::MemorySearch.into()
     }
     fn description(&self) -> &'static str {
         "Search saved memory by key or content. Returns a list of matching memory entries."
@@ -183,7 +183,7 @@ impl TypedTool for SimilarTasks {
     type Params = SimilarTasksArgs;
 
     fn name(&self) -> &'static str {
-        "similar_tasks"
+        ToolName::SimilarTasks.into()
     }
     fn description(&self) -> &'static str {
         "Find completed tasks with titles similar to the given title. Useful for estimating durations before creating a task."
@@ -249,7 +249,7 @@ impl TypedTool for MemorySave {
     type Params = MemorySaveArgs;
 
     fn name(&self) -> &'static str {
-        "memory_save"
+        ToolName::MemorySave.into()
     }
     fn description(&self) -> &'static str {
         "Propose saving a memory (proper noun, fact, or task note). Generates an approval request; does not write immediately."
@@ -383,7 +383,7 @@ impl TypedTool for MemoryUpdate {
     type Params = MemoryUpdateArgs;
 
     fn name(&self) -> &'static str {
-        "memory_update"
+        ToolName::MemoryUpdate.into()
     }
     fn description(&self) -> &'static str {
         "Propose updating a memory's content. Generates an approval request; does not write immediately."
@@ -477,7 +477,7 @@ impl TypedTool for MemoryDelete {
     type Params = MemoryDeleteArgs;
 
     fn name(&self) -> &'static str {
-        "memory_delete"
+        ToolName::MemoryDelete.into()
     }
     fn description(&self) -> &'static str {
         "Propose deleting a memory. Generates an approval request; does not write immediately."

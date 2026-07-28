@@ -5139,6 +5139,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_path_to_error",
+ "strum 0.28.0",
  "takusu-audio",
  "takusu-client",
  "takusu-core",
