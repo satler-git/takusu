@@ -1970,7 +1970,7 @@ impl Storage for SqliteStorage {
         // it never drops a relevant match in practice (#942).
         let cap = takusu_util::memory::SIMILAR_TASK_CANDIDATE_CAP;
         let sql = format!(
-            "SELECT t.id AS task_id, t.display_id, t.title, t.avg_minutes, t.sigma_minutes, tam.actual_minutes, t.completed_at, t.updated_at, '' AS similarity FROM tasks t LEFT JOIN task_actual_minutes tam ON tam.task_id = t.id WHERE t.status = 'completed' AND ({filter}) ORDER BY t.updated_at DESC LIMIT {cap}"
+            "SELECT t.id AS task_id, t.display_id, t.title, t.avg_minutes, t.sigma_minutes, tam.actual_minutes, t.completed_at, t.updated_at FROM tasks t LEFT JOIN task_actual_minutes tam ON tam.task_id = t.id WHERE t.status = 'completed' AND ({filter}) ORDER BY t.updated_at DESC LIMIT {cap}"
         );
         let mut q = sqlx::query_as::<_, SimilarTaskRow>(sqlx::AssertSqlSafe(sql.as_str()));
         for p in &patterns {
@@ -2001,7 +2001,7 @@ impl Storage for SqliteStorage {
         let mut out: Vec<SimilarTaskRow> = scored
             .into_iter()
             .map(|(score, mut row)| {
-                row.similarity = format!("dice:{score:.3}");
+                row.similarity = takusu_util::Similarity::dice(score);
                 row
             })
             .collect();

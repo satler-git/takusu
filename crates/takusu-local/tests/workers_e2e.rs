@@ -934,9 +934,10 @@ async fn similar_tasks(
 ) -> Json<Vec<SimilarTaskRow>> {
     let limit = q.limit.unwrap_or(10).clamp(1, 50) as usize;
     // Mirror the real worker contract: score completed tasks with the Dice
-    // coefficient and report it as `dice:{score:.3}` (#942). The mock scores in
-    // Rust from the raw title (normalizing both sides) instead of using the
-    // normalized_title SQL pre-filter, which is equivalent for test purposes.
+    // coefficient and report it as a structured Similarity (#942, #1253). The
+    // mock scores in Rust from the raw title (normalizing both sides) instead
+    // of using the normalized_title SQL pre-filter, which is equivalent for
+    // test purposes.
     let Ok(normalized) =
         takusu_util::memory::normalize_text(&q.title, Some(takusu_util::memory::MAX_QUERY_SCALARS))
     else {
@@ -946,7 +947,7 @@ async fn similar_tasks(
     // same on large datasets (#942).
     let cap = takusu_util::memory::SIMILAR_TASK_CANDIDATE_CAP;
     let sql = format!(
-        "SELECT t.id AS task_id, t.display_id, t.title, t.avg_minutes, t.sigma_minutes, tam.actual_minutes, t.completed_at, t.updated_at, '' AS similarity FROM tasks t LEFT JOIN task_actual_minutes tam ON tam.task_id = t.id WHERE t.status = 'completed' ORDER BY t.updated_at DESC LIMIT {cap}"
+        "SELECT t.id AS task_id, t.display_id, t.title, t.avg_minutes, t.sigma_minutes, tam.actual_minutes, t.completed_at, t.updated_at FROM tasks t LEFT JOIN task_actual_minutes tam ON tam.task_id = t.id WHERE t.status = 'completed' ORDER BY t.updated_at DESC LIMIT {cap}"
     );
     let rows: Vec<SimilarTaskRow> =
         sqlx::query_as::<_, SimilarTaskRow>(sqlx::AssertSqlSafe(sql.as_str()))
@@ -971,7 +972,7 @@ async fn similar_tasks(
     let mut out: Vec<SimilarTaskRow> = scored
         .into_iter()
         .map(|(score, mut row)| {
-            row.similarity = format!("dice:{score:.3}");
+            row.similarity = takusu_util::Similarity::dice(score);
             row
         })
         .collect();
