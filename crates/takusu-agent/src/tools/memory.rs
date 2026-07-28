@@ -3,7 +3,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use takusu_client::{Client, CreateMemory, MemoryQuery, MemoryRow, SimilarTaskQuery, UpdateMemory};
-use takusu_util::{MemoryKind, SubjectType};
+use takusu_util::{MemoryKind, MemorySource, SubjectType};
 
 use crate::tools::{ToolContext, ToolModule};
 use crate::{
@@ -341,7 +341,7 @@ impl TypedTool for MemorySave {
             "content": args.content,
             "subject_type": create.subject_type,
             "subject_id": create.subject_id,
-            "source": "user_confirmed",
+            "source": MemorySource::UserConfirmed,
             "revision": 1,
             "created_at": Value::Null,
             "updated_at": Value::Null,
@@ -552,7 +552,7 @@ mod tests {
             content: "大学".into(),
             subject_type: SubjectType::Empty,
             subject_id: "".into(),
-            source: "user_confirmed".into(),
+            source: MemorySource::UserConfirmed,
             revision: 1,
             created_at: "2025-01-01T00:00:00Z".parse().unwrap(),
             updated_at: "2025-01-01T00:00:00Z".parse().unwrap(),

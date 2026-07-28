@@ -1593,7 +1593,8 @@ pub struct MemoryRow {
     pub subject_type: takusu_util::SubjectType,
     #[serde(default)]
     pub subject_id: String,
-    pub source: String,
+    #[serde(with = "takusu_util::enum_serde", default)]
+    pub source: takusu_util::MemorySource,
     pub revision: i64,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,

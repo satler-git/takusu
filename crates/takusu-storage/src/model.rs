@@ -627,7 +627,9 @@ pub struct MemoryRow {
     #[sqlx(try_from = "String")]
     pub subject_type: takusu_util::SubjectType,
     pub subject_id: String,
-    pub source: String,
+    #[serde(with = "takusu_util::enum_serde", default)]
+    #[sqlx(try_from = "String")]
+    pub source: takusu_util::MemorySource,
     pub revision: i64,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,

@@ -340,6 +340,21 @@ enum_label! {
 }
 
 enum_label! {
+    /// Provenance of a memory row (see `doc/code-quality-issues.md` §34).
+    ///
+    /// Matches the `memories.source` CHECK constraint in
+    /// `migrations/016_memory.sql`: `user_confirmed`, `agent_inferred`,
+    /// `imported`. Currently only `UserConfirmed` is written by the storage
+    /// layer, but the schema accepts all three so the enum keeps them as
+    /// variants to round-trip existing rows safely.
+    pub enum MemorySource {
+        #[default] UserConfirmed = "user_confirmed",
+        AgentInferred = "agent_inferred",
+        Imported = "imported",
+    }
+}
+
+enum_label! {
     /// Phase 5 solver label (see `doc/type-safety-issues.md` §3.3).
     ///
     /// Kept in `takusu-util` because `takusu-core` does not depend on `serde`,
