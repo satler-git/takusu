@@ -17,6 +17,7 @@ pub use crate::llm::CompactionSettings;
 pub use tool::{
     ChangeOperation, ChangeReceipt, InferredField, InvalidArgsError, ProposedChange, ReceiptTarget,
     Target, TargetKind, Tool, ToolError, ToolExposure, ToolOutput, ToolRegistry, Typed, TypedTool,
+    deserialize_trimmed_optional, deserialize_trimmed_required,
     inferred_field_schema, inferred_fields_schema,
 };
 pub use user_input::{

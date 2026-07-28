@@ -1,36 +1,37 @@
 use async_trait::async_trait;
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use takusu_client::{Client, HabitRow, ProgressEventRow, TaskQuery, TaskRow};
 use takusu_util::{Quantity, TaskStatus};
 
 use crate::tools::takusu::{
-    TaskContext, TimeZoneCache, client_error, object, optional_bool, optional_string, required_i64,
-    server_timezone, strip_leading_hash, task_json,
+    TaskContext, TimeZoneCache, client_error, server_timezone, strip_leading_hash, task_json,
 };
 use crate::{
-    ChangeOperation, InvalidArgsError, ProposedChange, Target, TargetKind, Tool, ToolError,
-    ToolExposure, ToolOutput, ToolRegistry,
+    ChangeOperation, InvalidArgsError, ProposedChange, Target, TargetKind, ToolError,
+    ToolExposure, ToolOutput, ToolRegistry, TypedTool, deserialize_trimmed_optional,
 };
 
 /// Register the active-session progress tools.
 pub fn register_tools(registry: &mut ToolRegistry, client: Client, tz_cache: TimeZoneCache) {
-    registry.register(Box::new(TaskStart {
+    registry.register(Box::new(crate::tool::Typed(TaskStart {
         client: client.clone(),
         tz_cache: tz_cache.clone(),
-    }));
-    registry.register(Box::new(TaskPause {
+    })));
+    registry.register(Box::new(crate::tool::Typed(TaskPause {
         client: client.clone(),
         tz_cache: tz_cache.clone(),
-    }));
-    registry.register(Box::new(TaskProgress {
+    })));
+    registry.register(Box::new(crate::tool::Typed(TaskProgress {
         client: client.clone(),
         tz_cache: tz_cache.clone(),
-    }));
-    registry.register(Box::new(TaskComplete {
+    })));
+    registry.register(Box::new(crate::tool::Typed(TaskComplete {
         client: client.clone(),
         tz_cache: tz_cache.clone(),
-    }));
-    registry.register(Box::new(TaskSplit { client, tz_cache }));
+    })));
+    registry.register(Box::new(crate::tool::Typed(TaskSplit { client, tz_cache })));
 }
 
 async fn load_task_context(
@@ -68,17 +69,6 @@ async fn resolve_task(
     }
     ctx = TaskContext::new(&tasks, &habits);
     Ok((task, ctx))
-}
-
-fn optional_task_ref_arg(
-    args: &mut serde_json::Map<String, Value>,
-) -> Result<Option<String>, ToolError> {
-    let task_ref = optional_string(args, "task_ref")?;
-    let task_ref = task_ref.map(|s| strip_leading_hash(&s).to_string());
-    if let Some(ref s) = task_ref {
-        args.insert("task_ref".to_string(), Value::String(s.clone()));
-    }
-    Ok(task_ref)
 }
 
 fn clarification_output(message: &str) -> ToolOutput {
@@ -177,7 +167,7 @@ fn progress_output(
     why: &str,
     before: Value,
     after: Value,
-    execution_args: serde_json::Map<String, Value>,
+    execution_args: Value,
     warnings: Vec<String>,
     content_extra: serde_json::Map<String, Value>,
     observed_updated_at: Option<String>,
@@ -202,7 +192,7 @@ fn progress_output(
             description: description.to_string(),
             before: Some(before),
             after: Some(after),
-            arguments: Some(Value::Object(execution_args)),
+            arguments: Some(execution_args),
             observed_updated_at,
         }],
         inferred_fields: Vec::new(),
@@ -218,8 +208,20 @@ struct TaskStart {
     tz_cache: TimeZoneCache,
 }
 
+/// Arguments for [`TaskStart`].
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct TaskStartArgs {
+    /// Task reference such as #42 or h1#3. Omit if the user did not specify a task; a focused clarification will be returned.
+    #[serde(default, deserialize_with = "deserialize_trimmed_optional")]
+    #[schemars(with = "Option<String>")]
+    task_ref: Option<String>,
+}
+
 #[async_trait]
-impl Tool for TaskStart {
+impl TypedTool for TaskStart {
+    type Params = TaskStartArgs;
+
     fn name(&self) -> &'static str {
         "task_start"
     }
@@ -232,20 +234,8 @@ impl Tool for TaskStart {
         ToolExposure::Deferred
     }
 
-    fn parameters_schema(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "task_ref": {"type": "string", "description": "Task reference such as #42 or h1#3. Omit if the user did not specify a task; a focused clarification will be returned."},
-            },
-            "required": [],
-            "additionalProperties": false,
-        })
-    }
-
-    async fn call(&self, args: Value) -> Result<ToolOutput, ToolError> {
-        let mut args = object(args)?;
-        let task_ref = optional_task_ref_arg(&mut args)?;
+    async fn call_typed(&self, args: Self::Params) -> Result<ToolOutput, ToolError> {
+        let task_ref = args.task_ref.map(|s| strip_leading_hash(&s).to_string());
         let tz = server_timezone(&self.tz_cache).await;
 
         let (task, ctx) = match task_ref {
@@ -283,10 +273,9 @@ impl Tool for TaskStart {
             );
         }
 
-        let execution_args = serde_json::Map::from_iter([(
-            "task_ref".to_string(),
-            Value::String(display_ref.trim_start_matches('#').to_string()),
-        )]);
+        let execution_args = json!({
+            "task_ref": display_ref.trim_start_matches('#'),
+        });
         let observed = Some(task.updated_at.to_string());
 
         Ok(progress_output(
@@ -310,8 +299,20 @@ struct TaskPause {
     tz_cache: TimeZoneCache,
 }
 
+/// Arguments for [`TaskPause`].
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct TaskPauseArgs {
+    /// Task reference such as #42 or h1#3. Omit if the user did not specify a task; a focused clarification will be returned.
+    #[serde(default, deserialize_with = "deserialize_trimmed_optional")]
+    #[schemars(with = "Option<String>")]
+    task_ref: Option<String>,
+}
+
 #[async_trait]
-impl Tool for TaskPause {
+impl TypedTool for TaskPause {
+    type Params = TaskPauseArgs;
+
     fn name(&self) -> &'static str {
         "task_pause"
     }
@@ -324,20 +325,8 @@ impl Tool for TaskPause {
         ToolExposure::Deferred
     }
 
-    fn parameters_schema(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "task_ref": {"type": "string", "description": "Task reference such as #42 or h1#3. Omit if the user did not specify a task; a focused clarification will be returned."},
-            },
-            "required": [],
-            "additionalProperties": false,
-        })
-    }
-
-    async fn call(&self, args: Value) -> Result<ToolOutput, ToolError> {
-        let mut args = object(args)?;
-        let task_ref = optional_task_ref_arg(&mut args)?;
+    async fn call_typed(&self, args: Self::Params) -> Result<ToolOutput, ToolError> {
+        let task_ref = args.task_ref.map(|s| strip_leading_hash(&s).to_string());
         let tz = server_timezone(&self.tz_cache).await;
 
         let (task, ctx) = match task_ref {
@@ -370,10 +359,9 @@ impl Tool for TaskPause {
             obj.insert("status".to_string(), Value::String("scheduled".to_string()));
         }
 
-        let execution_args = serde_json::Map::from_iter([(
-            "task_ref".to_string(),
-            Value::String(display_ref.trim_start_matches('#').to_string()),
-        )]);
+        let execution_args = json!({
+            "task_ref": display_ref.trim_start_matches('#'),
+        });
         let observed = Some(task.updated_at.to_string());
 
         Ok(progress_output(
@@ -397,8 +385,26 @@ struct TaskProgress {
     tz_cache: TimeZoneCache,
 }
 
+/// Arguments for [`TaskProgress`].
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct TaskProgressArgs {
+    /// Task reference such as #42 or h1#3. Omit if the user did not specify a task; a focused clarification will be returned.
+    #[serde(default, deserialize_with = "deserialize_trimmed_optional")]
+    #[schemars(with = "Option<String>")]
+    task_ref: Option<String>,
+    /// Cumulative quantity completed.
+    quantity_done: i64,
+    /// Optional note for this progress event.
+    #[serde(default, deserialize_with = "deserialize_trimmed_optional")]
+    #[schemars(with = "Option<String>")]
+    note: Option<String>,
+}
+
 #[async_trait]
-impl Tool for TaskProgress {
+impl TypedTool for TaskProgress {
+    type Params = TaskProgressArgs;
+
     fn name(&self) -> &'static str {
         "task_progress"
     }
@@ -411,28 +417,18 @@ impl Tool for TaskProgress {
         ToolExposure::Deferred
     }
 
-    fn parameters_schema(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "task_ref": {"type": "string", "description": "Task reference such as #42 or h1#3. Omit if the user did not specify a task; a focused clarification will be returned."},
-                "quantity_done": {"type": "integer", "description": "Cumulative quantity completed."},
-                "note": {"type": "string", "description": "Optional note for this progress event."},
-            },
-            "required": ["quantity_done"],
-            "additionalProperties": false,
-        })
+    fn validate_args(&self, args: &Self::Params) -> Result<(), InvalidArgsError> {
+        Quantity::new(args.quantity_done).map_err(|_| {
+            InvalidArgsError::new("quantity_done", "cannot be negative")
+        })?;
+        Ok(())
     }
 
-    async fn call(&self, args: Value) -> Result<ToolOutput, ToolError> {
-        let mut args = object(args)?;
-        let task_ref = optional_task_ref_arg(&mut args)?;
-        let quantity_done = required_i64(&args, "quantity_done")?;
-        let note = optional_string(&args, "note")?;
-
-        let quantity_done = Quantity::new(quantity_done).map_err(|_| {
-            ToolError::InvalidArgs(InvalidArgsError::new("quantity_done", "cannot be negative"))
-        })?;
+    async fn call_typed(&self, args: Self::Params) -> Result<ToolOutput, ToolError> {
+        let task_ref = args.task_ref.map(|s| strip_leading_hash(&s).to_string());
+        let quantity_done = Quantity::new(args.quantity_done)
+            .expect("validate_args ensures quantity_done >= 0");
+        let note = args.note;
 
         let tz = server_timezone(&self.tz_cache).await;
         let (task, ctx) = match task_ref {
@@ -576,7 +572,7 @@ impl Tool for TaskProgress {
             &why,
             before,
             after,
-            execution_args,
+            Value::Object(execution_args),
             warnings,
             content_extra,
             Some(task.updated_at.to_string()),
@@ -590,8 +586,20 @@ struct TaskComplete {
     tz_cache: TimeZoneCache,
 }
 
+/// Arguments for [`TaskComplete`].
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct TaskCompleteArgs {
+    /// Task reference such as #42 or h1#3. Omit if the user did not specify a task; a focused clarification will be returned.
+    #[serde(default, deserialize_with = "deserialize_trimmed_optional")]
+    #[schemars(with = "Option<String>")]
+    task_ref: Option<String>,
+}
+
 #[async_trait]
-impl Tool for TaskComplete {
+impl TypedTool for TaskComplete {
+    type Params = TaskCompleteArgs;
+
     fn name(&self) -> &'static str {
         "task_complete"
     }
@@ -604,20 +612,8 @@ impl Tool for TaskComplete {
         ToolExposure::Deferred
     }
 
-    fn parameters_schema(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "task_ref": {"type": "string", "description": "Task reference such as #42 or h1#3. Omit if the user did not specify a task; a focused clarification will be returned."},
-            },
-            "required": [],
-            "additionalProperties": false,
-        })
-    }
-
-    async fn call(&self, args: Value) -> Result<ToolOutput, ToolError> {
-        let mut args = object(args)?;
-        let task_ref = optional_task_ref_arg(&mut args)?;
+    async fn call_typed(&self, args: Self::Params) -> Result<ToolOutput, ToolError> {
+        let task_ref = args.task_ref.map(|s| strip_leading_hash(&s).to_string());
         let tz = server_timezone(&self.tz_cache).await;
 
         let (task, ctx) = match task_ref {
@@ -694,10 +690,9 @@ impl Tool for TaskComplete {
             }
         }
 
-        let execution_args = serde_json::Map::from_iter([(
-            "task_ref".to_string(),
-            Value::String(display_ref.trim_start_matches('#').to_string()),
-        )]);
+        let execution_args = json!({
+            "task_ref": display_ref.trim_start_matches('#'),
+        });
 
         Ok(progress_output(
             ChangeOperation::Complete,
@@ -720,8 +715,37 @@ struct TaskSplit {
     tz_cache: TimeZoneCache,
 }
 
+/// Arguments for [`TaskSplit`].
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct TaskSplitArgs {
+    /// Task reference such as #42 or h1#3. Omit if the user did not specify a task; a focused clarification will be returned.
+    #[serde(default, deserialize_with = "deserialize_trimmed_optional")]
+    #[schemars(with = "Option<String>")]
+    task_ref: Option<String>,
+    /// Quantity to keep on the original task.
+    retained_quantity: i64,
+    /// If true, the remainder depends on the original task. Defaults to true.
+    #[serde(default)]
+    set_dependency: Option<bool>,
+    /// Optional title for the remainder task.
+    #[serde(default, deserialize_with = "deserialize_trimmed_optional")]
+    #[schemars(with = "Option<String>")]
+    title: Option<String>,
+    /// Optional description for the remainder task.
+    #[serde(default, deserialize_with = "deserialize_trimmed_optional")]
+    #[schemars(with = "Option<String>")]
+    description: Option<String>,
+    /// Optional deadline for the remainder task; interpreted in server timezone.
+    #[serde(default, deserialize_with = "deserialize_trimmed_optional")]
+    #[schemars(with = "Option<String>")]
+    end_at: Option<String>,
+}
+
 #[async_trait]
-impl Tool for TaskSplit {
+impl TypedTool for TaskSplit {
+    type Params = TaskSplitArgs;
+
     fn name(&self) -> &'static str {
         "task_split"
     }
@@ -734,36 +758,26 @@ impl Tool for TaskSplit {
         ToolExposure::Deferred
     }
 
-    fn parameters_schema(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "task_ref": {"type": "string", "description": "Task reference such as #42 or h1#3. Omit if the user did not specify a task; a focused clarification will be returned."},
-                "retained_quantity": {"type": "integer", "description": "Quantity to keep on the original task."},
-                "set_dependency": {"type": "boolean", "description": "If true, the remainder depends on the original task. Defaults to true."},
-                "title": {"type": "string", "description": "Optional title for the remainder task."},
-                "description": {"type": "string", "description": "Optional description for the remainder task."},
-                "end_at": {"type": "string", "description": "Optional deadline for the remainder task; interpreted in server timezone."},
-            },
-            "required": ["retained_quantity"],
-            "additionalProperties": false,
-        })
+    fn validate_args(&self, args: &Self::Params) -> Result<(), InvalidArgsError> {
+        Quantity::new(args.retained_quantity)
+            .map_err(|_| InvalidArgsError::new("retained_quantity", "cannot be negative"))?;
+        if args.retained_quantity <= 0 {
+            return Err(InvalidArgsError::new(
+                "retained_quantity",
+                "must be greater than 0",
+            ));
+        }
+        Ok(())
     }
 
-    async fn call(&self, args: Value) -> Result<ToolOutput, ToolError> {
-        let mut args = object(args)?;
-        let task_ref = optional_task_ref_arg(&mut args)?;
-        let retained_quantity = required_i64(&args, "retained_quantity")?;
-        let retained_quantity = Quantity::new(retained_quantity).map_err(|_| {
-            ToolError::InvalidArgs(InvalidArgsError::new(
-                "retained_quantity",
-                "cannot be negative",
-            ))
-        })?;
-        let set_dependency = optional_bool(&args, "set_dependency")?.unwrap_or(true);
-        let title = optional_string(&args, "title")?;
-        let description = optional_string(&args, "description")?;
-        let end_at = optional_string(&args, "end_at")?;
+    async fn call_typed(&self, args: Self::Params) -> Result<ToolOutput, ToolError> {
+        let task_ref = args.task_ref.map(|s| strip_leading_hash(&s).to_string());
+        let retained_quantity = Quantity::new(args.retained_quantity)
+            .expect("validate_args ensures retained_quantity > 0");
+        let set_dependency = args.set_dependency.unwrap_or(true);
+        let title = args.title;
+        let description = args.description;
+        let end_at = args.end_at;
 
         let tz = server_timezone(&self.tz_cache).await;
         let (task, ctx) = match task_ref {
@@ -800,12 +814,6 @@ impl Tool for TaskSplit {
                 "missing: cannot split a task with no quantity_total",
             ))
         })?;
-        if retained_quantity <= 0 {
-            return Err(ToolError::InvalidArgs(InvalidArgsError::new(
-                "retained_quantity",
-                "must be greater than 0",
-            )));
-        }
         if retained_quantity >= total {
             return Err(ToolError::InvalidArgs(InvalidArgsError::new(
                 "retained_quantity",
@@ -903,7 +911,7 @@ impl Tool for TaskSplit {
             &why,
             before,
             after,
-            execution_args,
+            Value::Object(execution_args),
             Vec::new(),
             content_extra,
             Some(task.updated_at.to_string()),

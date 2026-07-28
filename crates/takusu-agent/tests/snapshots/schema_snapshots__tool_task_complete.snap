@@ -14,7 +14,6 @@ expression: def
           "type": "string"
         }
       },
-      "required": [],
       "type": "object"
     }
   },

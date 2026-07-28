@@ -1,11 +1,13 @@
 use async_trait::async_trait;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use takusu_client::Client;
 
 use crate::{
-    ChangeOperation, InferredField, InvalidArgsError, ProposedChange, Target, TargetKind, Tool,
-    ToolError, ToolExposure, ToolOutput, ToolRegistry,
+    ChangeOperation, InferredField, InvalidArgsError, ProposedChange, Target, TargetKind,
+    ToolError, ToolExposure, ToolOutput, ToolRegistry, TypedTool,
+    deserialize_trimmed_optional, deserialize_trimmed_required, inferred_fields_schema,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -97,46 +99,16 @@ pub async fn sync_built_in_skills(client: &Client) -> Result<(), takusu_client::
 }
 
 pub fn register_tools(registry: &mut ToolRegistry, client: Client) {
-    registry.register(Box::new(SkillsList {
+    registry.register(Box::new(crate::tool::Typed(SkillsList {
         client: client.clone(),
-    }));
-    registry.register(Box::new(SkillsRead {
+    })));
+    registry.register(Box::new(crate::tool::Typed(SkillsRead {
         client: client.clone(),
-    }));
-    registry.register(Box::new(SkillsProposeAdd {
+    })));
+    registry.register(Box::new(crate::tool::Typed(SkillsProposeAdd {
         client: client.clone(),
-    }));
-    registry.register(Box::new(SkillsProposeEdit { client }));
-}
-
-fn object(args: Value) -> Result<serde_json::Map<String, Value>, ToolError> {
-    args.as_object()
-        .cloned()
-        .ok_or_else(|| ToolError::InvalidArgs(InvalidArgsError::new("args", "must be an object")))
-}
-
-fn required_string(args: &serde_json::Map<String, Value>, name: &str) -> Result<String, ToolError> {
-    args.get(name)
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(ToOwned::to_owned)
-        .ok_or_else(|| ToolError::InvalidArgs(InvalidArgsError::new(name, "missing or empty")))
-}
-
-fn optional_string(
-    args: &serde_json::Map<String, Value>,
-    name: &str,
-) -> Result<Option<String>, ToolError> {
-    match args.get(name) {
-        None | Some(Value::Null) => Ok(None),
-        Some(value) => value
-            .as_str()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(|value| Some(value.to_owned()))
-            .ok_or_else(|| ToolError::InvalidArgs(InvalidArgsError::new(name, "must be a string"))),
-    }
+    })));
+    registry.register(Box::new(crate::tool::Typed(SkillsProposeEdit { client })));
 }
 
 fn client_error(error: takusu_client::ClientError) -> ToolError {
@@ -238,8 +210,15 @@ struct SkillsList {
     client: Client,
 }
 
+/// Arguments for [`SkillsList`] (no parameters).
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct SkillsListArgs {}
+
 #[async_trait]
-impl Tool for SkillsList {
+impl TypedTool for SkillsList {
+    type Params = SkillsListArgs;
+
     fn name(&self) -> &'static str {
         "skills_list"
     }
@@ -252,12 +231,7 @@ impl Tool for SkillsList {
         ToolExposure::Deferred
     }
 
-    fn parameters_schema(&self) -> Value {
-        json!({"type":"object","properties":{},"additionalProperties":false})
-    }
-
-    async fn call(&self, args: Value) -> Result<ToolOutput, ToolError> {
-        let _ = object(args)?;
+    async fn call_typed(&self, _args: Self::Params) -> Result<ToolOutput, ToolError> {
         let skills = self.client.list_skills().await.map_err(client_error)?;
         let content = skills.iter().map(skill_json).collect::<Vec<_>>();
         Ok(ToolOutput {
@@ -271,8 +245,19 @@ struct SkillsRead {
     client: Client,
 }
 
+/// Arguments for [`SkillsRead`].
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct SkillsReadArgs {
+    #[serde(deserialize_with = "deserialize_trimmed_required")]
+    #[schemars(with = "String")]
+    slug: String,
+}
+
 #[async_trait]
-impl Tool for SkillsRead {
+impl TypedTool for SkillsRead {
+    type Params = SkillsReadArgs;
+
     fn name(&self) -> &'static str {
         "skills_read"
     }
@@ -285,14 +270,17 @@ impl Tool for SkillsRead {
         ToolExposure::Deferred
     }
 
-    fn parameters_schema(&self) -> Value {
-        json!({"type":"object","properties":{"slug":{"type":"string"}},"required":["slug"],"additionalProperties":false})
+    fn validate_args(&self, args: &Self::Params) -> Result<(), InvalidArgsError> {
+        validate_slug(&args.slug).map_err(ToolError::into_invalid_args)?;
+        Ok(())
     }
 
-    async fn call(&self, args: Value) -> Result<ToolOutput, ToolError> {
-        let slug = required_string(&object(args)?, "slug")?;
-        validate_slug(&slug)?;
-        let skill = self.client.get_skill(&slug).await.map_err(client_error)?;
+    async fn call_typed(&self, args: Self::Params) -> Result<ToolOutput, ToolError> {
+        let skill = self
+            .client
+            .get_skill(&args.slug)
+            .await
+            .map_err(client_error)?;
         Ok(ToolOutput {
             content: serde_json::to_string(&skill).unwrap(),
             ..Default::default()
@@ -304,8 +292,37 @@ struct SkillsProposeAdd {
     client: Client,
 }
 
+/// Arguments for [`SkillsProposeAdd`].
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct SkillsProposeAddArgs {
+    /// URL-safe identifier
+    #[serde(deserialize_with = "deserialize_trimmed_required")]
+    #[schemars(with = "String")]
+    slug: String,
+    #[serde(deserialize_with = "deserialize_trimmed_required")]
+    #[schemars(with = "String")]
+    name: String,
+    #[serde(deserialize_with = "deserialize_trimmed_required")]
+    #[schemars(with = "String")]
+    description: String,
+    /// Skill instructions (markdown)
+    #[serde(deserialize_with = "deserialize_trimmed_required")]
+    #[schemars(with = "String")]
+    body: String,
+    #[serde(default, deserialize_with = "deserialize_trimmed_optional")]
+    #[schemars(with = "Option<String>")]
+    why: Option<String>,
+    #[serde(default)]
+    warnings: Vec<String>,
+    #[serde(default)]
+    inferred_fields: Vec<InferredField>,
+}
+
 #[async_trait]
-impl Tool for SkillsProposeAdd {
+impl TypedTool for SkillsProposeAdd {
+    type Params = SkillsProposeAddArgs;
+
     fn name(&self) -> &'static str {
         "skills_propose_add"
     }
@@ -319,79 +336,60 @@ impl Tool for SkillsProposeAdd {
     }
 
     fn parameters_schema(&self) -> Value {
-        json!({
-            "type":"object",
-            "properties":{
-                "slug":{"type":"string","description":"URL-safe identifier"},
-                "name":{"type":"string"},
-                "description":{"type":"string"},
-                "body":{"type":"string","description":"Skill instructions (markdown)"},
-                "why":{"type":"string"},
-                "warnings":{"type":"array","items":{"type":"string"}},
-                "inferred_fields": crate::inferred_fields_schema("Fields inferred from user input.")
-            },
-            "required":["slug","name","description","body"],
-            "additionalProperties":false
-        })
+        let mut schema = self.default_parameters_schema();
+        // Replace inferred_fields with the hand-written schema that carries
+        // the custom description.
+        if let Some(props) = schema
+            .get_mut("properties")
+            .and_then(Value::as_object_mut)
+        {
+            props.insert(
+                "inferred_fields".into(),
+                inferred_fields_schema("Fields inferred from user input."),
+            );
+        }
+        schema
     }
 
-    async fn call(&self, args: Value) -> Result<ToolOutput, ToolError> {
-        let args = object(args)?;
-        let slug = required_string(&args, "slug")?;
-        let name = required_string(&args, "name")?;
-        let description = required_string(&args, "description")?;
-        let body = required_string(&args, "body")?;
-        validate_skill_input(&slug, Some(&name), Some(&description), Some(&body), true)?;
+    fn validate_args(&self, args: &Self::Params) -> Result<(), InvalidArgsError> {
+        validate_slug(&args.slug).map_err(ToolError::into_invalid_args)?;
+        validate_skill_input(
+            &args.slug,
+            Some(&args.name),
+            Some(&args.description),
+            Some(&args.body),
+            true,
+        )
+        .map_err(ToolError::into_invalid_args)?;
+        Ok(())
+    }
 
-        match self.client.get_skill(&slug).await {
+    async fn call_typed(&self, args: Self::Params) -> Result<ToolOutput, ToolError> {
+        match self.client.get_skill(&args.slug).await {
             Err(takusu_client::ClientError::Api { status: 404, .. }) => {}
             Ok(_) => {
                 return Err(ToolError::InvalidArgs(InvalidArgsError::new(
                     "slug",
-                    format!("skill {slug} already exists"),
+                    format!("skill {} already exists", args.slug),
                 )));
             }
             Err(e) => return Err(ToolError::Other(Box::new(e))),
         }
 
-        let why = optional_string(&args, "why")?;
-        let warnings = args
-            .get("warnings")
-            .and_then(Value::as_array)
-            .map(|values| {
-                values
-                    .iter()
-                    .filter_map(Value::as_str)
-                    .map(ToOwned::to_owned)
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        let inferred = args
-            .get("inferred_fields")
-            .cloned()
-            .unwrap_or_else(|| json!([]));
-        let inferred_fields: Vec<InferredField> =
-            serde_json::from_value(inferred).map_err(|error| {
-                ToolError::InvalidArgs(InvalidArgsError::new(
-                    "inferred_fields",
-                    format!("invalid: {error}"),
-                ))
-            })?;
-
         let after = json!({
-            "slug": slug,
-            "name": name,
-            "description": description,
-            "body": body,
+            "slug": args.slug,
+            "name": args.name,
+            "description": args.description,
+            "body": args.body,
         });
+        let arguments = serde_json::to_value(&args).unwrap_or_default();
         let proposal = ProposedChange {
             operation: ChangeOperation::Create,
-            target: Target::new(TargetKind::Skill, &slug),
-            description: format!("Create skill {slug}: {name}"),
+            target: Target::new(TargetKind::Skill, &args.slug),
+            description: format!("Create skill {}: {}", args.slug, args.name),
             before: None,
             after: Some(after),
-            arguments: Some(Value::Object(args)),
+            arguments: Some(arguments),
             observed_updated_at: None,
         };
 
@@ -401,10 +399,10 @@ impl Tool for SkillsProposeAdd {
                 "target": proposal.target.to_string(),
             }))
             .unwrap(),
-            why,
-            warnings,
+            why: args.why,
+            warnings: args.warnings,
             proposed_changes: vec![proposal],
-            inferred_fields,
+            inferred_fields: args.inferred_fields,
             schedule_dirty: false,
             ..Default::default()
         })
@@ -415,8 +413,35 @@ struct SkillsProposeEdit {
     client: Client,
 }
 
+/// Arguments for [`SkillsProposeEdit`].
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct SkillsProposeEditArgs {
+    #[serde(deserialize_with = "deserialize_trimmed_required")]
+    #[schemars(with = "String")]
+    slug: String,
+    #[serde(default, deserialize_with = "deserialize_trimmed_optional")]
+    #[schemars(with = "Option<String>")]
+    name: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_trimmed_optional")]
+    #[schemars(with = "Option<String>")]
+    description: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_trimmed_optional")]
+    #[schemars(with = "Option<String>")]
+    body: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_trimmed_optional")]
+    #[schemars(with = "Option<String>")]
+    why: Option<String>,
+    #[serde(default)]
+    warnings: Vec<String>,
+    #[serde(default)]
+    inferred_fields: Vec<InferredField>,
+}
+
 #[async_trait]
-impl Tool for SkillsProposeEdit {
+impl TypedTool for SkillsProposeEdit {
+    type Params = SkillsProposeEditArgs;
+
     fn name(&self) -> &'static str {
         "skills_propose_edit"
     }
@@ -430,50 +455,49 @@ impl Tool for SkillsProposeEdit {
     }
 
     fn parameters_schema(&self) -> Value {
-        json!({
-            "type":"object",
-            "properties":{
-                "slug":{"type":"string"},
-                "name":{"type":"string"},
-                "description":{"type":"string"},
-                "body":{"type":"string"},
-                "why":{"type":"string"},
-                "warnings":{"type":"array","items":{"type":"string"}},
-                "inferred_fields": crate::inferred_fields_schema("Fields inferred from user input.")
-            },
-            "required":["slug"],
-            "additionalProperties":false
-        })
+        let mut schema = self.default_parameters_schema();
+        if let Some(props) = schema
+            .get_mut("properties")
+            .and_then(Value::as_object_mut)
+        {
+            props.insert(
+                "inferred_fields".into(),
+                inferred_fields_schema("Fields inferred from user input."),
+            );
+        }
+        schema
     }
 
-    async fn call(&self, args: Value) -> Result<ToolOutput, ToolError> {
-        let args = object(args)?;
-        let slug = required_string(&args, "slug")?;
-        validate_slug(&slug)?;
+    fn validate_args(&self, args: &Self::Params) -> Result<(), InvalidArgsError> {
+        validate_slug(&args.slug).map_err(ToolError::into_invalid_args)?;
+        if args.name.is_none() && args.description.is_none() && args.body.is_none() {
+            return Err(InvalidArgsError::no_field(
+                "at least one of name, description, or body is required",
+            ));
+        }
+        validate_skill_input(
+            &args.slug,
+            args.name.as_deref(),
+            args.description.as_deref(),
+            args.body.as_deref(),
+            false,
+        )
+        .map_err(ToolError::into_invalid_args)?;
+        Ok(())
+    }
 
-        let existing = self.client.get_skill(&slug).await.map_err(client_error)?;
+    async fn call_typed(&self, args: Self::Params) -> Result<ToolOutput, ToolError> {
+        let existing = self
+            .client
+            .get_skill(&args.slug)
+            .await
+            .map_err(client_error)?;
         if existing.built_in {
             return Err(ToolError::InvalidArgs(InvalidArgsError::new(
                 "slug",
-                format!("built-in skill {slug} cannot be edited"),
+                format!("built-in skill {} cannot be edited", args.slug),
             )));
         }
-
-        let name = optional_string(&args, "name")?;
-        let description = optional_string(&args, "description")?;
-        let body = optional_string(&args, "body")?;
-        if name.is_none() && description.is_none() && body.is_none() {
-            return Err(ToolError::InvalidArgs(InvalidArgsError::no_field(
-                "at least one of name, description, or body is required",
-            )));
-        }
-        validate_skill_input(
-            &slug,
-            name.as_deref(),
-            description.as_deref(),
-            body.as_deref(),
-            false,
-        )?;
 
         let mut before =
             serde_json::to_value(&existing).map_err(|e| ToolError::Other(Box::new(e)))?;
@@ -484,48 +508,25 @@ impl Tool for SkillsProposeEdit {
         }
         let mut after = before.clone();
         if let Value::Object(ref mut map) = after {
-            if let Some(name) = name {
-                map.insert("name".to_owned(), Value::String(name));
+            if let Some(name) = &args.name {
+                map.insert("name".to_owned(), Value::String(name.clone()));
             }
-            if let Some(description) = description {
-                map.insert("description".to_owned(), Value::String(description));
+            if let Some(description) = &args.description {
+                map.insert("description".to_owned(), Value::String(description.clone()));
             }
-            if let Some(body) = body {
-                map.insert("body".to_owned(), Value::String(body));
+            if let Some(body) = &args.body {
+                map.insert("body".to_owned(), Value::String(body.clone()));
             }
         }
-        let why = optional_string(&args, "why")?;
-        let warnings = args
-            .get("warnings")
-            .and_then(Value::as_array)
-            .map(|values| {
-                values
-                    .iter()
-                    .filter_map(Value::as_str)
-                    .map(ToOwned::to_owned)
-                    .collect()
-            })
-            .unwrap_or_default();
 
-        let inferred = args
-            .get("inferred_fields")
-            .cloned()
-            .unwrap_or_else(|| json!([]));
-        let inferred_fields: Vec<InferredField> =
-            serde_json::from_value(inferred).map_err(|error| {
-                ToolError::InvalidArgs(InvalidArgsError::new(
-                    "inferred_fields",
-                    format!("invalid: {error}"),
-                ))
-            })?;
-
+        let arguments = serde_json::to_value(&args).unwrap_or_default();
         let proposal = ProposedChange {
             operation: ChangeOperation::Update,
-            target: Target::new(TargetKind::Skill, &slug),
-            description: format!("Update skill {slug}"),
+            target: Target::new(TargetKind::Skill, &args.slug),
+            description: format!("Update skill {}", args.slug),
             before: Some(before),
             after: Some(after),
-            arguments: Some(Value::Object(args)),
+            arguments: Some(arguments),
             observed_updated_at: Some(existing.updated_at.to_string()),
         };
 
@@ -535,10 +536,10 @@ impl Tool for SkillsProposeEdit {
                 "target": proposal.target.to_string(),
             }))
             .unwrap(),
-            why,
-            warnings,
+            why: args.why,
+            warnings: args.warnings,
             proposed_changes: vec![proposal],
-            inferred_fields,
+            inferred_fields: args.inferred_fields,
             schedule_dirty: false,
             ..Default::default()
         })

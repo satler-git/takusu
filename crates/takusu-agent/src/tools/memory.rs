@@ -1,55 +1,15 @@
 use async_trait::async_trait;
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use takusu_client::{Client, CreateMemory, MemoryQuery, MemoryRow, SimilarTaskQuery, UpdateMemory};
 use takusu_util::{MemoryKind, SubjectType};
 
-use crate::tools::takusu::required_i64;
 use crate::{
-    ChangeOperation, InvalidArgsError, ProposedChange, Target, TargetKind, Tool, ToolError,
-    ToolExposure, ToolOutput,
+    ChangeOperation, InferredField, InvalidArgsError, ProposedChange, Target, TargetKind,
+    ToolError, ToolExposure, ToolOutput, ToolRegistry, TypedTool,
+    deserialize_trimmed_optional, deserialize_trimmed_required, inferred_fields_schema,
 };
-
-fn object(args: Value) -> Result<serde_json::Map<String, Value>, ToolError> {
-    args.as_object()
-        .cloned()
-        .ok_or_else(|| ToolError::InvalidArgs(InvalidArgsError::new("args", "must be an object")))
-}
-
-fn required_string(args: &serde_json::Map<String, Value>, name: &str) -> Result<String, ToolError> {
-    args.get(name)
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(ToOwned::to_owned)
-        .ok_or_else(|| ToolError::InvalidArgs(InvalidArgsError::new(name, "missing or empty")))
-}
-
-fn optional_string(
-    args: &serde_json::Map<String, Value>,
-    name: &str,
-) -> Result<Option<String>, ToolError> {
-    match args.get(name) {
-        None | Some(Value::Null) => Ok(None),
-        Some(value) => value
-            .as_str()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(|value| Some(value.to_owned()))
-            .ok_or_else(|| ToolError::InvalidArgs(InvalidArgsError::new(name, "must be a string"))),
-    }
-}
-
-fn optional_i64(
-    args: &serde_json::Map<String, Value>,
-    name: &str,
-) -> Result<Option<i64>, ToolError> {
-    match args.get(name) {
-        None | Some(Value::Null) => Ok(None),
-        Some(value) => value.as_i64().map(Some).ok_or_else(|| {
-            ToolError::InvalidArgs(InvalidArgsError::new(name, "must be an integer"))
-        }),
-    }
-}
 
 pub fn client_error(error: takusu_client::ClientError) -> ToolError {
     match error {
@@ -89,7 +49,7 @@ fn make_proposal(
     description: &str,
     before: Option<Value>,
     after: Option<Value>,
-    execution_args: serde_json::Map<String, Value>,
+    execution_args: Value,
     observed_updated_at: Option<String>,
     inferred_fields: Vec<crate::InferredField>,
     why: Option<String>,
@@ -101,7 +61,7 @@ fn make_proposal(
         description: description.to_owned(),
         before,
         after,
-        arguments: Some(Value::Object(execution_args)),
+        arguments: Some(execution_args),
         observed_updated_at,
     };
     ToolOutput {
@@ -121,18 +81,18 @@ fn make_proposal(
     }
 }
 
-pub fn register_tools(registry: &mut crate::ToolRegistry, client: Client) {
-    registry.register(Box::new(MemorySearch {
+pub fn register_tools(registry: &mut ToolRegistry, client: Client) {
+    registry.register(Box::new(crate::tool::Typed(MemorySearch {
         client: client.clone(),
-    }));
-    registry.register(Box::new(SimilarTasks {
+    })));
+    registry.register(Box::new(crate::tool::Typed(SimilarTasks {
         client: client.clone(),
-    }));
-    registry.register(Box::new(MemorySave));
-    registry.register(Box::new(MemoryUpdate {
+    })));
+    registry.register(Box::new(crate::tool::Typed(MemorySave)));
+    registry.register(Box::new(crate::tool::Typed(MemoryUpdate {
         client: client.clone(),
-    }));
-    registry.register(Box::new(MemoryDelete { client }));
+    })));
+    registry.register(Box::new(crate::tool::Typed(MemoryDelete { client })));
 }
 
 #[derive(Clone)]
@@ -140,8 +100,33 @@ struct MemorySearch {
     client: Client,
 }
 
+/// Arguments for [`MemorySearch`].
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct MemorySearchArgs {
+    /// Search query. Multiple keywords are ANDed. * is a wildcard matching any sequence of characters. Example: 研究室 大学, 研究*大学.
+    #[serde(deserialize_with = "deserialize_trimmed_required")]
+    #[schemars(with = "String")]
+    q: String,
+    /// Filter by kind. Values: proper_noun, fact, task_note.
+    #[serde(default, deserialize_with = "deserialize_trimmed_optional")]
+    #[schemars(with = "Option<String>")]
+    kind: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_trimmed_optional")]
+    #[schemars(with = "Option<String>")]
+    subject_type: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_trimmed_optional")]
+    #[schemars(with = "Option<String>")]
+    subject_id: Option<String>,
+    /// Maximum results (default 10, max 50).
+    #[serde(default)]
+    limit: Option<i64>,
+}
+
 #[async_trait]
-impl Tool for MemorySearch {
+impl TypedTool for MemorySearch {
+    type Params = MemorySearchArgs;
+
     fn name(&self) -> &'static str {
         "memory_search"
     }
@@ -151,32 +136,19 @@ impl Tool for MemorySearch {
     fn exposure(&self) -> ToolExposure {
         ToolExposure::Deferred
     }
-    fn parameters_schema(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "q": {"type": "string", "description": "Search query. Multiple keywords are ANDed. * is a wildcard matching any sequence of characters. Example: 研究室 大学, 研究*大学."},
-                "kind": {"type": "string", "description": "Filter by kind. Values: proper_noun, fact, task_note."},
-                "subject_type": {"type": "string"},
-                "subject_id": {"type": "string"},
-                "limit": {"type": "integer", "description": "Maximum results (default 10, max 50)."},
-            },
-            "required": ["q"],
-            "additionalProperties": false,
-        })
-    }
-    async fn call(&self, args: Value) -> Result<ToolOutput, ToolError> {
-        let args = object(args)?;
+    async fn call_typed(&self, args: Self::Params) -> Result<ToolOutput, ToolError> {
         let query = MemoryQuery {
-            q: required_string(&args, "q")?,
-            kind: optional_string(&args, "kind")?
+            q: args.q,
+            kind: args
+                .kind
                 .map(|s| s.parse::<MemoryKind>())
                 .transpose()?,
-            subject_type: optional_string(&args, "subject_type")?
+            subject_type: args
+                .subject_type
                 .map(|s| s.parse::<SubjectType>())
                 .transpose()?,
-            subject_id: optional_string(&args, "subject_id")?,
-            limit: optional_i64(&args, "limit")?,
+            subject_id: args.subject_id,
+            limit: args.limit,
         };
         let rows = self
             .client
@@ -196,8 +168,23 @@ struct SimilarTasks {
     client: Client,
 }
 
+/// Arguments for [`SimilarTasks`].
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct SimilarTasksArgs {
+    /// Title to compare against completed tasks.
+    #[serde(deserialize_with = "deserialize_trimmed_required")]
+    #[schemars(with = "String")]
+    title: String,
+    /// Maximum results (default 10, max 50).
+    #[serde(default)]
+    limit: Option<i64>,
+}
+
 #[async_trait]
-impl Tool for SimilarTasks {
+impl TypedTool for SimilarTasks {
+    type Params = SimilarTasksArgs;
+
     fn name(&self) -> &'static str {
         "similar_tasks"
     }
@@ -207,22 +194,10 @@ impl Tool for SimilarTasks {
     fn exposure(&self) -> ToolExposure {
         ToolExposure::Deferred
     }
-    fn parameters_schema(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "title": {"type": "string", "description": "Title to compare against completed tasks."},
-                "limit": {"type": "integer", "description": "Maximum results (default 10, max 50)."},
-            },
-            "required": ["title"],
-            "additionalProperties": false,
-        })
-    }
-    async fn call(&self, args: Value) -> Result<ToolOutput, ToolError> {
-        let args = object(args)?;
+    async fn call_typed(&self, args: Self::Params) -> Result<ToolOutput, ToolError> {
         let query = SimilarTaskQuery {
-            title: required_string(&args, "title")?,
-            limit: optional_i64(&args, "limit")?,
+            title: args.title,
+            limit: args.limit,
         };
         let rows = self
             .client
@@ -238,8 +213,44 @@ impl Tool for SimilarTasks {
 
 struct MemorySave;
 
+/// Arguments for [`MemorySave`].
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct MemorySaveArgs {
+    /// proper_noun, fact, or task_note.
+    #[serde(deserialize_with = "deserialize_trimmed_required")]
+    #[schemars(with = "String")]
+    kind: String,
+    /// Short identifier or term.
+    #[serde(deserialize_with = "deserialize_trimmed_required")]
+    #[schemars(with = "String")]
+    key: String,
+    /// Detailed content.
+    #[serde(deserialize_with = "deserialize_trimmed_required")]
+    #[schemars(with = "String")]
+    content: String,
+    /// Optional. For task_note set to 'task'.
+    #[serde(default, deserialize_with = "deserialize_trimmed_optional")]
+    #[schemars(with = "Option<String>")]
+    subject_type: Option<String>,
+    /// Optional task ID when subject_type is 'task'.
+    #[serde(default, deserialize_with = "deserialize_trimmed_optional")]
+    #[schemars(with = "Option<String>")]
+    subject_id: Option<String>,
+    /// Short user-facing reason.
+    #[serde(default, deserialize_with = "deserialize_trimmed_optional")]
+    #[schemars(with = "Option<String>")]
+    why: Option<String>,
+    #[serde(default)]
+    warnings: Vec<String>,
+    #[serde(default)]
+    inferred_fields: Vec<InferredField>,
+}
+
 #[async_trait]
-impl Tool for MemorySave {
+impl TypedTool for MemorySave {
+    type Params = MemorySaveArgs;
+
     fn name(&self) -> &'static str {
         "memory_save"
     }
@@ -249,94 +260,80 @@ impl Tool for MemorySave {
     fn exposure(&self) -> ToolExposure {
         ToolExposure::Deferred
     }
-    fn parameters_schema(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "kind": {"type": "string", "description": "proper_noun, fact, or task_note."},
-                "key": {"type": "string", "description": "Short identifier or term."},
-                "content": {"type": "string", "description": "Detailed content."},
-                "subject_type": {"type": "string", "description": "Optional. For task_note set to 'task'."},
-                "subject_id": {"type": "string", "description": "Optional task ID when subject_type is 'task'."},
-                "why": {"type": "string", "description": "Short user-facing reason."},
-                "warnings": {"type": "array", "items": {"type": "string"}},
-                "inferred_fields": crate::inferred_fields_schema("Fields inferred from user input."),
-            },
-            "required": ["kind", "key", "content"],
-            "additionalProperties": false,
-        })
-    }
-    async fn call(&self, args: Value) -> Result<ToolOutput, ToolError> {
-        let args = object(args)?;
-        let kind: MemoryKind = required_string(&args, "kind")?.parse()?;
-        let key = required_string(&args, "key")?;
 
-        let subject_type = optional_string(&args, "subject_type")?
-            .map(|s| s.parse::<SubjectType>())
-            .transpose()?;
-        let subject_id = optional_string(&args, "subject_id")?;
+    fn parameters_schema(&self) -> Value {
+        let mut schema = self.default_parameters_schema();
+        if let Some(props) = schema
+            .get_mut("properties")
+            .and_then(Value::as_object_mut)
+        {
+            props.insert(
+                "inferred_fields".into(),
+                inferred_fields_schema("Fields inferred from user input."),
+            );
+        }
+        schema
+    }
+
+    fn validate_args(&self, args: &Self::Params) -> Result<(), InvalidArgsError> {
+        let kind: MemoryKind = args
+            .kind
+            .parse()
+            .map_err(|e: takusu_util::UnknownLabel| InvalidArgsError::new("kind", e.to_string()))?;
         if kind == MemoryKind::TaskNote {
-            if subject_type != Some(SubjectType::Task) {
-                return Err(ToolError::InvalidArgs(InvalidArgsError::new(
+            if args.subject_type.as_deref() != Some("task") {
+                return Err(InvalidArgsError::new(
                     "subject_type",
                     "task_note requires subject_type='task'",
-                )));
+                ));
             }
-            if subject_id.is_none() {
-                return Err(ToolError::InvalidArgs(InvalidArgsError::new(
+            if args.subject_id.is_none() {
+                return Err(InvalidArgsError::new(
                     "subject_id",
                     "task_note requires subject_id",
-                )));
+                ));
             }
+        } else if let Some(st) = &args.subject_type {
+            st.parse::<SubjectType>()
+                .map_err(|e: takusu_util::UnknownLabel| {
+                    InvalidArgsError::new("subject_type", e.to_string())
+                })?;
         }
+        Ok(())
+    }
 
-        let mut execution_args = args.clone();
+    async fn call_typed(&self, args: Self::Params) -> Result<ToolOutput, ToolError> {
+        let kind: MemoryKind = args.kind.parse()?;
         let create = CreateMemory {
             kind,
-            key: key.clone(),
-            content: required_string(&args, "content")?,
-            subject_type,
-            subject_id,
+            key: args.key.clone(),
+            content: args.content.clone(),
+            subject_type: args
+                .subject_type
+                .as_ref()
+                .map(|s| s.parse::<SubjectType>())
+                .transpose()?,
+            subject_id: args.subject_id.clone(),
             upsert: false,
         };
-        let mut body = serde_json::to_value(&create).map_err(|e| ToolError::Other(Box::new(e)))?;
-        if let Value::Object(ref mut map) = body {
-            map.remove("upsert");
-        }
-        if let Value::Object(map) = body {
-            execution_args.extend(map);
+
+        // Build execution_args: serialize the typed args (which includes
+        // kind, key, content, subject_type, subject_id) so that
+        // execute_proposed_change can deserialize them into CreateMemory.
+        let mut execution_args = serde_json::to_value(&args).unwrap_or_default();
+        if let Value::Object(ref mut map) = execution_args {
+            // Remove fields not needed by CreateMemory.
+            map.remove("why");
+            map.remove("warnings");
+            map.remove("inferred_fields");
         }
 
-        let description = format!("save {kind} memory \"{key}\"");
-        let why = optional_string(&args, "why")?;
-        let warnings = args
-            .get("warnings")
-            .and_then(Value::as_array)
-            .map(|values| {
-                values
-                    .iter()
-                    .filter_map(Value::as_str)
-                    .map(ToOwned::to_owned)
-                    .collect()
-            })
-            .unwrap_or_default();
-        let inferred_fields = args
-            .get("inferred_fields")
-            .cloned()
-            .unwrap_or_else(|| json!([]));
-        let inferred_fields = serde_json::from_value::<Vec<crate::InferredField>>(inferred_fields)
-            .map_err(|e| {
-                ToolError::InvalidArgs(InvalidArgsError::new(
-                    "inferred_fields",
-                    format!("invalid: {e}"),
-                ))
-            })?;
-
+        let description = format!("save {kind} memory \"{}\"", args.key);
         let after = json!({
             "id": Value::Null,
             "kind": kind,
-            "key": key,
-            "content": create.content,
+            "key": args.key,
+            "content": args.content,
             "subject_type": create.subject_type,
             "subject_id": create.subject_id,
             "source": "user_confirmed",
@@ -348,15 +345,15 @@ impl Tool for MemorySave {
 
         Ok(make_proposal(
             ChangeOperation::Create,
-            &Target::new(TargetKind::Memory, key.as_str()),
+            &Target::new(TargetKind::Memory, &args.key),
             &description,
             None,
             Some(after),
             execution_args,
             None,
-            inferred_fields,
-            why,
-            warnings,
+            args.inferred_fields,
+            args.why,
+            args.warnings,
         ))
     }
 }
@@ -366,8 +363,31 @@ struct MemoryUpdate {
     client: Client,
 }
 
+/// Arguments for [`MemoryUpdate`].
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct MemoryUpdateArgs {
+    /// Memory ID (from memory_search).
+    #[serde(deserialize_with = "deserialize_trimmed_required")]
+    #[schemars(with = "String")]
+    memory_ref: String,
+    observed_revision: i64,
+    #[serde(deserialize_with = "deserialize_trimmed_required")]
+    #[schemars(with = "String")]
+    content: String,
+    #[serde(default, deserialize_with = "deserialize_trimmed_optional")]
+    #[schemars(with = "Option<String>")]
+    why: Option<String>,
+    #[serde(default)]
+    warnings: Vec<String>,
+    #[serde(default)]
+    inferred_fields: Vec<InferredField>,
+}
+
 #[async_trait]
-impl Tool for MemoryUpdate {
+impl TypedTool for MemoryUpdate {
+    type Params = MemoryUpdateArgs;
+
     fn name(&self) -> &'static str {
         "memory_update"
     }
@@ -377,73 +397,49 @@ impl Tool for MemoryUpdate {
     fn exposure(&self) -> ToolExposure {
         ToolExposure::Deferred
     }
-    fn parameters_schema(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "memory_ref": {"type": "string", "description": "Memory ID (from memory_search)."},
-                "observed_revision": {"type": "integer"},
-                "content": {"type": "string"},
-                "why": {"type": "string"},
-                "warnings": {"type": "array", "items": {"type": "string"}},
-                "inferred_fields": crate::inferred_fields_schema("Fields inferred from user input."),
-            },
-            "required": ["memory_ref", "observed_revision", "content"],
-            "additionalProperties": false,
-        })
-    }
-    async fn call(&self, args: Value) -> Result<ToolOutput, ToolError> {
-        let args = object(args)?;
-        let memory_ref = required_string(&args, "memory_ref")?;
 
+    fn parameters_schema(&self) -> Value {
+        let mut schema = self.default_parameters_schema();
+        if let Some(props) = schema
+            .get_mut("properties")
+            .and_then(Value::as_object_mut)
+        {
+            props.insert(
+                "inferred_fields".into(),
+                inferred_fields_schema("Fields inferred from user input."),
+            );
+        }
+        schema
+    }
+
+    async fn call_typed(&self, args: Self::Params) -> Result<ToolOutput, ToolError> {
         let current = self
             .client
-            .get_memory(&memory_ref)
+            .get_memory(&args.memory_ref)
             .await
             .map_err(client_error)?;
 
-        let mut execution_args = args.clone();
         let update = UpdateMemory {
-            observed_revision: required_i64(&args, "observed_revision")?,
-            content: Some(required_string(&args, "content")?),
+            observed_revision: args.observed_revision,
+            content: Some(args.content.clone()),
         };
         let body = serde_json::to_value(&update).map_err(|e| ToolError::Other(Box::new(e)))?;
+
+        // Build execution_args: merge the serialized UpdateMemory body with
+        // memory_ref so execute_proposed_change has everything it needs.
+        let mut execution_args = serde_json::Map::new();
         if let Value::Object(map) = body {
             execution_args.extend(map);
         }
-        execution_args.insert("memory_ref".into(), Value::String(memory_ref.clone()));
+        execution_args.insert(
+            "memory_ref".into(),
+            Value::String(args.memory_ref.clone()),
+        );
 
         let description = format!("update memory \"{}\"", current.key);
-        let why = optional_string(&args, "why")?;
-        let warnings = args
-            .get("warnings")
-            .and_then(Value::as_array)
-            .map(|values| {
-                values
-                    .iter()
-                    .filter_map(Value::as_str)
-                    .map(ToOwned::to_owned)
-                    .collect()
-            })
-            .unwrap_or_default();
-        let inferred_fields = args
-            .get("inferred_fields")
-            .cloned()
-            .unwrap_or_else(|| json!([]));
-        let inferred_fields = serde_json::from_value::<Vec<crate::InferredField>>(inferred_fields)
-            .map_err(|e| {
-                ToolError::InvalidArgs(InvalidArgsError::new(
-                    "inferred_fields",
-                    format!("invalid: {e}"),
-                ))
-            })?;
-
         let mut after = memory_json(&current);
         if let Value::Object(ref mut map) = after {
-            map.insert(
-                "content".into(),
-                Value::String(update.content.clone().unwrap_or_default()),
-            );
+            map.insert("content".into(), Value::String(args.content.clone()));
             map.insert(
                 "revision".into(),
                 Value::Number(serde_json::Number::from(current.revision + 1)),
@@ -452,15 +448,15 @@ impl Tool for MemoryUpdate {
 
         Ok(make_proposal(
             ChangeOperation::Update,
-            &Target::new(TargetKind::Memory, memory_ref.as_str()),
+            &Target::new(TargetKind::Memory, &args.memory_ref),
             &description,
             Some(memory_json(&current)),
             Some(after),
-            execution_args,
+            Value::Object(execution_args),
             Some(current.updated_at.to_string()),
-            inferred_fields,
-            why,
-            warnings,
+            args.inferred_fields,
+            args.why,
+            args.warnings,
         ))
     }
 }
@@ -470,8 +466,28 @@ struct MemoryDelete {
     client: Client,
 }
 
+/// Arguments for [`MemoryDelete`].
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct MemoryDeleteArgs {
+    /// Memory ID (from memory_search).
+    #[serde(deserialize_with = "deserialize_trimmed_required")]
+    #[schemars(with = "String")]
+    memory_ref: String,
+    observed_revision: i64,
+    #[serde(default, deserialize_with = "deserialize_trimmed_optional")]
+    #[schemars(with = "Option<String>")]
+    why: Option<String>,
+    #[serde(default)]
+    warnings: Vec<String>,
+    #[serde(default)]
+    inferred_fields: Vec<InferredField>,
+}
+
 #[async_trait]
-impl Tool for MemoryDelete {
+impl TypedTool for MemoryDelete {
+    type Params = MemoryDeleteArgs;
+
     fn name(&self) -> &'static str {
         "memory_delete"
     }
@@ -481,69 +497,51 @@ impl Tool for MemoryDelete {
     fn exposure(&self) -> ToolExposure {
         ToolExposure::Deferred
     }
-    fn parameters_schema(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "memory_ref": {"type": "string", "description": "Memory ID (from memory_search)."},
-                "observed_revision": {"type": "integer"},
-                "why": {"type": "string"},
-                "warnings": {"type": "array", "items": {"type": "string"}},
-                "inferred_fields": crate::inferred_fields_schema("Fields inferred from user input."),
-            },
-            "required": ["memory_ref", "observed_revision"],
-            "additionalProperties": false,
-        })
-    }
-    async fn call(&self, args: Value) -> Result<ToolOutput, ToolError> {
-        let args = object(args)?;
-        let memory_ref = required_string(&args, "memory_ref")?;
 
+    fn parameters_schema(&self) -> Value {
+        let mut schema = self.default_parameters_schema();
+        if let Some(props) = schema
+            .get_mut("properties")
+            .and_then(Value::as_object_mut)
+        {
+            props.insert(
+                "inferred_fields".into(),
+                inferred_fields_schema("Fields inferred from user input."),
+            );
+        }
+        schema
+    }
+
+    async fn call_typed(&self, args: Self::Params) -> Result<ToolOutput, ToolError> {
         let current = self
             .client
-            .get_memory(&memory_ref)
+            .get_memory(&args.memory_ref)
             .await
             .map_err(client_error)?;
 
-        let mut execution_args = args.clone();
-        execution_args.insert("memory_ref".into(), Value::String(memory_ref.clone()));
+        let mut execution_args = serde_json::Map::new();
+        execution_args.insert(
+            "memory_ref".into(),
+            Value::String(args.memory_ref.clone()),
+        );
+        execution_args.insert(
+            "observed_revision".into(),
+            Value::Number(serde_json::Number::from(args.observed_revision)),
+        );
 
         let description = format!("delete memory \"{}\"", current.key);
-        let why = optional_string(&args, "why")?;
-        let warnings = args
-            .get("warnings")
-            .and_then(Value::as_array)
-            .map(|values| {
-                values
-                    .iter()
-                    .filter_map(Value::as_str)
-                    .map(ToOwned::to_owned)
-                    .collect()
-            })
-            .unwrap_or_default();
-        let inferred_fields = args
-            .get("inferred_fields")
-            .cloned()
-            .unwrap_or_else(|| json!([]));
-        let inferred_fields = serde_json::from_value::<Vec<crate::InferredField>>(inferred_fields)
-            .map_err(|e| {
-                ToolError::InvalidArgs(InvalidArgsError::new(
-                    "inferred_fields",
-                    format!("invalid: {e}"),
-                ))
-            })?;
 
         Ok(make_proposal(
             ChangeOperation::Delete,
-            &Target::new(TargetKind::Memory, memory_ref.as_str()),
+            &Target::new(TargetKind::Memory, &args.memory_ref),
             &description,
             Some(memory_json(&current)),
             None,
-            execution_args,
+            Value::Object(execution_args),
             Some(current.updated_at.to_string()),
-            inferred_fields,
-            why,
-            warnings,
+            args.inferred_fields,
+            args.why,
+            args.warnings,
         ))
     }
 }
@@ -603,8 +601,9 @@ mod tests {
 
     #[test]
     fn memory_save_schema_has_no_upsert() {
+        use crate::tool::Tool;
         let save = MemorySave;
-        let schema = save.parameters_schema();
+        let schema = crate::tool::Typed(save).parameters_schema();
         let props = schema["properties"].as_object().unwrap();
         assert!(!props.contains_key("upsert"));
     }
