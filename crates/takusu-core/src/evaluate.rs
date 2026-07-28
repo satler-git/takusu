@@ -15,39 +15,42 @@
 //!
 //! ## 各項の詳細
 //!
+//! 重みは [`EvaluationWeights`] のフィールド (`w.w_early` 等) で参照する。
+//! 以下の説明では `EvaluationWeights` のフィールド名を使う。
+//!
 //! ### task_and_depend_scores
 //! 1 回のループで締切・開始時刻・所要時間・依存関係の 4 つのスコアを計算する。
 //!
 //! - 締切 (deadline):
-//!   - slack >= 0: `min(slack * W_EARLY, 早期報酬上限)` — 早く終わるほどボーナス(上限あり)
-//!   - slack < 0:  `slack * W_LATE` — 締切超過ペナルティ (|W_LATE| ≫ W_EARLY)
+//!   - slack >= 0: `min(slack * w.w_early, 早期報酬上限)` — 早く終わるほどボーナス(上限あり)
+//!   - slack < 0:  `slack * w.w_late` — 締切超過ペナルティ (|w.w_late| ≫ w.w_early)
 //! - 開始可能時刻 (start):
 //!   - 開始可能時刻なし または 開始可能時刻以後 → 0
-//!   - それ以外 → `(scheduled_start - start) * W_START` (負)
+//!   - それ以外 → `(scheduled_start - start) * w.w_start` (負)
 //! - 所要時間マッチ (duration):
 //!   - `deficit = avg - scheduled_duration`
-//!   - deficit > 0: `-deficit² * W_SHORT` — 見積り不足 (二次で急峻)
-//!   - deficit < 0: `deficit * W_OVER` — 取りすぎ (線形で軽微)
+//!   - deficit > 0: `-deficit² * w.w_short` — 見積り不足 (二次で急峻)
+//!   - deficit < 0: `deficit * w.w_over` — 取りすぎ (線形で軽微)
 //! - 依存関係 (constraint annealing):
 //!   - 依存先タスクが終了していない場合:
-//!     `-(違反スロット数) * W_DEPEND_BASE * (1.0 - T/T₀)`
+//!     `-(違反スロット数) * w.w_depend_base * (1.0 - T/T₀)`
 //!   - 温度 T が高いうちは違反ペナルティが小さい → 探索範囲が広がる
 //!   - T → 0 で最大ペナルティに収束 → 実行可能領域へ誘導
 //!   - 違反の大きさに比例するため、大きな依存違反ほど強く罰せられる
 //!
 //! ### buffer_score
-//! - `task.sigma * 連続空き時間 * W_BUFFER`
+//! - `task.sigma * 連続空き時間 * w.w_buffer`
 //! - sigma=0 の確定タスクはバッファ報酬なし
 //! - sigmaが大きいタスクの後ろに、締切まで競合なく連続する空きがあるほど高スコア
 //!
 //! ### sleep_score (per day, 3h threshold)
-//! - ベース: `-sleep_used * W_SLEEP_NORMAL`
-//! - 睡眠残りが MIN_SLEEP (3時間) を下回った場合:
-//!   `-(MIN_SLEEP - sleep_got)² * W_SLEEP_SEVERE` (追加二次ペナルティ)
+//! - ベース: `-sleep_used * w.w_sleep_normal`
+//! - 睡眠残りが `w.min_sleep` (3時間) を下回った場合:
+//!   `-(w.min_sleep - sleep_got)² * w.w_sleep_severe` (追加二次ペナルティ)
 //!
 //! ### parallel_violation (重複スロット数比例)
 //! - 時間的重複があり、かつ並列条件を満たさないペア:
-//!   `-(重複スロット数) * W_PARALLEL_VIOL`
+//!   `-(重複スロット数) * w.w_parallel_viol`
 //!
 //! ### daily_load_score (#459)
 //! - 1日あたりの占有時間 (スロット数) のunionに対して二次ペナルティを与える。
@@ -56,64 +59,114 @@
 //! - `comfortable` 超過と `maximum` 超過に段階的に強いペナルティを追加。
 //!
 //! ### inclusion_bonus
-//! - スケジュールされているタスクごとに `+W_INCLUSION`
+//! - スケジュールされているタスクごとに `+w.w_inclusion`
 //!
 //! ## 重み設計
-//! |W_PARALLEL_VIOL| ≫ |W_DEPEND_BASE| ≫ |W_START| ≫ |W_LATE| > W_BUFFER > W_INCLUSION
+//! |w.w_parallel_viol| ≫ |w.w_depend_base| ≫ |w.w_start| ≫ |w.w_late| > w.w_buffer > w.w_inclusion
 //!
 //! ## 重みの根拠
 //!
-//! - W_PARALLEL_VIOL=2000: 人間は並列可能タスク以外は同時に実行できないため、
+//! - w_parallel_viol=2000: 人間は並列可能タスク以外は同時に実行できないため、
 //!   時間重複は実質的に硬制約。並列違反は最も強く罰する。
-//! - W_DEPEND_BASE=500: 依存違反は絶対に避けたい。T→0で最大500に収束。
+//! - w_depend_base=500: 依存違反は絶対に避けたい。T→0で最大500に収束。
 //!   温度比(1-T/T0)を乗じるので、実際のペナルティは温度依存。
-//! - W_START=100: 開始可能時刻より前に開始するのは硬違反。W_LATEより重い。
-//! - W_LATE=20: 締切超過は許容されるが重い。abandonability=1.0で0になる。
-//! - W_EARLY=1, cap=50: 早期完了は緩やかに報酬。上限で過学習防止。
-//! - W_BUFFER=2: sigma大→多めにバッファ。高sigmaタスクを後ろに倒す誘因。
-//! - W_SHORT=3 (2次): 見積り不足は2次ペナルティ。avgに近づける効果。
-//! - W_OVER=0.5 (線形): 取りすぎは軽微。最適化よりタスク詰め込み優先。
-//! - W_SLEEP_NORMAL=4, W_SLEEP_SEVERE=15 (2次): 3h硬閾値の意図。
+//! - w_start=100: 開始可能時刻より前に開始するのは硬違反。w_lateより重い。
+//! - w_late=20: 締切超過は許容されるが重い。abandonability=1.0で0になる。
+//! - w_early=1, cap=50: 早期完了は緩やかに報酬。上限で過学習防止。
+//! - w_buffer=2: sigma大→多めにバッファ。高sigmaタスクを後ろに倒す誘因。
+//! - w_short=3 (2次): 見積り不足は2次ペナルティ。avgに近づける効果。
+//! - w_over=0.5 (線形): 取りすぎは軽微。最適化よりタスク詰め込み優先。
+//! - w_sleep_normal=4, w_sleep_severe=15 (2次): 3h硬閾値の意図。
 //!   睡眠3h未満は2次で急峻に。設計思想: 徹夜よりタスク削減。
-//! - W_DAILY_NORMAL=0.01: 同じ総作業時間なら複数日に分散を弱く奨励。
-//! - W_DAILY_OVERLOAD=0.5 (2次): 快適容量超過を緩やかに抑制。
-//! - W_DAILY_MAXIMUM=2 (2次): 最大容量超過を強めに抑制。
-//! - W_INCLUSION=10: タスクをスケジュールから外さない誘因十分。
+//! - w_daily_normal=0.01: 同じ総作業時間なら複数日に分散を弱く奨励。
+//! - w_daily_overload=0.5 (2次): 快適容量超過を緩やかに抑制。
+//! - w_daily_maximum=2 (2次): 最大容量超過を強めに抑制。
+//! - w_inclusion=10: タスクをスケジュールから外さない誘因十分。
 
 use super::*;
 use crate::placement::{HabitGroupAnchor, Placement};
 
-const W_EARLY: f64 = 1.0;
-const W_LATE: f64 = 20.0;
-const W_START: f64 = 100.0;
-const W_DEPEND_BASE: f64 = 500.0;
-const W_BUFFER: f64 = 2.0;
-const W_SHORT: f64 = 3.0;
-const W_OVER: f64 = 0.5;
-const W_SLEEP_NORMAL: f64 = 4.0;
-const W_SLEEP_SEVERE: f64 = 15.0;
-const W_PARALLEL_VIOL: f64 = 2000.0;
-const W_INCLUSION: f64 = 10.0;
-const MIN_SLEEP: i64 = 36;
-/// #211: 直近タスクの移動ペナルティ。前回位置からの差分スロット × 重み。
-/// now に近いほど大きく、遠いタスクはほぼ無視できる。
-const W_STABILITY: f64 = 3.0;
-/// 安定性ペナルティの減衰スロット数（これ以降はペナルティなし）。
-const STABILITY_RANGE: i64 = 24 * 12; // 24時間
-/// #306: Habitタスクの時刻一貫性ボーナスの重み。
-/// 同じhabitグループのタスクが日ごとに近い時刻に配置されるとボーナス。
-/// 分散が小さいほど高スコア。最大ボーナス = W_HABIT_CONSISTENCY * グループ数。
-const W_HABIT_CONSISTENCY: f64 = 2.0;
-/// 一貫性ボーナスの計算対象となる最大分散 (スロット²)。
-/// この分散を超えるとボーナス0になる。
-const HABIT_CONSISTENCY_MAX_VAR: f64 = (6.0 * 12.0) * (6.0 * 12.0); // 6時間の分散で0
-/// #459: 快適容量以下の負荷に対する二次ペナルティ重み。
-/// 同じ総作業時間なら複数日に分散する配置を選好させる。
-const W_DAILY_NORMAL: f64 = 0.01;
-/// #459: 快適容量超過部分の二次ペナルティ重み。
-const W_DAILY_OVERLOAD: f64 = 0.5;
-/// #459: 最大容量超過部分の二次ペナルティ重み。
-const W_DAILY_MAXIMUM: f64 = 2.0;
+/// 評価関数の全重みを集約した構造体。
+///
+/// `Planner::weights` で保持し、`set_weights` で差し替え可能。
+/// チューニング実験ごとにコードを書き換える必要をなくす。
+///
+/// ## 重み設計
+/// |w_parallel_viol| ≫ |w_depend_base| ≫ |w_start| ≫ |w_late| > w_buffer > w_inclusion
+///
+/// 各フィールドの根拠はモジュールドキュメントを参照。
+#[derive(Debug, Clone, Copy)]
+pub struct EvaluationWeights {
+    /// 早期完了の緩やかな報酬 (上限 cap=50)。
+    pub w_early: f64,
+    /// 締切超過ペナルティ (abandonability で軽減)。
+    pub w_late: f64,
+    /// 開始可能時刻より前の開始に対するペナルティ。
+    pub w_start: f64,
+    /// 依存関係違反のベースペナルティ (温度比 1-T/T0 を乗じる)。
+    pub w_depend_base: f64,
+    /// 不確実性バッファ報酬。
+    pub w_buffer: f64,
+    /// 見積り不足の二次ペナルティ。
+    pub w_short: f64,
+    /// 取りすぎの線形ペナルティ。
+    pub w_over: f64,
+    /// 睡眠侵食の線形ペナルティ。
+    pub w_sleep_normal: f64,
+    /// 睡眠 `min_sleep` 未満の二次ペナルティ。
+    pub w_sleep_severe: f64,
+    /// 並列違反のペナルティ (最も重い)。
+    pub w_parallel_viol: f64,
+    /// スケジュール存在ボーナス。
+    pub w_inclusion: f64,
+    /// 睡眠の硬閾値 (スロット数)。3時間 = 36。
+    pub min_sleep: i64,
+    /// #211: 直近タスクの移動ペナルティ。前回位置からの差分スロット × 重み。
+    /// now に近いほど大きく、遠いタスクはほぼ無視できる。
+    pub w_stability: f64,
+    /// 安定性ペナルティの減衰スロット数（これ以降はペナルティなし）。
+    pub stability_range: i64,
+    /// #306: Habitタスクの時刻一貫性ボーナスの重み。
+    /// 同じhabitグループのタスクが日ごとに近い時刻に配置されるとボーナス。
+    /// 分散が小さいほど高スコア。最大ボーナス = w_habit_consistency * グループ数。
+    pub w_habit_consistency: f64,
+    /// 一貫性ボーナスの計算対象となる最大分散 (スロット²)。
+    /// この分散を超えるとボーナス0になる。
+    pub habit_consistency_max_var: f64,
+    /// #459: 快適容量以下の負荷に対する二次ペナルティ重み。
+    /// 同じ総作業時間なら複数日に分散する配置を選好させる。
+    pub w_daily_normal: f64,
+    /// #459: 快適容量超過部分の二次ペナルティ重み。
+    pub w_daily_overload: f64,
+    /// #459: 最大容量超過部分の二次ペナルティ重み。
+    pub w_daily_maximum: f64,
+}
+
+impl Default for EvaluationWeights {
+    fn default() -> Self {
+        Self {
+            w_early: 1.0,
+            w_late: 20.0,
+            w_start: 100.0,
+            w_depend_base: 500.0,
+            w_buffer: 2.0,
+            w_short: 3.0,
+            w_over: 0.5,
+            w_sleep_normal: 4.0,
+            w_sleep_severe: 15.0,
+            w_parallel_viol: 2000.0,
+            w_inclusion: 10.0,
+            min_sleep: 36,
+            w_stability: 3.0,
+            stability_range: 24 * 12, // 24時間
+            w_habit_consistency: 2.0,
+            habit_consistency_max_var: (6.0 * 12.0) * (6.0 * 12.0), // 6時間の分散で0
+            w_daily_normal: 0.01,
+            w_daily_overload: 0.5,
+            w_daily_maximum: 2.0,
+        }
+    }
+}
 
 pub fn evaluate(planner: &Planner, plan: &Plan, temperature: f64, t0: f64) -> f64 {
     let mut sorted = Vec::with_capacity(plan.schedules.len());
@@ -280,7 +333,8 @@ fn task_and_depend_scores(
     temperature: f64,
     t0: f64,
 ) -> f64 {
-    let depend_weight = W_DEPEND_BASE * (1.0 - temperature / t0);
+    let w = &planner.weights;
+    let depend_weight = w.w_depend_base * (1.0 - temperature / t0);
     let mut score = 0.0;
     let mut depend_penalty_slots = 0i64;
     for task in &planner.tasks {
@@ -293,26 +347,26 @@ fn task_and_depend_scores(
         // deadline_score
         let slack = Point::delta(task.end, sched_end);
         if slack >= 0 {
-            score += (slack as f64 * W_EARLY).min(50.0);
+            score += (slack as f64 * w.w_early).min(50.0);
         } else {
             let weight = 1.0 - task.abandonability.get();
-            score += slack as f64 * W_LATE * weight;
+            score += slack as f64 * w.w_late * weight;
         }
 
         // start_score
         if let Some(task_start) = task.start
             && sched_start < task_start
         {
-            score += Point::delta(sched_start, task_start) as f64 * W_START;
+            score += Point::delta(sched_start, task_start) as f64 * w.w_start;
         }
 
         // duration_score
         let actual = Point::delta(sched_end, sched_start);
         let deficit = task.cost_estimate.avg as i64 - actual;
         if deficit > 0 {
-            score += -(deficit * deficit) as f64 * W_SHORT;
+            score += -(deficit * deficit) as f64 * w.w_short;
         } else if deficit < 0 {
-            score += deficit as f64 * W_OVER;
+            score += deficit as f64 * w.w_over;
         }
 
         // depend_score (merged into the same loop)
@@ -334,6 +388,7 @@ fn task_and_depend_scores(
 /// sched_end より前に開始しても sched_end を超えて終了するタスクがバッファを遮るため、
 /// 走査は sorted[..end_pos] (start < task.end) 全体を対象とし、end > sched_end で絞る。
 fn buffer_score(planner: &Planner, index: &[Option<TimeWindow>], sorted: &[Placement]) -> f64 {
+    let w = &planner.weights;
     let mut score = 0.0;
     for task in &planner.tasks {
         let Some(tw) = index[task.id] else {
@@ -363,7 +418,7 @@ fn buffer_score(planner: &Planner, index: &[Option<TimeWindow>], sorted: &[Place
             }
         }
         let actual = (buffer_end.0 - sched_end.0).max(0);
-        score += task.cost_estimate.sigma as f64 * actual as f64 * W_BUFFER;
+        score += task.cost_estimate.sigma as f64 * actual as f64 * w.w_buffer;
     }
     score
 }
@@ -437,6 +492,7 @@ fn sleep_score(
         + (plan_start.0 - day_start_epoch).div_euclid(slots_per_day) * slots_per_day;
     let mut day_start_point = Point(first_day - slots_per_day);
 
+    let w = &planner.weights;
     let mut score = 0.0;
     let mut start_idx = 0usize;
 
@@ -449,10 +505,10 @@ fn sleep_score(
 
         if occupied > 0 {
             let sleep_got = (sleep_len - occupied).max(0);
-            score += -(occupied as f64) * W_SLEEP_NORMAL;
-            if sleep_got < MIN_SLEEP {
-                let deficit = MIN_SLEEP - sleep_got;
-                score += -(deficit * deficit) as f64 * W_SLEEP_SEVERE;
+            score += -(occupied as f64) * w.w_sleep_normal;
+            if sleep_got < w.min_sleep {
+                let deficit = w.min_sleep - sleep_got;
+                score += -(deficit * deficit) as f64 * w.w_sleep_severe;
             }
         }
 
@@ -468,11 +524,11 @@ fn sleep_score(
 /// 合法的に重複する並列タスクも単純に二重加算しない。
 ///
 /// 負荷に対しては以下の項を与える。
-/// - `-W_DAILY_NORMAL * load(day)^2`  
+/// - `-w.w_daily_normal * load(day)^2`
 ///   同じ総作業時間でも複数日に分散した plan を選好。
-/// - `-W_DAILY_OVERLOAD * max(0, load(day) - comfortable)^2`  
+/// - `-w.w_daily_overload * max(0, load(day) - comfortable)^2`
 ///   快適容量超過に対する緩やかなペナルティ。
-/// - `-W_DAILY_MAXIMUM * max(0, load(day) - maximum)^2`  
+/// - `-w.w_daily_maximum * max(0, load(day) - maximum)^2`
 ///   最大容量超過に対する強いペナルティ。
 fn daily_load_score(
     planner: &Planner,
@@ -496,6 +552,7 @@ fn daily_load_score(
         + (plan_start.0 - day_start_epoch).div_euclid(slots_per_day) * slots_per_day;
     let mut day_start = Point(first_day);
 
+    let w = &planner.weights;
     let mut score = 0.0;
     let mut start_idx = 0usize;
     while day_start.0 < plan_end.0 {
@@ -503,11 +560,11 @@ fn daily_load_score(
 
         let load = union_length_in_window(sorted, day_start, day_end, &mut start_idx);
 
-        let normal_penalty = (load * load) as f64 * W_DAILY_NORMAL;
+        let normal_penalty = (load * load) as f64 * w.w_daily_normal;
         let comfortable_excess = (load - planner.workload.comfortable_slots_per_day).max(0);
-        let overload_penalty = (comfortable_excess * comfortable_excess) as f64 * W_DAILY_OVERLOAD;
+        let overload_penalty = (comfortable_excess * comfortable_excess) as f64 * w.w_daily_overload;
         let maximum_excess = (load - planner.workload.maximum_slots_per_day).max(0);
-        let maximum_penalty = (maximum_excess * maximum_excess) as f64 * W_DAILY_MAXIMUM;
+        let maximum_penalty = (maximum_excess * maximum_excess) as f64 * w.w_daily_maximum;
         score -= normal_penalty + overload_penalty + maximum_penalty;
 
         day_start = Point(day_start.0 + slots_per_day);
@@ -564,22 +621,23 @@ fn parallel_violation_score(planner: &Planner, sorted: &[Placement]) -> f64 {
             }
         }
     }
-    -(penalty_slots as f64) * W_PARALLEL_VIOL
+    -(penalty_slots as f64) * planner.weights.w_parallel_viol
 }
 
-fn inclusion_bonus(_planner: &Planner, schedules: &[Placement]) -> f64 {
-    schedules.len() as f64 * W_INCLUSION
+fn inclusion_bonus(planner: &Planner, schedules: &[Placement]) -> f64 {
+    schedules.len() as f64 * planner.weights.w_inclusion
 }
 
 /// #211: 安定性ペナルティ — 前回スケジュールからタスクが移動した場合、
 /// 直近（now に近い）ほど大きなペナルティを課す。
-/// 前回位置との開始時刻の差分スロット × W_STABILITY × 減衰係数。
-/// 減衰係数 = max(0, 1 - distance_from_now / STABILITY_RANGE)² （二次減衰）
+/// 前回位置との開始時刻の差分スロット × `w.w_stability` × 減衰係数。
+/// 減衰係数 = max(0, 1 - distance_from_now / `w.stability_range`)² （二次減衰）
 fn stability_score(planner: &Planner, index: &[Option<TimeWindow>]) -> f64 {
     let prev = planner.previous_schedule();
     if prev.is_empty() {
         return 0.0;
     }
+    let w = &planner.weights;
     let now = planner.now;
     let mut penalty = 0.0;
     for task in &planner.tasks {
@@ -601,8 +659,8 @@ fn stability_score(planner: &Planner, index: &[Option<TimeWindow>]) -> f64 {
         }
         // 前回位置がnowに近いほど大きなペナルティ
         let distance = (prev_start.0 - now.0) as f64;
-        let decay = ((1.0 - distance / STABILITY_RANGE as f64).max(0.0)).powi(2);
-        penalty -= delta as f64 * W_STABILITY * decay;
+        let decay = ((1.0 - distance / w.stability_range as f64).max(0.0)).powi(2);
+        penalty -= delta as f64 * w.w_stability * decay;
     }
     penalty
 }
@@ -613,8 +671,8 @@ fn stability_score(planner: &Planner, index: &[Option<TimeWindow>]) -> f64 {
 /// (日付を無視したスロット) の分散を計算し、分散が小さいほどボーナス。
 ///
 /// - 時刻帯 = `start_slot % slots_per_day` (日付成分を除去)
-/// - 分散が0 (全タスクが同時刻) → 最大ボーナス `W_HABIT_CONSISTENCY`
-/// - 分散が `HABIT_CONSISTENCY_MAX_VAR` 以上 → ボーナス0
+/// - 分散が0 (全タスクが同時刻) → 最大ボーナス `w.w_habit_consistency`
+/// - 分散が `w.habit_consistency_max_var` 以上 → ボーナス0
 /// - 2タスク未満のグループは評価しない (分散が意味を持たない)
 fn habit_consistency_score(
     planner: &Planner,
@@ -622,6 +680,7 @@ fn habit_consistency_score(
     entries: &mut Vec<HabitGroupAnchor>,
 ) -> f64 {
     let slots_per_day = 24 * 60 / planner.per() as i64;
+    let w = &planner.weights;
     entries.clear();
     for task in &planner.tasks {
         let Some(group) = task.habit_group else {
@@ -672,8 +731,8 @@ fn habit_consistency_score(
         }
         let mean_sq_diff = sum_sq_diff / n;
         // 分散が小さいほどボーナス。線形減衰。
-        let consistency = (1.0 - mean_sq_diff / HABIT_CONSISTENCY_MAX_VAR).max(0.0);
-        bonus += W_HABIT_CONSISTENCY * consistency;
+        let consistency = (1.0 - mean_sq_diff / w.habit_consistency_max_var).max(0.0);
+        bonus += w.w_habit_consistency * consistency;
     }
     bonus
 }
@@ -840,8 +899,8 @@ mod tests {
 
         // Both plans have the same duration and capped early-bonus terms, and
         // the invalid schedule has no parallel overlap, so the score difference
-        // should be exactly the dependency violation penalty: 1 slot * W_DEPEND_BASE.
-        let expected_penalty = 1.0 * W_DEPEND_BASE;
+        // should be exactly the dependency violation penalty: 1 slot * w_depend_base.
+        let expected_penalty = 1.0 * EvaluationWeights::default().w_depend_base;
         let actual_gap = score_valid - score_invalid;
         assert!(
             (actual_gap - expected_penalty).abs() < 1e-6,
@@ -1358,7 +1417,7 @@ mod tests {
         // difference is the early-bonus cap (on_time gets +2 capped, late 0)
         // and duration_score (both have deficit 0). So on_time must score
         // strictly higher, but the gap should be small (just the early bonus),
-        // not the W_LATE*slack gap.
+        // not the w_late*slack gap.
         assert!(
             score_on > score_late,
             "on_time={score_on} late={score_late}"
@@ -1446,13 +1505,13 @@ mod tests {
 
         let score_hot = evaluate(&p, &violated, 10.0, 10.0);
         let score_cold = evaluate(&p, &violated, 0.0, 10.0);
-        // At T=T0: depend_weight = W_DEPEND_BASE*(1-1) = 0 → no depend penalty.
-        // At T=0:  depend_weight = W_DEPEND_BASE*(1-0) = W_DEPEND_BASE → penalty = -2*W_DEPEND_BASE.
+        // At T=T0: depend_weight = w_depend_base*(1-1) = 0 → no depend penalty.
+        // At T=0:  depend_weight = w_depend_base*(1-0) = w_depend_base → penalty = -2*w_depend_base.
         assert!(
             score_cold < score_hot,
             "cold should penalize violation more: hot={score_hot} cold={score_cold}"
         );
-        let expected_penalty = 2.0 * W_DEPEND_BASE;
+        let expected_penalty = 2.0 * EvaluationWeights::default().w_depend_base;
         assert!(
             (score_hot - score_cold - expected_penalty).abs() < 1e-6,
             "annealed penalty magnitude: hot={score_hot} cold={score_cold} expected={expected_penalty}"
@@ -1475,7 +1534,7 @@ mod tests {
 
         let score_one = evaluate(&p, &one, 0.0, 1.0);
         let score_two = evaluate(&p, &two, 0.0, 1.0);
-        // Adding a second scheduled task adds exactly W_INCLUSION (10.0)
+        // Adding a second scheduled task adds exactly w_inclusion (10.0)
         // plus the second task's own deadline early-bonus (capped 50) and
         // duration match (deficit 0). So the gap is >= 10.
         assert!(

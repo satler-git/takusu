@@ -1214,11 +1214,81 @@ pub(crate) fn repair_priority(
     result
 }
 
-/// 改善なしの温度レベルがこの回数続いたら current を best に戻す (intensification)。
-const STAGNATION_LIMIT: u32 = 3;
+/// SA（焼きなまし）のパラメータを集約した構造体。
+///
+/// `Planner::sa_config` で保持し、`set_sa_config` で差し替え可能。
+/// タスク規模や要件に合わせて温度スケジュール・反復数・近傍確率を調整できる。
+#[derive(Debug, Clone, Copy)]
+pub struct SaConfig {
+    /// 初期温度 `t0 = total_avg * t0_factor`。
+    pub t0_factor: f64,
+    /// 冷却率（毎温度の乗算係数）。
+    pub alpha: f64,
+    /// 終端温度 `t_min = t0 * t_min_factor`。
+    pub t_min_factor: f64,
+    /// 1 温度あたりの反復数 `iter_per_temp = task_count * iter_per_temp_factor`。
+    pub iter_per_temp_factor: usize,
+    /// 改善なしの温度レベルがこの回数続いたら current を best に戻す (intensification)。
+    pub stagnation_limit: u32,
+    /// 長距離 shift を選ぶ確率の分母 (1/N = 約 1/N の確率で長距離)。
+    pub long_shift_one_in: u32,
+    /// 近傍選択の重み。
+    pub neighbor: NeighborWeights,
+}
 
-/// 長距離 shift を選ぶ確率の分母 (1/5 = 20%)。
-const LONG_SHIFT_ONE_IN: u32 = 5;
+/// SA 近傍選択の重み付け。合計は 100 である必要はない（正規化して使う）。
+#[derive(Debug, Clone, Copy)]
+pub struct NeighborWeights {
+    pub shift: u32,
+    pub swap: u32,
+    pub duration: u32,
+    pub reorder: u32,
+    pub repair_depend: u32,
+    pub habit_anchor: u32,
+    pub habit_exception: u32,
+    pub lns: u32,
+}
+
+impl Default for SaConfig {
+    fn default() -> Self {
+        Self {
+            t0_factor: 0.1,
+            alpha: 0.93,
+            t_min_factor: 1e-4,
+            iter_per_temp_factor: 30,
+            stagnation_limit: 3,
+            long_shift_one_in: 5,
+            neighbor: NeighborWeights::default(),
+        }
+    }
+}
+
+impl Default for NeighborWeights {
+    fn default() -> Self {
+        Self {
+            shift: 17,
+            swap: 17,
+            duration: 14,
+            reorder: 14,
+            repair_depend: 14,
+            habit_anchor: 10,
+            habit_exception: 6,
+            lns: 8,
+        }
+    }
+}
+
+/// 近傍選択の重み合計を返す。`rng.random_range(0..total)` の上限に使う。
+fn total_neighbor_weight(nw: &NeighborWeights) -> u32 {
+    nw.shift
+        + nw.swap
+        + nw.duration
+        + nw.reorder
+        + nw.repair_depend
+        + nw.habit_anchor
+        + nw.habit_exception
+        + nw.lns
+}
 
 /// プラン全体の時間スパン。長距離 shift の移動幅に使う。
 fn plan_span(plan: &Plan) -> i64 {
@@ -1247,10 +1317,11 @@ pub fn sa_lns(planner: &Planner, rng: &mut impl Rng) -> Plan {
         .iter()
         .map(|t| t.cost_estimate.avg as i64)
         .sum();
-    let t0 = (total_avg as f64 * 0.1).max(1.0);
-    let alpha = 0.93;
-    let t_min = t0 * 1e-4;
-    let iter_per_temp = task_count * 30;
+    let cfg = &planner.sa_config;
+    let t0 = (total_avg as f64 * cfg.t0_factor).max(1.0);
+    let alpha = cfg.alpha;
+    let t_min = t0 * cfg.t_min_factor;
+    let iter_per_temp = task_count * cfg.iter_per_temp_factor;
 
     let mut tabu = TabuList::new(task_count * 2);
     let mut tabu_scratch: Vec<Option<(i64, i64)>> = Vec::with_capacity(task_count);
@@ -1351,7 +1422,7 @@ pub fn sa_lns(planner: &Planner, rng: &mut impl Rng) -> Plan {
             stagnant_levels = 0;
         } else {
             stagnant_levels += 1;
-            if stagnant_levels >= STAGNATION_LIMIT {
+            if stagnant_levels >= cfg.stagnation_limit {
                 current.schedules.clone_from(&best.schedules);
                 stagnant_levels = 0;
             }
@@ -1418,10 +1489,11 @@ pub fn sa_lns_partial(planner: &Planner, pinned: &[Placement], rng: &mut impl Rn
         .filter(|t| !pinned_ids.contains(&t.id))
         .map(|t| t.cost_estimate.avg as i64)
         .sum();
-    let t0 = (total_avg as f64 * 0.1).max(1.0);
-    let alpha = 0.93;
-    let t_min = t0 * 1e-4;
-    let iter_per_temp = unpinned_count.max(1) * 30;
+    let cfg = &planner.sa_config;
+    let t0 = (total_avg as f64 * cfg.t0_factor).max(1.0);
+    let alpha = cfg.alpha;
+    let t_min = t0 * cfg.t_min_factor;
+    let iter_per_temp = unpinned_count.max(1) * cfg.iter_per_temp_factor;
 
     let mut tabu = TabuList::new(task_count * 2);
     let mut tabu_scratch: Vec<Option<(i64, i64)>> = Vec::with_capacity(task_count);
@@ -1524,7 +1596,7 @@ pub fn sa_lns_partial(planner: &Planner, pinned: &[Placement], rng: &mut impl Rn
             stagnant_levels = 0;
         } else {
             stagnant_levels += 1;
-            if stagnant_levels >= STAGNATION_LIMIT {
+            if stagnant_levels >= cfg.stagnation_limit {
                 current.schedules.clone_from(&best.schedules);
                 stagnant_levels = 0;
             }
@@ -1769,29 +1841,41 @@ fn generate_neighbor_into(
     buf.clear();
     buf.extend_from_slice(current);
 
-    let r = rng.random_range(0..100u32) as i32;
+    let nw = &planner.sa_config.neighbor;
+    let r = rng.random_range(0..total_neighbor_weight(nw));
 
-    match r {
-        0..=16 => ShiftOp.apply_full(planner, buf, rng, span),
-        17..=33 => SwapOp.apply_full(planner, buf, rng, span),
-        34..=47 => DurationOp.apply_full(planner, buf, rng, span),
-        48..=61 => ReorderOp.apply_full(planner, buf, rng, span),
-        62..=75 => neighbor_repair_depend_into(planner, buf, rng, None),
-        76..=85 => {
-            if !neighbor_habit_anchor_into(planner, buf, rng, habit, &FxHashSet::default()) {
-                ShiftOp.apply_full(planner, buf, rng, span)
-            } else {
-                true
-            }
+    let t_shift = nw.shift;
+    let t_swap = t_shift + nw.swap;
+    let t_duration = t_swap + nw.duration;
+    let t_reorder = t_duration + nw.reorder;
+    let t_repair = t_reorder + nw.repair_depend;
+    let t_habit_anchor = t_repair + nw.habit_anchor;
+    let t_habit_exc = t_habit_anchor + nw.habit_exception;
+
+    if r < t_shift {
+        ShiftOp.apply_full(planner, buf, rng, span)
+    } else if r < t_swap {
+        SwapOp.apply_full(planner, buf, rng, span)
+    } else if r < t_duration {
+        DurationOp.apply_full(planner, buf, rng, span)
+    } else if r < t_reorder {
+        ReorderOp.apply_full(planner, buf, rng, span)
+    } else if r < t_repair {
+        neighbor_repair_depend_into(planner, buf, rng, None)
+    } else if r < t_habit_anchor {
+        if !neighbor_habit_anchor_into(planner, buf, rng, habit, &FxHashSet::default()) {
+            ShiftOp.apply_full(planner, buf, rng, span)
+        } else {
+            true
         }
-        86..=91 => {
-            if !neighbor_habit_exception_into(planner, buf, rng, habit, &FxHashSet::default()) {
-                ShiftOp.apply_full(planner, buf, rng, span)
-            } else {
-                true
-            }
+    } else if r < t_habit_exc {
+        if !neighbor_habit_exception_into(planner, buf, rng, habit, &FxHashSet::default()) {
+            ShiftOp.apply_full(planner, buf, rng, span)
+        } else {
+            true
         }
-        _ => neighbor_lns_into(planner, buf, rng),
+    } else {
+        neighbor_lns_into(planner, buf, rng)
     }
 }
 
@@ -1814,29 +1898,41 @@ fn generate_neighbor_partial_into(
     buf.clear();
     buf.extend_from_slice(current);
 
-    let r = rng.random_range(0..100u32) as i32;
+    let nw = &planner.sa_config.neighbor;
+    let r = rng.random_range(0..total_neighbor_weight(nw));
 
-    match r {
-        0..=16 => ShiftOp.apply_partial(planner, buf, rng, span, unpinned_positions),
-        17..=33 => SwapOp.apply_partial(planner, buf, rng, span, unpinned_positions),
-        34..=47 => DurationOp.apply_partial(planner, buf, rng, span, unpinned_positions),
-        48..=61 => ReorderOp.apply_partial(planner, buf, rng, span, unpinned_positions),
-        62..=75 => neighbor_repair_depend_into(planner, buf, rng, Some(pinned_ids)),
-        76..=85 => {
-            if !neighbor_habit_anchor_into(planner, buf, rng, habit, pinned_ids) {
-                ShiftOp.apply_partial(planner, buf, rng, span, unpinned_positions)
-            } else {
-                true
-            }
+    let t_shift = nw.shift;
+    let t_swap = t_shift + nw.swap;
+    let t_duration = t_swap + nw.duration;
+    let t_reorder = t_duration + nw.reorder;
+    let t_repair = t_reorder + nw.repair_depend;
+    let t_habit_anchor = t_repair + nw.habit_anchor;
+    let t_habit_exc = t_habit_anchor + nw.habit_exception;
+
+    if r < t_shift {
+        ShiftOp.apply_partial(planner, buf, rng, span, unpinned_positions)
+    } else if r < t_swap {
+        SwapOp.apply_partial(planner, buf, rng, span, unpinned_positions)
+    } else if r < t_duration {
+        DurationOp.apply_partial(planner, buf, rng, span, unpinned_positions)
+    } else if r < t_reorder {
+        ReorderOp.apply_partial(planner, buf, rng, span, unpinned_positions)
+    } else if r < t_repair {
+        neighbor_repair_depend_into(planner, buf, rng, Some(pinned_ids))
+    } else if r < t_habit_anchor {
+        if !neighbor_habit_anchor_into(planner, buf, rng, habit, pinned_ids) {
+            ShiftOp.apply_partial(planner, buf, rng, span, unpinned_positions)
+        } else {
+            true
         }
-        86..=91 => {
-            if !neighbor_habit_exception_into(planner, buf, rng, habit, pinned_ids) {
-                ShiftOp.apply_partial(planner, buf, rng, span, unpinned_positions)
-            } else {
-                true
-            }
+    } else if r < t_habit_exc {
+        if !neighbor_habit_exception_into(planner, buf, rng, habit, pinned_ids) {
+            ShiftOp.apply_partial(planner, buf, rng, span, unpinned_positions)
+        } else {
+            true
         }
-        _ => neighbor_lns_partial_into(planner, buf, rng, pinned_ids),
+    } else {
+        neighbor_lns_partial_into(planner, buf, rng, pinned_ids)
     }
 }
 
@@ -1952,7 +2048,7 @@ impl NeighborOp for ShiftOp {
             return false;
         }
         let dur = p.end.0 - p.start.0;
-        let range = shift_range_from_span(dur, rng, span);
+        let range = shift_range_from_span(dur, rng, span, planner.sa_config.long_shift_one_in);
         let k = rand_range(rng, -range, range + 1);
         let new_start_0 = (p.start.0 + k).max(planner.now.0);
         scheds[idx] = TaskPlacement::new(Point(new_start_0), Point(new_start_0 + dur), task_id);
@@ -2126,7 +2222,7 @@ fn neighbor_repair_depend_into(
 /// anchor 移動の時刻帯 delta。通常は ±1 時間程度、まれに大きく探索する。
 fn habit_anchor_delta(planner: &Planner, rng: &mut impl Rng) -> i64 {
     let spd = (24 * 60) / planner.per() as i64;
-    let range = if rng.random_range(0..LONG_SHIFT_ONE_IN) == 0 {
+    let range = if rng.random_range(0..planner.sa_config.long_shift_one_in) == 0 {
         (spd / 4).max(1)
     } else {
         (spd / 24).max(1)
@@ -2192,7 +2288,7 @@ fn neighbor_habit_exception_into(
         .map(|p| p.end.0 - p.start.0)
         .unwrap_or(1);
     let span = plan_span_scheds(scheds);
-    let range = shift_range_from_span(dur, rng, span);
+    let range = shift_range_from_span(dur, rng, span, planner.sa_config.long_shift_one_in);
     let delta = rand_range(rng, -range, range + 1);
     if delta == 0 {
         return false;
@@ -2299,8 +2395,8 @@ fn plan_span_scheds(schedules: &[Placement]) -> i64 {
 }
 
 /// shift_range using a pre-computed span to avoid re-scanning the schedule.
-fn shift_range_from_span(dur: i64, rng: &mut impl Rng, span: i64) -> i64 {
-    if rng.random_range(0..LONG_SHIFT_ONE_IN) == 0 {
+fn shift_range_from_span(dur: i64, rng: &mut impl Rng, span: i64, long_shift_one_in: u32) -> i64 {
+    if rng.random_range(0..long_shift_one_in) == 0 {
         span
     } else {
         (dur / 2).max(1)
