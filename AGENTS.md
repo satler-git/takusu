@@ -5,6 +5,16 @@
 The agent must follow these rules on every task. When in doubt, ask the user
 before acting.
 
+- **Assign issues first**: The very first action on any issue handed to you
+  (an issue URL, "do #N", or any reference to an issue number) is to run
+  `./scripts/issue-assign.sh <N>` to claim it. Do this **before** reading the
+  issue body, exploring the codebase, or writing any code. If the script
+  reports `already-assigned` and exits non-zero, **stop immediately**: another
+  agent (or human) already owns it. Do not continue working on the issue.
+  Report the conflict to the user and ask how to proceed. This rule exists
+  because multiple agents share one GitHub account, so the assignee field is
+  the only reliable ownership signal.
+  See [`.devin/rules/agent-helpers.md`](./.devin/rules/agent-helpers.md).
 - **Create PRs for issues**: When the user provides an issue to close (e.g. an
   issue URL or "do #N"), create a PR that closes it. Do not wait for a separate
   "create PR" request.
@@ -20,12 +30,13 @@ before acting.
   end of a task, or when asking the user for input.
   See [`.devin/rules/agent-helpers.md`](./.devin/rules/agent-helpers.md).
 - **Verify before finishing**: Run the checks appropriate to the changed code
-  (`cargo check`, `cargo nextest run`, `cargo clippy`; mobile `npm run lint`,
-  `npx tsc --noEmit`, `npm run fmt:check`).
+  (`cargo check`, `cargo nextest run`, `cargo clippy --all-targets --all-features`;
+  mobile `npm run lint`, `npx tsc --noEmit`, `npm run fmt:check`).
 - **Write the commit**: After finishing work, run `jj describe`. Commit messages
   are present tense, lowercase first word, no trailing period.
 - **Rebase before push**: Never rewrite `main`. Before pushing, run
-  `jj git fetch && jj rebase -r @ -d main`.
+  `jj git fetch && jj rebase -r @ -d main`. Push with
+  `jj git push --change @`.
 
 ## Detailed guidance
 

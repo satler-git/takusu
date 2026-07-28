@@ -26,8 +26,9 @@ and create a PR. Do not wait for a separate "create PR" request.
 ## Basic workflow
 
 1. Do the work.
-2. Run appropriate checks (`cargo check`, `cargo nextest run`, `cargo clippy`,
-   mobile `npm run lint` / `npx tsc --noEmit` / `npm run fmt:check`).
+2. Run appropriate checks (`cargo check`, `cargo nextest run`,
+   `cargo clippy --all-targets --all-features`, mobile `npm run lint` /
+   `npx tsc --noEmit` / `npm run fmt:check`).
 3. `jj describe` with a present-tense, lowercase, no-trailing-period message.
 4. If `main` has moved, rebase first: `jj git fetch && jj rebase -r @ -d main`.
 5. `jj git push --change @`

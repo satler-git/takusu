@@ -46,8 +46,9 @@ codes.
 
 ### `issue-assign.sh` — GitHub issue self-assignment
 
-Assigns an issue to the current user (or another user) only if it has zero
-assignees. Safe for agents to call before starting work.
+Claims an issue for the current user (or another user) only if it has zero
+assignees. **Call this first** on any issue handed to you, before reading the
+body or exploring the codebase.
 
 ```sh
 ./scripts/issue-assign.sh <number> [<number>...] [--assignee <user>]
@@ -55,7 +56,11 @@ assignees. Safe for agents to call before starting work.
 
 - Output (non-TTY): `number\tassignee(s)\tstatus`, where status is `assigned` or
   `already-assigned`.
-- No-op when the issue already has an assignee.
+- On `already-assigned`: exits non-zero, writes the TSV line to **stderr**,
+  and fires a `dunstify` desktop notification. **Stop and report the conflict
+  to the user; do not continue working on the issue.** Multiple agents share
+  one GitHub account, so the assignee field is the only reliable ownership
+  signal.
 
 ### `pr-watch.sh` — PR CI/review/comment watcher
 

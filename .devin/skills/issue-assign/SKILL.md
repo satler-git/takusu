@@ -1,15 +1,21 @@
 ---
 name: issue-assign
-description: Assign a GitHub issue to the current user only if it is currently unassigned
+description: Claim a GitHub issue for the current user; error + notify on conflict
 argument-hint: "<number> [<number>...] [--assignee <user>]"
 allowed-tools:
   - exec
   - read
 ---
 
-Use the `scripts/issue-assign.sh` helper to assign GitHub issues. The helper
-first checks that an issue has zero assignees, then adds the assignee. This
-avoids taking over an issue that someone else is already handling.
+Use the `scripts/issue-assign.sh` helper to claim GitHub issues. The helper
+first checks that an issue has zero assignees, then adds the assignee. If the
+issue is already assigned, it exits non-zero and fires a `dunstify` desktop
+notification so the user can intervene — **stop and report the conflict to the
+user; do not continue working on the issue**.
+
+This is the first action on any issue handed to you, before reading the body or
+exploring the codebase. Multiple agents share one GitHub account, so the
+assignee field is the only reliable ownership signal.
 
 ## Commands
 
@@ -25,12 +31,20 @@ avoids taking over an issue that someone else is already handling.
 
 - In a terminal: human-readable messages.
 - When stdout is not a TTY: TSV `number\tassignee(s)\tstatus`, where `status`
-  is `assigned` or `already-assigned`.
+  is `assigned` or `already-assigned`. The `already-assigned` line is written
+  to **stderr** and the script exits non-zero.
 
 ## When to use
 
-- Before starting work on a new issue, to claim it for yourself.
+- **First** action on any issue handed to you, before anything else.
 - To verify-and-assign an issue after the user has asked you to work on it.
+
+## On conflict
+
+If the script exits non-zero with `already-assigned`:
+1. Stop. Do not continue working on the issue.
+2. Report the conflict and the existing assignee(s) to the user.
+3. Ask the user how to proceed (skip, reassign, or take over explicitly).
 
 ## Examples
 
