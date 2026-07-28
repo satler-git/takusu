@@ -12,6 +12,8 @@ use futures_util::Stream;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::secrets::{ApiKey, EndpointUrl};
+
 /// TTS backend identifier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -56,8 +58,8 @@ pub struct TtsProviderConfig {
 #[derive(Debug, Clone)]
 pub struct TtsConfig {
     pub backend: TtsBackend,
-    pub url: String,
-    pub api_key: Option<String>,
+    pub url: EndpointUrl,
+    pub api_key: Option<ApiKey>,
 }
 
 #[derive(Debug, Clone, Default)]
