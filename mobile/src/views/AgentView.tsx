@@ -930,7 +930,7 @@ const makeStyles = (colors: ColorSet) =>
       padding: 16,
       gap: 10,
       flexGrow: 1,
-      justifyContent: 'flex-end',
+      justifyContent: 'flex-start',
     },
     empty: { textAlign: 'center', marginBottom: 20 },
     bubble: { maxWidth: '85%', padding: 12, borderRadius: 14 },
@@ -1222,11 +1222,6 @@ export function AgentView() {
   const backgroundAbortedRef = useRef(false);
   const flatListRef = useRef<FlatList<Message>>(null);
   const autoScrollRef = useRef(true);
-  const sessionJustLoadedRef = useRef(false);
-  const sessionLoadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
-  const sessionLoadScrolledRef = useRef(false);
   const skipSnapshotSaveRef = useRef(false);
   const lastPendingSessionIdRef = useRef<string | null>(null);
   const sessionPermissionsRef = useRef<PermissionsMap>({});
@@ -1270,31 +1265,6 @@ export function AgentView() {
   }, []);
 
   useEffect(() => {
-    return () => {
-      if (sessionLoadTimerRef.current)
-        clearTimeout(sessionLoadTimerRef.current);
-    };
-  }, []);
-
-  function scheduleSessionLoadScroll() {
-    if (sessionLoadTimerRef.current) clearTimeout(sessionLoadTimerRef.current);
-    sessionLoadTimerRef.current = setTimeout(() => {
-      sessionLoadTimerRef.current = null;
-      sessionJustLoadedRef.current = false;
-      sessionLoadScrolledRef.current = false;
-      if (autoScrollRef.current) {
-        flatListRef.current?.scrollToEnd({ animated: false });
-      }
-    }, 500);
-  }
-
-  function markSessionJustLoaded() {
-    sessionJustLoadedRef.current = true;
-    sessionLoadScrolledRef.current = false;
-    scheduleSessionLoadScroll();
-  }
-
-  useEffect(() => {
     const showEvent = 'keyboardDidShow';
     const hideEvent = 'keyboardDidHide';
     const showSub = Keyboard.addListener(showEvent, () =>
@@ -1336,7 +1306,6 @@ export function AgentView() {
       setSessionPermissions(perms);
       sessionPermissionsRef.current = perms;
       autoScrollRef.current = true;
-      markSessionJustLoaded();
       setMessages(snapshot?.messages ?? []);
       // Approval state is synced from the server after activation so we do not
       // show a stale approval from the local snapshot.
@@ -2340,40 +2309,31 @@ export function AgentView() {
 
   const handleScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      if (sessionJustLoadedRef.current) return;
-      const { contentOffset, contentSize, layoutMeasurement } =
-        event.nativeEvent;
-      const distanceFromBottom =
-        contentSize.height - contentOffset.y - layoutMeasurement.height;
-      autoScrollRef.current = distanceFromBottom <= SCROLL_THRESHOLD;
+      // Inverted FlatList: offset 0 = newest message at visual bottom.
+      // autoScroll stays on while the user is near the bottom.
+      const { contentOffset } = event.nativeEvent;
+      autoScrollRef.current = contentOffset.y <= SCROLL_THRESHOLD;
     },
     [],
   );
 
   const handleMessagesContentSizeChange = useCallback(() => {
-    if (sessionJustLoadedRef.current) {
-      // FlatList's content size may change several times while a past
-      // session is being laid out. Scroll on the first size change so
-      // the user sees the newest messages quickly, then re-schedule the
-      // final scroll so we settle on the actual bottom once layout is
-      // stable.
-      if (!sessionLoadScrolledRef.current) {
-        flatListRef.current?.scrollToEnd({ animated: false });
-        sessionLoadScrolledRef.current = true;
-      }
-      scheduleSessionLoadScroll();
-    } else if (autoScrollRef.current) {
-      flatListRef.current?.scrollToEnd({ animated: false });
+    // Inverted list shows newest at offset 0. When autoScroll is on,
+    // ensure we stay pinned to the bottom as new content arrives.
+    if (autoScrollRef.current) {
+      flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
     }
   }, []);
 
   const keyExtractor = useCallback((item: Message) => item.id, []);
 
+  // Inverted FlatList renders data[0] at the visual bottom. Reverse the
+  // messages so the newest (last in chronological order) sits at index 0
+  // and appears at the bottom on initial render — no scroll needed.
+  const reversedMessages = useMemo(() => [...messages].reverse(), [messages]);
+
   const handleMessagesLayout = useCallback((event: LayoutChangeEvent) => {
     setMessagesHeight(event.nativeEvent.layout.height);
-    if (!sessionJustLoadedRef.current && autoScrollRef.current) {
-      flatListRef.current?.scrollToEnd({ animated: false });
-    }
   }, []);
 
   const renderItem = useCallback(
@@ -2414,9 +2374,17 @@ export function AgentView() {
 
   const listEmpty = useMemo(
     () => (
-      <Text style={[styles.empty, { color: colors.gray }]}>
-        何を予定しますか？
-      </Text>
+      <View
+        style={{
+          flex: 1,
+          justifyContent: 'flex-end',
+          transform: [{ scaleY: -1 }],
+        }}
+      >
+        <Text style={[styles.empty, { color: colors.gray }]}>
+          何を予定しますか？
+        </Text>
+      </View>
     ),
     [colors.gray, styles],
   );
@@ -2673,7 +2641,6 @@ export function AgentView() {
       sessionIdRef.current = created;
       setText('');
       autoScrollRef.current = true;
-      markSessionJustLoaded();
       saveSessionHistory({ ids, activeIndex: nextIndex }).catch(() => {});
       resetToCenter();
     } catch (e: unknown) {
@@ -2845,7 +2812,7 @@ export function AgentView() {
           ref={flatListRef}
           style={styles.messages}
           contentContainerStyle={styles.messageContent}
-          data={messages}
+          data={reversedMessages}
           keyExtractor={keyExtractor}
           onLayout={handleMessagesLayout}
           renderItem={renderItem}
@@ -2853,6 +2820,7 @@ export function AgentView() {
           scrollEventThrottle={16}
           onContentSizeChange={handleMessagesContentSizeChange}
           ListEmptyComponent={listEmpty}
+          inverted
           initialNumToRender={10}
           maxToRenderPerBatch={10}
           windowSize={5}
