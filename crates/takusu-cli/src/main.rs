@@ -1,5 +1,6 @@
 mod agent;
 mod config;
+mod display_common;
 mod display_rich;
 mod display_simple;
 mod editor;
@@ -88,6 +89,19 @@ struct Cli {
 enum DisplayMode {
     Rich,
     Simple,
+}
+
+impl DisplayMode {
+    /// Return the active display renderer.
+    ///
+    /// Lets call sites write `mode.formatter().display_*(...)` instead of
+    /// repeating a `match` arm per renderer at every call site.
+    fn formatter(&self) -> &'static dyn display_common::DisplayFormatter {
+        match self {
+            DisplayMode::Rich => &display_rich::RichFormatter,
+            DisplayMode::Simple => &display_simple::SimpleFormatter,
+        }
+    }
 }
 
 #[derive(Subcommand)]
@@ -1273,10 +1287,7 @@ async fn run_task(
                 limit,
             };
             let tasks = app.list_tasks(&query).await?;
-            match mode {
-                DisplayMode::Rich => display_rich::display_tasks(&tasks, tz, &habit_map),
-                DisplayMode::Simple => display_simple::display_tasks(&tasks, tz, &habit_map),
-            }
+            mode.formatter().display_tasks(&tasks, tz, &habit_map);
         }
         TaskCommands::Show { id } => {
             let task = app.get_task(&id).await?;
@@ -1288,14 +1299,8 @@ async fn run_task(
                 }
                 Err(_) => None,
             };
-            match mode {
-                DisplayMode::Rich => {
-                    display_rich::display_task_detail(&task, entry.as_ref(), tz, &habit_map)
-                }
-                DisplayMode::Simple => {
-                    display_simple::display_task_detail(&task, entry.as_ref(), tz, &habit_map)
-                }
-            }
+            mode.formatter()
+                .display_task_detail(&task, entry.as_ref(), tz, &habit_map);
         }
         TaskCommands::Create {
             title,
@@ -1360,10 +1365,7 @@ async fn run_task(
                 original_quantity_total,
             };
             let task = app.create_task(&body).await?;
-            match mode {
-                DisplayMode::Rich => display_rich::display_tasks(&[task], tz, &habit_map),
-                DisplayMode::Simple => display_simple::display_tasks(&[task], tz, &habit_map),
-            }
+            mode.formatter().display_tasks(&[task], tz, &habit_map);
         }
         TaskCommands::Edit { id } => {
             let task = app.get_task(&id).await?;
@@ -1373,10 +1375,7 @@ async fn run_task(
                 .map_err(|e| AppError::BadRequest(e.to_string()))?;
             let update = editor::parse_edited_task(&edited, tz).map_err(AppError::BadRequest)?;
             let updated = app.update_task(&id, &update).await?;
-            match mode {
-                DisplayMode::Rich => display_rich::display_tasks(&[updated], tz, &habit_map),
-                DisplayMode::Simple => display_simple::display_tasks(&[updated], tz, &habit_map),
-            }
+            mode.formatter().display_tasks(&[updated], tz, &habit_map);
         }
         TaskCommands::Update {
             id,
@@ -1448,10 +1447,7 @@ async fn run_task(
                 original_quantity_total,
             };
             let task = app.update_task(&id, &body).await?;
-            match mode {
-                DisplayMode::Rich => display_rich::display_tasks(&[task], tz, &habit_map),
-                DisplayMode::Simple => display_simple::display_tasks(&[task], tz, &habit_map),
-            }
+            mode.formatter().display_tasks(&[task], tz, &habit_map);
         }
         TaskCommands::Replace {
             id,
@@ -1510,10 +1506,7 @@ async fn run_task(
                 original_quantity_total,
             };
             let task = app.replace_task(&id, &body).await?;
-            match mode {
-                DisplayMode::Rich => display_rich::display_tasks(&[task], tz, &habit_map),
-                DisplayMode::Simple => display_simple::display_tasks(&[task], tz, &habit_map),
-            }
+            mode.formatter().display_tasks(&[task], tz, &habit_map);
         }
         TaskCommands::Delete { id } => {
             app.delete_task(&id).await?;
@@ -1528,10 +1521,7 @@ async fn run_task(
                 ..Default::default()
             };
             let task = app.update_task(&id, &body).await?;
-            match mode {
-                DisplayMode::Rich => display_rich::display_tasks(&[task], tz, &habit_map),
-                DisplayMode::Simple => display_simple::display_tasks(&[task], tz, &habit_map),
-            }
+            mode.formatter().display_tasks(&[task], tz, &habit_map);
         }
         TaskCommands::DepsCheck => {
             deps_check_tasks(app).await?;
@@ -1549,10 +1539,7 @@ async fn run_task(
                     .into_iter()
                     .filter(|t| id_set.contains(&t.id))
                     .collect();
-                match mode {
-                    DisplayMode::Rich => display_rich::display_tasks(&tasks, tz, &habit_map),
-                    DisplayMode::Simple => display_simple::display_tasks(&tasks, tz, &habit_map),
-                }
+                mode.formatter().display_tasks(&tasks, tz, &habit_map);
             }
         }
         TaskCommands::Work(command) => {
@@ -1572,24 +1559,15 @@ async fn run_work(
     match cmd {
         WorkCommands::Start { id } => {
             let task = app.start_task_work(&id, None).await?;
-            match mode {
-                DisplayMode::Rich => display_rich::display_tasks(&[task], tz, habit_map),
-                DisplayMode::Simple => display_simple::display_tasks(&[task], tz, habit_map),
-            }
+            mode.formatter().display_tasks(&[task], tz, habit_map);
         }
         WorkCommands::Pause { id } => {
             let task = app.pause_task_work(&id, None).await?;
-            match mode {
-                DisplayMode::Rich => display_rich::display_tasks(&[task], tz, habit_map),
-                DisplayMode::Simple => display_simple::display_tasks(&[task], tz, habit_map),
-            }
+            mode.formatter().display_tasks(&[task], tz, habit_map);
         }
         WorkCommands::Complete { id } => {
             let task = app.complete_task_work(&id, None).await?;
-            match mode {
-                DisplayMode::Rich => display_rich::display_tasks(&[task], tz, habit_map),
-                DisplayMode::Simple => display_simple::display_tasks(&[task], tz, habit_map),
-            }
+            mode.formatter().display_tasks(&[task], tz, habit_map);
         }
         WorkCommands::Progress { id, quantity, note } => {
             let quantity_done =
@@ -1599,10 +1577,8 @@ async fn run_work(
                 note,
             };
             let result = app.record_progress(&id, &body, None).await?;
-            match mode {
-                DisplayMode::Rich => display_rich::display_tasks(&[result.task], tz, habit_map),
-                DisplayMode::Simple => display_simple::display_tasks(&[result.task], tz, habit_map),
-            }
+            mode.formatter()
+                .display_tasks(&[result.task], tz, habit_map);
             if let Some(event) = result.event {
                 println!(
                     "recorded: quantity {} (+{}), active {}min",
@@ -1642,10 +1618,7 @@ async fn run_work(
             let result = app.split_task(&id, &body, None).await?;
             let (original, remainder) = (result.original, result.remainder);
             let tasks = vec![original, remainder];
-            match mode {
-                DisplayMode::Rich => display_rich::display_tasks(&tasks, tz, habit_map),
-                DisplayMode::Simple => display_simple::display_tasks(&tasks, tz, habit_map),
-            }
+            mode.formatter().display_tasks(&tasks, tz, habit_map);
         }
     }
     Ok(())
@@ -1655,17 +1628,11 @@ async fn run_habit(mode: DisplayMode, app: &TakusuApp, cmd: HabitCommands) -> Re
     match cmd {
         HabitCommands::List => {
             let habits = app.list_habits().await?;
-            match mode {
-                DisplayMode::Rich => display_rich::display_habits(&habits),
-                DisplayMode::Simple => display_simple::display_habits(&habits),
-            }
+            mode.formatter().display_habits(&habits);
         }
         HabitCommands::Show { id } => {
             let detail = app.get_habit(&id).await?;
-            match mode {
-                DisplayMode::Rich => display_rich::display_habit_detail(&detail.habit),
-                DisplayMode::Simple => display_simple::display_habit_detail(&detail.habit),
-            }
+            mode.formatter().display_habit_detail(&detail.habit);
             // Show steps (#95) if any.
             if !detail.steps.is_empty() {
                 println!("   steps:");
@@ -1765,10 +1732,7 @@ async fn run_habit(mode: DisplayMode, app: &TakusuApp, cmd: HabitCommands) -> Re
                 window_mode: window,
             };
             let habit = app.create_habit(&body).await?;
-            match mode {
-                DisplayMode::Rich => display_rich::display_habit_detail(&habit),
-                DisplayMode::Simple => display_simple::display_habit_detail(&habit),
-            }
+            mode.formatter().display_habit_detail(&habit);
         }
         HabitCommands::Edit { id } => {
             let detail = app.get_habit(&id).await?;
@@ -1778,10 +1742,7 @@ async fn run_habit(mode: DisplayMode, app: &TakusuApp, cmd: HabitCommands) -> Re
                 .map_err(|e| AppError::BadRequest(e.to_string()))?;
             let update = editor::parse_edited_habit(&edited).map_err(AppError::BadRequest)?;
             let updated = app.update_habit(&id, &update).await?;
-            match mode {
-                DisplayMode::Rich => display_rich::display_habit_detail(&updated),
-                DisplayMode::Simple => display_simple::display_habit_detail(&updated),
-            }
+            mode.formatter().display_habit_detail(&updated);
         }
         HabitCommands::Update {
             id,
@@ -1832,10 +1793,7 @@ async fn run_habit(mode: DisplayMode, app: &TakusuApp, cmd: HabitCommands) -> Re
                 window_mode: window,
             };
             let habit = app.update_habit(&id, &body).await?;
-            match mode {
-                DisplayMode::Rich => display_rich::display_habit_detail(&habit),
-                DisplayMode::Simple => display_simple::display_habit_detail(&habit),
-            }
+            mode.formatter().display_habit_detail(&habit);
         }
         HabitCommands::Replace {
             id,
@@ -1879,10 +1837,7 @@ async fn run_habit(mode: DisplayMode, app: &TakusuApp, cmd: HabitCommands) -> Re
                 window_mode: window,
             };
             let habit = app.replace_habit(&id, &body).await?;
-            match mode {
-                DisplayMode::Rich => display_rich::display_habit_detail(&habit),
-                DisplayMode::Simple => display_simple::display_habit_detail(&habit),
-            }
+            mode.formatter().display_habit_detail(&habit);
         }
         HabitCommands::Delete { id } => {
             app.delete_habit(&id).await?;
@@ -1907,17 +1862,11 @@ async fn run_habit_steps(
     match cmd {
         StepsCommands::List { id } => {
             let steps = app.list_habit_steps(&id).await?;
-            match mode {
-                DisplayMode::Rich => display_rich::display_habit_steps(&steps),
-                DisplayMode::Simple => display_simple::display_habit_steps(&steps),
-            }
+            mode.formatter().display_habit_steps(&steps);
         }
         StepsCommands::ListAll => {
             let (steps, habits) = tokio::try_join!(app.list_all_habit_steps(), app.list_habits())?;
-            match mode {
-                DisplayMode::Rich => display_rich::display_all_habit_steps(&steps, &habits),
-                DisplayMode::Simple => display_simple::display_all_habit_steps(&steps, &habits),
-            }
+            mode.formatter().display_all_habit_steps(&steps, &habits);
         }
         StepsCommands::Edit { id } => {
             let steps = app.list_habit_steps(&id).await?;
@@ -1928,19 +1877,13 @@ async fn run_habit_steps(
                 .map_err(|e| AppError::BadRequest(e.to_string()))?;
             let inputs = editor::parse_edited_steps(&edited).map_err(AppError::BadRequest)?;
             let replaced = app.replace_habit_steps(&id, &inputs).await?;
-            match mode {
-                DisplayMode::Rich => display_rich::display_habit_steps(&replaced),
-                DisplayMode::Simple => display_simple::display_habit_steps(&replaced),
-            }
+            mode.formatter().display_habit_steps(&replaced);
         }
         StepsCommands::Set { id, file } => {
             let content = read_text_file(&file).await?;
             let inputs = editor::parse_edited_steps(&content).map_err(AppError::BadRequest)?;
             let replaced = app.replace_habit_steps(&id, &inputs).await?;
-            match mode {
-                DisplayMode::Rich => display_rich::display_habit_steps(&replaced),
-                DisplayMode::Simple => display_simple::display_habit_steps(&replaced),
-            }
+            mode.formatter().display_habit_steps(&replaced);
         }
     }
     Ok(())
@@ -1965,17 +1908,11 @@ async fn run_skill(mode: DisplayMode, app: &TakusuApp, cmd: SkillCommands) -> Re
     match cmd {
         SkillCommands::List => {
             let skills = app.list_skills().await?;
-            match mode {
-                DisplayMode::Rich => display_rich::display_skills(&skills),
-                DisplayMode::Simple => display_simple::display_skills(&skills),
-            }
+            mode.formatter().display_skills(&skills);
         }
         SkillCommands::Show { slug } => {
             let skill = app.get_skill(&slug).await?;
-            match mode {
-                DisplayMode::Rich => display_rich::display_skill_detail(&skill),
-                DisplayMode::Simple => display_simple::display_skill_detail(&skill),
-            }
+            mode.formatter().display_skill_detail(&skill);
         }
         SkillCommands::Create {
             slug,
@@ -2011,10 +1948,7 @@ async fn run_skill(mode: DisplayMode, app: &TakusuApp, cmd: SkillCommands) -> Re
                     built_in: None,
                 })
                 .await?;
-            match mode {
-                DisplayMode::Rich => display_rich::display_skill_detail(&created),
-                DisplayMode::Simple => display_simple::display_skill_detail(&created),
-            }
+            mode.formatter().display_skill_detail(&created);
         }
         SkillCommands::Update {
             slug,
@@ -2038,10 +1972,7 @@ async fn run_skill(mode: DisplayMode, app: &TakusuApp, cmd: SkillCommands) -> Re
                     },
                 )
                 .await?;
-            match mode {
-                DisplayMode::Rich => display_rich::display_skill_detail(&updated),
-                DisplayMode::Simple => display_simple::display_skill_detail(&updated),
-            }
+            mode.formatter().display_skill_detail(&updated);
         }
         SkillCommands::Delete { slug } => {
             app.delete_skill(&slug).await?;
@@ -2201,14 +2132,8 @@ async fn run_scheduled_spans(
         ScheduledSpanCommands::ListAll => {
             let (spans, habits) =
                 tokio::try_join!(app.list_all_habit_scheduled_spans(), app.list_habits())?;
-            match mode {
-                DisplayMode::Rich => {
-                    display_rich::display_all_habit_scheduled_spans(&spans, &habits)
-                }
-                DisplayMode::Simple => {
-                    display_simple::display_all_habit_scheduled_spans(&spans, &habits)
-                }
-            }
+            mode.formatter()
+                .display_all_habit_scheduled_spans(&spans, &habits);
         }
         ScheduledSpanCommands::Remove { id, span_id } => {
             app.delete_habit_scheduled_span(&id, &span_id).await?;
@@ -2234,14 +2159,8 @@ async fn run_schedule(
                 .list_tasks(&TaskQuery::default())
                 .await
                 .unwrap_or_default();
-            match mode {
-                DisplayMode::Rich => {
-                    display_rich::display_schedule(&entries, &tasks, tz, &habit_map)
-                }
-                DisplayMode::Simple => {
-                    display_simple::display_schedule(&entries, &tasks, tz, &habit_map)
-                }
-            }
+            mode.formatter()
+                .display_schedule(&entries, &tasks, tz, &habit_map);
         }
         ScheduleCommands::Generate { task_ids, sleep } => {
             let body = takusu_local_lib::app::GenerateScheduleInput { task_ids, sleep };
@@ -2252,14 +2171,8 @@ async fn run_schedule(
                 .list_tasks(&TaskQuery::default())
                 .await
                 .unwrap_or_default();
-            match mode {
-                DisplayMode::Rich => {
-                    display_rich::display_schedule(&entries, &tasks, tz, &habit_map)
-                }
-                DisplayMode::Simple => {
-                    display_simple::display_schedule(&entries, &tasks, tz, &habit_map)
-                }
-            }
+            mode.formatter()
+                .display_schedule(&entries, &tasks, tz, &habit_map);
         }
         ScheduleCommands::Reschedule {
             mode: rmode,
@@ -2288,14 +2201,8 @@ async fn run_schedule(
                 .list_tasks(&TaskQuery::default())
                 .await
                 .unwrap_or_default();
-            match mode {
-                DisplayMode::Rich => {
-                    display_rich::display_schedule(&entries, &tasks, tz, &habit_map)
-                }
-                DisplayMode::Simple => {
-                    display_simple::display_schedule(&entries, &tasks, tz, &habit_map)
-                }
-            }
+            mode.formatter()
+                .display_schedule(&entries, &tasks, tz, &habit_map);
         }
         ScheduleCommands::Move {
             task_id,
@@ -2328,10 +2235,7 @@ async fn run_token(mode: DisplayMode, app: &TakusuApp, cmd: TokenCommands) -> Re
         }
         TokenCommands::List => {
             let tokens = app.list_tokens().await?;
-            match mode {
-                DisplayMode::Rich => display_rich::display_tokens(&tokens),
-                DisplayMode::Simple => display_simple::display_tokens(&tokens),
-            }
+            mode.formatter().display_tokens(&tokens);
         }
         TokenCommands::Revoke { id } => {
             app.revoke_token(id).await?;
