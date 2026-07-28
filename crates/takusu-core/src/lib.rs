@@ -6,7 +6,7 @@
 //! ## 概要
 //!
 //! ```no_run
-//! use takusu_core::{Planner, NormalDist, Point, SleepConfig, Task};
+//! use takusu_core::{Planner, NormalDist, ParallelMode, Point, SleepConfig, Task};
 //! use jiff::Timestamp;
 //!
 //! let mut planner = Planner::new(Point::now(5), SleepConfig::disabled());
@@ -18,8 +18,7 @@
 //!     end: Point::from_raw(100),
 //!     cost_estimate: NormalDist::new(10, 2),
 //!     depends: vec![],
-//!     parallelizable: false,
-//!     allows_parallel: false,
+//!     parallel_mode: ParallelMode::Exclusive,
 //!     abandonability: 0.5.into(),
 //!     fixed: false,
 //!     habit_group: None,
@@ -283,6 +282,63 @@ impl Default for WorkloadConfig {
 
 // ── Task ──────────────────────────────────────────────────────────────
 
+/// タスクの並行実行モード。
+///
+/// `parallelizable`（他タスク実行中に動ける）と `allows_parallel`（自タスク
+/// 実行中に他を許す）の 2 つの bool を意味のある 4 状態にまとめたもの。
+/// 無意味な組み合わせを型レベルで排除できる。
+///
+/// 二つのタスクが同時に実行されてよい（オーバーラップ可能）のは、
+/// どちらかが `Host`/`Bidirectional`（許す側）で、かつもう一方が
+/// `Guest`/`Bidirectional`（動ける側）のときだけ。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ParallelMode {
+    /// 他タスクと並行実行できない。`parallelizable=false, allows_parallel=false`。
+    #[default]
+    Exclusive,
+    /// 他タスク実行中に動ける（ゲスト）。`parallelizable=true, allows_parallel=false`。
+    /// 例: スマホでできるタスク。
+    Guest,
+    /// 自タスク実行中に他のタスクの並行実行を許す（ホスト）。`parallelizable=false, allows_parallel=true`。
+    /// 例: 電車移動。
+    Host,
+    /// ゲストかつホスト。`parallelizable=true, allows_parallel=true`。
+    Bidirectional,
+}
+
+impl ParallelMode {
+    /// 2 つの bool から `ParallelMode` を構築する。
+    /// 境界層（DB や API が bool 2 つで保持している場合）の変換用。
+    #[inline]
+    pub fn from_bools(parallelizable: bool, allows_parallel: bool) -> Self {
+        match (parallelizable, allows_parallel) {
+            (false, false) => ParallelMode::Exclusive,
+            (true, false) => ParallelMode::Guest,
+            (false, true) => ParallelMode::Host,
+            (true, true) => ParallelMode::Bidirectional,
+        }
+    }
+
+    /// 他タスク実行中に動ける（`parallelizable`）か。
+    #[inline]
+    pub fn is_guest(self) -> bool {
+        matches!(self, ParallelMode::Guest | ParallelMode::Bidirectional)
+    }
+
+    /// 自タスク実行中に他のタスクの並行実行を許す（`allows_parallel`）か。
+    #[inline]
+    pub fn is_host(self) -> bool {
+        matches!(self, ParallelMode::Host | ParallelMode::Bidirectional)
+    }
+
+    /// 二つのタスクがオーバーラップ実行可能か。
+    /// どちらかがホストで、かつもう一方がゲストなら許可される。
+    #[inline]
+    pub fn can_overlap(a: Self, b: Self) -> bool {
+        (a.is_host() && b.is_guest()) || (b.is_host() && a.is_guest())
+    }
+}
+
 /// プランナーに渡すタスク。
 ///
 /// タスクは 5 分スロットに離散化された時間軸上に配置される。
@@ -304,11 +360,9 @@ pub struct Task {
     /// 依存タスクの ID リスト。これらのタスクがすべて終了してから開始可能。
     pub depends: Vec<usize>,
 
-    /// 他のタスク実行中でも実行可能か (例: スマホでできるタスク)。
-    pub parallelizable: bool,
-
-    /// このタスク実行中に他のタスクの並行実行を許すか (例: 電車移動)。
-    pub allows_parallel: bool,
+    /// 並行実行モード。他タスクとのオーバーラップ可否を表す。
+    /// 詳細は [`ParallelMode`] を参照。
+    pub parallel_mode: ParallelMode,
 
     /// 諦めやすさ [0.0, 1.0]。大きいほど諦められやすい。
     /// 全タスクが収まらない場合、この値が大きいタスクからドロップされる。
@@ -414,7 +468,7 @@ type ResultE<T> = Result<T, Error>;
 /// ## 使用例
 ///
 /// ```
-/// use takusu_core::{Planner, Task, NormalDist, Point, SleepConfig};
+/// use takusu_core::{Planner, Task, NormalDist, ParallelMode, Point, SleepConfig};
 ///
 /// let mut p = Planner::new(Point::from_raw(0), SleepConfig::disabled());
 ///
@@ -424,8 +478,7 @@ type ResultE<T> = Result<T, Error>;
 ///     end: Point::from_raw(20),
 ///     cost_estimate: NormalDist::new(5, 0),
 ///     depends: vec![],
-///     parallelizable: false,
-///     allows_parallel: false,
+///     parallel_mode: ParallelMode::Exclusive,
 ///     abandonability: 0.5.into(),
 ///     fixed: false,
 ///     habit_group: None,
@@ -695,8 +748,7 @@ mod tests {
                 end: Point(5),
                 cost_estimate: NormalDist::new(1, 0),
                 depends: vec![],
-                parallelizable: false,
-                allows_parallel: false,
+                parallel_mode: ParallelMode::Exclusive,
                 abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
@@ -709,8 +761,7 @@ mod tests {
                 end: Point(5),
                 cost_estimate: NormalDist::new(1, 2),
                 depends: vec![],
-                parallelizable: false,
-                allows_parallel: false,
+                parallel_mode: ParallelMode::Exclusive,
                 abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
@@ -744,8 +795,7 @@ mod tests {
             end: Point(200),
             cost_estimate: NormalDist::new(10, 0),
             depends: vec![],
-            parallelizable: false,
-            allows_parallel: false,
+            parallel_mode: ParallelMode::Exclusive,
             abandonability: 0.5.into(),
             fixed: false,
             habit_group: None,
@@ -776,8 +826,7 @@ mod tests {
             end: Point(0),
             cost_estimate: NormalDist::new(5, 0),
             depends: vec![],
-            parallelizable: false,
-            allows_parallel: false,
+            parallel_mode: ParallelMode::Exclusive,
             abandonability: 0.9.into(),
             fixed: false,
             habit_group: None,
@@ -813,8 +862,7 @@ mod tests {
                 end: Point(20),
                 cost_estimate: NormalDist::new(3, 0),
                 depends: vec![],
-                parallelizable: false,
-                allows_parallel: false,
+                parallel_mode: ParallelMode::Exclusive,
                 abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
@@ -827,8 +875,7 @@ mod tests {
                 end: Point(20),
                 cost_estimate: NormalDist::new(3, 0),
                 depends: vec![],
-                parallelizable: false,
-                allows_parallel: false,
+                parallel_mode: ParallelMode::Exclusive,
                 abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
@@ -858,8 +905,7 @@ mod tests {
             end: Point(10),
             cost_estimate: NormalDist::new(2, 0),
             depends: vec![],
-            parallelizable: false,
-            allows_parallel: false,
+            parallel_mode: ParallelMode::Exclusive,
             abandonability: 0.5.into(),
             fixed: false,
             habit_group: None,
@@ -885,8 +931,7 @@ mod tests {
                 end: Point(50),
                 cost_estimate: NormalDist::new(5, 0),
                 depends: vec![],
-                parallelizable: false,
-                allows_parallel: false,
+                parallel_mode: ParallelMode::Exclusive,
                 abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
@@ -899,8 +944,7 @@ mod tests {
                 end: Point(100),
                 cost_estimate: NormalDist::new(5, 0),
                 depends: vec![],
-                parallelizable: false,
-                allows_parallel: false,
+                parallel_mode: ParallelMode::Exclusive,
                 abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
@@ -930,8 +974,7 @@ mod tests {
                 end: Point(100),
                 cost_estimate: NormalDist::new(5, 0),
                 depends: vec![],
-                parallelizable: false,
-                allows_parallel: false,
+                parallel_mode: ParallelMode::Exclusive,
                 abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
@@ -944,8 +987,7 @@ mod tests {
                 end: Point(100),
                 cost_estimate: NormalDist::new(5, 0),
                 depends: vec![],
-                parallelizable: false,
-                allows_parallel: false,
+                parallel_mode: ParallelMode::Exclusive,
                 abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
@@ -958,8 +1000,7 @@ mod tests {
                 end: Point(100),
                 cost_estimate: NormalDist::new(5, 0),
                 depends: vec![],
-                parallelizable: false,
-                allows_parallel: false,
+                parallel_mode: ParallelMode::Exclusive,
                 abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
@@ -1013,8 +1054,7 @@ mod tests {
                 end: Point(100),
                 cost_estimate: NormalDist::new(1, 0),
                 depends: vec![],
-                parallelizable: false,
-                allows_parallel: false,
+                parallel_mode: ParallelMode::Exclusive,
                 abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
@@ -1027,8 +1067,7 @@ mod tests {
                 end: Point(100),
                 cost_estimate: NormalDist::new(1, 0),
                 depends: vec![0],
-                parallelizable: false,
-                allows_parallel: false,
+                parallel_mode: ParallelMode::Exclusive,
                 abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
@@ -1041,8 +1080,7 @@ mod tests {
                 end: Point(100),
                 cost_estimate: NormalDist::new(1, 0),
                 depends: vec![1],
-                parallelizable: false,
-                allows_parallel: false,
+                parallel_mode: ParallelMode::Exclusive,
                 abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
@@ -1080,8 +1118,7 @@ mod tests {
                 end: Point(100),
                 cost_estimate: NormalDist::new(1, 0),
                 depends: vec![],
-                parallelizable: false,
-                allows_parallel: false,
+                parallel_mode: ParallelMode::Exclusive,
                 abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
@@ -1094,8 +1131,7 @@ mod tests {
                 end: Point(100),
                 cost_estimate: NormalDist::new(1, 0),
                 depends: vec![0],
-                parallelizable: false,
-                allows_parallel: false,
+                parallel_mode: ParallelMode::Exclusive,
                 abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
@@ -1108,8 +1144,7 @@ mod tests {
                 end: Point(100),
                 cost_estimate: NormalDist::new(1, 0),
                 depends: vec![1],
-                parallelizable: false,
-                allows_parallel: false,
+                parallel_mode: ParallelMode::Exclusive,
                 abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
@@ -1192,8 +1227,7 @@ mod tests {
                 end: Point(100),
                 cost_estimate: NormalDist::new(10, 2),
                 depends: vec![],
-                parallelizable: false,
-                allows_parallel: false,
+                parallel_mode: ParallelMode::Exclusive,
                 abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
@@ -1206,8 +1240,7 @@ mod tests {
                 end: Point(200),
                 cost_estimate: NormalDist::new(5, 1),
                 depends: vec![],
-                parallelizable: false,
-                allows_parallel: false,
+                parallel_mode: ParallelMode::Exclusive,
                 abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
@@ -1227,8 +1260,7 @@ mod tests {
                 end: Point(100),
                 cost_estimate: NormalDist::new(5, 0),
                 depends: vec![],
-                parallelizable: false,
-                allows_parallel: false,
+                parallel_mode: ParallelMode::Exclusive,
                 abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
@@ -1241,8 +1273,7 @@ mod tests {
                 end: Point(200),
                 cost_estimate: NormalDist::new(5, 0),
                 depends: vec![0],
-                parallelizable: false,
-                allows_parallel: false,
+                parallel_mode: ParallelMode::Exclusive,
                 abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
@@ -1261,8 +1292,7 @@ mod tests {
                 end: Point(48),
                 cost_estimate: NormalDist::new(6, 2),
                 depends: vec![],
-                parallelizable: false,
-                allows_parallel: false,
+                parallel_mode: ParallelMode::Exclusive,
                 abandonability: 0.0.into(),
                 fixed: false,
                 habit_group: None,
@@ -1286,8 +1316,7 @@ mod tests {
                 end: Point(50),
                 cost_estimate: NormalDist::new(5, 0),
                 depends: vec![],
-                parallelizable: false,
-                allows_parallel: false,
+                parallel_mode: ParallelMode::Exclusive,
                 abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
@@ -1300,8 +1329,7 @@ mod tests {
                 end: Point(101),
                 cost_estimate: NormalDist::new(5, 0),
                 depends: vec![],
-                parallelizable: false,
-                allows_parallel: false,
+                parallel_mode: ParallelMode::Exclusive,
                 abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
@@ -1374,8 +1402,7 @@ mod tests {
                 end: Point(50),
                 cost_estimate: NormalDist::new(3, 0),
                 depends: vec![],
-                parallelizable: false,
-                allows_parallel: false,
+                parallel_mode: ParallelMode::Exclusive,
                 abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
@@ -1388,8 +1415,7 @@ mod tests {
                 end: Point(50),
                 cost_estimate: NormalDist::new(3, 0),
                 depends: vec![],
-                parallelizable: false,
-                allows_parallel: false,
+                parallel_mode: ParallelMode::Exclusive,
                 abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
@@ -1427,8 +1453,7 @@ mod tests {
                 end: Point(50),
                 cost_estimate: NormalDist::new(3, 0),
                 depends: vec![],
-                parallelizable: false,
-                allows_parallel: false,
+                parallel_mode: ParallelMode::Exclusive,
                 abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
@@ -1441,8 +1466,7 @@ mod tests {
                 end: Point(50),
                 cost_estimate: NormalDist::new(3, 0),
                 depends: vec![a],
-                parallelizable: false,
-                allows_parallel: false,
+                parallel_mode: ParallelMode::Exclusive,
                 abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
@@ -1480,8 +1504,7 @@ mod tests {
                 end: Point(50),
                 cost_estimate: NormalDist::new(3, 0),
                 depends: vec![],
-                parallelizable: false,
-                allows_parallel: false,
+                parallel_mode: ParallelMode::Exclusive,
                 abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
@@ -1494,8 +1517,7 @@ mod tests {
                 end: Point(50),
                 cost_estimate: NormalDist::new(3, 0),
                 depends: vec![],
-                parallelizable: false,
-                allows_parallel: false,
+                parallel_mode: ParallelMode::Exclusive,
                 abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
@@ -1529,8 +1551,7 @@ mod tests {
                 end: Point(50),
                 cost_estimate: NormalDist::new(3, 0),
                 depends: vec![],
-                parallelizable: false,
-                allows_parallel: false,
+                parallel_mode: ParallelMode::Exclusive,
                 abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
@@ -1543,8 +1564,7 @@ mod tests {
                 end: Point(50),
                 cost_estimate: NormalDist::new(3, 0),
                 depends: vec![a],
-                parallelizable: false,
-                allows_parallel: false,
+                parallel_mode: ParallelMode::Exclusive,
                 abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
@@ -1586,8 +1606,7 @@ mod tests {
                 end: Point(200),
                 cost_estimate: NormalDist::new(3, 0),
                 depends: vec![],
-                parallelizable: false,
-                allows_parallel: false,
+                parallel_mode: ParallelMode::Exclusive,
                 abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
@@ -1625,8 +1644,7 @@ mod tests {
                 end: Point(100),
                 cost_estimate: NormalDist::new(10, 2),
                 depends: vec![],
-                parallelizable: false,
-                allows_parallel: false,
+                parallel_mode: ParallelMode::Exclusive,
                 abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,
@@ -1639,8 +1657,7 @@ mod tests {
                 end: Point(200),
                 cost_estimate: NormalDist::new(10, 2),
                 depends: vec![],
-                parallelizable: false,
-                allows_parallel: false,
+                parallel_mode: ParallelMode::Exclusive,
                 abandonability: 0.5.into(),
                 fixed: false,
                 habit_group: None,

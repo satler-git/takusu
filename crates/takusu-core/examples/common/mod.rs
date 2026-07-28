@@ -1,4 +1,4 @@
-use takusu_core::{NormalDist, Planner, Point, SleepConfig, Task};
+use takusu_core::{NormalDist, ParallelMode, Planner, Point, SleepConfig, Task};
 
 #[derive(serde::Deserialize)]
 struct Fixture {
@@ -113,8 +113,7 @@ pub fn build_planner_from_str(input: &str) -> Planner {
                 end: Point(t.end),
                 cost_estimate: NormalDist::new(t.avg, t.sigma),
                 depends: t.depends,
-                parallelizable: t.parallelizable,
-                allows_parallel: t.allows_parallel,
+                parallel_mode: ParallelMode::from_bools(t.parallelizable, t.allows_parallel),
                 abandonability: t.abandonability.into(),
                 fixed: t.fixed,
                 habit_group: t.habit_group,

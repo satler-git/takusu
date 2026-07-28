@@ -6,8 +6,8 @@ use std::time::Duration;
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use takusu_core::{
-    Minutes, NormalDist, Planner, Point, RescheduleRange, SleepConfig, Slots, Task as CoreTask,
-    TaskPlacement, WorkloadConfig,
+    Minutes, NormalDist, ParallelMode, Planner, Point, RescheduleRange, SleepConfig, Slots,
+    Task as CoreTask, TaskPlacement, WorkloadConfig,
 };
 use takusu_storage::{
     CreateHabit, CreateHabitBatch, CreateHabitBatchResult, CreateHabitScheduledSpan, CreateMemory,
@@ -344,8 +344,7 @@ fn step_to_core_task(
             Minutes(step.sigma_minutes),
         ),
         depends: vec![],
-        parallelizable: step.parallelizable,
-        allows_parallel: step.allows_parallel,
+        parallel_mode: ParallelMode::from_bools(step.parallelizable, step.allows_parallel),
         abandonability: step.abandonability,
         fixed: step.fixed,
         habit_group: None,
@@ -366,8 +365,7 @@ fn step_to_core_task_period(step: &HabitStepRow, window_start: Point, deadline: 
             Minutes(step.sigma_minutes),
         ),
         depends: vec![],
-        parallelizable: step.parallelizable,
-        allows_parallel: step.allows_parallel,
+        parallel_mode: ParallelMode::from_bools(step.parallelizable, step.allows_parallel),
         abandonability: step.abandonability,
         fixed: step.fixed,
         habit_group: None,
@@ -1691,8 +1689,10 @@ impl TakusuApp {
                     end: deadline,
                     cost_estimate: cost,
                     depends: vec![],
-                    parallelizable: request.parallelizable.unwrap_or(false),
-                    allows_parallel: request.allows_parallel.unwrap_or(false),
+                    parallel_mode: ParallelMode::from_bools(
+                        request.parallelizable.unwrap_or(false),
+                        request.allows_parallel.unwrap_or(false),
+                    ),
                     abandonability: request.abandonability.unwrap_or(0.5.into()),
                     fixed: request.fixed.unwrap_or(false),
                     habit_group: None,
@@ -3070,8 +3070,10 @@ impl TakusuApp {
                             end: deadline_pt,
                             cost_estimate: cost,
                             depends: vec![],
-                            parallelizable: row.parallelizable,
-                            allows_parallel: row.allows_parallel,
+                            parallel_mode: ParallelMode::from_bools(
+                                row.parallelizable,
+                                row.allows_parallel,
+                            ),
                             abandonability: row.abandonability,
                             fixed: row.fixed,
                             // period mode: no habit_group (the consistency bonus
@@ -3205,8 +3207,8 @@ impl TakusuApp {
                         sigma_minutes: Some(
                             Slots(core_task.cost_estimate.sigma as i64).to_minutes().0,
                         ),
-                        parallelizable: Some(core_task.parallelizable),
-                        allows_parallel: Some(core_task.allows_parallel),
+                        parallelizable: Some(core_task.parallel_mode.is_guest()),
+                        allows_parallel: Some(core_task.parallel_mode.is_host()),
                         abandonability: Some(core_task.abandonability),
                         fixed: Some(core_task.fixed),
                         habit_step_id: step_id_opt.clone(),
@@ -3242,8 +3244,8 @@ impl TakusuApp {
                     avg_minutes: Slots(core_task.cost_estimate.avg as i64).to_minutes().0,
                     sigma_minutes: Some(Slots(core_task.cost_estimate.sigma as i64).to_minutes().0),
                     depends: Some(vec![]),
-                    parallelizable: Some(core_task.parallelizable),
-                    allows_parallel: Some(core_task.allows_parallel),
+                    parallelizable: Some(core_task.parallel_mode.is_guest()),
+                    allows_parallel: Some(core_task.parallel_mode.is_host()),
                     abandonability: Some(core_task.abandonability),
                     description: habit_desc.clone(),
                     ical_uid: None,
@@ -3461,8 +3463,7 @@ impl TakusuApp {
                     Minutes(row.sigma_minutes),
                 ),
                 depends: all_depends[i].clone(),
-                parallelizable: row.parallelizable,
-                allows_parallel: row.allows_parallel,
+                parallel_mode: ParallelMode::from_bools(row.parallelizable, row.allows_parallel),
                 abandonability: row.abandonability,
                 fixed: row.fixed,
                 habit_group: row

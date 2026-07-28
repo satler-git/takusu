@@ -282,8 +282,8 @@ pub(crate) fn try_place<const CHECK_CAPACITY: bool>(
             continue;
         }
 
-        let can_parallel = task.parallelizable;
-        let can_host = task.allows_parallel;
+        let can_parallel = task.parallel_mode.is_guest();
+        let can_host = task.parallel_mode.is_host();
         let mut has_overlap = false;
         let mut all_hosting = true;
         let mut all_guesting = true;
@@ -292,10 +292,10 @@ pub(crate) fn try_place<const CHECK_CAPACITY: bool>(
         for p in schedules {
             if p.start.0 < candidate_end.0 && p.end.0 > cursor.0 {
                 has_overlap = true;
-                if can_parallel && !planner.tasks[p.task_id].allows_parallel {
+                if can_parallel && !planner.tasks[p.task_id].parallel_mode.is_host() {
                     all_hosting = false;
                 }
-                if can_host && !planner.tasks[p.task_id].parallelizable {
+                if can_host && !planner.tasks[p.task_id].parallel_mode.is_guest() {
                     all_guesting = false;
                 }
                 if p.end.0 > next_start {

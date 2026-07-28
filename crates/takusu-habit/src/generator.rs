@@ -2,7 +2,7 @@ use jiff::Timestamp;
 use jiff::ToSpan;
 use jiff::civil::Date;
 use jiff::tz::TimeZone;
-use takusu_core::{Abandonability, NormalDist, Point, Task};
+use takusu_core::{Abandonability, NormalDist, ParallelMode, Point, Task};
 
 use crate::GeneratedTask;
 use crate::rule::{Frequency, NWeekday, RecurrenceRule, Weekday};
@@ -271,8 +271,10 @@ impl Iterator for RecurrenceGenerator {
                     end: end_pt,
                     cost_estimate: self.duration,
                     depends: vec![],
-                    parallelizable: self.parallelizable,
-                    allows_parallel: self.allows_parallel,
+                    parallel_mode: ParallelMode::from_bools(
+                        self.parallelizable,
+                        self.allows_parallel,
+                    ),
                     abandonability: self.abandonability,
                     fixed: self.fixed,
                     habit_group: None,

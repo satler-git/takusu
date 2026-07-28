@@ -2,7 +2,7 @@ use criterion::{Criterion, criterion_group, criterion_main};
 use rand::rngs::StdRng;
 use rand::{Rng, RngExt, SeedableRng};
 use std::hint::black_box;
-use takusu_core::{NormalDist, Planner, Point, SleepConfig, Solver, Task};
+use takusu_core::{NormalDist, ParallelMode, Planner, Point, SleepConfig, Solver, Task};
 
 fn generate_tasks(rng: &mut impl Rng, count: usize) -> Planner {
     generate_tasks_with(rng, count, 0.2, 0.2, false, 2)
@@ -44,8 +44,10 @@ fn generate_tasks_with(
                 end: Point(deadline_slot as i64),
                 cost_estimate: NormalDist::new(avg as u64, sigma as u64),
                 depends,
-                parallelizable: rng.random_bool(parallelizable_prob),
-                allows_parallel: rng.random_bool(allows_parallel_prob),
+                parallel_mode: ParallelMode::from_bools(
+                    rng.random_bool(parallelizable_prob),
+                    rng.random_bool(allows_parallel_prob),
+                ),
                 abandonability: rng.random::<f64>().into(),
                 fixed,
                 habit_group: None,

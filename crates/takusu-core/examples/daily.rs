@@ -9,7 +9,7 @@
 
 use std::collections::HashMap;
 
-use takusu_core::{NormalDist, Planner, Point, SleepConfig, Slots, Task};
+use takusu_core::{NormalDist, ParallelMode, Planner, Point, SleepConfig, Slots, Task};
 
 fn fmt_time(slot: i64) -> String {
     let total_minutes = Slots(slot).to_minutes().0;
@@ -58,8 +58,7 @@ fn main() {
                 end: Point(96),                       // 08:00 までに
                 cost_estimate: NormalDist::new(6, 1), // 30分 ±5分
                 depends: vec![],
-                parallelizable: false,
-                allows_parallel: false,
+                parallel_mode: ParallelMode::Exclusive,
                 abandonability: 0.1.into(), // // ほぼ諦めない
                 fixed: false,
                 habit_group: None,
@@ -77,8 +76,7 @@ fn main() {
                 end: Point(192),                       // 16:00 までに
                 cost_estimate: NormalDist::new(12, 3), // 60分 ±15分
                 depends: vec![],
-                parallelizable: false,
-                allows_parallel: true, // 洗濯中に他のことできる
+                parallel_mode: ParallelMode::Host, // 洗濯中に他のことできる
                 abandonability: 0.2.into(),
                 fixed: false,
                 habit_group: None,
@@ -96,8 +94,7 @@ fn main() {
                 end: Point(192),
                 cost_estimate: NormalDist::new(9, 2),
                 depends: vec![],
-                parallelizable: true, // 他のタスク中でも可
-                allows_parallel: false,
+                parallel_mode: ParallelMode::Guest, // 他のタスク中でも可
                 abandonability: 0.6.into(), // // まあできなくてもいい
                 fixed: false,
                 habit_group: None,
@@ -113,8 +110,7 @@ fn main() {
             end: Point(168),                       // 14:00 までに
             cost_estimate: NormalDist::new(18, 1), // 90分 ±5分
             depends: vec![],
-            parallelizable: false,
-            allows_parallel: false,
+            parallel_mode: ParallelMode::Exclusive,
             abandonability: 0.1.into(),
             fixed: false,
             habit_group: None,
@@ -132,8 +128,7 @@ fn main() {
                 end: Point(216), // 18:00 までに
                 cost_estimate: NormalDist::new(12, 2),
                 depends: vec![survey_id], // 調査が終わってから
-                parallelizable: false,
-                allows_parallel: false,
+                parallel_mode: ParallelMode::Exclusive,
                 abandonability: 0.2.into(),
                 fixed: false,
                 habit_group: None,
@@ -149,8 +144,7 @@ fn main() {
             end: Point(168),
             cost_estimate: NormalDist::new(3, 1), // 15分 ±5分
             depends: vec![],
-            parallelizable: false,
-            allows_parallel: false,
+            parallel_mode: ParallelMode::Exclusive,
             abandonability: 0.3.into(),
             fixed: false,
             habit_group: None,
@@ -168,8 +162,7 @@ fn main() {
                 end: Point(264),                       // 22:00 までに
                 cost_estimate: NormalDist::new(12, 4), // 60分 ±20分
                 depends: vec![list_id],
-                parallelizable: false,
-                allows_parallel: false,
+                parallel_mode: ParallelMode::Exclusive,
                 abandonability: 0.2.into(),
                 fixed: false,
                 habit_group: None,
@@ -187,8 +180,7 @@ fn main() {
                 end: Point(216), // 18:00 目標
                 cost_estimate: NormalDist::new(8, 2),
                 depends: vec![],
-                parallelizable: false,
-                allows_parallel: false,
+                parallel_mode: ParallelMode::Exclusive,
                 abandonability: 0.8.into(), // // deadline 超過を大きく許容
                 fixed: false,
                 habit_group: None,
@@ -206,8 +198,7 @@ fn main() {
                 end: Point(264),
                 cost_estimate: NormalDist::new(9, 2), // 45分 ±10分
                 depends: vec![],
-                parallelizable: false,
-                allows_parallel: true, // 移動中にメールできる
+                parallel_mode: ParallelMode::Host, // 移動中にメールできる
                 abandonability: 0.1.into(),
                 fixed: false,
                 habit_group: None,
@@ -224,8 +215,7 @@ fn main() {
                 end: Point(264),
                 cost_estimate: NormalDist::new(3, 1), // 15分 ±5分
                 depends: vec![],
-                parallelizable: true, // 他のタスク(移動)中にできる
-                allows_parallel: false,
+                parallel_mode: ParallelMode::Guest, // 他のタスク(移動)中にできる
                 abandonability: 0.3.into(),
                 fixed: false,
                 habit_group: None,
@@ -261,12 +251,12 @@ fn main() {
         } else {
             String::new()
         };
-        let parallel = if task.parallelizable || task.allows_parallel {
+        let parallel = if task.parallel_mode != ParallelMode::Exclusive {
             let mut tags = vec![];
-            if task.allows_parallel {
+            if task.parallel_mode.is_host() {
                 tags.push("host");
             }
-            if task.parallelizable {
+            if task.parallel_mode.is_guest() {
                 tags.push("guest");
             }
             format!(" [{}]", tags.join("+"))
@@ -325,8 +315,7 @@ fn main() {
             let b_name = name_of(&ids, &b_p.task_id);
             let task_a = &tasks[a_p.task_id];
             let task_b = &tasks[b_p.task_id];
-            let parallel_ok = (task_a.allows_parallel && task_b.parallelizable)
-                || (task_b.allows_parallel && task_a.parallelizable);
+            let parallel_ok = ParallelMode::can_overlap(task_a.parallel_mode, task_b.parallel_mode);
             let mark = if parallel_ok { "✓" } else { "⚠" };
             println!(
                 "  {} {} ⊗ {}  ({}–{} ⊗ {}–{})",
