@@ -643,7 +643,7 @@ pub async fn split_task(mut req: Request, env: Env, id: &str) -> Result<Response
     } else {
         Vec::new()
     };
-    let depends_json = serde_json::to_string(&depends).unwrap_or_else(|_| "[]".into());
+    let depends_json = crate::models::DependencyList::new(depends).to_json_string();
 
     let remainder_title = body.title.as_ref().unwrap_or(&original.title);
     let normalized_title = takusu_util::memory::normalize_text(

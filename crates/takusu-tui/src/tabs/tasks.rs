@@ -176,8 +176,8 @@ allows_parallel: {allows}",
 }
 
 fn format_task_depends(task: &TaskRow, all_tasks: &[TaskRow], habits: &[HabitRow]) -> String {
-    serde_json::from_str::<Vec<String>>(&task.depends)
-        .unwrap_or_default()
+    task.depends
+        .to_vec()
         .iter()
         .map(|id| task_ref(id, all_tasks, habits).unwrap_or_else(|| "?".to_string()))
         .collect::<Vec<_>>()
@@ -377,6 +377,7 @@ fn open_editor(content: &str) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use takusu_util::DependencyList;
 
     fn sample_task() -> TaskRow {
         TaskRow {
@@ -388,7 +389,7 @@ mod tests {
             end_at: "2025-06-15T10:00:00Z".parse().unwrap(),
             avg_minutes: 30,
             sigma_minutes: 5,
-            depends: serde_json::to_string(&["dep-uuid".to_string()]).unwrap(),
+            depends: vec!["dep-uuid".to_string()].into(),
             parallelizable: true,
             allows_parallel: false,
             abandonability: 0.25.into(),
@@ -420,7 +421,7 @@ mod tests {
             end_at: "2025-06-15T12:00:00Z".parse().unwrap(),
             avg_minutes: 15,
             sigma_minutes: 3,
-            depends: "[]".to_string(),
+            depends: DependencyList::default(),
             parallelizable: false,
             allows_parallel: false,
             abandonability: 0.5.into(),
@@ -452,7 +453,7 @@ mod tests {
             end_at: "2025-06-15T12:00:00Z".parse().unwrap(),
             avg_minutes: 15,
             sigma_minutes: 3,
-            depends: "[]".to_string(),
+            depends: DependencyList::default(),
             parallelizable: false,
             allows_parallel: false,
             abandonability: 0.5.into(),
@@ -530,7 +531,7 @@ mod tests {
 
     fn sample_task_with_dep(dep_id: &str) -> TaskRow {
         let mut task = sample_task();
-        task.depends = serde_json::to_string(&[dep_id.to_string()]).unwrap();
+        task.depends = vec![dep_id.to_string()].into();
         task
     }
 

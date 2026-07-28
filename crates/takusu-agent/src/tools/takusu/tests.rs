@@ -13,8 +13,8 @@ use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::sync::Arc;
 use takusu_client::{
-    Client, HabitDetail, HabitRow, HabitScheduledSpanRow, HabitStepRow, ScheduleRow,
-    SettingsResponse, TaskRow,
+    Client, HabitDetail, HabitRow, HabitScheduledSpanRow, HabitStepRow, ScheduleEntry,
+    ScheduleRow, SettingsResponse, TaskRow,
 };
 use takusu_util::{Quantity, TaskStatus, parse_datetime_tz};
 
@@ -146,8 +146,7 @@ fn task_row(
         end_at: "2025-06-05T10:00:00Z".parse().unwrap(),
         avg_minutes: 30,
         sigma_minutes: 5,
-        depends: serde_json::to_string(&depends.iter().map(|s| s.to_string()).collect::<Vec<_>>())
-            .unwrap(),
+        depends: depends.iter().map(|s| s.to_string()).collect::<Vec<_>>().into(),
         parallelizable: false,
         allows_parallel: false,
         abandonability: 0.5.into(),
@@ -206,7 +205,7 @@ fn step_row(id: &str, habit_id: &str, position: i64, title: &str) -> HabitStepRo
         allows_parallel: false,
         abandonability: 0.5.into(),
         fixed: false,
-        depends_on: "[]".to_string(),
+        depends_on: Vec::new().into(),
         created_at: "2025-06-01T00:00:00Z".parse().unwrap(),
     }
 }
@@ -402,7 +401,7 @@ fn habit_json_maps_step_dependencies_to_display_positions() {
     let habit = habit_row("habit-uuid", 7, "habit");
     let first = step_row("step-1", "habit-uuid", 0, "warmup");
     let mut second = step_row("step-2", "habit-uuid", 1, "run");
-    second.depends_on = r#"["step-1"]"#.to_string();
+    second.depends_on = vec!["step-1".to_string()].into();
     let detail = HabitDetail {
         habit,
         steps: vec![first, second],
@@ -892,12 +891,12 @@ async fn move_task_tool_proposes_move_with_existing_entry() {
     let task_for_get = task.as_ref().clone();
     let task_for_list = vec![task.as_ref().clone()];
     let habits = vec![habit_row("habit-uuid", 1, "朝のランニング")];
-    let schedule = serde_json::to_string(&json!([{
-        "task_id": "task-uuid",
-        "start_at": "2025-06-05T18:00:00Z",
-        "end_at": "2025-06-05T18:30:00Z",
-    }]))
-    .unwrap();
+    let schedule = vec![ScheduleEntry {
+        task_id: "task-uuid".to_string(),
+        start_at: "2025-06-05T18:00:00Z".parse().unwrap(),
+        end_at: "2025-06-05T18:30:00Z".parse().unwrap(),
+    }]
+    .into();
     let schedule_row = ScheduleRow {
         id: "sched-1".into(),
         created_at: "2025-06-01T00:00:00Z".parse().unwrap(),

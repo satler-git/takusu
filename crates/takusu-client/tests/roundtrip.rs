@@ -290,7 +290,7 @@ fn task_row_deserialization() {
     assert_eq!(tr.id, "task-123");
     assert_eq!(tr.display_id, 42);
     assert_eq!(tr.status, TaskStatus::Pending);
-    assert_eq!(tr.depends, "[]");
+    assert!(tr.depends.is_empty());
 }
 
 #[test]
@@ -361,11 +361,11 @@ fn schedule_row_deserialization() {
         "id": "active",
         "created_at": "2025-06-01T00:00:00Z",
         "updated_at": "2025-06-01T00:00:00Z",
-        "schedule": "[{\"task_id\":\"t1\",\"start_at\":\"...\",\"end_at\":\"...\"}]"
+        "schedule": "[{\"task_id\":\"t1\",\"start_at\":\"2025-06-01T10:00:00Z\",\"end_at\":\"2025-06-01T11:00:00Z\"}]"
     });
     let sr: ScheduleRow = serde_json::from_value(json).unwrap();
     assert_eq!(sr.id, "active");
-    assert!(sr.schedule.contains("t1"));
+    assert!(sr.schedule.as_inner().iter().any(|e| e.task_id == "t1"));
 }
 
 #[test]

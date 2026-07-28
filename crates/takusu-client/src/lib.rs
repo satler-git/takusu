@@ -7,7 +7,8 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use takusu_util::{
-    Date, ScheduleMode, Similarity, SleepInput, TimeOfDay, Timestamp, url_encode,
+    Date, DependencyList, JsonString, ScheduleMode, Similarity, SleepInput, TimeOfDay,
+    Timestamp, url_encode,
 };
 use tokio::sync::RwLock;
 
@@ -1007,7 +1008,8 @@ pub struct TaskRow {
     pub end_at: Timestamp,
     pub avg_minutes: i64,
     pub sigma_minutes: i64,
-    pub depends: String,
+    #[serde(default)]
+    pub depends: DependencyList,
     #[serde(with = "takusu_util::bool_compat", default)]
     pub parallelizable: bool,
     #[serde(with = "takusu_util::bool_compat", default)]
@@ -1257,7 +1259,8 @@ pub struct HabitStepRow {
     pub abandonability: takusu_util::Abandonability,
     #[serde(with = "takusu_util::bool_compat", default)]
     pub fixed: bool,
-    pub depends_on: String,
+    #[serde(default)]
+    pub depends_on: DependencyList,
     pub created_at: Timestamp,
 }
 
@@ -1390,7 +1393,8 @@ pub struct ScheduleRow {
     pub id: String,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
-    pub schedule: String,
+    #[serde(default)]
+    pub schedule: ScheduleData,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1399,6 +1403,9 @@ pub struct ScheduleEntry {
     pub start_at: Timestamp,
     pub end_at: Timestamp,
 }
+
+/// Type alias for the JSON-string-encoded schedule entries (#1252).
+pub type ScheduleData = JsonString<Vec<ScheduleEntry>>;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GenerateSchedule {

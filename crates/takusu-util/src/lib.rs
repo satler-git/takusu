@@ -2,6 +2,7 @@ pub mod abandonability;
 pub mod bool_compat;
 pub mod duration_seconds;
 pub mod enum_label;
+pub mod json_string;
 pub mod jwt;
 pub mod option_bool_compat;
 pub mod quantity;
@@ -17,6 +18,7 @@ pub use enum_label::{
     EnumLabel, MemoryKind, ScheduleMode, SimilarityMetric, Solver, SubjectType, TaskStatus,
     TaskStatusFilter, TokenScope, UnknownLabel, WindowMode, enum_serde,
 };
+pub use json_string::{DependencyList, JsonString};
 pub use quantity::{Quantity, QuantityError};
 pub use similarity::Similarity;
 pub use sleep_input::{SleepInput, SleepInputError};

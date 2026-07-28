@@ -516,7 +516,7 @@ fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use takusu_util::Quantity;
+    use takusu_util::{DependencyList, Quantity};
 
     fn task(id: &str) -> TaskRow {
         TaskRow {
@@ -528,7 +528,7 @@ mod tests {
             end_at: "2025-06-15T10:00:00Z".parse().unwrap(),
             avg_minutes: 30,
             sigma_minutes: 5,
-            depends: "[]".to_string(),
+            depends: DependencyList::default(),
             parallelizable: false,
             allows_parallel: false,
             abandonability: 0.5.into(),

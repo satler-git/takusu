@@ -113,7 +113,7 @@ impl App {
 
     pub async fn reload_schedule(&mut self) {
         if let Ok(s) = self.app.get_schedule().await {
-            self.schedule_entries = serde_json::from_str(&s.schedule).unwrap_or_default();
+            self.schedule_entries = s.schedule.as_inner().clone();
             self.schedule_entries.sort_by_key(|e| e.start_at);
             self.schedule_list.set_len(self.schedule_entries.len());
         }

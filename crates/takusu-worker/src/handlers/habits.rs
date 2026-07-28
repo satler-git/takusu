@@ -481,7 +481,7 @@ pub async fn replace_steps(
         let abandonability = s.abandonability.unwrap_or(0.5.into());
         let fixed = s.fixed.unwrap_or(false);
         let depends_json =
-            serde_json::to_string(&s.depends_on).unwrap_or_else(|_| "[]".to_string());
+            crate::models::DependencyList::new(s.depends_on.clone()).to_json_string();
 
         if existing_ids.contains(&id) {
             let stmt = database.prepare(

@@ -24,8 +24,7 @@ pub fn format_task_for_editing(
     habit_map: &HashMap<String, i64>,
     tz: &jiff::tz::TimeZone,
 ) -> String {
-    let depends_uuids: Vec<String> =
-        serde_json::from_str::<Vec<String>>(&task.depends).unwrap_or_default();
+    let depends_uuids: Vec<String> = task.depends.to_vec();
     // Show display_ids when the dependency task is known, otherwise fall back to UUID.
     let depends: String = depends_uuids
         .iter()
@@ -458,8 +457,7 @@ fn habit_step_row_to_input(step: &HabitStepRow) -> Result<HabitStepInput, String
         allows_parallel: Some(step.allows_parallel),
         abandonability: Some(step.abandonability),
         fixed: Some(step.fixed),
-        depends_on: serde_json::from_str(&step.depends_on)
-            .map_err(|e| format!("invalid depends_on JSON for step {}: {e}", step.id))?,
+        depends_on: step.depends_on.to_vec(),
     })
 }
 
@@ -531,10 +529,7 @@ mod tests {
             end_at: "2026-07-23T23:59:00Z".parse().unwrap(),
             avg_minutes: 30,
             sigma_minutes: 5,
-            depends: serde_json::to_string(
-                &depends.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
-            )
-            .unwrap(),
+            depends: depends.iter().map(|s| s.to_string()).collect::<Vec<_>>().into(),
             parallelizable: false,
             allows_parallel: false,
             abandonability: 0.5.into(),
@@ -685,7 +680,7 @@ mod tests {
             allows_parallel: true,
             abandonability: 0.25.into(),
             fixed: true,
-            depends_on: "[\"step-0\"]".into(),
+            depends_on: vec!["step-0".to_string()].into(),
             created_at: "2026-07-16T00:00:00Z".parse().unwrap(),
         };
         let formatted = format_steps_for_editing(&[row]).unwrap();
@@ -722,35 +717,12 @@ mod tests {
             allows_parallel: false,
             abandonability: 0.5.into(),
             fixed: false,
-            depends_on: "[]".into(),
+            depends_on: Vec::new().into(),
             created_at: "2026-07-16T00:00:00Z".parse().unwrap(),
         };
         let formatted = format_steps_for_editing(&[row]).unwrap();
         let parsed = parse_edited_steps(&formatted).unwrap();
         assert_eq!(parsed[0].sigma_minutes, Some(0));
-    }
-
-    #[test]
-    fn format_steps_for_editing_rejects_invalid_depends_on() {
-        let row = HabitStepRow {
-            id: "step-1".into(),
-            habit_id: "habit-1".into(),
-            position: 1,
-            title: "Bad".into(),
-            description: None,
-            start_time: "09:00".parse().unwrap(),
-            end_time: "09:15".parse().unwrap(),
-            avg_minutes: 15,
-            sigma_minutes: 0,
-            parallelizable: false,
-            allows_parallel: false,
-            abandonability: 0.5.into(),
-            fixed: false,
-            depends_on: "not-json".into(),
-            created_at: "2026-07-16T00:00:00Z".parse().unwrap(),
-        };
-        let err = format_steps_for_editing(&[row]).unwrap_err();
-        assert!(err.contains("depends_on"), "error: {err}");
     }
 
     // ── Habit task dependency references (#933) ──────────────────────────
@@ -925,7 +897,7 @@ mod tests {
             .await
             .unwrap();
 
-        let resolved: Vec<String> = serde_json::from_str(&target.depends).unwrap();
+        let resolved: Vec<String> = target.depends.to_vec();
         assert_eq!(resolved, vec![habit_task_id]);
     }
 }

@@ -14,7 +14,7 @@ pub trait Task {
     fn status(&self) -> String;
     fn start_at(&self) -> Option<String>;
     fn end_at(&self) -> String;
-    fn depends(&self) -> &str;
+    fn depends(&self) -> &[String];
     fn habit_id(&self) -> Option<&str>;
     fn fixed(&self) -> bool;
     fn parallelizable(&self) -> bool;
@@ -62,8 +62,8 @@ macro_rules! impl_search_task {
             fn end_at(&self) -> String {
                 self.end_at.to_string()
             }
-            fn depends(&self) -> &str {
-                &self.depends
+            fn depends(&self) -> &[String] {
+                self.depends.as_slice()
             }
             fn habit_id(&self) -> Option<&str> {
                 self.habit_id.as_deref()
@@ -135,10 +135,8 @@ impl EvalContext {
             task_ref_to_id.insert(display_id.to_string(), id.clone());
             task_id_to_display.insert(id.clone(), display_id);
 
-            if let Ok(ids) = serde_json::from_str::<Vec<String>>(t.depends()) {
-                for dep in ids {
-                    dependents.entry(dep).or_default().insert(id.clone());
-                }
+            for dep in t.depends() {
+                dependents.entry(dep.clone()).or_default().insert(id.clone());
             }
         }
 
@@ -486,7 +484,7 @@ fn eval<T: Task>(expr: &Expr, task: &T, ctx: &EvalContext) -> bool {
 }
 
 fn task_dep_ids(task: &impl Task) -> Vec<String> {
-    serde_json::from_str::<Vec<String>>(task.depends()).unwrap_or_default()
+    task.depends().to_vec()
 }
 
 fn resolve_task_ref<'c>(ctx: &'c EvalContext, v: &'c str) -> Option<&'c str> {
@@ -947,7 +945,7 @@ mod tests {
         status: String,
         start_at: Option<String>,
         end_at: String,
-        depends: String,
+        depends: Vec<String>,
         habit_id: Option<String>,
         fixed: bool,
         parallelizable: bool,
@@ -977,7 +975,7 @@ mod tests {
         fn end_at(&self) -> String {
             self.end_at.clone()
         }
-        fn depends(&self) -> &str {
+        fn depends(&self) -> &[String] {
             &self.depends
         }
         fn habit_id(&self) -> Option<&str> {
@@ -1041,7 +1039,7 @@ mod tests {
                 status: "pending".to_string(),
                 start_at: None,
                 end_at: "2026-07-25T08:00:00Z".to_string(),
-                depends: "[\"t2\"]".to_string(),
+                depends: vec!["t2".to_string()],
                 habit_id: Some("h1".to_string()),
                 fixed: false,
                 parallelizable: false,
@@ -1056,7 +1054,7 @@ mod tests {
                 status: "pending".to_string(),
                 start_at: None,
                 end_at: "2026-07-25T18:00:00Z".to_string(),
-                depends: "[]".to_string(),
+                depends: vec![],
                 habit_id: None,
                 fixed: false,
                 parallelizable: false,
@@ -1071,7 +1069,7 @@ mod tests {
                 status: "scheduled".to_string(),
                 start_at: Some("2026-07-25T10:00:00Z".to_string()),
                 end_at: "2026-07-25T17:00:00Z".to_string(),
-                depends: "[\"t1\",\"t2\"]".to_string(),
+                depends: vec!["t1".to_string(), "t2".to_string()],
                 habit_id: None,
                 fixed: true,
                 parallelizable: false,

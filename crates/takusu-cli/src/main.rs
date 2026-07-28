@@ -1334,7 +1334,7 @@ async fn run_task(
             let entry = match app.get_schedule().await {
                 Ok(schedule) => {
                     let entries: Vec<ScheduleEntry> =
-                        serde_json::from_str(&schedule.schedule).unwrap_or_default();
+                        schedule.schedule.as_inner().clone();
                     entries.into_iter().find(|e| e.task_id == task.id)
                 }
                 Err(_) => None,
@@ -1673,7 +1673,7 @@ async fn run_habit(mode: DisplayMode, app: &TakusuApp, cmd: HabitCommands) -> Re
             if !detail.steps.is_empty() {
                 println!("   steps:");
                 for s in &detail.steps {
-                    let deps: Vec<String> = serde_json::from_str(&s.depends_on).unwrap_or_default();
+                    let deps: Vec<String> = s.depends_on.to_vec();
                     println!(
                         "     {} [{}] {} ({}–{}, {}min){}",
                         s.id,
@@ -2168,7 +2168,7 @@ async fn run_schedule(
         ScheduleCommands::Get => {
             let schedule = app.get_schedule().await?;
             let entries: Vec<ScheduleEntry> =
-                serde_json::from_str(&schedule.schedule).unwrap_or_default();
+                schedule.schedule.as_inner().clone();
             let tasks = app
                 .list_tasks(&TaskQuery::default())
                 .await
@@ -2180,7 +2180,7 @@ async fn run_schedule(
             let body = takusu_local_lib::app::GenerateScheduleInput { task_ids, sleep };
             let schedule = app.generate_schedule(&body).await?;
             let entries: Vec<ScheduleEntry> =
-                serde_json::from_str(&schedule.schedule).unwrap_or_default();
+                schedule.schedule.as_inner().clone();
             let tasks = app
                 .list_tasks(&TaskQuery::default())
                 .await
@@ -2210,7 +2210,7 @@ async fn run_schedule(
             };
             let schedule = app.reschedule(&body).await?;
             let entries: Vec<ScheduleEntry> =
-                serde_json::from_str(&schedule.schedule).unwrap_or_default();
+                schedule.schedule.as_inner().clone();
             let tasks = app
                 .list_tasks(&TaskQuery::default())
                 .await
@@ -2685,7 +2685,7 @@ fn format_path(via: &[DependencyNode]) -> String {
 /// Remove `to_id` from the `depends` list of task `from_id` via PATCH.
 async fn remove_task_dep(app: &TakusuApp, from_id: &str, to_id: &str) -> Result<(), AppError> {
     let task = app.get_task(from_id).await?;
-    let mut deps: Vec<String> = serde_json::from_str(&task.depends).unwrap_or_default();
+    let mut deps: Vec<String> = task.depends.to_vec();
     deps.retain(|d| d != to_id);
     let body = takusu_storage::UpdateTask {
         depends: Some(deps),
@@ -2795,7 +2795,7 @@ async fn remove_step_dep(
     let inputs: Vec<takusu_storage::HabitStepInput> = steps
         .iter()
         .map(|s| {
-            let mut deps: Vec<String> = serde_json::from_str(&s.depends_on).unwrap_or_default();
+            let mut deps: Vec<String> = s.depends_on.to_vec();
             if s.id == from_id {
                 deps.retain(|d| d != to_id);
             }

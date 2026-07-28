@@ -3,7 +3,9 @@
 //! `FromRow` derive the storage crate uses) into the WASM bundle.
 
 use serde::{Deserialize, Serialize};
-pub use takusu_util::{Abandonability, Date, Quantity, Similarity, TimeOfDay, Timestamp};
+pub use takusu_util::{
+    Abandonability, Date, DependencyList, JsonString, Quantity, Similarity, TimeOfDay, Timestamp,
+};
 
 use crate::memory;
 
@@ -18,7 +20,8 @@ pub struct TaskRow {
     pub end_at: Timestamp,
     pub avg_minutes: i64,
     pub sigma_minutes: i64,
-    pub depends: String,
+    #[serde(default)]
+    pub depends: DependencyList,
     #[serde(with = "takusu_util::bool_compat", default)]
     pub parallelizable: bool,
     #[serde(with = "takusu_util::bool_compat", default)]
@@ -256,7 +259,8 @@ pub struct HabitStepRow {
     pub abandonability: Abandonability,
     #[serde(with = "takusu_util::bool_compat", default)]
     pub fixed: bool,
-    pub depends_on: String,
+    #[serde(default)]
+    pub depends_on: DependencyList,
     pub created_at: Timestamp,
 }
 
@@ -315,7 +319,8 @@ pub struct ScheduleRow {
     pub id: String,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
-    pub schedule: String,
+    #[serde(default)]
+    pub schedule: ScheduleData,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -324,6 +329,9 @@ pub struct ScheduleEntry {
     pub start_at: Timestamp,
     pub end_at: Timestamp,
 }
+
+/// Type alias for the JSON-string-encoded schedule entries (#1252).
+pub type ScheduleData = JsonString<Vec<ScheduleEntry>>;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SaveScheduleRequest {

@@ -510,12 +510,12 @@ impl TypedTool for GetSchedule {
         .map_err(client_error)?;
 
         let ctx = TaskContext::new(&tasks, &habits);
-        let entries: Value = serde_json::from_str(&schedule.schedule)
-            .map_err(|error| ToolError::Other(Box::new(error)))?;
-        let entries = match entries {
-            Value::Array(entries) => entries,
-            _ => Vec::new(),
-        };
+        let entries: Vec<Value> = schedule
+            .schedule
+            .as_inner()
+            .iter()
+            .map(|entry| serde_json::to_value(entry).map_err(|error| ToolError::Other(Box::new(error))))
+            .collect::<Result<_, _>>()?;
         let entries = entries
             .iter()
             .filter(|entry| entry_in_range(entry, from_ts, to_ts, &tz))

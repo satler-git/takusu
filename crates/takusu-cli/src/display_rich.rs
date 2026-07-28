@@ -237,7 +237,7 @@ impl DisplayFormatter for RichFormatter {
             ]);
 
         for s in steps {
-            let deps: Vec<String> = serde_json::from_str(&s.depends_on).unwrap_or_default();
+            let deps: Vec<String> = s.depends_on.to_vec();
             let deps_str = deps.join(",");
             let id_short: String = s.id.chars().take(8).collect();
             table.add_row(vec![
@@ -319,7 +319,7 @@ impl DisplayFormatter for RichFormatter {
 
         for s in steps {
             let (title, display_id, _id) = habit_label_by_id(&s.habit_id, habits);
-            let deps: Vec<String> = serde_json::from_str(&s.depends_on).unwrap_or_default();
+            let deps: Vec<String> = s.depends_on.to_vec();
             let deps_str = deps.join(",");
             table.add_row(vec![
                 Cell::new(format!("h{} {}", display_id, title)),

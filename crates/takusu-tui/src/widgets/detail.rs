@@ -94,7 +94,7 @@ pub fn render_task_detail(frame: &mut Frame, area: Rect, task: &TaskRow, tz: &ji
             )),
         ]));
     }
-    let deps: Vec<String> = serde_json::from_str(&task.depends).unwrap_or_default();
+    let deps: Vec<String> = task.depends.to_vec();
     if !deps.is_empty() {
         lines.push(Line::from(vec![
             Span::styled("Depends: ", Style::default().fg(style::HEADER_FG)),

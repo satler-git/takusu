@@ -570,8 +570,7 @@ impl Storage for SqliteStorage {
         validate_quantity(quantity_total, body.quantity_done, original_quantity_total)?;
         let id = uuid::Uuid::now_v7().to_string();
         let resolved_depends = resolve_depends(&self.pool, body.depends.as_deref()).await?;
-        let depends_json =
-            serde_json::to_string(&resolved_depends).unwrap_or_else(|_| "[]".to_string());
+        let depends = takusu_util::DependencyList::new(resolved_depends);
         // sigma 未指定時は avg の 20% をデフォルトにする (確定タスクでない限りある程度バッファを見込む)
         let sigma = body
             .sigma_minutes
@@ -630,7 +629,7 @@ impl Storage for SqliteStorage {
         .bind(body.end_at)
         .bind(body.avg_minutes)
         .bind(sigma)
-        .bind(&depends_json)
+        .bind(&depends)
         .bind(parallelizable)
         .bind(allows_parallel)
         .bind(abandonability)
@@ -655,9 +654,9 @@ impl Storage for SqliteStorage {
     }
 
     async fn update_task(&self, id: &str, body: &UpdateTask) -> StorageResult<TaskRow> {
-        let depends_json = if let Some(ref deps) = body.depends {
+        let depends = if let Some(ref deps) = body.depends {
             let resolved = resolve_depends(&self.pool, Some(deps)).await?;
-            Some(serde_json::to_string(&resolved).unwrap_or_else(|_| "[]".into()))
+            Some(takusu_util::DependencyList::new(resolved))
         } else {
             None
         };
@@ -674,7 +673,7 @@ impl Storage for SqliteStorage {
             })?;
 
         let plan = validate_task_update(body, &existing)?;
-        update_task_fields(&mut *tx, &full, body, &plan, &depends_json).await?;
+        update_task_fields(&mut *tx, &full, body, &plan, &depends).await?;
         if body.status.is_some() {
             handle_status_transition(&mut *tx, &full, &existing, plan.status).await?;
             // #1044: moving to a terminal status should close any open work
@@ -705,7 +704,7 @@ impl Storage for SqliteStorage {
         )?;
         let full = resolve_task_id(&self.pool, id).await?;
         let resolved_depends = resolve_depends(&self.pool, body.depends.as_deref()).await?;
-        let depends_json = serde_json::to_string(&resolved_depends).unwrap_or_else(|_| "[]".into());
+        let depends = takusu_util::DependencyList::new(resolved_depends);
         let sigma = body
             .sigma_minutes
             .unwrap_or(Minutes(body.avg_minutes).to_slots().0.max(1));
@@ -729,7 +728,7 @@ impl Storage for SqliteStorage {
         .bind(body.end_at)
         .bind(body.avg_minutes)
         .bind(sigma)
-        .bind(&depends_json)
+        .bind(&depends)
         .bind(parallelizable)
         .bind(allows_parallel)
         .bind(abandonability)
@@ -1118,8 +1117,7 @@ impl Storage for SqliteStorage {
             let allows_parallel = s.allows_parallel.unwrap_or(false);
             let abandonability = s.abandonability.unwrap_or(0.5.into());
             let fixed = s.fixed.unwrap_or(false);
-            let depends_json =
-                serde_json::to_string(&s.depends_on).unwrap_or_else(|_| "[]".to_string());
+            let depends_on = takusu_util::DependencyList::new(s.depends_on.clone());
 
             if existing_set.contains(&id) {
                 sqlx::query(
@@ -1136,7 +1134,7 @@ impl Storage for SqliteStorage {
                 .bind(allows_parallel)
                 .bind(abandonability)
                 .bind(fixed)
-                .bind(&depends_json)
+                .bind(&depends_on)
                 .bind(&id)
                 .bind(&full)
                 .execute(&mut *tx)
@@ -1159,7 +1157,7 @@ impl Storage for SqliteStorage {
                 .bind(allows_parallel)
                 .bind(abandonability)
                 .bind(fixed)
-                .bind(&depends_json)
+                .bind(&depends_on)
                 .bind(&now)
                 .execute(&mut *tx)
                 .await
@@ -1247,8 +1245,7 @@ impl Storage for SqliteStorage {
     }
 
     async fn save_schedule(&self, req: &SaveScheduleRequest) -> StorageResult<ScheduleRow> {
-        let schedule_json = serde_json::to_string(&req.entries)
-            .map_err(|e| StorageError::Internal(format!("serialize schedule: {e}")))?;
+        let schedule = takusu_storage::ScheduleData::new(req.entries.clone());
         let now = takusu_util::now_rfc3339();
         // Wrap the schedule upsert and the task status updates in a single
         // transaction so a failure mid-way cannot leave the schedule saved
@@ -1259,7 +1256,7 @@ impl Storage for SqliteStorage {
         )
         .bind(&now)
         .bind(&now)
-        .bind(&schedule_json)
+        .bind(&schedule)
         .execute(&mut *tx)
         .await
         .map_err(map_err)?;
@@ -2446,7 +2443,7 @@ impl Storage for SqliteStorage {
         } else {
             Vec::new()
         };
-        let depends_json = serde_json::to_string(&depends).unwrap_or_else(|_| "[]".into());
+        let depends = takusu_util::DependencyList::new(depends);
 
         let remainder_title = body.title.as_ref().unwrap_or(&original.title);
         let normalized_title = takusu_util::memory::normalize_text(
@@ -2466,7 +2463,7 @@ impl Storage for SqliteStorage {
         .bind(body.end_at.as_ref().unwrap_or(&original.end_at))
         .bind(original.avg_minutes)
         .bind(original.sigma_minutes)
-        .bind(&depends_json)
+        .bind(&depends)
         .bind(original.parallelizable)
         .bind(original.allows_parallel)
         .bind(original.abandonability)
@@ -2545,8 +2542,7 @@ async fn filter_rows_with_query(
     let habits = storage.list_habits().await?;
 
     let schedule_entries: Vec<ScheduleEntry> = match storage.get_schedule().await? {
-        Some(row) => serde_json::from_str(&row.schedule)
-            .map_err(|e| StorageError::Internal(format!("failed to parse schedule json: {e}")))?,
+        Some(row) => row.schedule.as_inner().clone(),
         None => Vec::new(),
     };
     let schedule: Vec<(String, (String, String))> = schedule_entries
@@ -2795,13 +2791,13 @@ fn validate_task_update(body: &UpdateTask, existing: &TaskRow) -> StorageResult<
 }
 
 /// Apply the field-level `UPDATE tasks SET ...` for an update. Binds every
-/// column from `body` plus the precomputed `plan`/`depends_json` values.
+/// column from `body` plus the precomputed `plan`/`depends` values.
 async fn update_task_fields<'c, E>(
     executor: E,
     full: &str,
     body: &UpdateTask,
     plan: &TaskUpdatePlan,
-    depends_json: &Option<String>,
+    depends: &Option<takusu_util::DependencyList>,
 ) -> StorageResult<()>
 where
     E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
@@ -2839,7 +2835,7 @@ where
     .bind(body.end_at)
     .bind(body.avg_minutes)
     .bind(body.sigma_minutes)
-    .bind(depends_json.as_ref())
+    .bind(depends.as_ref())
     .bind(body.parallelizable)
     .bind(body.allows_parallel)
     .bind(body.abandonability)
@@ -3124,7 +3120,7 @@ mod tests {
             end_at: now,
             avg_minutes: 30,
             sigma_minutes: 5,
-            depends: "[]".into(),
+            depends: Vec::new().into(),
             parallelizable: false,
             allows_parallel: false,
             abandonability: Abandonability::default(),
