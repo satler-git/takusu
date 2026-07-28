@@ -8,7 +8,6 @@
 //! This module mirrors the reference PyTorch inference in `scripts/infer_single.py`
 //! from the Hush repository, using `libDF`-compatible STFT/ERB/ISTFT processing.
 
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use ndarray::prelude::*;
@@ -33,7 +32,7 @@ pub enum HushError {
     Shape(String),
 }
 
-/// Hush model configuration (`config.ini`).
+/// Hush model configuration.
 #[derive(Debug, Clone)]
 pub struct HushConfig {
     pub sr: usize,
@@ -74,60 +73,6 @@ impl Default for HushConfig {
 }
 
 impl HushConfig {
-    fn load_from_dir(dir: &Path) -> Result<Self, HushError> {
-        let path = dir.join("config.ini");
-        if !path.exists() {
-            return Err(HushError::MissingModel(format!(
-                "config.ini in {}",
-                dir.display()
-            )));
-        }
-        let content = std::fs::read_to_string(&path)?;
-        let mut map: HashMap<String, String> = HashMap::new();
-        let mut section = String::new();
-        for line in content.lines() {
-            let line = line.trim();
-            if line.is_empty() || line.starts_with('#') {
-                continue;
-            }
-            if line.starts_with('[') && line.ends_with(']') {
-                section = line[1..line.len() - 1].to_string();
-                continue;
-            }
-            if let Some((k, v)) = line.split_once('=') {
-                map.insert(format!("{}/{}", section, k.trim()), v.trim().to_string());
-            }
-        }
-
-        fn parse<T: std::str::FromStr>(map: &HashMap<String, String>, key: &str, default: T) -> T {
-            map.get(key).and_then(|s| s.parse().ok()).unwrap_or(default)
-        }
-
-        let default = HushConfig::default();
-        let target_rms_f = parse(&map, "hush/target_rms", default.target_rms.unwrap_or(0.0));
-        let target_rms = if target_rms_f > 0.0 {
-            Some(target_rms_f)
-        } else {
-            None
-        };
-
-        Ok(HushConfig {
-            sr: parse(&map, "df/sr", 16000),
-            fft_size: parse(&map, "df/fft_size", 320),
-            hop_size: parse(&map, "df/hop_size", 160),
-            nb_erb: parse(&map, "df/nb_erb", 32),
-            nb_df: parse(&map, "df/nb_df", 64),
-            min_nb_erb_freqs: parse(&map, "df/min_nb_erb_freqs", 2),
-            norm_tau: parse(&map, "df/norm_tau", 1.0),
-            df_order: parse(&map, "deepfilternet/df_order", 5),
-            df_lookahead: parse(&map, "deepfilternet/df_lookahead", 0),
-            conv_lookahead: parse(&map, "deepfilternet/conv_lookahead", 0),
-            conv_ch: parse(&map, "deepfilternet/conv_ch", 16),
-            target_rms,
-            restore_loudness: parse(&map, "hush/restore_loudness", default.restore_loudness),
-        })
-    }
-
     fn norm_alpha(&self) -> f32 {
         let dt = self.hop_size as f32 / self.sr as f32;
         f32::exp(-dt / self.norm_tau)
@@ -149,10 +94,10 @@ pub struct Hush {
 
 impl Hush {
     /// Load a Hush ONNX bundle from a directory containing `enc.onnx`, `erb_dec.onnx`,
-    /// `df_dec.onnx`, and `config.ini`.
+    /// and `df_dec.onnx`.
     pub fn from_model_dir(dir: impl AsRef<Path>) -> Result<Self, HushError> {
         let dir = dir.as_ref();
-        let config = HushConfig::load_from_dir(dir)?;
+        let config = HushConfig::default();
 
         let enc_path = dir.join("enc.onnx");
         let erb_dec_path = dir.join("erb_dec.onnx");

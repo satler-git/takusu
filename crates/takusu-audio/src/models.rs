@@ -58,7 +58,7 @@ const ALL_MODELS: [ModelSpec; 2] = [
         id: "hush",
         url: HUSH_URL,
         format: ArchiveFormat::TarGz,
-        expected_files: &["config.ini", "enc.onnx", "erb_dec.onnx", "df_dec.onnx"],
+        expected_files: &["enc.onnx", "erb_dec.onnx", "df_dec.onnx"],
     },
     ModelSpec {
         id: "sherpa-sense-voice-int8",
