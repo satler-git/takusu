@@ -94,6 +94,51 @@ impl From<InvalidArgsError> for ToolError {
     }
 }
 
+impl ToolError {
+    /// Extract the `InvalidArgsError` from a `ToolError::InvalidArgs`,
+    /// converting any other variant into `InvalidArgsError::no_field`.
+    pub fn into_invalid_args(self) -> InvalidArgsError {
+        match self {
+            ToolError::InvalidArgs(e) => e,
+            other => InvalidArgsError::no_field(other.to_string()),
+        }
+    }
+}
+
+/// Serde helper: deserialize an optional string, trim whitespace, and return
+/// `None` for empty/whitespace-only values. Mirrors the behavior of the
+/// hand-written `optional_string` helper used by the legacy tools.
+pub fn deserialize_trimmed_optional<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let raw: Option<String> = Option::deserialize(deserializer)?;
+    Ok(raw.and_then(|s| {
+        let trimmed = s.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    }))
+}
+
+/// Serde helper: deserialize a required string and trim whitespace. Returns
+/// an error if the result is empty. Mirrors the behavior of the hand-written
+/// `required_string` helper.
+pub fn deserialize_trimmed_required<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let raw: String = String::deserialize(deserializer)?;
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        Err(serde::de::Error::custom("missing or empty"))
+    } else {
+        Ok(trimmed.to_string())
+    }
+}
+
 /// How a tool is exposed to the model.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToolExposure {
@@ -239,10 +284,13 @@ pub struct ProposedChange {
     pub observed_updated_at: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct InferredField {
+    /// Name of the inferred field.
     pub field: String,
+    /// Inferred value for the field.
     pub value: Value,
+    /// Reason the field was inferred.
     pub reason: String,
 }
 
@@ -362,11 +410,19 @@ pub trait TypedTool: Send + Sync {
     /// JSON Schema for the arguments object. Defaults to a schemars-generated
     /// schema for [`Self::Params`], normalized to match the hand-written
     /// schema style used by the existing tools (no `$schema`, no `title`,
-    /// no `format`, `Option<T>` rendered as `T` with `default: null`).
+    /// no `format`, `Option<T>` rendered as `T`).
     ///
     /// Override to post-process further (e.g. attach descriptions that cannot
-    /// be expressed via doc comments).
+    /// be expressed via doc comments). When overriding, call
+    /// [`TypedTool::default_parameters_schema`] to get the generated base
+    /// schema instead of calling `parameters_schema` (which would recurse).
     fn parameters_schema(&self) -> Value {
+        self.default_parameters_schema()
+    }
+
+    /// The schemars-generated, normalized schema for [`Self::Params`].
+    /// Intended to be called from `parameters_schema` overrides.
+    fn default_parameters_schema(&self) -> Value {
         use schemars::generate::{SchemaGenerator, SchemaSettings};
         let mut settings = SchemaSettings::default();
         settings.inline_subschemas = true;
@@ -408,6 +464,17 @@ pub trait TypedTool: Send + Sync {
 /// matching the previous hand-written schemas where optional fields were
 /// typed as their inner type.
 pub fn normalize_schema(mut schema: Value) -> Value {
+    // Remove root-level keys that schemars adds but the hand-written schemas
+    // never carried. Field-level descriptions inside `properties` are kept.
+    if let Some(obj) = schema.as_object_mut() {
+        obj.remove("description");
+        obj.remove("title");
+        // schemars omits `properties` for structs with no fields; the
+        // hand-written schemas always included `"properties": {}`.
+        if !obj.contains_key("properties") {
+            obj.insert("properties".into(), Value::Object(Default::default()));
+        }
+    }
     normalize_value(&mut schema);
     schema
 }
@@ -416,18 +483,11 @@ fn normalize_value(value: &mut Value) {
     if let Some(obj) = value.as_object_mut() {
         // Strip keys that are not present in the hand-written schemas.
         obj.remove("$schema");
-        obj.remove("title");
         obj.remove("format");
         obj.remove("assertionLine");
         // schemars emits `default` for `#[serde(default)]` fields; the
         // hand-written schemas never carried it.
         obj.remove("default");
-        // schemars adds `description` from the struct doc comment; the
-        // hand-written schemas never had a top-level params description.
-        // Keep field-level descriptions (those live inside `properties`).
-        if obj.contains_key("properties") {
-            obj.remove("description");
-        }
 
         // Collapse `["integer", "null"]` / `["string", "null"]` etc. back to
         // the non-null variant so the LLM sees the same shape as before.
@@ -494,8 +554,16 @@ impl<T: TypedTool> Tool for Typed<T> {
 
 impl<T: TypedTool> Typed<T> {
     fn parse_params(&self, args: Value) -> Result<T::Params, ToolError> {
-        let params: T::Params = serde_json::from_value(args)
-            .map_err(|e| ToolError::InvalidArgs(InvalidArgsError::no_field(e.to_string())))?;
+        let params: T::Params = serde_path_to_error::deserialize(args)
+            .map_err(|e| {
+                let path = e.path().to_string();
+                let reason = e.into_inner().to_string();
+                if path.is_empty() {
+                    ToolError::InvalidArgs(InvalidArgsError::no_field(reason))
+                } else {
+                    ToolError::InvalidArgs(InvalidArgsError::new(path, reason))
+                }
+            })?;
         self.0.validate_args(&params)?;
         Ok(params)
     }

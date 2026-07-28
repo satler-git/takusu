@@ -4,7 +4,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::ToolError;
 
-/// A single ambiguous ASR snippet the agent wants the user to correct.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct UserInputQuestion {
