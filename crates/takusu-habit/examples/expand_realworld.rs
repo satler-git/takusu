@@ -255,8 +255,8 @@ fn main() {
         .map(|t| TaskFixture {
             start: t.start.map(|p| p.0),
             end: t.end.0,
-            avg: t.cost_estimate.avg,
-            sigma: t.cost_estimate.sigma,
+            avg: t.cost_estimate.avg(),
+            sigma: t.cost_estimate.sigma(),
             depends: t.depends,
             parallelizable: t.parallel_mode.is_guest(),
             allows_parallel: t.parallel_mode.is_host(),
@@ -269,10 +269,10 @@ fn main() {
     let output = Output {
         now: now.0,
         sleep: SleepFixture {
-            day_start: sleep.day_start,
-            start: sleep.start,
-            end: sleep.end,
-            enabled: sleep.enabled,
+            day_start: sleep.day_start(),
+            start: sleep.start(),
+            end: sleep.end(),
+            enabled: sleep.enabled(),
         },
         tasks: task_fixtures,
     };

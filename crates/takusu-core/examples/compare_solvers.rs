@@ -212,21 +212,21 @@ fn metrics(planner: &Planner, plan: &Plan) -> Metrics {
 fn sleep_shortage(planner: &Planner, plan: &Plan) -> (usize, i64) {
     let slots_per_day = 24 * 60 / planner.per() as i64;
     let sleep = planner.sleep_config();
-    if !sleep.enabled || plan.schedules.is_empty() {
+    if !sleep.enabled() || plan.schedules.is_empty() {
         return (0, 0);
     }
     let plan_start = plan.schedules.iter().map(|p| p.start.0).min().unwrap();
     let plan_end = plan.schedules.iter().map(|p| p.end.0).max().unwrap();
-    let first_day = sleep.day_start
-        + (plan_start - sleep.day_start).div_euclid(slots_per_day) * slots_per_day
+    let first_day = sleep.day_start()
+        + (plan_start - sleep.day_start()).div_euclid(slots_per_day) * slots_per_day
         - slots_per_day;
-    let sleep_len = sleep.end - sleep.start;
+    let sleep_len = sleep.end() - sleep.start();
     let mut shortage_days = 0;
     let mut shortage_slots = 0;
     let mut day_start = first_day;
-    while day_start + sleep.start <= plan_end {
-        let window_start = day_start + sleep.start;
-        let window_end = day_start + sleep.end;
+    while day_start + sleep.start() <= plan_end {
+        let window_start = day_start + sleep.start();
+        let window_end = day_start + sleep.end();
         let occupied: Vec<_> = plan
             .schedules
             .iter()
@@ -256,7 +256,7 @@ fn daily_maximum_excess(planner: &Planner, plan: &Plan) -> i64 {
             cursor = segment_end;
         }
     }
-    let maximum = planner.workload().maximum_slots_per_day;
+    let maximum = planner.workload().maximum_slots_per_day();
     if maximum <= 0 {
         return 0;
     }
@@ -498,7 +498,7 @@ fn render_html(
         out.push_str(&format!("<td>{}</td>", task.id));
         out.push_str(&format!(
             "<td>{}</td>",
-            fmt_duration(task.cost_estimate.avg as i64)
+            fmt_duration(task.cost_estimate.avg() as i64)
         ));
         out.push_str(&format!("<td>{}</td>", deadline_label));
         task_cells(&mut out, planner, task, sa, &best_sa.plan, global_min);
@@ -605,7 +605,7 @@ fn timeline(out: &mut String, planner: &Planner, label: &str, plan: &Plan, min: 
                 p.task_id,
                 fmt_relative(p.start.0, min),
                 fmt_relative(p.end.0, min),
-                fmt_duration(task.cost_estimate.avg as i64),
+                fmt_duration(task.cost_estimate.avg() as i64),
                 fmt_duration(p.end.0 - p.start.0)
             );
             let border = if task.fixed {

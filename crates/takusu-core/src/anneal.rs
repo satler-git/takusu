@@ -247,7 +247,7 @@ fn build_initial(planner: &Planner) -> Plan {
     // (#391)。固定タスクは移動できないため、通常タスク側が重複を回避する必要がある。
     for &task_id in &by_freeness {
         let task = &planner.tasks[task_id];
-        let dur = (task.cost_estimate.avg as i64).max(1);
+        let dur = (task.cost_estimate.avg() as i64).max(1);
         if task.fixed
             && let Some(start) = task.start
         {
@@ -259,7 +259,7 @@ fn build_initial(planner: &Planner) -> Plan {
 
     for task_id in by_freeness {
         let task = &planner.tasks[task_id];
-        let dur = (task.cost_estimate.avg as i64).max(1);
+        let dur = (task.cost_estimate.avg() as i64).max(1);
 
         // 固定タスクは先に配置済み
         if task.fixed && task.start.is_some() {
@@ -452,7 +452,7 @@ fn sa_polish_inner(
         .tasks
         .iter()
         .filter(|t| !pinned_ids.contains(&t.id))
-        .map(|t| t.cost_estimate.avg as i64)
+        .map(|t| t.cost_estimate.avg() as i64)
         .sum();
     let t0 = (total_avg as f64 * 0.02).max(1.0);
     let alpha = 0.85;
@@ -1013,7 +1013,7 @@ pub(crate) fn destroy_priority(
             let seed_tw = scheduled(seed);
             let seed_s = seed_tw.start;
             let seed_e = seed_tw.end;
-            let window = (planner.tasks[seed].cost_estimate.avg as i64).max(5);
+            let window = (planner.tasks[seed].cost_estimate.avg() as i64).max(5);
 
             let mut scored: Vec<(usize, i64)> = movable
                 .iter()
@@ -1274,7 +1274,7 @@ pub fn sa_lns(planner: &Planner, rng: &mut impl Rng) -> Plan {
     let total_avg: i64 = planner
         .tasks
         .iter()
-        .map(|t| t.cost_estimate.avg as i64)
+        .map(|t| t.cost_estimate.avg() as i64)
         .sum();
     let cfg = &planner.sa_config;
     let t0 = (total_avg as f64 * cfg.t0_factor).max(1.0);
@@ -1398,7 +1398,7 @@ pub fn sa_lns_partial(planner: &Planner, pinned: &[Placement], rng: &mut impl Rn
         .tasks
         .iter()
         .filter(|t| !pinned_ids.contains(&t.id))
-        .map(|t| t.cost_estimate.avg as i64)
+        .map(|t| t.cost_estimate.avg() as i64)
         .sum();
     let cfg = &planner.sa_config;
     let t0 = (total_avg as f64 * cfg.t0_factor).max(1.0);
@@ -1592,7 +1592,7 @@ fn build_initial_partial(planner: &Planner, pinned: &[Placement]) -> Plan {
     // (#391)。pinned に含まれない固定タスクを先に処理する。
     for &task_id in &unpinned {
         let task = &planner.tasks[task_id];
-        let dur = (task.cost_estimate.avg as i64).max(1);
+        let dur = (task.cost_estimate.avg() as i64).max(1);
         if task.fixed
             && let Some(start) = task.start
         {
@@ -1603,7 +1603,7 @@ fn build_initial_partial(planner: &Planner, pinned: &[Placement]) -> Plan {
 
     for task_id in unpinned {
         let task = &planner.tasks[task_id];
-        let dur = (task.cost_estimate.avg as i64).max(1);
+        let dur = (task.cost_estimate.avg() as i64).max(1);
 
         // 固定タスクは先に配置済み
         if task.fixed && task.start.is_some() {
@@ -2306,7 +2306,7 @@ fn incremental_decode(
                 continue;
             }
 
-            let dur = (task.cost_estimate.avg as i64).max(1);
+            let dur = (task.cost_estimate.avg() as i64).max(1);
             let earliest = compute_earliest_indexed(planner, &pos_index, task);
             let latest_end = dependents[task_id]
                 .iter()
@@ -2328,7 +2328,7 @@ fn incremental_decode(
         if !progressed {
             for &task_id in &next_pending {
                 let task = &planner.tasks[task_id];
-                let dur = (task.cost_estimate.avg as i64).max(1);
+                let dur = (task.cost_estimate.avg() as i64).max(1);
                 let earliest = compute_earliest_indexed(planner, &pos_index, task);
                 let latest_end = dependents[task_id]
                     .iter()
@@ -2410,7 +2410,7 @@ fn place_one(planner: &Planner, scheds: &mut Vec<Placement>, task_id: usize) {
     // build_initial と同様、avg=0 のタスクは dur=1 として配置する。
     // さもないと iCal 由来の avg=0 タスクが LNS/repair_polish の再構築で
     // サイレントにドロップされてしまう (inclusion_bonus の不整合)。
-    let dur = (task.cost_estimate.avg as i64).max(1);
+    let dur = (task.cost_estimate.avg() as i64).max(1);
     // 固定タスクは start に直接配置
     if task.fixed
         && let Some(start) = task.start
@@ -2758,7 +2758,7 @@ mod tests {
             id: 0,
             start: Some(Point(0)),
             end: Point(100),
-            cost_estimate: NormalDist { avg: 4, sigma: 0 },
+            cost_estimate: NormalDist::new(4, 0),
             depends: vec![],
             parallel_mode: ParallelMode::Exclusive,
             abandonability: 0.5.into(),
@@ -2791,7 +2791,7 @@ mod tests {
             id: 0,
             start: Some(Point(0)),
             end: Point(10),
-            cost_estimate: NormalDist { avg: 2, sigma: 0 },
+            cost_estimate: NormalDist::new(2, 0),
             depends: vec![],
             parallel_mode: ParallelMode::Exclusive,
             abandonability: 0.5.into(),
@@ -2802,7 +2802,7 @@ mod tests {
             id: 1,
             start: Some(Point(0)),
             end: Point(10),
-            cost_estimate: NormalDist { avg: 2, sigma: 0 },
+            cost_estimate: NormalDist::new(2, 0),
             depends: vec![0],
             parallel_mode: ParallelMode::Exclusive,
             abandonability: 0.5.into(),
@@ -2826,7 +2826,7 @@ mod tests {
             id: 0,
             start: Some(Point(0)),
             end: Point(10),
-            cost_estimate: NormalDist { avg: 2, sigma: 0 },
+            cost_estimate: NormalDist::new(2, 0),
             depends: vec![],
             parallel_mode: ParallelMode::Exclusive,
             abandonability: 0.5.into(),
@@ -2837,7 +2837,7 @@ mod tests {
             id: 1,
             start: Some(Point(0)),
             end: Point(10),
-            cost_estimate: NormalDist { avg: 2, sigma: 0 },
+            cost_estimate: NormalDist::new(2, 0),
             depends: vec![],
             parallel_mode: ParallelMode::Exclusive,
             abandonability: 0.5.into(),
@@ -2855,7 +2855,7 @@ mod tests {
             id: 0,
             start: Some(Point(0)),
             end: Point(5),
-            cost_estimate: NormalDist { avg: 1, sigma: 0 },
+            cost_estimate: NormalDist::new(1, 0),
             depends: vec![],
             parallel_mode: ParallelMode::Exclusive,
             abandonability: 0.5.into(),
@@ -2866,7 +2866,7 @@ mod tests {
             id: 1,
             start: Some(Point(0)),
             end: Point(5),
-            cost_estimate: NormalDist { avg: 1, sigma: 2 },
+            cost_estimate: NormalDist::new(1, 2),
             depends: vec![],
             parallel_mode: ParallelMode::Exclusive,
             abandonability: 0.5.into(),
@@ -2903,7 +2903,7 @@ mod tests {
             id: 0,
             start: Some(Point(0)),
             end: Point(10),
-            cost_estimate: NormalDist { avg: 2, sigma: 0 },
+            cost_estimate: NormalDist::new(2, 0),
             depends: vec![],
             parallel_mode: ParallelMode::Exclusive,
             abandonability: 0.5.into(),
@@ -2914,7 +2914,7 @@ mod tests {
             id: 1,
             start: Some(Point(0)),
             end: Point(10),
-            cost_estimate: NormalDist { avg: 2, sigma: 0 },
+            cost_estimate: NormalDist::new(2, 0),
             depends: vec![0],
             parallel_mode: ParallelMode::Exclusive,
             abandonability: 0.5.into(),
@@ -2942,7 +2942,7 @@ mod tests {
             id: 0,
             start: Some(Point(0)),
             end: Point(100),
-            cost_estimate: NormalDist { avg: 0, sigma: 0 },
+            cost_estimate: NormalDist::new(0, 0),
             depends: vec![],
             parallel_mode: ParallelMode::Exclusive,
             abandonability: 0.5.into(),
@@ -2953,7 +2953,7 @@ mod tests {
             id: 1,
             start: Some(Point(0)),
             end: Point(100),
-            cost_estimate: NormalDist { avg: 3, sigma: 0 },
+            cost_estimate: NormalDist::new(3, 0),
             depends: vec![],
             parallel_mode: ParallelMode::Exclusive,
             abandonability: 0.5.into(),
@@ -2983,7 +2983,7 @@ mod tests {
             id: 0,
             start: Some(Point(2)),
             end: Point(100),
-            cost_estimate: NormalDist { avg: 2, sigma: 0 },
+            cost_estimate: NormalDist::new(2, 0),
             depends: vec![],
             parallel_mode: ParallelMode::Exclusive,
             abandonability: 0.5.into(),
@@ -2994,7 +2994,7 @@ mod tests {
             id: 1,
             start: Some(Point(0)),
             end: Point(100),
-            cost_estimate: NormalDist { avg: 2, sigma: 0 },
+            cost_estimate: NormalDist::new(2, 0),
             depends: vec![],
             parallel_mode: ParallelMode::Exclusive,
             abandonability: 0.5.into(),
@@ -3030,7 +3030,7 @@ mod tests {
             id: 0,
             start: Some(Point(2)),
             end: Point(100),
-            cost_estimate: NormalDist { avg: 2, sigma: 0 },
+            cost_estimate: NormalDist::new(2, 0),
             depends: vec![],
             parallel_mode: ParallelMode::Exclusive,
             abandonability: 0.5.into(),
@@ -3041,7 +3041,7 @@ mod tests {
             id: 1,
             start: Some(Point(0)),
             end: Point(100),
-            cost_estimate: NormalDist { avg: 2, sigma: 0 },
+            cost_estimate: NormalDist::new(2, 0),
             depends: vec![],
             parallel_mode: ParallelMode::Exclusive,
             abandonability: 0.5.into(),
@@ -3075,7 +3075,7 @@ mod tests {
             id: 0,
             start: Some(Point(0)),
             end: Point(100),
-            cost_estimate: NormalDist { avg: 2, sigma: 0 },
+            cost_estimate: NormalDist::new(2, 0),
             depends: vec![],
             parallel_mode: ParallelMode::Exclusive,
             abandonability: 0.5.into(),
@@ -3086,7 +3086,7 @@ mod tests {
             id: 1,
             start: Some(Point(0)),
             end: Point(10),
-            cost_estimate: NormalDist { avg: 2, sigma: 0 },
+            cost_estimate: NormalDist::new(2, 0),
             depends: vec![0],
             parallel_mode: ParallelMode::Exclusive,
             abandonability: 0.5.into(),
@@ -3116,7 +3116,7 @@ mod tests {
             id: 0,
             start: Some(Point(2)),
             end: Point(100),
-            cost_estimate: NormalDist { avg: 2, sigma: 0 },
+            cost_estimate: NormalDist::new(2, 0),
             depends: vec![],
             parallel_mode: ParallelMode::Exclusive,
             abandonability: 0.5.into(),
@@ -3127,7 +3127,7 @@ mod tests {
             id: 1,
             start: Some(Point(0)),
             end: Point(100),
-            cost_estimate: NormalDist { avg: 2, sigma: 0 },
+            cost_estimate: NormalDist::new(2, 0),
             depends: vec![],
             parallel_mode: ParallelMode::Exclusive,
             abandonability: 0.5.into(),
@@ -3159,7 +3159,7 @@ mod tests {
             id: 0,
             start: Some(Point(0)),
             end: Point(100),
-            cost_estimate: NormalDist { avg: 5, sigma: 0 },
+            cost_estimate: NormalDist::new(5, 0),
             depends: vec![],
             parallel_mode: ParallelMode::Exclusive,
             abandonability: 0.5.into(),
@@ -3171,7 +3171,7 @@ mod tests {
             id: 1,
             start: Some(Point(0)),
             end: Point(100),
-            cost_estimate: NormalDist { avg: 0, sigma: 0 },
+            cost_estimate: NormalDist::new(0, 0),
             depends: vec![0],
             parallel_mode: ParallelMode::Exclusive,
             abandonability: 0.5.into(),
@@ -3219,7 +3219,7 @@ mod tests {
                 id: 0,
                 start: Some(Point(0)),
                 end: Point(100),
-                cost_estimate: NormalDist { avg: 5, sigma: 0 },
+                cost_estimate: NormalDist::new(5, 0),
                 depends: vec![],
                 parallel_mode: ParallelMode::Exclusive,
                 abandonability: 0.5.into(),
@@ -3230,7 +3230,7 @@ mod tests {
                 id: 1,
                 start: Some(Point(0)),
                 end: Point(100),
-                cost_estimate: NormalDist { avg: 5, sigma: 0 },
+                cost_estimate: NormalDist::new(5, 0),
                 depends: vec![0],
                 parallel_mode: ParallelMode::Exclusive,
                 abandonability: 0.5.into(),
@@ -3249,7 +3249,7 @@ mod tests {
                 id: 0,
                 start: Some(Point(0)),
                 end: Point(100),
-                cost_estimate: NormalDist { avg: 10, sigma: 0 },
+                cost_estimate: NormalDist::new(10, 0),
                 depends: vec![],
                 parallel_mode: ParallelMode::Exclusive,
                 abandonability: 0.5.into(),
@@ -3260,7 +3260,7 @@ mod tests {
                 id: 1,
                 start: Some(Point(0)),
                 end: Point(30),
-                cost_estimate: NormalDist { avg: 10, sigma: 0 },
+                cost_estimate: NormalDist::new(10, 0),
                 depends: vec![0],
                 parallel_mode: ParallelMode::Exclusive,
                 abandonability: 0.5.into(),
@@ -3285,7 +3285,7 @@ mod tests {
                 id: 0,
                 start: None,
                 end: Point(100),
-                cost_estimate: NormalDist { avg: 1, sigma: 0 },
+                cost_estimate: NormalDist::new(1, 0),
                 depends: vec![],
                 parallel_mode: ParallelMode::Exclusive,
                 abandonability: 0.5.into(),
@@ -3307,7 +3307,7 @@ mod tests {
                     id,
                     start: Some(Point(0)),
                     end: Point(100),
-                    cost_estimate: NormalDist { avg: 2, sigma: 0 },
+                    cost_estimate: NormalDist::new(2, 0),
                     depends: vec![],
                     parallel_mode: ParallelMode::Exclusive,
                     abandonability: 0.5.into(),
@@ -3349,7 +3349,7 @@ mod tests {
                     id,
                     start: Some(Point(0)),
                     end: Point(100),
-                    cost_estimate: NormalDist { avg: 2, sigma: 0 },
+                    cost_estimate: NormalDist::new(2, 0),
                     depends: vec![],
                     parallel_mode: ParallelMode::Exclusive,
                     abandonability: 0.5.into(),

@@ -41,12 +41,12 @@ const FIXTURE_30D: &str = include_str!("fixtures/realworld_tasks_30d.json");
 fn build_planner(fixture: &str) -> (Planner, i64) {
     let fixture: Fixture = serde_json::from_str(fixture).unwrap();
 
-    let sleep = SleepConfig {
-        day_start: fixture.sleep.day_start,
-        start: fixture.sleep.start,
-        end: fixture.sleep.end,
-        enabled: fixture.sleep.enabled,
-    };
+    let sleep = SleepConfig::new(
+        fixture.sleep.day_start,
+        fixture.sleep.start,
+        fixture.sleep.end,
+        fixture.sleep.enabled,
+    );
 
     let mut planner = Planner::new(PlannerConfig::new(Point(fixture.now), sleep));
 

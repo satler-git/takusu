@@ -245,7 +245,7 @@ fn main() {
         let name = name_of(&ids, &p.task_id);
         let task = &tasks[p.task_id];
         let dur = p.end.0 - p.start.0;
-        let sigma = task.cost_estimate.sigma;
+        let sigma = task.cost_estimate.sigma();
 
         let deadline_flag = if p.end > task.end { " ⚠ over" } else { "" };
         let sigma_str = if sigma > 0 {

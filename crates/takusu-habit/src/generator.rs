@@ -194,7 +194,7 @@ impl RecurrenceGenerator {
     }
 
     fn effective_deadline(&self) -> u64 {
-        self.deadline_slots.unwrap_or(self.duration.avg)
+        self.deadline_slots.unwrap_or(self.duration.avg())
     }
 }
 

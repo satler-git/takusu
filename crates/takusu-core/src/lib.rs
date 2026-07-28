@@ -138,8 +138,8 @@ impl std::ops::Sub<i64> for Point {
 /// `avg`/`sigma` の単位は 5 分スロット数。
 #[derive(Debug, Clone, Copy)]
 pub struct NormalDist {
-    pub avg: u64,
-    pub sigma: u64,
+    avg: u64,
+    sigma: u64,
 }
 
 impl NormalDist {
@@ -150,10 +150,20 @@ impl NormalDist {
 
     /// 分から構築する。負値は 0 クランプ。
     pub fn from_minutes(avg: Minutes, sigma: Minutes) -> Self {
-        Self {
-            avg: avg.to_slots().0.max(0) as u64,
-            sigma: sigma.to_slots().0.max(0) as u64,
-        }
+        Self::new(
+            avg.to_slots().0.max(0) as u64,
+            sigma.to_slots().0.max(0) as u64,
+        )
+    }
+
+    /// 平均（スロット数）。
+    pub fn avg(&self) -> u64 {
+        self.avg
+    }
+
+    /// 標準偏差（スロット数）。
+    pub fn sigma(&self) -> u64 {
+        self.sigma
     }
 }
 
@@ -163,37 +173,47 @@ impl NormalDist {
 ///
 /// 一日の基点 (`day_start`) からの相対スロット数で睡眠時間帯を指定する。
 /// 例: `day_start=0` (0:00基点), `start=264` (22:00), `end=360` (翌6:00) → 8時間睡眠。
+///
+/// 不変条件: `enabled == true` のとき `end > start`。
 #[derive(Debug, Clone, Copy)]
 pub struct SleepConfig {
     /// 一日の基点 (エポックからのスロット)。通常 0。
-    pub day_start: i64,
+    day_start: i64,
     /// 睡眠開始 (基点からの相対スロット)。
-    pub start: i64,
-    /// 睡眠終了 (基点からの相対スロット)。end > start。
-    pub end: i64,
+    start: i64,
+    /// 睡眠終了 (基点からの相対スロット)。enabled のとき end > start。
+    end: i64,
     /// 睡眠制約が有効かどうか。
-    pub enabled: bool,
+    enabled: bool,
 }
 
 impl SleepConfig {
+    /// 全フィールドを指定して構築。
+    ///
+    /// `enabled == true` のとき `end > start` でなければならない。
+    pub fn new(day_start: i64, start: i64, end: i64, enabled: bool) -> Self {
+        if enabled {
+            assert!(
+                end > start,
+                "SleepConfig::new: end ({end}) must be greater than start ({start}) when enabled"
+            );
+        }
+        Self {
+            day_start,
+            start,
+            end,
+            enabled,
+        }
+    }
+
     /// 推奨設定: 22:00–06:00 (8時間), 一日は 0:00 基点。
     pub fn recommended() -> Self {
-        Self {
-            day_start: 0,
-            start: 264, // 22 * 12
-            end: 360,   // 30 * 12 = 6:00 next day
-            enabled: true,
-        }
+        Self::new(0, 264, 360, true) // 22 * 12, 30 * 12 = 6:00 next day
     }
 
     /// 睡眠制約なし。
     pub fn disabled() -> Self {
-        Self {
-            day_start: 0,
-            start: 0,
-            end: 0,
-            enabled: false,
-        }
+        Self::new(0, 0, 0, false)
     }
 
     /// タイムゾーンとローカル時計時刻から SleepConfig を構築。
@@ -224,12 +244,27 @@ impl SleepConfig {
             end += slots_per_day;
         }
 
-        Self {
-            day_start,
-            start,
-            end,
-            enabled: true,
-        }
+        Self::new(day_start, start, end, true)
+    }
+
+    /// 一日の基点 (エポックからのスロット)。通常 0。
+    pub fn day_start(&self) -> i64 {
+        self.day_start
+    }
+
+    /// 睡眠開始 (基点からの相対スロット)。
+    pub fn start(&self) -> i64 {
+        self.start
+    }
+
+    /// 睡眠終了 (基点からの相対スロット)。enabled のとき end > start。
+    pub fn end(&self) -> i64 {
+        self.end
+    }
+
+    /// 睡眠制約が有効かどうか。
+    pub fn enabled(&self) -> bool {
+        self.enabled
     }
 }
 
@@ -246,41 +281,54 @@ impl Default for SleepConfig {
 /// ユーザーの「1 日にどれくらいのタスクを入れたいか」を表す。
 /// デフォルトでは内部で決定された値を使い、詳細を指定したい場合だけ
 /// `PlannerConfig` 経由で上書きする。
+///
+/// 不変条件: `comfortable_slots_per_day <= maximum_slots_per_day`。
 #[derive(Debug, Clone, Copy)]
 pub struct WorkloadConfig {
     /// 快適な 1 日あたりの作業スロット数（5 分単位）。
     /// この値を超えると緩やかなペナルティがかかる。
-    pub comfortable_slots_per_day: i64,
+    comfortable_slots_per_day: i64,
     /// 1 日あたりの作業スロット数の上限（5 分単位）。
     /// この値を超えると強いペナルティがかかる。
-    pub maximum_slots_per_day: i64,
+    maximum_slots_per_day: i64,
 }
 
 impl WorkloadConfig {
     /// 負荷評価を無効化する。
     pub fn disabled() -> Self {
-        Self {
-            comfortable_slots_per_day: 0,
-            maximum_slots_per_day: 0,
-        }
+        Self::new(0, 0)
     }
 
     /// 任意の閾値を指定する。
+    ///
+    /// `comfortable_slots_per_day <= maximum_slots_per_day` でなければならない。
     pub fn new(comfortable_slots_per_day: i64, maximum_slots_per_day: i64) -> Self {
+        assert!(
+            comfortable_slots_per_day <= maximum_slots_per_day,
+            "WorkloadConfig::new: comfortable ({comfortable_slots_per_day}) \
+             must be <= maximum ({maximum_slots_per_day})"
+        );
         Self {
             comfortable_slots_per_day,
             maximum_slots_per_day,
         }
+    }
+
+    /// 快適な 1 日あたりの作業スロット数（5 分単位）。
+    pub fn comfortable_slots_per_day(&self) -> i64 {
+        self.comfortable_slots_per_day
+    }
+
+    /// 1 日あたりの作業スロット数の上限（5 分単位）。
+    pub fn maximum_slots_per_day(&self) -> i64 {
+        self.maximum_slots_per_day
     }
 }
 
 impl Default for WorkloadConfig {
     /// デフォルト設定: 快適 8 時間（96 スロット）、上限 12 時間（144 スロット）。
     fn default() -> Self {
-        Self {
-            comfortable_slots_per_day: 96,
-            maximum_slots_per_day: 144,
-        }
+        Self::new(96, 144)
     }
 }
 
@@ -801,7 +849,7 @@ impl Planner {
         if slack == 0 {
             return 0.;
         }
-        1. - (self.tasks[id].cost_estimate.avg as f64 / slack as f64)
+        1. - (self.tasks[id].cost_estimate.avg() as f64 / slack as f64)
     }
 }
 
@@ -859,12 +907,7 @@ mod tests {
     fn planner_sleep_avoided() {
         let mut p = Planner::new(PlannerConfig::new(
             Point(0),
-            SleepConfig {
-                day_start: 0,
-                start: 0,
-                end: 96,
-                enabled: true,
-            },
+            SleepConfig::new(0, 0, 96, true),
         ));
         p.add(Task {
             id: 0,
@@ -1264,35 +1307,146 @@ mod tests {
     #[test]
     fn normal_dist_new() {
         let nd = NormalDist::new(10, 3);
-        assert_eq!(nd.avg, 10);
-        assert_eq!(nd.sigma, 3);
+        assert_eq!(nd.avg(), 10);
+        assert_eq!(nd.sigma(), 3);
     }
 
     #[test]
     fn normal_dist_sigma_can_exceed_avg() {
         let nd = NormalDist::new(5, 8);
-        assert_eq!(nd.avg, 5);
-        assert_eq!(nd.sigma, 8);
+        assert_eq!(nd.avg(), 5);
+        assert_eq!(nd.sigma(), 8);
     }
 
     #[test]
     fn normal_dist_zero_avg() {
         let nd = NormalDist::new(0, 0);
-        assert_eq!(nd.avg, 0);
-        assert_eq!(nd.sigma, 0);
+        assert_eq!(nd.avg(), 0);
+        assert_eq!(nd.sigma(), 0);
     }
 
     #[test]
     fn sleep_config_disabled() {
         let sc = SleepConfig::disabled();
-        assert!(!sc.enabled);
+        assert!(!sc.enabled());
     }
 
     #[test]
     fn sleep_config_recommended() {
         let sc = SleepConfig::recommended();
-        assert!(sc.enabled);
+        assert!(sc.enabled());
     }
+
+    // ── Characterization tests for invariant work (#1195) ───────────────
+    // These tests pin down the current behaviour of the three config structs
+    // so that the encapsulation / validation change can be verified to not
+    // alter existing semantics.
+
+    #[test]
+    fn sleep_config_recommended_values() {
+        let sc = SleepConfig::recommended();
+        assert_eq!(sc.day_start(), 0);
+        assert_eq!(sc.start(), 264);
+        assert_eq!(sc.end(), 360);
+        assert!(sc.enabled());
+        assert!(sc.end() > sc.start(), "recommended sleep must have end > start");
+    }
+
+    #[test]
+    fn sleep_config_disabled_values() {
+        let sc = SleepConfig::disabled();
+        assert_eq!(sc.day_start(), 0);
+        assert_eq!(sc.start(), 0);
+        assert_eq!(sc.end(), 0);
+        assert!(!sc.enabled());
+    }
+
+    #[test]
+    fn workload_config_new_preserves_values() {
+        let wc = WorkloadConfig::new(48, 96);
+        assert_eq!(wc.comfortable_slots_per_day(), 48);
+        assert_eq!(wc.maximum_slots_per_day(), 96);
+    }
+
+    #[test]
+    fn workload_config_default_values() {
+        let wc = WorkloadConfig::default();
+        assert_eq!(wc.comfortable_slots_per_day(), 96);
+        assert_eq!(wc.maximum_slots_per_day(), 144);
+        assert!(
+            wc.comfortable_slots_per_day() <= wc.maximum_slots_per_day(),
+            "default must satisfy comfortable <= maximum"
+        );
+    }
+
+    #[test]
+    fn workload_config_disabled_values() {
+        let wc = WorkloadConfig::disabled();
+        assert_eq!(wc.comfortable_slots_per_day(), 0);
+        assert_eq!(wc.maximum_slots_per_day(), 0);
+    }
+
+    #[test]
+    fn normal_dist_from_minutes_clamps_negative() {
+        let nd = NormalDist::from_minutes(Minutes(-5), Minutes(-3));
+        assert_eq!(nd.avg(), 0);
+        assert_eq!(nd.sigma(), 0);
+    }
+
+    // ── End characterization tests ──────────────────────────────────────
+
+    // ── Invariant validation tests (#1195) ──────────────────────────────
+
+    #[test]
+    #[should_panic(expected = "end (10) must be greater than start (20)")]
+    fn sleep_config_new_rejects_end_le_start_when_enabled() {
+        let _ = SleepConfig::new(0, 20, 10, true);
+    }
+
+    #[test]
+    #[should_panic(expected = "end (20) must be greater than start (20)")]
+    fn sleep_config_new_rejects_end_eq_start_when_enabled() {
+        let _ = SleepConfig::new(0, 20, 20, true);
+    }
+
+    #[test]
+    fn sleep_config_new_allows_end_le_start_when_disabled() {
+        // disabled のときは end <= start でもよい（推奨されないがパニックしない）
+        let sc = SleepConfig::new(0, 20, 10, false);
+        assert!(!sc.enabled());
+        assert_eq!(sc.start(), 20);
+        assert_eq!(sc.end(), 10);
+    }
+
+    #[test]
+    fn sleep_config_new_valid_when_end_gt_start() {
+        let sc = SleepConfig::new(0, 22, 30, true);
+        assert!(sc.enabled());
+        assert_eq!(sc.start(), 22);
+        assert_eq!(sc.end(), 30);
+    }
+
+    #[test]
+    #[should_panic(expected = "comfortable (100)")]
+    fn workload_config_new_rejects_comfortable_gt_maximum() {
+        let _ = WorkloadConfig::new(100, 50);
+    }
+
+    #[test]
+    fn workload_config_new_allows_comfortable_eq_maximum() {
+        let wc = WorkloadConfig::new(80, 80);
+        assert_eq!(wc.comfortable_slots_per_day(), 80);
+        assert_eq!(wc.maximum_slots_per_day(), 80);
+    }
+
+    #[test]
+    fn workload_config_new_valid_when_comfortable_lt_maximum() {
+        let wc = WorkloadConfig::new(48, 96);
+        assert_eq!(wc.comfortable_slots_per_day(), 48);
+        assert_eq!(wc.maximum_slots_per_day(), 96);
+    }
+
+    // ── End invariant validation tests ───────────────────────────────────
 
     #[test]
     fn task_add_assigns_id() {

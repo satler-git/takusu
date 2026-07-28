@@ -355,22 +355,22 @@ fn metrics(planner: &takusu_core::Planner, plan: &takusu_core::Plan) -> Metrics 
 
 fn sleep_shortage(planner: &takusu_core::Planner, plan: &takusu_core::Plan) -> (usize, i64) {
     let sleep = planner.sleep_config();
-    if !sleep.enabled || plan.schedules.is_empty() {
+    if !sleep.enabled() || plan.schedules.is_empty() {
         return (0, 0);
     }
     let slots_per_day = 288;
     let plan_start = plan.schedules.iter().map(|p| p.start.0).min().unwrap();
     let plan_end = plan.schedules.iter().map(|p| p.end.0).max().unwrap();
-    let first_day = sleep.day_start
-        + (plan_start - sleep.day_start).div_euclid(slots_per_day) * slots_per_day
+    let first_day = sleep.day_start()
+        + (plan_start - sleep.day_start()).div_euclid(slots_per_day) * slots_per_day
         - slots_per_day;
-    let sleep_len = sleep.end - sleep.start;
+    let sleep_len = sleep.end() - sleep.start();
     let mut shortage_days = 0;
     let mut shortage_slots = 0;
     let mut day_start = first_day;
-    while day_start + sleep.start <= plan_end {
-        let window_start = day_start + sleep.start;
-        let window_end = day_start + sleep.end;
+    while day_start + sleep.start() <= plan_end {
+        let window_start = day_start + sleep.start();
+        let window_end = day_start + sleep.end();
         let occupied = plan
             .schedules
             .iter()
@@ -399,7 +399,7 @@ fn daily_maximum_excess(planner: &takusu_core::Planner, plan: &takusu_core::Plan
             cursor = segment_end;
         }
     }
-    let maximum = planner.workload().maximum_slots_per_day;
+    let maximum = planner.workload().maximum_slots_per_day();
     if maximum <= 0 {
         return 0;
     }
