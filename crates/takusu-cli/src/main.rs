@@ -75,7 +75,7 @@ fn parse_date(s: &str) -> Result<Date, AppError> {
     })
 }
 
-/// Parse `--mode` for `reschedule`, rejecting `full` at parse time.
+/// Parse `--schedule-mode` for `reschedule`, rejecting `full` at parse time.
 ///
 /// `full` regenerates the entire schedule and is only valid for
 /// `generate_schedule`; `reschedule` is a partial reconfiguration. Rejecting
@@ -884,8 +884,8 @@ enum ScheduleCommands {
 
     /// Reschedule (partial)
     Reschedule {
-        #[arg(long, value_parser = parse_reschedule_mode)]
-        mode: ScheduleMode,
+        #[arg(long = "schedule-mode", value_parser = parse_reschedule_mode)]
+        schedule_mode: ScheduleMode,
         #[arg(long, help = "Start time (e.g. 2025-06-05, 2025-06-05T06:00Z)")]
         from: Option<String>,
         #[arg(long, help = "End time (e.g. 2025-06-06, 2025-06-06T06:00Z)")]
@@ -2189,7 +2189,7 @@ async fn run_schedule(
                 .display_schedule(&entries, &tasks, tz, &habit_map);
         }
         ScheduleCommands::Reschedule {
-            mode: rmode,
+            schedule_mode: rmode,
             from,
             until,
             task_ids,
@@ -2903,4 +2903,103 @@ async fn deps_check_steps(app: &TakusuApp, habit_id: &str) -> Result<(), AppErro
         println!("無効な選択です");
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `--schedule-mode range` parses to `ScheduleMode::Range` without
+    /// colliding with the global `--mode` (regression test for #1276).
+    #[test]
+    fn reschedule_schedule_mode_range_parses() {
+        let cli = Cli::parse_from([
+            "takusu",
+            "schedule",
+            "reschedule",
+            "--schedule-mode",
+            "range",
+            "--from",
+            "2025-06-05T08:00Z",
+            "--until",
+            "2025-06-05T18:00Z",
+        ]);
+        let Commands::Schedule {
+            command: ScheduleCommands::Reschedule { schedule_mode, .. },
+        } = cli.command.expect("subcommand")
+        else {
+            panic!("expected ScheduleCommands::Reschedule");
+        };
+        assert_eq!(schedule_mode, ScheduleMode::Range);
+    }
+
+    /// `--schedule-mode tasks` parses to `ScheduleMode::Tasks`.
+    #[test]
+    fn reschedule_schedule_mode_tasks_parses() {
+        let cli = Cli::parse_from([
+            "takusu",
+            "schedule",
+            "reschedule",
+            "--schedule-mode",
+            "tasks",
+        ]);
+        let Commands::Schedule {
+            command: ScheduleCommands::Reschedule { schedule_mode, .. },
+        } = cli.command.expect("subcommand")
+        else {
+            panic!("expected ScheduleCommands::Reschedule");
+        };
+        assert_eq!(schedule_mode, ScheduleMode::Tasks);
+    }
+
+    /// `--schedule-mode full` is rejected at parse time by the value parser.
+    #[test]
+    fn reschedule_schedule_mode_full_rejected() {
+        let result = Cli::try_parse_from([
+            "takusu",
+            "schedule",
+            "reschedule",
+            "--schedule-mode",
+            "full",
+        ]);
+        assert!(result.is_err(), "full should be rejected at parse time");
+    }
+
+    /// Global `--mode simple` and `--schedule-mode range` coexist without
+    /// panic — the arg-id collision that caused #1276 is resolved.
+    #[test]
+    fn global_mode_and_schedule_mode_coexist() {
+        let cli = Cli::parse_from([
+            "takusu",
+            "--mode",
+            "simple",
+            "schedule",
+            "reschedule",
+            "--schedule-mode",
+            "range",
+        ]);
+        assert!(matches!(cli.mode, DisplayMode::Simple));
+        let Commands::Schedule {
+            command: ScheduleCommands::Reschedule { schedule_mode, .. },
+        } = cli.command.expect("subcommand")
+        else {
+            panic!("expected ScheduleCommands::Reschedule");
+        };
+        assert_eq!(schedule_mode, ScheduleMode::Range);
+    }
+
+    /// `--mode range` on reschedule is now a clean clap error (not a panic)
+    /// because `--mode` is the global `DisplayMode` flag, which only accepts
+    /// `rich` / `simple`.
+    #[test]
+    fn reschedule_legacy_mode_flag_is_clean_error() {
+        let result = Cli::try_parse_from([
+            "takusu",
+            "schedule",
+            "reschedule",
+            "--mode",
+            "range",
+        ]);
+        assert!(result.is_err(), "--mode range should be a clap error, not accepted");
+    }
 }
