@@ -149,15 +149,15 @@ jobs:
           # to 60 minutes for the merge to complete.
           for i in $(seq 1 360); do
             state=$(gh pr view "$PR_NUMBER" --json state --jq '.state')
-            merged=$(gh pr view "$PR_NUMBER" --json merged --jq '.merged')
-            if [ "$state" = "CLOSED" ] && [ "$merged" = "true" ]; then
+            merged_at=$(gh pr view "$PR_NUMBER" --json mergedAt --jq '.mergedAt')
+            if [ "$state" = "CLOSED" ] && [ "$merged_at" != "null" ]; then
               echo "PR merged after ${i} polls"
               break
             fi
             sleep 10
           done
 
-          if [ "$state" != "CLOSED" ] || [ "$merged" != "true" ]; then
+          if [ "$state" != "CLOSED" ] || [ "$merged_at" = "null" ]; then
             echo "PR ${PR_NUMBER} was not merged within the polling window" >&2
             exit 1
           fi
