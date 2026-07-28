@@ -60,9 +60,18 @@ use evaluate::{
     evaluate_presorted, evaluate_with_scratch, sorted_incremental_apply, sorted_revert,
 };
 
+/// タブーリストのキー。`(task_id, start, duration)` の各要素を型付きで保持し、
+/// `start` と `duration` の取り違えを型レベルで防ぐ。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+struct TabuKey {
+    task_id: usize,
+    start: Point,
+    duration: Slots,
+}
+
 struct TabuList {
-    entries: VecDeque<(usize, i64, i64)>,
-    set: FxHashSet<(usize, i64, i64)>,
+    entries: VecDeque<TabuKey>,
+    set: FxHashSet<TabuKey>,
     capacity: usize,
 }
 
@@ -75,8 +84,12 @@ impl TabuList {
         }
     }
 
-    fn push(&mut self, task_id: usize, start: Point, duration: i64) {
-        let key = (task_id, start.0, duration);
+    fn push(&mut self, task_id: usize, start: Point, duration: Slots) {
+        let key = TabuKey {
+            task_id,
+            start,
+            duration,
+        };
         if self.entries.len() >= self.capacity
             && let Some(old) = self.entries.pop_front()
         {
@@ -86,8 +99,12 @@ impl TabuList {
         self.set.insert(key);
     }
 
-    fn contains(&self, task_id: usize, start: Point, duration: i64) -> bool {
-        self.set.contains(&(task_id, start.0, duration))
+    fn contains(&self, task_id: usize, start: Point, duration: Slots) -> bool {
+        self.set.contains(&TabuKey {
+            task_id,
+            start,
+            duration,
+        })
     }
 }
 
@@ -1789,7 +1806,7 @@ fn build_initial_partial(planner: &Planner, pinned: &[Placement]) -> Plan {
 fn is_tabu_scheds(tabu: &TabuList, schedules: &[Placement]) -> bool {
     schedules
         .iter()
-        .any(|p| tabu.contains(p.task_id, p.start, p.end.0 - p.start.0))
+        .any(|p| tabu.contains(p.task_id, p.start, Slots(p.end.0 - p.start.0)))
 }
 
 /// O(n) tabu marking: scratch buffer を再利用して allocation を避ける。
@@ -1822,7 +1839,7 @@ fn mark_tabu_scheds(
             None => true,
         };
         if changed {
-            tabu.push(id, s, e.0 - s.0);
+            tabu.push(id, s, Slots(e.0 - s.0));
         }
     }
 }
