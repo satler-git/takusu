@@ -235,7 +235,7 @@ export function DependencyGraph({
     for (const node of inputNodes) {
       const text = truncate(node.label, MAX_LABEL_CHARS);
       const isDone = node.color === colors.done;
-      const color = isDone ? colors.disabled : colors.black;
+      const color = isDone ? colors.gray : colors.black;
       const builder = Skia.ParagraphBuilder.Make({
         textAlign: TextAlign.Center,
       });
@@ -730,11 +730,12 @@ export function DependencyGraph({
   }
 
   // Edge color helper: crossing cut line (#382) → red, redundant (#387) → orange,
-  // normal → gray
+  // normal → gray. Use `gray` (not `grayLight`) so edges are clearly visible
+  // against the background in all themes (#1174).
   function edgeColor(key: string, redundant: boolean): string {
     if (crossingEdges.has(key)) return colors.red;
     if (redundant) return colors.redundantEdge;
-    return colors.grayLight ?? colors.done;
+    return colors.gray;
   }
 
   return (
@@ -768,7 +769,7 @@ export function DependencyGraph({
                 color={edgeColor(ep.key, ep.redundant)}
                 style="stroke"
                 strokeWidth={
-                  crossingEdges.has(ep.key) ? 4 : ep.redundant ? 3 : 2
+                  crossingEdges.has(ep.key) ? 5 : ep.redundant ? 3.5 : 2.5
                 }
                 zIndex={1}
               />
@@ -815,7 +816,7 @@ export function DependencyGraph({
               const isDone = inputNode?.color === colors.done;
               const isHighlight = node.id === highlightTaskId;
               const bgColor = isDone
-                ? colors.grayLight
+                ? colors.done
                 : isHighlight
                   ? colors.red
                   : (inputNode?.color ?? colors.brand);
@@ -828,6 +829,19 @@ export function DependencyGraph({
                     r={nodeRadius}
                     color={bgColor}
                   />
+                  {/* Node border — gives pale habit-colored nodes definition
+                      against the background (#1174). Highlighted nodes use
+                      the thicker red border below instead. */}
+                  {!isHighlight && (
+                    <Circle
+                      cx={node.x}
+                      cy={node.y}
+                      r={nodeRadius}
+                      color={colors.grayDark}
+                      style="stroke"
+                      strokeWidth={1.5}
+                    />
+                  )}
                   <NodeLabelText
                     x={node.x}
                     y={node.y + labelOffset}
@@ -864,9 +878,9 @@ function truncate(s: string, maxLen: number): string {
 // don't render on Android (Roboto lacks CJK). Paragraph's fontFamilies
 // list provides per-character fallback: Latin chars use sans-serif,
 // Japanese chars fall through to NotoSansCJK.
-// Label is drawn below the node (#294) with a surface background pill so
-// it stays readable even when zoomed out. The background and text are
-// rendered in separate passes so edges can be drawn between them (#589).
+// Label is drawn below the node (#294) with a grayLight background pill so
+// it stays readable even when zoomed out (#1174). The background and text
+// are rendered in separate passes so edges can be drawn between them (#589).
 const NODE_LABEL_FONTS: string[] = [
   'sans-serif',
   'NotoSansCJK',
@@ -897,9 +911,9 @@ function NodeLabelBackground({
     return p;
   }, [x, y, height]);
 
-  return (
-    <Path path={bgPath} color={colors.surface} style="fill" opacity={0.85} />
-  );
+  // grayLight gives a clearly visible pill in all themes — surfaceTint was
+  // nearly identical to the page background in light theme (#1174).
+  return <Path path={bgPath} color={colors.grayLight} style="fill" />;
 }
 
 function NodeLabelText({

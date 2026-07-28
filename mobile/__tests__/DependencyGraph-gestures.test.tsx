@@ -93,8 +93,13 @@ import {
 import { DependencyGraph } from '@/src/components/graph/DependencyGraph';
 
 function getCircles(container: TestInstance): TestInstance[] {
+  // Only return fill circles — border/highlight circles use style="stroke"
+  // and would inflate the count (#1174 added node borders).
   return container.queryAll(
-    (i) => i.type === 'View' && typeof i.props.cx === 'number',
+    (i) =>
+      i.type === 'View' &&
+      typeof i.props.cx === 'number' &&
+      i.props.style !== 'stroke',
   );
 }
 
