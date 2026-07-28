@@ -807,6 +807,74 @@ async fn workers_storage_e2e() {
 
 // ── Memory handlers (mock worker) ──
 
+#[tokio::test]
+async fn workers_storage_habit_resolve_uuid_existence() {
+    // Regression guard for #1271: the Worker-side `resolve_habit_id` must
+    // verify full UUID existence so operations on non-existent UUIDs return
+    // NotFound. This test exercises the client → mock-worker path; the mock
+    // mirrors the corrected Worker behaviour (existence check in
+    // `resolve_habit_id`). The real Worker fix lives in
+    // `takusu-worker/src/handlers/habits.rs` and is not directly testable
+    // without a D1 instance, but this test protects the client contract:
+    // a 404 from the Worker must surface as `StorageError::NotFound`.
+    let base_url = spawn_mock_worker().await;
+    let storage = WorkersStorage::new_with(base_url, ROOT_TOKEN.to_string());
+
+    let habit = storage
+        .create_habit(&CreateHabit {
+            title: "test habit".into(),
+            description: None,
+            recurrence: "FREQ=DAILY".into(),
+            start_time: "09:00".parse().unwrap(),
+            end_time: "10:00".parse().unwrap(),
+            avg_minutes: 30,
+            sigma_minutes: None,
+            parallelizable: None,
+            allows_parallel: None,
+            abandonability: None,
+            fixed: None,
+            window_mode: None,
+        })
+        .await
+        .unwrap();
+    let id = habit.id.clone();
+
+    // Full UUID of an existing habit resolves fine.
+    let fetched = storage.get_habit(&id).await.unwrap();
+    assert_eq!(fetched.id, id);
+
+    // Non-existent full UUID → NotFound (not a silent empty result).
+    let bogus = "00000000-0000-0000-0000-000000000000";
+    let err = storage.get_habit(bogus).await;
+    assert!(matches!(
+        err,
+        Err(takusu_storage::StorageError::NotFound(_))
+    ));
+
+    // Scheduled-spans listing on a non-existent habit UUID → NotFound.
+    let spans_err = storage.list_habit_scheduled_spans(bogus).await;
+    assert!(matches!(
+        spans_err,
+        Err(takusu_storage::StorageError::NotFound(_))
+    ));
+
+    // Creating a scheduled span on a non-existent habit UUID → NotFound.
+    let create_span_err = storage
+        .create_habit_scheduled_span(
+            bogus,
+            &CreateHabitScheduledSpan {
+                start_date: takusu_util::Date::new(2026, 7, 1).unwrap(),
+                end_date: takusu_util::Date::new(2026, 7, 2).unwrap(),
+                reason: None,
+            },
+        )
+        .await;
+    assert!(matches!(
+        create_span_err,
+        Err(takusu_storage::StorageError::NotFound(_))
+    ));
+}
+
 async fn create_memory(
     State(state): State<MockState>,
     Json(body): Json<CreateMemory>,
