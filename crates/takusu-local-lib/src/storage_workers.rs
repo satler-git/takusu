@@ -1089,6 +1089,9 @@ impl WorkersStorage {
             }
             return Err(StorageError::NotFound(format!("task {id} not found")));
         }
+        // Full UUID — pass through. The Worker-side `resolve_task_id`
+        // verifies existence (tasks.rs), so non-existent UUIDs surface as
+        // 404 from the actual operation request without an extra round-trip.
         if id.contains('-') {
             return Ok(id.to_string());
         }
