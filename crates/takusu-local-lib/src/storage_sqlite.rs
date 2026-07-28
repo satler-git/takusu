@@ -15,7 +15,7 @@ use takusu_storage::{
 };
 use takusu_util::search::{EvalContext, filter_tasks};
 use takusu_util::{DEFAULT_AUD, SCOPE_READ_WRITE};
-use takusu_util::{EnumLabel, Quantity, TaskStatus, WindowMode};
+use takusu_util::{EnumLabel, Quantity, TaskStatus, TaskStatusFilter, WindowMode};
 
 use crate::config::LocalConfig;
 
@@ -477,25 +477,25 @@ impl Storage for SqliteStorage {
     async fn list_tasks(&self, query: &TaskQuery) -> StorageResult<Vec<TaskRow>> {
         let mut sql = format!("{SELECT_TASKS} WHERE 1=1");
         let mut bindings: Vec<String> = Vec::new();
-        if let Some(ref v) = query.status {
-            if v == "overdue" {
+        if let Some(status) = query.status {
+            if status == TaskStatusFilter::Overdue {
                 sql.push_str(" AND ");
                 sql.push_str(OVERDUE_SQL);
             } else {
                 sql.push_str(" AND status = ?");
-                bindings.push(v.clone());
+                bindings.push(status.as_str().to_string());
             }
         }
-        if let Some(ref v) = query.from {
+        if let Some(v) = query.from {
             sql.push_str(" AND end_at >= ?");
-            bindings.push(v.clone());
+            bindings.push(v.to_string());
         }
-        if let Some(ref v) = query.until {
+        if let Some(v) = query.until {
             // start_at is nullable: NULL <= value evaluates to NULL
             // (excluded). Include tasks with no explicit start time so
             // range queries don't silently drop them.
             sql.push_str(" AND (start_at IS NULL OR start_at <= ?)");
-            bindings.push(v.clone());
+            bindings.push(v.to_string());
         }
         if query.no_overdue == Some(true) {
             sql.push_str(" AND ");

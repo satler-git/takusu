@@ -14,6 +14,7 @@ use clap::{CommandFactory, Parser, Subcommand};
 use config::CliConfig;
 use std::io::{self, Read, Write};
 use std::process;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -36,8 +37,8 @@ use takusu_storage::{
     UpdateMemory, UpdateSettings,
 };
 use takusu_util::{
-    Abandonability, Date, MemoryKind, Quantity, SubjectType, TaskStatus, TimeOfDay, Timestamp,
-    WindowMode, parse_datetime_to_timestamp, parse_duration,
+    Abandonability, Date, MemoryKind, Quantity, SubjectType, TaskStatus, TaskStatusFilter,
+    TimeOfDay, Timestamp, WindowMode, parse_datetime_to_timestamp, parse_duration,
 };
 
 fn prompt(label: &str) -> Result<String, AppError> {
@@ -1273,13 +1274,12 @@ async fn run_task(
                 Some(query.join(" "))
             };
             let query = TaskQuery {
-                status,
-                from: from
-                    .map(|s| parse_dt(&s, tz).map(|t| t.to_string()))
-                    .transpose()?,
-                until: until
-                    .map(|s| parse_dt(&s, tz).map(|t| t.to_string()))
-                    .transpose()?,
+                status: status
+                    .map(|s| TaskStatusFilter::from_str(&s))
+                    .transpose()
+                    .map_err(|e| AppError::BadRequest(e.to_string()))?,
+                from: from.map(|s| parse_dt(&s, tz)).transpose()?,
+                until: until.map(|s| parse_dt(&s, tz)).transpose()?,
                 no_overdue: Some(no_overdue).filter(|x| *x),
                 habit_id,
                 ical_uid,

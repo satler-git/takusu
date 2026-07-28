@@ -275,6 +275,36 @@ enum_label! {
 }
 
 enum_label! {
+    /// Filter value for task status queries.
+    ///
+    /// Superset of [`TaskStatus`] that adds [`TaskStatusFilter::Overdue`] — a
+    /// virtual pseudo-status that selects tasks whose `end_at` has passed but
+    /// are not `completed` or `skipped`. `Overdue` is never stored in the
+    /// `status` column; it is expanded to a SQL predicate by storage
+    /// implementations.
+    pub enum TaskStatusFilter {
+        #[default] Pending = "pending",
+        Scheduled = "scheduled",
+        InProgress = "in_progress",
+        Completed = "completed",
+        Skipped = "skipped",
+        Overdue = "overdue",
+    }
+}
+
+impl From<TaskStatus> for TaskStatusFilter {
+    fn from(status: TaskStatus) -> Self {
+        match status {
+            TaskStatus::Pending => Self::Pending,
+            TaskStatus::Scheduled => Self::Scheduled,
+            TaskStatus::InProgress => Self::InProgress,
+            TaskStatus::Completed => Self::Completed,
+            TaskStatus::Skipped => Self::Skipped,
+        }
+    }
+}
+
+enum_label! {
     pub enum WindowMode {
         #[default] Day = "day",
         Period = "period",
@@ -528,5 +558,13 @@ mod tests {
     fn option_serde_rejects_unknown_label() {
         let err = serde_json::from_str::<OptionWrapper>(r#"{"status":"deleted"}"#);
         assert!(err.is_err());
+    }
+
+    #[test]
+    fn task_status_filter_from_task_status_preserves_label() {
+        for status in TaskStatus::all_variants() {
+            let filter: TaskStatusFilter = (*status).into();
+            assert_eq!(filter.as_str(), status.as_str());
+        }
     }
 }

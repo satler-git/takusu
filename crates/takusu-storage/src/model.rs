@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use takusu_util::{Abandonability, Date, Quantity, TimeOfDay, Timestamp};
+use takusu_util::{Abandonability, Date, Quantity, TaskStatusFilter, TimeOfDay, Timestamp};
 
 #[allow(dead_code)]
 fn default_sleep() -> String {
@@ -181,9 +181,10 @@ pub struct UpdateTask {
 
 #[derive(Debug, Default, serde::Deserialize)]
 pub struct TaskQuery {
-    pub status: Option<String>,
-    pub from: Option<String>,
-    pub until: Option<String>,
+    #[serde(default, with = "takusu_util::enum_serde::option")]
+    pub status: Option<TaskStatusFilter>,
+    pub from: Option<Timestamp>,
+    pub until: Option<Timestamp>,
     pub no_overdue: Option<bool>,
     pub habit_id: Option<String>,
     pub ical_uid: Option<String>,

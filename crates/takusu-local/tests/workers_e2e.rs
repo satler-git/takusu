@@ -20,7 +20,7 @@ use takusu_storage::{
     HabitScheduledSpanRow, MemoryQuery, MemoryRow, SimilarTaskQuery, SimilarTaskRow, Storage,
     TaskQuery, TaskRow, TokenCreateResponse, TokenRow, UpdateHabit, UpdateMemory, UpdateTask,
 };
-use takusu_util::{EnumLabel, Minutes, Quantity};
+use takusu_util::{EnumLabel, Minutes, Quantity, TaskStatusFilter};
 use tokio::net::TcpListener;
 
 const JWT_SECRET: &str = "test-secret-do-not-use-in-production";
@@ -159,8 +159,8 @@ async fn list_tasks(
     axum::extract::Query(q): axum::extract::Query<TaskQuery>,
 ) -> Json<Vec<TaskRow>> {
     let mut sql = format!("{TASK_SELECT} WHERE 1=1");
-    if let Some(ref status) = q.status {
-        if status == "overdue" {
+    if let Some(status) = q.status {
+        if status == TaskStatusFilter::Overdue {
             sql.push_str(" AND ");
             sql.push_str(OVERDUE_SQL);
         } else {
@@ -188,16 +188,16 @@ async fn list_tasks(
     }
     sql.push_str(" ORDER BY created_at DESC");
     let mut query = sqlx::query_as::<_, TaskRow>(sqlx::AssertSqlSafe(sql.as_str()));
-    if let Some(s) = &q.status
-        && s != "overdue"
+    if let Some(s) = q.status
+        && s != TaskStatusFilter::Overdue
     {
-        query = query.bind(s);
+        query = query.bind(s.as_str());
     }
-    if let Some(f) = &q.from {
-        query = query.bind(f);
+    if let Some(f) = q.from {
+        query = query.bind(f.to_string());
     }
-    if let Some(u) = &q.until {
-        query = query.bind(u);
+    if let Some(u) = q.until {
+        query = query.bind(u.to_string());
     }
     if let Some(h) = &q.habit_id {
         query = query.bind(h);
@@ -772,7 +772,7 @@ async fn workers_storage_e2e() {
 
     let tasks = storage
         .list_tasks(&TaskQuery {
-            status: Some("pending".to_string()),
+            status: Some(TaskStatusFilter::Pending),
             ..Default::default()
         })
         .await

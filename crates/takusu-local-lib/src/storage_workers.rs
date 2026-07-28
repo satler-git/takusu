@@ -273,14 +273,14 @@ impl Storage for WorkersStorage {
         let mut path = String::from("/api/tasks");
         let q = _query;
         let mut parts: Vec<String> = Vec::new();
-        if let Some(s) = &q.status {
-            parts.push(format!("status={}", url_encode(s)));
+        if let Some(s) = q.status {
+            parts.push(format!("status={}", url_encode(s.as_str())));
         }
-        if let Some(f) = &q.from {
-            parts.push(format!("from={}", url_encode(f)));
+        if let Some(f) = q.from {
+            parts.push(format!("from={}", url_encode(&f.to_string())));
         }
-        if let Some(u) = &q.until {
-            parts.push(format!("until={}", url_encode(u)));
+        if let Some(u) = q.until {
+            parts.push(format!("until={}", url_encode(&u.to_string())));
         }
         if q.no_overdue == Some(true) {
             parts.push("no_overdue=true".into());

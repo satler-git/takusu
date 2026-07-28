@@ -22,7 +22,7 @@ use takusu_storage::{
     UpdateTask,
 };
 use takusu_util::search::{Completion, complete};
-use takusu_util::{Abandonability, EnumLabel, MemoryKind, TaskStatus, WindowMode};
+use takusu_util::{Abandonability, EnumLabel, MemoryKind, TaskStatus, TaskStatusFilter, WindowMode};
 
 use crate::error::AppError;
 use crate::error::storage_to_app;
@@ -810,6 +810,7 @@ fn default_settings_row() -> SettingsRow {
 pub struct TakusuApp {
     pub storage: Arc<dyn Storage>,
     pub token_cache: Arc<TokenCache>,
+    timezone_cache: tokio::sync::Mutex<Option<jiff::tz::TimeZone>>,
 }
 
 /// Result of explicitly deleting every mapped Google Calendar event.
@@ -830,6 +831,7 @@ impl TakusuApp {
         Self {
             storage,
             token_cache,
+            timezone_cache: tokio::sync::Mutex::new(None),
         }
     }
 
@@ -856,6 +858,20 @@ impl TakusuApp {
             })
     }
 
+    /// Return the server's configured timezone, falling back to UTC when
+    /// settings have not been created yet. The result is cached for the
+    /// lifetime of the `TakusuApp` and invalidated by `update_settings`.
+    pub async fn server_timezone(&self) -> Result<jiff::tz::TimeZone, AppError> {
+        let mut cache = self.timezone_cache.lock().await;
+        if let Some(ref tz) = *cache {
+            return Ok(tz.clone());
+        }
+        let settings = self.get_settings_or_default().await?;
+        let tz = parse_settings_timezone(&settings.tz)?;
+        *cache = Some(tz.clone());
+        Ok(tz)
+    }
+
     pub async fn get_settings(&self) -> Result<SettingsRow, AppError> {
         self.storage.get_settings().await.map_err(storage_to_app)
     }
@@ -865,10 +881,16 @@ impl TakusuApp {
             validate_timezone(tz)?;
         }
         // sleep_start/sleep_end are Option<TimeOfDay>, already validated by deserialization.
-        self.storage
+        let row = self
+            .storage
             .update_settings(body)
             .await
-            .map_err(storage_to_app)
+            .map_err(storage_to_app)?;
+        // Invalidate the cached timezone since settings may have changed.
+        if body.tz.is_some() {
+            *self.timezone_cache.lock().await = None;
+        }
+        Ok(row)
     }
 
     // ── Skills ────────────────────────────────────────────
@@ -1738,7 +1760,7 @@ impl TakusuApp {
         let completed = self
             .storage
             .list_tasks(&TaskQuery {
-                status: Some("completed".to_string()),
+                status: Some(TaskStatusFilter::Completed),
                 habit_id: Some(id.to_string()),
                 ..TaskQuery::default()
             })
@@ -2153,7 +2175,7 @@ impl TakusuApp {
         // 消えてしまう。前回スケジュールから in_progress タスクのエントリを
         // 引き継ぐ。
         entries = self
-            .preserve_active_entries(entries, &existing_entries, &["in_progress"])
+            .preserve_active_entries(entries, &existing_entries, &[TaskStatus::InProgress])
             .await?;
         let mark_ids: Vec<String> = all_rows.iter().map(|t| t.id.clone()).collect();
 
@@ -2379,7 +2401,7 @@ impl TakusuApp {
         // #354: in_progress タスクは planner の対象外なので、再スケジュール時も
         // 進行中タスクのエントリが消えないよう前回スケジュールから引き継ぐ。
         final_entries = self
-            .preserve_active_entries(final_entries, &entries, &["in_progress"])
+            .preserve_active_entries(final_entries, &entries, &[TaskStatus::InProgress])
             .await?;
         let result = self
             .storage
@@ -3505,7 +3527,7 @@ impl TakusuApp {
         &self,
         mut new_entries: Vec<ScheduleEntry>,
         existing_entries: &[ScheduleEntry],
-        statuses: &[&str],
+        statuses: &[TaskStatus],
     ) -> Result<Vec<ScheduleEntry>, AppError> {
         if existing_entries.is_empty() {
             return Ok(new_entries);
@@ -3515,7 +3537,7 @@ impl TakusuApp {
             let rows = self
                 .storage
                 .list_tasks(&TaskQuery {
-                    status: Some((*status).to_string()),
+                    status: Some((*status).into()),
                     ..Default::default()
                 })
                 .await
