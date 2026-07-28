@@ -24,6 +24,7 @@ jiff = { workspace = true }
 jpholiday = "0.2.0"
 rand = { workspace = true }
 reqwest = { workspace = true, features = ["stream"] }
+schemars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
@@ -41,3 +42,4 @@ pulldown-cmark = "0.13.4"
 
 [dev-dependencies]
 axum = { workspace = true }
+insta = { workspace = true, features = ["json"] }

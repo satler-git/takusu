@@ -364,6 +364,11 @@ pub struct CapabilitiesResponse {
     pub user_input: bool,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct HealthResponse {
+    pub ok: bool,
+}
+
 pub fn router(state: Arc<AgentApiState>) -> Router {
     Router::new()
         .route("/health", get(health))
@@ -400,7 +405,7 @@ async fn health(State(state): State<Arc<AgentApiState>>, headers: HeaderMap) -> 
     }
     Json(Versioned {
         version: API_VERSION,
-        value: serde_json::json!({ "ok": true }),
+        value: HealthResponse { ok: true },
     })
     .into_response()
 }

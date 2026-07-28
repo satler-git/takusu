@@ -947,6 +947,7 @@
                   cargo-codspeed
                   cargo-expand
                   cargo-flamegraph
+                  cargo-insta
                   cargo-nextest
                   rust-bin
                   pkg-config
@@ -1053,6 +1054,7 @@
                   cargo-codspeed
                   cargo-expand
                   cargo-flamegraph
+                  cargo-insta
                   cargo-nextest
                   cargo-ndk
                   rust-bin

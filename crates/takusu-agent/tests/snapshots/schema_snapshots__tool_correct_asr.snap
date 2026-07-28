@@ -1,0 +1,42 @@
+---
+source: crates/takusu-agent/tests/schema_snapshots.rs
+expression: def
+---
+{
+  "function": {
+    "description": "Ask the user to correct ambiguous ASR text. First state your interpretation. Infer obvious ASR errors from context without asking; use this tool only when context is insufficient to disambiguate proper nouns, homonyms, numbers, dates, days of the week, or the action target. Group multiple questions into one call.",
+    "name": "correct_asr",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "questions": {
+          "description": "List of ambiguous ASR snippets to ask the user to correct. Group multiple questions into one call.",
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "for": {
+                "description": "What this text is used for and why it is ambiguous",
+                "type": "string"
+              },
+              "text": {
+                "description": "The ASR-recognized text that may be wrong",
+                "type": "string"
+              }
+            },
+            "required": [
+              "text",
+              "for"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "questions"
+      ],
+      "type": "object"
+    }
+  },
+  "type": "function"
+}

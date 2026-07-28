@@ -1,0 +1,53 @@
+---
+source: crates/takusu-agent/tests/schema_snapshots.rs
+expression: def
+---
+{
+  "function": {
+    "description": "List tasks, optionally filtered by status, time range, or habit.",
+    "name": "list_tasks",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "from": {
+          "description": "Start of range; interpreted in server timezone.",
+          "type": "string"
+        },
+        "habit_id": {
+          "description": "Habit reference such as h1.",
+          "type": "string"
+        },
+        "limit": {
+          "description": "Maximum number of tasks to return.",
+          "type": "integer"
+        },
+        "no_overdue": {
+          "description": "If true, exclude tasks whose end_at has passed. Do not use together with status='overdue'.",
+          "type": "boolean"
+        },
+        "q": {
+          "description": "Free-form search query with qualifiers. Boolean: AND (space/AND), OR, -/NOT. Parentheses supported. Qualifiers: status:<pending|scheduled|in_progress|completed|skipped|overdue>, title:<text>, desc:<text>, start:<date>, end:<date>, scheduled-start:<date>, scheduled-end:<date>, from:<date> (alias end:>=), until:<date> (alias start:<=), habit:<hN|N>, depends:<#N|UUID>, dependents:<#N|UUID>, deps_count:<op>N, is:<overdue|fixed|parallelizable|allows_parallel>, has:<description|completed_at|schedule|depends>. Date: YYYY-MM-DD, today, tomorrow, yesterday, Nd (relative), or operators like >=2026-07-25. Examples: status:pending 買い物, end:today OR end:tomorrow, -habit:h1, depends:#42",
+          "type": "string"
+        },
+        "status": {
+          "description": "Task status filter. Use 'completed' for done tasks, 'overdue' for tasks whose end_at has passed but are not completed or skipped.",
+          "enum": [
+            "pending",
+            "scheduled",
+            "in_progress",
+            "completed",
+            "skipped",
+            "overdue"
+          ],
+          "type": "string"
+        },
+        "until": {
+          "description": "End of range; interpreted in server timezone.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "type": "function"
+}

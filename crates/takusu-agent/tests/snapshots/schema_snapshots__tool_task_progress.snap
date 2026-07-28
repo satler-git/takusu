@@ -1,0 +1,32 @@
+---
+source: crates/takusu-agent/tests/schema_snapshots.rs
+expression: def
+---
+{
+  "function": {
+    "description": "Propose recording cumulative progress on a task. Updates quantity_done and may update the estimate. A lower quantity is treated as a correction, not a speed observation. Does not implicitly close the work session; use task_complete to finish. If task_ref is omitted, asks for clarification. Requires approval before writing.",
+    "name": "task_progress",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "note": {
+          "description": "Optional note for this progress event.",
+          "type": "string"
+        },
+        "quantity_done": {
+          "description": "Cumulative quantity completed.",
+          "type": "integer"
+        },
+        "task_ref": {
+          "description": "Task reference such as #42 or h1#3. Omit if the user did not specify a task; a focused clarification will be returned.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "quantity_done"
+      ],
+      "type": "object"
+    }
+  },
+  "type": "function"
+}

@@ -1,0 +1,122 @@
+---
+source: crates/takusu-agent/tests/schema_snapshots.rs
+expression: def
+---
+{
+  "function": {
+    "description": "Create a task update proposal. Calling this tool generates a pending approval request; it does not write immediately.",
+    "name": "update_task",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "abandonability": {
+          "description": "A value in [0.0, 1.0]; out-of-range values are silently clamped.",
+          "type": "number"
+        },
+        "allows_parallel": {
+          "type": "boolean"
+        },
+        "avg_minutes": {
+          "type": "integer"
+        },
+        "depends": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "description": {
+          "type": "string"
+        },
+        "end_at": {
+          "description": "Deadline; interpreted in server timezone if no offset is given.",
+          "type": "string"
+        },
+        "fixed": {
+          "description": "If true, the start time is fixed and the scheduler will not move the task.",
+          "type": "boolean"
+        },
+        "inferred_fields": {
+          "description": "List of fields that were inferred from ambiguous user input and should be highlighted. Do not include obvious conversions (e.g. '1 hour' -> 60 minutes) or values filled from the current date/time.",
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "field": {
+                "description": "Name of the inferred field.",
+                "type": "string"
+              },
+              "reason": {
+                "description": "Reason the field was inferred.",
+                "type": "string"
+              },
+              "value": {
+                "description": "Inferred value for the field."
+              }
+            },
+            "required": [
+              "field",
+              "value",
+              "reason"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "parallelizable": {
+          "type": "boolean"
+        },
+        "quantity_done": {
+          "description": "Quantity already completed.",
+          "type": "integer"
+        },
+        "quantity_total": {
+          "description": "Total quantity for a quantitative task (e.g. 30).",
+          "type": "integer"
+        },
+        "quantity_unit": {
+          "description": "Unit for the quantity (e.g. 'pages', 'questions').",
+          "type": "string"
+        },
+        "sigma_minutes": {
+          "type": "integer"
+        },
+        "start_at": {
+          "description": "Start time; interpreted in server timezone if no offset is given.",
+          "type": "string"
+        },
+        "status": {
+          "description": "New task status. 'completed' means done.",
+          "enum": [
+            "pending",
+            "scheduled",
+            "in_progress",
+            "completed",
+            "skipped"
+          ],
+          "type": "string"
+        },
+        "task_ref": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "why": {
+          "description": "Short user-facing reason for the proposed change.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "task_ref"
+      ],
+      "type": "object"
+    }
+  },
+  "type": "function"
+}

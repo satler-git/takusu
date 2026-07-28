@@ -1,0 +1,86 @@
+---
+source: crates/takusu-agent/tests/schema_snapshots.rs
+expression: def
+---
+{
+  "function": {
+    "description": "List, create, or delete scheduled spans for a habit. The effect of a span depends on the habit's active flag: for active habits it is a pause period, for disabled habits it is an activation window. action=list returns existing spans; action=create and action=delete generate approval proposals.",
+    "name": "habit_scheduled_spans",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "description": "Operation to perform.",
+          "enum": [
+            "list",
+            "create",
+            "delete"
+          ],
+          "type": "string"
+        },
+        "end_date": {
+          "description": "End date (YYYY-MM-DD) for action=create.",
+          "type": "string"
+        },
+        "habit_ref": {
+          "description": "Habit reference such as h1.",
+          "type": "string"
+        },
+        "inferred_fields": {
+          "description": "List of fields that were inferred from ambiguous user input and should be highlighted. Do not include obvious conversions (e.g. '1 hour' -> 60 minutes) or values filled from the current date/time.",
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "field": {
+                "description": "Name of the inferred field.",
+                "type": "string"
+              },
+              "reason": {
+                "description": "Reason the field was inferred.",
+                "type": "string"
+              },
+              "value": {
+                "description": "Inferred value for the field."
+              }
+            },
+            "required": [
+              "field",
+              "value",
+              "reason"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "reason": {
+          "description": "Optional reason for action=create.",
+          "type": "string"
+        },
+        "span_id": {
+          "description": "Span id to delete for action=delete. Use the id returned by action=list.",
+          "type": "string"
+        },
+        "start_date": {
+          "description": "Start date (YYYY-MM-DD) for action=create.",
+          "type": "string"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "why": {
+          "description": "Short user-facing reason for the proposed change.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "habit_ref",
+        "action"
+      ],
+      "type": "object"
+    }
+  },
+  "type": "function"
+}

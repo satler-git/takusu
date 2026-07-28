@@ -1,0 +1,35 @@
+---
+source: crates/takusu-agent/tests/schema_snapshots.rs
+expression: def
+---
+{
+  "function": {
+    "description": "Get one or more tasks by display reference. task_ref may be a single #id or h<habit>#<task>, or an array of such references. Returns an object with `tasks` (requested), `dependencies` (all transitive dependencies), and `missing_dependencies` (dependency IDs not found in the task list).",
+    "name": "get_task",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "task_ref": {
+          "anyOf": [
+            {
+              "description": "#42 or h1#5",
+              "type": "string"
+            },
+            {
+              "description": "Array of task references such as [\"#1\", \"h1#5\"]",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          ]
+        }
+      },
+      "required": [
+        "task_ref"
+      ],
+      "type": "object"
+    }
+  },
+  "type": "function"
+}

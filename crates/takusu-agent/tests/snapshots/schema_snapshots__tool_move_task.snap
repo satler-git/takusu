@@ -1,0 +1,73 @@
+---
+source: crates/takusu-agent/tests/schema_snapshots.rs
+expression: def
+---
+{
+  "function": {
+    "description": "Propose moving a scheduled task to a new start time. The task can also be marked fixed (default true). Generates a pending approval request; it does not write immediately.",
+    "name": "move_task",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "fixed": {
+          "description": "Mark the task as fixed after moving; defaults to true.",
+          "type": "boolean"
+        },
+        "force": {
+          "description": "Override deadline violation warnings.",
+          "type": "boolean"
+        },
+        "inferred_fields": {
+          "description": "List of fields that were inferred from ambiguous user input and should be highlighted. Do not include obvious conversions (e.g. '1 hour' -> 60 minutes) or values filled from the current date/time.",
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "field": {
+                "description": "Name of the inferred field.",
+                "type": "string"
+              },
+              "reason": {
+                "description": "Reason the field was inferred.",
+                "type": "string"
+              },
+              "value": {
+                "description": "Inferred value for the field."
+              }
+            },
+            "required": [
+              "field",
+              "value",
+              "reason"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "start_at": {
+          "description": "New start time; interpreted in server timezone if no offset is given.",
+          "type": "string"
+        },
+        "task_ref": {
+          "description": "Task reference such as #42 or h1#3.",
+          "type": "string"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "why": {
+          "description": "Short user-facing reason for the proposed change.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "task_ref",
+        "start_at"
+      ],
+      "type": "object"
+    }
+  },
+  "type": "function"
+}

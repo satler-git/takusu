@@ -16,7 +16,7 @@ pub use permissions::Permissions;
 pub use crate::llm::CompactionSettings;
 pub use tool::{
     ChangeOperation, ChangeReceipt, InferredField, InvalidArgsError, ProposedChange, ReceiptTarget,
-    Target, TargetKind, Tool, ToolError, ToolExposure, ToolOutput, ToolRegistry,
+    Target, TargetKind, Tool, ToolError, ToolExposure, ToolOutput, ToolRegistry, Typed, TypedTool,
     inferred_field_schema, inferred_fields_schema,
 };
 pub use user_input::{

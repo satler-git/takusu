@@ -1,0 +1,23 @@
+---
+source: crates/takusu-agent/tests/schema_snapshots.rs
+expression: def
+---
+{
+  "function": {
+    "description": "Read a skill by slug, including its full body.",
+    "name": "skills_read",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "slug": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "slug"
+      ],
+      "type": "object"
+    }
+  },
+  "type": "function"
+}

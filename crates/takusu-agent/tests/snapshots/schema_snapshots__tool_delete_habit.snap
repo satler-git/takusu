@@ -1,0 +1,33 @@
+---
+source: crates/takusu-agent/tests/schema_snapshots.rs
+expression: def
+---
+{
+  "function": {
+    "description": "Create a recurring habit deletion proposal. Calling this tool generates a pending approval request; it does not write immediately.",
+    "name": "delete_habit",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "habit_ref": {
+          "type": "string"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "why": {
+          "description": "Short user-facing reason for the proposed change.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "habit_ref"
+      ],
+      "type": "object"
+    }
+  },
+  "type": "function"
+}

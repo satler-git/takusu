@@ -1,0 +1,22 @@
+---
+source: crates/takusu-agent/tests/schema_snapshots.rs
+expression: def
+---
+{
+  "function": {
+    "description": "Propose starting work on a task. Creates an open work session and sets the task status to in_progress. If task_ref is omitted, asks for clarification. Requires approval before writing.",
+    "name": "task_start",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "task_ref": {
+          "description": "Task reference such as #42 or h1#3. Omit if the user did not specify a task; a focused clarification will be returned.",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "type": "object"
+    }
+  },
+  "type": "function"
+}
