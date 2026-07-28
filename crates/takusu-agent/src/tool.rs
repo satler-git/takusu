@@ -554,16 +554,15 @@ impl<T: TypedTool> Tool for Typed<T> {
 
 impl<T: TypedTool> Typed<T> {
     fn parse_params(&self, args: Value) -> Result<T::Params, ToolError> {
-        let params: T::Params = serde_path_to_error::deserialize(args)
-            .map_err(|e| {
-                let path = e.path().to_string();
-                let reason = e.into_inner().to_string();
-                if path.is_empty() {
-                    ToolError::InvalidArgs(InvalidArgsError::no_field(reason))
-                } else {
-                    ToolError::InvalidArgs(InvalidArgsError::new(path, reason))
-                }
-            })?;
+        let params: T::Params = serde_path_to_error::deserialize(args).map_err(|e| {
+            let path = e.path().to_string();
+            let reason = e.into_inner().to_string();
+            if path.is_empty() {
+                ToolError::InvalidArgs(InvalidArgsError::no_field(reason))
+            } else {
+                ToolError::InvalidArgs(InvalidArgsError::new(path, reason))
+            }
+        })?;
         self.0.validate_args(&params)?;
         Ok(params)
     }

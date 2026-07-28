@@ -11,11 +11,14 @@ use takusu_client::Client;
 use crate::{ToolRegistry, UserInputProvider};
 
 // Re-export shared helpers so external modules (progress.rs, rrule.rs,
-// day_details.rs, runner.rs, lib.rs) can access them at `crate::tools::takusu::*`.
-pub use common::*;
+// day_details.rs, runner.rs, lib.rs, takusu-android) can access them at
+// `crate::tools::takusu::*` / `takusu_agent::tools::takusu::*`.
+pub use common::TimeZoneCache;
+pub(crate) use common::{
+    TaskContext, client_error, server_timezone, strip_leading_hash, task_json,
+};
 
-// Bring submodule items into scope for `register_tools` and for tests via
-// `use super::*`.
+// Bring submodule items into scope for `register_tools`.
 use mutation::*;
 use read_tools::*;
 
@@ -38,10 +41,10 @@ pub fn register_tools(
         client: client.clone(),
         tz_cache: tz_cache.clone(),
     })));
-    registry.register(Box::new(MoveTaskTool {
+    registry.register(Box::new(crate::tool::Typed(MoveTaskTool {
         client: client.clone(),
         tz_cache,
-    }));
+    })));
     crate::tools::skills::register_tools(registry, client.clone());
     crate::tools::user_input::register_user_input_tool(registry, user_input_provider);
     registry.register(Box::new(crate::tool::Typed(

@@ -2,36 +2,9 @@ use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::str::FromStr;
 use takusu_client::{Client, HabitDetail, HabitRow, HabitStepRow, TaskRow};
-use takusu_util::{TaskStatus, Timestamp, parse_datetime_to_timestamp, parse_datetime_tz};
+use takusu_util::{TaskStatus, Timestamp, parse_datetime_to_timestamp};
 
 use crate::{InvalidArgsError, ToolError};
-
-pub(crate) fn object(args: Value) -> Result<serde_json::Map<String, Value>, ToolError> {
-    args.as_object()
-        .cloned()
-        .ok_or_else(|| ToolError::InvalidArgs(InvalidArgsError::new("args", "must be an object")))
-}
-
-pub(crate) fn required_string(
-    args: &serde_json::Map<String, Value>,
-    name: &str,
-) -> Result<String, ToolError> {
-    args.get(name)
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(ToOwned::to_owned)
-        .ok_or_else(|| ToolError::InvalidArgs(InvalidArgsError::new(name, "missing or empty")))
-}
-
-pub(crate) fn required_i64(
-    args: &serde_json::Map<String, Value>,
-    name: &str,
-) -> Result<i64, ToolError> {
-    args.get(name)
-        .and_then(Value::as_i64)
-        .ok_or_else(|| ToolError::InvalidArgs(InvalidArgsError::new(name, "missing or invalid")))
-}
 
 pub(crate) fn optional_string(
     args: &serde_json::Map<String, Value>,
@@ -48,83 +21,12 @@ pub(crate) fn optional_string(
     }
 }
 
-pub(crate) fn optional_bool(
-    args: &serde_json::Map<String, Value>,
-    name: &str,
-) -> Result<Option<bool>, ToolError> {
-    match args.get(name) {
-        None | Some(Value::Null) => Ok(None),
-        Some(value) => value.as_bool().map(Some).ok_or_else(|| {
-            ToolError::InvalidArgs(InvalidArgsError::new(name, "must be a boolean"))
-        }),
-    }
-}
-
-#[allow(dead_code)]
-pub(crate) fn optional_i64(
-    args: &serde_json::Map<String, Value>,
-    name: &str,
-) -> Result<Option<i64>, ToolError> {
-    match args.get(name) {
-        None | Some(Value::Null) => Ok(None),
-        Some(value) => value.as_i64().map(Some).ok_or_else(|| {
-            ToolError::InvalidArgs(InvalidArgsError::new(name, "must be an integer"))
-        }),
-    }
-}
-
 pub(super) fn summary_string(args: &serde_json::Map<String, Value>, name: &str) -> Option<String> {
     args.get(name)
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(ToOwned::to_owned)
-}
-
-/// Parse `key` as either a single string or an array of display references.
-/// Strips leading `#` characters and deduplicates while preserving order.
-#[allow(dead_code)]
-pub(super) fn refs_from_args(
-    args: &serde_json::Map<String, Value>,
-    key: &str,
-) -> Result<Vec<String>, ToolError> {
-    fn non_empty_ref(key: &str, raw: &str) -> Result<String, ToolError> {
-        let raw = raw.trim();
-        if raw.is_empty() {
-            return Err(ToolError::InvalidArgs(InvalidArgsError::new(
-                key,
-                "must not be empty",
-            )));
-        }
-        let r = strip_leading_hash(raw);
-        if r.is_empty() {
-            return Err(ToolError::InvalidArgs(InvalidArgsError::new(
-                key,
-                "must not be just '#'",
-            )));
-        }
-        Ok(r.to_string())
-    }
-
-    match args.get(key) {
-        Some(Value::String(s)) => Ok(vec![non_empty_ref(key, s)?]),
-        Some(Value::Array(arr)) => {
-            let mut refs = Vec::with_capacity(arr.len());
-            for value in arr {
-                let s = value.as_str().ok_or_else(|| {
-                    ToolError::InvalidArgs(InvalidArgsError::new(key, "must contain only strings"))
-                })?;
-                refs.push(non_empty_ref(key, s)?);
-            }
-            let mut seen = HashSet::new();
-            refs.retain(|r| seen.insert(r.clone()));
-            Ok(refs)
-        }
-        _ => Err(ToolError::InvalidArgs(InvalidArgsError::new(
-            key,
-            "must be a string or an array of strings",
-        ))),
-    }
 }
 
 pub(crate) fn client_error(error: takusu_client::ClientError) -> ToolError {
@@ -203,18 +105,6 @@ impl TimeZoneCache {
 
 pub(crate) async fn server_timezone(cache: &TimeZoneCache) -> jiff::tz::TimeZone {
     cache.get_with_fallback().await
-}
-
-#[allow(dead_code)]
-pub(super) fn normalize_datetime(
-    value: Option<String>,
-    tz: &jiff::tz::TimeZone,
-    name: &str,
-) -> Result<Option<String>, ToolError> {
-    let Some(value) = value else { return Ok(None) };
-    parse_datetime_tz(&value, tz).map(Some).map_err(|error| {
-        ToolError::InvalidArgs(InvalidArgsError::new(name, format!("invalid: {error}")))
-    })
 }
 
 /// Format a stored datetime string for display in the configured timezone.
@@ -703,7 +593,11 @@ fn reference_value(id: &str, ctx: &TaskContext) -> Value {
         .unwrap_or_else(|| Value::String("unknown".into()))
 }
 
-pub(super) fn transform_preview(preview: Value, ctx: &TaskContext, tz: Option<&jiff::tz::TimeZone>) -> Value {
+pub(super) fn transform_preview(
+    preview: Value,
+    ctx: &TaskContext,
+    tz: Option<&jiff::tz::TimeZone>,
+) -> Value {
     let mut out = preview.as_object().cloned().unwrap_or_default();
 
     if let Some(Value::Array(entries)) = out.get("entries").cloned() {

@@ -16,7 +16,12 @@ use crate::{
     deserialize_trimmed_required, inferred_fields_schema,
 };
 
-use super::common::*;
+use super::common::{
+    TaskContext, TimeZoneCache, client_error, entry_in_range, format_datetime_for_display,
+    format_display_datetime_args, habit_json, habit_summary_json, is_overdue, normalize_status,
+    overdue_in_range, schedule_entry_value, server_timezone, strip_leading_hash, task_json,
+    transform_preview, transitive_dependencies,
+};
 
 /// Registers the read-only planner tools used by the agent.
 pub(super) fn register_read_tools(
@@ -607,10 +612,7 @@ impl TypedTool for HabitScheduledSpans {
 
     fn parameters_schema(&self) -> Value {
         let mut schema = self.default_parameters_schema();
-        if let Some(props) = schema
-            .get_mut("properties")
-            .and_then(Value::as_object_mut)
-        {
+        if let Some(props) = schema.get_mut("properties").and_then(Value::as_object_mut) {
             props.insert(
                 "inferred_fields".into(),
                 inferred_fields_schema("List of fields that were inferred from ambiguous user input and should be highlighted. Do not include obvious conversions (e.g. '1 hour' -> 60 minutes) or values filled from the current date/time."),
@@ -635,8 +637,7 @@ impl TypedTool for HabitScheduledSpans {
                     ));
                 }
                 if let (Some(start), Some(end)) = (&args.start_date, &args.end_date) {
-                    validate_scheduled_span_dates(start, end)
-                        .map_err(|e| e.into_invalid_args())?;
+                    validate_scheduled_span_dates(start, end).map_err(|e| e.into_invalid_args())?;
                 }
             }
             ScheduledSpanAction::Delete => {
@@ -665,8 +666,14 @@ impl TypedTool for HabitScheduledSpans {
         match args.action {
             ScheduledSpanAction::List => self.list(&habit, &tz).await,
             ScheduledSpanAction::Create => {
-                self.proposal_output(&args, &habit_ref, &habit, ChangeOperation::CreateScheduledSpan, None)
-                    .await
+                self.proposal_output(
+                    &args,
+                    &habit_ref,
+                    &habit,
+                    ChangeOperation::CreateScheduledSpan,
+                    None,
+                )
+                .await
             }
             ScheduledSpanAction::Delete => {
                 let span_id = args.span_id.as_ref().expect("validated in validate_args");
