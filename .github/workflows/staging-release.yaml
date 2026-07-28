@@ -127,23 +127,58 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Merge PR and push release tag
+      - name: Wait for PR checks to pass
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ needs.create-pr.outputs.pr_number }}
+        run: |
+          # The merge queue on main requires required checks to pass before
+          # a PR can be queued. Auto-merge is disabled on this repo, so we
+          # must wait for checks to go green before calling `gh pr merge`.
+          echo "waiting for checks on PR ${PR_NUMBER} to complete..."
+          # The build job (release.yaml) includes the Android APK build which
+          # can take 40+ minutes, so poll for up to 90 minutes.
+          for i in $(seq 1 540); do
+            state=$(gh pr checks "$PR_NUMBER" --json name,state --jq '.[].state' 2>/dev/null || true)
+            if [ -n "$state" ]; then
+              if echo "$state" | grep -qE '^(FAILURE|CANCELLED|TIMED_OUT|ACTION_REQUIRED)$'; then
+                echo "a required check failed on PR ${PR_NUMBER}" >&2
+                exit 1
+              fi
+              if ! echo "$state" | grep -qE '^(PENDING|STARTED|QUEUED)$'; then
+                echo "all checks passed after ${i} polls"
+                break
+              fi
+            fi
+            sleep 10
+          done
+
+          # If the loop exhausted without breaking, checks are still pending.
+          if echo "$state" | grep -qE '^(PENDING|STARTED|QUEUED)$'; then
+            echo "checks on PR ${PR_NUMBER} did not complete within the polling window" >&2
+            exit 1
+          fi
+
+      - name: Queue PR merge and push release tag
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ needs.create-pr.outputs.pr_number }}
           TAG: ${{ needs.validate.outputs.tag }}
         run: |
-          # Merge queue is enabled on main, so --delete-branch cannot be
-          # passed to `gh pr merge`, and the merge is asynchronous: the PR is
-          # queued, not merged, when the command returns. Poll until the PR
-          # is actually merged before deleting the branch and tagging main.
-          if ! gh pr merge "$PR_NUMBER" --merge --subject "release ${TAG}"; then
-            echo "standard merge failed, retrying with admin override"
-            gh pr merge "$PR_NUMBER" --merge --admin --subject "release ${TAG}"
-          fi
+          # Merge queue is enabled on main, so no merge strategy is passed to
+          # `gh pr merge`: gh adds the PR to the merge queue. The merge is
+          # asynchronous: the PR is queued, not merged, when the command
+          # returns. Poll until the PR is actually merged before deleting the
+          # branch and tagging main. --delete-branch cannot be passed because
+          # the merge queue owns the branch until the merge completes. No
+          # --subject is passed because the merge queue creates the merge
+          # commit with its own message.
+          gh pr merge "$PR_NUMBER"
 
           echo "waiting for PR ${PR_NUMBER} to be merged by the merge queue..."
-          for i in $(seq 1 120); do
+          # The merge queue may need to re-run checks on the queued commit,
+          # so poll for up to 60 minutes.
+          for i in $(seq 1 360); do
             state=$(gh pr view "$PR_NUMBER" --json state --jq '.state')
             merged=$(gh pr view "$PR_NUMBER" --json merged --jq '.merged')
             if [ "$state" = "CLOSED" ] && [ "$merged" = "true" ]; then
