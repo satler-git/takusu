@@ -14,7 +14,7 @@ use crate::SimilarityMetric;
 /// Serialized as `{"metric":"dice","score":0.85}`. Implements [`Default`]
 /// (`Dice`, `0.0`) so it can be used with `#[sqlx(skip)]` / `#[serde(default)]`
 /// on row structs where the SQL/JSON result does not include the field.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct Similarity {
     pub metric: SimilarityMetric,
     pub score: f64,

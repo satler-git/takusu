@@ -23,9 +23,11 @@
     "test": "vitest run",
     "lint": "oxlint",
     "fmt": "oxfmt",
-    "fmt:check": "oxfmt --check"
+    "fmt:check": "oxfmt --check",
+    "gen:types": "openapi-typescript openapi/openapi.json -o src/types.gen.ts"
   },
   "devDependencies": {
+    "openapi-typescript": "^7.13.0",
     "oxfmt": "0.56.0",
     "oxlint": "1.71.0",
     "tsup": "^8.5.0",

@@ -29,7 +29,8 @@ use crate::SLOT_MINUTES;
 /// This type was originally defined in `takusu-habit` and has been moved here
 /// so that `takusu-storage` / `takusu-client` / `takusu-worker` can use it
 /// without depending on `takusu-habit`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, schemars::JsonSchema)]
+#[schemars(with = "String")]
 pub struct TimeOfDay {
     hour: u8,
     minute: u8,
@@ -118,7 +119,8 @@ impl<'de> Deserialize<'de> for TimeOfDay {
 ///
 /// Serialized as a `"YYYY-MM-DD"` string for JSON and stored as `TEXT` in
 /// SQLite. Wraps [`jiff::civil::Date`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, schemars::JsonSchema)]
+#[schemars(with = "String")]
 pub struct Date(pub JiffDate);
 
 impl Date {
@@ -220,7 +222,8 @@ impl<'de> Deserialize<'de> for Date {
 ///
 /// Serialized as an RFC 3339 string for JSON and stored as `TEXT` in SQLite.
 /// Wraps [`jiff::Timestamp`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, schemars::JsonSchema)]
+#[schemars(with = "String")]
 pub struct Timestamp(pub JiffTimestamp);
 
 impl Timestamp {

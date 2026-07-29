@@ -4,7 +4,7 @@ use takusu_types::{
     TimeOfDay, Timestamp,
 };
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
 pub struct TaskRow {
     pub id: String,
@@ -19,18 +19,23 @@ pub struct TaskRow {
     #[serde(default)]
     pub depends: DependencyList,
     #[serde(with = "takusu_types::bool_compat", default)]
+    #[schemars(with = "bool")]
     pub parallelizable: bool,
     #[serde(with = "takusu_types::bool_compat", default)]
+    #[schemars(with = "bool")]
     pub allows_parallel: bool,
     pub abandonability: Abandonability,
     #[serde(with = "takusu_types::enum_serde")]
     #[cfg_attr(feature = "sqlx", sqlx(try_from = "String"))]
+    #[schemars(with = "takusu_types::TaskStatus")]
     pub status: takusu_types::TaskStatus,
     pub habit_id: Option<String>,
     pub ical_uid: Option<String>,
     #[serde(with = "takusu_types::bool_compat", default)]
+    #[schemars(with = "bool")]
     pub user_edited: bool,
     #[serde(with = "takusu_types::bool_compat", default)]
+    #[schemars(with = "bool")]
     pub fixed: bool,
     /// The habit step that generated this task, if any (#95). NULL for simple
     /// (step-less) habits and manually created tasks.
@@ -62,7 +67,7 @@ pub struct TaskRow {
     pub updated_at: Timestamp,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CreateTask {
     pub title: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -107,7 +112,7 @@ pub struct CreateTask {
 /// A single task inside a batch create request (#1083).
 /// `client_id` is a caller-supplied temporary id that can be referenced by
 /// `depends` of other items in the same batch.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CreateTaskBatchItem {
     #[serde(flatten)]
     pub task: CreateTask,
@@ -116,7 +121,7 @@ pub struct CreateTaskBatchItem {
 }
 
 /// Request body for `POST /api/tasks/batch` (#1083).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CreateTaskBatch {
     pub tasks: Vec<CreateTaskBatchItem>,
 }
@@ -124,7 +129,7 @@ pub struct CreateTaskBatch {
 /// A single result from a batch create request (#1083).
 /// The caller can correlate results with input items by `client_id` and by
 /// position.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CreateTaskBatchResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub client_id: Option<String>,
@@ -132,7 +137,7 @@ pub struct CreateTaskBatchResult {
     pub task: TaskRow,
 }
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct UpdateTask {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
@@ -156,6 +161,7 @@ pub struct UpdateTask {
     pub abandonability: Option<Abandonability>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     #[serde(with = "takusu_types::enum_serde::option")]
+    #[schemars(with = "Option<takusu_types::TaskStatus>")]
     pub status: Option<takusu_types::TaskStatus>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub habit_id: Option<String>,
@@ -179,9 +185,10 @@ pub struct UpdateTask {
     pub original_quantity_total: Option<Quantity>,
 }
 
-#[derive(Debug, Default, serde::Deserialize)]
+#[derive(Debug, Default, serde::Deserialize, schemars::JsonSchema)]
 pub struct TaskQuery {
     #[serde(default, with = "takusu_types::enum_serde::option")]
+    #[schemars(with = "Option<TaskStatusFilter>")]
     pub status: Option<TaskStatusFilter>,
     pub from: Option<Timestamp>,
     pub until: Option<Timestamp>,
@@ -192,7 +199,7 @@ pub struct TaskQuery {
     pub limit: Option<i64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
 pub struct HabitRow {
     pub id: String,
@@ -206,25 +213,30 @@ pub struct HabitRow {
     pub avg_minutes: i64,
     pub sigma_minutes: i64,
     #[serde(with = "takusu_types::bool_compat", default)]
+    #[schemars(with = "bool")]
     pub parallelizable: bool,
     #[serde(with = "takusu_types::bool_compat", default)]
+    #[schemars(with = "bool")]
     pub allows_parallel: bool,
     pub abandonability: Abandonability,
     #[serde(with = "takusu_types::bool_compat", default)]
+    #[schemars(with = "bool")]
     pub active: bool,
     #[serde(with = "takusu_types::bool_compat", default)]
+    #[schemars(with = "bool")]
     pub fixed: bool,
     /// Window mode for generated tasks (#window_mode).
     /// `'day'` (default) = occurrence day's start_time..end_time.
     /// `'period'` = occurrence start_time .. next occurrence's start_time.
     #[serde(with = "takusu_types::enum_serde", default)]
     #[cfg_attr(feature = "sqlx", sqlx(try_from = "String"))]
+    #[schemars(with = "takusu_types::WindowMode")]
     pub window_mode: takusu_types::WindowMode,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CreateHabit {
     pub title: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -246,11 +258,12 @@ pub struct CreateHabit {
     /// Window mode: `'day'` or `'period'` (#window_mode).
     #[serde(skip_serializing_if = "Option::is_none", default)]
     #[serde(with = "takusu_types::enum_serde::option")]
+    #[schemars(with = "Option<takusu_types::WindowMode>")]
     pub window_mode: Option<takusu_types::WindowMode>,
 }
 
 /// A single habit inside a batch create request (#1083).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CreateHabitBatchItem {
     #[serde(flatten)]
     pub habit: CreateHabit,
@@ -259,13 +272,13 @@ pub struct CreateHabitBatchItem {
 }
 
 /// Request body for `POST /api/habits/batch` (#1083).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CreateHabitBatch {
     pub habits: Vec<CreateHabitBatchItem>,
 }
 
 /// A single result from a batch create request (#1083).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CreateHabitBatchResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub client_id: Option<String>,
@@ -273,7 +286,7 @@ pub struct CreateHabitBatchResult {
     pub habit: HabitRow,
 }
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct UpdateHabit {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
@@ -302,6 +315,7 @@ pub struct UpdateHabit {
     /// Window mode: `'day'` or `'period'` (#window_mode).
     #[serde(skip_serializing_if = "Option::is_none", default)]
     #[serde(with = "takusu_types::enum_serde::option")]
+    #[schemars(with = "Option<takusu_types::WindowMode>")]
     pub window_mode: Option<takusu_types::WindowMode>,
 }
 
@@ -313,7 +327,7 @@ pub struct UpdateHabit {
 ///
 /// `start_date` / `end_date` are inclusive `YYYY-MM-DD` strings in the
 /// user's local timezone.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
 pub struct HabitScheduledSpanRow {
     pub id: String,
@@ -324,7 +338,7 @@ pub struct HabitScheduledSpanRow {
     pub created_at: Timestamp,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CreateHabitScheduledSpan {
     pub start_date: Date,
     pub end_date: Date,
@@ -335,7 +349,7 @@ pub struct CreateHabitScheduledSpan {
 /// A step of a multi-step habit (#95). Each step produces one task per
 /// occurrence with its own window / cost / flags. Steps form a DAG via
 /// `depends_on` (JSON array of step ids within the same habit).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
 pub struct HabitStepRow {
     pub id: String,
@@ -348,11 +362,14 @@ pub struct HabitStepRow {
     pub avg_minutes: i64,
     pub sigma_minutes: i64,
     #[serde(with = "takusu_types::bool_compat", default)]
+    #[schemars(with = "bool")]
     pub parallelizable: bool,
     #[serde(with = "takusu_types::bool_compat", default)]
+    #[schemars(with = "bool")]
     pub allows_parallel: bool,
     pub abandonability: Abandonability,
     #[serde(with = "takusu_types::bool_compat", default)]
+    #[schemars(with = "bool")]
     pub fixed: bool,
     /// JSON array of step ids this step depends on (within the same habit).
     #[serde(default)]
@@ -365,7 +382,7 @@ pub struct HabitStepRow {
 /// generated tasks); an `id` absent or unknown creates a new step. Existing
 /// steps not in the array are deleted. `depends_on` references step ids that
 /// must exist in the resulting set.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct HabitStepInput {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
@@ -392,7 +409,7 @@ pub struct HabitStepInput {
 
 /// Preview request for `POST /api/habits/preview`. Mirrors `CreateHabit`
 /// plus an optional step list and preview range.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct HabitPreviewRequest {
     pub title: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -414,6 +431,7 @@ pub struct HabitPreviewRequest {
     /// Window mode: `'day'` or `'period'` (#window_mode).
     #[serde(skip_serializing_if = "Option::is_none", default)]
     #[serde(with = "takusu_types::enum_serde::option")]
+    #[schemars(with = "Option<takusu_types::WindowMode>")]
     pub window_mode: Option<takusu_types::WindowMode>,
     #[serde(default)]
     pub steps: Vec<HabitStepInput>,
@@ -426,7 +444,7 @@ pub struct HabitPreviewRequest {
 }
 
 /// A single task occurrence produced by `HabitPreviewRequest`.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct HabitPreviewTask {
     pub title: String,
     pub start_at: Timestamp,
@@ -436,7 +454,7 @@ pub struct HabitPreviewTask {
 /// Step estimate update element for `Storage::apply_habit_estimate` (#919).
 /// Only the estimate fields are updated; the step row is otherwise left
 /// untouched.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct HabitStepEstimateInput {
     pub step_id: String,
     pub avg_minutes: i64,
@@ -446,7 +464,7 @@ pub struct HabitStepEstimateInput {
 /// Request body for the backend-specific apply-habit-estimate call (#919).
 /// `TakusuApp` computes estimates locally and asks the storage backend to
 /// persist the habit and step values in one batch.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ApplyHabitEstimateRequest {
     pub avg_minutes: i64,
     pub sigma_minutes: i64,
@@ -455,14 +473,14 @@ pub struct ApplyHabitEstimateRequest {
 
 /// Habit detail response: the habit row plus its steps (#95). Used by
 /// `GET /api/habits/:id` so clients receive steps in one round-trip.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct HabitDetail {
     #[serde(flatten)]
     pub habit: HabitRow,
     pub steps: Vec<HabitStepRow>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
 pub struct ScheduleRow {
     pub id: String,
@@ -472,7 +490,7 @@ pub struct ScheduleRow {
     pub schedule: ScheduleData,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ScheduleEntry {
     pub task_id: String,
     pub start_at: Timestamp,
@@ -483,7 +501,7 @@ pub struct ScheduleEntry {
 /// `ScheduleRow.schedule` (#1252).
 pub type ScheduleData = JsonString<Vec<ScheduleEntry>>;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SaveScheduleRequest {
     pub entries: Vec<ScheduleEntry>,
     #[serde(default)]
@@ -493,13 +511,14 @@ pub struct SaveScheduleRequest {
 takusu_search::impl_search_task!(TaskRow);
 takusu_search::impl_search_habit!(HabitRow);
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
 pub struct TokenRow {
     pub id: i64,
     pub jti: String,
     #[serde(with = "takusu_types::enum_serde")]
     #[cfg_attr(feature = "sqlx", sqlx(try_from = "String"))]
+    #[schemars(with = "takusu_types::TokenScope")]
     pub scope: takusu_types::TokenScope,
     pub label: Option<String>,
     pub created_by: String,
@@ -508,22 +527,24 @@ pub struct TokenRow {
     pub expires_at: Option<Timestamp>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct TokenCreateResponse {
     pub id: i64,
     pub token: String,
     #[serde(with = "takusu_types::enum_serde")]
+    #[schemars(with = "takusu_types::TokenScope")]
     pub scope: takusu_types::TokenScope,
     pub label: Option<String>,
     pub created_at: Timestamp,
     pub expires_at: Option<Timestamp>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
 pub struct GoogleCalSettingsRow {
     pub id: String,
     #[serde(with = "takusu_types::bool_compat", default)]
+    #[schemars(with = "bool")]
     pub enabled: bool,
     pub calendar_id: String,
     pub client_id: String,
@@ -533,7 +554,7 @@ pub struct GoogleCalSettingsRow {
     pub updated_at: Timestamp,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct UpdateGoogleCalSettings {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
@@ -547,7 +568,7 @@ pub struct UpdateGoogleCalSettings {
     pub refresh_token: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
 pub struct GoogleCalEventRow {
     pub task_id: String,
@@ -555,7 +576,7 @@ pub struct GoogleCalEventRow {
     pub updated_at: Timestamp,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
 pub struct SettingsRow {
     pub id: String,
@@ -569,6 +590,7 @@ pub struct SettingsRow {
     /// 使用する solver。`"sa"` / `"priority"` / `"auto"`。未設定の場合は `sa`。未知値はエラー。
     #[serde(with = "takusu_types::enum_serde", default)]
     #[cfg_attr(feature = "sqlx", sqlx(try_from = "String"))]
+    #[schemars(with = "takusu_types::Solver")]
     pub solver: takusu_types::Solver,
     /// 求解時間の上限（ミリ秒）。`None` または `0` の場合は制限なし。
     #[serde(default)]
@@ -578,12 +600,13 @@ pub struct SettingsRow {
     pub seed: Option<i64>,
     /// 前回スケジュールから priority/ALNS の初期解を warm start する。
     #[serde(with = "takusu_types::bool_compat", default)]
+    #[schemars(with = "bool")]
     pub warm_start: bool,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
 pub struct SkillRow {
     pub slug: String,
@@ -591,12 +614,13 @@ pub struct SkillRow {
     pub description: String,
     pub body: String,
     #[serde(with = "takusu_types::bool_compat", default)]
+    #[schemars(with = "bool")]
     pub built_in: bool,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CreateSkill {
     pub slug: String,
     pub name: String,
@@ -606,7 +630,7 @@ pub struct CreateSkill {
     pub built_in: Option<bool>,
 }
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct UpdateSkill {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
@@ -616,12 +640,13 @@ pub struct UpdateSkill {
     pub body: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
 pub struct MemoryRow {
     pub id: String,
     #[serde(with = "takusu_types::enum_serde")]
     #[cfg_attr(feature = "sqlx", sqlx(try_from = "String"))]
+    #[schemars(with = "takusu_types::MemoryKind")]
     pub kind: takusu_types::MemoryKind,
     pub key: String,
     #[serde(default, skip_serializing)]
@@ -631,10 +656,12 @@ pub struct MemoryRow {
     pub normalized_content: String,
     #[serde(with = "takusu_types::enum_serde", default)]
     #[cfg_attr(feature = "sqlx", sqlx(try_from = "String"))]
+    #[schemars(with = "takusu_types::SubjectType")]
     pub subject_type: takusu_types::SubjectType,
     pub subject_id: String,
     #[serde(with = "takusu_types::enum_serde", default)]
     #[cfg_attr(feature = "sqlx", sqlx(try_from = "String"))]
+    #[schemars(with = "takusu_types::MemorySource")]
     pub source: takusu_types::MemorySource,
     pub revision: i64,
     pub created_at: Timestamp,
@@ -657,14 +684,16 @@ impl takusu_search::memory::MemoryRankable for MemoryRow {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CreateMemory {
     #[serde(with = "takusu_types::enum_serde")]
+    #[schemars(with = "takusu_types::MemoryKind")]
     pub kind: takusu_types::MemoryKind,
     pub key: String,
     pub content: String,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     #[serde(with = "takusu_types::enum_serde::option")]
+    #[schemars(with = "Option<takusu_types::SubjectType>")]
     pub subject_type: Option<takusu_types::SubjectType>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub subject_id: Option<String>,
@@ -672,21 +701,23 @@ pub struct CreateMemory {
     pub upsert: bool,
 }
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct UpdateMemory {
     pub observed_revision: i64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub content: Option<String>,
 }
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct MemoryQuery {
     pub q: String,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     #[serde(with = "takusu_types::enum_serde::option")]
+    #[schemars(with = "Option<takusu_types::MemoryKind>")]
     pub kind: Option<takusu_types::MemoryKind>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     #[serde(with = "takusu_types::enum_serde::option")]
+    #[schemars(with = "Option<takusu_types::SubjectType>")]
     pub subject_type: Option<takusu_types::SubjectType>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub subject_id: Option<String>,
@@ -694,7 +725,7 @@ pub struct MemoryQuery {
     pub limit: Option<i64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
 pub struct SimilarTaskRow {
     pub task_id: String,
@@ -711,7 +742,7 @@ pub struct SimilarTaskRow {
     pub similarity: Similarity,
 }
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SimilarTaskQuery {
     #[serde(rename = "q")]
     pub title: String,
@@ -719,7 +750,7 @@ pub struct SimilarTaskQuery {
     pub limit: Option<i64>,
 }
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct UpdateSettings {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tz: Option<String>,
@@ -739,6 +770,7 @@ pub struct UpdateSettings {
         default,
         skip_serializing_if = "Option::is_none"
     )]
+    #[schemars(with = "Option<takusu_types::Solver>")]
     pub solver: Option<takusu_types::Solver>,
     /// 求解時間の上限（ミリ秒）。`None` または `0` で制限なし。
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -752,12 +784,13 @@ pub struct UpdateSettings {
         skip_serializing_if = "Option::is_none",
         with = "takusu_types::option_bool_compat"
     )]
+    #[schemars(with = "Option<bool>")]
     pub warm_start: Option<bool>,
 }
 
 // ── WI-9 active-session progress management ─────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
 pub struct TaskWorkSessionRow {
     pub id: String,
@@ -767,7 +800,7 @@ pub struct TaskWorkSessionRow {
     pub created_at: Timestamp,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
 pub struct ProgressEventRow {
     pub id: String,
@@ -779,14 +812,14 @@ pub struct ProgressEventRow {
     pub note: Option<String>,
 }
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct RecordProgress {
     pub quantity_done: Quantity,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ProgressResult {
     pub task: TaskRow,
     /// The recorded event, or `None` when the reported quantity_done has not
@@ -797,7 +830,7 @@ pub struct ProgressResult {
     pub suggests_completion: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct TaskProgress {
     pub task: TaskRow,
     pub open_session: Option<TaskWorkSessionRow>,
@@ -806,7 +839,7 @@ pub struct TaskProgress {
     pub total_active_minutes: i64,
 }
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SplitTask {
     /// Quantity to keep on the original task.
     pub retained_quantity: Quantity,
@@ -824,7 +857,7 @@ pub struct SplitTask {
     pub end_at: Option<Timestamp>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SplitResult {
     pub original: TaskRow,
     pub remainder: TaskRow,
@@ -833,7 +866,7 @@ pub struct SplitResult {
 // ── Habit estimation from completed task actuals (#919) ────────────────────
 
 /// Request body for `POST /api/habits/{id}/estimate`.
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct HabitEstimateRequest {
     /// When true, detect and exclude outliers using the median absolute
     /// deviation (MAD) before computing the estimate.
@@ -846,7 +879,7 @@ pub struct HabitEstimateRequest {
 }
 
 /// One completed task observation included in a habit estimate.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct HabitEstimateSample {
     pub task_id: String,
     pub title: String,
@@ -855,7 +888,7 @@ pub struct HabitEstimateSample {
 }
 
 /// Estimate result for a single habit step.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct HabitEstimateStep {
     pub step_id: String,
     pub title: String,
@@ -867,7 +900,7 @@ pub struct HabitEstimateStep {
 }
 
 /// Response from `POST /api/habits/{id}/estimate`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct HabitEstimateResult {
     pub avg_minutes: i64,
     pub sigma_minutes: i64,

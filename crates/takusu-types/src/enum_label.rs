@@ -199,7 +199,7 @@ macro_rules! enum_label {
         }
     ) => {
         $(#[$meta])*
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
         #[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
         $vis enum $name {
             #[serde(rename = $first_s)]

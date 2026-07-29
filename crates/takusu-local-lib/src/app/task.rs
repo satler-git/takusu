@@ -22,7 +22,7 @@ use crate::validate::{
     Validate, parse_settings_timezone, validate_minutes, validate_task_datetimes,
 };
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct IcalImportResult {
     pub imported: usize,
     pub task_ids: Vec<String>,

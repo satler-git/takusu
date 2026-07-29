@@ -8,7 +8,8 @@ use std::str::FromStr;
 ///
 /// Negative values are rejected at construction time. The inner `i64` can be
 /// retrieved via [`Quantity::get`].
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, schemars::JsonSchema)]
+#[schemars(transparent)]
 pub struct Quantity(i64);
 
 impl Quantity {

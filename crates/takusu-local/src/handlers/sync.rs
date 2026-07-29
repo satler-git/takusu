@@ -1,19 +1,22 @@
 use axum::Json;
 use axum::extract::State;
 use serde::Deserialize;
-use takusu_local_lib::app::{DeleteAllGcalResult, GoogleCalSettingsOutput};
+use takusu_local_lib::app::{
+    DeleteAllGcalResult, GoogleCalSettingsOutput, OAuthCallbackResponse, OAuthUrlResponse,
+    SyncTriggerResponse,
+};
 use takusu_local_lib::error::AppError;
 use takusu_storage::{GoogleCalEventRow, UpdateGoogleCalSettings};
 
 use crate::error::HttpError;
 use crate::state::AppState;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct OAuthUrlRequest {
     pub redirect_uri: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct OAuthCallbackRequest {
     pub code: String,
     pub redirect_uri: Option<String>,
@@ -37,30 +40,34 @@ pub async fn update_settings(
 pub async fn oauth_url(
     State(state): State<AppState>,
     Json(body): Json<OAuthUrlRequest>,
-) -> Result<Json<serde_json::Value>, HttpError> {
+) -> Result<Json<OAuthUrlResponse>, HttpError> {
     let url = state.app.oauth_url(&body.redirect_uri).await?;
-    Ok(Json(serde_json::json!({ "url": url })))
+    Ok(Json(OAuthUrlResponse { url }))
 }
 
 pub async fn oauth_callback(
     State(state): State<AppState>,
     Json(body): Json<OAuthCallbackRequest>,
-) -> Result<Json<serde_json::Value>, HttpError> {
+) -> Result<Json<OAuthCallbackResponse>, HttpError> {
     state
         .app
         .oauth_callback(&body.code, body.redirect_uri.as_deref())
         .await?;
-    Ok(Json(serde_json::json!({ "refresh_token_set": true })))
+    Ok(Json(OAuthCallbackResponse {
+        refresh_token_set: true,
+    }))
 }
 
 pub async fn trigger_sync(
     State(state): State<AppState>,
-) -> Result<Json<serde_json::Value>, HttpError> {
+) -> Result<Json<SyncTriggerResponse>, HttpError> {
     state.app.do_sync().await.map_err(|e| {
         tracing::error!("google calendar sync failed: {e}");
         HttpError::from(AppError::Internal(format!("sync failed: {e}")))
     })?;
-    Ok(Json(serde_json::json!({ "status": "sync_triggered" })))
+    Ok(Json(SyncTriggerResponse {
+        status: "sync_triggered".to_string(),
+    }))
 }
 
 pub async fn list_mappings(

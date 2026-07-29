@@ -122,7 +122,7 @@ pub struct SchedulePreviewInput {
     pub sleep: SleepInput,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
 pub struct SchedulePreviewOutput {
     pub entries: Vec<ScheduleEntry>,
     pub unscheduled_task_ids: Vec<String>,
@@ -132,7 +132,7 @@ pub struct SchedulePreviewOutput {
     pub warnings: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
 pub struct MoveEntryOutput {
     pub task_id: String,
     pub start_at: String,

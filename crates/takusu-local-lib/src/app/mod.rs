@@ -19,8 +19,11 @@ mod habit_sync;
 mod schedule;
 mod task;
 
-pub use dependency::{DependencyNode, RedundantDependency};
-pub use gcal::{DeleteAllGcalFailure, DeleteAllGcalResult, GoogleCalSettingsOutput};
+pub use dependency::{DependencyAnalysisResponse, DependencyNode, RedundantDependency};
+pub use gcal::{
+    DeleteAllGcalFailure, DeleteAllGcalResult, GoogleCalSettingsOutput, OAuthCallbackResponse,
+    OAuthUrlResponse, SyncTriggerResponse,
+};
 pub use schedule::{
     GenerateScheduleInput, MoveEntryOutput, RescheduleInput, SchedulePreviewInput,
     SchedulePreviewOutput,

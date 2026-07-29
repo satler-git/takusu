@@ -1,156 +1,231 @@
+use aide::axum::ApiRouter;
+use aide::openapi::{Info, OpenApi, Server};
+use aide::axum::routing as api;
+use axum::Extension;
 use axum::Router;
 use axum::body::Body;
 use axum::http::Request;
 use axum::middleware;
-use axum::routing::{delete, get, patch, post, put};
+use axum::routing::get;
 use sentry::integrations::tower::{NewSentryLayer, SentryHttpLayer};
+use std::sync::Arc;
 
 use crate::auth;
 use crate::handlers;
 use crate::state::AppState;
 
-pub fn router(state: AppState) -> Router {
-    let api = Router::new()
-        .route("/tasks", post(handlers::task::create_task))
-        .route("/tasks", get(handlers::task::list_tasks))
-        .route("/tasks/batch", post(handlers::task::create_task_batch))
-        .route("/tasks/complete", get(handlers::task::complete_task_query))
-        .route("/tasks/import/ical", post(handlers::task::import_ical))
-        .route(
+/// Create the base `OpenApi` with shared info and server metadata.
+fn base_open_api() -> OpenApi {
+    OpenApi {
+        info: Info {
+            title: "takusu API".to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            ..Default::default()
+        },
+        servers: vec![Server {
+            url: "/api".to_string(),
+            ..Default::default()
+        }],
+        ..Default::default()
+    }
+}
+
+/// Build the API routes with all documented routes and populate `open_api`.
+///
+/// This is shared between [`router`] (runtime) and [`generate_openapi`] (build
+/// tool) so the generated spec always matches the served routes.
+fn build_api_router(open_api: &mut OpenApi) -> Router<AppState> {
+    ApiRouter::new()
+        .api_route("/tasks", api::post(handlers::task::create_task))
+        .api_route("/tasks", api::get(handlers::task::list_tasks))
+        .api_route("/tasks/batch", api::post(handlers::task::create_task_batch))
+        .api_route(
+            "/tasks/complete",
+            api::get(handlers::task::complete_task_query),
+        )
+        .api_route("/tasks/import/ical", api::post(handlers::task::import_ical))
+        .api_route(
             "/tasks/dependency-analysis",
-            get(handlers::task::dependency_analysis),
+            api::get(handlers::task::dependency_analysis),
         )
         // `/tasks/similar` must be declared before `/tasks/{id}` so axum
         // matches the literal segment instead of treating "similar" as an id.
-        .route("/tasks/similar", get(handlers::memory::find_similar_tasks))
-        .route("/tasks/{id}", get(handlers::task::get_task))
-        .route("/tasks/{id}", put(handlers::task::replace_task))
-        .route("/tasks/{id}", patch(handlers::task::update_task))
-        .route("/tasks/{id}", delete(handlers::task::delete_task))
-        .route(
+        .api_route(
+            "/tasks/similar",
+            api::get(handlers::memory::find_similar_tasks),
+        )
+        .api_route("/tasks/{id}", api::get(handlers::task::get_task))
+        .api_route("/tasks/{id}", api::put(handlers::task::replace_task))
+        .api_route("/tasks/{id}", api::patch(handlers::task::update_task))
+        .api_route("/tasks/{id}", api::delete(handlers::task::delete_task))
+        .api_route(
             "/tasks/{id}/work/start",
-            post(handlers::task::start_task_work),
+            api::post(handlers::task::start_task_work),
         )
-        .route(
+        .api_route(
             "/tasks/{id}/work/pause",
-            post(handlers::task::pause_task_work),
+            api::post(handlers::task::pause_task_work),
         )
-        .route(
+        .api_route(
             "/tasks/{id}/progress",
-            post(handlers::task::record_progress),
+            api::post(handlers::task::record_progress),
         )
-        .route(
+        .api_route(
             "/tasks/{id}/progress",
-            get(handlers::task::get_task_progress),
+            api::get(handlers::task::get_task_progress),
         )
-        .route(
+        .api_route(
             "/tasks/{id}/work/complete",
-            post(handlers::task::complete_task_work),
+            api::post(handlers::task::complete_task_work),
         )
-        .route("/tasks/{id}/split", post(handlers::task::split_task))
-        .route("/habits", post(handlers::habit::create_habit))
-        .route("/habits/batch", post(handlers::habit::create_habit_batch))
-        .route("/habits/preview", post(handlers::habit::preview_habit))
-        .route("/habits", get(handlers::habit::list_habits))
+        .api_route("/tasks/{id}/split", api::post(handlers::task::split_task))
+        .api_route("/habits", api::post(handlers::habit::create_habit))
+        .api_route("/habits/batch", api::post(handlers::habit::create_habit_batch))
+        .api_route("/habits/preview", api::post(handlers::habit::preview_habit))
+        .api_route("/habits", api::get(handlers::habit::list_habits))
         // `/habits/scheduled-spans` and `/habits/steps` must be declared before
         // `/habits/{id}` so axum matches the literal segment instead of
         // treating "scheduled-spans" / "steps" as an id (#303 / #95).
-        .route(
+        .api_route(
             "/habits/scheduled-spans",
-            get(handlers::habit::list_all_habit_scheduled_spans),
+            api::get(handlers::habit::list_all_habit_scheduled_spans),
         )
-        .route("/habits/steps", get(handlers::habit::list_all_habit_steps))
-        .route("/habits/{id}", get(handlers::habit::get_habit))
-        .route("/habits/{id}", put(handlers::habit::replace_habit))
-        .route("/habits/{id}", patch(handlers::habit::update_habit))
-        .route("/habits/{id}", delete(handlers::habit::delete_habit))
-        .route(
+        .api_route("/habits/steps", api::get(handlers::habit::list_all_habit_steps))
+        .api_route("/habits/{id}", api::get(handlers::habit::get_habit))
+        .api_route("/habits/{id}", api::put(handlers::habit::replace_habit))
+        .api_route("/habits/{id}", api::patch(handlers::habit::update_habit))
+        .api_route("/habits/{id}", api::delete(handlers::habit::delete_habit))
+        .api_route(
             "/habits/{id}/estimate",
-            post(handlers::habit::estimate_habit),
+            api::post(handlers::habit::estimate_habit),
         )
-        .route(
+        .api_route(
             "/habits/{id}/scheduled-spans",
-            get(handlers::habit::list_habit_scheduled_spans),
+            api::get(handlers::habit::list_habit_scheduled_spans),
         )
-        .route(
+        .api_route(
             "/habits/{id}/scheduled-spans",
-            post(handlers::habit::create_habit_scheduled_span),
+            api::post(handlers::habit::create_habit_scheduled_span),
         )
-        .route(
+        .api_route(
             "/habits/{id}/scheduled-spans/{span_id}",
-            delete(handlers::habit::delete_habit_scheduled_span),
+            api::delete(handlers::habit::delete_habit_scheduled_span),
         )
-        .route("/habits/{id}/steps", get(handlers::habit::list_habit_steps))
-        .route(
+        .api_route("/habits/{id}/steps", api::get(handlers::habit::list_habit_steps))
+        .api_route(
             "/habits/{id}/steps",
-            put(handlers::habit::replace_habit_steps),
+            api::put(handlers::habit::replace_habit_steps),
         )
-        .route(
+        .api_route(
             "/habits/{id}/steps/dependency-analysis",
-            get(handlers::habit::step_dependency_analysis),
+            api::get(handlers::habit::step_dependency_analysis),
         )
-        .route("/schedule", get(handlers::schedule::get_schedule))
-        .route(
+        .api_route("/schedule", api::get(handlers::schedule::get_schedule))
+        .api_route(
             "/schedule/generate",
-            post(handlers::schedule::generate_schedule),
+            api::post(handlers::schedule::generate_schedule),
         )
-        .route(
+        .api_route(
             "/schedule/preview",
-            post(handlers::schedule::preview_schedule),
+            api::post(handlers::schedule::preview_schedule),
         )
-        .route(
+        .api_route(
             "/schedule/replace",
-            post(handlers::schedule::replace_schedule),
+            api::post(handlers::schedule::replace_schedule),
         )
-        .route("/schedule/reschedule", post(handlers::schedule::reschedule))
-        .route(
+        .api_route(
+            "/schedule/reschedule",
+            api::post(handlers::schedule::reschedule),
+        )
+        .api_route(
             "/schedule/entries/{task_id}",
-            patch(handlers::schedule::move_entry),
+            api::patch(handlers::schedule::move_entry),
         )
-        .route("/schedule", delete(handlers::schedule::clear_schedule))
-        .route("/tokens", post(handlers::token::create_token))
-        .route("/tokens", get(handlers::token::list_tokens))
-        .route("/tokens/{id}", delete(handlers::token::revoke_token))
-        .route("/sync/settings", get(handlers::sync::get_settings))
-        .route("/sync/settings", put(handlers::sync::update_settings))
-        .route("/sync/oauth/url", post(handlers::sync::oauth_url))
-        .route("/sync/oauth/callback", post(handlers::sync::oauth_callback))
-        .route("/sync/trigger", post(handlers::sync::trigger_sync))
-        .route(
+        .api_route("/schedule", api::delete(handlers::schedule::clear_schedule))
+        .api_route("/tokens", api::post(handlers::token::create_token))
+        .api_route("/tokens", api::get(handlers::token::list_tokens))
+        .api_route("/tokens/{id}", api::delete(handlers::token::revoke_token))
+        .api_route("/sync/settings", api::get(handlers::sync::get_settings))
+        .api_route("/sync/settings", api::put(handlers::sync::update_settings))
+        .api_route("/sync/oauth/url", api::post(handlers::sync::oauth_url))
+        .api_route(
+            "/sync/oauth/callback",
+            api::post(handlers::sync::oauth_callback),
+        )
+        .api_route("/sync/trigger", api::post(handlers::sync::trigger_sync))
+        .api_route(
             "/sync/delete-all",
-            post(handlers::sync::delete_all_gcal_events),
+            api::post(handlers::sync::delete_all_gcal_events),
         )
-        .route("/sync/mappings", get(handlers::sync::list_mappings))
-        .route("/settings", get(handlers::settings::get_settings))
-        .route("/settings", put(handlers::settings::update_settings))
-        .route(
+        .api_route("/sync/mappings", api::get(handlers::sync::list_mappings))
+        .api_route("/settings", api::get(handlers::settings::get_settings))
+        .api_route("/settings", api::put(handlers::settings::update_settings))
+        .api_route(
             "/workers/config",
-            put(handlers::settings::update_workers_config),
+            api::put(handlers::settings::update_workers_config),
         )
-        .route("/skills", get(handlers::skills::list_skills))
-        .route("/skills", post(handlers::skills::create_skill))
-        .route("/skills/{slug}", get(handlers::skills::get_skill))
-        .route("/skills/{slug}", patch(handlers::skills::update_skill))
-        .route("/skills/{slug}", delete(handlers::skills::delete_skill))
-        .route("/memory", post(handlers::memory::create_memory))
-        .route("/memory/search", get(handlers::memory::search_memory))
-        .route("/memory/{id}", get(handlers::memory::get_memory))
-        .route("/memory/{id}", patch(handlers::memory::update_memory))
-        .route("/memory/{id}", delete(handlers::memory::delete_memory))
-        .route("/workers/health", get(handlers::settings::workers_health))
-        .layer(middleware::from_fn_with_state(
-            state.clone(),
-            auth::auth_middleware,
-        ));
+        .api_route("/skills", api::get(handlers::skills::list_skills))
+        .api_route("/skills", api::post(handlers::skills::create_skill))
+        .api_route("/skills/{slug}", api::get(handlers::skills::get_skill))
+        .api_route("/skills/{slug}", api::patch(handlers::skills::update_skill))
+        .api_route("/skills/{slug}", api::delete(handlers::skills::delete_skill))
+        .api_route("/memory", api::post(handlers::memory::create_memory))
+        .api_route("/memory/search", api::get(handlers::memory::search_memory))
+        .api_route("/memory/{id}", api::get(handlers::memory::get_memory))
+        .api_route("/memory/{id}", api::patch(handlers::memory::update_memory))
+        .api_route("/memory/{id}", api::delete(handlers::memory::delete_memory))
+        .api_route(
+            "/workers/health",
+            api::get(handlers::settings::workers_health),
+        )
+        // Serve the generated OpenAPI document. This route is not documented
+        // in the spec itself (it uses `route`, not `api_route`).
+        .route("/openapi.json", get(serve_openapi))
+        .finish_api_with(open_api, |api| {
+            api.default_response::<crate::error::HttpError>()
+        })
+}
+
+pub fn router(state: AppState) -> Router {
+    let mut open_api = base_open_api();
+
+    let api = build_api_router(&mut open_api).layer(middleware::from_fn_with_state(
+        state.clone(),
+        auth::auth_middleware,
+    ));
 
     Router::new()
         .route("/health", get(health))
         .nest("/api", api)
         .with_state(state)
+        .layer(Extension(Arc::new(open_api)))
         .layer(SentryHttpLayer::new().enable_transaction())
         .layer(NewSentryLayer::<Request<Body>>::new_from_top())
 }
 
+/// Generate the OpenAPI document without starting a server.
+///
+/// Used by the `generate-openapi` binary and CI to produce the spec file
+/// that `openapi-typescript` consumes.
+pub fn generate_openapi() -> OpenApi {
+    let mut open_api = base_open_api();
+    // Build the router to populate the spec, then discard the router.
+    let _ = build_api_router(&mut open_api);
+    open_api
+}
+
 async fn health() -> &'static str {
     "ok"
+}
+
+async fn serve_openapi(
+    Extension(api): Extension<Arc<OpenApi>>,
+) -> axum::response::Response {
+    // Serialize once and return the bytes directly to avoid cloning the
+    // full ~360 KB OpenApi document on every request.
+    let body = serde_json::to_vec(api.as_ref()).unwrap_or_default();
+    axum::response::IntoResponse::into_response((
+        [(axum::http::header::CONTENT_TYPE, "application/json")],
+        Body::from(body),
+    ))
 }

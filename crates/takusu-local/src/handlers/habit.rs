@@ -1,29 +1,30 @@
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
+use takusu_local_lib::app::DependencyAnalysisResponse;
 use takusu_storage::{
     CreateHabit, CreateHabitBatch, CreateHabitBatchResult, CreateHabitScheduledSpan, HabitDetail,
     HabitEstimateRequest, HabitEstimateResult, HabitPreviewRequest, HabitPreviewTask, HabitRow,
     HabitScheduledSpanRow, HabitStepInput, HabitStepRow, UpdateHabit,
 };
 
-use crate::error::HttpError;
+use crate::error::{HttpError, NoContent};
 use crate::state::AppState;
 
 pub async fn create_habit(
     State(state): State<AppState>,
     Json(body): Json<CreateHabit>,
-) -> Result<(StatusCode, Json<HabitRow>), HttpError> {
+) -> Result<Json<HabitRow>, HttpError> {
     let habit = state.app.create_habit(&body).await?;
-    Ok((StatusCode::CREATED, Json(habit)))
+    Ok(Json(habit))
 }
 
 pub async fn create_habit_batch(
     State(state): State<AppState>,
     Json(body): Json<CreateHabitBatch>,
-) -> Result<(StatusCode, Json<Vec<CreateHabitBatchResult>>), HttpError> {
+) -> Result<Json<Vec<CreateHabitBatchResult>>, HttpError> {
     let habits = state.app.create_habit_batch(&body).await?;
-    Ok((StatusCode::CREATED, Json(habits)))
+    Ok(Json(habits))
 }
 
 pub async fn preview_habit(
@@ -77,9 +78,9 @@ pub async fn replace_habit(
 pub async fn delete_habit(
     State(state): State<AppState>,
     Path(id): Path<String>,
-) -> Result<StatusCode, HttpError> {
+) -> Result<NoContent, HttpError> {
     state.app.delete_habit(&id).await?;
-    Ok(StatusCode::NO_CONTENT)
+    Ok(NoContent(StatusCode::NO_CONTENT))
 }
 
 // ── Habit scheduled spans (#303 / #503) ────────────────────────────────
@@ -107,17 +108,17 @@ pub async fn create_habit_scheduled_span(
     State(state): State<AppState>,
     Path(id): Path<String>,
     Json(body): Json<CreateHabitScheduledSpan>,
-) -> Result<(StatusCode, Json<HabitScheduledSpanRow>), HttpError> {
+) -> Result<Json<HabitScheduledSpanRow>, HttpError> {
     let span = state.app.create_habit_scheduled_span(&id, &body).await?;
-    Ok((StatusCode::CREATED, Json(span)))
+    Ok(Json(span))
 }
 
 pub async fn delete_habit_scheduled_span(
     State(state): State<AppState>,
     Path((id, span_id)): Path<(String, String)>,
-) -> Result<StatusCode, HttpError> {
+) -> Result<NoContent, HttpError> {
     state.app.delete_habit_scheduled_span(&id, &span_id).await?;
-    Ok(StatusCode::NO_CONTENT)
+    Ok(NoContent(StatusCode::NO_CONTENT))
 }
 
 // ── Habit steps (#95) ────────────────────────────────────────────────────
@@ -149,7 +150,7 @@ pub async fn replace_habit_steps(
 pub async fn step_dependency_analysis(
     State(state): State<AppState>,
     Path(id): Path<String>,
-) -> Result<Json<serde_json::Value>, HttpError> {
+) -> Result<Json<DependencyAnalysisResponse>, HttpError> {
     let redundant = state.app.analyze_habit_step_dependencies(&id).await?;
-    Ok(Json(serde_json::json!({ "redundant": redundant })))
+    Ok(Json(DependencyAnalysisResponse { redundant }))
 }

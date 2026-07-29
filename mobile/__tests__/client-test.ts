@@ -91,6 +91,7 @@ describe('TakusuClient', () => {
     });
     const result = await client.moveEntry('task-1', {
       start_at: '2026-07-24T10:00:00Z',
+      force: false,
     });
     expect(result.task_id).toBe('task-1');
     expect(result.start_at).toBe('2026-07-24T10:00:00Z');

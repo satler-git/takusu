@@ -27,6 +27,8 @@ async-trait = "0.1"
 strum = { version = "0.28", features = ["derive"] }
 insta = "1"
 inventory = "0.3"
+schemars = "1"
+aide = { version = "0.16.0-alpha.4", features = ["axum", "axum-extra", "axum-json", "axum-query"] }
 reqwest = { version = "0.13", features = [
   "json",
   "form",

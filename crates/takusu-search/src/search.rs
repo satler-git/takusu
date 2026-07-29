@@ -183,7 +183,7 @@ impl EvalContext {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct Completion {
     /// Full query value after selecting this completion.
     pub value: String,

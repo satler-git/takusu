@@ -27,6 +27,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "aide"
+version = "0.16.0-alpha.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "390515b47251185fa076ac92a7a582d9d383b03e13cef0c801e7670cf928229b"
+dependencies = [
+ "axum",
+ "axum-extra",
+ "bytes",
+ "cfg-if",
+ "http",
+ "indexmap",
+ "schemars",
+ "serde",
+ "serde_json",
+ "serde_qs",
+ "thiserror 2.0.18",
+ "tower-layer",
+ "tower-service",
+ "tracing",
+]
+
+[[package]]
 name = "allocator-api2"
 version = "0.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -303,6 +325,27 @@ dependencies = [
  "mime",
  "pin-project-lite",
  "sync_wrapper",
+ "tower-layer",
+ "tower-service",
+ "tracing",
+]
+
+[[package]]
+name = "axum-extra"
+version = "0.12.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "be44683b41ccb9ab2d23a5230015c9c3c55be97a25e4428366de8873103f7970"
+dependencies = [
+ "axum",
+ "axum-core",
+ "bytes",
+ "futures-core",
+ "futures-util",
+ "http",
+ "http-body",
+ "http-body-util",
+ "mime",
+ "pin-project-lite",
  "tower-layer",
  "tower-service",
  "tracing",
@@ -4347,6 +4390,7 @@ checksum = "a2b42f36aa1cd011945615b92222f6bf73c599a102a300334cd7f8dbeec726cc"
 dependencies = [
  "chrono",
  "dyn-clone",
+ "indexmap",
  "ref-cast",
  "schemars_derive",
  "serde",
@@ -4633,6 +4677,19 @@ dependencies = [
  "itoa",
  "serde",
  "serde_core",
+]
+
+[[package]]
+name = "serde_qs"
+version = "1.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "67d525c8ff68aa99e5818302259bdd02d86d0303710616f39c0f44846ff6d332"
+dependencies = [
+ "axum",
+ "itoa",
+ "percent-encoding",
+ "ryu",
+ "serde",
 ]
 
 [[package]]
@@ -5243,6 +5300,7 @@ dependencies = [
  "realfft",
  "regex",
  "reqwest",
+ "schemars",
  "serde",
  "serde_json",
  "sherpa-onnx",
@@ -5351,13 +5409,16 @@ dependencies = [
 name = "takusu-local"
 version = "0.20260729.1"
 dependencies = [
+ "aide",
  "async-trait",
  "axum",
  "http",
  "http-body-util",
+ "indexmap",
  "jiff",
  "libc",
  "rstest",
+ "schemars",
  "sentry",
  "serde",
  "serde_json",
@@ -5386,6 +5447,7 @@ dependencies = [
  "moka",
  "petgraph",
  "reqwest",
+ "schemars",
  "sentry",
  "serde",
  "serde_json",
@@ -5410,6 +5472,7 @@ name = "takusu-search"
 version = "0.20260729.1"
 dependencies = [
  "jiff",
+ "schemars",
  "serde",
  "serde_json",
  "takusu-types",
@@ -5422,6 +5485,7 @@ name = "takusu-storage"
 version = "0.20260729.1"
 dependencies = [
  "async-trait",
+ "schemars",
  "serde",
  "serde_json",
  "sqlx",
@@ -5456,6 +5520,7 @@ dependencies = [
  "getrandom 0.4.3",
  "hmac",
  "jiff",
+ "schemars",
  "serde",
  "serde_json",
  "sha2 0.11.0",

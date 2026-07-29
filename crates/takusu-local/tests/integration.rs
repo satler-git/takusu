@@ -136,7 +136,7 @@ async fn token_crud() {
         json!({ "label": "test-device" }),
     );
     let res = app.clone().oneshot(req).await.unwrap();
-    assert_eq!(res.status(), StatusCode::CREATED);
+    assert_eq!(res.status(), StatusCode::OK);
     let body: serde_json::Value = serde_json::from_str(&body_str(res.into_body()).await).unwrap();
     let new_token = body["token"].as_str().unwrap();
     assert_eq!(new_token.split('.').count(), 3, "token should be a JWT");
@@ -198,7 +198,7 @@ async fn task_create_and_list() {
         }),
     );
     let res = app.clone().oneshot(req).await.unwrap();
-    assert_eq!(res.status(), StatusCode::CREATED);
+    assert_eq!(res.status(), StatusCode::OK);
     let body: serde_json::Value = serde_json::from_str(&body_str(res.into_body()).await).unwrap();
     assert_eq!(body["title"], "テストタスク");
     assert_eq!(body["status"], "pending");
@@ -246,7 +246,7 @@ async fn task_update_rejects_reversed_datetimes() {
         }),
     );
     let res = app.clone().oneshot(create).await.unwrap();
-    assert_eq!(res.status(), StatusCode::CREATED);
+    assert_eq!(res.status(), StatusCode::OK);
     let body: serde_json::Value = serde_json::from_str(&body_str(res.into_body()).await).unwrap();
     let task_id = body["id"].as_str().unwrap();
 
@@ -279,7 +279,7 @@ async fn split_rejects_end_at_before_start_at() {
         }),
     );
     let res = app.clone().oneshot(create).await.unwrap();
-    assert_eq!(res.status(), StatusCode::CREATED);
+    assert_eq!(res.status(), StatusCode::OK);
     let task: serde_json::Value = serde_json::from_str(&body_str(res.into_body()).await).unwrap();
     let id = task["id"].as_str().unwrap();
 
@@ -540,7 +540,7 @@ async fn habit_crud() {
         }),
     );
     let res = app.clone().oneshot(req).await.unwrap();
-    assert_eq!(res.status(), StatusCode::CREATED);
+    assert_eq!(res.status(), StatusCode::OK);
     let body: serde_json::Value = serde_json::from_str(&body_str(res.into_body()).await).unwrap();
     let habit_id = body["id"].as_str().unwrap();
     // create_habit assigns a monotonic display_id (#305).
@@ -647,7 +647,7 @@ async fn habit_delete_cascades_to_tasks() {
         }),
     );
     let res = app.clone().oneshot(habit_req).await.unwrap();
-    assert_eq!(res.status(), StatusCode::CREATED);
+    assert_eq!(res.status(), StatusCode::OK);
     let body: serde_json::Value = serde_json::from_str(&body_str(res.into_body()).await).unwrap();
     let habit_id = body["id"].as_str().unwrap();
 
@@ -668,7 +668,7 @@ async fn habit_delete_cascades_to_tasks() {
         }),
     );
     let res = app.clone().oneshot(task_req).await.unwrap();
-    assert_eq!(res.status(), StatusCode::CREATED);
+    assert_eq!(res.status(), StatusCode::OK);
     let task_body: serde_json::Value =
         serde_json::from_str(&body_str(res.into_body()).await).unwrap();
     let task_id = task_body["id"].as_str().unwrap();
@@ -970,7 +970,7 @@ async fn update_task_to_terminal_status_closes_open_work_session() {
             }),
         );
         let res = app.clone().oneshot(req).await.unwrap();
-        assert_eq!(res.status(), StatusCode::CREATED);
+        assert_eq!(res.status(), StatusCode::OK);
         let body: serde_json::Value =
             serde_json::from_str(&body_str(res.into_body()).await).unwrap();
         body["id"].as_str().unwrap().to_string()
@@ -1709,7 +1709,7 @@ async fn habit_sync_marks_generated_task_unedited() {
         }),
     );
     let res = app.clone().oneshot(create_req).await.unwrap();
-    assert_eq!(res.status(), StatusCode::CREATED);
+    assert_eq!(res.status(), StatusCode::OK);
     let body: serde_json::Value = serde_json::from_str(&body_str(res.into_body()).await).unwrap();
     let habit_id = body["id"].as_str().unwrap();
 
@@ -1754,7 +1754,7 @@ async fn task_edit_marks_habit_task_user_edited() {
         }),
     );
     let res = app.clone().oneshot(create_req).await.unwrap();
-    assert_eq!(res.status(), StatusCode::CREATED);
+    assert_eq!(res.status(), StatusCode::OK);
     let body: serde_json::Value = serde_json::from_str(&body_str(res.into_body()).await).unwrap();
     let habit_id = body["id"].as_str().unwrap();
 
@@ -2372,7 +2372,7 @@ async fn task_replace_rejects_negative_avg_minutes() {
         }),
     );
     let res = app.clone().oneshot(create_req).await.unwrap();
-    assert_eq!(res.status(), StatusCode::CREATED);
+    assert_eq!(res.status(), StatusCode::OK);
     let body: serde_json::Value = serde_json::from_str(&body_str(res.into_body()).await).unwrap();
     let task_id = body["id"].as_str().unwrap();
 
@@ -2407,7 +2407,7 @@ async fn create_daily_habit(app: &axum::Router, title: &str) -> String {
         }),
     );
     let res = app.clone().oneshot(req).await.unwrap();
-    assert_eq!(res.status(), StatusCode::CREATED);
+    assert_eq!(res.status(), StatusCode::OK);
     let body: serde_json::Value = serde_json::from_str(&body_str(res.into_body()).await).unwrap();
     body["id"].as_str().unwrap().to_string()
 }
@@ -2451,7 +2451,7 @@ async fn habit_scheduled_span_skips_occurrences_in_range() {
         json!({ "start_date": span_start, "end_date": span_end, "reason": "休暇" }),
     );
     let res = app.clone().oneshot(req).await.unwrap();
-    assert_eq!(res.status(), StatusCode::CREATED);
+    assert_eq!(res.status(), StatusCode::OK);
 
     let tasks = sync_habit_tasks(&app, &habit_id).await;
     assert!(
@@ -2515,7 +2515,7 @@ async fn habit_scheduled_span_generates_only_in_range_for_disabled_habit() {
         json!({ "start_date": span_start, "end_date": span_end, "reason": "集中ウィーク" }),
     );
     let res = app.clone().oneshot(req).await.unwrap();
-    assert_eq!(res.status(), StatusCode::CREATED);
+    assert_eq!(res.status(), StatusCode::OK);
 
     let tasks = sync_habit_tasks(&app, &habit_id).await;
     assert!(
@@ -2584,7 +2584,7 @@ async fn habit_scheduled_span_deletes_existing_pending_unedited_tasks() {
         json!({ "start_date": span_date, "end_date": span_date }),
     );
     let res = app.clone().oneshot(req).await.unwrap();
-    assert_eq!(res.status(), StatusCode::CREATED);
+    assert_eq!(res.status(), StatusCode::OK);
 
     // Re-sync; the skipped date's pending unedited task should be deleted.
     let tasks_after = sync_habit_tasks(&app, &habit_id).await;
@@ -2631,7 +2631,7 @@ async fn habit_scheduled_span_protects_edited_and_nonpending_tasks() {
         json!({ "start_date": span_date, "end_date": span_date }),
     );
     let res = app.clone().oneshot(req).await.unwrap();
-    assert_eq!(res.status(), StatusCode::CREATED);
+    assert_eq!(res.status(), StatusCode::OK);
 
     // Re-sync; the protected task must still exist.
     let _ = sync_habit_tasks(&app, &habit_id).await;
@@ -2714,7 +2714,7 @@ async fn habit_scheduled_span_list_and_delete() {
         json!({ "start_date": "2026-08-01", "end_date": "2026-08-07", "reason": "夏休み" }),
     );
     let res = app.clone().oneshot(req).await.unwrap();
-    assert_eq!(res.status(), StatusCode::CREATED);
+    assert_eq!(res.status(), StatusCode::OK);
     let span_body: serde_json::Value =
         serde_json::from_str(&body_str(res.into_body()).await).unwrap();
     let span_id = span_body["id"].as_str().unwrap().to_string();
@@ -2766,7 +2766,7 @@ async fn habit_scheduled_span_list_all_endpoint() {
             json!({ "start_date": start, "end_date": start }),
         );
         let res = app.clone().oneshot(req).await.unwrap();
-        assert_eq!(res.status(), StatusCode::CREATED);
+        assert_eq!(res.status(), StatusCode::OK);
     }
 
     // GET /api/habits/spans must return both (and not be shadowed by
@@ -2796,7 +2796,7 @@ async fn habit_delete_removes_its_scheduled_spans() {
         json!({ "start_date": "2026-08-01", "end_date": "2026-08-07" }),
     );
     let res = app.clone().oneshot(req).await.unwrap();
-    assert_eq!(res.status(), StatusCode::CREATED);
+    assert_eq!(res.status(), StatusCode::OK);
 
     // Confirm it shows up in list-all.
     let req = auth_req(Method::GET, "/api/habits/scheduled-spans");
@@ -3218,7 +3218,7 @@ async fn create_weekly_period_habit(app: &axum::Router, title: &str) -> String {
     let res = app.clone().oneshot(req).await.unwrap();
     let status = res.status();
     let raw = body_str(res.into_body()).await;
-    assert_eq!(status, StatusCode::CREATED, "create failed: {raw}");
+    assert_eq!(status, StatusCode::OK, "create failed: {raw}");
     let body: serde_json::Value = serde_json::from_str(&raw).unwrap();
     body["id"].as_str().unwrap().to_string()
 }
@@ -3309,7 +3309,7 @@ async fn habit_period_clamps_today_start_to_midnight() {
     let res = app.clone().oneshot(req).await.unwrap();
     let status = res.status();
     let raw = body_str(res.into_body()).await;
-    assert_eq!(status, StatusCode::CREATED, "create failed: {raw}");
+    assert_eq!(status, StatusCode::OK, "create failed: {raw}");
     let body: serde_json::Value = serde_json::from_str(&raw).unwrap();
     let habit_id = body["id"].as_str().unwrap().to_string();
 
@@ -3372,7 +3372,7 @@ async fn habit_period_scheduled_span_skips_occurrence() {
         json!({ "start_date": first_date, "end_date": first_date }),
     );
     let res = app.clone().oneshot(req).await.unwrap();
-    assert_eq!(res.status(), StatusCode::CREATED);
+    assert_eq!(res.status(), StatusCode::OK);
 
     // Re-sync; no task should carry the skipped date in its title.
     let tasks = sync_habit_tasks(&app, &habit_id).await;
@@ -3430,7 +3430,7 @@ async fn create_task_simple(app: &axum::Router, title: &str) -> String {
         }),
     );
     let res = app.clone().oneshot(req).await.unwrap();
-    assert_eq!(res.status(), StatusCode::CREATED);
+    assert_eq!(res.status(), StatusCode::OK);
     let body: serde_json::Value = serde_json::from_str(&body_str(res.into_body()).await).unwrap();
     body["id"].as_str().unwrap().to_string()
 }
@@ -3823,7 +3823,7 @@ async fn list_tasks_overdue_status_returns_unfinished_past_deadline() {
         }),
     );
     let res = app.clone().oneshot(future_req).await.unwrap();
-    assert_eq!(res.status(), StatusCode::CREATED);
+    assert_eq!(res.status(), StatusCode::OK);
     let body: serde_json::Value = serde_json::from_str(&body_str(res.into_body()).await).unwrap();
     let future = body["id"].as_str().unwrap().to_string();
 
@@ -3862,7 +3862,7 @@ async fn memory_crud_and_search() {
         }),
     );
     let res = app.clone().oneshot(create_req).await.unwrap();
-    assert_eq!(res.status(), StatusCode::CREATED);
+    assert_eq!(res.status(), StatusCode::OK);
     let row: serde_json::Value = serde_json::from_str(&body_str(res.into_body()).await).unwrap();
     let id = row["id"].as_str().unwrap().to_owned();
     assert_eq!(row["key"], "研究室");
@@ -4188,7 +4188,7 @@ async fn progress_lifecycle() {
         }),
     );
     let res = app.clone().oneshot(create).await.unwrap();
-    assert_eq!(res.status(), StatusCode::CREATED);
+    assert_eq!(res.status(), StatusCode::OK);
     let task: serde_json::Value = serde_json::from_str(&body_str(res.into_body()).await).unwrap();
     let id = task["id"].as_str().unwrap();
 
@@ -4260,7 +4260,7 @@ async fn progress_and_pause_cannot_share_operation_id() {
         }),
     );
     let res = app.clone().oneshot(create).await.unwrap();
-    assert_eq!(res.status(), StatusCode::CREATED);
+    assert_eq!(res.status(), StatusCode::OK);
     let task: serde_json::Value = serde_json::from_str(&body_str(res.into_body()).await).unwrap();
     let id = task["id"].as_str().unwrap();
 
@@ -4316,7 +4316,7 @@ async fn progress_status_validation() {
         }),
     );
     let res = app.clone().oneshot(create).await.unwrap();
-    assert_eq!(res.status(), StatusCode::CREATED);
+    assert_eq!(res.status(), StatusCode::OK);
     let task: serde_json::Value = serde_json::from_str(&body_str(res.into_body()).await).unwrap();
     let id = task["id"].as_str().unwrap();
 
@@ -4368,7 +4368,7 @@ async fn split_task_works() {
         }),
     );
     let res = app.clone().oneshot(create).await.unwrap();
-    assert_eq!(res.status(), StatusCode::CREATED);
+    assert_eq!(res.status(), StatusCode::OK);
     let task: serde_json::Value = serde_json::from_str(&body_str(res.into_body()).await).unwrap();
     let id = task["id"].as_str().unwrap();
 
@@ -4404,7 +4404,7 @@ async fn split_rejects_retained_less_than_done() {
         }),
     );
     let res = app.clone().oneshot(create).await.unwrap();
-    assert_eq!(res.status(), StatusCode::CREATED);
+    assert_eq!(res.status(), StatusCode::OK);
     let task: serde_json::Value = serde_json::from_str(&body_str(res.into_body()).await).unwrap();
     let id = task["id"].as_str().unwrap();
 
@@ -4433,7 +4433,7 @@ async fn task_create_normalizes_zero_quantity_total_to_null() {
         }),
     );
     let res = app.oneshot(req).await.unwrap();
-    assert_eq!(res.status(), StatusCode::CREATED);
+    assert_eq!(res.status(), StatusCode::OK);
     let body: serde_json::Value = serde_json::from_str(&body_str(res.into_body()).await).unwrap();
     assert!(body["quantity_total"].is_null());
     assert_eq!(body["quantity_done"], 0);
@@ -4456,7 +4456,7 @@ async fn task_create_normalizes_zero_original_quantity_total_to_null() {
         }),
     );
     let res = app.oneshot(req).await.unwrap();
-    assert_eq!(res.status(), StatusCode::CREATED);
+    assert_eq!(res.status(), StatusCode::OK);
     let body: serde_json::Value = serde_json::from_str(&body_str(res.into_body()).await).unwrap();
     assert_eq!(body["quantity_total"], 10);
     assert!(body["original_quantity_total"].is_null());
@@ -4478,7 +4478,7 @@ async fn split_rejects_zero_quantity_total() {
         }),
     );
     let res = app.clone().oneshot(create).await.unwrap();
-    assert_eq!(res.status(), StatusCode::CREATED);
+    assert_eq!(res.status(), StatusCode::OK);
     let task: serde_json::Value = serde_json::from_str(&body_str(res.into_body()).await).unwrap();
     let id = task["id"].as_str().unwrap();
     assert!(task["quantity_total"].is_null());
@@ -4509,7 +4509,7 @@ async fn split_uses_total_when_original_quantity_total_is_zero() {
         }),
     );
     let res = app.clone().oneshot(create).await.unwrap();
-    assert_eq!(res.status(), StatusCode::CREATED);
+    assert_eq!(res.status(), StatusCode::OK);
     let task: serde_json::Value = serde_json::from_str(&body_str(res.into_body()).await).unwrap();
     let id = task["id"].as_str().unwrap();
     assert!(task["original_quantity_total"].is_null());
@@ -4546,7 +4546,7 @@ async fn progress_active_minutes_are_incremental() {
         }),
     );
     let res = app.clone().oneshot(create).await.unwrap();
-    assert_eq!(res.status(), StatusCode::CREATED);
+    assert_eq!(res.status(), StatusCode::OK);
     let task: serde_json::Value = serde_json::from_str(&body_str(res.into_body()).await).unwrap();
     let id = task["id"].as_str().unwrap();
 
@@ -4620,7 +4620,7 @@ async fn update_task_completed_at_follows_status() {
         }),
     );
     let res = app.clone().oneshot(create).await.unwrap();
-    assert_eq!(res.status(), StatusCode::CREATED);
+    assert_eq!(res.status(), StatusCode::OK);
     let task: serde_json::Value = serde_json::from_str(&body_str(res.into_body()).await).unwrap();
     let id = task["id"].as_str().unwrap();
 
@@ -5018,7 +5018,7 @@ async fn delete_task_nullifies_split_from_task_id() {
         }),
     );
     let res = app.clone().oneshot(create).await.unwrap();
-    assert_eq!(res.status(), StatusCode::CREATED);
+    assert_eq!(res.status(), StatusCode::OK);
     let task: serde_json::Value = serde_json::from_str(&body_str(res.into_body()).await).unwrap();
     let id = task["id"].as_str().unwrap().to_string();
 
@@ -5061,7 +5061,7 @@ async fn delete_task_removes_progress_and_work_session_rows() {
         }),
     );
     let res = app.clone().oneshot(create).await.unwrap();
-    assert_eq!(res.status(), StatusCode::CREATED);
+    assert_eq!(res.status(), StatusCode::OK);
     let task: serde_json::Value = serde_json::from_str(&body_str(res.into_body()).await).unwrap();
     let id = task["id"].as_str().unwrap().to_string();
 
@@ -5194,7 +5194,7 @@ async fn create_task_batch_with_relative_dependencies() {
         }),
     );
     let res = app.clone().oneshot(req).await.unwrap();
-    assert_eq!(res.status(), StatusCode::CREATED);
+    assert_eq!(res.status(), StatusCode::OK);
     let results: Vec<serde_json::Value> =
         serde_json::from_str(&body_str(res.into_body()).await).unwrap();
     assert_eq!(results.len(), 3);
@@ -5306,7 +5306,7 @@ async fn create_habit_batch_succeeds() {
         }),
     );
     let res = app.clone().oneshot(req).await.unwrap();
-    assert_eq!(res.status(), StatusCode::CREATED);
+    assert_eq!(res.status(), StatusCode::OK);
     let results: Vec<serde_json::Value> =
         serde_json::from_str(&body_str(res.into_body()).await).unwrap();
     assert_eq!(results.len(), 2);
@@ -5372,7 +5372,7 @@ async fn task_update_clears_nullable_fields_via_sentinel() {
         }),
     );
     let res = app.clone().oneshot(create).await.unwrap();
-    assert_eq!(res.status(), StatusCode::CREATED);
+    assert_eq!(res.status(), StatusCode::OK);
     let task: serde_json::Value = serde_json::from_str(&body_str(res.into_body()).await).unwrap();
     let id = task["id"].as_str().unwrap();
     assert_eq!(task["description"], "read chapter 3");

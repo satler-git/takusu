@@ -143,7 +143,7 @@ export function habitColorFor(habitDisplayId: number, theme: AppTheme): string {
 //  - otherwise → abandonability color
 export function taskCardColor(
   abandonability: number,
-  habitId: string | undefined,
+  habitId: string | null | undefined,
   habitDisplayId: number | undefined,
   theme: AppTheme,
 ): string {
