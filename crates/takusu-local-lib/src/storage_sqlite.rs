@@ -156,7 +156,9 @@ impl SqliteStorage {
         if let Some(path) = extract_db_path(&url)
             && let Some(parent) = std::path::Path::new(&path).parent()
         {
-            std::fs::create_dir_all(parent).ok();
+            std::fs::create_dir_all(parent).map_err(|e| {
+                format!("failed to create db directory {}: {e}", parent.display())
+            })?;
         }
 
         let pool = SqlitePoolOptions::new()
@@ -713,6 +715,9 @@ impl Storage for SqliteStorage {
         let abandonability = body.abandonability.unwrap_or(0.5.into());
         let fixed = body.fixed.unwrap_or(false);
         let quantity_unit = body.quantity_unit.as_deref();
+        // A title that fails NFKC normalization (e.g. control-character only)
+        // stores NULL, excluding the task from similar-task search rather than
+        // matching on a misleading empty string (#942).
         let normalized_title = takusu_search::memory::normalize_text(
             &body.title,
             Some(takusu_search::memory::MAX_CONTENT_SCALARS),
@@ -1570,7 +1575,8 @@ impl Storage for SqliteStorage {
         let subject_id = body.subject_id.clone().unwrap_or_default();
 
         let mut tx = self.pool.begin().await.map_err(map_err)?;
-        let payload = serde_json::to_string(body).unwrap_or_default();
+        let payload = serde_json::to_string(body)
+            .map_err(|e| StorageError::Io(format!("serialize memory body: {e}")))?;
         let hash = memory_request_hash(&payload, operation_id);
         if let Some(op_id) = operation_id
             && let Some(stored) = Self::check_idempotency(&mut *tx, op_id, &hash).await?
@@ -2445,6 +2451,9 @@ impl Storage for SqliteStorage {
         let depends = takusu_types::DependencyList::new(depends);
 
         let remainder_title = body.title.as_ref().unwrap_or(&original.title);
+        // A title that fails NFKC normalization (e.g. control-character only)
+        // stores NULL, excluding the task from similar-task search rather than
+        // matching on a misleading empty string (#942).
         let normalized_title = takusu_search::memory::normalize_text(
             remainder_title,
             Some(takusu_search::memory::MAX_CONTENT_SCALARS),
