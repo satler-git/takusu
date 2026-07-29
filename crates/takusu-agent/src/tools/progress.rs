@@ -170,6 +170,16 @@ fn apply_estimate_preview(
     }
 }
 
+/// Content payload for progress tools, extending [`ProposalContent`] with
+/// tool-specific extra fields (e.g. `estimate_preview`, `choices`).
+#[derive(Debug, Serialize)]
+struct ProgressContent {
+    approval_required: bool,
+    target: String,
+    #[serde(flatten)]
+    extra: serde_json::Map<String, Value>,
+}
+
 #[allow(clippy::too_many_arguments)]
 fn progress_output(
     operation: ChangeOperation,
@@ -184,15 +194,11 @@ fn progress_output(
     observed_updated_at: Option<String>,
     schedule_dirty: bool,
 ) -> ToolOutput {
-    let mut content = json!({
-        "approval_required": true,
-        "target": target.to_string(),
-    });
-    if let Some(obj) = content.as_object_mut() {
-        for (k, v) in content_extra {
-            obj.insert(k, v);
-        }
-    }
+    let content = ProgressContent {
+        approval_required: true,
+        target: target.to_string(),
+        extra: content_extra,
+    };
     ToolOutput {
         content: serde_json::to_string(&content).unwrap(),
         why: Some(why.to_string()),

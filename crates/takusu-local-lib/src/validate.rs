@@ -18,8 +18,8 @@
 
 use takusu_core::{Minutes, SleepConfig, WorkloadConfig};
 use takusu_storage::{
-    CreateHabit, CreateHabitScheduledSpan, CreateMemory, CreateSkill, CreateTask, HabitPreviewRequest,
-    HabitStepInput, SettingsRow, UpdateHabit, UpdateSettings, UpdateTask,
+    CreateHabit, CreateHabitScheduledSpan, CreateMemory, CreateSkill, CreateTask,
+    HabitPreviewRequest, HabitStepInput, SettingsRow, UpdateHabit, UpdateSettings, UpdateTask,
 };
 use takusu_util::{EnumLabel, SleepInput};
 
@@ -78,9 +78,7 @@ pub(crate) fn validate_title(title: &str) -> Result<(), AppError> {
 /// This is the single point inside `takusu-local-lib` where storage/client strings
 /// become `takusu_habit` types (see `doc/type-safety-issues.md` §3.4 / §8.6).
 /// `takusu-worker` validates recurrences separately without converting to `takusu_habit`.
-pub(crate) fn parse_recurrence(
-    recurrence: &str,
-) -> Result<takusu_habit::RecurrenceRule, AppError> {
+pub(crate) fn parse_recurrence(recurrence: &str) -> Result<takusu_habit::RecurrenceRule, AppError> {
     serde_json::from_str::<takusu_habit::RecurrenceRule>(recurrence).map_err(|e| {
         AppError::BadRequest(BadRequestKind::Other(format!("invalid recurrence: {e}")))
     })
@@ -250,12 +248,7 @@ impl Validate for CreateTask {
         validate_minutes(self.avg_minutes, self.sigma_minutes)?;
         validate_title(&self.title)?;
         // For create/replace there is no existing row to compare against.
-        validate_task_datetimes(
-            Some(self.start_at.as_ref()),
-            Some(&self.end_at),
-            None,
-            None,
-        )?;
+        validate_task_datetimes(Some(self.start_at.as_ref()), Some(&self.end_at), None, None)?;
         Ok(())
     }
 }

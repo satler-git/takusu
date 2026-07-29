@@ -3965,7 +3965,10 @@ async fn find_similar_tasks_orders_completed_tasks() {
     // similarity is a structured object with metric and score (#942, #1253).
     let sim = &similar[0]["similarity"];
     assert_eq!(sim["metric"], "dice");
-    assert!(sim["score"].as_f64().is_some(), "unexpected similarity: {sim}");
+    assert!(
+        sim["score"].as_f64().is_some(),
+        "unexpected similarity: {sim}"
+    );
 }
 
 #[tokio::test]
@@ -5384,8 +5387,12 @@ async fn task_update_clears_nullable_fields_via_sentinel() {
     );
     let res = app.clone().oneshot(patch).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let updated: serde_json::Value = serde_json::from_str(&body_str(res.into_body()).await).unwrap();
-    assert!(updated["description"].is_null(), "description should be null");
+    let updated: serde_json::Value =
+        serde_json::from_str(&body_str(res.into_body()).await).unwrap();
+    assert!(
+        updated["description"].is_null(),
+        "description should be null"
+    );
     assert!(
         updated.get("quantity_unit").is_none() || updated["quantity_unit"].is_null(),
         "quantity_unit should be absent or null"
@@ -5400,8 +5407,14 @@ async fn task_update_clears_nullable_fields_via_sentinel() {
             .fetch_one(&pool)
             .await
             .unwrap();
-    assert!(db_desc.is_none(), "DB description should be NULL, got {db_desc:?}");
-    assert!(db_unit.is_none(), "DB quantity_unit should be NULL, got {db_unit:?}");
+    assert!(
+        db_desc.is_none(),
+        "DB description should be NULL, got {db_desc:?}"
+    );
+    assert!(
+        db_unit.is_none(),
+        "DB quantity_unit should be NULL, got {db_unit:?}"
+    );
 
     // quantity_total=0 is rejected by validation on both backends.
     let patch_zero = auth_req_body(

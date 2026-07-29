@@ -13,8 +13,8 @@ use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::sync::Arc;
 use takusu_client::{
-    Client, HabitDetail, HabitRow, HabitScheduledSpanRow, HabitStepRow, ScheduleEntry,
-    ScheduleRow, SettingsResponse, TaskRow,
+    Client, HabitDetail, HabitRow, HabitScheduledSpanRow, HabitStepRow, ScheduleEntry, ScheduleRow,
+    SettingsResponse, TaskRow,
 };
 use takusu_util::{Quantity, TaskStatus, parse_datetime_tz};
 
@@ -146,7 +146,11 @@ fn task_row(
         end_at: "2025-06-05T10:00:00Z".parse().unwrap(),
         avg_minutes: 30,
         sigma_minutes: 5,
-        depends: depends.iter().map(|s| s.to_string()).collect::<Vec<_>>().into(),
+        depends: depends
+            .iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>()
+            .into(),
         parallelizable: false,
         allows_parallel: false,
         abandonability: 0.5.into(),

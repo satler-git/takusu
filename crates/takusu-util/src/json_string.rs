@@ -90,8 +90,8 @@ impl<T: Serialize> Serialize for JsonString<T> {
     where
         S: Serializer,
     {
-        let json = serde_json::to_string(&self.0)
-            .map_err(<S::Error as serde::ser::Error>::custom)?;
+        let json =
+            serde_json::to_string(&self.0).map_err(<S::Error as serde::ser::Error>::custom)?;
         serializer.serialize_str(&json)
     }
 }
@@ -102,8 +102,7 @@ impl<'de, T: DeserializeOwned> Deserialize<'de> for JsonString<T> {
         D: Deserializer<'de>,
     {
         let s: String = String::deserialize(deserializer)?;
-        let val =
-            serde_json::from_str(&s).map_err(<D::Error as serde::de::Error>::custom)?;
+        let val = serde_json::from_str(&s).map_err(<D::Error as serde::de::Error>::custom)?;
         Ok(JsonString(val))
     }
 }
@@ -113,8 +112,8 @@ impl<'de, T: DeserializeOwned> Deserialize<'de> for JsonString<T> {
 #[cfg(feature = "sqlx")]
 mod sqlx_impl {
     use super::JsonString;
-    use serde::de::DeserializeOwned;
     use serde::Serialize;
+    use serde::de::DeserializeOwned;
     use sqlx::encode::IsNull;
     use sqlx::error::BoxDynError;
     use sqlx::{Database, Decode, Encode, Type};
@@ -242,8 +241,14 @@ mod tests {
     #[test]
     fn json_string_with_struct_vec_roundtrip() {
         let entries = vec![
-            TestEntry { id: 1, name: "a".into() },
-            TestEntry { id: 2, name: "b".into() },
+            TestEntry {
+                id: 1,
+                name: "a".into(),
+            },
+            TestEntry {
+                id: 2,
+                name: "b".into(),
+            },
         ];
         let js = JsonString::new(entries.clone());
         let json = serde_json::to_string(&js).unwrap();

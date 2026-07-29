@@ -11,9 +11,7 @@ pub(crate) fn validate_scheduled_span_dates(
     end: &takusu_util::Date,
 ) -> Result<(), String> {
     if start > end {
-        return Err(format!(
-            "start_date ({start}) must be <= end_date ({end})"
-        ));
+        return Err(format!("start_date ({start}) must be <= end_date ({end})"));
     }
     Ok(())
 }

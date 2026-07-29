@@ -20,7 +20,9 @@ use crate::TimeOfDay;
 
 /// Error returned when a string cannot be parsed into [`SleepInput`].
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
-#[error("invalid sleep input: {value:?} (expected \"recommended\", \"disabled\", or \"HH:MM-HH:MM\")")]
+#[error(
+    "invalid sleep input: {value:?} (expected \"recommended\", \"disabled\", or \"HH:MM-HH:MM\")"
+)]
 pub struct SleepInputError {
     value: String,
 }
@@ -45,10 +47,7 @@ pub enum SleepInput {
     /// Disable the sleep window entirely.
     Disabled,
     /// A custom sleep window.
-    Custom {
-        start: TimeOfDay,
-        end: TimeOfDay,
-    },
+    Custom { start: TimeOfDay, end: TimeOfDay },
 }
 
 impl fmt::Display for SleepInput {
@@ -110,13 +109,19 @@ mod tests {
 
     #[test]
     fn recommended_round_trips() {
-        assert_eq!("recommended".parse::<SleepInput>().unwrap(), SleepInput::Recommended);
+        assert_eq!(
+            "recommended".parse::<SleepInput>().unwrap(),
+            SleepInput::Recommended
+        );
         assert_eq!(SleepInput::Recommended.to_string(), "recommended");
     }
 
     #[test]
     fn disabled_round_trips() {
-        assert_eq!("disabled".parse::<SleepInput>().unwrap(), SleepInput::Disabled);
+        assert_eq!(
+            "disabled".parse::<SleepInput>().unwrap(),
+            SleepInput::Disabled
+        );
         assert_eq!(SleepInput::Disabled.to_string(), "disabled");
     }
 

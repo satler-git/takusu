@@ -6,8 +6,8 @@ use takusu_client::Client;
 
 use crate::tools::{ToolContext, ToolModule};
 use crate::{
-    ChangeOperation, InferredField, InvalidArgsError, ProposedChange, Target, TargetKind,
-    ToolError, ToolExposure, ToolName, ToolOutput, ToolRegistry, TypedTool,
+    ChangeOperation, InferredField, InvalidArgsError, ProposalContent, ProposedChange, Target,
+    TargetKind, ToolError, ToolExposure, ToolName, ToolOutput, ToolRegistry, TypedTool,
     deserialize_trimmed_optional, deserialize_trimmed_required, inferred_fields_schema,
 };
 
@@ -206,15 +206,32 @@ fn validate_skill_input(
     Ok(())
 }
 
+/// Serialized form of a skill returned by `skills_list` / `skills_read`.
+#[derive(Debug, Serialize)]
+struct SkillResponse<'a> {
+    slug: &'a str,
+    name: &'a str,
+    description: &'a str,
+    built_in: bool,
+    created_at: &'a takusu_util::Timestamp,
+    updated_at: &'a takusu_util::Timestamp,
+}
+
+impl<'a> From<&'a takusu_client::SkillRow> for SkillResponse<'a> {
+    fn from(skill: &'a takusu_client::SkillRow) -> Self {
+        Self {
+            slug: &skill.slug,
+            name: &skill.name,
+            description: &skill.description,
+            built_in: skill.built_in,
+            created_at: &skill.created_at,
+            updated_at: &skill.updated_at,
+        }
+    }
+}
+
 fn skill_json(skill: &takusu_client::SkillRow) -> Value {
-    json!({
-        "slug": skill.slug,
-        "name": skill.name,
-        "description": skill.description,
-        "built_in": skill.built_in,
-        "created_at": skill.created_at,
-        "updated_at": skill.updated_at,
-    })
+    serde_json::to_value(SkillResponse::from(skill)).unwrap()
 }
 
 struct SkillsList {
@@ -402,11 +419,7 @@ impl TypedTool for SkillsProposeAdd {
         };
 
         Ok(ToolOutput {
-            content: serde_json::to_string(&json!({
-                "approval_required": true,
-                "target": proposal.target.to_string(),
-            }))
-            .unwrap(),
+            content: ProposalContent::new(&proposal.target).to_json_string(),
             why: args.why,
             warnings: args.warnings,
             proposed_changes: vec![proposal],
@@ -536,11 +549,7 @@ impl TypedTool for SkillsProposeEdit {
         };
 
         Ok(ToolOutput {
-            content: serde_json::to_string(&json!({
-                "approval_required": true,
-                "target": proposal.target.to_string(),
-            }))
-            .unwrap(),
+            content: ProposalContent::new(&proposal.target).to_json_string(),
             why: args.why,
             warnings: args.warnings,
             proposed_changes: vec![proposal],

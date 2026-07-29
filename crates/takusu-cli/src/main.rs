@@ -1333,8 +1333,7 @@ async fn run_task(
             let task = app.get_task(&id).await?;
             let entry = match app.get_schedule().await {
                 Ok(schedule) => {
-                    let entries: Vec<ScheduleEntry> =
-                        schedule.schedule.as_inner().clone();
+                    let entries: Vec<ScheduleEntry> = schedule.schedule.as_inner().clone();
                     entries.into_iter().find(|e| e.task_id == task.id)
                 }
                 Err(_) => None,
@@ -2167,8 +2166,7 @@ async fn run_schedule(
     match cmd {
         ScheduleCommands::Get => {
             let schedule = app.get_schedule().await?;
-            let entries: Vec<ScheduleEntry> =
-                schedule.schedule.as_inner().clone();
+            let entries: Vec<ScheduleEntry> = schedule.schedule.as_inner().clone();
             let tasks = app
                 .list_tasks(&TaskQuery::default())
                 .await
@@ -2179,8 +2177,7 @@ async fn run_schedule(
         ScheduleCommands::Generate { task_ids, sleep } => {
             let body = takusu_local_lib::app::GenerateScheduleInput { task_ids, sleep };
             let schedule = app.generate_schedule(&body).await?;
-            let entries: Vec<ScheduleEntry> =
-                schedule.schedule.as_inner().clone();
+            let entries: Vec<ScheduleEntry> = schedule.schedule.as_inner().clone();
             let tasks = app
                 .list_tasks(&TaskQuery::default())
                 .await
@@ -2209,8 +2206,7 @@ async fn run_schedule(
                 sleep,
             };
             let schedule = app.reschedule(&body).await?;
-            let entries: Vec<ScheduleEntry> =
-                schedule.schedule.as_inner().clone();
+            let entries: Vec<ScheduleEntry> = schedule.schedule.as_inner().clone();
             let tasks = app
                 .list_tasks(&TaskQuery::default())
                 .await
@@ -2993,13 +2989,10 @@ mod tests {
     /// `rich` / `simple`.
     #[test]
     fn reschedule_legacy_mode_flag_is_clean_error() {
-        let result = Cli::try_parse_from([
-            "takusu",
-            "schedule",
-            "reschedule",
-            "--mode",
-            "range",
-        ]);
-        assert!(result.is_err(), "--mode range should be a clap error, not accepted");
+        let result = Cli::try_parse_from(["takusu", "schedule", "reschedule", "--mode", "range"]);
+        assert!(
+            result.is_err(),
+            "--mode range should be a clap error, not accepted"
+        );
     }
 }

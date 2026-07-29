@@ -17,10 +17,10 @@ pub use permissions::Permissions;
 pub use crate::llm::CompactionSettings;
 pub use tool::{
     ChangeOperation, ChangeReceipt, InferredField, InvalidArgsError, OpenAITool,
-    OpenAIToolFunction, ProposedChange, ReceiptTarget, Target, TargetKind, Tool, ToolError,
-    ToolExposure, ToolName, ToolOutput, ToolRegistry, Typed, TypedTool,
+    OpenAIToolFunction, ProposalContent, ProposedChange, ReceiptTarget, Target, TargetKind, Tool,
+    ToolError, ToolExposure, ToolName, ToolOutput, ToolRegistry, Typed, TypedTool,
     deserialize_trimmed_optional, deserialize_trimmed_required, inferred_field_schema,
-    inferred_fields_schema,
+    inferred_fields_schema, normalize_schema,
 };
 pub use user_input::{
     StubUserInputProvider, UserInputAnswer, UserInputProvider, UserInputQuestion,

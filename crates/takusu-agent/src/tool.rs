@@ -377,6 +377,7 @@ pub struct ProposedChange {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct InferredField {
     /// Name of the inferred field.
     pub field: String,
@@ -421,6 +422,34 @@ pub struct ChangeReceipt {
     pub target_revision: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub inferred_fields: Option<Value>,
+}
+
+/// Content payload for proposal-generating tools, serialized into
+/// [`ToolOutput::content`].
+///
+/// Replaces the ad-hoc `json!({ "approval_required": true, "target": ... })`
+/// blocks that were duplicated across mutation, memory, skill, and progress
+/// tools. The struct makes the wire shape visible at the type level and
+/// catches field-name typos at compile time.
+#[derive(Debug, Serialize)]
+pub struct ProposalContent {
+    pub approval_required: bool,
+    pub target: String,
+}
+
+impl ProposalContent {
+    /// Build the standard proposal content for `target`.
+    pub fn new(target: impl fmt::Display) -> Self {
+        Self {
+            approval_required: true,
+            target: target.to_string(),
+        }
+    }
+
+    /// Serialize to the JSON string stored in [`ToolOutput::content`].
+    pub fn to_json_string(&self) -> String {
+        serde_json::to_string(self).unwrap()
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -609,6 +638,13 @@ fn normalize_value(value: &mut Value) {
                     obj.insert("type".into(), inner);
                 }
             }
+        }
+
+        // schemars includes `null` in the `enum` array for `Option<Enum>`
+        // fields. After collapsing the type above, strip `null` from `enum`
+        // so the LLM sees only the valid non-null variants.
+        if let Some(e) = obj.get_mut("enum").and_then(Value::as_array_mut) {
+            e.retain(|v| !v.is_null());
         }
 
         // Recurse into every child value. `properties` is a map of

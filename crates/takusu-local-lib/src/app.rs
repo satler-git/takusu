@@ -23,16 +23,15 @@ use takusu_storage::{
 };
 use takusu_util::search::{Completion, complete};
 use takusu_util::{
-    Abandonability, MemoryKind, ScheduleMode, SleepInput, TaskStatus, TaskStatusFilter,
-    WindowMode,
+    Abandonability, MemoryKind, ScheduleMode, SleepInput, TaskStatus, TaskStatusFilter, WindowMode,
 };
 
 use crate::error::storage_to_app;
 use crate::error::{AppError, BadRequestKind, ConflictKind, SkillOp};
 use crate::token_cache::TokenCache;
 use crate::validate::{
-    parse_recurrence, parse_settings_timezone, validate_minutes, validate_task_datetimes,
-    SettingsPlannerExt, Validate,
+    SettingsPlannerExt, Validate, parse_recurrence, parse_settings_timezone, validate_minutes,
+    validate_task_datetimes,
 };
 
 /// Topologically sort habit steps by their `depends_on` DAG (#95). Steps with
@@ -1117,12 +1116,7 @@ impl TakusuApp {
     ) -> Result<SplitResult, AppError> {
         if body.end_at.is_some() {
             let original = self.storage.get_task(id).await.map_err(storage_to_app)?;
-            validate_task_datetimes(
-                None,
-                body.end_at.as_ref(),
-                original.start_at.as_ref(),
-                None,
-            )?;
+            validate_task_datetimes(None, body.end_at.as_ref(), original.start_at.as_ref(), None)?;
         }
         self.storage
             .split_task(id, body, operation_id)
@@ -1971,7 +1965,8 @@ impl TakusuApp {
         let plan = match input.mode {
             ScheduleMode::Full => {
                 return Err(AppError::BadRequest(BadRequestKind::Other(
-                    "full mode is not supported for reschedule; use generate_schedule instead".into(),
+                    "full mode is not supported for reschedule; use generate_schedule instead"
+                        .into(),
                 )));
             }
             ScheduleMode::Range => {
@@ -2272,7 +2267,8 @@ impl TakusuApp {
             .get_schedule()
             .await
             .map_err(|e| e.to_string())?;
-        let entries: Option<Vec<ScheduleEntry>> = schedule_row.map(|s| s.schedule.as_inner().clone());
+        let entries: Option<Vec<ScheduleEntry>> =
+            schedule_row.map(|s| s.schedule.as_inner().clone());
 
         let client = google_cal::Client::new(client_id, client_secret, refresh_token, calendar_id)
             .map_err(|e| e.to_string())?;

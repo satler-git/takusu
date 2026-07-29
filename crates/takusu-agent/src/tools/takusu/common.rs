@@ -1,3 +1,4 @@
+use serde::Serialize;
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::str::FromStr;
@@ -379,46 +380,87 @@ pub(crate) fn task_reference(task: &TaskRow, habit_display_ids: &HashMap<String,
         .unwrap_or_else(|| format!("#{}", task.display_id))
 }
 
+/// Serialized form of a task returned by task read/preview tools.
+///
+/// Replaces the hand-built `json!({ ... })` object in `task_json`. The
+/// `actual_minutes` field is omitted entirely when `None` (matching the
+/// previous `map.remove("actual_minutes")` behavior) via
+/// `skip_serializing_if`.
+#[derive(Debug, Serialize)]
+pub(crate) struct TaskResponse {
+    pub display_id: i64,
+    pub reference: String,
+    pub title: String,
+    pub description: Option<String>,
+    pub start_at: Option<String>,
+    pub end_at: String,
+    pub avg_minutes: i64,
+    pub sigma_minutes: i64,
+    pub depends: Vec<String>,
+    pub parallelizable: bool,
+    pub allows_parallel: bool,
+    pub abandonability: takusu_util::Abandonability,
+    pub status: TaskStatus,
+    pub fixed: bool,
+    pub quantity_total: Option<takusu_util::Quantity>,
+    pub quantity_done: takusu_util::Quantity,
+    pub quantity_unit: Option<String>,
+    pub completed_at: Option<String>,
+    pub split_from_task_id: Option<String>,
+    pub original_quantity_total: Option<takusu_util::Quantity>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub actual_minutes: Option<i64>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+impl TaskResponse {
+    pub(crate) fn from_task(
+        task: &TaskRow,
+        ctx: &TaskContext,
+        tz: Option<&jiff::tz::TimeZone>,
+    ) -> Self {
+        let fmt = |t: &Timestamp| match tz {
+            Some(tz) => format_datetime_for_display(&t.to_string(), tz),
+            None => t.to_string(),
+        };
+        Self {
+            display_id: task.display_id,
+            reference: ctx.reference(task),
+            title: task.title.clone(),
+            description: task.description.clone(),
+            start_at: task.start_at.as_ref().map(fmt),
+            end_at: fmt(&task.end_at),
+            avg_minutes: task.avg_minutes,
+            sigma_minutes: task.sigma_minutes,
+            depends: ctx.depends(task),
+            parallelizable: task.parallelizable,
+            allows_parallel: task.allows_parallel,
+            abandonability: task.abandonability,
+            status: task.status,
+            fixed: task.fixed,
+            quantity_total: task.quantity_total,
+            quantity_done: task.quantity_done,
+            quantity_unit: task.quantity_unit.clone(),
+            completed_at: task.completed_at.as_ref().map(fmt),
+            split_from_task_id: task
+                .split_from_task_id
+                .as_deref()
+                .and_then(|id| ctx.ref_by_id(id).map(|r| r.reference.clone())),
+            original_quantity_total: task.original_quantity_total,
+            actual_minutes: task.actual_minutes,
+            created_at: fmt(&task.created_at),
+            updated_at: fmt(&task.updated_at),
+        }
+    }
+}
+
 pub(crate) fn task_json(
     task: &TaskRow,
     ctx: &TaskContext,
     tz: Option<&jiff::tz::TimeZone>,
 ) -> Value {
-    let fmt = |t: &Timestamp| match tz {
-        Some(tz) => format_datetime_for_display(&t.to_string(), tz),
-        None => t.to_string(),
-    };
-    let mut value = json!({
-        "display_id": task.display_id,
-        "reference": ctx.reference(task),
-        "title": task.title,
-        "description": task.description,
-        "start_at": task.start_at.as_ref().map(fmt),
-        "end_at": fmt(&task.end_at),
-        "avg_minutes": task.avg_minutes,
-        "sigma_minutes": task.sigma_minutes,
-        "depends": ctx.depends(task),
-        "parallelizable": task.parallelizable,
-        "allows_parallel": task.allows_parallel,
-        "abandonability": task.abandonability,
-        "status": task.status,
-        "fixed": task.fixed,
-        "quantity_total": task.quantity_total,
-        "quantity_done": task.quantity_done,
-        "quantity_unit": task.quantity_unit,
-        "completed_at": task.completed_at.as_ref().map(fmt),
-        "split_from_task_id": task.split_from_task_id.as_deref().and_then(|id| ctx.ref_by_id(id).map(|r| r.reference.clone())),
-        "original_quantity_total": task.original_quantity_total,
-        "actual_minutes": task.actual_minutes,
-        "created_at": fmt(&task.created_at),
-        "updated_at": fmt(&task.updated_at),
-    });
-    if task.actual_minutes.is_none()
-        && let Value::Object(map) = &mut value
-    {
-        map.remove("actual_minutes");
-    }
-    value
+    serde_json::to_value(TaskResponse::from_task(task, ctx, tz)).unwrap()
 }
 
 fn task_dependency_ids(task: &TaskRow) -> Vec<String> {
@@ -535,7 +577,8 @@ pub(super) fn habit_json(habit: &HabitDetail) -> Value {
 }
 
 fn step_json(step: &HabitStepRow, id_to_display_position: &HashMap<String, i64>) -> Value {
-    let depends_on: Vec<i64> = step.depends_on
+    let depends_on: Vec<i64> = step
+        .depends_on
         .to_vec()
         .iter()
         .filter_map(|id| id_to_display_position.get(id).copied())

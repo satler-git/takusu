@@ -30,7 +30,7 @@ expression: def
           "type": "string"
         },
         "fixed": {
-          "description": "If true, generated tasks start at a fixed time and the scheduler will not move them.",
+          "description": "If true, the start time is fixed and the scheduler will not move the task.",
           "type": "boolean"
         },
         "habit_ref": {
@@ -76,7 +76,7 @@ expression: def
           "type": "string"
         },
         "steps": {
-          "description": "Complete ordered steps to replace existing ones. Match existing steps by position.",
+          "description": "Ordered steps for a multi-step habit. Existing step ids are omitted; match by position on update.",
           "items": {
             "additionalProperties": false,
             "properties": {
