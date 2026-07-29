@@ -17,7 +17,7 @@ pub(crate) mod approval;
 pub(crate) mod habit_steps;
 pub(crate) mod history;
 
-pub use permissions::Permissions;
+pub use permissions::{PermissionKey, PermissionKeyParseError, Permissions};
 pub use tts_queue::TtsQueue;
 
 pub use crate::llm::CompactionSettings;
@@ -39,7 +39,6 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use takusu_client::ClientError;
-use takusu_types::EnumLabel;
 use uuid::Uuid;
 
 use jiff::Unit;
@@ -324,7 +323,7 @@ impl AgentSession {
 
     fn all_changes_allowed(&self, changes: &[ProposedChange]) -> Result<bool, AgentError> {
         for change in changes {
-            if !self.is_auto_approved(change.target.kind.as_str(), change.operation.as_str())? {
+            if !self.is_auto_approved(change.target.kind, change.operation)? {
                 return Ok(false);
             }
         }
@@ -2069,7 +2068,9 @@ mod tests {
 
         let mut cfg = AgentConfig::default();
         cfg.server.url = format!("http://{addr}");
-        cfg.llm.permissions.set("schedule", "generate", true);
+        cfg.llm
+            .permissions
+            .set(TargetKind::Schedule, ChangeOperation::Generate, true);
         let agent = AgentSession::new(cfg, registry, mock);
         let result = agent.run_turn("スケジュールを作成して").await.unwrap();
 
@@ -2140,12 +2141,14 @@ mod tests {
         let mut cfg = AgentConfig::default();
         cfg.server.url = format!("http://{addr}");
         // Provider disallows schedule generation.
-        cfg.llm.permissions.set("schedule", "generate", false);
+        cfg.llm
+            .permissions
+            .set(TargetKind::Schedule, ChangeOperation::Generate, false);
         let agent = AgentSession::new(cfg, registry, mock);
 
         // Session override allows it.
         let mut session_permissions = Permissions::default();
-        session_permissions.set("schedule", "generate", true);
+        session_permissions.set(TargetKind::Schedule, ChangeOperation::Generate, true);
         agent.set_session_permissions(session_permissions).unwrap();
 
         let result = agent.run_turn("スケジュールを作成して").await.unwrap();
