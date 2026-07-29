@@ -17,17 +17,17 @@ use crate::tool::{
 use crate::{AgentError, AgentSession, ApprovalRequest, ApprovalResult};
 
 impl AgentSession {
-    pub(crate) fn is_auto_approved(&self, target: &str, operation: &str) -> bool {
-        let session = self.session_permissions.lock().unwrap();
+    pub(crate) fn is_auto_approved(&self, target: &str, operation: &str) -> Result<bool, AgentError> {
+        let session = self.session_permissions.lock()?;
         if let Some(allowed) = session.resolve(target, operation) {
-            return allowed;
+            return Ok(allowed);
         }
-        self.config
-            .read()
-            .unwrap()
+        Ok(self
+            .config
+            .read()?
             .llm
             .permissions
-            .is_allowed(target, operation)
+            .is_allowed(target, operation))
     }
 
     pub(crate) fn make_approval_request(
@@ -36,11 +36,11 @@ impl AgentSession {
         inferred_fields: Vec<InferredField>,
         why: Option<String>,
         warnings: Vec<String>,
-    ) -> Option<ApprovalRequest> {
+    ) -> Result<Option<ApprovalRequest>, AgentError> {
         if changes.is_empty() {
-            return None;
+            return Ok(None);
         }
-        let mut sequence = self.approval_sequence.lock().unwrap();
+        let mut sequence = self.approval_sequence.lock()?;
         *sequence += 1;
         let id = format!("{}-approval-{}", self.session_id, *sequence);
         tracing::info!(session_id = %self.session_id, approval_id = %id, changes = changes.len(), "approval requested");
@@ -54,8 +54,8 @@ impl AgentSession {
                 .checked_add(jiff::Span::new().minutes(5))
                 .expect("valid approval expiry"),
         };
-        *self.pending_approval.lock().unwrap() = Some(request.clone());
-        Some(request)
+        *self.pending_approval.lock()? = Some(request.clone());
+        Ok(Some(request))
     }
 
     pub fn build_approval_resolution_message(
@@ -87,7 +87,7 @@ impl AgentSession {
         let _guard = self.turn_lock.lock().await;
         tracing::info!(session_id = %self.session_id, approval_id = %id, approved = approve, "resolving approval");
         let request = {
-            let mut pending = self.pending_approval.lock().unwrap();
+            let mut pending = self.pending_approval.lock()?;
             let current = pending.as_ref().ok_or_else(|| {
                 AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
                     "approval_id",
@@ -106,17 +106,17 @@ impl AgentSession {
         }
         if !approve {
             tracing::info!(session_id = %self.session_id, approval_id = %id, "approval denied");
-            let system_estimate = self.last_system_estimate.lock().unwrap().unwrap_or(0);
+            let system_estimate = self.last_system_estimate.lock()?.unwrap_or(0);
             let resolution_message =
                 Self::build_approval_resolution_message(false, &request.changes, false);
-            let mut local = self.history.lock().unwrap().clone();
+            let mut local = self.history.lock()?.clone();
             local.push(llm::Message::User(resolution_message));
-            self.replace_history(local, None, system_estimate);
+            self.replace_history(local, None, system_estimate)?;
             return Ok(ApprovalResult {
                 id: id.to_owned(),
                 approved: false,
                 changes: Vec::new(),
-                schedule_dirty: *self.schedule_dirty.lock().unwrap(),
+                schedule_dirty: *self.schedule_dirty.lock()?,
             });
         }
         self.execute_approved_changes(request, false).await
@@ -137,7 +137,7 @@ impl AgentSession {
                 )
         });
         let mut receipts = Vec::new();
-        let mut schedule_dirty = *self.schedule_dirty.lock().unwrap();
+        let mut schedule_dirty = *self.schedule_dirty.lock()?;
         let mut execution_error = None;
         for (idx, change) in request.changes.into_iter().enumerate() {
             let args = change.arguments.clone().unwrap_or_default();
@@ -160,8 +160,8 @@ impl AgentSession {
         if schedule_commit && execution_error.is_none() {
             schedule_dirty = false;
         }
-        *self.schedule_dirty.lock().unwrap() = schedule_dirty;
-        let system_estimate = self.last_system_estimate.lock().unwrap().unwrap_or(0);
+        *self.schedule_dirty.lock()? = schedule_dirty;
+        let system_estimate = self.last_system_estimate.lock()?.unwrap_or(0);
         if let Some((change, e)) = execution_error {
             let error_message = if auto {
                 format!(
@@ -174,17 +174,17 @@ impl AgentSession {
                     e, change.description
                 )
             };
-            let mut local = self.history.lock().unwrap().clone();
+            let mut local = self.history.lock()?.clone();
             local.push(llm::Message::User(error_message));
-            self.replace_history(local, None, system_estimate);
+            self.replace_history(local, None, system_estimate)?;
             tracing::error!(session_id = %self.session_id, approval_id = %request.id, error = %e, "approved change failed");
             return Err(e);
         }
         let resolution_message =
             Self::build_approval_resolution_message(true, &changes_for_message, auto);
-        let mut local = self.history.lock().unwrap().clone();
+        let mut local = self.history.lock()?.clone();
         local.push(llm::Message::User(resolution_message));
-        self.replace_history(local, None, system_estimate);
+        self.replace_history(local, None, system_estimate)?;
         tracing::info!(session_id = %self.session_id, approval_id = %request.id, count = receipts.len(), "approved changes executed");
         Ok(ApprovalResult {
             id: request.id,
@@ -244,7 +244,7 @@ impl AgentSession {
         let after = outcome.after;
         let target_revision = outcome.target_revision;
         if change.target.kind == TargetKind::Skill {
-            self.clear_skills_index();
+            self.clear_skills_index()?;
         }
         Ok(ChangeReceipt {
             operation: change.operation,

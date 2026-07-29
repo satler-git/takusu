@@ -205,16 +205,22 @@ impl UserInputProvider for ApiUserInputProvider {
         _questions: Vec<UserInputQuestion>,
     ) -> Result<Vec<UserInputAnswer>, ToolError> {
         let (tx, rx) = oneshot::channel();
+        // Best-effort insert: a poisoned guard still holds the resolver map,
+        // so recovering via `into_inner()` and inserting is safe and avoids
+        // crashing the request on a prior panic.
         self.resolvers
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .insert(call_id.to_string(), tx);
         // Wait for the client to call the resolve endpoint, with a timeout to
         // avoid keeping stale resolvers in memory indefinitely.
         match tokio::time::timeout(self.timeout, rx).await {
             Ok(Ok(answers)) => Ok(answers),
             Ok(Err(_)) | Err(_) => {
-                self.resolvers.lock().unwrap().remove(call_id);
+                self.resolvers
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .remove(call_id);
                 Err(ToolError::Cancelled)
             }
         }
@@ -224,7 +230,7 @@ impl UserInputProvider for ApiUserInputProvider {
         let tx = self
             .resolvers
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .remove(call_id)
             .ok_or_else(|| {
                 ToolError::InvalidArgs(InvalidArgsError::new(
@@ -490,9 +496,17 @@ async fn update_settings(
 
     *state.config.write().await = new_config.clone();
 
-    let sessions: Vec<_> = state.sessions.lock().unwrap().values().cloned().collect();
+    let sessions: Vec<_> = state
+        .sessions
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .values()
+        .cloned()
+        .collect();
     for session in sessions {
-        session.apply_config(&new_config, new_llm.clone()).await;
+        if let Err(e) = session.apply_config(&new_config, new_llm.clone()).await {
+            tracing::warn!(session_id = %session.session_id(), error = %e, "apply_config failed for session");
+        }
     }
 
     tracing::info!(model = %new_config.llm.model, backend = %new_config.audio.tts.backend, "agent settings updated");
@@ -523,8 +537,9 @@ async fn create_session(
     };
     if let Some(Json(body)) = body
         && let Some(permissions) = body.value.permissions
+        && let Err(e) = session.set_session_permissions(permissions)
     {
-        session.set_session_permissions(permissions);
+        return agent_error(e);
     }
     let id = session.session_id().to_string();
     let session = Arc::new(session);
@@ -821,8 +836,10 @@ async fn update_session_settings(
     let Some(session) = state.session(&id) else {
         return StatusCode::NOT_FOUND.into_response();
     };
-    if let Some(permissions) = body.value.permissions {
-        session.set_session_permissions(permissions);
+    if let Some(permissions) = body.value.permissions
+        && let Err(e) = session.set_session_permissions(permissions)
+    {
+        return agent_error(e);
     }
     tracing::info!(session_id = %id, "agent session settings updated");
     Json(Versioned {

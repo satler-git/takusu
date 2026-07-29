@@ -126,6 +126,20 @@ pub enum AgentError {
     #[cfg(feature = "audio-device")]
     #[error("audio error: {0}")]
     Audio(#[from] audio::AudioError),
+    /// A `Mutex` / `RwLock` guard was poisoned by a panic while held.
+    #[error("lock poisoned: {0}")]
+    Lock(String),
+}
+
+// `PoisonError` is generic over the guard type, so a single `#[from]` on the
+// `Lock` variant cannot cover every lock. This manual generic `From` lets
+// production call sites write `.lock()?` / `.read()?` / `.write()?` directly
+// against `Result<_, AgentError>` and surface poison as `AgentError::Lock`
+// instead of crashing the process via `.unwrap()`.
+impl<G> From<std::sync::PoisonError<G>> for AgentError {
+    fn from(e: std::sync::PoisonError<G>) -> Self {
+        AgentError::Lock(e.to_string())
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -281,12 +295,14 @@ impl AgentSession {
         session
     }
 
-    fn clear_discovered_tools(&self) {
-        self.discovered_tools.lock().unwrap().clear();
+    fn clear_discovered_tools(&self) -> Result<(), AgentError> {
+        self.discovered_tools.lock()?.clear();
+        Ok(())
     }
 
-    pub fn set_session_permissions(&self, permissions: Permissions) {
-        *self.session_permissions.lock().unwrap() = permissions;
+    pub fn set_session_permissions(&self, permissions: Permissions) -> Result<(), AgentError> {
+        *self.session_permissions.lock()? = permissions;
+        Ok(())
     }
 
     /// Returns the session identifier used for routing and approval ids.
@@ -298,30 +314,34 @@ impl AgentSession {
         &self,
         config: &AgentConfig,
         llm: Arc<dyn llm::LlmClient + Send + Sync>,
-    ) {
+    ) -> Result<(), AgentError> {
         let _guard = self.turn_lock.lock().await;
         tracing::info!(session_id = %self.session_id, "agent config applied");
-        *self.llm.write().unwrap() = llm;
-        *self.config.write().unwrap() = config.clone();
+        *self.llm.write()? = llm;
+        *self.config.write()? = config.clone();
+        Ok(())
     }
 
-    fn all_changes_allowed(&self, changes: &[ProposedChange]) -> bool {
-        changes.iter().all(|change| {
-            self.is_auto_approved(change.target.kind.as_str(), change.operation.as_str())
-        })
+    fn all_changes_allowed(&self, changes: &[ProposedChange]) -> Result<bool, AgentError> {
+        for change in changes {
+            if !self.is_auto_approved(change.target.kind.as_str(), change.operation.as_str())? {
+                return Ok(false);
+            }
+        }
+        Ok(true)
     }
 
     pub async fn run_turn(&self, user_text: &str) -> Result<TurnResult, AgentError> {
         let _guard = self.turn_lock.lock().await;
-        self.clear_discovered_tools();
+        self.clear_discovered_tools()?;
         self.maybe_compact().await?;
         tracing::info!(session_id = %self.session_id, text_len = user_text.len(), "agent turn started");
 
-        let system = llm::Message::System(self.build_system_prompt().await);
+        let system = llm::Message::System(self.build_system_prompt().await?);
         let system_estimate = system.estimate_tokens();
-        *self.last_system_estimate.lock().unwrap() = Some(system_estimate);
+        *self.last_system_estimate.lock()? = Some(system_estimate);
 
-        let mut local = self.history.lock().unwrap().clone();
+        let mut local = self.history.lock()?.clone();
         local.push(llm::Message::User(user_text.to_string()));
 
         let mut changes = Vec::new();
@@ -329,7 +349,7 @@ impl AgentSession {
         let mut inferred_fields: Vec<InferredField> = Vec::new();
         let mut approval_why = None;
         let mut approval_warnings = Vec::new();
-        let mut schedule_dirty = *self.schedule_dirty.lock().unwrap();
+        let mut schedule_dirty = *self.schedule_dirty.lock()?;
         let mut tool_call_count = 0;
         // Accumulates assistant text emitted alongside tool calls. Non-streaming
         // callers (CLI, transport) only receive the final `TurnResult.text`, so
@@ -339,29 +359,29 @@ impl AgentSession {
         let mut intermediate_text = String::new();
 
         loop {
-            if tool_call_count >= self.config.read().unwrap().llm.max_tool_calls {
-                self.replace_history(local, None, system_estimate);
+            if tool_call_count >= self.config.read()?.llm.max_tool_calls {
+                let _ = self.replace_history(local, None, system_estimate);
                 return Err(AgentError::TooManyToolCalls);
             }
 
-            let active_names = self.active_tool_names();
+            let active_names = self.active_tool_names()?;
             let tools = self.registry.definitions_for(&active_names);
 
             let mut messages = vec![system.clone()];
             messages.extend(local.clone());
-            let messages = self.trim_messages(messages);
+            let messages = self.trim_messages(messages)?;
 
-            let llm = self.llm.read().unwrap().clone();
+            let llm = self.llm.read()?.clone();
             let response = llm.chat(&messages, &tools).await.map_err(AgentError::Llm)?;
 
-            *self.last_prompt_tokens.lock().unwrap() = response.prompt_tokens;
+            *self.last_prompt_tokens.lock()? = response.prompt_tokens;
 
             match response.content {
                 llm::LlmResponseContent::Text(text) => {
                     local.push(llm::Message::Assistant(llm::AssistantContent::Text(
                         text.clone(),
                     )));
-                    self.replace_history(local, response.prompt_tokens, system_estimate);
+                    self.replace_history(local, response.prompt_tokens, system_estimate)?;
                     let final_text = if intermediate_text.is_empty() {
                         text
                     } else {
@@ -370,16 +390,16 @@ impl AgentSession {
                         combined.push_str(&text);
                         combined
                     };
-                    let all_allowed =
-                        !proposed_changes.is_empty() && self.all_changes_allowed(&proposed_changes);
+                    let all_allowed = !proposed_changes.is_empty()
+                        && self.all_changes_allowed(&proposed_changes)?;
                     let approval_request = self.make_approval_request(
                         proposed_changes,
                         inferred_fields,
                         approval_why,
                         approval_warnings,
-                    );
+                    )?;
                     if all_allowed && let Some(request) = approval_request {
-                        *self.pending_approval.lock().unwrap() = None;
+                        *self.pending_approval.lock()? = None;
                         let result = self.execute_approved_changes(request, true).await?;
                         let mut final_changes = changes;
                         final_changes.extend(result.changes);
@@ -390,7 +410,7 @@ impl AgentSession {
                             approval_request: None,
                         });
                     }
-                    *self.schedule_dirty.lock().unwrap() = schedule_dirty;
+                    *self.schedule_dirty.lock()? = schedule_dirty;
                     return Ok(TurnResult {
                         text: final_text,
                         changes,
@@ -400,8 +420,8 @@ impl AgentSession {
                 }
                 llm::LlmResponseContent::ToolCalls { text, calls } => {
                     tool_call_count += calls.len();
-                    if tool_call_count > self.config.read().unwrap().llm.max_tool_calls {
-                        self.replace_history(local, response.prompt_tokens, system_estimate);
+                    if tool_call_count > self.config.read()?.llm.max_tool_calls {
+                        let _ = self.replace_history(local, response.prompt_tokens, system_estimate);
                         return Err(AgentError::TooManyToolCalls);
                     }
 
@@ -456,15 +476,15 @@ impl AgentSession {
         G: FnMut(String),
     {
         let _guard = self.turn_lock.lock().await;
-        self.clear_discovered_tools();
+        self.clear_discovered_tools()?;
         self.maybe_compact().await?;
         tracing::info!(session_id = %self.session_id, text_len = user_text.len(), "agent turn stream started");
 
-        let system = llm::Message::System(self.build_system_prompt().await);
+        let system = llm::Message::System(self.build_system_prompt().await?);
         let system_estimate = system.estimate_tokens();
-        *self.last_system_estimate.lock().unwrap() = Some(system_estimate);
+        *self.last_system_estimate.lock()? = Some(system_estimate);
 
-        let mut local = self.history.lock().unwrap().clone();
+        let mut local = self.history.lock()?.clone();
         local.push(llm::Message::User(user_text.to_string()));
 
         self.run_from_local_stream(system, system_estimate, local, emit, tts_emit)
@@ -491,13 +511,13 @@ impl AgentSession {
     {
         let _guard = self.turn_lock.lock().await;
         tracing::info!(session_id = %self.session_id, turn_index, text_len = user_text.len(), "agent edit turn stream started");
-        self.clear_discovered_tools();
+        self.clear_discovered_tools()?;
 
-        let system = llm::Message::System(self.build_system_prompt().await);
+        let system = llm::Message::System(self.build_system_prompt().await?);
         let system_estimate = system.estimate_tokens();
-        *self.last_system_estimate.lock().unwrap() = Some(system_estimate);
+        *self.last_system_estimate.lock()? = Some(system_estimate);
 
-        let mut local = self.history.lock().unwrap().clone();
+        let mut local = self.history.lock()?.clone();
         let user_position = local
             .iter()
             .enumerate()
@@ -514,10 +534,10 @@ impl AgentSession {
         local.truncate(user_position + 1);
 
         // Any pending approval from later turns is no longer valid.
-        *self.pending_approval.lock().unwrap() = None;
+        *self.pending_approval.lock()? = None;
         // Recompute schedule_dirty and prompt tokens from the re-run.
-        *self.schedule_dirty.lock().unwrap() = false;
-        *self.last_prompt_tokens.lock().unwrap() = None;
+        *self.schedule_dirty.lock()? = false;
+        *self.last_prompt_tokens.lock()? = None;
 
         self.run_from_local_stream(system, system_estimate, local, emit, tts_emit)
             .await
@@ -540,24 +560,24 @@ impl AgentSession {
         let mut inferred_fields: Vec<InferredField> = Vec::new();
         let mut approval_why = None;
         let mut approval_warnings = Vec::new();
-        let mut schedule_dirty = *self.schedule_dirty.lock().unwrap();
+        let mut schedule_dirty = *self.schedule_dirty.lock()?;
         let mut tool_call_count = 0;
         let mut tts_queue = TtsQueue::new();
 
         loop {
-            if tool_call_count >= self.config.read().unwrap().llm.max_tool_calls {
-                self.replace_history(local, None, system_estimate);
+            if tool_call_count >= self.config.read()?.llm.max_tool_calls {
+                let _ = self.replace_history(local, None, system_estimate);
                 return Err(AgentError::TooManyToolCalls);
             }
 
-            let active_names = self.active_tool_names();
+            let active_names = self.active_tool_names()?;
             let tools = self.registry.definitions_for(&active_names);
 
             let mut messages = vec![system.clone()];
             messages.extend(local.clone());
-            let messages = self.trim_messages(messages);
+            let messages = self.trim_messages(messages)?;
 
-            let llm = self.llm.read().unwrap().clone();
+            let llm = self.llm.read()?.clone();
             let mut stream = llm
                 .chat_stream(&messages, &tools)
                 .await
@@ -595,8 +615,8 @@ impl AgentSession {
                             tts_emit(block);
                         }
                         tool_call_count += 1;
-                        if tool_call_count > self.config.read().unwrap().llm.max_tool_calls {
-                            self.replace_history(local, None, system_estimate);
+                        if tool_call_count > self.config.read()?.llm.max_tool_calls {
+                            let _ = self.replace_history(local, None, system_estimate);
                             return Err(AgentError::TooManyToolCalls);
                         }
                         current_calls.push(call);
@@ -605,7 +625,7 @@ impl AgentSession {
                         finish_reason,
                         prompt_tokens,
                     } => {
-                        *self.last_prompt_tokens.lock().unwrap() = prompt_tokens;
+                        *self.last_prompt_tokens.lock()? = prompt_tokens;
 
                         let final_text = text;
 
@@ -616,17 +636,17 @@ impl AgentSession {
                             local.push(llm::Message::Assistant(llm::AssistantContent::Text(
                                 final_text.clone(),
                             )));
-                            self.replace_history(local, prompt_tokens, system_estimate);
+                            self.replace_history(local, prompt_tokens, system_estimate)?;
                             let all_allowed = !proposed_changes.is_empty()
-                                && self.all_changes_allowed(&proposed_changes);
+                                && self.all_changes_allowed(&proposed_changes)?;
                             let approval_request = self.make_approval_request(
                                 proposed_changes,
                                 inferred_fields,
                                 approval_why,
                                 approval_warnings,
-                            );
+                            )?;
                             if all_allowed && let Some(request) = approval_request {
-                                *self.pending_approval.lock().unwrap() = None;
+                                *self.pending_approval.lock()? = None;
                                 let result = self.execute_approved_changes(request, true).await?;
                                 let mut final_changes = changes;
                                 final_changes.extend(result.changes);
@@ -637,7 +657,7 @@ impl AgentSession {
                                     approval_request: None,
                                 });
                             }
-                            *self.schedule_dirty.lock().unwrap() = schedule_dirty;
+                            *self.schedule_dirty.lock()? = schedule_dirty;
                             return Ok(TurnResult {
                                 text: final_text,
                                 changes,
@@ -752,8 +772,7 @@ impl AgentSession {
                         changes.extend(output.changes);
                         *schedule_dirty |= output.schedule_dirty;
                         self.discovered_tools
-                            .lock()
-                            .unwrap()
+                            .lock()?
                             .extend(output.discovered_tools.iter().cloned());
                         emit(TurnEvent::ToolResult {
                             call_id: tool_call_id,
@@ -790,8 +809,9 @@ impl AgentSession {
         Ok(results)
     }
 
-    fn clear_skills_index(&self) {
-        *self.skills_index.lock().unwrap() = None;
+    fn clear_skills_index(&self) -> Result<(), AgentError> {
+        *self.skills_index.lock()? = None;
+        Ok(())
     }
 
     /// Borrow the HTTP client. Used by `change_executor` arms so they can stay
@@ -800,18 +820,17 @@ impl AgentSession {
         &self.client
     }
 
-    async fn build_system_prompt(&self) -> String {
+    async fn build_system_prompt(&self) -> Result<String, AgentError> {
         let tz = self.load_server_timezone().await;
         let now = jiff::Timestamp::now()
             .to_zoned(tz.clone())
             .round(Unit::Second)
             .unwrap_or_else(|_| jiff::Timestamp::now().to_zoned(tz));
         let tz_name = now.time_zone().iana_name().unwrap_or("unknown");
-        let skills = self.build_skills_index().await;
+        let skills = self.build_skills_index().await?;
         let summary_section = self
             .compaction_summary
-            .lock()
-            .unwrap()
+            .lock()?
             .clone()
             .map(|s| format!("## これまでの要約\n{s}\n"))
             .unwrap_or_default();
@@ -900,11 +919,12 @@ impl AgentSession {
             - ツールが失敗した場合は、エラーをそのまま返すのではなく、ユーザーに分かりやすく説明し、必要に応じて再試行してください。
             "####
         );
-        prompt
+        let prompt = prompt
             .lines()
             .map(|l| l.trim_start())
             .collect::<Vec<_>>()
-            .join("\n")
+            .join("\n");
+        Ok(prompt)
     }
 
     async fn load_server_timezone(&self) -> jiff::tz::TimeZone {
@@ -927,11 +947,11 @@ impl AgentSession {
         Ok(())
     }
 
-    async fn build_skills_index(&self) -> String {
+    async fn build_skills_index(&self) -> Result<String, AgentError> {
         {
-            let guard = self.skills_index.lock().unwrap();
+            let guard = self.skills_index.lock()?;
             if let Some(cached) = guard.clone() {
-                return cached;
+                return Ok(cached);
             }
         }
 
@@ -958,9 +978,9 @@ impl AgentSession {
         };
 
         if should_cache {
-            *self.skills_index.lock().unwrap() = Some(index.clone());
+            *self.skills_index.lock()? = Some(index.clone());
         }
-        index
+        Ok(index)
     }
 }
 
@@ -1734,8 +1754,8 @@ mod tests {
             messages_empty.push(llm::Message::User(m));
         }
 
-        let trimmed_with_tools = agent_with_tools.trim_messages(messages_with_tools);
-        let trimmed_empty = agent_empty.trim_messages(messages_empty);
+        let trimmed_with_tools = agent_with_tools.trim_messages(messages_with_tools).unwrap();
+        let trimmed_empty = agent_empty.trim_messages(messages_empty).unwrap();
 
         assert!(
             trimmed_with_tools.len() < trimmed_empty.len(),
@@ -2126,7 +2146,7 @@ mod tests {
         // Session override allows it.
         let mut session_permissions = Permissions::default();
         session_permissions.set("schedule", "generate", true);
-        agent.set_session_permissions(session_permissions);
+        agent.set_session_permissions(session_permissions).unwrap();
 
         let result = agent.run_turn("スケジュールを作成して").await.unwrap();
 

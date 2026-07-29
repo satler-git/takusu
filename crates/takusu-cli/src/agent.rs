@@ -36,7 +36,8 @@ pub async fn run(
     .map_err(|e| AppError::Internal(format!("failed to build agent session: {e}")))?;
 
     if !session_permissions.allow.is_empty() {
-        session.set_session_permissions(session_permissions);
+        session.set_session_permissions(session_permissions)
+            .map_err(|e| AppError::Internal(format!("failed to set session permissions: {e}")))?;
     }
 
     if let Some(text) = text {
