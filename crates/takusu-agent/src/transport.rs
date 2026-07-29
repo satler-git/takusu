@@ -22,7 +22,7 @@ use tokio::sync::mpsc::unbounded_channel;
 use tokio::sync::oneshot;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
-use crate::llm::{LlmClient, OpenAIClient};
+use crate::llm::{LlmClient, build_llm_client};
 use crate::{
     AgentConfig, AgentError, AgentSession, ApprovalRequest, ApprovalResult, InvalidArgsError,
     ToolError, TurnEvent, TurnResult, UserInputAnswer, UserInputProvider, UserInputQuestion,
@@ -283,6 +283,7 @@ pub struct UpdateAgentLlmSettings {
     pub base_url: Option<String>,
     pub model: Option<String>,
     pub api_key: Option<String>,
+    pub provider: Option<crate::llm::LlmProviderKind>,
     pub permissions: Option<crate::Permissions>,
 }
 
@@ -452,6 +453,9 @@ async fn update_settings(
         if let Some(api_key) = llm.api_key {
             new_config.llm.api_key = api_key;
         }
+        if let Some(provider) = llm.provider {
+            new_config.llm.provider = provider;
+        }
         if let Some(permissions) = llm.permissions {
             new_config.llm.permissions = permissions;
         }
@@ -479,9 +483,8 @@ async fn update_settings(
         }
     }
 
-    let new_llm: Arc<dyn LlmClient + Send + Sync> = match OpenAIClient::new(new_config.llm.clone())
-    {
-        Ok(client) => Arc::new(client),
+    let new_llm: Arc<dyn LlmClient + Send + Sync> = match build_llm_client(&new_config.llm) {
+        Ok(client) => client,
         Err(e) => return agent_error(AgentError::Llm(e)),
     };
 
@@ -1267,8 +1270,7 @@ mod tests {
                 llm: Some(UpdateAgentLlmSettings {
                     base_url: Some("http://new".into()),
                     model: Some("new-model".into()),
-                    api_key: None,
-                    permissions: None,
+                    ..Default::default()
                 }),
                 audio: Some(UpdateAgentAudioSettings {
                     tts: Some(UpdateAgentTtsSettings {
@@ -1302,10 +1304,8 @@ mod tests {
             version: API_VERSION,
             value: UpdateAgentSettings {
                 llm: Some(UpdateAgentLlmSettings {
-                    base_url: None,
-                    model: None,
                     api_key: Some("new".into()),
-                    permissions: None,
+                    ..Default::default()
                 }),
                 ..Default::default()
             },
@@ -1330,10 +1330,8 @@ mod tests {
             version: API_VERSION,
             value: UpdateAgentSettings {
                 llm: Some(UpdateAgentLlmSettings {
-                    base_url: None,
                     model: Some("new-model".into()),
-                    api_key: None,
-                    permissions: None,
+                    ..Default::default()
                 }),
                 ..Default::default()
             },
