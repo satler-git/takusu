@@ -522,12 +522,13 @@
   特殊: takusu-worker (wasm, → util のみ), takusu-audio-cli (→ audio)
   ```
 - **矛盾**:
-  1. `takusu-util` → `takusu-search`: util が L1 のはずが別 crate に依存。`takusu-search` を util に統合するか、search も L1 に含める必要がある。
+  1. `takusu-util` → `takusu-search`: util が L1 のはずが別 crate に依存。`takusu-util` は現在 `takusu-search` の公開 API を全て re-export しており、crate 境界が形式的になっている。
   2. `takusu-storage` → `takusu-util`: issue は両者を L1（contract）に置くことを想定。L1 内依存を許さないなら、`util` を L0、`contract`（旧 storage）を L1 に分けるべき。
-- **推奨されるレイヤー構成**:
+- **推奨されるレイヤー構成（部分統合）**:
   ```
   L0 (foundation):
-    takusu-util（takusu-search を統合）
+    takusu-util    ← takusu-search の date.rs を統合
+    takusu-search  ← search.rs / memory.rs は独立 L0 に残留
 
   L1 (contract):
     takusu-storage（→ rename: takusu-contract, depends on L0）
@@ -558,7 +559,8 @@
   - L4: 統合層。複数の L2/L3 を組み合わせる
   - L5: アプリケーション。L4 以下を束ねる
 - **解決すべき点**:
-  - `takusu-search` は `takusu-util` に統合する（独立 crate にする理由が薄い）
+  - `takusu-search` は部分統合する。`date.rs`（日付 parse、335 行）は `takusu-util` の `time_types.rs` と被る領域であり util に統合する。`search.rs`（1260 行、`Task` / `Habit` trait とクエリ AST 評価）と `memory.rs`（750 行、テキスト正規化 + bigram + 類似タスクスコアリング）は検索ドメインロジックであり、`takusu-util`（L0「純粋なユーティリティ・型定義」）に畳み込むと役割定義と矛盾するため `takusu-search` として独立 L0 に残留させる
+  - `takusu-util` からの `takusu-search` re-export を廃止し、消費者（`takusu-storage` / `takusu-worker`）は `takusu-search` を直接依存に持つ。これで facade 反パターンを解消し、crate 境界に実質を持たせる
   - `takusu-storage` は `takusu-contract` に rename し、ドメイン型と `Storage` trait の定義のみを残す。実装（SQLite / Workers）は L4 の `takusu-local-lib` と L2 の `takusu-worker` が持つ
   - `takusu-worker` は wasm 制約があるが、`takusu-contract`（L1）が `sqlx` を optional feature で持つなら L1 に依存しても wasm ビルドに影響しない
   - `takusu-cli` → `takusu-tui` の依存は L5 内のため方針違反だが許容範囲とする
