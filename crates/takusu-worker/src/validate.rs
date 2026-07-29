@@ -6,6 +6,5 @@
 //! `From<StorageError>` impl in [`crate::error`].
 
 pub use takusu_storage::validate::{
-    validate_minutes, validate_quantity, validate_recurrence, validate_scheduled_span_dates,
-    validate_task_datetimes, validate_title,
+    validate_minutes, validate_recurrence, validate_scheduled_span_dates, validate_title,
 };

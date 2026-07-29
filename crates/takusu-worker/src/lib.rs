@@ -10,19 +10,32 @@
 //! (google-cal), iCal parsing (takusu-ical) — those run in the native local
 //! server.
 
+#[cfg(target_arch = "wasm32")]
 mod auth;
+#[cfg(target_arch = "wasm32")]
 mod error;
+#[cfg(target_arch = "wasm32")]
 mod handlers;
-mod memory;
-mod models;
+pub mod memory;
+pub mod models;
+#[cfg(target_arch = "wasm32")]
 mod router;
-mod validate;
+#[cfg(target_arch = "wasm32")]
+mod storage_d1;
+#[cfg(target_arch = "wasm32")]
+mod storage_d1_impl;
+pub mod util;
+pub mod validate;
 
+#[cfg(target_arch = "wasm32")]
 use std::sync::Once;
+#[cfg(target_arch = "wasm32")]
 use worker::{Context, Env, Request, Response};
 
+#[cfg(target_arch = "wasm32")]
 static INIT: Once = Once::new();
 
+#[cfg(target_arch = "wasm32")]
 fn init_logging(env: &Env) {
     INIT.call_once(|| {
         console_error_panic_hook::set_once();
@@ -36,6 +49,7 @@ fn init_logging(env: &Env) {
     });
 }
 
+#[cfg(target_arch = "wasm32")]
 #[worker::event(fetch)]
 pub async fn fetch(req: Request, env: Env, _ctx: Context) -> worker::Result<Response> {
     init_logging(&env);

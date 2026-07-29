@@ -30,7 +30,7 @@ before acting.
   end of a task, or when asking the user for input.
   See [`.devin/rules/agent-helpers.md`](./.devin/rules/agent-helpers.md).
 - **Verify before finishing**: Run the checks appropriate to the changed code
-  (`cargo check`, `cargo nextest run`, `cargo clippy --all-targets --all-features`;
+  (`cargo check --workspace`, `cargo nextest run --workspace`, `cargo clippy --workspace --all-targets --all-features`;
   mobile `npm run lint`, `npx tsc --noEmit`, `npm run fmt:check`).
 - **Write the commit**: After finishing work, run `jj describe`. Commit messages
   are present tense, lowercase first word, no trailing period.

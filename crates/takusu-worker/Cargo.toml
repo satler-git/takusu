@@ -9,12 +9,18 @@ repository.workspace = true
 crate-type = ["cdylib"]
 
 [dependencies]
-worker = { version = "0.8", features = ["d1"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2.workspace = true
-uuid = { version = "1", features = ["v7", "js"] }
+uuid = { workspace = true }
 thiserror.workspace = true
+jiff.workspace = true
+takusu-types.workspace = true
+takusu-search.workspace = true
+takusu-storage.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+worker = { version = "0.8", features = ["d1"] }
 getrandom = { version = "0.4", features = ["wasm_js"] }
 wasm-bindgen = "0.2"
 jiff.workspace = true
@@ -22,6 +28,5 @@ web-time = "1.1"
 log = "0.4"
 wasm-logger = "0.2"
 console_error_panic_hook = "0.1"
-takusu-types.workspace = true
-takusu-search.workspace = true
-takusu-storage.workspace = true
+async-trait.workspace = true
+uuid = { workspace = true, features = ["js"] }

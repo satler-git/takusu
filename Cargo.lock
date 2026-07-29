@@ -5552,6 +5552,7 @@ dependencies = [
 name = "takusu-worker"
 version = "0.20260729.1"
 dependencies = [
+ "async-trait",
  "console_error_panic_hook",
  "getrandom 0.4.3",
  "jiff",

@@ -50,7 +50,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Clippy
-        run: nix develop .#rust --command bash -c "cargo clippy --all-targets --all-features -- -D warnings"
+        run: nix develop .#rust --command bash -c "cargo clippy --workspace --all-targets --all-features -- -D warnings"
 
   js:
     if: |

@@ -10,7 +10,7 @@
 - `path/to/file.ext`: description of change
 
 ## Check
-- [ ] ran relevant checks (`cargo check`, `cargo nextest run`, `cargo clippy`; mobile `npm run lint`, `npx tsc --noEmit`, `npm run fmt:check`)
+- [ ] ran relevant checks (`cargo check --workspace`, `cargo nextest run --workspace`, `cargo clippy --workspace --all-targets --all-features`; mobile `npm run lint`, `npx tsc --noEmit`, `npm run fmt:check`)
 - [ ] commit message is present tense, lowercase first word, no trailing period
 - [ ] rebased onto `main` before pushing (`jj git fetch && jj rebase -r @ -d main`)
 
