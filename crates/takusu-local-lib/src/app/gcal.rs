@@ -15,25 +15,43 @@ use crate::error::storage_to_app;
 use crate::error::{AppError, BadRequestKind};
 
 /// Result of explicitly deleting every mapped Google Calendar event.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
 pub struct DeleteAllGcalResult {
     pub deleted: usize,
     pub failed: Vec<DeleteAllGcalFailure>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
 pub struct DeleteAllGcalFailure {
     pub task_id: String,
     pub error: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
 pub struct GoogleCalSettingsOutput {
     pub enabled: bool,
     pub calendar_id: String,
     pub client_id: String,
     pub has_client_secret: bool,
     pub has_refresh_token: bool,
+}
+
+/// Response for `POST /api/sync/oauth/url`.
+#[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
+pub struct OAuthUrlResponse {
+    pub url: String,
+}
+
+/// Response for `POST /api/sync/oauth/callback`.
+#[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
+pub struct OAuthCallbackResponse {
+    pub refresh_token_set: bool,
+}
+
+/// Response for `POST /api/sync/trigger`.
+#[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
+pub struct SyncTriggerResponse {
+    pub status: String,
 }
 
 impl super::TakusuApp {

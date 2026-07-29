@@ -11,6 +11,7 @@ jiff.workspace = true
 web-time = "1.1"
 serde.workspace = true
 serde_json.workspace = true
+schemars.workspace = true
 sha2.workspace = true
 sqlx = { version = "0.9", optional = true, default-features = false, features = [] }
 thiserror.workspace = true

@@ -380,7 +380,7 @@ export function TaskDetailView() {
       setAvgMinutes(String(t.avg_minutes));
       setSigmaMinutes(t.sigma_minutes > 0 ? String(t.sigma_minutes) : '');
       setQuantityTotal(
-        t.quantity_total !== undefined && t.quantity_total > 0
+        t.quantity_total != null && t.quantity_total > 0
           ? String(t.quantity_total)
           : '',
       );
@@ -1191,7 +1191,7 @@ export function TaskDetailView() {
         {/* Progress */}
         {!editing &&
           task.status === 'in_progress' &&
-          task.quantity_total !== undefined &&
+          task.quantity_total != null &&
           task.quantity_total > 0 && (
             <View style={styles.section}>
               <View style={styles.progressHeader}>
@@ -1354,7 +1354,8 @@ export function TaskDetailView() {
             ) : (
               <Pressable onPress={() => handleSectionTap('time')}>
                 <Text style={[styles.timeText, { color: colors.gray }]}>
-                  {formatTime(task.start_at)} → {formatTime(task.end_at)}
+                  {formatTime(task.start_at ?? undefined)} →{' '}
+                  {formatTime(task.end_at)}
                 </Text>
               </Pressable>
             )}
@@ -1450,8 +1451,7 @@ export function TaskDetailView() {
                 ) : (
                   <Text style={{ color: colors.grayLight }}>0m</Text>
                 )}
-                {task.actual_minutes !== undefined &&
-                task.actual_minutes > 0 ? (
+                {task.actual_minutes != null && task.actual_minutes > 0 ? (
                   <Text style={{ color: colors.gray }}>
                     {' '}
                     (実績: {formatDuration(task.actual_minutes)})

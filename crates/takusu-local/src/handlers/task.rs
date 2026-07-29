@@ -3,6 +3,7 @@ use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use serde::Deserialize;
 use std::str::FromStr;
+use takusu_local_lib::app::{DependencyAnalysisResponse, IcalImportResult};
 use takusu_search::search::Completion;
 use takusu_storage::{
     CreateTask, CreateTaskBatch, CreateTaskBatchResult, ProgressResult, RecordProgress,
@@ -10,11 +11,11 @@ use takusu_storage::{
 };
 use takusu_types::{TaskStatusFilter, Timestamp, parse_datetime_to_timestamp};
 
-use crate::error::HttpError;
+use crate::error::{HttpError, NoContent};
 use crate::handlers::common::operation_id;
 use crate::state::AppState;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct TaskQueryParams {
     pub status: Option<String>,
     pub from: Option<String>,
@@ -29,17 +30,17 @@ pub struct TaskQueryParams {
 pub async fn create_task(
     State(state): State<AppState>,
     Json(body): Json<CreateTask>,
-) -> Result<(StatusCode, Json<TaskRow>), HttpError> {
+) -> Result<Json<TaskRow>, HttpError> {
     let task = state.app.create_task(&body).await?;
-    Ok((StatusCode::CREATED, Json(task)))
+    Ok(Json(task))
 }
 
 pub async fn create_task_batch(
     State(state): State<AppState>,
     Json(body): Json<CreateTaskBatch>,
-) -> Result<(StatusCode, Json<Vec<CreateTaskBatchResult>>), HttpError> {
+) -> Result<Json<Vec<CreateTaskBatchResult>>, HttpError> {
     let tasks = state.app.create_task_batch(&body).await?;
-    Ok((StatusCode::CREATED, Json(tasks)))
+    Ok(Json(tasks))
 }
 
 pub async fn list_tasks(
@@ -85,7 +86,7 @@ pub async fn list_tasks(
     Ok(Json(tasks))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct CompleteQuery {
     pub q: String,
     pub limit: Option<usize>,
@@ -128,27 +129,24 @@ pub async fn replace_task(
 pub async fn delete_task(
     State(state): State<AppState>,
     Path(id): Path<String>,
-) -> Result<StatusCode, HttpError> {
+) -> Result<NoContent, HttpError> {
     state.app.delete_task(&id).await?;
-    Ok(StatusCode::NO_CONTENT)
+    Ok(NoContent(StatusCode::NO_CONTENT))
 }
 
 pub async fn import_ical(
     State(state): State<AppState>,
     body: String,
-) -> Result<Json<serde_json::Value>, HttpError> {
+) -> Result<Json<IcalImportResult>, HttpError> {
     let result = state.app.import_ical(&body).await?;
-    Ok(Json(serde_json::json!({
-        "imported": result.imported,
-        "task_ids": result.task_ids,
-    })))
+    Ok(Json(result))
 }
 
 pub async fn dependency_analysis(
     State(state): State<AppState>,
-) -> Result<Json<serde_json::Value>, HttpError> {
+) -> Result<Json<DependencyAnalysisResponse>, HttpError> {
     let redundant = state.app.analyze_task_dependencies().await?;
-    Ok(Json(serde_json::json!({ "redundant": redundant })))
+    Ok(Json(DependencyAnalysisResponse { redundant }))
 }
 
 pub async fn start_task_work(

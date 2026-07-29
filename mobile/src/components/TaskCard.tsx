@@ -508,7 +508,7 @@ function TaskCardImpl({
 
             {/* Right: deps, dependents, and cost stacked vertically */}
             <View style={styles.meta}>
-              {task.quantity_total !== undefined && task.quantity_total > 0 && (
+              {task.quantity_total != null && task.quantity_total > 0 && (
                 <Text
                   style={[
                     styles.metaText,

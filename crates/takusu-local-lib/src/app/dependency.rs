@@ -57,7 +57,7 @@ pub(super) fn build_dep_graph(
 }
 
 /// A node on a dependency witness path (task or habit step) (#355).
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
 pub struct DependencyNode {
     pub id: String,
     pub title: String,
@@ -65,7 +65,7 @@ pub struct DependencyNode {
 
 /// A redundant (composite / transitively implied) dependency edge with a
 /// witness path proving the direct edge is unnecessary (#355).
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
 pub struct RedundantDependency {
     pub from: String,
     pub from_title: String,
@@ -73,6 +73,13 @@ pub struct RedundantDependency {
     pub to_title: String,
     /// Witness path `from → … → to` (endpoints included, length >= 3).
     pub via: Vec<DependencyNode>,
+}
+
+/// Response for `GET /api/tasks/dependency-analysis` and the habit step
+/// variant (#355).
+#[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
+pub struct DependencyAnalysisResponse {
+    pub redundant: Vec<RedundantDependency>,
 }
 
 impl super::TakusuApp {

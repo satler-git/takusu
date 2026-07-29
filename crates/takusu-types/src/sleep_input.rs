@@ -39,7 +39,8 @@ impl SleepInputError {
 ///
 /// Parsed at the API/CLI boundary from a plain string; consumed by
 /// `takusu-local-lib` to build a `SleepConfig` using settings + timezone.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, schemars::JsonSchema)]
+#[schemars(with = "String")]
 pub enum SleepInput {
     /// Use the sleep window from settings (`sleep_start` / `sleep_end`).
     #[default]

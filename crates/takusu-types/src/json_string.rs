@@ -28,7 +28,8 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// Common instantiations:
 /// - `JsonString<Vec<String>>` — task / step dependency lists
 /// - `JsonString<Vec<ScheduleEntry>>` — schedule entry arrays
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, schemars::JsonSchema)]
+#[schemars(with = "String")]
 pub struct JsonString<T>(pub T);
 
 impl<T> JsonString<T> {

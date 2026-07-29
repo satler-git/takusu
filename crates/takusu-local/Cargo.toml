@@ -22,10 +22,13 @@ takusu-types.workspace = true
 takusu-search.workspace = true
 takusu-storage.workspace = true
 axum = "0.8"
+aide.workspace = true
+schemars.workspace = true
 tokio.workspace = true
 sqlx = { version = "0.9", features = ["runtime-tokio", "sqlite"], optional = true }
 serde.workspace = true
 serde_json.workspace = true
+indexmap = "2"
 tower-http = { version = "0.7", features = ["cors", "trace"] }
 tracing.workspace = true
 sentry = { version = "0.48.4", default-features = false, features = ["backtrace", "contexts", "debug-images", "panic", "rustls", "tracing", "ureq", "tower", "tower-axum-matched-path"] }

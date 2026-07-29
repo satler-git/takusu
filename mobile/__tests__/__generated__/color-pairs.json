@@ -540,7 +540,7 @@
       "fg": "black",
       "bg": "surface",
       "file": "components/HabitPreviewModal.tsx",
-      "line": 136,
+      "line": 140,
       "kind": "parent-child",
       "source": "text"
     },
@@ -548,7 +548,7 @@
       "fg": "gray",
       "bg": "surface",
       "file": "components/HabitPreviewModal.tsx",
-      "line": 147,
+      "line": 151,
       "kind": "parent-child",
       "source": "icon"
     },
@@ -556,7 +556,7 @@
       "fg": "brand",
       "bg": "surface",
       "file": "components/HabitPreviewModal.tsx",
-      "line": 153,
+      "line": 157,
       "kind": "parent-child",
       "source": "icon"
     },
@@ -564,7 +564,7 @@
       "fg": "gray",
       "bg": "surface",
       "file": "components/HabitPreviewModal.tsx",
-      "line": 155,
+      "line": 159,
       "kind": "parent-child",
       "source": "text"
     },
@@ -572,7 +572,7 @@
       "fg": "brand",
       "bg": "surfaceTint",
       "file": "components/HabitPreviewModal.tsx",
-      "line": 284,
+      "line": 288,
       "kind": "parent-child",
       "source": "text"
     },
@@ -580,7 +580,7 @@
       "fg": "black",
       "bg": "surfaceTint",
       "file": "components/HabitPreviewModal.tsx",
-      "line": 286,
+      "line": 290,
       "kind": "parent-child",
       "source": "text"
     },
@@ -588,7 +588,7 @@
       "fg": "gray",
       "bg": "surfaceTint",
       "file": "components/HabitPreviewModal.tsx",
-      "line": 289,
+      "line": 293,
       "kind": "parent-child",
       "source": "text"
     },
@@ -4956,7 +4956,7 @@
       "fg": "gray",
       "bg": "white",
       "file": "views/TaskDetailView.tsx",
-      "line": 1367,
+      "line": 1368,
       "kind": "parent-child",
       "source": "text"
     },
@@ -4964,7 +4964,7 @@
       "fg": "brand",
       "bg": "white",
       "file": "views/TaskDetailView.tsx",
-      "line": 1377,
+      "line": 1378,
       "kind": "parent-child",
       "source": "text"
     },
@@ -4972,7 +4972,7 @@
       "fg": "black",
       "bg": "white",
       "file": "views/TaskDetailView.tsx",
-      "line": 1380,
+      "line": 1381,
       "kind": "parent-child",
       "source": "text"
     },
@@ -4980,7 +4980,7 @@
       "fg": "gray",
       "bg": "white",
       "file": "views/TaskDetailView.tsx",
-      "line": 1391,
+      "line": 1392,
       "kind": "parent-child",
       "source": "text"
     },
@@ -4988,7 +4988,7 @@
       "fg": "grayLight",
       "bg": "white",
       "file": "views/TaskDetailView.tsx",
-      "line": 1438,
+      "line": 1439,
       "kind": "parent-child",
       "source": "text"
     },
@@ -4996,7 +4996,7 @@
       "fg": "black",
       "bg": "white",
       "file": "views/TaskDetailView.tsx",
-      "line": 1446,
+      "line": 1447,
       "kind": "parent-child",
       "source": "text"
     },
@@ -5004,7 +5004,7 @@
       "fg": "grayLight",
       "bg": "white",
       "file": "views/TaskDetailView.tsx",
-      "line": 1451,
+      "line": 1452,
       "kind": "parent-child",
       "source": "text"
     },
@@ -5339,5 +5339,5 @@
       "source": "text"
     }
   ],
-  "generatedAt": "2026-07-29T06:01:47.258Z"
+  "generatedAt": "2026-07-29T08:14:33.057Z"
 }

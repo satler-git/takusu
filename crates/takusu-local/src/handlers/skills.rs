@@ -4,7 +4,7 @@ use axum::http::StatusCode;
 use takusu_local_lib::TokenClaims;
 use takusu_storage::{CreateSkill, SkillRow, UpdateSkill};
 
-use crate::error::HttpError;
+use crate::error::{HttpError, NoContent};
 use crate::state::AppState;
 use takusu_local_lib::error::AppError;
 
@@ -12,12 +12,12 @@ pub async fn create_skill(
     State(state): State<AppState>,
     Extension(claims): Extension<TokenClaims>,
     Json(body): Json<CreateSkill>,
-) -> Result<(StatusCode, Json<SkillRow>), HttpError> {
+) -> Result<Json<SkillRow>, HttpError> {
     if body.built_in == Some(true) && !claims.is_root() {
         return Err(AppError::Unauthorized.into());
     }
     let skill = state.app.create_skill(&body).await?;
-    Ok((StatusCode::CREATED, Json(skill)))
+    Ok(Json(skill))
 }
 
 pub async fn list_skills(State(state): State<AppState>) -> Result<Json<Vec<SkillRow>>, HttpError> {
@@ -45,7 +45,7 @@ pub async fn update_skill(
 pub async fn delete_skill(
     State(state): State<AppState>,
     Path(slug): Path<String>,
-) -> Result<StatusCode, HttpError> {
+) -> Result<NoContent, HttpError> {
     state.app.delete_skill(&slug).await?;
-    Ok(StatusCode::NO_CONTENT)
+    Ok(NoContent(StatusCode::NO_CONTENT))
 }

@@ -3,7 +3,7 @@ use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use takusu_storage::{CreateMemory, MemoryQuery, SimilarTaskQuery, UpdateMemory};
 
-use crate::error::HttpError;
+use crate::error::{HttpError, NoContent};
 use crate::handlers::common::operation_id;
 use crate::state::AppState;
 
@@ -11,12 +11,12 @@ pub async fn create_memory(
     State(state): State<AppState>,
     headers: HeaderMap,
     Json(body): Json<CreateMemory>,
-) -> Result<(StatusCode, Json<takusu_storage::MemoryRow>), HttpError> {
+) -> Result<Json<takusu_storage::MemoryRow>, HttpError> {
     let memory = state
         .app
         .create_memory(&body, operation_id(&headers))
         .await?;
-    Ok((StatusCode::CREATED, Json(memory)))
+    Ok(Json(memory))
 }
 
 pub async fn get_memory(
@@ -40,7 +40,7 @@ pub async fn update_memory(
     Ok(Json(memory))
 }
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, schemars::JsonSchema)]
 pub struct DeleteMemoryParams {
     pub observed_revision: i64,
 }
@@ -50,12 +50,12 @@ pub async fn delete_memory(
     Path(id): Path<String>,
     headers: HeaderMap,
     Query(params): Query<DeleteMemoryParams>,
-) -> Result<StatusCode, HttpError> {
+) -> Result<NoContent, HttpError> {
     state
         .app
         .delete_memory(&id, params.observed_revision, operation_id(&headers))
         .await?;
-    Ok(StatusCode::NO_CONTENT)
+    Ok(NoContent(StatusCode::NO_CONTENT))
 }
 
 pub async fn search_memory(

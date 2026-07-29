@@ -49,7 +49,7 @@ export function stepRowToDraft(row: HabitStepRow): StepDraft {
     tempId: row.id, // existing steps use their real id as tempId too
     position: row.position,
     title: row.title,
-    description: row.description,
+    description: row.description ?? undefined,
     start_time: row.start_time,
     end_time: row.end_time,
     avg_minutes: row.avg_minutes,

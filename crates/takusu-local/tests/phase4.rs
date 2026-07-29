@@ -466,7 +466,7 @@ async fn token_create_invalidates_cache() {
         ))
         .unwrap();
     let cr = app.clone().oneshot(create_req).await.unwrap();
-    assert_eq!(cr.status(), StatusCode::CREATED);
+    assert_eq!(cr.status(), StatusCode::OK);
 
     let r2 = app
         .clone()

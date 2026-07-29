@@ -13,6 +13,7 @@ sqlx = ["dep:sqlx", "takusu-types/sqlx"]
 async-trait.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+schemars.workspace = true
 thiserror.workspace = true
 sqlx = { version = "0.9", default-features = false, features = ["derive", "macros"], optional = true }
 takusu-types = { workspace = true }

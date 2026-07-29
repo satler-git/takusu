@@ -12,7 +12,8 @@ use std::str::FromStr;
 /// Higher values mean the task is more likely to be dropped when the schedule
 /// does not fit. `new` silently clamps the input to `[0.0, 1.0]`; `NaN`
 /// becomes `0.5`.
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, schemars::JsonSchema)]
+#[schemars(transparent)]
 pub struct Abandonability(f64);
 
 impl Abandonability {

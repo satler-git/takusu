@@ -111,14 +111,14 @@ export class TakusuClient {
       params.push(`status=${encodeURIComponent(query.status)}`);
     if (query?.from) params.push(`from=${encodeURIComponent(query.from)}`);
     if (query?.until) params.push(`until=${encodeURIComponent(query.until)}`);
-    if (query?.no_overdue !== undefined)
+    if (query?.no_overdue !== undefined && query.no_overdue !== null)
       params.push(`no_overdue=${query.no_overdue}`);
     if (query?.habit_id)
       params.push(`habit_id=${encodeURIComponent(query.habit_id)}`);
     if (query?.ical_uid)
       params.push(`ical_uid=${encodeURIComponent(query.ical_uid)}`);
     if (query?.q) params.push(`q=${encodeURIComponent(query.q)}`);
-    if (query?.limit !== undefined)
+    if (query?.limit !== undefined && query.limit !== null)
       params.push(`limit=${encodeURIComponent(query.limit.toString())}`);
     const qs = params.join('&');
     return this.request('GET', `/api/tasks${qs ? `?${qs}` : ''}`);

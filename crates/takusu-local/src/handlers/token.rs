@@ -5,11 +5,11 @@ use serde::Deserialize;
 use takusu_local_lib::TokenClaims;
 use takusu_storage::{TokenCreateResponse, TokenRow};
 
-use crate::error::HttpError;
+use crate::error::{HttpError, NoContent};
 use crate::state::AppState;
 use takusu_local_lib::error::AppError;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct CreateTokenRequest {
     pub label: Option<String>,
 }
@@ -25,10 +25,10 @@ pub async fn create_token(
     State(state): State<AppState>,
     Extension(claims): Extension<TokenClaims>,
     Json(body): Json<CreateTokenRequest>,
-) -> Result<(StatusCode, Json<TokenCreateResponse>), HttpError> {
+) -> Result<Json<TokenCreateResponse>, HttpError> {
     require_root(&claims)?;
     let resp = state.app.create_token(body.label.as_deref()).await?;
-    Ok((StatusCode::CREATED, Json(resp)))
+    Ok(Json(resp))
 }
 
 pub async fn list_tokens(
@@ -44,8 +44,8 @@ pub async fn revoke_token(
     State(state): State<AppState>,
     Extension(claims): Extension<TokenClaims>,
     Path(id): Path<i64>,
-) -> Result<StatusCode, HttpError> {
+) -> Result<NoContent, HttpError> {
     require_root(&claims)?;
     state.app.revoke_token(id).await?;
-    Ok(StatusCode::NO_CONTENT)
+    Ok(NoContent(StatusCode::NO_CONTENT))
 }

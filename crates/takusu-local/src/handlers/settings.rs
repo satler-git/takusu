@@ -23,7 +23,7 @@ pub async fn update_settings(
     Ok(Json(row))
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, schemars::JsonSchema)]
 pub struct HealthCheckResponse {
     pub status: String,
 }
@@ -37,10 +37,16 @@ pub async fn workers_health(
     Ok(Json(HealthCheckResponse { status }))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 pub struct UpdateWorkersConfig {
     pub url: String,
     pub token: String,
+}
+
+/// Response for `PUT /api/workers/config`.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct WorkersConfigUpdateResponse {
+    pub ok: bool,
 }
 
 /// `PUT /api/workers/config` — updates the Worker endpoint and root token
@@ -49,7 +55,7 @@ pub async fn update_workers_config(
     State(state): State<AppState>,
     Extension(claims): Extension<TokenClaims>,
     Json(body): Json<UpdateWorkersConfig>,
-) -> Result<Json<serde_json::Value>, HttpError> {
+) -> Result<Json<WorkersConfigUpdateResponse>, HttpError> {
     if !claims.is_root() {
         return Err(HttpError(AppError::Unauthorized));
     }
@@ -60,5 +66,5 @@ pub async fn update_workers_config(
     // token so that subsequent root-only requests (e.g. further config
     // updates) can still succeed even if the new worker is unreachable.
     *state.root_token.write().await = Arc::from(body.token.into_boxed_str());
-    Ok(Json(serde_json::json!({ "ok": true })))
+    Ok(Json(WorkersConfigUpdateResponse { ok: true }))
 }

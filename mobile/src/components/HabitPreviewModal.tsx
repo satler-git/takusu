@@ -23,7 +23,11 @@ import { useColors, type ColorSet } from '@/src/theme';
 import { haptic } from '@/src/components/haptics';
 import { AgentClient } from '@/src/api/agentClient';
 import { showError } from '@/src/api/errors';
-import type { HabitPreviewTask, HabitStepInput } from '@/src/api/types';
+import type {
+  HabitPreviewTask,
+  HabitStepInput,
+  WindowMode,
+} from '@/src/api/types';
 
 interface HabitPreviewModalProps {
   visible: boolean;
@@ -229,7 +233,7 @@ function usePreviewTasks(
       allows_parallel: asBoolean(habit.allows_parallel),
       abandonability: asNumber(habit.abandonability),
       fixed: asBoolean(habit.fixed),
-      window_mode: asString(habit.window_mode) ?? undefined,
+      window_mode: (asString(habit.window_mode) as WindowMode) ?? undefined,
       steps,
     };
 
