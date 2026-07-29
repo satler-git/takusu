@@ -12,20 +12,7 @@ use crate::{
     deserialize_trimmed_optional, deserialize_trimmed_required, inferred_fields_schema,
 };
 
-pub fn client_error(error: takusu_client::ClientError) -> ToolError {
-    match error {
-        takusu_client::ClientError::Api { status: 400, body } => {
-            ToolError::InvalidArgs(InvalidArgsError::no_field(body))
-        }
-        takusu_client::ClientError::Api { status: 404, body } => ToolError::NotFound(body),
-        takusu_client::ClientError::Api { status: 409, body } => ToolError::Conflict(body),
-        takusu_client::ClientError::Api {
-            status: status @ 401..=499,
-            body,
-        } => ToolError::Other(Box::new(takusu_client::ClientError::Api { status, body })),
-        error => ToolError::Other(Box::new(error)),
-    }
-}
+pub(crate) use super::client_error;
 
 /// Serialized form of a memory row returned by memory tools.
 #[derive(Debug, Serialize)]
@@ -588,33 +575,6 @@ mod tests {
         assert_eq!(value["key"], "研究室");
         assert!(value.get("normalized_key").is_none());
         assert!(value.get("normalized_content").is_none());
-    }
-
-    #[test]
-    fn client_error_maps_status_to_tool_error() {
-        let err400 = takusu_client::ClientError::Api {
-            status: 400,
-            body: "bad".into(),
-        };
-        assert!(matches!(client_error(err400), ToolError::InvalidArgs(_)));
-
-        let err404 = takusu_client::ClientError::Api {
-            status: 404,
-            body: "gone".into(),
-        };
-        assert!(matches!(client_error(err404), ToolError::NotFound(_)));
-
-        let err409 = takusu_client::ClientError::Api {
-            status: 409,
-            body: "conflict".into(),
-        };
-        assert!(matches!(client_error(err409), ToolError::Conflict(_)));
-
-        let err418 = takusu_client::ClientError::Api {
-            status: 418,
-            body: "teapot".into(),
-        };
-        assert!(matches!(client_error(err418), ToolError::Other(_)));
     }
 
     #[test]

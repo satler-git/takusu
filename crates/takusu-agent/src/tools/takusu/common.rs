@@ -5,6 +5,7 @@ use std::str::FromStr;
 use takusu_client::{Client, HabitDetail, HabitRow, HabitStepRow, TaskRow};
 use takusu_types::{TaskStatus, Timestamp, parse_datetime_to_timestamp};
 
+use super::client_error;
 use crate::{InvalidArgsError, ToolError};
 
 pub(crate) fn optional_string(
@@ -28,22 +29,6 @@ pub(super) fn summary_string(args: &serde_json::Map<String, Value>, name: &str) 
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(ToOwned::to_owned)
-}
-
-pub(crate) fn client_error(error: takusu_client::ClientError) -> ToolError {
-    match error {
-        takusu_client::ClientError::Api {
-            status: 400..=499,
-            body,
-        } => {
-            if body.contains("not found") || body.contains("Not found") {
-                ToolError::NotFound(body)
-            } else {
-                ToolError::InvalidArgs(InvalidArgsError::no_field(body))
-            }
-        }
-        error => ToolError::Other(Box::new(error)),
-    }
 }
 
 /// Cache for the configured timezone, shared across tools in a session.

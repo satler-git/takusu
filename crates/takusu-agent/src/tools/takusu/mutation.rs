@@ -13,11 +13,13 @@ use crate::{
 };
 
 use super::common::{
-    TaskContext, TimeZoneCache, client_error, format_display_datetime_args, habit_json,
-    normalize_reference_array, normalize_status, optional_string, server_timezone,
-    strip_leading_hash, summary_string, task_json, transform_preview,
+    format_display_datetime_args, habit_json, normalize_reference_array, normalize_status,
+    optional_string, summary_string, transform_preview,
 };
 use super::read_tools::HabitScheduledSpans;
+use super::{
+    TaskContext, TimeZoneCache, client_error, server_timezone, strip_leading_hash, task_json,
+};
 
 /// Registers planner mutation tools and the hybrid habit_scheduled_spans tool.
 /// Calls produce approval proposals or read data; they never write directly.

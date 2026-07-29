@@ -12,10 +12,21 @@ use std::sync::{Arc, Weak};
 use takusu_client::Client;
 
 use crate::tools::takusu::TimeZoneCache;
-use crate::{ToolError, ToolRegistry, UserInputProvider};
+use crate::{InvalidArgsError, ToolError, ToolRegistry, UserInputProvider};
 
 pub(crate) fn other_error(msg: impl Into<String>) -> ToolError {
     ToolError::Other(Box::new(std::io::Error::other(msg.into())))
+}
+
+pub(crate) fn client_error(error: takusu_client::ClientError) -> ToolError {
+    match error {
+        takusu_client::ClientError::Api { status: 400, body } => {
+            ToolError::InvalidArgs(InvalidArgsError::no_field(body))
+        }
+        takusu_client::ClientError::Api { status: 404, body } => ToolError::NotFound(body),
+        takusu_client::ClientError::Api { status: 409, body } => ToolError::Conflict(body),
+        error => ToolError::Other(Box::new(error)),
+    }
 }
 
 /// Shared dependencies passed to every [`ToolModule::register`] call.
@@ -44,3 +55,35 @@ pub trait ToolModule: Send + Sync + 'static {
 }
 
 inventory::collect!(&'static dyn ToolModule);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn client_error_maps_status_to_tool_error() {
+        let err400 = takusu_client::ClientError::Api {
+            status: 400,
+            body: "bad".into(),
+        };
+        assert!(matches!(client_error(err400), ToolError::InvalidArgs(_)));
+
+        let err404 = takusu_client::ClientError::Api {
+            status: 404,
+            body: "gone".into(),
+        };
+        assert!(matches!(client_error(err404), ToolError::NotFound(_)));
+
+        let err409 = takusu_client::ClientError::Api {
+            status: 409,
+            body: "conflict".into(),
+        };
+        assert!(matches!(client_error(err409), ToolError::Conflict(_)));
+
+        let err418 = takusu_client::ClientError::Api {
+            status: 418,
+            body: "teapot".into(),
+        };
+        assert!(matches!(client_error(err418), ToolError::Other(_)));
+    }
+}
