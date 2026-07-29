@@ -26,6 +26,7 @@ provides:
 | `cargo run -p takusu-habit --example expand_realworld -- --horizon-days N --output ...` | Regenerate real-world task fixtures from the habit fixture |
 | `cargo test -p takusu-worker` | Run takusu-worker unit tests (6 auth tests) |
 | `cargo test -p takusu-worker --test auth -- --ignored` | Run takusu-worker auth integration tests (requires `wrangler`) |
+| `cargo test -p takusu-local --test storage_suite -- --ignored --test-threads=1` | Run parameterized storage-suite (sqlite + real worker via `wrangler dev`; requires `wrangler` + `worker-build --release` first) |
 | `cargo run --example daily` | Run daily schedule example |
 | `cargo run -p takusu-cli -- --help` | Run CLI client |
 | `cargo run -p takusu-local` | Start local server |
