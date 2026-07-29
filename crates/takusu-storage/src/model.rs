@@ -4,11 +4,6 @@ use takusu_util::{
     TimeOfDay, Timestamp,
 };
 
-#[allow(dead_code)]
-fn default_sleep() -> String {
-    "recommended".to_string()
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct TaskRow {
     pub id: String,
@@ -884,7 +879,6 @@ mod tests {
         #[derive(serde::Deserialize)]
         struct Wrap {
             #[serde(with = "takusu_util::bool_compat", default)]
-            #[allow(dead_code)]
             v: bool,
         }
         assert!(serde_json::from_str::<Wrap>(r#"{"v":true}"#).unwrap().v);
@@ -898,7 +892,6 @@ mod tests {
         #[derive(serde::Deserialize)]
         struct Wrap {
             #[serde(with = "takusu_util::bool_compat", default)]
-            #[allow(dead_code)]
             v: bool,
         }
         assert!(serde_json::from_str::<Wrap>(r#"{"v":1}"#).unwrap().v);
@@ -913,7 +906,6 @@ mod tests {
         #[derive(serde::Deserialize)]
         struct Wrap {
             #[serde(with = "takusu_util::bool_compat", default)]
-            #[allow(dead_code)]
             v: bool,
         }
         assert!(!serde_json::from_str::<Wrap>(r#"{"v":null}"#).unwrap().v);
@@ -935,7 +927,6 @@ mod tests {
         #[derive(serde::Deserialize)]
         struct Wrap {
             #[serde(with = "takusu_util::bool_compat", default)]
-            #[allow(dead_code)]
             v: bool,
         }
         assert!(!serde_json::from_str::<Wrap>(r#"{}"#).unwrap().v);

@@ -5,10 +5,6 @@ use takusu_core::Point;
 
 pub use takusu_core::SLOT_MINUTES;
 pub use takusu_util::TimeOfDay;
-#[allow(dead_code)]
-pub const SLOTS_PER_HOUR: i64 = 12;
-#[allow(dead_code)]
-pub const SLOTS_PER_DAY: i64 = 288;
 
 pub fn point_to_date(point: Point, tz: &TimeZone) -> Option<Date> {
     let seconds = point.0.checked_mul(SLOT_MINUTES)?.checked_mul(60)?;
@@ -20,12 +16,6 @@ pub fn date_time_to_point(date: Date, time: &TimeOfDay, tz: &TimeZone) -> Option
     let dt = date.at(time.hour() as i8, time.minute() as i8, 0, 0);
     let ts = tz.to_timestamp(dt).ok()?;
     Some(Point::from_timestamp(ts, SLOT_MINUTES as u16))
-}
-
-#[allow(dead_code)]
-pub fn point_to_day_number(point: Point, tz: &TimeZone) -> i64 {
-    let date = point_to_date(point, tz).unwrap_or(Date::MAX);
-    date_to_day_number(date)
 }
 
 pub fn date_to_day_number(date: Date) -> i64 {
