@@ -2431,14 +2431,6 @@ export function AgentView() {
               break;
             }
           }
-          const resolveText = '変更を取り消しました。';
-          next.push({
-            id: newId('assistant'),
-            role: 'assistant',
-            text: resolveText,
-            segments: [{ type: 'text', text: resolveText }],
-            collapsedGroups: [],
-          });
           return next;
         });
       }
