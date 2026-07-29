@@ -3,6 +3,7 @@ pub mod bool_compat;
 pub mod date;
 pub mod duration_seconds;
 pub mod enum_label;
+pub mod id_ref;
 pub mod json_string;
 pub mod jwt;
 pub mod option_bool_compat;
@@ -23,6 +24,7 @@ pub use enum_label::{
     EnumLabel, MemoryKind, MemorySource, ScheduleMode, SimilarityMetric, Solver, SubjectType,
     TaskStatus, TaskStatusFilter, TokenScope, UnknownLabel, WindowMode, enum_serde,
 };
+pub use id_ref::{HabitRef, IdRefError, TaskRef};
 pub use json_string::{DependencyList, JsonString};
 pub use quantity::{Quantity, QuantityError};
 pub use similarity::Similarity;

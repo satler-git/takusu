@@ -1034,69 +1034,61 @@ impl Storage for WorkersStorage {
 
 impl WorkersStorage {
     async fn resolve_task_id(&self, id: &str) -> StorageResult<String> {
-        // Allow display ids with a leading `#` (e.g. `#42`) written by the LLM.
-        let id = id.strip_prefix('#').unwrap_or(id);
-
-        // `h{habit_display_id}#{task_display_id}` → habit task lookup (#380).
-        if let Some(rest) = id.strip_prefix(['h', 'H'])
-            && let Some((hdisp, tdisp)) = rest.split_once('#')
-            && let (Ok(hnum), Ok(tnum)) = (hdisp.parse::<i64>(), tdisp.parse::<i64>())
-        {
-            let tasks: Vec<TaskRow> = self
-                .send_json::<Vec<TaskRow>>(
-                    reqwest::Method::GET,
-                    paths::TASKS,
-                    RequestBody::None,
-                    None,
-                )
-                .await?;
-            let habits: Vec<HabitRow> = self
-                .send_json::<Vec<HabitRow>>(
-                    reqwest::Method::GET,
-                    paths::HABITS,
-                    RequestBody::None,
-                    None,
-                )
-                .await?;
-            let habit_id = habits
-                .iter()
-                .find(|h| h.display_id == hnum)
-                .map(|h| h.id.as_str());
-            if let Some(hid) = habit_id
-                && let Some(t) = tasks
+        let parsed = takusu_types::TaskRef::try_from(id)
+            .map_err(|_| StorageError::NotFound(format!("task {id} not found")))?;
+        match parsed {
+            takusu_types::TaskRef::HabitTask { habit, task } => {
+                let tasks: Vec<TaskRow> = self
+                    .send_json::<Vec<TaskRow>>(
+                        reqwest::Method::GET,
+                        paths::TASKS,
+                        RequestBody::None,
+                        None,
+                    )
+                    .await?;
+                let habits: Vec<HabitRow> = self
+                    .send_json::<Vec<HabitRow>>(
+                        reqwest::Method::GET,
+                        paths::HABITS,
+                        RequestBody::None,
+                        None,
+                    )
+                    .await?;
+                let habit_id = habits
                     .iter()
-                    .find(|t| t.habit_id.as_deref() == Some(hid) && t.display_id == tnum)
-            {
-                return Ok(t.id.clone());
+                    .find(|h| h.display_id == habit)
+                    .map(|h| h.id.as_str());
+                if let Some(hid) = habit_id
+                    && let Some(t) = tasks
+                        .iter()
+                        .find(|t| t.habit_id.as_deref() == Some(hid) && t.display_id == task)
+                {
+                    return Ok(t.id.clone());
+                }
+                Err(StorageError::NotFound(format!("task {id} not found")))
             }
-            return Err(StorageError::NotFound(format!("task {id} not found")));
-        }
-        // Numeric input → resolve via display_id for non-habit tasks only (#380).
-        if let Ok(num) = id.parse::<i64>() {
-            let tasks: Vec<TaskRow> = self
-                .send_json::<Vec<TaskRow>>(
-                    reqwest::Method::GET,
-                    paths::TASKS,
-                    RequestBody::None,
-                    None,
-                )
-                .await?;
-            if let Some(t) = tasks
-                .iter()
-                .find(|t| t.display_id == num && t.habit_id.is_none())
-            {
-                return Ok(t.id.clone());
+            takusu_types::TaskRef::Display(num) => {
+                let tasks: Vec<TaskRow> = self
+                    .send_json::<Vec<TaskRow>>(
+                        reqwest::Method::GET,
+                        paths::TASKS,
+                        RequestBody::None,
+                        None,
+                    )
+                    .await?;
+                if let Some(t) = tasks
+                    .iter()
+                    .find(|t| t.display_id == num && t.habit_id.is_none())
+                {
+                    return Ok(t.id.clone());
+                }
+                Err(StorageError::NotFound(format!("task {id} not found")))
             }
-            return Err(StorageError::NotFound(format!("task {id} not found")));
+            // Full UUID — pass through. The Worker-side `resolve_task_id`
+            // verifies existence (tasks.rs), so non-existent UUIDs surface as
+            // 404 from the actual operation request without an extra round-trip.
+            takusu_types::TaskRef::Uuid(uuid) => Ok(uuid),
         }
-        // Full UUID — pass through. The Worker-side `resolve_task_id`
-        // verifies existence (tasks.rs), so non-existent UUIDs surface as
-        // 404 from the actual operation request without an extra round-trip.
-        if id.contains('-') {
-            return Ok(id.to_string());
-        }
-        // Anything else (e.g. a UUID prefix) is not a valid reference (#1251).
-        Err(StorageError::NotFound(format!("task {id} not found")))
     }
 }
 

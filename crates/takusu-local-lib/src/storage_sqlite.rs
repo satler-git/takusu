@@ -2929,77 +2929,74 @@ async fn resolve_task_id<'c, E>(executor: E, id: &str) -> StorageResult<String>
 where
     E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
 {
-    // Allow display ids with a leading `#` (e.g. `#42`) written by the LLM.
-    let id = id.strip_prefix('#').unwrap_or(id);
-
-    // `h{habit_display_id}#{task_display_id}` → habit task lookup (#380).
-    if let Some(rest) = id.strip_prefix(['h', 'H'])
-        && let Some((hdisp, tdisp)) = rest.split_once('#')
-        && let (Ok(hnum), Ok(tnum)) = (hdisp.parse::<i64>(), tdisp.parse::<i64>())
-    {
-        return sqlx::query_scalar::<_, String>(
-            "SELECT t.id FROM tasks t JOIN habits h ON t.habit_id = h.id \
-             WHERE h.display_id = ? AND t.display_id = ?",
-        )
-        .bind(hnum)
-        .bind(tnum)
-        .fetch_optional(executor)
-        .await
-        .map_err(map_err)?
-        .ok_or_else(|| StorageError::NotFound(format!("task {id} not found")));
-    }
-    // Numeric input → display_id lookup for non-habit tasks only (#380).
-    if let Ok(num) = id.parse::<i64>() {
-        return sqlx::query_scalar::<_, String>(
-            "SELECT id FROM tasks WHERE display_id = ? AND habit_id IS NULL",
-        )
-        .bind(num)
-        .fetch_optional(executor)
-        .await
-        .map_err(map_err)?
-        .ok_or_else(|| StorageError::NotFound(format!("task {id} not found")));
-    }
-    if id.contains('-') {
-        let exists: bool = sqlx::query_scalar("SELECT COUNT(*) > 0 FROM tasks WHERE id = ?")
-            .bind(id)
-            .fetch_one(executor)
+    let parsed = takusu_types::TaskRef::try_from(id)
+        .map_err(|_| StorageError::NotFound(format!("task {id} not found")))?;
+    match parsed {
+        takusu_types::TaskRef::HabitTask { habit, task } => {
+            sqlx::query_scalar::<_, String>(
+                "SELECT t.id FROM tasks t JOIN habits h ON t.habit_id = h.id \
+                 WHERE h.display_id = ? AND t.display_id = ?",
+            )
+            .bind(habit)
+            .bind(task)
+            .fetch_optional(executor)
             .await
-            .map_err(map_err)?;
-        if exists {
-            return Ok(id.to_string());
+            .map_err(map_err)?
+            .ok_or_else(|| StorageError::NotFound(format!("task {id} not found")))
+        }
+        takusu_types::TaskRef::Display(num) => {
+            sqlx::query_scalar::<_, String>(
+                "SELECT id FROM tasks WHERE display_id = ? AND habit_id IS NULL",
+            )
+            .bind(num)
+            .fetch_optional(executor)
+            .await
+            .map_err(map_err)?
+            .ok_or_else(|| StorageError::NotFound(format!("task {id} not found")))
+        }
+        takusu_types::TaskRef::Uuid(uuid) => {
+            let exists: bool = sqlx::query_scalar("SELECT COUNT(*) > 0 FROM tasks WHERE id = ?")
+                .bind(&uuid)
+                .fetch_one(executor)
+                .await
+                .map_err(map_err)?;
+            if exists {
+                Ok(uuid)
+            } else {
+                Err(StorageError::NotFound(format!("task {id} not found")))
+            }
         }
     }
-    // Anything else (e.g. a UUID prefix) is not a valid reference (#1251).
-    Err(StorageError::NotFound(format!("task {id} not found")))
 }
 
 /// Resolve a habit reference to its full UUID.
 /// Accepts `h<N>` (habit display_id, e.g. `h1`) or a full UUID. UUID prefixes
 /// are not accepted (#1251).
 async fn resolve_habit_id(pool: &SqlitePool, id: &str) -> StorageResult<String> {
-    // `h<N>` → habit display_id lookup (#305).
-    if let Some(rest) = id.strip_prefix(['h', 'H'])
-        && let Ok(num) = rest.parse::<i64>()
-    {
-        return sqlx::query_scalar::<_, String>("SELECT id FROM habits WHERE display_id = ?")
-            .bind(num)
-            .fetch_optional(pool)
-            .await
-            .map_err(map_err)?
-            .ok_or_else(|| StorageError::NotFound(format!("habit {id} not found")));
-    }
-    if id.contains('-') {
-        let exists: bool = sqlx::query_scalar("SELECT COUNT(*) > 0 FROM habits WHERE id = ?")
-            .bind(id)
-            .fetch_one(pool)
-            .await
-            .map_err(map_err)?;
-        if exists {
-            return Ok(id.to_string());
+    let parsed = takusu_types::HabitRef::try_from(id)
+        .map_err(|_| StorageError::NotFound(format!("habit {id} not found")))?;
+    match parsed {
+        takusu_types::HabitRef::Display(num) => {
+            sqlx::query_scalar::<_, String>("SELECT id FROM habits WHERE display_id = ?")
+                .bind(num)
+                .fetch_optional(pool)
+                .await
+                .map_err(map_err)?
+                .ok_or_else(|| StorageError::NotFound(format!("habit {id} not found")))
+        }
+        takusu_types::HabitRef::Uuid(uuid) => {
+            let exists: bool = sqlx::query_scalar("SELECT COUNT(*) > 0 FROM habits WHERE id = ?")
+                .bind(&uuid)
+                .fetch_one(pool)
+                .await
+                .map_err(map_err)?;
+            if exists {
+                Ok(uuid)
+            } else {
+                Err(StorageError::NotFound(format!("habit {id} not found")))
+            }
         }
     }
-    // Anything else (e.g. a UUID prefix) is not a valid reference (#1251).
-    Err(StorageError::NotFound(format!("habit {id} not found")))
 }
 
 /// Resolve a list of dependency references (display_id numbers or full UUIDs)
