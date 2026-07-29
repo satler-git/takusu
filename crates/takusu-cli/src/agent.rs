@@ -1,5 +1,6 @@
 use std::io::{self, BufRead, Write};
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -50,34 +51,26 @@ pub async fn run(
 fn parse_session_permissions(allow: &[String], deny: &[String]) -> Result<Permissions, AppError> {
     let mut permissions = Permissions::default();
     for key in allow {
-        let (target, operation) = parse_permission_key(key)?;
-        permissions.set(target, operation, true);
+        let parsed = takusu_agent::PermissionKey::from_str(key)
+            .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
+        permissions.set(parsed.target, parsed.operation, true);
     }
     for key in deny {
-        let (target, operation) = parse_permission_key(key)?;
-        permissions.set(target, operation, false);
+        let parsed = takusu_agent::PermissionKey::from_str(key)
+            .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
+        permissions.set(parsed.target, parsed.operation, false);
     }
     Ok(permissions)
 }
 
-fn parse_permission_key(key: &str) -> Result<(&str, &str), AppError> {
-    if key.matches(':').count() != 1 {
-        return Err(AppError::BadRequest(BadRequestKind::Other(format!(
-            "permission key must be 'target:operation' (got '{key}')"
-        ))));
-    }
-    let mut parts = key.splitn(2, ':');
-    let target = parts.next().filter(|s| !s.is_empty()).ok_or_else(|| {
-        AppError::BadRequest(BadRequestKind::Other(format!(
-            "invalid permission key '{key}'"
-        )))
-    })?;
-    let operation = parts.next().filter(|s| !s.is_empty()).ok_or_else(|| {
-        AppError::BadRequest(BadRequestKind::Other(format!(
-            "invalid permission key '{key}'"
-        )))
-    })?;
-    Ok((target, operation))
+/// Validate a permission key string using the typed `PermissionKey` parser.
+///
+/// This catches unknown target/operation labels (e.g. `foo:bar`) at
+/// config-write time rather than deferring the failure to `AgentConfig::load()`.
+fn validate_permission_key(key: &str) -> Result<(), AppError> {
+    takusu_agent::PermissionKey::from_str(key)
+        .map(|_| ())
+        .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))
 }
 
 async fn run_text(session: &AgentSession, text: &str, yes: bool) -> Result<(), AppError> {
@@ -410,7 +403,7 @@ pub fn permissions_set(key: &str, value: &str) -> Result<(), AppError> {
 }
 
 fn permissions_set_at(path: &std::path::Path, key: &str, value: &str) -> Result<(), AppError> {
-    parse_permission_key(key)?;
+    validate_permission_key(key)?;
     let allowed = parse_permission_value(value)?;
     let mut doc = if path.exists() {
         let content = std::fs::read_to_string(path)
@@ -441,7 +434,7 @@ pub fn permissions_unset(key: &str) -> Result<(), AppError> {
 }
 
 fn permissions_unset_at(path: &std::path::Path, key: &str) -> Result<(), AppError> {
-    parse_permission_key(key)?;
+    validate_permission_key(key)?;
     if !path.exists() {
         println!("Permission not found: {key}");
         return Ok(());
@@ -567,24 +560,29 @@ mod tests {
     }
 
     #[test]
-    fn parse_permission_key_accepts_valid_keys() {
-        assert_eq!(
-            parse_permission_key("task:create").unwrap(),
-            ("task", "create")
-        );
-        assert_eq!(parse_permission_key("*:*").unwrap(), ("*", "*"));
-        assert_eq!(parse_permission_key("task:*").unwrap(), ("task", "*"));
-        assert_eq!(parse_permission_key("*:create").unwrap(), ("*", "create"));
+    fn validate_permission_key_accepts_valid_keys() {
+        for key in ["task:create", "*:*", "task:*", "*:create", "schedule:generate"] {
+            assert!(validate_permission_key(key).is_ok(), "{key} should be valid");
+        }
     }
 
     #[test]
-    fn parse_permission_key_rejects_invalid_keys() {
+    fn validate_permission_key_rejects_invalid_keys() {
         for key in ["invalid", "task", "task:", ":create", "task:create:sub"] {
             assert!(
-                parse_permission_key(key).is_err(),
+                validate_permission_key(key).is_err(),
                 "{key} should be rejected"
             );
         }
+    }
+
+    #[test]
+    fn validate_permission_key_rejects_unknown_labels() {
+        // Unknown target/operation labels are caught at config-write time,
+        // not deferred to AgentConfig::load().
+        assert!(validate_permission_key("foo:bar").is_err());
+        assert!(validate_permission_key("task:bar").is_err());
+        assert!(validate_permission_key("foo:create").is_err());
     }
 
     #[test]
@@ -606,22 +604,27 @@ mod tests {
 
     #[test]
     fn parse_session_permissions_builds_map() {
+        use takusu_agent::{ChangeOperation, TargetKind};
         let perms = parse_session_permissions(
             &["task:create".into(), "schedule:generate".into()],
             &["task:delete".into()],
         )
         .unwrap();
-        assert!(perms.is_allowed("task", "create"));
-        assert!(perms.is_allowed("schedule", "generate"));
-        assert!(!perms.is_allowed("task", "delete"));
-        assert!(!perms.is_allowed("memory", "create"));
+        assert!(perms.is_allowed(TargetKind::Task, ChangeOperation::Create));
+        assert!(perms.is_allowed(
+            TargetKind::Schedule,
+            ChangeOperation::Generate
+        ));
+        assert!(!perms.is_allowed(TargetKind::Task, ChangeOperation::Delete));
+        assert!(!perms.is_allowed(TargetKind::Memory, ChangeOperation::Create));
     }
 
     #[test]
     fn parse_session_permissions_deny_overrides_allow() {
+        use takusu_agent::{ChangeOperation, TargetKind};
         let perms =
             parse_session_permissions(&["task:create".into()], &["task:create".into()]).unwrap();
-        assert!(!perms.is_allowed("task", "create"));
+        assert!(!perms.is_allowed(TargetKind::Task, ChangeOperation::Create));
     }
 
     #[test]

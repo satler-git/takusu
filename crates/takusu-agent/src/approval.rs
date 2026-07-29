@@ -17,7 +17,11 @@ use crate::tool::{
 use crate::{AgentError, AgentSession, ApprovalRequest, ApprovalResult};
 
 impl AgentSession {
-    pub(crate) fn is_auto_approved(&self, target: &str, operation: &str) -> Result<bool, AgentError> {
+    pub(crate) fn is_auto_approved(
+        &self,
+        target: TargetKind,
+        operation: ChangeOperation,
+    ) -> Result<bool, AgentError> {
         let session = self.session_permissions.lock()?;
         if let Some(allowed) = session.resolve(target, operation) {
             return Ok(allowed);
