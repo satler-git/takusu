@@ -36,7 +36,6 @@ impl From<takusu_storage::StorageError> for WorkerError {
         }
     }
 }
-
 impl WorkerError {
     pub fn status(&self) -> u16 {
         match self {

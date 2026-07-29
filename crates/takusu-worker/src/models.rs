@@ -12,4 +12,3 @@
 //! resolving.
 
 pub use takusu_storage::model::*;
-pub use takusu_types::{DependencyList, Quantity};

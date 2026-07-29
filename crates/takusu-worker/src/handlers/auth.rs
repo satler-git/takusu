@@ -45,6 +45,15 @@ pub fn db(env: &Env) -> Result<D1Database, WorkerError> {
         .map_err(|e| WorkerError::Internal(format!("D1 binding 'DB' missing: {e}")))
 }
 
+/// Construct a `D1Storage` from the Worker `Env`, extracting both the D1
+/// database binding and the JWT secret. This is the standard entry point
+/// for handler modules that delegate to the `Storage` trait.
+pub fn storage(env: &Env) -> Result<crate::storage_d1::D1Storage, WorkerError> {
+    let db = db(env)?;
+    let jwt_secret = crate::auth::jwt_secret(env)?;
+    Ok(crate::storage_d1::D1Storage::new(db, jwt_secret))
+}
+
 #[derive(serde::Deserialize)]
 struct CountRow {
     #[serde(rename = "c")]

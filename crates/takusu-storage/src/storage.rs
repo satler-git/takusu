@@ -12,7 +12,8 @@ use takusu_types::TokenClaims;
 
 pub type StorageResult<T> = Result<T, StorageError>;
 
-#[async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 pub trait Storage: Send + Sync + 'static {
     async fn verify_token(&self, token: &str) -> StorageResult<Option<TokenClaims>>;
 

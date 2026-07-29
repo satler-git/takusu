@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# cargo-x — tiny cargo subcommand that splits lint commands into a
+# wasm (takusu-worker) pass and a native (everything else) pass.
+#
+# cargo x check
+#   => cargo check -p takusu-worker --target wasm32-unknown-unknown
+#      cargo check --workspace --exclude takusu-worker
+#
+# cargo x clippy --all-targets --all-features -- -D warnings
+#   => cargo clippy -p takusu-worker --target wasm32-unknown-unknown --all-targets --all-features -- -D warnings
+#      cargo clippy --workspace --exclude takusu-worker --all-targets --all-features -- -D warnings
+
+if [[ $# -eq 0 ]]; then
+    echo "usage: cargo x <cmd> [args...]" >&2
+    exit 1
+fi
+
+# When invoked as `cargo x`, cargo passes the subcommand name `x` as argv[1].
+cmd="$1"
+if [[ "$cmd" == "x" ]]; then
+    shift
+    cmd="$1"
+fi
+if [[ -z "$cmd" ]]; then
+    echo "usage: cargo x <cmd> [args...]" >&2
+    exit 1
+fi
+shift
+
+case "$cmd" in
+    check | clippy | build)
+        echo "+ cargo $cmd -p takusu-worker --target wasm32-unknown-unknown $*" >&2
+        cargo "$cmd" -p takusu-worker --target wasm32-unknown-unknown "$@"
+        ;;
+    test | nextest)
+        # takusu-worker is a wasm cdylib and cannot execute tests on the host.
+        # The native workspace run below covers the testable crates.
+        ;;
+    *)
+        echo "error: 'cargo x $cmd' is not supported" >&2
+        exit 1
+        ;;
+esac
+
+if [[ "$cmd" == "nextest" ]]; then
+    echo "+ cargo nextest run --workspace --exclude takusu-worker $*" >&2
+    cargo nextest run --workspace --exclude takusu-worker "$@"
+else
+    echo "+ cargo $cmd --workspace --exclude takusu-worker $*" >&2
+    cargo "$cmd" --workspace --exclude takusu-worker "$@"
+fi

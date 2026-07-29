@@ -88,7 +88,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - run: nix develop .#rust --command bash -c "cargo clippy --all-targets --all-features -- -D warnings"
+      - run: nix develop .#rust --command bash -c "cargo clippy --workspace --all-targets --all-features -- -D warnings"
   test:
     needs: changes
     if: |
@@ -125,8 +125,8 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - run: nix develop .#rust --command bash -c "cargo nextest run --all"
-      - run: nix develop .#rust --command bash -c "cargo test --doc --all-features -- --nocapture"
+      - run: nix develop .#rust --command bash -c "cargo nextest run --workspace"
+      - run: nix develop .#rust --command bash -c "cargo test --doc --all-features --workspace -- --nocapture"
 
   # Run the parameterized storage-suite tests against both SqliteStorage and
   # the real takusu-worker (workerd + D1 via `wrangler dev --local`). The

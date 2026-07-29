@@ -1,8 +1,6 @@
 pub mod auth;
-pub mod d1;
 pub mod habits;
 pub mod health;
-pub mod id_resolver;
 pub mod memory;
 pub mod progress;
 pub mod schedule;
