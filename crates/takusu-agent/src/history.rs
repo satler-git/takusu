@@ -181,61 +181,17 @@ impl AgentSession {
             .saturating_sub(tools_estimate)
             .max(last_estimate);
 
-        let mut current = messages.iter().map(|m| m.estimate_tokens()).sum::<usize>();
-        let adjusted_target = {
+        let current = messages.iter().map(|m| m.estimate_tokens()).sum::<usize>();
+        let actual_local = {
             let last = *self.last_prompt_tokens.lock().unwrap();
-            let actual_local = last
-                .map(|p| {
-                    p.saturating_sub(system_estimate)
-                        .saturating_sub(tools_estimate)
-                })
-                .unwrap_or(current);
-            let base = if actual_local > 0 {
-                (target as f64 * current as f64 / actual_local as f64) as usize
-            } else {
-                target
-            };
-            base.max(last_estimate)
+            last.map(|p| {
+                p.saturating_sub(system_estimate)
+                    .saturating_sub(tools_estimate)
+            })
+            .unwrap_or(current)
         };
 
-        while current > adjusted_target && !messages.is_empty() {
-            // Never remove the last user message or the assistant/tool-result
-            // messages that belong to the current turn.
-            let last_user_start = messages
-                .iter()
-                .enumerate()
-                .rfind(|(_, m)| matches!(m, llm::Message::User(_)))
-                .map(|(i, _)| i)
-                .unwrap_or(0);
-
-            let drain_end = if messages.len() > 1 {
-                let start = messages
-                    .iter()
-                    .enumerate()
-                    .find(|(_, m)| matches!(m, llm::Message::User(_)))
-                    .map(|(i, _)| i)
-                    .unwrap_or(0);
-                let next = if start == 0 {
-                    messages
-                        .iter()
-                        .enumerate()
-                        .skip(1)
-                        .find(|(_, m)| matches!(m, llm::Message::User(_)))
-                        .map(|(i, _)| i)
-                        .unwrap_or(messages.len())
-                } else {
-                    start
-                };
-                next.min(last_user_start)
-            } else {
-                1.min(last_user_start)
-            };
-
-            if messages.drain(0..drain_end).count() == 0 {
-                break;
-            }
-            current = messages.iter().map(|m| m.estimate_tokens()).sum();
-        }
+        let mut messages = trim_to_target(messages, target, current, actual_local, last_estimate);
 
         if let Some(system) = system_message {
             messages.insert(0, system);
@@ -245,7 +201,7 @@ impl AgentSession {
 
     pub(crate) fn replace_history(
         &self,
-        mut local: Vec<llm::Message>,
+        local: Vec<llm::Message>,
         prompt_tokens: Option<usize>,
         system_estimate: usize,
     ) {
@@ -267,58 +223,171 @@ impl AgentSession {
             })
             .unwrap_or(current);
 
-        if actual_local <= target {
-            let mut guard = self.history.lock().unwrap();
-            *guard = local;
-            return;
-        }
+        // Both trim_messages and replace_history delegate the trimming loop to
+        // trim_to_target so the two paths stay consistent. When the provider
+        // reports we are within budget (actual_local > 0 && actual_local <=
+        // target), trim_to_target computes adjusted_target >= current and
+        // returns the messages untouched. When actual_local == 0 (degenerate
+        // provider count from saturating_sub), trim_to_target falls back to
+        // `target` and trims conservatively if current > target — matching
+        // trim_messages' behavior for the same case.
+        let local = trim_to_target(local, target, current, actual_local, last_estimate);
 
-        let adjusted_target = {
-            let base = if actual_local > 0 {
-                (target as f64 * current as f64 / actual_local as f64) as usize
-            } else {
-                target
-            };
-            base.max(last_estimate)
+        let mut guard = self.history.lock().unwrap();
+        *guard = local;
+    }
+}
+
+/// Trim `messages` (without the system message) to fit within a token budget.
+///
+/// `target` is the local token budget (max context minus system + tools).
+/// `current` is the estimated token count of `messages`, and `actual_local` is
+/// the provider-reported count for the same span when available (otherwise
+/// equal to `current`). The provider count calibrates the per-message estimate:
+/// when the estimate overshoots the provider count, the adjusted target is
+/// scaled up proportionally so we don't over-trim.
+///
+/// `last_estimate` is the token estimate of the final message; the adjusted
+/// target is clamped to at least this so the current turn's last message is
+/// never dropped.
+///
+/// Drops the oldest complete turns first. The last user message and the
+/// assistant/tool-result messages that belong to the current turn are always
+/// preserved.
+fn trim_to_target(
+    mut messages: Vec<llm::Message>,
+    target: usize,
+    current: usize,
+    actual_local: usize,
+    last_estimate: usize,
+) -> Vec<llm::Message> {
+    let adjusted_target = {
+        let base = if actual_local > 0 {
+            (target as f64 * current as f64 / actual_local as f64) as usize
+        } else {
+            target
         };
+        base.max(last_estimate)
+    };
 
-        let mut estimate = current;
-        while estimate > adjusted_target && !local.is_empty() {
-            // Never remove the last user message or the assistant/tool-result
-            // messages that belong to the current turn.
-            let last_user_start = local
-                .iter()
-                .enumerate()
-                .rfind(|(_, m)| matches!(m, llm::Message::User(_)))
-                .map(|(i, _)| i)
-                .unwrap_or(0);
+    let mut estimate = current;
+    while estimate > adjusted_target && !messages.is_empty() {
+        // Never remove the last user message or the assistant/tool-result
+        // messages that belong to the current turn.
+        let last_user_start = messages
+            .iter()
+            .enumerate()
+            .rfind(|(_, m)| matches!(m, llm::Message::User(_)))
+            .map(|(i, _)| i)
+            .unwrap_or(0);
 
-            let start = local
+        let drain_end = if messages.len() > 1 {
+            let start = messages
                 .iter()
                 .enumerate()
                 .find(|(_, m)| matches!(m, llm::Message::User(_)))
                 .map(|(i, _)| i)
                 .unwrap_or(0);
             let next = if start == 0 {
-                local
+                messages
                     .iter()
                     .enumerate()
                     .skip(1)
                     .find(|(_, m)| matches!(m, llm::Message::User(_)))
                     .map(|(i, _)| i)
-                    .unwrap_or(local.len())
+                    .unwrap_or(messages.len())
             } else {
                 start
             };
-            let drain_end = next.min(last_user_start);
+            next.min(last_user_start)
+        } else {
+            1.min(last_user_start)
+        };
 
-            if local.drain(0..drain_end).count() == 0 {
-                break;
-            }
-            estimate = local.iter().map(|m| m.estimate_tokens()).sum();
+        if messages.drain(0..drain_end).count() == 0 {
+            break;
         }
+        estimate = messages.iter().map(|m| m.estimate_tokens()).sum();
+    }
 
-        let mut guard = self.history.lock().unwrap();
-        *guard = local;
+    messages
+}
+
+#[cfg(test)]
+mod tests {
+    use super::trim_to_target;
+    use crate::llm::Message;
+
+    // estimate_tokens = chars.div_ceil(4) + 4.
+    // "aaaa" (4 chars)  → 5 tokens
+    // "aaaaaaaa" (8 chars) → 6 tokens
+    fn user(s: &str) -> Message {
+        Message::User(s.to_string())
+    }
+
+    #[test]
+    fn trim_to_target_no_trim_when_within_budget() {
+        // current (10) <= adjusted_target (25): no trimming.
+        let msgs = vec![user("aaaa"), user("aaaa")];
+        let result = trim_to_target(msgs, 20, 10, 8, 5);
+        assert_eq!(result.len(), 2, "should not trim when within budget");
+    }
+
+    #[test]
+    fn trim_to_target_trims_when_actual_local_equals_current() {
+        // adjusted_target = target (10) = current (15) → trim one turn.
+        let msgs = vec![user("aaaa"), user("aaaa"), user("aaaa")];
+        let result = trim_to_target(msgs, 10, 15, 15, 5);
+        assert_eq!(result.len(), 2, "should trim one oldest turn");
+    }
+
+    #[test]
+    fn trim_to_target_falls_back_to_target_when_actual_local_is_zero() {
+        // Degenerate provider count (saturating_sub → 0). adjusted_target
+        // falls back to `target` (10), and current (15) > 10 → trim.
+        let msgs = vec![user("aaaa"), user("aaaa"), user("aaaa")];
+        let result = trim_to_target(msgs, 10, 15, 0, 5);
+        assert_eq!(
+            result.len(),
+            2,
+            "actual_local == 0 should fall back to target and trim conservatively"
+        );
+    }
+
+    #[test]
+    fn trim_to_target_no_trim_when_actual_local_zero_and_current_within_target() {
+        // actual_local == 0, but current (10) <= target (20) → no trim.
+        let msgs = vec![user("aaaa"), user("aaaa")];
+        let result = trim_to_target(msgs, 20, 10, 0, 5);
+        assert_eq!(result.len(), 2, "should not trim when current <= target");
+    }
+
+    #[test]
+    fn trim_to_target_trims_more_when_estimate_overcounts_provider() {
+        // actual_local (20) > current (15): provider says we used more than
+        // our estimate predicts. adjusted_target = 10*15/20 = 7, so we trim
+        // aggressively down to the last message.
+        let msgs = vec![user("aaaa"), user("aaaa"), user("aaaa")];
+        let result = trim_to_target(msgs, 10, 15, 20, 5);
+        assert_eq!(result.len(), 1, "should trim down to last message");
+    }
+
+    #[test]
+    fn trim_to_target_trims_less_when_estimate_undercounts_provider() {
+        // actual_local (12) < current (15): estimate overcounts, so
+        // adjusted_target = 10*15/12 = 12, only one turn trimmed.
+        let msgs = vec![user("aaaa"), user("aaaa"), user("aaaa")];
+        let result = trim_to_target(msgs, 10, 15, 12, 5);
+        assert_eq!(result.len(), 2, "should trim only one turn");
+    }
+
+    #[test]
+    fn trim_to_target_preserves_last_message_when_target_below_last_estimate() {
+        // target (3) < last_estimate (6): adjusted_target clamped to 6,
+        // so the last message is never dropped.
+        let msgs = vec![user("aaaa"), user("aaaaaaaa")];
+        let result = trim_to_target(msgs, 3, 11, 11, 6);
+        assert_eq!(result.len(), 1);
+        assert!(matches!(&result[0], Message::User(t) if t == "aaaaaaaa"));
     }
 }
