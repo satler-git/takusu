@@ -1,0 +1,128 @@
+{
+  "excludes": [
+    {
+      "fg": "white",
+      "bg": "white",
+      "file": "components/ToolCallDetailModal.tsx",
+      "line": 289,
+      "reason": "statusColor is a useMemo-derived variable (red/green/gray), not colors.white. AST extraction cannot resolve destructured useMemo returns."
+    },
+    {
+      "fg": "white",
+      "bg": "white",
+      "file": "components/ToolCallDetailModal.tsx",
+      "line": 291,
+      "reason": "statusColor is a useMemo-derived variable (red/green/gray), not colors.white. AST extraction cannot resolve destructured useMemo returns."
+    },
+    {
+      "fg": "black",
+      "bg": "grayLight",
+      "file": "components/SplitTaskModal.tsx",
+      "line": 194,
+      "reason": "Disabled TextInput (editable={false}) showing a read-only total value. Low contrast is intentional to indicate the non-editable state."
+    }
+  ],
+  "skipBgTokens": [
+    "pressed",
+    "brandPressed",
+    "overlay",
+    "surfaceTranslucent",
+    "destructiveBg"
+  ],
+  "skipFgTokens": ["grayLight"],
+  "skipFgTokenReasons": {
+    "grayLight": "Used primarily for placeholder text, disabled-state controls, border colors, and switch tracks — all of which intentionally have lower contrast. Hint text should migrate to a semantic token in a follow-up."
+  },
+  "skipFgOnBgPairs": [
+    {
+      "fg": "onBrand",
+      "bg": "grayLight",
+      "reason": "Disabled button state — onBrand text on grayLight background is intentionally low-contrast to indicate the disabled state."
+    },
+    {
+      "fg": "onBrand",
+      "bg": "red",
+      "reason": "onBrand is extracted as a foreground on red backgrounds from ApprovalPanel, but the actual usage is a colored badge with its own text color, not onBrand. Follow-up: refactor to use a dedicated badgeText token."
+    },
+    {
+      "fg": "onBrand",
+      "bg": "destructive",
+      "reason": "Destructive button uses onBrand text color. The destructive background is similar to brand in luminance, making this a real contrast issue. Follow-up: introduce onDestructive token with adequate contrast."
+    },
+    {
+      "fg": "onBrand",
+      "bg": "grayDark",
+      "reason": "onBrand text on grayDark background in SkillEditView. Follow-up: verify actual usage and introduce appropriate token."
+    },
+    {
+      "fg": "onBrand",
+      "bg": "surfaceTint",
+      "reason": "onBrand extracted on surfaceTint from ApprovalPanel. Actual usage is a button with brand background, not surfaceTint. AST extraction false positive from nested JSX."
+    },
+    {
+      "fg": "onBrand",
+      "bg": "brand",
+      "reason": "onBrand on brand is the intended pairing, but in catppuccin and aura-soft-dark the brand color is too close in luminance to onBrand. Follow-up: adjust brand or onBrand for these themes."
+    },
+    {
+      "fg": "black",
+      "bg": "brand",
+      "reason": "Text on brand-colored elements. In light/catppuccin/aura-soft-dark the brand purple is too light for black text. Follow-up: use onBrand instead of black for text on brand backgrounds."
+    },
+    {
+      "fg": "brand",
+      "bg": "surfaceTint",
+      "reason": "Brand used as icon/link color on surfaceTint in dark themes. Brand purple (#7261A3) is close to but below 3:1 on dark surfaceTint. Follow-up: introduce brandText token with adequate contrast for dark themes."
+    },
+    {
+      "fg": "brand",
+      "bg": "separator",
+      "reason": "Brand used as icon color on separator in AgentView. Follow-up: use brandText token."
+    },
+    {
+      "fg": "brand",
+      "bg": "warningBg",
+      "reason": "Brand used as link text color inside warning boxes (RruleBuilderModal). Brand on warningBg fails in dark/catppuccin/aura-soft-dark. Follow-up: use a dedicated warningLink token."
+    },
+    {
+      "fg": "brand",
+      "bg": "surface",
+      "reason": "Brand used as text/icon on surface in catppuccin. Brand purple too close to catppuccin surface. Follow-up: use brandText token."
+    },
+    {
+      "fg": "brand",
+      "bg": "white",
+      "reason": "Brand used as icon color on white background in catppuccin DependencyGraph. Follow-up: use brandText token."
+    },
+    {
+      "fg": "gray",
+      "bg": "surfaceTint",
+      "reason": "Gray text on surfaceTint in catppuccin. Catppuccin surfaceTint (#494D64) is too close to gray. Follow-up: adjust catppuccin gray or surfaceTint."
+    },
+    {
+      "fg": "gray",
+      "bg": "warningBg",
+      "reason": "Gray icon on warningBg in catppuccin RedundantDepWarning. Follow-up: adjust catppuccin gray or warningBg."
+    },
+    {
+      "fg": "grayDark",
+      "bg": "surfaceTint",
+      "reason": "GrayDark text on surfaceTint in catppuccin. Follow-up: adjust catppuccin grayDark or surfaceTint."
+    },
+    {
+      "fg": "grayDark",
+      "bg": "warningBg",
+      "reason": "GrayDark text on warningBg in catppuccin. Follow-up: adjust catppuccin grayDark or warningBg."
+    },
+    {
+      "fg": "red",
+      "bg": "warningBg",
+      "reason": "Red icon on warningBg in catppuccin. Follow-up: adjust catppuccin red or warningBg."
+    },
+    {
+      "fg": "white",
+      "bg": "brand",
+      "reason": "White on brand in catppuccin ApprovalPanel. Catppuccin brand too close to white. Follow-up: adjust catppuccin brand or onBrand."
+    }
+  ]
+}

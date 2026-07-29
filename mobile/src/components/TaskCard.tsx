@@ -470,17 +470,23 @@ function TaskCardImpl({
           >
             {/* Left: times */}
             <View style={styles.times}>
-              <Text style={[styles.timeText, { color: colors.grayDark }]}>
+              <Text
+                style={[styles.timeText, { color: colors.textOnCardSecondary }]}
+              >
                 {formatTime(scheduleStart)}
               </Text>
-              <Text style={[styles.timeText, { color: colors.grayDark }]}>
+              <Text
+                style={[styles.timeText, { color: colors.textOnCardSecondary }]}
+              >
                 {formatTime(scheduleEnd)}
               </Text>
             </View>
 
             {/* Center: title */}
             <View style={styles.titleContainer}>
-              <Text style={[styles.taskId, { color: colors.gray }]}>
+              <Text
+                style={[styles.taskId, { color: colors.textOnCardSecondary }]}
+              >
                 {task.habit_id && habitDisplayId !== undefined
                   ? `h${habitDisplayId}#${task.display_id}`
                   : `#${task.display_id}`}
@@ -488,10 +494,10 @@ function TaskCardImpl({
               <Text
                 style={[
                   styles.title,
-                  { color: colors.black },
+                  { color: colors.textOnCard },
                   isDone && {
                     textDecorationLine: 'line-through',
-                    color: colors.done,
+                    color: colors.textOnCardDone,
                   },
                 ]}
                 numberOfLines={2}
@@ -503,29 +509,54 @@ function TaskCardImpl({
             {/* Right: deps, dependents, and cost stacked vertically */}
             <View style={styles.meta}>
               {task.quantity_total !== undefined && task.quantity_total > 0 && (
-                <Text style={[styles.metaText, { color: colors.gray }]}>
+                <Text
+                  style={[
+                    styles.metaText,
+                    { color: colors.textOnCardSecondary },
+                  ]}
+                >
                   {task.quantity_done}/{task.quantity_total}
                 </Text>
               )}
               {deps.length > 0 && (
-                <Text style={[styles.metaText, { color: colors.gray }]}>
+                <Text
+                  style={[
+                    styles.metaText,
+                    { color: colors.textOnCardSecondary },
+                  ]}
+                >
                   ↳ {deps.length}
                 </Text>
               )}
               {(dependentCount ?? 0) > 0 && (
-                <Text style={[styles.metaText, { color: colors.gray }]}>
+                <Text
+                  style={[
+                    styles.metaText,
+                    { color: colors.textOnCardSecondary },
+                  ]}
+                >
                   ↗ {dependentCount}
                 </Text>
               )}
               {task.avg_minutes > 0 && (
-                <Text style={[styles.metaText, { color: colors.gray }]}>
+                <Text
+                  style={[
+                    styles.metaText,
+                    { color: colors.textOnCardSecondary },
+                  ]}
+                >
                   {task.avg_minutes}m ±{task.sigma_minutes}
                 </Text>
               )}
               {(() => {
                 const hint = deadlineHint(task, scheduleStart);
                 return hint ? (
-                  <Text style={[styles.deadlineHint, { color: colors.gray }]}>
+                  <Text
+                    style={[
+                      styles.deadlineHint,
+                      { color: colors.textOnCardSecondary },
+                    ]}
+                  >
                     {hint}
                   </Text>
                 ) : null;

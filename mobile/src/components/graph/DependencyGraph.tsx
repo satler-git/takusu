@@ -236,7 +236,7 @@ export function DependencyGraph({
     for (const node of inputNodes) {
       const text = truncate(node.label, MAX_LABEL_CHARS);
       const isDone = node.color === colors.done;
-      const color = isDone ? colors.gray : colors.black;
+      const color = isDone ? colors.grayDark : colors.black;
       const builder = Skia.ParagraphBuilder.Make({
         textAlign: TextAlign.Center,
       });
@@ -927,9 +927,20 @@ function NodeLabelBackground({
     return p;
   }, [x, y, height]);
 
-  // grayLight gives a clearly visible pill in all themes — surfaceTint was
-  // nearly identical to the page background in light theme (#1174).
-  return <Path path={bgPath} color={colors.grayLight} style="fill" />;
+  // Fill with the page background color so label text (black/gray) has
+  // maximum contrast. A thin separator-colored border distinguishes the
+  // pill from the background in all themes (#1174, #1181).
+  return (
+    <>
+      <Path path={bgPath} color={colors.white} style="fill" />
+      <Path
+        path={bgPath}
+        color={colors.separator}
+        style="stroke"
+        strokeWidth={1}
+      />
+    </>
+  );
 }
 
 function NodeLabelText({

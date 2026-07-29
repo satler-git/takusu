@@ -11,5 +11,6 @@
     // provided by their own packages. Add other @types packages if needed.
     "types": ["jest"],
     "ignoreDeprecations": "6.0"
-  }
+  },
+  "exclude": ["scripts", "node_modules"]
 }

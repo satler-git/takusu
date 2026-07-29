@@ -1134,7 +1134,7 @@ export function SettingsDetailView({
                     <Pressable
                       style={[
                         styles.actionButton,
-                        { backgroundColor: colors.grayLight },
+                        { backgroundColor: colors.surfaceTint },
                       ]}
                       onPress={() => {
                         haptic.light();
