@@ -118,22 +118,23 @@ pub(crate) fn compute_earliest_indexed(
 }
 
 /// `[start, end)` と重なる睡眠窓があれば、その窓の終端スロットを返す。
-fn sleep_window_conflict(planner: &Planner, start: i64, end: i64) -> Option<i64> {
+fn sleep_window_conflict(planner: &Planner, start: Point, end: Point) -> Option<Point> {
     let sleep = &planner.sleep;
     if !sleep.enabled() {
         return None;
     }
-    let slots_per_day: i64 = (24 * 60) / planner.per as i64;
-    let mut day = sleep.day_start()
-        + (start - sleep.day_start()).div_euclid(slots_per_day) * slots_per_day
-        - slots_per_day;
-    while day + sleep.start() < end {
+    let spd: i64 = (24 * 60) / planner.per as i64;
+    let base = sleep.day_start();
+    let mut day = base
+        + (start.0 - base).div_euclid(spd) * spd
+        - spd;
+    while day + sleep.start() < end.0 {
         let w_start = day + sleep.start();
         let w_end = day + sleep.end();
-        if w_start < end && w_end > start {
-            return Some(w_end);
+        if w_start < end.0 && w_end > start.0 {
+            return Some(Point(w_end));
         }
-        day += slots_per_day;
+        day += spd;
     }
     None
 }
@@ -145,11 +146,11 @@ fn slots_per_day(planner: &Planner) -> i64 {
 fn day_start_for(planner: &Planner, p: Point) -> Point {
     let spd = slots_per_day(planner);
     let base = planner.sleep.day_start();
-    Point(base + (p.0 - base).div_euclid(spd) * spd)
+    Point(base) + Slots((p.0 - base).div_euclid(spd) * spd)
 }
 
 pub(crate) fn next_day_start(planner: &Planner, p: Point) -> Point {
-    day_start_for(planner, p) + slots_per_day(planner)
+    day_start_for(planner, p) + Slots(slots_per_day(planner))
 }
 
 /// 指定日に candidate を追加した場合の union 負荷を計算する。
@@ -182,7 +183,7 @@ fn day_load_with_candidate(
             if tw.start.0 <= c.end.0 {
                 cur = Some(TimeWindow::new(c.start, Point(c.end.0.max(tw.end.0))));
             } else {
-                total += c.end.0 - c.start.0;
+                total += (c.end - c.start).0;
                 cur = Some(tw);
             }
         } else {
@@ -190,7 +191,7 @@ fn day_load_with_candidate(
         }
     }
     if let Some(c) = cur {
-        total += c.end.0 - c.start.0;
+        total += (c.end - c.start).0;
     }
     total
 }
@@ -200,7 +201,7 @@ fn day_load_with_candidate(
 pub(crate) fn max_end_in_day(planner: &Planner, schedules: &[Placement], cursor: Point) -> Point {
     let spd = slots_per_day(planner);
     let day_start = day_start_for(planner, cursor);
-    let day_end = day_start + spd;
+    let day_end = day_start + Slots(spd);
     let max_end = schedules
         .iter()
         .filter(|p| p.start.0 < day_end.0 && p.end.0 > day_start.0 && p.end.0 > cursor.0)
@@ -224,7 +225,7 @@ pub(crate) fn capacity_exceeded_for(
     let spd = slots_per_day(planner);
     let mut day = day_start_for(planner, start);
     while day.0 < end.0 {
-        let day_end = day + spd;
+        let day_end = day + Slots(spd);
         let load = day_load_with_candidate(
             schedules,
             TimeWindow::new(start, end),
@@ -245,11 +246,11 @@ pub(crate) fn try_place(
     schedules: &[Placement],
     task: &Task,
     earliest: Point,
-    dur: i64,
+    dur: Slots,
     latest_end: Option<Point>,
     capacity: CapacityMode<'_>,
 ) -> Result<TimeWindow, PlacementFailure> {
-    if dur <= 0 {
+    if dur.0 <= 0 {
         return Err(PlacementFailure::NoLegalSlot);
     }
     let awake_len = if planner.sleep.enabled() {
@@ -257,7 +258,7 @@ pub(crate) fn try_place(
     } else {
         i64::MAX
     };
-    let avoid_sleep = dur <= awake_len;
+    let avoid_sleep = dur.0 <= awake_len;
     let mut cursor = earliest;
     let mut guard = 0u32;
     let mut capacity = capacity;
@@ -267,7 +268,7 @@ pub(crate) fn try_place(
         if guard > 10_000 {
             return Err(PlacementFailure::NoLegalSlot);
         }
-        let candidate_end = Point(cursor.0 + dur);
+        let candidate_end = cursor + dur;
 
         if candidate_end.0 > task.end.0 {
             return Err(PlacementFailure::DeadlineExceeded);
@@ -286,20 +287,20 @@ pub(crate) fn try_place(
         }
 
         if avoid_sleep
-            && let Some(w_end) = sleep_window_conflict(planner, cursor.0, candidate_end.0)
+            && let Some(w_end) = sleep_window_conflict(planner, cursor, candidate_end)
         {
             // sleep を避けた先が latest_end / deadline を超える場合、
             // 実際の失敗原因を SleepConflict ではなく正しく報告する。
             let next_end = w_end + dur;
             if let Some(limit) = latest_end
-                && next_end > limit.0
+                && next_end > limit
             {
                 return Err(PlacementFailure::LatestEndExceeded);
             }
-            if next_end > task.end.0 {
+            if next_end > task.end {
                 return Err(PlacementFailure::DeadlineExceeded);
             }
-            cursor = Point(w_end);
+            cursor = w_end;
             continue;
         }
 
@@ -343,7 +344,7 @@ pub(crate) fn try_place(
         {
             return Err(PlacementFailure::LatestEndExceeded);
         }
-        if next_start + dur > task.end.0 {
+        if next_start + dur.0 > task.end.0 {
             return Err(PlacementFailure::DeadlineExceeded);
         }
         cursor = Point(next_start);

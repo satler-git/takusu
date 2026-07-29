@@ -157,7 +157,7 @@ pub(crate) fn apply_anchor_shift(
         if circ_dist(tod_of(s, spd), anchor, spd) > threshold {
             continue;
         }
-        let dur = e.0 - s.0;
+        let dur = e - s;
         // この occurrence の「日」の基点 (raw 時刻帯を引いて得る)。
         let day_base = s.0 - tod_of(s, spd);
         // 基本は day_base + new_tod で「同じ日 + 新しい時刻帯」を狙うが、
@@ -173,7 +173,7 @@ pub(crate) fn apply_anchor_shift(
             new_start = ts.0;
         }
         if new_start != s.0 {
-            *entry = TaskPlacement::new(Point(new_start), Point(new_start + dur), id);
+            *entry = TaskPlacement::new(Point(new_start), Point(new_start) + dur, id);
             changed = true;
         }
     }
@@ -202,7 +202,7 @@ pub(crate) fn apply_member_shift(
         if id != member {
             continue;
         }
-        let dur = e.0 - s.0;
+        let dur = e - s;
         let mut new_start = s.0 + delta;
         if new_start < planner.now.0 {
             new_start = planner.now.0;
@@ -215,7 +215,7 @@ pub(crate) fn apply_member_shift(
         if new_start == s.0 {
             return None;
         }
-        *entry = TaskPlacement::new(Point(new_start), Point(new_start + dur), member);
+        *entry = TaskPlacement::new(Point(new_start), Point(new_start) + dur, member);
         return Some(Plan {
             schedules: new_scheds,
         });
@@ -268,7 +268,7 @@ mod tests {
                 .iter()
                 .map(|&id| {
                     let s = p.tasks()[id].start.unwrap();
-                    TaskPlacement::new(s, Point(s.0 + dur), id)
+                    TaskPlacement::new(s, s + Slots(dur), id)
                 })
                 .collect(),
         }
@@ -406,8 +406,8 @@ mod tests {
         let (p, ids) = habit_planner(4, 108, 6);
         let mut plan = plan_at_starts(&p, &ids, 6);
         // deviate one member far from the anchor -> becomes an exception
-        plan.schedules[2].start = Point(plan.schedules[2].start.0 + 100);
-        plan.schedules[2].end = Point(plan.schedules[2].end.0 + 100);
+        plan.schedules[2].start = plan.schedules[2].start + Slots(100);
+        plan.schedules[2].end = plan.schedules[2].end + Slots(100);
 
         let moved = apply_anchor_shift(&p, &plan, &group(&ids), 5, &empty_pinned()).unwrap();
         let exc_after = moved

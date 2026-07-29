@@ -219,12 +219,12 @@ fn push_fallback(
     planner: &Planner,
     schedules: &mut Vec<Placement>,
     earliest: Point,
-    dur: i64,
+    dur: Slots,
     task_id: usize,
     last_end: Point,
 ) -> Point {
     let start = last_end.max(planner.now).max(earliest);
-    let end = Point(start.0 + dur);
+    let end = start + dur;
     schedules.push(TaskPlacement::new(start, end, task_id));
     end
 }
@@ -248,11 +248,11 @@ fn build_initial(planner: &Planner) -> Plan {
     // (#391)。固定タスクは移動できないため、通常タスク側が重複を回避する必要がある。
     for &task_id in &by_freeness {
         let task = &planner.tasks[task_id];
-        let dur = (task.cost_estimate.avg() as i64).max(1);
+        let dur = Slots((task.cost_estimate.avg() as i64).max(1));
         if task.fixed
             && let Some(start) = task.start
         {
-            let end = Point(start.0 + dur);
+            let end = start + dur;
             schedules.push(TaskPlacement::new(start, end, task_id));
             last_end = last_end.max(end);
         }
@@ -260,7 +260,7 @@ fn build_initial(planner: &Planner) -> Plan {
 
     for task_id in by_freeness {
         let task = &planner.tasks[task_id];
-        let dur = (task.cost_estimate.avg() as i64).max(1);
+        let dur = Slots((task.cost_estimate.avg() as i64).max(1));
 
         // 固定タスクは先に配置済み
         if task.fixed && task.start.is_some() {
@@ -856,9 +856,9 @@ fn force_fix_dependencies(planner: &Planner, plan: Plan, pinned_ids: &FxHashSet<
             };
 
             if let Some(pos) = schedules.iter().position(|p| p.task_id == task.id) {
-                let dur = schedules[pos].end.0 - schedules[pos].start.0;
-                schedules[pos] = TaskPlacement::new(dep_end, Point(dep_end.0 + dur), task.id);
-                pos_index[task.id] = Some(TimeWindow::new(dep_end, Point(dep_end.0 + dur)));
+                let dur = schedules[pos].end - schedules[pos].start;
+                schedules[pos] = TaskPlacement::new(dep_end, dep_end + dur, task.id);
+                pos_index[task.id] = Some(TimeWindow::new(dep_end, dep_end + dur));
                 any_fixed = true;
             }
         }
@@ -1604,18 +1604,18 @@ fn build_initial_partial(planner: &Planner, pinned: &[Placement]) -> Plan {
     // (#391)。pinned に含まれない固定タスクを先に処理する。
     for &task_id in &unpinned {
         let task = &planner.tasks[task_id];
-        let dur = (task.cost_estimate.avg() as i64).max(1);
+        let dur = Slots((task.cost_estimate.avg() as i64).max(1));
         if task.fixed
             && let Some(start) = task.start
         {
-            let end = Point(start.0 + dur);
+            let end = start + dur;
             schedules.push(TaskPlacement::new(start, end, task_id));
         }
     }
 
     for task_id in unpinned {
         let task = &planner.tasks[task_id];
-        let dur = (task.cost_estimate.avg() as i64).max(1);
+        let dur = Slots((task.cost_estimate.avg() as i64).max(1));
 
         // 固定タスクは先に配置済み
         if task.fixed && task.start.is_some() {
@@ -1658,7 +1658,7 @@ fn build_initial_partial(planner: &Planner, pinned: &[Placement]) -> Plan {
 fn is_tabu_scheds(tabu: &TabuList, schedules: &[Placement]) -> bool {
     schedules
         .iter()
-        .any(|p| tabu.contains(p.task_id, p.start, Slots(p.end.0 - p.start.0)))
+        .any(|p| tabu.contains(p.task_id, p.start, p.end - p.start))
 }
 
 /// O(n) tabu marking: scratch buffer を再利用して allocation を避ける。
@@ -1691,7 +1691,7 @@ fn mark_tabu_scheds(
             None => true,
         };
         if changed {
-            tabu.push(id, s, Slots(e.0 - s.0));
+            tabu.push(id, s, e - s);
         }
     }
 }
@@ -1916,11 +1916,11 @@ impl NeighborOp for ShiftOp {
         if planner.tasks[task_id].fixed {
             return false;
         }
-        let dur = p.end.0 - p.start.0;
-        let range = shift_range_from_span(dur, rng, span, planner.sa_config.long_shift_one_in);
+        let dur = p.end - p.start;
+        let range = shift_range_from_span(dur.0, rng, span, planner.sa_config.long_shift_one_in);
         let k = rand_range(rng, -range, range + 1);
         let new_start_0 = (p.start.0 + k).max(planner.now.0);
-        scheds[idx] = TaskPlacement::new(Point(new_start_0), Point(new_start_0 + dur), task_id);
+        scheds[idx] = TaskPlacement::new(Point(new_start_0), Point(new_start_0) + dur, task_id);
         true
     }
 }
@@ -1949,10 +1949,10 @@ impl NeighborOp for SwapOp {
         if planner.tasks[a_p.task_id].fixed || planner.tasks[b_p.task_id].fixed {
             return false;
         }
-        let a_dur = a_p.end.0 - a_p.start.0;
-        let b_dur = b_p.end.0 - b_p.start.0;
-        scheds[a] = TaskPlacement::new(b_p.start, Point(b_p.start.0 + a_dur), a_p.task_id);
-        scheds[b] = TaskPlacement::new(a_p.start, Point(a_p.start.0 + b_dur), b_p.task_id);
+        let a_dur = a_p.end - a_p.start;
+        let b_dur = b_p.end - b_p.start;
+        scheds[a] = TaskPlacement::new(b_p.start, b_p.start + a_dur, a_p.task_id);
+        scheds[b] = TaskPlacement::new(a_p.start, a_p.start + b_dur, b_p.task_id);
         true
     }
 }
@@ -1978,16 +1978,16 @@ impl NeighborOp for DurationOp {
         if planner.tasks[task_id].fixed {
             return false;
         }
-        let dur = p.end.0 - p.start.0;
-        if dur <= 1 {
+        let dur = p.end - p.start;
+        if dur.0 <= 1 {
             return false;
         }
         let delta: i64 = if rng.random::<bool>() { 1 } else { -1 };
-        let new_dur = dur + delta;
+        let new_dur = dur.0 + delta;
         if new_dur < 1 {
             return false;
         }
-        scheds[idx] = TaskPlacement::new(p.start, Point(p.start.0 + new_dur), task_id);
+        scheds[idx] = TaskPlacement::new(p.start, p.start + Slots(new_dur), task_id);
         true
     }
 }
@@ -2019,11 +2019,11 @@ impl NeighborOp for ReorderOp {
             (b, a)
         };
         let f_s = scheds[first].start;
-        let f_dur = scheds[first].end.0 - f_s.0;
+        let f_dur = scheds[first].end - f_s;
         let s_s = scheds[second].start;
-        let s_dur = scheds[second].end.0 - s_s.0;
-        scheds[first] = TaskPlacement::new(s_s, Point(s_s.0 + f_dur), scheds[first].task_id);
-        scheds[second] = TaskPlacement::new(f_s, Point(f_s.0 + s_dur), scheds[second].task_id);
+        let s_dur = scheds[second].end - s_s;
+        scheds[first] = TaskPlacement::new(s_s, s_s + f_dur, scheds[first].task_id);
+        scheds[second] = TaskPlacement::new(f_s, f_s + s_dur, scheds[second].task_id);
         true
     }
 }
@@ -2083,8 +2083,8 @@ fn neighbor_repair_depend_into(
     let p = scheds[pos];
     let start = p.start;
     let end = p.end;
-    let dur = end.0 - start.0;
-    scheds[pos] = TaskPlacement::new(new_start, Point(new_start.0 + dur), task_id);
+    let dur = end - start;
+    scheds[pos] = TaskPlacement::new(new_start, new_start + dur, task_id);
     true
 }
 
@@ -2154,7 +2154,7 @@ fn neighbor_habit_exception_into(
     let dur = scheds
         .iter()
         .find(|p| p.task_id == member)
-        .map(|p| p.end.0 - p.start.0)
+        .map(|p| (p.end - p.start).0)
         .unwrap_or(1);
     let span = plan_span_scheds(scheds);
     let range = shift_range_from_span(dur, rng, span, planner.sa_config.long_shift_one_in);
@@ -2188,8 +2188,8 @@ fn neighbor_lns_into(planner: &Planner, scheds: &mut Vec<Placement>, rng: &mut i
     let pivot_start = pivot_p.start;
     let pivot_end = pivot_p.end;
 
-    let total_dur: i64 = scheds.iter().map(|p| p.end.0 - p.start.0).sum();
-    let window_size = ((pivot_end.0 - pivot_start.0) * 2)
+    let total_dur: i64 = scheds.iter().map(|p| (p.end - p.start).0).sum();
+    let window_size = ((pivot_end - pivot_start).0 * 2)
         .max(4)
         .min(total_dur / 3 + 1);
 
@@ -2228,8 +2228,8 @@ fn neighbor_lns_partial_into(
     let pivot_start = pivot_p.start;
     let pivot_end = pivot_p.end;
 
-    let total_dur: i64 = scheds.iter().map(|p| p.end.0 - p.start.0).sum();
-    let window_size = ((pivot_end.0 - pivot_start.0) * 2)
+    let total_dur: i64 = scheds.iter().map(|p| (p.end - p.start).0).sum();
+    let window_size = ((pivot_end - pivot_start).0 * 2)
         .max(4)
         .min(total_dur / 3 + 1);
 
@@ -2326,7 +2326,7 @@ fn incremental_decode(
                 continue;
             }
 
-            let dur = (task.cost_estimate.avg() as i64).max(1);
+            let dur = Slots((task.cost_estimate.avg() as i64).max(1));
             let earliest = compute_earliest_indexed(planner, &pos_index, task);
             let latest_end = dependents[task_id]
                 .iter()
@@ -2363,7 +2363,7 @@ fn incremental_decode(
         if !progressed {
             for &task_id in &next_pending {
                 let task = &planner.tasks[task_id];
-                let dur = (task.cost_estimate.avg() as i64).max(1);
+                let dur = Slots((task.cost_estimate.avg() as i64).max(1));
                 let earliest = compute_earliest_indexed(planner, &pos_index, task);
                 let latest_end = dependents[task_id]
                     .iter()
@@ -2452,12 +2452,12 @@ fn place_one(planner: &Planner, scheds: &mut Vec<Placement>, task_id: usize) {
     // build_initial と同様、avg=0 のタスクは dur=1 として配置する。
     // さもないと iCal 由来の avg=0 タスクが LNS/repair_polish の再構築で
     // サイレントにドロップされてしまう (inclusion_bonus の不整合)。
-    let dur = (task.cost_estimate.avg() as i64).max(1);
+    let dur = Slots((task.cost_estimate.avg() as i64).max(1));
     // 固定タスクは start に直接配置
     if task.fixed
         && let Some(start) = task.start
     {
-        let end = Point(start.0 + dur);
+        let end = start + dur;
         scheds.push(TaskPlacement::new(start, end, task_id));
         return;
     }
@@ -2528,7 +2528,7 @@ mod tests {
 
         // Succeeds and preserves duration
         assert!(ShiftOp.apply_full(&planner, &mut buf, &mut rng, span));
-        assert_eq!(buf[0].end.0 - buf[0].start.0, 4);
+        assert_eq!((buf[0].end - buf[0].start).0, 4);
         assert!(buf[0].start.0 >= planner.now.0);
 
         // Fixed task is rejected
@@ -2560,8 +2560,8 @@ mod tests {
         assert_eq!(buf[0].start.0, 20);
         assert_eq!(buf[1].start.0, 10);
         // Durations preserved
-        assert_eq!(buf[0].end.0 - buf[0].start.0, 4);
-        assert_eq!(buf[1].end.0 - buf[1].start.0, 6);
+        assert_eq!((buf[0].end - buf[0].start).0, 4);
+        assert_eq!((buf[1].end - buf[1].start).0, 6);
     }
 
     #[test]
@@ -2571,12 +2571,12 @@ mod tests {
 
         let planner = test_planner(vec![simple_task(0, 10, 4, false)]);
         let mut buf = vec![TaskPlacement::new(Point(10), Point(14), 0)];
-        let orig_dur = buf[0].end.0 - buf[0].start.0;
+        let orig_dur = (buf[0].end - buf[0].start).0;
         let mut rng = StdRng::seed_from_u64(0);
 
         let positions = [0usize, 0];
         assert!(DurationOp.apply_at(&planner, &mut buf, &positions[..1], &mut rng, 0));
-        let new_dur = buf[0].end.0 - buf[0].start.0;
+        let new_dur = (buf[0].end - buf[0].start).0;
         assert!(
             (new_dur - orig_dur).abs() == 1,
             "duration should change by ±1, got {new_dur}"
@@ -2602,8 +2602,8 @@ mod tests {
         assert_eq!(buf[0].start.0, 20);
         assert_eq!(buf[1].start.0, 10);
         // Durations preserved
-        assert_eq!(buf[0].end.0 - buf[0].start.0, 4);
-        assert_eq!(buf[1].end.0 - buf[1].start.0, 6);
+        assert_eq!((buf[0].end - buf[0].start).0, 4);
+        assert_eq!((buf[1].end - buf[1].start).0, 6);
     }
 
     #[test]
@@ -2677,8 +2677,8 @@ mod tests {
                 .iter()
                 .zip(offsets.iter())
                 .map(|(t, off)| {
-                    let s = Point(t.start.unwrap().0 + off);
-                    TaskPlacement::new(s, Point(s.0 + 6), t.id)
+                    let s = t.start.unwrap() + Slots(*off);
+                    TaskPlacement::new(s, s + Slots(6), t.id)
                 })
                 .collect(),
         };
@@ -2743,7 +2743,7 @@ mod tests {
                 .iter()
                 .map(|t| {
                     let s = t.start.unwrap();
-                    TaskPlacement::new(s, Point(s.0 + 6), t.id)
+                    TaskPlacement::new(s, s + Slots(6), t.id)
                 })
                 .collect(),
         };
