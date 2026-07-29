@@ -76,8 +76,25 @@ pub fn record(config: &RecordConfig) -> Result<Vec<f32>, RecorderError> {
                     if stopped_c.load(Ordering::Relaxed) {
                         return;
                     }
-                    if let Ok(mut buf) = samples_c.try_lock() {
-                        buf.extend_from_slice(data);
+                    // `try_lock` avoids blocking the realtime audio thread if
+                    // the buffer is briefly held elsewhere. Contention here is
+                    // unexpected (the only other lock site runs after the stream
+                    // is dropped), so a failure is logged rather than silently
+                    // dropped so a stuck recorder is diagnosable.
+                    match samples_c.try_lock() {
+                        Ok(mut buf) => buf.extend_from_slice(data),
+                        Err(std::sync::TryLockError::WouldBlock) => {
+                            tracing::warn!(
+                                "audio buffer busy; dropping {} f32 samples",
+                                data.len()
+                            );
+                        }
+                        Err(std::sync::TryLockError::Poisoned(e)) => {
+                            // A panic in another lock holder poisoned the mutex.
+                            // Recover the (still valid) payload so recording can
+                            // continue rather than losing all captured audio.
+                            e.into_inner().extend_from_slice(data);
+                        }
                     }
                 },
                 error_fn,
@@ -94,9 +111,23 @@ pub fn record(config: &RecordConfig) -> Result<Vec<f32>, RecorderError> {
                     if stopped_c.load(Ordering::Relaxed) {
                         return;
                     }
-                    if let Ok(mut buf) = samples_c.try_lock() {
-                        for &s in data {
-                            buf.push(s as f32 / I16_MAX_F32);
+                    match samples_c.try_lock() {
+                        Ok(mut buf) => {
+                            for &s in data {
+                                buf.push(s as f32 / I16_MAX_F32);
+                            }
+                        }
+                        Err(std::sync::TryLockError::WouldBlock) => {
+                            tracing::warn!(
+                                "audio buffer busy; dropping {} i16 samples",
+                                data.len()
+                            );
+                        }
+                        Err(std::sync::TryLockError::Poisoned(e)) => {
+                            let mut buf = e.into_inner();
+                            for &s in data {
+                                buf.push(s as f32 / I16_MAX_F32);
+                            }
                         }
                     }
                 },
@@ -110,6 +141,16 @@ pub fn record(config: &RecordConfig) -> Result<Vec<f32>, RecorderError> {
     stream.play()?;
 
     let stopped_t = stopped.clone();
+    // `record()` is a synchronous, blocking API, so `tokio::task::spawn_blocking`
+    // is not available here — callers that invoke it from an async context are
+    // expected to wrap the whole call in `spawn_blocking` (see
+    // `takusu_agent::audio::record_with_timeout`). `thread::spawn` lets the
+    // realtime polling loop below observe Enter while stdin blocks on a separate
+    // OS thread. The handle is intentionally dropped: if the caller stops via
+    // `max_duration` instead of Enter, this thread stays blocked on `read_line`
+    // until stdin closes. That is unavoidable for blocking stdin I/O and is
+    // preferred over pulling in a raw-terminal dependency just to interrupt the
+    // read; the leaked thread consumes no CPU while parked in the kernel.
     let _waiter = std::thread::spawn(move || {
         let stdin = std::io::stdin();
         let mut line = String::new();
@@ -134,7 +175,14 @@ pub fn record(config: &RecordConfig) -> Result<Vec<f32>, RecorderError> {
 
     drop(stream);
 
-    let mut raw = samples.lock().unwrap().clone();
+    // The mutex can only be poisoned if a stream callback panicked while holding
+    // the lock; the callbacks above do not panic, so this is effectively
+    // unreachable. Recover the payload on poisoning instead of propagating a
+    // panic, so a callback hiccup does not discard the entire recording.
+    let mut raw = samples
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
 
     if channels > 1 {
         raw = mix_to_mono(&raw, channels);
