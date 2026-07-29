@@ -864,6 +864,7 @@
                 paths = with pkgs; [
                   cargo-codspeed
                   cargo-expand
+                  cargo-llvm-cov
                   cargo-nextest
                   rust-bin
                   pkg-config
@@ -948,6 +949,7 @@
                   cargo-expand
                   cargo-flamegraph
                   cargo-insta
+                  cargo-llvm-cov
                   cargo-nextest
                   rust-bin
                   pkg-config

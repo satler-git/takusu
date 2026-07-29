@@ -13,6 +13,7 @@ provides:
 | `cargo fmt` / `treefmt` | Format code |
 | `cargo clippy` | Lint |
 | `cargo nextest run --workspace` | Run all tests (~171 across crates) |
+| `./scripts/coverage.sh [text\|lcov\|html\|open]` | Measure Rust workspace coverage with `cargo-llvm-cov` (excludes `takusu-worker`); `lcov` writes `target/coverage/lcov.info` + html |
 | `cargo nextest run -p takusu-core` | Run core planner tests (45) |
 | `cargo nextest run -p takusu-local` | Run local server integration tests (39) |
 | `cargo nextest run -p takusu-ical` | Run iCal parser tests (15) |

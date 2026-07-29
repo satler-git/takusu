@@ -1,0 +1,85 @@
+name: Coverage
+
+on:
+  push:
+    branches:
+      - main
+      - '!regression-*-discover-*'
+      - '!regression-*-fix-*'
+    paths:
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'flake.nix'
+      - 'flake.lock'
+      - 'rust-toolchain.toml'
+      - '.github/workflows/coverage.yaml'
+      - 'scripts/coverage.sh'
+  pull_request:
+    branches-ignore:
+      - 'regression-*-discover-*'
+      - 'regression-*-fix-*'
+    paths:
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'flake.nix'
+      - 'flake.lock'
+      - 'rust-toolchain.toml'
+      - '.github/workflows/coverage.yaml'
+      - 'scripts/coverage.sh'
+  workflow_dispatch:
+
+jobs:
+  rust-coverage:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    env:
+      SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@02a151ada4993995686f9ed4f1be7cfbb229e56f
+        with:
+          extra_nix_config: |
+            keep-outputs = true
+            keep-env-derivations = true
+
+      - name: Restore and save Nix store
+        uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-${{ runner.os }}-${{ runner.arch }}-coverage-${{ hashFiles('flake.lock', 'flake.nix', 'rust-toolchain.toml') }}
+          restore-prefixes-first-match: |
+            nix-${{ runner.os }}-${{ runner.arch }}-coverage-
+            nix-${{ runner.os }}-${{ runner.arch }}-test-
+          gc-max-store-size: 6G
+          purge: true
+          purge-prefixes: |
+            nix-${{ runner.os }}-${{ runner.arch }}-coverage-
+          purge-last-accessed: P6D
+          purge-primary-key: never
+
+      - run: nix profile install .#ci-rust
+      - run: nix build ".#devShells.${{ runner.arch == 'ARM64' && 'aarch64-linux' || 'x86_64-linux' }}.rust" -o /tmp/rust-shell
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Generate coverage report
+        run: nix develop .#rust --command bash -c "./scripts/coverage.sh lcov"
+
+      - name: Upload HTML report artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-coverage-html
+          path: target/coverage/html/
+          if-no-files-found: error
+
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: target/coverage/lcov.info
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
