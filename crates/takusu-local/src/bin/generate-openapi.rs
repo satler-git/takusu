@@ -24,7 +24,6 @@ fn main() {
     let spec = takusu_local::router::generate_openapi();
     let json = serde_json::to_string_pretty(&spec).expect("serialize openapi");
     let mut file = std::fs::File::create(&output).expect("create output file");
-    file.write_all(json.as_bytes())
-        .expect("write openapi spec");
+    file.write_all(json.as_bytes()).expect("write openapi spec");
     eprintln!("wrote {output}");
 }
