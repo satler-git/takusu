@@ -213,8 +213,8 @@ struct SkillResponse<'a> {
     name: &'a str,
     description: &'a str,
     built_in: bool,
-    created_at: &'a takusu_util::Timestamp,
-    updated_at: &'a takusu_util::Timestamp,
+    created_at: &'a takusu_types::Timestamp,
+    updated_at: &'a takusu_types::Timestamp,
 }
 
 impl<'a> From<&'a takusu_client::SkillRow> for SkillResponse<'a> {

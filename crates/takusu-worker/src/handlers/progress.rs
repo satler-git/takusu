@@ -104,7 +104,7 @@ fn parse_timestamp(s: &str) -> Result<i64, WorkerError> {
 fn session_minutes(session: &TaskWorkSessionRow) -> i64 {
     match session.ended_at {
         Some(end) => {
-            takusu_util::minutes_between(&session.started_at.to_string(), &end.to_string())
+            takusu_types::minutes_between(&session.started_at.to_string(), &end.to_string())
         }
         None => {
             let now = now_seconds();
@@ -134,7 +134,7 @@ async fn compute_updated_estimate(
         .map(|e| (e.active_minutes, e.delta_quantity.unwrap_or(1).max(1)))
         .collect();
 
-    Ok(takusu_util::estimate_progress(
+    Ok(takusu_types::estimate_progress(
         avg_minutes,
         sigma_minutes,
         quantity_total,
@@ -271,8 +271,8 @@ pub async fn record_progress(
 
     let task = select_one(&database, &full).await?;
 
-    if task.status == takusu_util::TaskStatus::Completed
-        || task.status == takusu_util::TaskStatus::Skipped
+    if task.status == takusu_types::TaskStatus::Completed
+        || task.status == takusu_types::TaskStatus::Skipped
     {
         return Err(WorkerError::BadRequest(format!(
             "cannot record progress on a {} task",
@@ -347,7 +347,7 @@ pub async fn record_progress(
         } else {
             session.started_at
         };
-        takusu_util::minutes_between(&base.to_string(), &now)
+        takusu_types::minutes_between(&base.to_string(), &now)
     } else {
         0
     };
@@ -389,12 +389,12 @@ pub async fn record_progress(
         new_sigma = sigma;
     }
 
-    let status = if task.status == takusu_util::TaskStatus::Completed {
-        takusu_util::TaskStatus::Completed
+    let status = if task.status == takusu_types::TaskStatus::Completed {
+        takusu_types::TaskStatus::Completed
     } else if delta_quantity < 0 {
         task.status
     } else {
-        takusu_util::TaskStatus::InProgress
+        takusu_types::TaskStatus::InProgress
     };
 
     let suggests_completion = task
@@ -453,8 +453,8 @@ pub async fn complete_task_work(req: Request, env: Env, id: &str) -> Result<Resp
     let full = resolve_task_id(&database, id).await?;
 
     let original = select_one(&database, &full).await?;
-    if original.status == takusu_util::TaskStatus::Completed
-        || original.status == takusu_util::TaskStatus::Skipped
+    if original.status == takusu_types::TaskStatus::Completed
+        || original.status == takusu_types::TaskStatus::Skipped
     {
         return Err(WorkerError::BadRequest(format!(
             "cannot complete a {} task",
@@ -597,8 +597,8 @@ pub async fn split_task(mut req: Request, env: Env, id: &str) -> Result<Response
             None,
         )?;
     }
-    if original.status == takusu_util::TaskStatus::Completed
-        || original.status == takusu_util::TaskStatus::Skipped
+    if original.status == takusu_types::TaskStatus::Completed
+        || original.status == takusu_types::TaskStatus::Skipped
     {
         return Err(WorkerError::BadRequest(format!(
             "cannot split a {} task",
@@ -647,9 +647,9 @@ pub async fn split_task(mut req: Request, env: Env, id: &str) -> Result<Response
     let depends_json = crate::models::DependencyList::new(depends).to_json_string();
 
     let remainder_title = body.title.as_ref().unwrap_or(&original.title);
-    let normalized_title = takusu_util::memory::normalize_text(
+    let normalized_title = takusu_search::memory::normalize_text(
         remainder_title,
-        Some(takusu_util::memory::MAX_CONTENT_SCALARS),
+        Some(takusu_search::memory::MAX_CONTENT_SCALARS),
     )
     .ok();
 

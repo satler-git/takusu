@@ -33,7 +33,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use takusu_client::{ClientError, HabitStepInput};
-use takusu_util::{Abandonability, EnumLabel, TimeOfDay};
+use takusu_types::{Abandonability, EnumLabel, TimeOfDay};
 use tools::memory::client_error;
 use uuid::Uuid;
 
@@ -2609,7 +2609,12 @@ mod tests {
         // one in the same turn.
         let merged_index = history
             .iter()
-            .position(|m| matches!(m, llm::Message::Assistant(llm::AssistantContent::ToolCalls { .. })))
+            .position(|m| {
+                matches!(
+                    m,
+                    llm::Message::Assistant(llm::AssistantContent::ToolCalls { .. })
+                )
+            })
             .unwrap();
         let preceding = &history[..merged_index];
         assert!(
@@ -4025,7 +4030,7 @@ mod tests {
             abandonability: 0.5.into(),
             active: true,
             fixed: false,
-            window_mode: takusu_util::WindowMode::Day,
+            window_mode: takusu_types::WindowMode::Day,
             created_at: "2026-01-01T00:00:00Z".parse().unwrap(),
             updated_at: "2026-01-01T00:00:00Z".parse().unwrap(),
         }

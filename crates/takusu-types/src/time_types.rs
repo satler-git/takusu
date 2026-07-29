@@ -252,16 +252,15 @@ impl Timestamp {
     ///
     /// Accepts RFC 3339 (`2025-01-01T00:00:00Z`), SQLite datetime formats
     /// (`2025-01-01T12:00:00`, `2025-01-01 12:00:00`), and other formats
-    /// supported by [`takusu_util::parse_datetime_to_timestamp`].
+    /// supported by [`takusu_types::parse_datetime_to_timestamp`].
     pub fn parse_with_tz(s: &str, tz: &jiff::tz::TimeZone) -> Result<Self, TimeParseError> {
-        let ts =
-            takusu_search::date::parse_datetime_to_timestamp(s, tz).map_err(TimeParseError::msg)?;
+        let ts = crate::date::parse_datetime_to_timestamp(s, tz).map_err(TimeParseError::msg)?;
         Ok(Self(ts))
     }
 }
 
 /// Whole minutes between two timestamps, returning at least 1 to avoid
-/// degenerate speed observations (mirrors `takusu_search::date::minutes_between`
+/// degenerate speed observations (mirrors `crate::date::minutes_between`
 /// but operates on typed `Timestamp` values instead of strings).
 pub fn minutes_between_ts(start: Timestamp, end: Timestamp) -> i64 {
     ((end.as_second() - start.as_second()) / 60).max(1)

@@ -504,98 +504,40 @@
 
 ---
 
-## 31. クレートのレイヤー違反とドメイン型の 3 crate 重複（`takusu-storage` / `takusu-client` / `takusu-worker`）
+## ~~31. クレートのレイヤー違反とドメイン型の 3 crate 重複（`takusu-storage` / `takusu-client` / `takusu-worker`）~~ FIXED
 
-> **関連 issue**: [takusu-dev/takusu#1163](https://github.com/takusu-dev/takusu/issues/1163)「依存関係のレイヤー整理」
+> **関連 issue**: [takusu-dev/takusu#1294](https://github.com/takusu-dev/takusu/issues/1294)「Crate layer violations and 3-crate duplication of domain types」
 
-### 31.1 レイヤー違反
+### 31.1 レイヤー違反 — FIXED
 
-- **問題の要約**: Issue #1163 の方針「Ln は L(n-1) 以下にしか依存できない」に対し、現在の依存グラフに矛盾がある。とくに `takusu-util`（L1 想定）が `takusu-search` に依存し、`takusu-storage`（L1 想定、`contract` に rename）が `takusu-util` に依存している。L1 内での依存は方針違反である。
-- **現在の依存グラフ**:
+- `takusu-util` を `takusu-types` に rename し、L0（foundation）に配置。
+- `takusu-search/src/date.rs`（日付 parse）を `takusu-types/src/date.rs` に統合。`takusu-search` は `takusu-types` に依存する独立 L0 に残留（`search.rs` / `memory.rs` は検索ドメインロジックのため）。
+- `takusu-types` からの `takusu-search` re-export を廃止。消費者（`takusu-storage` / `takusu-worker` / `takusu-local-lib` / `takusu-local`）は `takusu-search` を直接依存に持ち、facade 反パターンを解消。
+- 最終依存グラフ:
   ```
-  L0: takusu-search, takusu-ical, takusu-audio（workspace dep なし）
-  L1: takusu-util (→ search), takusu-storage (→ util), takusu-core (→ util), takusu-client (→ util)
-  L2: takusu-habit (→ core, util), google-cal (→ client)
-  L3: takusu-agent (→ audio, client, core, habit, util), takusu-local-lib (→ core, ical, habit, storage, util, google-cal)
-  L4: takusu-local (→ local-lib, util, storage), takusu-tui (→ local-lib, storage, habit, util)
+  L0: takusu-types (← date.rs 統合), takusu-search (→ types), takusu-ical, takusu-audio
+  L1: takusu-storage (→ types, search), takusu-core (→ types), takusu-client (→ types, storage)
+  L2: takusu-habit (→ core, types), google-cal (→ client)
+  L3: takusu-agent (→ audio, client, core, habit, types), takusu-local-lib (→ core, ical, habit, storage, types, search, google-cal)
+  L4: takusu-local (→ local-lib, types, search, storage), takusu-tui (→ local-lib, storage, habit, types)
   L5: takusu-web (→ local, local-lib, storage), takusu-cli (→ ほぼ全部), takusu-android (→ local, agent, audio, client, local-lib, storage)
-  特殊: takusu-worker (wasm, → util のみ), takusu-audio-cli (→ audio)
+  特殊: takusu-worker (wasm, → types, search, storage), takusu-audio-cli (→ audio)
   ```
-- **矛盾**:
-  1. `takusu-util` → `takusu-search`: util が L1 のはずが別 crate に依存。`takusu-util` は現在 `takusu-search` の公開 API を全て re-export しており、crate 境界が形式的になっている。
-  2. `takusu-storage` → `takusu-util`: issue は両者を L1（contract）に置くことを想定。L1 内依存を許さないなら、`util` を L0、`contract`（旧 storage）を L1 に分けるべき。
-- **推奨されるレイヤー構成（部分統合）**:
-  ```
-  L0 (foundation):
-    takusu-util    ← takusu-search の date.rs を統合
-    takusu-search  ← search.rs / memory.rs は独立 L0 に残留
+- `takusu-storage` は rename せずそのまま（issue #1294 の方針に従い `takusu-types` のみ rename）。
 
-  L1 (contract):
-    takusu-storage（→ rename: takusu-contract, depends on L0）
+### 31.2 workspace `Cargo.toml` の依存集中 — FIXED
 
-  L2 (primitive):
-    takusu-core   → L0
-    takusu-ical   → L0
-    takusu-audio  → 依存なし（独立）
-    takusu-client → L0
-    takusu-worker → L0: util, L1: contract（D1 ストレージ実装）
+- 広く使われるもの（`thiserror` / `serde` / `serde_json` / `jiff` / `uuid` / `sha2` / `tracing` / `async-trait` / `rand` / `tokio` / `reqwest` / `strum` / `insta` / `inventory` / `serde_path_to_error`）は workspace 残置。
+- 少数 crate しか使わない 13 依存（`axum` / `sqlx` / `tower-http` / `sentry` / `config` / `schemars` / `petgraph` / `rust-embed` / `mime_guess` / `futures-util` / `toml` / `tracing-subscriber` / `web-time`）を個別 crate の `Cargo.toml` に移動。
+- `sqlx` は feature が crate ごとに異なるため個別化（`takusu-storage` は `derive` / `macros` のみ、`takusu-local` / `takusu-local-lib` は `runtime-tokio` / `sqlite`）。
 
-  L3 (domain):
-    takusu-habit  → L2: core, L0: util
-    google-cal    → L2: client
+### 31.3 ドメイン型の 3 crate 重複 — FIXED
 
-  L4 (integration):
-    takusu-agent     → L2/L3
-    takusu-local-lib → L1/L2/L3
-
-  L5 (app):
-    takusu-local, takusu-tui, takusu-web, takusu-cli, takusu-android, takusu-audio-cli
-  ```
-- **各レイヤーの根拠**:
-  - L0: 純粋なユーティリティ・型定義。workspace crate に依存しない
-  - L1: ドメイン型と `Storage` trait の契約。L0 のみに依存
-  - L2: 計算・通信のプリミティブ。L0/L1 のみに依存。`takusu-worker` は D1 ストレージ実装としてここに配置
-  - L3: ドメインロジック。L2 以下に依存
-  - L4: 統合層。複数の L2/L3 を組み合わせる
-  - L5: アプリケーション。L4 以下を束ねる
-- **解決すべき点**:
-  - `takusu-search` は部分統合する。`date.rs`（日付 parse、335 行）は `takusu-util` の `time_types.rs` と被る領域であり util に統合する。`search.rs`（1260 行、`Task` / `Habit` trait とクエリ AST 評価）と `memory.rs`（750 行、テキスト正規化 + bigram + 類似タスクスコアリング）は検索ドメインロジックであり、`takusu-util`（L0「純粋なユーティリティ・型定義」）に畳み込むと役割定義と矛盾するため `takusu-search` として独立 L0 に残留させる
-  - `takusu-util` からの `takusu-search` re-export を廃止し、消費者（`takusu-storage` / `takusu-worker`）は `takusu-search` を直接依存に持つ。これで facade 反パターンを解消し、crate 境界に実質を持たせる
-  - `takusu-storage` は `takusu-contract` に rename し、ドメイン型と `Storage` trait の定義のみを残す。実装（SQLite / Workers）は L4 の `takusu-local-lib` と L2 の `takusu-worker` が持つ
-  - `takusu-worker` は wasm 制約があるが、`takusu-contract`（L1）が `sqlx` を optional feature で持つなら L1 に依存しても wasm ビルドに影響しない
-  - `takusu-cli` → `takusu-tui` の依存は L5 内のため方針違反だが許容範囲とする
-- **修正の重み**: 大
-
-### 31.2 workspace `Cargo.toml` の依存集中
-
-- **問題の要約**: すべての外部依存が workspace root の `Cargo.toml` に集中している。`axum` / `sqlx` / `tower-http` / `sentry` / `config` / `schemars` / `petgraph` / `rust-embed` 等の少数 crate しか使わない依存も workspace に置かれたままで、メンテ性を損ねている。
-- **推奨**:
-  - 広く使われるもの（`thiserror` / `serde` / `serde_json` / `jiff` / `uuid` / `sha2` / `tracing` / `async-trait` / `rand`）は workspace 残置
-  - 少数 crate しか使わないもの（`axum` / `sqlx` / `tower-http` / `sentry` / `config` / `schemars` / `petgraph` / `rust-embed` / `mime_guess` / `futures-util` / `toml` / `tracing-subscriber` / `web-time` 等）は個別 crate の `Cargo.toml` に移す
-  - `sqlx` は feature が crate ごとに異なるため、とくに個別化すべき
-- **修正の重み**: 中
-
-### 31.3 ドメイン型の 3 crate 重複
-
-- **問題の要約**: `TaskRow` / `CreateTask` / `UpdateTask` / `HabitRow` / `CreateHabit` / `ScheduleRow` / `ScheduleEntry` / `TokenRow` / `SettingsRow` / `SkillRow` / `MemoryRow` / `GoogleCalSettingsRow` / `ProgressEventRow` / `RecordProgress` 等のドメイン型が、`takusu-storage/src/model.rs` / `takusu-client/src/lib.rs` / `takusu-worker/src/models.rs` の 3 ファイルでほぼ同一の定義が重複している。フィールド追加時に 3 箇所を手動で同期する必要があり、ずれると実行時まで気づかない。
-- **現在の型**: 3 crate に重複する `struct` 定義
-- **推奨型**:
-  - L1 の `takusu-contract`（旧 `takusu-storage`）にドメイン型を集約する
-  - `#[derive(sqlx::FromRow)]` は feature flag で付与し、wasm 版は derive しない
-  - `takusu-client` / `takusu-worker` は共有型を re-export する
-  - wasm ターゲットの `takusu-worker` でもビルドできるよう、`takusu-contract` の依存を `takusu-util`（L0）のみに保つ
-- **修正の重み**: 大
-- **該当箇所**:
-  - `crates/takusu-storage/src/model.rs:10-180`（`TaskRow` / `CreateTask` / `UpdateTask`）
-  - `crates/takusu-client/src/lib.rs:1236-1357`（同上）
-  - `crates/takusu-worker/src/models.rs:11-133`（同上）
-  - `crates/takusu-storage/src/model.rs:195-304`（`HabitRow` / `CreateHabit` / `UpdateHabit`）
-  - `crates/takusu-client/src/lib.rs:1372-1451`（同上）
-  - `crates/takusu-worker/src/models.rs:136-215`（同上）
-  - `crates/takusu-storage/src/model.rs:461-480`（`ScheduleRow` / `ScheduleEntry`）
-  - `crates/takusu-client/src/lib.rs:1624-1636`（同上）
-  - `crates/takusu-worker/src/models.rs:314-333`（同上）
-  - 他、`SettingsRow` / `TokenRow` / `MemoryRow` / `SkillRow` / `GoogleCalSettingsRow` / `ProgressEventRow` も同様
+- `takusu-storage/src/model.rs` をドメイン型の単一定義場所にする。
+- `#[derive(sqlx::FromRow)]` と `#[sqlx(...)]` 属性を `#[cfg_attr(feature = "sqlx", ...)]` で gate。`takusu-storage` の `sqlx` feature が `dep:sqlx` と `takusu-types/sqlx` を有効化する。
+- `takusu-client/src/lib.rs` は `pub use takusu_storage::model::*;` で共有型を re-export。クライアント専用型（`DependencyAnalysisResponse` / `SchedulePreviewRequest|Response` / `GenerateSchedule` / `Reschedule` / `MoveEntry|Response` / `SyncSettingsResponse` / `UpdateSyncSettings` / `OAuthUrlResponse|CallbackResponse` / `TriggerSyncResponse` / `DeleteAllGcalResponse|Failure` / `SettingsResponse`）のみ残置。
+- `takusu-worker/src/models.rs` は `pub use takusu_storage::model::*;` と `pub use takusu_types::{DependencyList, Quantity};` のみ。`MemoryRow` の `normalized_key` / `normalized_content` フィールド（`#[serde(skip_serializing)]`）が共有型に統合され、agent テストも更新。
+- wasm ビルド確認済み: `cargo check -p takusu-worker --target wasm32-unknown-unknown` が通り、`sqlx` は WASM バンドルに入らない。
 
 ---
 

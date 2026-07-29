@@ -8,7 +8,7 @@ use async_trait::async_trait;
 
 use crate::error::StorageError;
 use crate::model::*;
-use takusu_util::TokenClaims;
+use takusu_types::TokenClaims;
 
 pub type StorageResult<T> = Result<T, StorageError>;
 

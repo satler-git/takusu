@@ -13,10 +13,8 @@ use crate::models::{
 use crate::validate::{
     validate_minutes, validate_quantity, validate_task_datetimes, validate_title,
 };
-use takusu_util::{
-    Minutes,
-    search::{EvalContext, filter_tasks},
-};
+use takusu_search::search::{EvalContext, filter_tasks};
+use takusu_types::Minutes;
 
 const TASK_COLS: &str = "id, display_id, title, description, start_at, end_at, avg_minutes, sigma_minutes, depends, parallelizable, allows_parallel, abandonability, status, habit_id, ical_uid, user_edited, fixed, habit_step_id, quantity_total, quantity_done, quantity_unit, completed_at, split_from_task_id, original_quantity_total, created_at, updated_at, tam.actual_minutes";
 const TASK_FROM: &str = "tasks LEFT JOIN task_actual_minutes tam ON tam.task_id = tasks.id";
@@ -130,7 +128,7 @@ async fn filter_rows_with_query(
     q: &str,
 ) -> Result<Vec<TaskRow>, WorkerError> {
     let tz = get_timezone(database).await?;
-    let now = takusu_util::now_timestamp()
+    let now = takusu_types::now_timestamp()
         .map_err(|e| WorkerError::Internal(format!("current time unavailable: {e}")))?;
 
     let habits_stmt = database.prepare(
@@ -226,9 +224,9 @@ pub async fn create(mut req: Request, env: Env) -> Result<Response, WorkerError>
     let quantity_done = body.quantity_done.unwrap_or_default();
     // A title that fails NFKC normalization stores NULL, excluding the task from
     // similar-task search rather than matching on a misleading empty string (#942).
-    let normalized_title = takusu_util::memory::normalize_text(
+    let normalized_title = takusu_search::memory::normalize_text(
         &body.title,
-        Some(takusu_util::memory::MAX_CONTENT_SCALARS),
+        Some(takusu_search::memory::MAX_CONTENT_SCALARS),
     )
     .ok();
     let stmt = database.prepare(
@@ -345,7 +343,8 @@ pub async fn update(mut req: Request, env: Env, id: &str) -> Result<Response, Wo
     // otherwise (or when normalization fails) so COALESCE keeps the stored value
     // (#942).
     let normalized_title = body.title.as_deref().and_then(|t| {
-        takusu_util::memory::normalize_text(t, Some(takusu_util::memory::MAX_CONTENT_SCALARS)).ok()
+        takusu_search::memory::normalize_text(t, Some(takusu_search::memory::MAX_CONTENT_SCALARS))
+            .ok()
     });
 
     // Unpack Option<Option<Timestamp>> for start_at.
@@ -440,10 +439,10 @@ pub async fn update(mut req: Request, env: Env, id: &str) -> Result<Response, Wo
 
         // #1044: moving to a terminal status should close any open work
         // session so active time is not left dangling.
-        if status == takusu_util::TaskStatus::Skipped
-            || status == takusu_util::TaskStatus::Completed
+        if status == takusu_types::TaskStatus::Skipped
+            || status == takusu_types::TaskStatus::Completed
         {
-            let now = takusu_util::now_rfc3339();
+            let now = takusu_types::now_rfc3339();
             let session_stmt = database.prepare(
                 "UPDATE task_work_sessions SET ended_at = ?1 WHERE task_id = ?2 AND ended_at IS NULL",
             );
@@ -488,9 +487,9 @@ pub async fn replace(mut req: Request, env: Env, id: &str) -> Result<Response, W
     let allows_parallel = body.allows_parallel.unwrap_or(false);
     let abandonability = body.abandonability.unwrap_or(0.5.into());
 
-    let normalized_title = takusu_util::memory::normalize_text(
+    let normalized_title = takusu_search::memory::normalize_text(
         &body.title,
-        Some(takusu_util::memory::MAX_CONTENT_SCALARS),
+        Some(takusu_search::memory::MAX_CONTENT_SCALARS),
     )
     .ok();
 

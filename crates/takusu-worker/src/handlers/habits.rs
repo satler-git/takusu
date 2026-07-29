@@ -14,7 +14,7 @@ use crate::models::{
 use crate::validate::{
     validate_minutes, validate_recurrence, validate_scheduled_span_dates, validate_steps,
 };
-use takusu_util::Minutes;
+use takusu_types::Minutes;
 
 const HABIT_COLS: &str = "id, display_id, title, description, recurrence, start_time, end_time, avg_minutes, sigma_minutes, parallelizable, allows_parallel, abandonability, active, fixed, window_mode, created_at, updated_at";
 const STEP_COLS: &str = "id, habit_id, position, title, description, start_time, end_time, avg_minutes, sigma_minutes, parallelizable, allows_parallel, abandonability, fixed, depends_on, created_at";
@@ -37,7 +37,7 @@ pub async fn create(mut req: worker::Request, env: Env) -> Result<Response, Work
     let body: CreateHabit = parse_json(&mut req).await?;
     validate_minutes(body.avg_minutes, body.sigma_minutes)?;
     validate_recurrence(&body.recurrence)?;
-    let window_mode = body.window_mode.unwrap_or(takusu_util::WindowMode::Day);
+    let window_mode = body.window_mode.unwrap_or(takusu_types::WindowMode::Day);
     let database = db(&env)?;
     let id = uuid::Uuid::now_v7().to_string();
     let sigma = body
@@ -170,7 +170,7 @@ pub async fn replace(
     let body: CreateHabit = parse_json(&mut req).await?;
     validate_minutes(body.avg_minutes, body.sigma_minutes)?;
     validate_recurrence(&body.recurrence)?;
-    let window_mode = body.window_mode.unwrap_or(takusu_util::WindowMode::Day);
+    let window_mode = body.window_mode.unwrap_or(takusu_types::WindowMode::Day);
     let database = db(&env)?;
     let full = resolve_habit_id(&database, id).await?;
     let sigma = body

@@ -1,10 +1,11 @@
 use serde::{Deserialize, Serialize};
-use takusu_util::{
+use takusu_types::{
     Abandonability, Date, DependencyList, JsonString, Quantity, Similarity, TaskStatusFilter,
     TimeOfDay, Timestamp,
 };
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
 pub struct TaskRow {
     pub id: String,
     #[serde(default)]
@@ -17,19 +18,19 @@ pub struct TaskRow {
     pub sigma_minutes: i64,
     #[serde(default)]
     pub depends: DependencyList,
-    #[serde(with = "takusu_util::bool_compat", default)]
+    #[serde(with = "takusu_types::bool_compat", default)]
     pub parallelizable: bool,
-    #[serde(with = "takusu_util::bool_compat", default)]
+    #[serde(with = "takusu_types::bool_compat", default)]
     pub allows_parallel: bool,
     pub abandonability: Abandonability,
-    #[serde(with = "takusu_util::enum_serde")]
-    #[sqlx(try_from = "String")]
-    pub status: takusu_util::TaskStatus,
+    #[serde(with = "takusu_types::enum_serde")]
+    #[cfg_attr(feature = "sqlx", sqlx(try_from = "String"))]
+    pub status: takusu_types::TaskStatus,
     pub habit_id: Option<String>,
     pub ical_uid: Option<String>,
-    #[serde(with = "takusu_util::bool_compat", default)]
+    #[serde(with = "takusu_types::bool_compat", default)]
     pub user_edited: bool,
-    #[serde(with = "takusu_util::bool_compat", default)]
+    #[serde(with = "takusu_types::bool_compat", default)]
     pub fixed: bool,
     /// The habit step that generated this task, if any (#95). NULL for simple
     /// (step-less) habits and manually created tasks.
@@ -55,7 +56,7 @@ pub struct TaskRow {
     pub original_quantity_total: Option<Quantity>,
     /// Total active work minutes from task_work_sessions (NULL when no work has been done).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[sqlx(default)]
+    #[cfg_attr(feature = "sqlx", sqlx(default))]
     pub actual_minutes: Option<i64>,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
@@ -154,8 +155,8 @@ pub struct UpdateTask {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub abandonability: Option<Abandonability>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    #[serde(with = "takusu_util::enum_serde::option")]
-    pub status: Option<takusu_util::TaskStatus>,
+    #[serde(with = "takusu_types::enum_serde::option")]
+    pub status: Option<takusu_types::TaskStatus>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub habit_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
@@ -180,7 +181,7 @@ pub struct UpdateTask {
 
 #[derive(Debug, Default, serde::Deserialize)]
 pub struct TaskQuery {
-    #[serde(default, with = "takusu_util::enum_serde::option")]
+    #[serde(default, with = "takusu_types::enum_serde::option")]
     pub status: Option<TaskStatusFilter>,
     pub from: Option<Timestamp>,
     pub until: Option<Timestamp>,
@@ -191,7 +192,8 @@ pub struct TaskQuery {
     pub limit: Option<i64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
 pub struct HabitRow {
     pub id: String,
     #[serde(default)]
@@ -203,21 +205,21 @@ pub struct HabitRow {
     pub end_time: TimeOfDay,
     pub avg_minutes: i64,
     pub sigma_minutes: i64,
-    #[serde(with = "takusu_util::bool_compat", default)]
+    #[serde(with = "takusu_types::bool_compat", default)]
     pub parallelizable: bool,
-    #[serde(with = "takusu_util::bool_compat", default)]
+    #[serde(with = "takusu_types::bool_compat", default)]
     pub allows_parallel: bool,
     pub abandonability: Abandonability,
-    #[serde(with = "takusu_util::bool_compat", default)]
+    #[serde(with = "takusu_types::bool_compat", default)]
     pub active: bool,
-    #[serde(with = "takusu_util::bool_compat", default)]
+    #[serde(with = "takusu_types::bool_compat", default)]
     pub fixed: bool,
     /// Window mode for generated tasks (#window_mode).
     /// `'day'` (default) = occurrence day's start_time..end_time.
     /// `'period'` = occurrence start_time .. next occurrence's start_time.
-    #[serde(with = "takusu_util::enum_serde", default)]
-    #[sqlx(try_from = "String")]
-    pub window_mode: takusu_util::WindowMode,
+    #[serde(with = "takusu_types::enum_serde", default)]
+    #[cfg_attr(feature = "sqlx", sqlx(try_from = "String"))]
+    pub window_mode: takusu_types::WindowMode,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
 }
@@ -243,8 +245,8 @@ pub struct CreateHabit {
     pub fixed: Option<bool>,
     /// Window mode: `'day'` or `'period'` (#window_mode).
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    #[serde(with = "takusu_util::enum_serde::option")]
-    pub window_mode: Option<takusu_util::WindowMode>,
+    #[serde(with = "takusu_types::enum_serde::option")]
+    pub window_mode: Option<takusu_types::WindowMode>,
 }
 
 /// A single habit inside a batch create request (#1083).
@@ -299,8 +301,8 @@ pub struct UpdateHabit {
     pub fixed: Option<bool>,
     /// Window mode: `'day'` or `'period'` (#window_mode).
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    #[serde(with = "takusu_util::enum_serde::option")]
-    pub window_mode: Option<takusu_util::WindowMode>,
+    #[serde(with = "takusu_types::enum_serde::option")]
+    pub window_mode: Option<takusu_types::WindowMode>,
 }
 
 /// A scheduled span for a habit (#503).
@@ -311,7 +313,8 @@ pub struct UpdateHabit {
 ///
 /// `start_date` / `end_date` are inclusive `YYYY-MM-DD` strings in the
 /// user's local timezone.
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
 pub struct HabitScheduledSpanRow {
     pub id: String,
     pub habit_id: String,
@@ -332,7 +335,8 @@ pub struct CreateHabitScheduledSpan {
 /// A step of a multi-step habit (#95). Each step produces one task per
 /// occurrence with its own window / cost / flags. Steps form a DAG via
 /// `depends_on` (JSON array of step ids within the same habit).
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
 pub struct HabitStepRow {
     pub id: String,
     pub habit_id: String,
@@ -343,12 +347,12 @@ pub struct HabitStepRow {
     pub end_time: TimeOfDay,
     pub avg_minutes: i64,
     pub sigma_minutes: i64,
-    #[serde(with = "takusu_util::bool_compat", default)]
+    #[serde(with = "takusu_types::bool_compat", default)]
     pub parallelizable: bool,
-    #[serde(with = "takusu_util::bool_compat", default)]
+    #[serde(with = "takusu_types::bool_compat", default)]
     pub allows_parallel: bool,
     pub abandonability: Abandonability,
-    #[serde(with = "takusu_util::bool_compat", default)]
+    #[serde(with = "takusu_types::bool_compat", default)]
     pub fixed: bool,
     /// JSON array of step ids this step depends on (within the same habit).
     #[serde(default)]
@@ -409,8 +413,8 @@ pub struct HabitPreviewRequest {
     pub fixed: Option<bool>,
     /// Window mode: `'day'` or `'period'` (#window_mode).
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    #[serde(with = "takusu_util::enum_serde::option")]
-    pub window_mode: Option<takusu_util::WindowMode>,
+    #[serde(with = "takusu_types::enum_serde::option")]
+    pub window_mode: Option<takusu_types::WindowMode>,
     #[serde(default)]
     pub steps: Vec<HabitStepInput>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -458,7 +462,8 @@ pub struct HabitDetail {
     pub steps: Vec<HabitStepRow>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
 pub struct ScheduleRow {
     pub id: String,
     pub created_at: Timestamp,
@@ -485,16 +490,17 @@ pub struct SaveScheduleRequest {
     pub mark_scheduled_task_ids: Vec<String>,
 }
 
-takusu_util::impl_search_task!(TaskRow);
-takusu_util::impl_search_habit!(HabitRow);
+takusu_search::impl_search_task!(TaskRow);
+takusu_search::impl_search_habit!(HabitRow);
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
 pub struct TokenRow {
     pub id: i64,
     pub jti: String,
-    #[serde(with = "takusu_util::enum_serde")]
-    #[sqlx(try_from = "String")]
-    pub scope: takusu_util::TokenScope,
+    #[serde(with = "takusu_types::enum_serde")]
+    #[cfg_attr(feature = "sqlx", sqlx(try_from = "String"))]
+    pub scope: takusu_types::TokenScope,
     pub label: Option<String>,
     pub created_by: String,
     pub created_at: Timestamp,
@@ -506,17 +512,18 @@ pub struct TokenRow {
 pub struct TokenCreateResponse {
     pub id: i64,
     pub token: String,
-    #[serde(with = "takusu_util::enum_serde")]
-    pub scope: takusu_util::TokenScope,
+    #[serde(with = "takusu_types::enum_serde")]
+    pub scope: takusu_types::TokenScope,
     pub label: Option<String>,
     pub created_at: Timestamp,
     pub expires_at: Option<Timestamp>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
 pub struct GoogleCalSettingsRow {
     pub id: String,
-    #[serde(with = "takusu_util::bool_compat", default)]
+    #[serde(with = "takusu_types::bool_compat", default)]
     pub enabled: bool,
     pub calendar_id: String,
     pub client_id: String,
@@ -540,14 +547,16 @@ pub struct UpdateGoogleCalSettings {
     pub refresh_token: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
 pub struct GoogleCalEventRow {
     pub task_id: String,
     pub google_event_id: String,
     pub updated_at: Timestamp,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
 pub struct SettingsRow {
     pub id: String,
     pub tz: String,
@@ -558,9 +567,9 @@ pub struct SettingsRow {
     /// #459: 1 日の最大作業時間（分）。`None` または `0` の場合はデフォルトを使う。
     pub maximum_minutes: Option<i64>,
     /// 使用する solver。`"sa"` / `"priority"` / `"auto"`。未設定の場合は `sa`。未知値はエラー。
-    #[serde(with = "takusu_util::enum_serde", default)]
-    #[sqlx(try_from = "String")]
-    pub solver: takusu_util::Solver,
+    #[serde(with = "takusu_types::enum_serde", default)]
+    #[cfg_attr(feature = "sqlx", sqlx(try_from = "String"))]
+    pub solver: takusu_types::Solver,
     /// 求解時間の上限（ミリ秒）。`None` または `0` の場合は制限なし。
     #[serde(default)]
     pub time_budget_ms: Option<i64>,
@@ -568,19 +577,20 @@ pub struct SettingsRow {
     #[serde(default)]
     pub seed: Option<i64>,
     /// 前回スケジュールから priority/ALNS の初期解を warm start する。
-    #[serde(with = "takusu_util::bool_compat", default)]
+    #[serde(with = "takusu_types::bool_compat", default)]
     pub warm_start: bool,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
 pub struct SkillRow {
     pub slug: String,
     pub name: String,
     pub description: String,
     pub body: String,
-    #[serde(with = "takusu_util::bool_compat", default)]
+    #[serde(with = "takusu_types::bool_compat", default)]
     pub built_in: bool,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
@@ -606,32 +616,33 @@ pub struct UpdateSkill {
     pub body: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
 pub struct MemoryRow {
     pub id: String,
-    #[serde(with = "takusu_util::enum_serde")]
-    #[sqlx(try_from = "String")]
-    pub kind: takusu_util::MemoryKind,
+    #[serde(with = "takusu_types::enum_serde")]
+    #[cfg_attr(feature = "sqlx", sqlx(try_from = "String"))]
+    pub kind: takusu_types::MemoryKind,
     pub key: String,
     #[serde(default, skip_serializing)]
     pub normalized_key: String,
     pub content: String,
     #[serde(default, skip_serializing)]
     pub normalized_content: String,
-    #[serde(with = "takusu_util::enum_serde", default)]
-    #[sqlx(try_from = "String")]
-    pub subject_type: takusu_util::SubjectType,
+    #[serde(with = "takusu_types::enum_serde", default)]
+    #[cfg_attr(feature = "sqlx", sqlx(try_from = "String"))]
+    pub subject_type: takusu_types::SubjectType,
     pub subject_id: String,
-    #[serde(with = "takusu_util::enum_serde", default)]
-    #[sqlx(try_from = "String")]
-    pub source: takusu_util::MemorySource,
+    #[serde(with = "takusu_types::enum_serde", default)]
+    #[cfg_attr(feature = "sqlx", sqlx(try_from = "String"))]
+    pub source: takusu_types::MemorySource,
     pub revision: i64,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
     pub last_used_at: Option<Timestamp>,
 }
 
-impl takusu_util::memory::MemoryRankable for MemoryRow {
+impl takusu_search::memory::MemoryRankable for MemoryRow {
     fn id(&self) -> &str {
         &self.id
     }
@@ -648,13 +659,13 @@ impl takusu_util::memory::MemoryRankable for MemoryRow {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateMemory {
-    #[serde(with = "takusu_util::enum_serde")]
-    pub kind: takusu_util::MemoryKind,
+    #[serde(with = "takusu_types::enum_serde")]
+    pub kind: takusu_types::MemoryKind,
     pub key: String,
     pub content: String,
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    #[serde(with = "takusu_util::enum_serde::option")]
-    pub subject_type: Option<takusu_util::SubjectType>,
+    #[serde(with = "takusu_types::enum_serde::option")]
+    pub subject_type: Option<takusu_types::SubjectType>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub subject_id: Option<String>,
     #[serde(default)]
@@ -672,18 +683,19 @@ pub struct UpdateMemory {
 pub struct MemoryQuery {
     pub q: String,
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    #[serde(with = "takusu_util::enum_serde::option")]
-    pub kind: Option<takusu_util::MemoryKind>,
+    #[serde(with = "takusu_types::enum_serde::option")]
+    pub kind: Option<takusu_types::MemoryKind>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    #[serde(with = "takusu_util::enum_serde::option")]
-    pub subject_type: Option<takusu_util::SubjectType>,
+    #[serde(with = "takusu_types::enum_serde::option")]
+    pub subject_type: Option<takusu_types::SubjectType>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub subject_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub limit: Option<i64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
 pub struct SimilarTaskRow {
     pub task_id: String,
     pub display_id: i64,
@@ -695,7 +707,7 @@ pub struct SimilarTaskRow {
     #[serde(default, skip_serializing)]
     pub updated_at: Timestamp,
     #[serde(default)]
-    #[sqlx(skip)]
+    #[cfg_attr(feature = "sqlx", sqlx(skip))]
     pub similarity: Similarity,
 }
 
@@ -723,11 +735,11 @@ pub struct UpdateSettings {
     pub maximum_minutes: Option<i64>,
     /// 使用する solver。`"sa"` / `"priority"` / `"auto"`。
     #[serde(
-        with = "takusu_util::enum_serde::option",
+        with = "takusu_types::enum_serde::option",
         default,
         skip_serializing_if = "Option::is_none"
     )]
-    pub solver: Option<takusu_util::Solver>,
+    pub solver: Option<takusu_types::Solver>,
     /// 求解時間の上限（ミリ秒）。`None` または `0` で制限なし。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub time_budget_ms: Option<i64>,
@@ -738,14 +750,15 @@ pub struct UpdateSettings {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        with = "takusu_util::option_bool_compat"
+        with = "takusu_types::option_bool_compat"
     )]
     pub warm_start: Option<bool>,
 }
 
 // ── WI-9 active-session progress management ─────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
 pub struct TaskWorkSessionRow {
     pub id: String,
     pub task_id: String,
@@ -754,7 +767,8 @@ pub struct TaskWorkSessionRow {
     pub created_at: Timestamp,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
 pub struct ProgressEventRow {
     pub id: String,
     pub task_id: String,
@@ -878,7 +892,7 @@ mod tests {
     fn bool_compat_deserializes_true_false() {
         #[derive(serde::Deserialize)]
         struct Wrap {
-            #[serde(with = "takusu_util::bool_compat", default)]
+            #[serde(with = "takusu_types::bool_compat", default)]
             v: bool,
         }
         assert!(serde_json::from_str::<Wrap>(r#"{"v":true}"#).unwrap().v);
@@ -891,7 +905,7 @@ mod tests {
         // clients that send 0/1 instead of booleans (e.g. some CLI/worker paths).
         #[derive(serde::Deserialize)]
         struct Wrap {
-            #[serde(with = "takusu_util::bool_compat", default)]
+            #[serde(with = "takusu_types::bool_compat", default)]
             v: bool,
         }
         assert!(serde_json::from_str::<Wrap>(r#"{"v":1}"#).unwrap().v);
@@ -905,7 +919,7 @@ mod tests {
     fn bool_compat_deserializes_null_as_false() {
         #[derive(serde::Deserialize)]
         struct Wrap {
-            #[serde(with = "takusu_util::bool_compat", default)]
+            #[serde(with = "takusu_types::bool_compat", default)]
             v: bool,
         }
         assert!(!serde_json::from_str::<Wrap>(r#"{"v":null}"#).unwrap().v);
@@ -915,7 +929,7 @@ mod tests {
     fn bool_compat_rejects_strings() {
         #[derive(serde::Deserialize)]
         struct Wrap {
-            #[serde(with = "takusu_util::bool_compat")]
+            #[serde(with = "takusu_types::bool_compat")]
             #[allow(dead_code)]
             v: bool,
         }
@@ -926,7 +940,7 @@ mod tests {
     fn bool_compat_defaults_to_false_when_missing() {
         #[derive(serde::Deserialize)]
         struct Wrap {
-            #[serde(with = "takusu_util::bool_compat", default)]
+            #[serde(with = "takusu_types::bool_compat", default)]
             v: bool,
         }
         assert!(!serde_json::from_str::<Wrap>(r#"{}"#).unwrap().v);

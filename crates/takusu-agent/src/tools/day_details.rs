@@ -14,7 +14,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use takusu_client::{Client, ScheduleEntry, TaskQuery, TaskRow};
-use takusu_util::parse_date_expression;
+use takusu_types::parse_date_expression;
 
 use crate::tools::takusu::TimeZoneCache;
 use crate::tools::takusu::client_error;

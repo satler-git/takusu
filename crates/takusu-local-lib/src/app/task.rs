@@ -9,11 +9,11 @@ use std::collections::HashMap;
 
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
+use takusu_search::search::{Completion, complete};
 use takusu_storage::{
     CreateTask, CreateTaskBatch, CreateTaskBatchItem, CreateTaskBatchResult, ProgressResult,
     RecordProgress, SplitResult, SplitTask, TaskProgress, TaskQuery, TaskRow, UpdateTask,
 };
-use takusu_util::search::{Completion, complete};
 
 use super::dependency;
 use crate::error::storage_to_app;
@@ -449,9 +449,9 @@ impl super::TakusuApp {
             {
                 continue;
             }
-            let start_at: takusu_util::Timestamp = event.start_at.into();
-            let end_at: takusu_util::Timestamp = event.end_at.into();
-            let avg_minutes = takusu_util::minutes_between_ts(start_at, end_at);
+            let start_at: takusu_types::Timestamp = event.start_at.into();
+            let end_at: takusu_types::Timestamp = event.end_at.into();
+            let avg_minutes = takusu_types::minutes_between_ts(start_at, end_at);
             validate_minutes(avg_minutes, Some(0))?;
             let task = self
                 .storage

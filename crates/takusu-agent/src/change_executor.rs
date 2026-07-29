@@ -159,12 +159,12 @@ fn to_after<T: serde::Serialize>(value: &T) -> Result<Option<Value>, AgentError>
 
 /// Serde helper: deserialize a `Date` from a trimmed string.
 /// Mirrors the old `str::trim` applied before `Date::from_str`.
-fn deserialize_trimmed_date<'de, D>(deserializer: D) -> Result<takusu_util::Date, D::Error>
+fn deserialize_trimmed_date<'de, D>(deserializer: D) -> Result<takusu_types::Date, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
     let raw: String = String::deserialize(deserializer)?;
-    takusu_util::Date::from_str(raw.trim()).map_err(serde::de::Error::custom)
+    takusu_types::Date::from_str(raw.trim()).map_err(serde::de::Error::custom)
 }
 
 /// Serde helper: deserialize a required string, trim whitespace, and reject
@@ -190,9 +190,9 @@ fn default_true() -> bool {
 #[derive(Debug, Deserialize)]
 struct ScheduledSpanArgs {
     #[serde(deserialize_with = "deserialize_trimmed_date")]
-    start_date: takusu_util::Date,
+    start_date: takusu_types::Date,
     #[serde(deserialize_with = "deserialize_trimmed_date")]
-    end_date: takusu_util::Date,
+    end_date: takusu_types::Date,
     #[serde(default, deserialize_with = "crate::deserialize_trimmed_optional")]
     reason: Option<String>,
 }
@@ -214,7 +214,7 @@ struct MemoryDeleteArgs {
 /// of `MoveEntry`).
 #[derive(Debug, Deserialize)]
 struct MoveArgs {
-    start_at: takusu_util::Timestamp,
+    start_at: takusu_types::Timestamp,
     #[serde(default)]
     force: bool,
     #[serde(default = "default_true")]

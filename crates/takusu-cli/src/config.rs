@@ -75,7 +75,7 @@ pub fn init() {
 # worker_url = "http://127.0.0.1:8787"
 # workers_token = "eyJ..."
 # root_token = "eyJ..."
-# jwt_secret = "<generate with `openssl rand -hex 32` or `takusu-util::jwt::generate_secret()`>"
+# jwt_secret = "<generate with `openssl rand -hex 32` or `takusu-types::jwt::generate_secret()`>"
 # tz = "Asia/Tokyo"
 # sleep_start = "22:00"
 # sleep_end = "06:00"

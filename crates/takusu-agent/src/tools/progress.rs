@@ -3,7 +3,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use takusu_client::{Client, HabitRow, ProgressEventRow, TaskQuery, TaskRow};
-use takusu_util::{Quantity, TaskStatus};
+use takusu_types::{Quantity, TaskStatus};
 
 use crate::tools::takusu::{
     TaskContext, TimeZoneCache, client_error, server_timezone, strip_leading_hash, task_json,
@@ -134,7 +134,7 @@ fn estimate_preview(
         .map(|e| (e.active_minutes, e.delta_quantity.unwrap_or(1).max(1)))
         .collect();
 
-    takusu_util::estimate_progress(
+    takusu_types::estimate_progress(
         avg_minutes,
         sigma_minutes,
         quantity_total,
@@ -518,12 +518,12 @@ impl TypedTool for TaskProgress {
                     let active_minutes = if let Some(ref session) = progress.open_session {
                         let started_at = session.started_at.to_string();
                         let base: String = if let Some(last) = progress.events.last() {
-                            takusu_util::later_timestamp(&started_at, &last.at.to_string())
+                            takusu_types::later_timestamp(&started_at, &last.at.to_string())
                                 .to_string()
                         } else {
                             started_at
                         };
-                        takusu_util::minutes_between(&base, &takusu_util::now_rfc3339())
+                        takusu_types::minutes_between(&base, &takusu_types::now_rfc3339())
                     } else {
                         0
                     };
@@ -873,7 +873,7 @@ impl TypedTool for TaskSplit {
             execution_args.insert("description".to_string(), Value::String(v.clone()));
         }
         let end_at_normalized = if let Some(v) = &end_at {
-            let normalized = takusu_util::parse_datetime_tz(v, &tz).map_err(|e| {
+            let normalized = takusu_types::parse_datetime_tz(v, &tz).map_err(|e| {
                 ToolError::InvalidArgs(InvalidArgsError::new("end_at", format!("invalid: {e}")))
             })?;
             execution_args.insert("end_at".to_string(), Value::String(normalized.clone()));
@@ -899,7 +899,7 @@ impl TypedTool for TaskSplit {
         }
         if let Some(end) = end_at_normalized.as_ref() {
             remainder.insert("end_at".to_string(), Value::String(end.clone()));
-        } else if task.end_at != takusu_util::Timestamp::default() {
+        } else if task.end_at != takusu_types::Timestamp::default() {
             remainder.insert("end_at".to_string(), Value::String(task.end_at.to_string()));
         }
         if set_dependency {

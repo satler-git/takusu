@@ -56,7 +56,7 @@ pub struct LlmConfig {
     pub max_tool_calls: usize,
     #[serde(
         default = "default_request_timeout",
-        with = "takusu_util::duration_seconds",
+        with = "takusu_types::duration_seconds",
         alias = "request_timeout_seconds"
     )]
     pub request_timeout: Duration,

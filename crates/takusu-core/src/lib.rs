@@ -68,7 +68,7 @@ static GLOBAL_ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 // ── Minutes / Slots ───────────────────────────────────────────────────
 
-pub use takusu_util::{Abandonability, Minutes, SLOT_MINUTES, Slots};
+pub use takusu_types::{Abandonability, Minutes, SLOT_MINUTES, Slots};
 
 // ── Point ────────────────────────────────────────────────────────────
 
@@ -480,12 +480,12 @@ pub enum Solver {
     Auto,
 }
 
-impl From<takusu_util::Solver> for Solver {
-    fn from(solver: takusu_util::Solver) -> Self {
+impl From<takusu_types::Solver> for Solver {
+    fn from(solver: takusu_types::Solver) -> Self {
         match solver {
-            takusu_util::Solver::Sa => Self::Sa,
-            takusu_util::Solver::Priority => Self::Priority,
-            takusu_util::Solver::Auto => Self::Auto,
+            takusu_types::Solver::Sa => Self::Sa,
+            takusu_types::Solver::Priority => Self::Priority,
+            takusu_types::Solver::Auto => Self::Auto,
         }
     }
 }

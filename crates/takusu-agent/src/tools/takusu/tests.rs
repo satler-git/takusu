@@ -16,7 +16,7 @@ use takusu_client::{
     Client, HabitDetail, HabitRow, HabitScheduledSpanRow, HabitStepRow, ScheduleEntry, ScheduleRow,
     SettingsResponse, TaskRow,
 };
-use takusu_util::{Quantity, TaskStatus, parse_datetime_tz};
+use takusu_types::{Quantity, TaskStatus, parse_datetime_tz};
 
 // ── test-only helpers (moved from common.rs and mutation.rs) ─────────────
 
@@ -188,7 +188,7 @@ fn habit_row(id: &str, display_id: i64, title: &str) -> HabitRow {
         abandonability: 0.5.into(),
         active: true,
         fixed: false,
-        window_mode: takusu_util::WindowMode::Day,
+        window_mode: takusu_types::WindowMode::Day,
         created_at: "2025-06-01T00:00:00Z".parse().unwrap(),
         updated_at: "2025-06-01T00:00:00Z".parse().unwrap(),
     }
@@ -922,7 +922,7 @@ async fn move_task_tool_proposes_move_with_existing_entry() {
                     sleep_end: "07:00".parse().unwrap(),
                     comfortable_minutes: None,
                     maximum_minutes: None,
-                    solver: takusu_util::Solver::Auto,
+                    solver: takusu_types::Solver::Auto,
                     time_budget_ms: None,
                     seed: None,
                     warm_start: false,
@@ -992,7 +992,7 @@ async fn habit_scheduled_spans_tool_lists_and_proposes() {
                     sleep_end: "07:00".parse().unwrap(),
                     comfortable_minutes: None,
                     maximum_minutes: None,
-                    solver: takusu_util::Solver::Auto,
+                    solver: takusu_types::Solver::Auto,
                     time_budget_ms: None,
                     seed: None,
                     warm_start: false,

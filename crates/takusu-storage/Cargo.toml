@@ -5,11 +5,16 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[features]
+default = []
+sqlx = ["dep:sqlx", "takusu-types/sqlx"]
+
 [dependencies]
 async-trait.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
-sqlx = { version = "0.9", default-features = false, features = ["derive", "macros"] }
-takusu-util = { workspace = true, features = ["sqlx"] }
+sqlx = { version = "0.9", default-features = false, features = ["derive", "macros"], optional = true }
+takusu-types = { workspace = true }
+takusu-search.workspace = true
 

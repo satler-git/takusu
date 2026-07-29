@@ -1,6 +1,6 @@
 use serde_json::json;
 use takusu_client::*;
-use takusu_util::{ScheduleMode, SleepInput, TaskStatus};
+use takusu_types::{ScheduleMode, SleepInput, TaskStatus};
 
 #[test]
 fn create_task_serialization() {
@@ -223,7 +223,7 @@ fn update_settings_new_fields_serialization() {
         sleep_end: None,
         comfortable_minutes: None,
         maximum_minutes: None,
-        solver: Some(takusu_util::Solver::Sa),
+        solver: Some(takusu_types::Solver::Sa),
         time_budget_ms: Some(1500),
         seed: Some(42),
         warm_start: Some(true),

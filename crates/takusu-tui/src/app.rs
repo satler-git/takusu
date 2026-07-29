@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use takusu_local_lib::app::{GenerateScheduleInput, RescheduleInput, TakusuApp};
 use takusu_storage::{HabitRow, ScheduleEntry, SettingsRow, TaskRow};
-use takusu_util::{EnumLabel, ScheduleMode, SleepInput};
+use takusu_types::{EnumLabel, ScheduleMode, SleepInput};
 
 use crate::tabs::{habits, schedule, settings, tasks};
 use crate::widgets::list::StatefulList;
@@ -299,7 +299,7 @@ impl App {
             self.status_msg = Some("Title and deadline required".into());
             return;
         }
-        let end_at = match takusu_util::Timestamp::parse_with_tz(&end_at, &self.tz) {
+        let end_at = match takusu_types::Timestamp::parse_with_tz(&end_at, &self.tz) {
             Ok(ts) => ts,
             Err(e) => {
                 self.status_msg = Some(format!("Invalid deadline: {e}"));

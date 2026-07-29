@@ -24,7 +24,7 @@ use takusu_storage::{
     CreateHabit, CreateHabitScheduledSpan, CreateMemory, CreateTask, MemoryQuery, Storage,
     StorageError, TaskQuery, UpdateMemory, UpdateTask,
 };
-use takusu_util::{EnumLabel, MemoryKind, Quantity, TaskStatus, TaskStatusFilter};
+use takusu_types::{EnumLabel, MemoryKind, Quantity, TaskStatus, TaskStatusFilter};
 
 use common::{JWT_SECRET, WRANGLER_PORT, root_token, spawn_wrangler};
 
@@ -311,16 +311,20 @@ async fn task_lifecycle_and_tokens(#[case] backend: &str) {
     cleanup(&*storage).await;
 
     // root token verifies, bogus token does not
-    assert!(storage
-        .verify_token(root_token())
-        .await
-        .expect("verify_token")
-        .is_some());
-    assert!(storage
-        .verify_token("tsk_bogus")
-        .await
-        .expect("verify_token bogus")
-        .is_none());
+    assert!(
+        storage
+            .verify_token(root_token())
+            .await
+            .expect("verify_token")
+            .is_some()
+    );
+    assert!(
+        storage
+            .verify_token("tsk_bogus")
+            .await
+            .expect("verify_token bogus")
+            .is_none()
+    );
 
     // create → list → get → update → delete
     let created = storage
@@ -440,8 +444,8 @@ async fn habit_uuid_existence(#[case] backend: &str) {
         .create_habit_scheduled_span(
             bogus,
             &CreateHabitScheduledSpan {
-                start_date: takusu_util::Date::new(2026, 7, 1).unwrap(),
-                end_date: takusu_util::Date::new(2026, 7, 2).unwrap(),
+                start_date: takusu_types::Date::new(2026, 7, 1).unwrap(),
+                end_date: takusu_types::Date::new(2026, 7, 2).unwrap(),
                 reason: None,
             },
         )

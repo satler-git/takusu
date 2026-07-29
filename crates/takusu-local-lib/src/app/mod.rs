@@ -5,7 +5,7 @@ use takusu_storage::{
     SimilarTaskRow, SkillRow, Storage, TokenCreateResponse, TokenRow, UpdateMemory, UpdateSettings,
     UpdateSkill,
 };
-use takusu_util::MemoryKind;
+use takusu_types::MemoryKind;
 
 use crate::error::storage_to_app;
 use crate::error::{AppError, BadRequestKind, ConflictKind, SkillOp};
@@ -31,16 +31,16 @@ fn default_settings_row() -> SettingsRow {
     SettingsRow {
         id: "active".to_string(),
         tz: "UTC".to_string(),
-        sleep_start: takusu_util::TimeOfDay::new(22, 0).unwrap(),
-        sleep_end: takusu_util::TimeOfDay::new(6, 0).unwrap(),
+        sleep_start: takusu_types::TimeOfDay::new(22, 0).unwrap(),
+        sleep_end: takusu_types::TimeOfDay::new(6, 0).unwrap(),
         comfortable_minutes: None,
         maximum_minutes: None,
-        solver: takusu_util::Solver::Sa,
+        solver: takusu_types::Solver::Sa,
         time_budget_ms: None,
         seed: None,
         warm_start: false,
-        created_at: takusu_util::Timestamp::default(),
-        updated_at: takusu_util::Timestamp::default(),
+        created_at: takusu_types::Timestamp::default(),
+        updated_at: takusu_types::Timestamp::default(),
     }
 }
 
@@ -233,7 +233,8 @@ impl TakusuApp {
                 "content is required".into(),
             )));
         }
-        if takusu_util::memory::normalize_content(body.content.as_deref().unwrap_or("")).is_err() {
+        if takusu_search::memory::normalize_content(body.content.as_deref().unwrap_or("")).is_err()
+        {
             return Err(AppError::BadRequest(BadRequestKind::Other(
                 "invalid content".into(),
             )));
@@ -257,7 +258,7 @@ impl TakusuApp {
     }
 
     pub async fn search_memories(&self, query: &MemoryQuery) -> Result<Vec<MemoryRow>, AppError> {
-        if takusu_util::memory::normalize_query(&query.q).is_err() {
+        if takusu_search::memory::normalize_query(&query.q).is_err() {
             return Err(AppError::BadRequest(BadRequestKind::Other(
                 "invalid query".into(),
             )));
@@ -272,9 +273,9 @@ impl TakusuApp {
         &self,
         query: &SimilarTaskQuery,
     ) -> Result<Vec<SimilarTaskRow>, AppError> {
-        if takusu_util::memory::normalize_text(
+        if takusu_search::memory::normalize_text(
             &query.title,
-            Some(takusu_util::memory::MAX_QUERY_SCALARS),
+            Some(takusu_search::memory::MAX_QUERY_SCALARS),
         )
         .is_err()
         {
@@ -325,8 +326,8 @@ impl TakusuApp {
 #[cfg(test)]
 mod tests {
     use crate::validate::{validate_minutes, validate_task_datetimes};
-    use takusu_util::SleepInput;
-    use takusu_util::parse_timezone;
+    use takusu_types::SleepInput;
+    use takusu_types::parse_timezone;
 
     // ── parse_timezone accepts IANA and fixed-offset timezones (#607) ────
 
@@ -404,24 +405,24 @@ mod tests {
 
     #[test]
     fn validate_task_datetimes_accepts_valid_range() {
-        let s: takusu_util::Timestamp = "2026-07-22T10:00:00Z".parse().unwrap();
-        let e: takusu_util::Timestamp = "2026-07-22T12:00:00Z".parse().unwrap();
+        let s: takusu_types::Timestamp = "2026-07-22T10:00:00Z".parse().unwrap();
+        let e: takusu_types::Timestamp = "2026-07-22T12:00:00Z".parse().unwrap();
         assert!(validate_task_datetimes(Some(Some(&s)), Some(&e), None, None).is_ok());
     }
 
     #[test]
     fn validate_task_datetimes_rejects_reversed() {
-        let s: takusu_util::Timestamp = "2026-07-22T12:00:00Z".parse().unwrap();
-        let e: takusu_util::Timestamp = "2026-07-22T10:00:00Z".parse().unwrap();
+        let s: takusu_types::Timestamp = "2026-07-22T12:00:00Z".parse().unwrap();
+        let e: takusu_types::Timestamp = "2026-07-22T10:00:00Z".parse().unwrap();
         assert!(validate_task_datetimes(Some(Some(&s)), Some(&e), None, None).is_err());
     }
 
     #[test]
     fn validate_task_datetimes_fills_existing_for_partial_update() {
-        let e: takusu_util::Timestamp = "2026-07-22T10:00:00Z".parse().unwrap();
-        let existing: takusu_util::Timestamp = "2026-07-22T08:00:00Z".parse().unwrap();
+        let e: takusu_types::Timestamp = "2026-07-22T10:00:00Z".parse().unwrap();
+        let existing: takusu_types::Timestamp = "2026-07-22T08:00:00Z".parse().unwrap();
         assert!(validate_task_datetimes(None, Some(&e), Some(&existing), None).is_ok());
-        let e2: takusu_util::Timestamp = "2026-07-22T07:00:00Z".parse().unwrap();
+        let e2: takusu_types::Timestamp = "2026-07-22T07:00:00Z".parse().unwrap();
         assert!(validate_task_datetimes(None, Some(&e2), Some(&existing), None).is_err());
     }
 
@@ -430,7 +431,7 @@ mod tests {
         // With typed Timestamp, invalid strings cannot be constructed.
         // This test now verifies that a None existing value with a Some end
         // still works (no existing to compare against).
-        let e: takusu_util::Timestamp = "2026-07-22T10:00:00Z".parse().unwrap();
+        let e: takusu_types::Timestamp = "2026-07-22T10:00:00Z".parse().unwrap();
         assert!(validate_task_datetimes(None, Some(&e), None, None).is_ok());
     }
 }

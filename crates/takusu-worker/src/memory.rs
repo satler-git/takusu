@@ -1,1 +1,1 @@
-pub use takusu_util::memory::*;
+pub use takusu_search::memory::*;

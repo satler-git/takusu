@@ -14,7 +14,7 @@ use takusu_storage::{
     HabitPreviewRequest, HabitPreviewTask, HabitRow, HabitScheduledSpanRow, HabitStepEstimateInput,
     HabitStepInput, HabitStepRow, TaskQuery, TaskRow, UpdateHabit,
 };
-use takusu_util::{TaskStatusFilter, WindowMode};
+use takusu_types::{TaskStatusFilter, WindowMode};
 
 use super::dependency::topo_sort_steps;
 use super::habit_sync::{
@@ -273,7 +273,7 @@ impl super::TakusuApp {
             } else {
                 let entries = by_step.remove(&Some(step.id.clone())).unwrap_or_default();
                 let minutes: Vec<i64> = entries.iter().map(|(_, m)| *m).collect();
-                let (avg, sigma, excluded) = takusu_util::estimate_from_samples_with_outliers(
+                let (avg, sigma, excluded) = takusu_types::estimate_from_samples_with_outliers(
                     &minutes,
                     request.detect_outliers,
                 );
@@ -326,7 +326,7 @@ impl super::TakusuApp {
         let overall_entries = by_step.remove(&None).unwrap_or_default();
         let overall_minutes: Vec<i64> = overall_entries.iter().map(|(_, m)| *m).collect();
         let (overall_avg, overall_sigma, overall_excluded) =
-            takusu_util::estimate_from_samples_with_outliers(
+            takusu_types::estimate_from_samples_with_outliers(
                 &overall_minutes,
                 request.detect_outliers,
             );
@@ -349,8 +349,8 @@ impl super::TakusuApp {
         let (final_avg, final_sigma) = if step_rows.is_empty() {
             (overall_avg, overall_sigma)
         } else {
-            let max = takusu_util::MAX_ESTIMATE_MINUTES as i128;
-            let min = takusu_util::MIN_ESTIMATE_MINUTES as i128;
+            let max = takusu_types::MAX_ESTIMATE_MINUTES as i128;
+            let min = takusu_types::MIN_ESTIMATE_MINUTES as i128;
             (
                 combined_avg.clamp(min, max) as i64,
                 (combined_sigma_sq.sqrt().round() as i128).clamp(min, max) as i64,
