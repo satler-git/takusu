@@ -18,15 +18,14 @@ use crate::error::{AppError, BadRequestKind};
 /// no dependencies come first. Returns indices into `steps`. Cycles are
 /// rejected (defensive — validation already caught them at replace time).
 pub(super) fn topo_sort_steps(steps: &[HabitStepRow]) -> Result<Vec<usize>, AppError> {
-    let mut id_to_idx: HashMap<String, usize> = HashMap::new();
+    let mut id_to_idx: HashMap<&str, usize> = HashMap::new();
     for (i, s) in steps.iter().enumerate() {
-        id_to_idx.insert(s.id.clone(), i);
+        id_to_idx.insert(&s.id, i);
     }
     let mut adj: Vec<Vec<usize>> = vec![Vec::new(); steps.len()];
     for (i, s) in steps.iter().enumerate() {
-        let deps: Vec<String> = s.depends_on.to_vec();
-        for dep in &deps {
-            if let Some(&dep_idx) = id_to_idx.get(dep) {
+        for dep in s.depends_on.iter() {
+            if let Some(&dep_idx) = id_to_idx.get(dep.as_str()) {
                 // edge dep_idx → i (dep must come before i)
                 adj[dep_idx].push(i);
             }
@@ -38,17 +37,16 @@ pub(super) fn topo_sort_steps(steps: &[HabitStepRow]) -> Result<Vec<usize>, AppE
 #[allow(clippy::type_complexity)]
 pub(super) fn build_dep_graph(
     tasks: &[TaskRow],
-) -> Result<(Vec<Vec<usize>>, HashMap<String, usize>), AppError> {
-    let mut id_to_idx: HashMap<String, usize> = HashMap::new();
+) -> Result<(Vec<Vec<usize>>, HashMap<&str, usize>), AppError> {
+    let mut id_to_idx: HashMap<&str, usize> = HashMap::new();
     for (i, t) in tasks.iter().enumerate() {
-        id_to_idx.insert(t.id.clone(), i);
+        id_to_idx.insert(&t.id, i);
     }
     let mut adj = vec![Vec::new(); tasks.len()];
     for t in tasks {
-        let idx = id_to_idx[&t.id];
-        let deps: Vec<String> = t.depends.to_vec();
-        for dep_id in &deps {
-            if let Some(&dep_idx) = id_to_idx.get(dep_id) {
+        let idx = id_to_idx[t.id.as_str()];
+        for dep_id in t.depends.iter() {
+            if let Some(&dep_idx) = id_to_idx.get(dep_id.as_str()) {
                 adj[idx].push(dep_idx);
             }
         }
@@ -93,15 +91,14 @@ impl super::TakusuApp {
             .iter()
             .filter(|t| t.status != TaskStatus::Completed && t.status != TaskStatus::Skipped)
             .collect();
-        let mut id_to_idx: HashMap<String, usize> = HashMap::new();
+        let mut id_to_idx: HashMap<&str, usize> = HashMap::new();
         for (i, t) in active.iter().enumerate() {
-            id_to_idx.insert(t.id.clone(), i);
+            id_to_idx.insert(&t.id, i);
         }
         let mut adj = vec![Vec::new(); active.len()];
         for (i, t) in active.iter().enumerate() {
-            let deps: Vec<String> = t.depends.to_vec();
-            for dep_id in &deps {
-                if let Some(&dep_idx) = id_to_idx.get(dep_id) {
+            for dep_id in t.depends.iter() {
+                if let Some(&dep_idx) = id_to_idx.get(dep_id.as_str()) {
                     adj[i].push(dep_idx);
                 }
             }
@@ -134,15 +131,14 @@ impl super::TakusuApp {
             .list_habit_steps(habit_id)
             .await
             .map_err(storage_to_app)?;
-        let mut id_to_idx: HashMap<String, usize> = HashMap::new();
+        let mut id_to_idx: HashMap<&str, usize> = HashMap::new();
         for (i, s) in steps.iter().enumerate() {
-            id_to_idx.insert(s.id.clone(), i);
+            id_to_idx.insert(&s.id, i);
         }
         let mut adj = vec![Vec::new(); steps.len()];
         for (i, s) in steps.iter().enumerate() {
-            let deps: Vec<String> = s.depends_on.to_vec();
-            for dep_id in &deps {
-                if let Some(&dep_idx) = id_to_idx.get(dep_id) {
+            for dep_id in s.depends_on.iter() {
+                if let Some(&dep_idx) = id_to_idx.get(dep_id.as_str()) {
                     adj[i].push(dep_idx);
                 }
             }
