@@ -29,7 +29,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             cfg.bind = v;
         }
         if let Ok(v) = std::env::var("TAKUSU_STORAGE") && !v.is_empty() {
-            cfg.storage = v;
+            cfg.storage = v.parse().unwrap_or_else(|e| {
+                eprintln!("Error: invalid TAKUSU_STORAGE: {e}");
+                std::process::exit(1);
+            });
         }
         if let Ok(v) = std::env::var("TAKUSU_WORKERS_URL") && !v.is_empty() {
             cfg.worker_url = v;
@@ -51,7 +54,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .or_else(|| env_root.clone())
             .unwrap_or_default();
 
-        let storage: Arc<dyn Storage> = match cfg.storage_kind() {
+        let storage: Arc<dyn Storage> = match cfg.storage {
             #[cfg(feature = "sqlite")]
             StorageKind::Sqlite => {
                 if cfg.jwt_secret.is_empty() {

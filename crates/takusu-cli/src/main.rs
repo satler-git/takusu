@@ -1128,13 +1128,16 @@ fn main() {
         let env_db = std::env::var("TAKUSU_DB").ok().filter(|s| !s.is_empty());
 
         if let Some(v) = env_storage {
-            local_cfg.storage = v;
+            local_cfg.storage = v.parse().unwrap_or_else(|e| {
+                eprintln!("Error: invalid TAKUSU_STORAGE: {e}");
+                process::exit(1);
+            });
         } else if env_db.is_some() {
             // TAKUSU_DB only makes sense for the sqlite backend, so prefer it
             // over a config file that may point at production workers.
-            local_cfg.storage = "sqlite".to_string();
-        } else if let Some(ref v) = cfg.storage {
-            local_cfg.storage = v.clone();
+            local_cfg.storage = StorageKind::Sqlite;
+        } else if let Some(v) = cfg.storage {
+            local_cfg.storage = v;
         }
         if let Some(v) = env_db {
             local_cfg.db = v;
@@ -1168,7 +1171,7 @@ fn main() {
             .or_else(|| cfg.root_token.clone())
             .unwrap_or_default();
 
-        let storage: Arc<dyn takusu_storage::Storage> = match local_cfg.storage_kind() {
+        let storage: Arc<dyn takusu_storage::Storage> = match local_cfg.storage {
             StorageKind::Workers => {
                 let url = local_cfg.workers_url().to_string();
                 if url.is_empty() {
