@@ -165,11 +165,9 @@ pub async fn create(mut req: Request, env: Env) -> Result<Response, WorkerError>
     let original_quantity_total = body.original_quantity_total.filter(|t| *t != 0);
     validate_quantity(quantity_total, body.quantity_done, original_quantity_total)?;
     let database = db(&env)?;
-    let tz = get_timezone(&database).await?;
     validate_task_datetimes(
         body.start_at.as_ref().map(Some),
         Some(&body.end_at),
-        &tz,
         None,
         None,
     )?;
@@ -310,11 +308,9 @@ pub async fn update(mut req: Request, env: Env, id: &str) -> Result<Response, Wo
     let full = resolve_task_id(&database, id).await?;
     let existing = select_one(&database, &full).await?;
     if body.start_at.is_some() || body.end_at.is_some() {
-        let tz = get_timezone(&database).await?;
         validate_task_datetimes(
             body.start_at.as_ref().map(|o| o.as_ref()),
             body.end_at.as_ref(),
-            &tz,
             existing.start_at.as_ref(),
             Some(&existing.end_at),
         )?;
@@ -469,11 +465,9 @@ pub async fn replace(mut req: Request, env: Env, id: &str) -> Result<Response, W
         original_quantity_total,
     )?;
     let database = db(&env)?;
-    let tz = get_timezone(&database).await?;
     validate_task_datetimes(
         body.start_at.as_ref().map(Some),
         Some(&body.end_at),
-        &tz,
         None,
         None,
     )?;

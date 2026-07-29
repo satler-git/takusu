@@ -1,7 +1,6 @@
 pub mod app;
 pub mod auth;
 pub mod config;
-mod date_utils;
 pub mod error;
 mod graph;
 pub mod sentry;

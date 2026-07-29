@@ -11,9 +11,8 @@ use crate::models::{
     ApplyHabitEstimateRequest, CreateHabit, CreateHabitScheduledSpan, HabitDetail, HabitRow,
     HabitScheduledSpanRow, HabitStepInput, HabitStepRow, UpdateHabit,
 };
-use crate::validate::{
-    validate_minutes, validate_recurrence, validate_scheduled_span_dates, validate_steps,
-};
+use crate::validate::{validate_minutes, validate_recurrence, validate_scheduled_span_dates};
+use takusu_storage::Validate;
 use takusu_types::Minutes;
 
 const HABIT_COLS: &str = "id, display_id, title, description, recurrence, start_time, end_time, avg_minutes, sigma_minutes, parallelizable, allows_parallel, abandonability, active, fixed, window_mode, created_at, updated_at";
@@ -309,7 +308,7 @@ pub async fn create_scheduled_span(
     id: &str,
 ) -> Result<Response, WorkerError> {
     let body: CreateHabitScheduledSpan = parse_json(&mut req).await?;
-    validate_scheduled_span_dates(&body.start_date.to_string(), &body.end_date.to_string())?;
+    validate_scheduled_span_dates(&body.start_date, &body.end_date)?;
     let database = db(&env)?;
     let full = resolve_habit_id(&database, id).await?;
     let span_id = uuid::Uuid::now_v7().to_string();
@@ -414,7 +413,7 @@ pub async fn replace_steps(
     id: &str,
 ) -> Result<Response, WorkerError> {
     let body: Vec<HabitStepInput> = parse_json(&mut req).await?;
-    validate_steps(&body)?;
+    body.validate()?;
     let database = db(&env)?;
     let full = resolve_habit_id(&database, id).await?;
 

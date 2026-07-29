@@ -75,6 +75,7 @@ pub(crate) fn storage_to_app(e: takusu_storage::StorageError) -> AppError {
     match e {
         StorageError::NotFound(m) => AppError::NotFound(m),
         StorageError::BadRequest(m) => AppError::BadRequest(BadRequestKind::Other(m)),
+        StorageError::BadRequestCycle => AppError::BadRequest(BadRequestKind::CycleDetected),
         StorageError::Unauthorized => AppError::Unauthorized,
         StorageError::Conflict(m) => AppError::Conflict(ConflictKind::Other(m)),
         StorageError::Internal(m) => AppError::Internal(m),

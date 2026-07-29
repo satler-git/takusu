@@ -7,7 +7,9 @@
 pub mod error;
 pub mod model;
 pub mod storage;
+pub mod validate;
 
 pub use error::StorageError;
 pub use model::*;
 pub use storage::Storage;
+pub use validate::Validate;

@@ -1,78 +1,71 @@
-//! Validation trait and impls for input structs.
+//! Validation trait and helpers for `takusu-local-lib`.
 //!
-//! The `Validate` trait ties validation logic to the struct it validates so
-//! the compiler can detect forgotten calls: `body.validate()?` instead of
-//! remembering to call `validate_xxx(&body)?` at every entry point (#1255).
+//! The shared validation logic lives in [`takusu_storage::validate`] so the
+//! local server and the Cloudflare Worker use a single implementation
+//! (#1322). This module provides:
 //!
-//! Self-contained validators (minutes, title, recurrence, skill, memory,
-//! steps, timezone, scheduled-span dates, task datetimes for create) are
-//! expressed as `Validate` impls on the corresponding input structs.
-//!
-//! Context-dependent validators that need an existing row or a timezone
-//! (e.g. `UpdateTask` datetime checks against an existing task) remain as
-//! `pub(crate)` free functions and are called explicitly at the call site.
-//!
-//! `parse_sleep` / `parse_workload` have been moved to the
-//! [`SettingsPlannerExt`] extension trait so they are tied to `SettingsRow`
-//! rather than floating as standalone functions.
+//! - A local [`Validate`] trait that blanket-impls for every type that
+//!   implements `takusu_storage::Validate`, mapping `StorageError` to
+//!   `AppError`. This lets existing `body.validate()?` call sites work
+//!   unchanged.
+//! - Thin wrappers around the shared free functions (`validate_minutes`,
+//!   `validate_task_datetimes`) that return `AppError`.
+//! - `parse_recurrence`, which deserialises into the real
+//!   `takusu_habit::RecurrenceRule` (the shared crate only validates JSON
+//!   shape to avoid pulling `takusu-habit` into WASM).
+//! - `parse_settings_timezone` and [`SettingsPlannerExt`], which depend on
+//!   `takusu-core` / `jiff` and are local-server-specific.
 
 use takusu_core::{Minutes, SleepConfig, WorkloadConfig};
-use takusu_storage::{
-    CreateHabit, CreateHabitScheduledSpan, CreateMemory, CreateSkill, CreateTask,
-    HabitPreviewRequest, HabitStepInput, SettingsRow, UpdateHabit, UpdateSettings, UpdateTask,
-};
-use takusu_types::{EnumLabel, SleepInput};
+use takusu_storage::SettingsRow;
+use takusu_types::SleepInput;
 
-use crate::error::{AppError, BadRequestKind};
+use crate::error::{AppError, storage_to_app};
 
-// ── helper free functions ─────────────────────────────────────────────
+// ── Validate trait (blanket impl over the shared trait) ───────────────
 
-/// Reject negative or unrealistically large `avg_minutes` / `sigma_minutes`,
-/// which would wrap to a huge `u64` slot count in the planner and break the
-/// schedule (#269, #604).
+/// Validate self-contained input before it reaches storage.
+///
+/// This trait is blanket-implemented for every `T: takusu_storage::Validate`,
+/// mapping `StorageError` to `AppError`. Call `body.validate()?` as before;
+/// the compiler resolves to this blanket impl.
+pub trait Validate {
+    fn validate(&self) -> Result<(), AppError>;
+}
+
+impl<T: ?Sized + takusu_storage::Validate> Validate for T {
+    fn validate(&self) -> Result<(), AppError> {
+        takusu_storage::Validate::validate(self).map_err(storage_to_app)
+    }
+}
+
+// ── thin wrappers returning AppError ──────────────────────────────────
+
+/// Reject negative or unrealistically large `avg_minutes` / `sigma_minutes`
+/// (#269, #604). Delegates to the shared implementation.
 pub(crate) fn validate_minutes(avg: i64, sigma: Option<i64>) -> Result<(), AppError> {
-    // Roughly one year in minutes.  This keeps the converted slot count well
-    // within the range where `duration_score`, `total_avg`, and timestamp
-    // arithmetic cannot overflow, while still allowing long-running tasks.
-    const MAX_MINUTES: i64 = 60 * 24 * 365;
-
-    if avg < 0 {
-        return Err(AppError::BadRequest(BadRequestKind::Other(format!(
-            "avg_minutes must be >= 0 (got {avg})"
-        ))));
-    }
-    if avg > MAX_MINUTES {
-        return Err(AppError::BadRequest(BadRequestKind::Other(format!(
-            "avg_minutes must be at most {MAX_MINUTES} (got {avg})"
-        ))));
-    }
-    if let Some(s) = sigma
-        && s < 0
-    {
-        return Err(AppError::BadRequest(BadRequestKind::Other(format!(
-            "sigma_minutes must be >= 0 (got {s})"
-        ))));
-    }
-    if let Some(s) = sigma
-        && s > MAX_MINUTES
-    {
-        return Err(AppError::BadRequest(BadRequestKind::Other(format!(
-            "sigma_minutes must be at most {MAX_MINUTES} (got {s})"
-        ))));
-    }
-    Ok(())
+    takusu_storage::validate::validate_minutes(avg, sigma).map_err(storage_to_app)
 }
 
-/// Reject titles that cannot be NFKC-normalized for similar-task search (empty,
-/// control-character only, or exceeding the normalized-title scalar limit).
-/// Validating at the boundary keeps `normalized_title` always populated for
-/// stored tasks, so a task is never silently excluded from similar-task search
-/// (#942).
-pub(crate) fn validate_title(title: &str) -> Result<(), AppError> {
-    takusu_search::memory::normalize_text(title, Some(takusu_search::memory::MAX_CONTENT_SCALARS))
-        .map_err(|e| AppError::BadRequest(BadRequestKind::Other(format!("invalid title: {e}"))))?;
-    Ok(())
+/// Validate `start_at` / `end_at` datetime values and that the effective
+/// start is not after the effective end (#934). Delegates to the shared
+/// implementation.
+pub(crate) fn validate_task_datetimes(
+    start_at: Option<Option<&takusu_types::Timestamp>>,
+    end_at: Option<&takusu_types::Timestamp>,
+    existing_start: Option<&takusu_types::Timestamp>,
+    existing_end: Option<&takusu_types::Timestamp>,
+) -> Result<(), AppError> {
+    takusu_storage::validate::validate_task_datetimes(
+        start_at,
+        end_at,
+        existing_start,
+        existing_end,
+    )
+    .map_err(storage_to_app)
 }
+
+// ── local-server-specific helpers ─────────────────────────────────────
 
 /// Parse a recurrence JSON string into a `RecurrenceRule`.
 /// This is the single point inside `takusu-local-lib` where storage/client strings
@@ -80,282 +73,16 @@ pub(crate) fn validate_title(title: &str) -> Result<(), AppError> {
 /// `takusu-worker` validates recurrences separately without converting to `takusu_habit`.
 pub(crate) fn parse_recurrence(recurrence: &str) -> Result<takusu_habit::RecurrenceRule, AppError> {
     serde_json::from_str::<takusu_habit::RecurrenceRule>(recurrence).map_err(|e| {
-        AppError::BadRequest(BadRequestKind::Other(format!("invalid recurrence: {e}")))
+        AppError::BadRequest(crate::error::BadRequestKind::Other(format!(
+            "invalid recurrence: {e}"
+        )))
     })
-}
-
-/// Verify the timezone string resolves to a real `jiff::tz::TimeZone` so that
-/// typos don't silently fall back to UTC (#277). User-supplied timezones are
-/// reported as BadRequest.
-pub(crate) fn validate_timezone(tz: &str) -> Result<(), AppError> {
-    takusu_types::parse_timezone(tz)
-        .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))
-        .map(|_| ())
 }
 
 /// Parse the timezone stored in settings. A corrupt stored timezone is a
 /// server-side data error, so it is reported as Internal.
 pub(crate) fn parse_settings_timezone(tz: &str) -> Result<jiff::tz::TimeZone, AppError> {
     takusu_types::parse_timezone(tz).map_err(AppError::Internal)
-}
-
-/// Validate `start_at` / `end_at` datetime values and that the effective
-/// start is not after the effective end. Missing fields are filled from the
-/// existing row for comparison when one side is being updated (#934). If an
-/// existing value is needed for comparison but cannot be parsed, it is treated
-/// as a data-corruption error rather than silently ignored.
-///
-/// `start_at`: `None` = no change → use existing; `Some(None)` = clear;
-/// `Some(Some(ts))` = set.
-/// `end_at`: `None` = no change → use existing; `Some(ts)` = set (cannot be
-/// cleared).
-pub(crate) fn validate_task_datetimes(
-    start_at: Option<Option<&takusu_types::Timestamp>>,
-    end_at: Option<&takusu_types::Timestamp>,
-    existing_start: Option<&takusu_types::Timestamp>,
-    existing_end: Option<&takusu_types::Timestamp>,
-) -> Result<(), AppError> {
-    let effective_start = match &start_at {
-        None => existing_start.copied(),
-        Some(inner) => inner.copied(),
-    };
-    let effective_end = match &end_at {
-        None => existing_end.copied(),
-        Some(e) => Some(**e),
-    };
-
-    if let (Some(s), Some(e)) = (effective_start, effective_end)
-        && s > e
-    {
-        return Err(AppError::BadRequest(BadRequestKind::Other(format!(
-            "start_at must be <= end_at ({s} > {e})"
-        ))));
-    }
-    Ok(())
-}
-
-// ── Validate trait ─────────────────────────────────────────────────────
-
-/// Validate self-contained input before it reaches storage.
-///
-/// Implementations check only fields that can be validated without external
-/// context (no existing row, no timezone from settings). Context-dependent
-/// checks (e.g. `UpdateTask` datetime ordering against an existing task) are
-/// kept as explicit free-function calls at the call site.
-pub trait Validate {
-    fn validate(&self) -> Result<(), AppError>;
-}
-
-impl Validate for CreateSkill {
-    fn validate(&self) -> Result<(), AppError> {
-        const MAX_SLUG_LEN: usize = 64;
-        const MAX_NAME_LEN: usize = 100;
-        const MAX_DESC_LEN: usize = 500;
-        const MAX_BODY_LEN: usize = 64 * 1024;
-
-        if self.slug.is_empty() || self.slug.len() > MAX_SLUG_LEN {
-            return Err(AppError::BadRequest(BadRequestKind::Other(format!(
-                "slug must be 1..{MAX_SLUG_LEN} characters"
-            ))));
-        }
-        if self.slug.starts_with('.') || self.slug.contains('/') || self.slug.contains("..") {
-            return Err(AppError::BadRequest(BadRequestKind::Other(
-                "slug must not contain path components".into(),
-            )));
-        }
-        if !self
-            .slug
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
-        {
-            return Err(AppError::BadRequest(BadRequestKind::Other(
-                "slug must contain only ASCII letters, digits, '-', '_'".into(),
-            )));
-        }
-        if self.name.is_empty() || self.name.len() > MAX_NAME_LEN {
-            return Err(AppError::BadRequest(BadRequestKind::Other(format!(
-                "name must be 1..{MAX_NAME_LEN} characters"
-            ))));
-        }
-        if self.description.len() > MAX_DESC_LEN {
-            return Err(AppError::BadRequest(BadRequestKind::Other(format!(
-                "description must be at most {MAX_DESC_LEN} characters"
-            ))));
-        }
-        if self.body.is_empty() || self.body.len() > MAX_BODY_LEN {
-            return Err(AppError::BadRequest(BadRequestKind::Other(format!(
-                "body must be 1..{MAX_BODY_LEN} characters"
-            ))));
-        }
-        Ok(())
-    }
-}
-
-impl Validate for CreateMemory {
-    fn validate(&self) -> Result<(), AppError> {
-        if !matches!(
-            self.kind,
-            takusu_types::MemoryKind::ProperNoun
-                | takusu_types::MemoryKind::Fact
-                | takusu_types::MemoryKind::TaskNote
-        ) {
-            return Err(AppError::BadRequest(BadRequestKind::Other(
-                "kind must be 'proper_noun', 'fact', or 'task_note'".into(),
-            )));
-        }
-        if takusu_search::memory::normalize_key(&self.key).is_err() {
-            return Err(AppError::BadRequest(BadRequestKind::Other(
-                "invalid key".into(),
-            )));
-        }
-        if takusu_search::memory::normalize_content(&self.content).is_err() {
-            return Err(AppError::BadRequest(BadRequestKind::Other(
-                "invalid content".into(),
-            )));
-        }
-        if self
-            .subject_type
-            .as_ref()
-            .is_some_and(|s| s.as_str().len() > 64)
-        {
-            return Err(AppError::BadRequest(BadRequestKind::Other(
-                "subject_type too long".into(),
-            )));
-        }
-        if self.subject_id.as_ref().is_some_and(|s| s.len() > 64) {
-            return Err(AppError::BadRequest(BadRequestKind::Other(
-                "subject_id too long".into(),
-            )));
-        }
-        if self.kind == takusu_types::MemoryKind::TaskNote {
-            if self.subject_type != Some(takusu_types::SubjectType::Task) {
-                return Err(AppError::BadRequest(BadRequestKind::Other(
-                    "task_note requires subject_type='task'".into(),
-                )));
-            }
-            if self.subject_id.as_ref().is_none_or(|s| s.is_empty()) {
-                return Err(AppError::BadRequest(BadRequestKind::Other(
-                    "task_note requires subject_id".into(),
-                )));
-            }
-        }
-        Ok(())
-    }
-}
-
-impl Validate for CreateTask {
-    fn validate(&self) -> Result<(), AppError> {
-        validate_minutes(self.avg_minutes, self.sigma_minutes)?;
-        validate_title(&self.title)?;
-        // For create/replace there is no existing row to compare against.
-        validate_task_datetimes(Some(self.start_at.as_ref()), Some(&self.end_at), None, None)?;
-        Ok(())
-    }
-}
-
-impl Validate for UpdateTask {
-    fn validate(&self) -> Result<(), AppError> {
-        // Validate minutes if provided. avg_minutes is required to be present
-        // only when it is actually set in the update body.
-        if let Some(avg) = self.avg_minutes {
-            validate_minutes(avg, self.sigma_minutes)?;
-        } else if let Some(sigma) = self.sigma_minutes {
-            validate_minutes(0, Some(sigma))?;
-        }
-        if let Some(ref t) = self.title {
-            validate_title(t)?;
-        }
-        // Datetime ordering against an existing row is context-dependent and
-        // validated explicitly at the call site.
-        Ok(())
-    }
-}
-
-impl Validate for CreateHabit {
-    fn validate(&self) -> Result<(), AppError> {
-        validate_minutes(self.avg_minutes, self.sigma_minutes)?;
-        parse_recurrence(&self.recurrence).map(|_| ())?;
-        Ok(())
-    }
-}
-
-impl Validate for UpdateHabit {
-    fn validate(&self) -> Result<(), AppError> {
-        if let Some(avg) = self.avg_minutes {
-            validate_minutes(avg, self.sigma_minutes)?;
-        } else if let Some(sigma) = self.sigma_minutes {
-            validate_minutes(0, Some(sigma))?;
-        }
-        if let Some(recurrence) = &self.recurrence {
-            parse_recurrence(recurrence).map(|_| ())?;
-        }
-        Ok(())
-    }
-}
-
-impl Validate for CreateHabitScheduledSpan {
-    fn validate(&self) -> Result<(), AppError> {
-        crate::date_utils::validate_scheduled_span_dates(&self.start_date, &self.end_date)
-            .map_err(|msg| AppError::BadRequest(BadRequestKind::Other(msg)))
-    }
-}
-
-impl Validate for UpdateSettings {
-    fn validate(&self) -> Result<(), AppError> {
-        if let Some(tz) = &self.tz {
-            validate_timezone(tz)?;
-        }
-        // sleep_start/sleep_end are Option<TimeOfDay>, already validated by deserialization.
-        Ok(())
-    }
-}
-
-/// Validate a bulk-replace step array (#95): per-field sanity + DAG integrity
-/// (intra-habit references, cycle detection). Mirrors the worker-side
-/// `validate_steps`.
-impl Validate for [HabitStepInput] {
-    fn validate(&self) -> Result<(), AppError> {
-        use std::collections::HashMap;
-
-        for s in self {
-            validate_minutes(s.avg_minutes, s.sigma_minutes)?;
-            // start_time/end_time are TimeOfDay, already validated by deserialization.
-        }
-
-        // Build id → index map for steps that carry an id. A depends_on reference
-        // must point at a sibling step with a known id.
-        let mut id_to_idx: HashMap<String, usize> = HashMap::new();
-        for (i, s) in self.iter().enumerate() {
-            if let Some(ref id) = s.id {
-                id_to_idx.insert(id.clone(), i);
-            }
-        }
-
-        let mut adj = vec![Vec::new(); self.len()];
-        for (i, s) in self.iter().enumerate() {
-            for dep in &s.depends_on {
-                let Some(&dep_idx) = id_to_idx.get(dep) else {
-                    return Err(AppError::BadRequest(BadRequestKind::Other(format!(
-                        "step depends_on references unknown step id: {dep}"
-                    ))));
-                };
-                adj[i].push(dep_idx);
-            }
-        }
-
-        crate::graph::detect_cycle(&adj)
-            .map_err(|_| AppError::BadRequest(BadRequestKind::CycleDetected))?;
-        Ok(())
-    }
-}
-
-impl Validate for HabitPreviewRequest {
-    fn validate(&self) -> Result<(), AppError> {
-        validate_minutes(self.avg_minutes, self.sigma_minutes)?;
-        parse_recurrence(&self.recurrence).map(|_| ())?;
-        self.steps.validate()?;
-        Ok(())
-    }
 }
 
 // ── SettingsPlannerExt ─────────────────────────────────────────────────
@@ -434,3 +161,64 @@ impl SettingsPlannerExt for SettingsRow {
         }
     }
 }
+
+// ── tests ─────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── recurrence mirror vs. real type agreement (#1322) ─────────────
+    //
+    // `takusu_storage::validate::validate_recurrence` validates JSON shape
+    // using a lightweight mirror of `takusu_habit::RecurrenceRule` to avoid
+    // pulling `takusu-habit` into the WASM bundle. `parse_recurrence` (this
+    // crate) deserialises the real `takusu_habit::RecurrenceRule`. If the
+    // mirror and the real type ever drift, a recurrence could pass boundary
+    // validation but fail at sync/preview time. These tests assert that
+    // every JSON string accepted by one side is accepted by the other, and
+    // vice versa, for a representative set of inputs.
+
+    #[test]
+    fn recurrence_mirror_and_real_type_agree_on_valid() {
+        let valid = [
+            r#"{"freq":"daily","interval":1,"by_day":[],"by_month":[],"by_month_day":[],"count":null,"exdates":[]}"#,
+            r#"{"freq":"weekly","interval":2,"by_day":[{"n":null,"weekday":"mon"}],"by_month":[],"by_month_day":[],"count":10,"exdates":[]}"#,
+            r#"{"freq":"monthly","interval":1,"by_day":[],"by_month":[],"by_month_day":[15],"count":null,"exdates":["2024-02-29"]}"#,
+            r#"{"freq":"yearly","interval":3,"by_day":[],"by_month":[12],"by_month_day":[31],"count":null,"exdates":["2026-01-01","2026-07-04"]}"#,
+        ];
+        for json in &valid {
+            let mirror_ok = takusu_storage::validate::validate_recurrence(json).is_ok();
+            let real_ok = parse_recurrence(json).is_ok();
+            assert!(
+                mirror_ok && real_ok,
+                "mirror={mirror_ok} real={real_ok} for {json}"
+            );
+        }
+    }
+
+    #[test]
+    fn recurrence_mirror_and_real_type_agree_on_invalid() {
+        let invalid = [
+            // Not JSON.
+            "not json",
+            // Missing required field.
+            r#"{"freq":"daily"}"#,
+            // Invalid freq.
+            r#"{"freq":"hourly","interval":1,"by_day":[],"by_month":[],"by_month_day":[],"count":null,"exdates":[]}"#,
+            // Invalid exdate (not a date).
+            r#"{"freq":"daily","interval":1,"by_day":[],"by_month":[],"by_month_day":[],"count":null,"exdates":["notadate"]}"#,
+            // Impossible calendar date.
+            r#"{"freq":"daily","interval":1,"by_day":[],"by_month":[],"by_month_day":[],"count":null,"exdates":["2026-02-30"]}"#,
+        ];
+        for json in &invalid {
+            let mirror_err = takusu_storage::validate::validate_recurrence(json).is_err();
+            let real_err = parse_recurrence(json).is_err();
+            assert!(
+                mirror_err && real_err,
+                "mirror should reject and real should reject, got mirror_err={mirror_err} real_err={real_err} for {json}"
+            );
+        }
+    }
+}
+

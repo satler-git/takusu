@@ -17,6 +17,25 @@ pub enum WorkerError {
     Worker(#[from] worker::Error),
 }
 
+impl From<takusu_storage::StorageError> for WorkerError {
+    fn from(e: takusu_storage::StorageError) -> Self {
+        use takusu_storage::StorageError;
+        match e {
+            StorageError::NotFound(m) => WorkerError::NotFound(m),
+            StorageError::BadRequest(m) => WorkerError::BadRequest(m),
+            // Preserve the user-visible message the worker previously
+            // produced. The local server maps this to the structured
+            // `BadRequestKind::CycleDetected` variant via `storage_to_app`.
+            StorageError::BadRequestCycle => {
+                WorkerError::BadRequest("habit steps に循環依存が検出されました".into())
+            }
+            StorageError::Unauthorized => WorkerError::Unauthorized,
+            StorageError::Conflict(m) => WorkerError::Conflict(m),
+            StorageError::Internal(m) => WorkerError::Internal(m),
+        }
+    }
+}
+
 impl WorkerError {
     pub fn status(&self) -> u16 {
         match self {
