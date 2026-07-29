@@ -96,7 +96,7 @@ const makeStyles = (colors: ColorSet) =>
       minWidth: 56,
       fontSize: 13,
     },
-    whenValue: { fontSize: 13, fontWeight: '600' },
+    whenValue: { fontSize: 13, fontWeight: '600', flex: 1 },
     strikethrough: { textDecorationLine: 'line-through' },
     stepList: {
       borderWidth: 1,
@@ -414,7 +414,7 @@ function DateTimeDiff({ before, after, colors }: DateTimeDiffProps) {
   const a = parseDateTime(after);
   if (b && a && b.date === a.date) {
     return (
-      <Text style={{ color: colors.black }}>
+      <Text style={{ color: colors.black, flex: 1 }}>
         {b.date}{' '}
         <Text style={[styles.strikethrough, { color: colors.gray }]}>
           {b.time}
@@ -424,7 +424,7 @@ function DateTimeDiff({ before, after, colors }: DateTimeDiffProps) {
     );
   }
   return (
-    <Text style={{ color: colors.black }}>
+    <Text style={{ color: colors.black, flex: 1 }}>
       <Text style={[styles.strikethrough, { color: colors.gray }]}>
         {formatInstant(before)}
       </Text>{' '}

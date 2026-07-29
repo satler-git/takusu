@@ -932,7 +932,7 @@ const makeStyles = (colors: ColorSet) =>
       flexGrow: 1,
       justifyContent: 'flex-start',
     },
-    empty: { textAlign: 'center', marginBottom: 20 },
+    empty: { textAlign: 'center', marginTop: 20 },
     bubble: { maxWidth: '85%', padding: 12, borderRadius: 14 },
     userBubble: { alignSelf: 'flex-end' },
     assistantBubble: { alignSelf: 'flex-start' },
@@ -2382,17 +2382,9 @@ export function AgentView() {
 
   const listEmpty = useMemo(
     () => (
-      <View
-        style={{
-          flex: 1,
-          justifyContent: 'flex-end',
-          transform: [{ scaleY: -1 }],
-        }}
-      >
-        <Text style={[styles.empty, { color: colors.gray }]}>
-          何を予定しますか？
-        </Text>
-      </View>
+      <Text style={[styles.empty, { color: colors.gray }]}>
+        何を予定しますか？
+      </Text>
     ),
     [colors.gray, styles],
   );

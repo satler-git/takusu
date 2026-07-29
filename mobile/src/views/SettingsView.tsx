@@ -964,12 +964,25 @@ export function SettingsDetailView({
   }
 
   async function clearLogs() {
-    try {
-      await TakusuServerModule.clearLogs();
-      haptic.success();
-    } catch (e) {
-      void showError(e, 'エラー');
-    }
+    Alert.alert(
+      'ログを消去',
+      '保存されているログをすべて消去します。よろしいですか？',
+      [
+        { text: 'キャンセル', style: 'cancel' },
+        {
+          text: '消去',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await TakusuServerModule.clearLogs();
+              haptic.success();
+            } catch (e) {
+              void showError(e, 'エラー');
+            }
+          },
+        },
+      ],
+    );
   }
 
   async function copyLogs() {
@@ -2023,10 +2036,7 @@ export function SettingsDetailView({
               </Pressable>
 
               <Pressable
-                style={[
-                  styles.actionButton,
-                  { backgroundColor: colors.grayLight },
-                ]}
+                style={[styles.actionButton, { backgroundColor: colors.brand }]}
                 onPress={() => {
                   haptic.light();
                   copyLogs();
@@ -2034,31 +2044,23 @@ export function SettingsDetailView({
                 disabled={logCopyLoading || logExportLoading}
               >
                 {logCopyLoading ? (
-                  <ActivityIndicator color={colors.black} />
+                  <ActivityIndicator color={colors.onBrand} />
                 ) : (
-                  <Text
-                    style={[styles.actionButtonText, { color: colors.black }]}
-                  >
-                    ログをコピー
-                  </Text>
+                  <Text style={styles.actionButtonText}>ログをコピー</Text>
                 )}
               </Pressable>
 
               <Pressable
                 style={[
                   styles.actionButton,
-                  { backgroundColor: colors.grayLight },
+                  { backgroundColor: colors.destructive },
                 ]}
                 onPress={() => {
                   haptic.medium();
                   clearLogs();
                 }}
               >
-                <Text
-                  style={[styles.actionButtonText, { color: colors.black }]}
-                >
-                  ログを消去
-                </Text>
+                <Text style={styles.actionButtonText}>ログを消去</Text>
               </Pressable>
             </>
           )}
