@@ -448,17 +448,17 @@ impl Validate for [crate::HabitStepInput] {
 
         // Build id → index map for steps that carry an id. A depends_on reference
         // must point at a sibling step with a known id.
-        let mut id_to_idx: HashMap<String, usize> = HashMap::new();
+        let mut id_to_idx: HashMap<&str, usize> = HashMap::new();
         for (i, s) in self.iter().enumerate() {
             if let Some(ref id) = s.id {
-                id_to_idx.insert(id.clone(), i);
+                id_to_idx.insert(id.as_str(), i);
             }
         }
 
         let mut adj = vec![Vec::new(); self.len()];
         for (i, s) in self.iter().enumerate() {
             for dep in &s.depends_on {
-                let Some(&dep_idx) = id_to_idx.get(dep) else {
+                let Some(&dep_idx) = id_to_idx.get(dep.as_str()) else {
                     return Err(StorageError::BadRequest(format!(
                         "step depends_on references unknown step id: {dep}"
                     )));

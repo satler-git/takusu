@@ -179,7 +179,7 @@ impl super::TakusuApp {
                 let mut titles: HashMap<String, (String, Option<String>)> = HashMap::new();
                 for id in &task_ids {
                     if let Ok(t) = self.storage.get_task(id).await {
-                        titles.insert(t.id.clone(), (t.title, t.description));
+                        titles.insert(t.id, (t.title, t.description));
                     }
                 }
                 let db_mappings = self
