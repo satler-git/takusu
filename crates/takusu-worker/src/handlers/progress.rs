@@ -8,7 +8,6 @@ use crate::error::WorkerError;
 use crate::handlers::auth::db;
 use crate::handlers::d1::safe_all;
 use crate::handlers::id_resolver::resolve_task_id;
-use crate::handlers::settings::get_timezone;
 use crate::handlers::tasks::{allocate_display_id, select_one};
 use crate::handlers::tokens::{json_ok, parse_json};
 use crate::models::{
@@ -588,11 +587,9 @@ pub async fn split_task(mut req: Request, env: Env, id: &str) -> Result<Response
 
     let original = select_one(&database, &full).await?;
     if body.end_at.is_some() {
-        let tz = get_timezone(&database).await?;
         validate_task_datetimes(
             None,
             body.end_at.as_ref(),
-            &tz,
             original.start_at.as_ref(),
             None,
         )?;

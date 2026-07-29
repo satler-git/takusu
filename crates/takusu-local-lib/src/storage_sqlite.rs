@@ -18,7 +18,7 @@ use takusu_types::{DEFAULT_AUD, SCOPE_READ_WRITE};
 use takusu_types::{EnumLabel, Quantity, TaskStatus, TaskStatusFilter, Timestamp, WindowMode};
 
 use crate::config::LocalConfig;
-use crate::date_utils::validate_scheduled_span_dates;
+use takusu_storage::validate::{validate_quantity, validate_scheduled_span_dates};
 
 /// SQL predicate for tasks whose deadline has passed but are not finished.
 const OVERDUE_SQL: &str =
@@ -1016,8 +1016,7 @@ impl Storage for SqliteStorage {
         habit_id: &str,
         body: &CreateHabitScheduledSpan,
     ) -> StorageResult<HabitScheduledSpanRow> {
-        validate_scheduled_span_dates(&body.start_date, &body.end_date)
-            .map_err(StorageError::BadRequest)?;
+        validate_scheduled_span_dates(&body.start_date, &body.end_date)?;
         let full = resolve_habit_id(&self.pool, habit_id).await?;
         let id = uuid::Uuid::now_v7().to_string();
         let now = takusu_types::now_rfc3339();
@@ -2690,37 +2689,6 @@ fn memory_request_hash(payload: &str, operation_id: Option<&str>) -> String {
 
 fn progress_request_hash(payload: &str, operation_id: Option<&str>) -> String {
     crate::auth::hash_token(&format!("{}:{}", payload, operation_id.unwrap_or("")))
-}
-
-/// Reject nonsensical quantity values and ensure `done <= total` when both
-/// sides are provided.
-fn validate_quantity(
-    total: Option<Quantity>,
-    done: Option<Quantity>,
-    original: Option<Quantity>,
-) -> StorageResult<()> {
-    if let Some(t) = total
-        && t <= 0
-    {
-        return Err(StorageError::BadRequest(format!(
-            "quantity_total must be > 0 (got {t})"
-        )));
-    }
-    if let Some(o) = original
-        && o <= 0
-    {
-        return Err(StorageError::BadRequest(format!(
-            "original_quantity_total must be > 0 (got {o})"
-        )));
-    }
-    if let (Some(t), Some(d)) = (total, done)
-        && d > t
-    {
-        return Err(StorageError::BadRequest(format!(
-            "quantity_done cannot exceed quantity_total ({d} > {t})"
-        )));
-    }
-    Ok(())
 }
 
 /// Computed, validated values needed to apply an `UpdateTask` to an existing
