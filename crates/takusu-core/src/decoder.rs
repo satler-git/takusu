@@ -248,7 +248,7 @@ fn latest_end_for(
 ) -> Option<Point> {
     dependents[task_id]
         .iter()
-        .filter_map(|&d| index[d].map(|tw| tw.start))
+        .filter_map(|&d| get_time_window(index, d).map(|tw| tw.start))
         .min()
 }
 
@@ -750,7 +750,7 @@ impl PlacementStrategy for DeadlineStrategy {
 
 /// 前回スケジュールにおける `id` の開始時刻。未配置なら `None`。
 fn prev_start(previous: &[Option<TimeWindow>], id: usize) -> Option<i64> {
-    previous.get(id).and_then(|x| x.map(|tw| tw.start.0))
+    get_time_window(previous, id).map(|tw| tw.start.0)
 }
 
 /// Habit: habit タスクを優先し、前回 anchor 昇順で ready タスクを選んで

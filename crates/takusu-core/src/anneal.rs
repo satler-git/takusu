@@ -53,7 +53,7 @@ use crate::decoder::{DecodeInput, RepairMode, decode, decode_status, fallback_fo
 use crate::habit;
 use crate::placement::{
     CapacityMode, Placement, capacity_exceeded_for, compute_earliest, compute_earliest_indexed,
-    try_place,
+    get_time_window, try_place,
 };
 use evaluate::EvaluationContext;
 #[cfg(test)]
@@ -576,10 +576,7 @@ pub(crate) fn alns_search_pinned(
     if planner.warm_start && !planner.previous_schedule.is_empty() {
         priority.sort_by(|a, b| {
             let anchor = |id: &usize| {
-                planner
-                    .previous_schedule
-                    .get(*id)
-                    .and_then(|x| *x)
+                get_time_window(&planner.previous_schedule, *id)
                     .map(|tw| tw.start.0)
                     .unwrap_or(i64::MAX)
             };
@@ -801,12 +798,12 @@ fn has_dependency_violation(planner: &Planner, plan: &Plan, pinned_ids: &FxHashS
         if pinned_ids.contains(&task.id) || task.fixed {
             continue;
         }
-        let Some(tw) = pos_index[task.id] else {
+        let Some(tw) = get_time_window(&pos_index, task.id) else {
             continue;
         };
         let start = tw.start;
         for dep_id in &task.depends {
-            if let Some(Some(dep_tw)) = pos_index.get(*dep_id)
+            if let Some(dep_tw) = get_time_window(&pos_index, *dep_id)
                 && dep_tw.end > start
             {
                 return true;
@@ -839,13 +836,13 @@ fn force_fix_dependencies(planner: &Planner, plan: Plan, pinned_ids: &FxHashSet<
             if pinned_ids.contains(&task.id) || task.fixed {
                 continue;
             }
-            let Some(tw) = pos_index[task.id] else {
+            let Some(tw) = get_time_window(&pos_index, task.id) else {
                 continue;
             };
             let start = tw.start;
             let mut latest_dep_end: Option<Point> = None;
             for dep_id in &task.depends {
-                if let Some(Some(dep_tw)) = pos_index.get(*dep_id)
+                if let Some(dep_tw) = get_time_window(&pos_index, *dep_id)
                     && dep_tw.end > start
                 {
                     latest_dep_end = Some(latest_dep_end.map_or(dep_tw.end, |m| m.max(dep_tw.end)));
@@ -965,8 +962,11 @@ pub(crate) fn destroy_priority(
             pos_index[id] = Some(TimeWindow::new(s, e));
         }
     }
-    let scheduled =
-        |id: usize| -> TimeWindow { pos_index[id].unwrap_or(TimeWindow::new(Point(0), Point(0))) };
+    let scheduled = |id: usize| -> TimeWindow {
+        get_time_window(&pos_index, id)
+            .copied()
+            .unwrap_or(TimeWindow::new(Point(0), Point(0)))
+    };
 
     match op {
         DestroyOperator::Random => {
@@ -1523,12 +1523,12 @@ fn repair_polish(planner: &Planner, best: Plan, pinned_ids: Option<&FxHashSet<us
         {
             continue;
         }
-        let Some(tw) = index[task.id] else {
+        let Some(tw) = get_time_window(&index, task.id) else {
             continue;
         };
         let start = tw.start;
         for dep_id in &task.depends {
-            if let Some(Some(dep_tw)) = index.get(*dep_id)
+            if let Some(dep_tw) = get_time_window(&index, *dep_id)
                 && dep_tw.end > start
             {
                 violators.insert(task.id);
@@ -2072,13 +2072,13 @@ fn neighbor_repair_depend_into(
         if task.fixed {
             continue;
         }
-        let Some(tw) = index[task.id] else {
+        let Some(tw) = get_time_window(&index, task.id) else {
             continue;
         };
         let start = tw.start;
         let mut latest_dep_end: Option<Point> = None;
         for dep_id in &task.depends {
-            if let Some(Some(dep_tw)) = index.get(*dep_id)
+            if let Some(dep_tw) = get_time_window(&index, *dep_id)
                 && dep_tw.end > start
             {
                 latest_dep_end = Some(latest_dep_end.map_or(dep_tw.end, |m| m.max(dep_tw.end)));
@@ -2363,7 +2363,7 @@ fn incremental_decode(
             let earliest = compute_earliest_indexed(planner, &pos_index, task);
             let latest_end = dependents[task_id]
                 .iter()
-                .filter_map(|&d| pos_index[d].map(|tw| tw.start))
+                .filter_map(|&d| get_time_window(&pos_index, d).map(|tw| tw.start))
                 .min();
             if let Ok(tw) = try_place(
                 planner,
@@ -2400,7 +2400,7 @@ fn incremental_decode(
                 let earliest = compute_earliest_indexed(planner, &pos_index, task);
                 let latest_end = dependents[task_id]
                     .iter()
-                    .filter_map(|&d| pos_index[d].map(|tw| tw.start))
+                    .filter_map(|&d| get_time_window(&pos_index, d).map(|tw| tw.start))
                     .min();
                 let (start, end, _err) = fallback_for(
                     planner,

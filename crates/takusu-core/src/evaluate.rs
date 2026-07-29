@@ -84,7 +84,7 @@
 //! - w_inclusion=10: タスクをスケジュールから外さない誘因十分。
 
 use super::*;
-use crate::placement::{HabitGroupAnchor, Placement};
+use crate::placement::{HabitGroupAnchor, Placement, get_time_window};
 
 /// 評価関数の全重みを集約した構造体。
 ///
@@ -427,7 +427,7 @@ fn task_and_depend_scores(
     let mut score = 0.0;
     let mut depend_penalty_slots = 0i64;
     for task in &planner.tasks {
-        let Some(tw) = index[task.id] else {
+        let Some(tw) = get_time_window(index, task.id) else {
             continue;
         };
         let sched_start = tw.start;
@@ -460,7 +460,7 @@ fn task_and_depend_scores(
 
         // depend_score (merged into the same loop)
         for dep_id in &task.depends {
-            if let Some(Some(dep_tw)) = index.get(*dep_id)
+            if let Some(dep_tw) = get_time_window(index, *dep_id)
                 && dep_tw.end > sched_start
             {
                 let violation_end = dep_tw.end.0.min(sched_end.0);
@@ -480,7 +480,7 @@ fn buffer_score(planner: &Planner, index: &[Option<TimeWindow>], sorted: &[Place
     let w = &planner.weights;
     let mut score = 0.0;
     for task in &planner.tasks {
-        let Some(tw) = index[task.id] else {
+        let Some(tw) = get_time_window(index, task.id) else {
             continue;
         };
         let sched_end = tw.end;
@@ -731,11 +731,11 @@ fn stability_score(planner: &Planner, index: &[Option<TimeWindow>]) -> f64 {
     let now = planner.now;
     let mut penalty = 0.0;
     for task in &planner.tasks {
-        let Some(tw) = index[task.id] else {
+        let Some(tw) = get_time_window(index, task.id) else {
             continue;
         };
         let sched_start = tw.start;
-        let Some(Some(prev_tw)) = prev.get(task.id) else {
+        let Some(prev_tw) = get_time_window(prev, task.id) else {
             continue;
         };
         let prev_start = prev_tw.start;
@@ -776,7 +776,7 @@ fn habit_consistency_score(
         let Some(group) = task.habit_group else {
             continue;
         };
-        let Some(tw) = index[task.id] else {
+        let Some(tw) = get_time_window(index, task.id) else {
             continue;
         };
         let sched_start = tw.start;

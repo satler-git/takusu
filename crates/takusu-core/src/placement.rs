@@ -37,6 +37,14 @@ impl TimeWindow {
     }
 }
 
+/// `Vec<Option<TimeWindow>>` 形式の task_id → TimeWindow 索引から、
+/// 指定 task_id の `TimeWindow` を借用で取得する。
+/// `task_id` が範囲外、または未配置なら `None`。
+#[inline]
+pub(crate) fn get_time_window(index: &[Option<TimeWindow>], task_id: usize) -> Option<&TimeWindow> {
+    index.get(task_id).and_then(|x| x.as_ref())
+}
+
 /// #306: habit グループの anchor エントリ。
 /// `group` は `Task.habit_group`、`tod` は開始スロットの日付成分を除去した時刻帯
 /// (`start_slot % slots_per_day`)。
@@ -110,7 +118,7 @@ pub(crate) fn compute_earliest_indexed(
         earliest = earliest.max(start);
     }
     for dep_id in &task.depends {
-        if let Some(Some(tw)) = index.get(*dep_id) {
+        if let Some(tw) = get_time_window(index, *dep_id) {
             earliest = earliest.max(tw.end);
         }
     }
