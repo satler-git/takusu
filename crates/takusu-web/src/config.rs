@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use serde::Deserialize;
-use takusu_local_lib::config::LocalConfig;
+use takusu_local_lib::config::{LocalConfig, StorageKind};
 
 /// Web server configuration. Mirrors the fields of the shared CLI config
 /// (`~/.config/takusu/config.toml`) that the server needs, then maps onto
@@ -10,7 +10,7 @@ use takusu_local_lib::config::LocalConfig;
 #[derive(Debug, Default, Deserialize)]
 pub struct WebConfig {
     #[serde(default)]
-    pub storage: Option<String>,
+    pub storage: Option<StorageKind>,
     #[serde(default)]
     pub db: Option<String>,
     #[serde(default, alias = "url")]
@@ -86,11 +86,14 @@ pub fn load() -> Settings {
     let env_db = std::env::var("TAKUSU_DB").ok().filter(|s| !s.is_empty());
 
     if let Some(v) = env_storage {
-        cfg.storage = v;
+        cfg.storage = v.parse().unwrap_or_else(|e| {
+            eprintln!("Error: invalid TAKUSU_STORAGE: {e}");
+            std::process::exit(1);
+        });
     } else if env_db.is_some() {
         // TAKUSU_DB only makes sense for the sqlite backend, so prefer it over a
         // config file that may point at production workers.
-        cfg.storage = "sqlite".to_string();
+        cfg.storage = StorageKind::Sqlite;
     }
     if let Some(v) = env_db {
         cfg.db = v;

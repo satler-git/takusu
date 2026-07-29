@@ -1,11 +1,13 @@
 use serde::Deserialize;
 use std::path::PathBuf;
+use std::str::FromStr;
+use takusu_local_lib::config::StorageKind;
 use toml_edit::DocumentMut;
 
 #[derive(Debug, Deserialize, Default, Clone)]
 pub struct CliConfig {
     #[serde(default)]
-    pub storage: Option<String>,
+    pub storage: Option<StorageKind>,
     #[serde(default)]
     pub db: Option<String>,
     #[serde(default, alias = "url")]
@@ -112,6 +114,15 @@ pub fn set(key: &str, value: &str) -> Result<(), String> {
         "sleep_start" => ("sleep_start", None),
         "sleep_end" => ("sleep_end", None),
         _ => return Err(format!("unknown key: {key}")),
+    };
+    // Validate and normalize `storage` so the file always contains a value
+    // that `StorageKind` deserialization accepts (e.g. `Workers` -> `workers`).
+    // Without this, `config set --storage Workers` would write a value that
+    // silently breaks the next `config::load()`.
+    let value: String = if key == "storage" {
+        StorageKind::from_str(value).map(|kind| kind.to_string())?
+    } else {
+        value.to_string()
     };
     if let Some(alias) = alias {
         doc.remove(alias);

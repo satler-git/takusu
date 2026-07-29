@@ -28,7 +28,7 @@ async fn build_storage(
     workers_token: &str,
 ) -> Result<Arc<dyn Storage>, Box<dyn std::error::Error>> {
     let workers_url = cfg.workers_url();
-    let storage: Arc<dyn Storage> = match cfg.storage_kind() {
+    let storage: Arc<dyn Storage> = match cfg.storage {
         #[cfg(feature = "sqlite")]
         StorageKind::Sqlite => {
             if cfg.jwt_secret.is_empty() {
