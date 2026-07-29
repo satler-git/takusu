@@ -14,7 +14,6 @@ use crate::tool::{
     ChangeOperation, ChangeReceipt, InferredField, InvalidArgsError, ProposedChange, TargetKind,
     ToolError,
 };
-use crate::tools::memory::client_error;
 use crate::{AgentError, AgentSession, ApprovalRequest, ApprovalResult};
 
 impl AgentSession {
@@ -206,50 +205,21 @@ impl AgentSession {
         if let Some(obj) = args.as_object_mut() {
             obj.remove("steps");
         }
-        let (target_id, current_updated_at, existing_habit) =
-            match (change.target.kind, change.operation) {
-                (_, ChangeOperation::Create) | (TargetKind::Schedule, _) => {
-                    (String::new(), None, None)
-                }
-                (TargetKind::Task, _) => {
-                    let task = self
-                        .client()
-                        .get_task(&change.target.display_id)
-                        .await
-                        .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
-                    (task.id, Some(task.updated_at), None)
-                }
-                (TargetKind::Habit, _) => {
-                    let habit = self
-                        .client()
-                        .get_habit(&change.target.display_id)
-                        .await
-                        .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
-                    (
-                        habit.habit.id.clone(),
-                        Some(habit.habit.updated_at),
-                        Some(habit),
-                    )
-                }
-                (TargetKind::Skill, _) => {
-                    let skill = self
-                        .client()
-                        .get_skill(&change.target.display_id)
-                        .await
-                        .map_err(|e| AgentError::Tool(ToolError::Other(Box::new(e))))?;
-                    (skill.slug, Some(skill.updated_at), None)
-                }
-                (TargetKind::Memory, _) => {
-                    let memory = self
-                        .client()
-                        .get_memory(&change.target.display_id)
-                        .await
-                        .map_err(|e| AgentError::Tool(client_error(e)))?;
-                    (memory.id, Some(memory.updated_at), None)
-                }
-            };
+        let executor =
+            change_executor::dispatch(change.target.kind, change.operation).ok_or_else(|| {
+                AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::no_field(
+                    "unsupported proposal",
+                )))
+            })?;
+        let target = executor
+            .fetch_target(&change_executor::FetchContext {
+                session: self,
+                change,
+            })
+            .await?;
         if let Some(observed) = &change.observed_updated_at
-            && current_updated_at
+            && target
+                .current_updated_at
                 .as_ref()
                 .map(|t| t.to_string())
                 .as_deref()
@@ -259,18 +229,12 @@ impl AgentSession {
                 "target changed after proposal".into(),
             )));
         }
-        let executor =
-            change_executor::dispatch(change.target.kind, change.operation).ok_or_else(|| {
-                AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::no_field(
-                    "unsupported proposal",
-                )))
-            })?;
         let ctx = change_executor::ChangeContext {
             session: self,
-            target_id,
+            target_id: target.target_id,
             args,
             steps_value,
-            existing_habit,
+            existing_habit: target.existing_habit,
             operation_id,
             change,
         };

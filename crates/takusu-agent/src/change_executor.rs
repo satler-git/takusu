@@ -7,6 +7,10 @@
 //! than editing a central 20+ arm `match`. The arms previously lived inline
 //! in `AgentSession::execute_proposed_change`; see issue #1222.
 //!
+//! Target fetching is also resolved through [`dispatch`] via
+//! [`ChangeExecutor::fetch_target`], so adding a new `TargetKind` only
+//! requires editing this module; see issue #1330.
+//!
 //! Error-mapping conventions are preserved exactly from the original arms:
 //! - Task/Habit/Skill/Schedule client failures map to `ToolError::Other`.
 //! - Memory client failures map via `tools::memory::client_error`.
@@ -26,6 +30,7 @@ use takusu_client::{
     MoveEntry, RecordProgress, SaveScheduleRequest, ScheduleEntry, SplitTask, UpdateHabit,
     UpdateMemory, UpdateSkill, UpdateTask,
 };
+use takusu_types::Timestamp;
 
 use crate::tools::memory::client_error as memory_client_error;
 use crate::tools::takusu::client_error as takusu_client_error;
@@ -43,6 +48,34 @@ pub(crate) struct ExecutionOutcome {
     pub before: Option<Value>,
     pub after: Option<Value>,
     pub target_revision: Option<i64>,
+}
+
+/// Resolved target identity and freshness snapshot fetched before executing
+/// a proposed change.
+///
+/// `target_id` is empty for `Create` and `Schedule` operations, which do not
+/// address an existing row. `existing_habit` is only populated for `Habit`
+/// targets, where `Update` needs the current steps to diff against.
+#[derive(Default)]
+pub(crate) struct TargetInfo {
+    pub target_id: String,
+    pub current_updated_at: Option<Timestamp>,
+    pub existing_habit: Option<HabitDetail>,
+}
+
+/// Read-only context handed to [`ChangeExecutor::fetch_target`].
+///
+/// This is a slimmer view than [`ChangeContext`] because the target id and
+/// habit detail are not known until `fetch_target` runs.
+pub(crate) struct FetchContext<'a> {
+    pub session: &'a AgentSession,
+    pub change: &'a ProposedChange,
+}
+
+impl<'a> FetchContext<'a> {
+    fn client(&self) -> &takusu_client::Client {
+        self.session.client()
+    }
 }
 
 /// Shared context handed to every `ChangeExecutor` arm.
@@ -75,6 +108,15 @@ impl<'a> ChangeContext<'a> {
 /// This trait is object-safe: `dispatch` returns `&'static dyn ChangeExecutor`.
 #[async_trait]
 pub(crate) trait ChangeExecutor: Send + Sync {
+    /// Resolve the existing target row addressed by the proposed change.
+    ///
+    /// Returns an empty [`TargetInfo`] for `Create` and `Schedule` operations,
+    /// which do not address an existing row. For other operations the
+    /// per-kind fetch is resolved through the same `dispatch` table that
+    /// selects [`execute`](Self::execute), so adding a new `TargetKind` only
+    /// requires editing this module (see issue #1330).
+    async fn fetch_target(&self, ctx: &FetchContext<'_>) -> Result<TargetInfo, AgentError>;
+
     async fn execute(&self, ctx: &ChangeContext<'_>) -> Result<ExecutionOutcome, AgentError>;
 }
 
@@ -116,6 +158,16 @@ impl<T> ChangeExecutor for T
 where
     T: ChangeHandler,
 {
+    async fn fetch_target(&self, ctx: &FetchContext<'_>) -> Result<TargetInfo, AgentError> {
+        // `Create` and `Schedule` never address an existing row.
+        if matches!(ctx.change.operation, ChangeOperation::Create)
+            || ctx.change.target.kind == TargetKind::Schedule
+        {
+            return Ok(TargetInfo::default());
+        }
+        fetch_target_for_kind(ctx).await
+    }
+
     async fn execute(&self, ctx: &ChangeContext<'_>) -> Result<ExecutionOutcome, AgentError> {
         let args = T::deserialize_args(&ctx.args)?;
         self.execute_typed(ctx, &args).await
@@ -123,6 +175,57 @@ where
 }
 
 // --- error-mapping helpers ---------------------------------------------------
+
+/// Resolve the existing target row for a non-`Create`, non-`Schedule` change.
+///
+/// Branches on `TargetKind` only; the `(kind, operation)` dispatch is handled
+/// by [`dispatch`]. Error-mapping mirrors the original `execute_proposed_change`
+/// arms: Task/Habit/Skill use [`other_err`], Memory uses
+/// [`memory_client_error`].
+async fn fetch_target_for_kind(ctx: &FetchContext<'_>) -> Result<TargetInfo, AgentError> {
+    let display_id = &ctx.change.target.display_id;
+    match ctx.change.target.kind {
+        TargetKind::Task => {
+            let task = ctx.client().get_task(display_id).await.map_err(other_err)?;
+            Ok(TargetInfo {
+                target_id: task.id,
+                current_updated_at: Some(task.updated_at),
+                existing_habit: None,
+            })
+        }
+        TargetKind::Habit => {
+            let habit = ctx.client().get_habit(display_id).await.map_err(other_err)?;
+            Ok(TargetInfo {
+                target_id: habit.habit.id.clone(),
+                current_updated_at: Some(habit.habit.updated_at),
+                existing_habit: Some(habit),
+            })
+        }
+        TargetKind::Skill => {
+            let skill = ctx.client().get_skill(display_id).await.map_err(other_err)?;
+            Ok(TargetInfo {
+                target_id: skill.slug,
+                current_updated_at: Some(skill.updated_at),
+                existing_habit: None,
+            })
+        }
+        TargetKind::Memory => {
+            let memory = ctx
+                .client()
+                .get_memory(display_id)
+                .await
+                .map_err(|e| AgentError::Tool(memory_client_error(e)))?;
+            Ok(TargetInfo {
+                target_id: memory.id,
+                current_updated_at: Some(memory.updated_at),
+                existing_habit: None,
+            })
+        }
+        // `Schedule` is short-circuited by the blanket impl; this arm is
+        // unreachable but kept exhaustive for `TargetKind`.
+        TargetKind::Schedule => Ok(TargetInfo::default()),
+    }
+}
 
 /// Map a serde failure into the recoverable `InvalidArgs` error used by every
 /// arm that deserializes typed arguments.
