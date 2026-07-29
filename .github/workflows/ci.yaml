@@ -259,6 +259,14 @@ jobs:
         working-directory: mobile
         run: npx tsc --noEmit
 
+      - name: Typecheck scripts
+        working-directory: mobile
+        run: npm run typecheck:scripts
+
+      - name: Color pairs up to date
+        working-directory: mobile
+        run: npm run extract-colors:check
+
       - name: Test
         working-directory: mobile
         run: npm run test
