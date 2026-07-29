@@ -624,29 +624,17 @@ struct ChatCompletionResponse {
 #[derive(Deserialize, Debug)]
 struct Usage {
     #[serde(default)]
-    #[allow(dead_code)]
     prompt_tokens: u32,
-    #[serde(default)]
-    #[allow(dead_code)]
-    completion_tokens: u32,
-    #[serde(default)]
-    #[allow(dead_code)]
-    total_tokens: u32,
 }
 
 #[derive(Deserialize, Debug)]
 struct Choice {
-    #[allow(dead_code)]
-    index: u32,
     message: ResponseMessage,
-    #[allow(dead_code)]
     finish_reason: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]
 struct ResponseMessage {
-    #[allow(dead_code)]
-    role: String,
     content: Option<String>,
     #[serde(default)]
     tool_calls: Option<Vec<ToolCallResponse>>,
@@ -655,9 +643,6 @@ struct ResponseMessage {
 #[derive(Deserialize, Debug)]
 struct ToolCallResponse {
     id: String,
-    #[serde(rename = "type")]
-    #[allow(dead_code)]
-    type_: String,
     function: ToolCallFunction,
 }
 
@@ -675,11 +660,6 @@ struct ErrorResponse {
 #[derive(Deserialize, Debug)]
 struct ErrorDetail {
     message: String,
-    #[serde(rename = "type")]
-    #[allow(dead_code)]
-    type_: Option<String>,
-    #[allow(dead_code)]
-    code: Option<String>,
 }
 
 fn extract_error_message(text: &str) -> String {
@@ -698,16 +678,12 @@ struct ChatCompletionChunk {
 
 #[derive(Deserialize, Debug)]
 struct ChunkChoice {
-    #[allow(dead_code)]
-    index: u32,
     delta: ChunkDelta,
     finish_reason: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Default)]
 struct ChunkDelta {
-    #[allow(dead_code)]
-    role: Option<String>,
     content: Option<String>,
     #[serde(rename = "reasoning_content")]
     reasoning_content: Option<String>,
@@ -718,9 +694,6 @@ struct ChunkDelta {
 struct ChunkToolCall {
     index: usize,
     id: Option<String>,
-    #[serde(rename = "type")]
-    #[allow(dead_code)]
-    type_: Option<String>,
     function: Option<ChunkToolCallFunction>,
 }
 
