@@ -288,7 +288,10 @@ impl WorkersStorage {
 async fn map_response<T: DeserializeOwned>(resp: reqwest::Response) -> StorageResult<T> {
     let status = resp.status().as_u16();
     if status >= 400 {
-        let body = resp.text().await.unwrap_or_default();
+        let body = resp
+            .text()
+            .await
+            .map_err(|e| StorageError::Io(format!("read error body (status {status}): {e}")))?;
         return Err(map_status(status, body));
     }
     resp.json::<T>()
@@ -299,7 +302,10 @@ async fn map_response<T: DeserializeOwned>(resp: reqwest::Response) -> StorageRe
 async fn map_empty(resp: reqwest::Response) -> StorageResult<()> {
     let status = resp.status().as_u16();
     if status >= 400 {
-        let body = resp.text().await.unwrap_or_default();
+        let body = resp
+            .text()
+            .await
+            .map_err(|e| StorageError::Io(format!("read error body (status {status}): {e}")))?;
         return Err(map_status(status, body));
     }
     Ok(())
@@ -337,7 +343,10 @@ impl Storage for WorkersStorage {
                 .map_err(|e| StorageError::Internal(format!("invalid verify response: {e}"))),
             401 => Ok(None),
             other => {
-                let body = resp.text().await.unwrap_or_default();
+                let body = resp
+                    .text()
+                    .await
+                    .map_err(|e| StorageError::Io(format!("read verify body (status {other}): {e}")))?;
                 Err(StorageError::Internal(format!(
                     "verify status {other}: {body}"
                 )))
@@ -628,7 +637,10 @@ impl Storage for WorkersStorage {
             }
             404 => Ok(None),
             other => {
-                let body = resp.text().await.unwrap_or_default();
+                let body = resp
+                    .text()
+                    .await
+                    .map_err(|e| StorageError::Io(format!("read schedule body (status {other}): {e}")))?;
                 Err(StorageError::Internal(format!(
                     "schedule status {other}: {body}"
                 )))

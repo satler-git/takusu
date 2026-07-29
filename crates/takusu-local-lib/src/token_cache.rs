@@ -22,6 +22,10 @@ pub enum TokenState {
 }
 
 fn now_seconds() -> i64 {
+    // `duration_since(UNIX_EPOCH)` only fails if the system clock is before
+    // 1970, which is not a realistic runtime condition. Falling back to 0
+    // keeps the cache usable (treats entries as freshly created) rather than
+    // panicking; the `.ok()` is intentional.
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .ok()

@@ -32,6 +32,7 @@ impl From<takusu_storage::StorageError> for WorkerError {
             StorageError::Unauthorized => WorkerError::Unauthorized,
             StorageError::Conflict(m) => WorkerError::Conflict(m),
             StorageError::Internal(m) => WorkerError::Internal(m),
+            StorageError::Io(m) => WorkerError::Internal(m),
         }
     }
 }

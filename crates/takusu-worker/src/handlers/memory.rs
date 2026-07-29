@@ -25,17 +25,26 @@ fn operation_id(req: &Request) -> Option<String> {
         .or_else(|| req.headers().get("idempotency-key").ok().flatten())
 }
 
-fn request_hash_create(body: &CreateMemory, operation_id: Option<&str>) -> String {
-    let payload = serde_json::to_string(body).unwrap_or_default();
-    auth::hash_token(&format!("{}:{}", payload, operation_id.unwrap_or("")))
+fn request_hash_create(
+    body: &CreateMemory,
+    operation_id: Option<&str>,
+) -> Result<String, WorkerError> {
+    let payload = serde_json::to_string(body)
+        .map_err(|e| WorkerError::Internal(format!("serialize memory body: {e}")))?;
+    Ok(auth::hash_token(&format!("{}:{}", payload, operation_id.unwrap_or(""))))
 }
 
-fn request_hash_update(id: &str, body: &UpdateMemory, operation_id: Option<&str>) -> String {
-    let payload = serde_json::to_string(body).unwrap_or_default();
-    auth::hash_token(&format!(
+fn request_hash_update(
+    id: &str,
+    body: &UpdateMemory,
+    operation_id: Option<&str>,
+) -> Result<String, WorkerError> {
+    let payload = serde_json::to_string(body)
+        .map_err(|e| WorkerError::Internal(format!("serialize memory body: {e}")))?;
+    Ok(auth::hash_token(&format!(
         "update:{id}:{payload}:{}",
         operation_id.unwrap_or("")
-    ))
+    )))
 }
 
 fn request_hash_delete(id: &str, observed_revision: i64, operation_id: Option<&str>) -> String {
@@ -174,7 +183,7 @@ pub async fn create(mut req: Request, env: Env) -> Result<Response, WorkerError>
         body.subject_id.clone().unwrap_or_default()
     };
 
-    let hash = request_hash_create(&body, op.as_deref());
+    let hash = request_hash_create(&body, op.as_deref())?;
     if let Some(op_id) = op.as_deref()
         && let Some(json) = check_idempotency(&database, op_id, &hash).await?
     {
@@ -334,7 +343,7 @@ pub async fn update(mut req: Request, env: Env, id: &str) -> Result<Response, Wo
     }
 
     let op = operation_id(&req);
-    let hash = request_hash_update(id, &body, op.as_deref());
+    let hash = request_hash_update(id, &body, op.as_deref())?;
     if let Some(op_id) = op.as_deref()
         && let Some(json) = check_idempotency(&database, op_id, &hash).await?
     {

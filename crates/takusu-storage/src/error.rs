@@ -18,4 +18,10 @@ pub enum StorageError {
     Conflict(String),
     #[error("internal: {0}")]
     Internal(String),
+    /// An I/O or transport failure (HTTP body read, serialization, filesystem
+    /// operation) that is distinct from a backend logic error. The inner
+    /// string preserves the underlying error message for diagnostics so the
+    /// cause is not hidden behind an empty string.
+    #[error("io: {0}")]
+    Io(String),
 }
