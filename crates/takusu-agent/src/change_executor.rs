@@ -11,12 +11,15 @@
 //! [`ChangeExecutor::fetch_target`], so adding a new `TargetKind` only
 //! requires editing this module; see issue #1330.
 //!
-//! Error-mapping conventions are preserved exactly from the original arms:
-//! - Task/Habit/Skill/Schedule client failures map to `ToolError::Other`.
+//! Error-mapping conventions:
+//! - Task/Habit/Skill/Schedule create/update/delete/fetch client failures
+//!   map to `ToolError::Other`.
 //! - Memory client failures map via `tools::memory::client_error`.
-//! - Task work-state operations (move/start/pause/progress/complete/split)
-//!   map via `tools::takusu::client_error`, except `Move` which has its own
-//!   409 → `Conflict` mapping.
+//! - Task work-state operations (start/pause/progress/complete/split) map
+//!   via `tools::takusu::client_error`, which classifies 400 as `InvalidArgs`,
+//!   404 as `NotFound`, and 409 as `Conflict`.
+//! - `Move` keeps its own mapping: 409 becomes `Conflict`, and all other
+//!   client errors become `ToolError::Other`.
 
 use std::future::Future;
 use std::str::FromStr;

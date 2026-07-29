@@ -12,10 +12,9 @@ use crate::tools::{ToolContext, ToolModule};
 // Re-export shared helpers so external modules (progress.rs, rrule.rs,
 // day_details.rs, runner.rs, lib.rs, takusu-android) can access them at
 // `crate::tools::takusu::*` / `takusu_agent::tools::takusu::*`.
+pub(crate) use super::client_error;
 pub use common::TimeZoneCache;
-pub(crate) use common::{
-    TaskContext, client_error, server_timezone, strip_leading_hash, task_json,
-};
+pub(crate) use common::{TaskContext, server_timezone, strip_leading_hash, task_json};
 
 // Bring submodule items into scope for `register_tools`.
 use mutation::*;

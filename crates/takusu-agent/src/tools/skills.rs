@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use takusu_client::Client;
 
-use crate::tools::{ToolContext, ToolModule};
+use crate::tools::{ToolContext, ToolModule, client_error};
 use crate::{
     ChangeOperation, InferredField, InvalidArgsError, ProposalContent, ProposedChange, Target,
     TargetKind, ToolError, ToolExposure, ToolName, ToolOutput, ToolRegistry, TypedTool,
@@ -121,22 +121,6 @@ impl ToolModule for SkillsModule {
 static SKILLS_MODULE: &dyn ToolModule = &SkillsModule;
 
 inventory::submit!(SKILLS_MODULE);
-
-fn client_error(error: takusu_client::ClientError) -> ToolError {
-    match error {
-        takusu_client::ClientError::Api {
-            status: 400..=499,
-            body,
-        } => {
-            if body.contains("not found") || body.contains("Not found") {
-                ToolError::NotFound(body)
-            } else {
-                ToolError::InvalidArgs(InvalidArgsError::no_field(body))
-            }
-        }
-        error => ToolError::Other(Box::new(error)),
-    }
-}
 
 fn validate_slug(slug: &str) -> Result<(), ToolError> {
     if slug.is_empty() || slug.len() > 64 {
