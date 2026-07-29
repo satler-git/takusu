@@ -2035,8 +2035,9 @@ export function AgentView() {
           }
           try {
             const path = await currentFilePromise;
-            if (!path) continue;
-            await TakusuAudioModule.playFile(path);
+            if (path) {
+              await TakusuAudioModule.playFile(path);
+            }
           } catch (ttsError: unknown) {
             const ttsMessage =
               ttsError instanceof Error ? ttsError.message : String(ttsError);
@@ -2055,6 +2056,13 @@ export function AgentView() {
             console.error('TTS failed:', ttsMessage);
             void showError(ttsMessage, '音声読み上げに失敗');
             break;
+          }
+          // Re-check the queue after the await calls. Blocks that arrived
+          // during synthesis/playback were pushed to ttsQueueRef but the
+          // pre-await shift() already returned undefined, so without this
+          // re-check the loop would exit and strand those blocks.
+          if (!nextBlock && !nextFilePromise) {
+            nextBlock = ttsQueueRef.current.shift();
           }
         }
       } finally {
