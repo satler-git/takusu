@@ -1,6 +1,6 @@
 use aide::axum::ApiRouter;
-use aide::openapi::{Info, OpenApi, Server};
 use aide::axum::routing as api;
+use aide::openapi::{Info, OpenApi, Server};
 use axum::Extension;
 use axum::Router;
 use axum::body::Body;
@@ -80,7 +80,10 @@ fn build_api_router(open_api: &mut OpenApi) -> Router<AppState> {
         )
         .api_route("/tasks/{id}/split", api::post(handlers::task::split_task))
         .api_route("/habits", api::post(handlers::habit::create_habit))
-        .api_route("/habits/batch", api::post(handlers::habit::create_habit_batch))
+        .api_route(
+            "/habits/batch",
+            api::post(handlers::habit::create_habit_batch),
+        )
         .api_route("/habits/preview", api::post(handlers::habit::preview_habit))
         .api_route("/habits", api::get(handlers::habit::list_habits))
         // `/habits/scheduled-spans` and `/habits/steps` must be declared before
@@ -90,7 +93,10 @@ fn build_api_router(open_api: &mut OpenApi) -> Router<AppState> {
             "/habits/scheduled-spans",
             api::get(handlers::habit::list_all_habit_scheduled_spans),
         )
-        .api_route("/habits/steps", api::get(handlers::habit::list_all_habit_steps))
+        .api_route(
+            "/habits/steps",
+            api::get(handlers::habit::list_all_habit_steps),
+        )
         .api_route("/habits/{id}", api::get(handlers::habit::get_habit))
         .api_route("/habits/{id}", api::put(handlers::habit::replace_habit))
         .api_route("/habits/{id}", api::patch(handlers::habit::update_habit))
@@ -111,7 +117,10 @@ fn build_api_router(open_api: &mut OpenApi) -> Router<AppState> {
             "/habits/{id}/scheduled-spans/{span_id}",
             api::delete(handlers::habit::delete_habit_scheduled_span),
         )
-        .api_route("/habits/{id}/steps", api::get(handlers::habit::list_habit_steps))
+        .api_route(
+            "/habits/{id}/steps",
+            api::get(handlers::habit::list_habit_steps),
+        )
         .api_route(
             "/habits/{id}/steps",
             api::put(handlers::habit::replace_habit_steps),
@@ -168,7 +177,10 @@ fn build_api_router(open_api: &mut OpenApi) -> Router<AppState> {
         .api_route("/skills", api::post(handlers::skills::create_skill))
         .api_route("/skills/{slug}", api::get(handlers::skills::get_skill))
         .api_route("/skills/{slug}", api::patch(handlers::skills::update_skill))
-        .api_route("/skills/{slug}", api::delete(handlers::skills::delete_skill))
+        .api_route(
+            "/skills/{slug}",
+            api::delete(handlers::skills::delete_skill),
+        )
         .api_route("/memory", api::post(handlers::memory::create_memory))
         .api_route("/memory/search", api::get(handlers::memory::search_memory))
         .api_route("/memory/{id}", api::get(handlers::memory::get_memory))
@@ -218,9 +230,7 @@ async fn health() -> &'static str {
     "ok"
 }
 
-async fn serve_openapi(
-    Extension(api): Extension<Arc<OpenApi>>,
-) -> axum::response::Response {
+async fn serve_openapi(Extension(api): Extension<Arc<OpenApi>>) -> axum::response::Response {
     // Serialize once and return the bytes directly to avoid cloning the
     // full ~360 KB OpenApi document on every request.
     let body = serde_json::to_vec(api.as_ref()).unwrap_or_default();

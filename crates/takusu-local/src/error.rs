@@ -1,5 +1,5 @@
-use aide::operation::OperationOutput;
 use aide::openapi::{Response, StatusCode as OpenApiStatusCode};
+use aide::operation::OperationOutput;
 use schemars::JsonSchema;
 use serde::Serialize;
 use takusu_local_lib::error::AppError;
