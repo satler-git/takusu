@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -15,24 +16,29 @@ use crate::tool::OpenAITool;
 
 pub use crate::compact::CompactionSettings;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+/// Identifies which LLM backend implementation to build.
+///
+/// Currently only `OpenAICompatible` exists — OpenAI, OpenRouter, and custom
+/// OpenAI-compatible endpoints are all served by [`OpenAIClient`]. The enum
+/// is kept as a single variant so that future non-OpenAI-compatible providers
+/// (e.g. Anthropic native, Gemini) can be added without touching the dispatch
+/// sites that call [`build_llm_client`].
+///
+/// The legacy `openai`, `openrouter`, and `custom` values (from the previous
+/// three-variant enum) are accepted as aliases during deserialization so that
+/// existing `agent.toml` files and persisted mobile settings keep working.
+/// They all map to `OpenAICompatible`. Serialization always emits
+/// `openai_compatible`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum LlmProviderKind {
-    Openai,
-    Openrouter,
-    Custom,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LlmProviderConfig {
-    pub id: String,
-    pub name: String,
-    pub provider: LlmProviderKind,
-    pub base_url: String,
-    pub selected_model: String,
-    #[serde(default)]
-    pub cached_models: Vec<String>,
-    pub models_fetched_at: Option<String>,
+    #[serde(
+        rename = "openai_compatible",
+        alias = "openai",
+        alias = "openrouter",
+        alias = "custom"
+    )]
+    #[default]
+    OpenAICompatible,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -46,6 +52,8 @@ pub struct LlmConfig {
     pub api_key_env: String,
     #[serde(default)]
     pub api_key: String,
+    #[serde(default)]
+    pub provider: LlmProviderKind,
     #[serde(default)]
     pub permissions: Permissions,
     #[serde(default = "default_max_history")]
@@ -71,6 +79,7 @@ impl Default for LlmConfig {
             model: default_llm_model(),
             api_key_env: default_llm_api_key_env(),
             api_key: String::new(),
+            provider: LlmProviderKind::default(),
             permissions: Permissions::default(),
             max_history: default_max_history(),
             max_context_tokens: default_max_context_tokens(),
@@ -375,6 +384,39 @@ pub trait LlmClient: Send + Sync {
     }
 }
 
+#[async_trait]
+impl<T: LlmClient + ?Sized> LlmClient for Arc<T> {
+    async fn chat(
+        &self,
+        messages: &[Message],
+        tools: &[OpenAITool],
+    ) -> Result<LlmResponse, LlmError> {
+        (**self).chat(messages, tools).await
+    }
+
+    async fn chat_stream(
+        &self,
+        messages: &[Message],
+        tools: &[OpenAITool],
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<LlmStreamEvent, LlmError>> + Send>>, LlmError>
+    {
+        (**self).chat_stream(messages, tools).await
+    }
+}
+
+/// Build an [`LlmClient`] from [`LlmConfig`], dispatching on `config.provider`.
+///
+/// This is the single construction site for LLM clients. Adding a new
+/// non-OpenAI-compatible provider means adding a variant to [`LlmProviderKind`]
+/// and a match arm here — callers never need to change.
+pub fn build_llm_client(
+    config: &LlmConfig,
+) -> Result<Arc<dyn LlmClient + Send + Sync>, LlmError> {
+    match config.provider {
+        LlmProviderKind::OpenAICompatible => Ok(Arc::new(OpenAIClient::new(config)?)),
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct OpenAIClient {
     client: reqwest::Client,
@@ -387,21 +429,21 @@ pub struct OpenAIClient {
 }
 
 impl OpenAIClient {
-    pub fn new(config: LlmConfig) -> Result<Self, LlmError> {
+    pub fn new(config: &LlmConfig) -> Result<Self, LlmError> {
         let client = takusu_client::default_http_client(Some(config.request_timeout.as_secs()))
             .map_err(|e| LlmError::Request(e.to_string()))?;
 
         let api_key = if config.api_key.is_empty() {
             std::env::var(&config.api_key_env).unwrap_or_default()
         } else {
-            config.api_key
+            config.api_key.clone()
         };
 
         Ok(Self {
             client,
-            base_url: config.base_url,
+            base_url: config.base_url.clone(),
             api_key,
-            model: config.model,
+            model: config.model.clone(),
             request_timeout: config.request_timeout,
             max_retries: 3,
             initial_backoff: Duration::from_millis(500),
@@ -975,6 +1017,42 @@ mod tests {
     use super::*;
 
     #[test]
+    fn build_llm_client_dispatches_on_provider_kind() {
+        let cfg = LlmConfig {
+            base_url: "http://localhost:0/".into(),
+            request_timeout: Duration::from_secs(5),
+            api_key_env: "UNUSED".into(),
+            ..Default::default()
+        };
+        // The default provider is OpenAICompatible, so the factory must
+        // succeed and produce a usable trait object.
+        let _client = build_llm_client(&cfg).unwrap();
+    }
+
+    #[test]
+    fn llm_provider_kind_default_is_openai_compatible() {
+        assert_eq!(LlmProviderKind::default(), LlmProviderKind::OpenAICompatible);
+    }
+
+    #[test]
+    fn llm_provider_kind_serializes_as_openai_compatible() {
+        let value: Value = serde_json::to_value(LlmProviderKind::OpenAICompatible).unwrap();
+        assert_eq!(value, Value::String("openai_compatible".into()));
+        let parsed: LlmProviderKind = serde_json::from_value(value).unwrap();
+        assert_eq!(parsed, LlmProviderKind::OpenAICompatible);
+    }
+
+    #[test]
+    fn llm_provider_kind_accepts_legacy_aliases() {
+        for legacy in ["openai", "openrouter", "custom"] {
+            let json = format!("\"{legacy}\"");
+            let parsed: LlmProviderKind =
+                serde_json::from_str(&json).unwrap_or_else(|e| panic!("{legacy}: {e}"));
+            assert_eq!(parsed, LlmProviderKind::OpenAICompatible);
+        }
+    }
+
+    #[test]
     fn llm_error_retryable_detection() {
         assert!(LlmError::RateLimited.is_retryable());
         assert!(LlmError::Timeout.is_retryable());
@@ -1207,7 +1285,7 @@ mod tests {
             api_key_env: "UNUSED".into(),
             ..Default::default()
         };
-        let client = OpenAIClient::new(cfg).unwrap();
+        let client = OpenAIClient::new(&cfg).unwrap();
 
         let response = client
             .chat(&[Message::User("hello".into())], &[])
@@ -1244,7 +1322,7 @@ mod tests {
             api_key_env: "UNUSED".into(),
             ..Default::default()
         };
-        let client = OpenAIClient::new(cfg).unwrap();
+        let client = OpenAIClient::new(&cfg).unwrap();
 
         let response = client
             .chat(&[Message::User("予定を教えて".into())], &[])
@@ -1303,7 +1381,7 @@ mod tests {
             api_key_env: "UNUSED".into(),
             ..Default::default()
         };
-        let client = OpenAIClient::new(cfg).unwrap();
+        let client = OpenAIClient::new(&cfg).unwrap();
 
         let response = client
             .chat(&[Message::User("hello".into())], &[])
@@ -1340,7 +1418,7 @@ mod tests {
             api_key_env: "UNUSED".into(),
             ..Default::default()
         };
-        let client = OpenAIClient::new(cfg).unwrap();
+        let client = OpenAIClient::new(&cfg).unwrap();
 
         let response = client.chat(&[Message::User("hello".into())], &[]).await;
 
@@ -1355,7 +1433,7 @@ mod tests {
             request_timeout: Duration::from_secs(30),
             ..Default::default()
         };
-        let client = OpenAIClient::new(cfg).unwrap();
+        let client = OpenAIClient::new(&cfg).unwrap();
         let response = client.chat(&[Message::User("hello".into())], &[]).await;
         assert!(response.is_ok(), "{response:?}");
     }

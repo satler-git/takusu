@@ -162,7 +162,7 @@ impl TakusuServer {
         let agent_factory = Arc::new({
             let user_input_provider = user_input_provider.clone();
             move |config: &AgentConfig, token: Arc<RwLock<Arc<str>>>| {
-                let llm = takusu_agent::llm::OpenAIClient::new(config.llm.clone())?;
+                let llm = takusu_agent::llm::build_llm_client(&config.llm)?;
                 let planner_client =
                     takusu_client::Client::new_with_token(&config.server.url, token);
                 let tz_cache = TimeZoneCache::new(planner_client.clone());
