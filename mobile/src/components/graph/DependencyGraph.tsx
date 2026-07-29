@@ -29,6 +29,7 @@ import Reanimated, {
 } from 'react-native-reanimated';
 import * as d3 from 'd3-force';
 import { useColors } from '@/src/theme';
+import { zoomAroundFocalPoint } from '@/src/components/graph/zoom';
 
 // Paragraph object type from react-native-skia.
 type SkParagraph = NonNullable<ComponentProps<typeof Paragraph>['paragraph']>;
@@ -485,7 +486,22 @@ export function DependencyGraph({
   const pinchGesture = Gesture.Pinch()
     .enabled(!editMode && !height)
     .onChange((e) => {
-      scale.value = Math.max(0.3, Math.min(3, scale.value * e.scaleChange));
+      // Zoom around the pinch focal point so the content under the user's
+      // fingers stays in place (#1310). Without this adjustment, scaling
+      // happens around the canvas origin (top-left) and feels unnatural.
+      const next = zoomAroundFocalPoint(
+        translateX.value,
+        translateY.value,
+        scale.value,
+        e.focalX,
+        e.focalY,
+        e.scaleChange,
+        0.3,
+        3,
+      );
+      translateX.value = next.translateX;
+      translateY.value = next.translateY;
+      scale.value = next.scale;
     });
 
   // ── Gesture: Tap (node tap only — edge cutting moved to line-cut #382) ──
