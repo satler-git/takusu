@@ -43,7 +43,6 @@ import Markdown, {
   type MarkdownStyles,
   type RenderRules,
 } from 'react-native-markdown-renderer';
-import type { NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
 import { DEFAULT_PORT, useServer } from '@/src/api/ServerProvider';
 import { showError } from '@/src/api/errors';
 import { useTopToast } from '@/src/components/TopToast';
@@ -1221,7 +1220,7 @@ export function AgentView() {
   const streamAbortRef = useRef<AbortController | null>(null);
   const backgroundAbortedRef = useRef(false);
   const flatListRef = useRef<FlatList<Message>>(null);
-  const autoScrollRef = useRef(true);
+  const forceScrollToBottomRef = useRef(false);
   const skipSnapshotSaveRef = useRef(false);
   const lastPendingSessionIdRef = useRef<string | null>(null);
   const sessionPermissionsRef = useRef<PermissionsMap>({});
@@ -1305,7 +1304,7 @@ export function AgentView() {
       const perms = snapshot?.permissions ?? {};
       setSessionPermissions(perms);
       sessionPermissionsRef.current = perms;
-      autoScrollRef.current = true;
+      forceScrollToBottomRef.current = true;
       setMessages(snapshot?.messages ?? []);
       // Approval state is synced from the server after activation so we do not
       // show a stale approval from the local snapshot.
@@ -1766,7 +1765,8 @@ export function AgentView() {
       return;
     setError(null);
     backgroundAbortedRef.current = false;
-    autoScrollRef.current = true;
+    forceScrollToBottomRef.current = true;
+
     setApproval(null);
     setUserInput(null);
     const trimmed = value.trim();
@@ -1817,7 +1817,8 @@ export function AgentView() {
       return;
     setError(null);
     backgroundAbortedRef.current = false;
-    autoScrollRef.current = true;
+    forceScrollToBottomRef.current = true;
+
     setApproval(null);
     setUserInput(null);
     const trimmed = newText.trim();
@@ -2315,25 +2316,14 @@ export function AgentView() {
     }
   }, [contextMenuMessage, messages, client, historyReady, busy]);
 
-  const handleScroll = useCallback(
-    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      // Inverted FlatList: offset 0 = newest message at visual bottom.
-      // autoScroll stays on while the user is near the bottom.
-      const { contentOffset } = event.nativeEvent;
-      autoScrollRef.current = contentOffset.y <= SCROLL_THRESHOLD;
-    },
-    [],
-  );
+  const keyExtractor = useCallback((item: Message) => item.id, []);
 
   const handleMessagesContentSizeChange = useCallback(() => {
-    // Inverted list shows newest at offset 0. When autoScroll is on,
-    // ensure we stay pinned to the bottom as new content arrives.
-    if (autoScrollRef.current) {
+    if (forceScrollToBottomRef.current) {
+      forceScrollToBottomRef.current = false;
       flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
     }
   }, []);
-
-  const keyExtractor = useCallback((item: Message) => item.id, []);
 
   // Inverted FlatList renders data[0] at the visual bottom. Reverse the
   // messages so the newest (last in chronological order) sits at index 0
@@ -2632,7 +2622,8 @@ export function AgentView() {
       activeIndexRef.current = nextIndex;
       sessionIdRef.current = created;
       setText('');
-      autoScrollRef.current = true;
+      forceScrollToBottomRef.current = true;
+
       saveSessionHistory({ ids, activeIndex: nextIndex }).catch(() => {});
       resetToCenter();
     } catch (e: unknown) {
@@ -2807,15 +2798,17 @@ export function AgentView() {
           data={reversedMessages}
           keyExtractor={keyExtractor}
           onLayout={handleMessagesLayout}
-          renderItem={renderItem}
-          onScroll={handleScroll}
-          scrollEventThrottle={16}
           onContentSizeChange={handleMessagesContentSizeChange}
+          renderItem={renderItem}
           ListEmptyComponent={listEmpty}
           inverted
           initialNumToRender={10}
           maxToRenderPerBatch={10}
           windowSize={5}
+          maintainVisibleContentPosition={{
+            minIndexForVisible: 0,
+            autoscrollToTopThreshold: SCROLL_THRESHOLD,
+          }}
         />
         {approval && (
           <ApprovalPanel
