@@ -281,6 +281,7 @@ interface components$1 {
             id: string;
             title: string;
         };
+        /** @description Request body for `POST /api/schedule/generate`. */
         GenerateSchedule: {
             /** @default recommended */
             sleep: components$1["schemas"]["SleepInput"];
@@ -601,15 +602,18 @@ interface components$1 {
          * @enum {string}
          */
         MemorySource: "user_confirmed" | "agent_inferred" | "imported";
+        /** @description Request body for `PATCH /api/schedule/entries/:task_id`. */
         MoveEntry: {
             /** @default false */
             force: boolean;
-            start_at: string;
+            start_at: components$1["schemas"]["Timestamp"];
         };
-        MoveEntryOutput: {
-            end_at: string;
-            start_at: string;
+        /** @description Response body for `PATCH /api/schedule/entries/:task_id`. */
+        MoveEntryResponse: {
+            end_at: components$1["schemas"]["Timestamp"];
+            start_at: components$1["schemas"]["Timestamp"];
             task_id: string;
+            /** @default [] */
             warnings: string[];
         };
         OAuthCallbackRequest: {
@@ -626,17 +630,6 @@ interface components$1 {
         /** @description Response for `POST /api/sync/oauth/url`. */
         OAuthUrlResponse: {
             url: string;
-        };
-        PreviewSchedule: {
-            from?: string | null;
-            /** @default full */
-            mode: components$1["schemas"]["ScheduleMode"];
-            /** @default [] */
-            pinned: string[];
-            /** @default recommended */
-            sleep: components$1["schemas"]["SleepInput"];
-            task_ids?: string[] | null;
-            until?: string | null;
         };
         ProgressEventRow: {
             /** Format: int64 */
@@ -686,6 +679,7 @@ interface components$1 {
             /** @description Witness path `from → … → to` (endpoints included, length >= 3). */
             via: components$1["schemas"]["DependencyNode"][];
         };
+        /** @description Request body for `POST /api/schedule/reschedule`. */
         Reschedule: {
             from?: string | null;
             mode: components$1["schemas"]["ScheduleMode"];
@@ -711,19 +705,41 @@ interface components$1 {
          *
          *     `Range` replans tasks within a time window; `Tasks` replans a specific
          *     set of task IDs; `Full` regenerates the entire schedule (only valid for
-         *     preview — `reschedule` rejects it). Used by `RescheduleInput`,
-         *     `SchedulePreviewInput`, and the CLI's `ScheduleCommands::Reschedule`.
+         *     preview — `reschedule` rejects it). Used by `Reschedule`,
+         *     `SchedulePreviewRequest`, and the CLI's `ScheduleCommands::Reschedule`.
          * @enum {string}
          */
         ScheduleMode: "range" | "tasks" | "full";
-        SchedulePreviewOutput: {
+        /** @description Request body for `POST /api/schedule/preview`. */
+        SchedulePreviewRequest: {
+            from?: string | null;
+            /** @default full */
+            mode: components$1["schemas"]["ScheduleMode"];
+            /** @default [] */
+            pinned: string[];
+            /** @default recommended */
+            sleep: components$1["schemas"]["SleepInput"];
+            task_ids?: string[] | null;
+            until?: string | null;
+        };
+        /** @description Response body for `POST /api/schedule/preview`. */
+        SchedulePreviewResponse: {
+            /** @default [] */
             displaced_task_ids: string[];
             entries: components$1["schemas"]["ScheduleEntry"][];
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @default 0
+             */
             sleep_minutes_after: number;
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @default 0
+             */
             sleep_minutes_before: number;
+            /** @default [] */
             unscheduled_task_ids: string[];
+            /** @default [] */
             warnings: string[];
         };
         ScheduleRow: {
@@ -1153,7 +1169,7 @@ type WindowMode = S['WindowMode'];
 type TaskQuery = S['TaskQueryParams'];
 type RescheduleRequest = S['Reschedule'];
 type MoveEntryRequest = S['MoveEntry'];
-type MoveEntryResponse = S['MoveEntryOutput'];
+type MoveEntryResponse = S['MoveEntryResponse'];
 type GoogleCalSettings = S['GoogleCalSettingsOutput'];
 type DeleteAllGcalResponse = S['DeleteAllGcalResult'];
 type GoogleCalEventMapping = S['GoogleCalEventRow'];

@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use takusu_types::{ScheduleMode, SleepInput, TimeOfDay, Timestamp, url_encode};
+use takusu_types::{TimeOfDay, url_encode};
 use tokio::sync::RwLock;
 
 #[derive(Debug, thiserror::Error)]
@@ -1023,80 +1023,6 @@ pub struct RedundantDependency {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DependencyAnalysisResponse {
     pub redundant: Vec<RedundantDependency>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct SchedulePreviewRequest {
-    pub mode: ScheduleMode,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub from: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub until: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub task_ids: Option<Vec<String>>,
-    #[serde(default)]
-    pub pinned: Vec<String>,
-    #[serde(default = "default_sleep")]
-    pub sleep: SleepInput,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SchedulePreviewResponse {
-    pub entries: Vec<ScheduleEntry>,
-    #[serde(default)]
-    pub unscheduled_task_ids: Vec<String>,
-    #[serde(default)]
-    pub displaced_task_ids: Vec<String>,
-    #[serde(default)]
-    pub sleep_minutes_before: i64,
-    #[serde(default)]
-    pub sleep_minutes_after: i64,
-    #[serde(default)]
-    pub warnings: Vec<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct GenerateSchedule {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub task_ids: Option<Vec<String>>,
-    #[serde(default = "default_sleep")]
-    pub sleep: SleepInput,
-}
-
-#[allow(dead_code)]
-fn default_sleep() -> SleepInput {
-    SleepInput::Recommended
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Reschedule {
-    pub mode: ScheduleMode,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub from: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub until: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub task_ids: Option<Vec<String>>,
-    #[serde(default)]
-    pub pinned: Vec<String>,
-    #[serde(default = "default_sleep")]
-    pub sleep: SleepInput,
-}
-
-#[derive(Debug, Serialize)]
-pub struct MoveEntry {
-    pub start_at: Timestamp,
-    #[serde(default)]
-    pub force: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MoveEntryResponse {
-    pub task_id: String,
-    pub start_at: Timestamp,
-    pub end_at: Timestamp,
-    #[serde(default)]
-    pub warnings: Vec<String>,
 }
 
 // ── Sync types ──

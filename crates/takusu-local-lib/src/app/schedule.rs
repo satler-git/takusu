@@ -11,12 +11,12 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use jiff::Timestamp;
-use serde::Serialize;
 use takusu_core::{Planner, PlannerConfig, Point, RescheduleRange, SleepConfig, TaskPlacement};
 use takusu_storage::{
-    SaveScheduleRequest, ScheduleEntry, ScheduleRow, SettingsRow, TaskQuery, TaskRow,
+    GenerateSchedule, MoveEntryResponse, Reschedule, SaveScheduleRequest, ScheduleEntry,
+    SchedulePreviewRequest, SchedulePreviewResponse, ScheduleRow, SettingsRow, TaskQuery, TaskRow,
 };
-use takusu_types::{ScheduleMode, SleepInput, TaskStatus};
+use takusu_types::{ScheduleMode, TaskStatus};
 
 use crate::error::storage_to_app;
 use crate::error::{AppError, BadRequestKind, ConflictKind};
@@ -96,50 +96,6 @@ fn planner_config(start: Point, sleep: SleepConfig, settings: &SettingsRow) -> P
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct GenerateScheduleInput {
-    pub task_ids: Option<Vec<String>>,
-    pub sleep: SleepInput,
-}
-
-#[derive(Debug, Clone)]
-pub struct RescheduleInput {
-    pub mode: ScheduleMode,
-    pub from: Option<String>,
-    pub until: Option<String>,
-    pub task_ids: Option<Vec<String>>,
-    pub pinned: Vec<String>,
-    pub sleep: SleepInput,
-}
-
-#[derive(Debug, Clone)]
-pub struct SchedulePreviewInput {
-    pub mode: ScheduleMode,
-    pub from: Option<String>,
-    pub until: Option<String>,
-    pub task_ids: Option<Vec<String>>,
-    pub pinned: Vec<String>,
-    pub sleep: SleepInput,
-}
-
-#[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
-pub struct SchedulePreviewOutput {
-    pub entries: Vec<ScheduleEntry>,
-    pub unscheduled_task_ids: Vec<String>,
-    pub displaced_task_ids: Vec<String>,
-    pub sleep_minutes_before: i64,
-    pub sleep_minutes_after: i64,
-    pub warnings: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
-pub struct MoveEntryOutput {
-    pub task_id: String,
-    pub start_at: String,
-    pub end_at: String,
-    pub warnings: Vec<String>,
-}
-
 impl super::TakusuApp {
     pub async fn get_schedule(&self) -> Result<ScheduleRow, AppError> {
         let row = self
@@ -153,7 +109,7 @@ impl super::TakusuApp {
 
     pub async fn generate_schedule(
         &self,
-        input: &GenerateScheduleInput,
+        input: &GenerateSchedule,
     ) -> Result<ScheduleRow, AppError> {
         let settings = self.get_settings_or_default().await?;
         let tz = parse_settings_timezone(&settings.tz)?;
@@ -223,8 +179,8 @@ impl super::TakusuApp {
 
     pub async fn preview_schedule(
         &self,
-        input: &SchedulePreviewInput,
-    ) -> Result<SchedulePreviewOutput, AppError> {
+        input: &SchedulePreviewRequest,
+    ) -> Result<SchedulePreviewResponse, AppError> {
         let settings = self.get_settings_or_default().await?;
         let tz = parse_settings_timezone(&settings.tz)?;
         let sleep = settings.sleep_config(&input.sleep, &tz)?;
@@ -316,7 +272,7 @@ impl super::TakusuApp {
             .map(|entry| entry.task_id.clone())
             .filter(|id| !scheduled.contains(id))
             .collect();
-        Ok(SchedulePreviewOutput {
+        Ok(SchedulePreviewResponse {
             entries,
             unscheduled_task_ids,
             displaced_task_ids,
@@ -341,7 +297,7 @@ impl super::TakusuApp {
         Ok(result)
     }
 
-    pub async fn reschedule(&self, input: &RescheduleInput) -> Result<ScheduleRow, AppError> {
+    pub async fn reschedule(&self, input: &Reschedule) -> Result<ScheduleRow, AppError> {
         let settings = self.get_settings_or_default().await?;
         let tz = parse_settings_timezone(&settings.tz)?;
         let sleep = settings.sleep_config(&input.sleep, &tz)?;
@@ -453,9 +409,9 @@ impl super::TakusuApp {
     pub async fn move_entry(
         &self,
         task_id: &str,
-        new_start: &str,
+        new_start: takusu_types::Timestamp,
         force: bool,
-    ) -> Result<MoveEntryOutput, AppError> {
+    ) -> Result<MoveEntryResponse, AppError> {
         let full_task_id = self
             .storage
             .get_task(task_id)
@@ -478,7 +434,7 @@ impl super::TakusuApp {
             .position(|e| e.task_id == full_task_id)
             .ok_or_else(|| AppError::NotFound(format!("task {task_id} not in schedule")))?;
 
-        let new_start_point = iso_to_point(new_start, &tz)?;
+        let new_start_point = Point::from_timestamp(new_start.to_jiff(), 5);
         let task_row = self
             .storage
             .get_task(&full_task_id)
@@ -520,10 +476,10 @@ impl super::TakusuApp {
             tracing::warn!("google calendar sync failed: {e}");
         }
 
-        Ok(MoveEntryOutput {
+        Ok(MoveEntryResponse {
             task_id: task_row.id,
-            start_at: point_to_iso(new_start_point.0)?.to_string(),
-            end_at: point_to_iso(new_end.0)?.to_string(),
+            start_at: point_to_iso(new_start_point.0)?,
+            end_at: point_to_iso(new_end.0)?,
             warnings,
         })
     }

@@ -31,9 +31,9 @@ use takusu_local_lib::{
     token_cache::TokenCache,
 };
 use takusu_storage::{
-    CreateHabit, CreateHabitScheduledSpan, CreateMemory, CreateSkill, CreateTask, MemoryQuery,
-    RecordProgress, ScheduleEntry, SimilarTaskQuery, SplitTask, TaskQuery, UpdateHabit,
-    UpdateMemory, UpdateSettings,
+    CreateHabit, CreateHabitScheduledSpan, CreateMemory, CreateSkill, CreateTask, GenerateSchedule,
+    MemoryQuery, RecordProgress, Reschedule, ScheduleEntry, SimilarTaskQuery, SplitTask, TaskQuery,
+    UpdateHabit, UpdateMemory, UpdateSettings,
 };
 use takusu_types::{
     Abandonability, Date, MemoryKind, Quantity, ScheduleMode, SleepInput, SubjectType, TaskStatus,
@@ -2175,7 +2175,7 @@ async fn run_schedule(
                 .display_schedule(&entries, &tasks, tz, &habit_map);
         }
         ScheduleCommands::Generate { task_ids, sleep } => {
-            let body = takusu_local_lib::app::GenerateScheduleInput { task_ids, sleep };
+            let body = GenerateSchedule { task_ids, sleep };
             let schedule = app.generate_schedule(&body).await?;
             let entries: Vec<ScheduleEntry> = schedule.schedule.as_inner().clone();
             let tasks = app
@@ -2193,7 +2193,7 @@ async fn run_schedule(
             pinned,
             sleep,
         } => {
-            let body = takusu_local_lib::app::RescheduleInput {
+            let body = Reschedule {
                 mode: rmode,
                 from: from
                     .map(|s| parse_dt(&s, tz).map(|t| t.to_string()))
@@ -2220,7 +2220,7 @@ async fn run_schedule(
             force,
         } => {
             let result = app
-                .move_entry(&task_id, &parse_dt(&start_at, tz)?.to_string(), force)
+                .move_entry(&task_id, parse_dt(&start_at, tz)?, force)
                 .await?;
             println!("{}", serde_json::to_string_pretty(&result).unwrap());
         }

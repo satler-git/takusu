@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use takusu_local_lib::app::{GenerateScheduleInput, RescheduleInput, TakusuApp};
-use takusu_storage::{HabitRow, ScheduleEntry, SettingsRow, TaskRow};
+use takusu_local_lib::app::TakusuApp;
+use takusu_storage::{GenerateSchedule, HabitRow, Reschedule, ScheduleEntry, SettingsRow, TaskRow};
 use takusu_types::{EnumLabel, ScheduleMode, SleepInput};
 
 use crate::tabs::{habits, schedule, settings, tasks};
@@ -133,7 +133,7 @@ impl App {
     pub async fn on_tick(&mut self) {}
 
     pub async fn do_generate(&mut self) {
-        let input = GenerateScheduleInput {
+        let input = GenerateSchedule {
             task_ids: None,
             sleep: SleepInput::Recommended,
         };
@@ -148,7 +148,7 @@ impl App {
     }
 
     pub async fn do_reschedule(&mut self) {
-        let input = RescheduleInput {
+        let input = Reschedule {
             mode: ScheduleMode::Range,
             from: None,
             until: None,
