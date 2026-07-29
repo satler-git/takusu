@@ -36,7 +36,6 @@ interface ColorPair {
   fg: string;
   bg: string;
   file: string;
-  line: number;
   kind: 'same-style' | 'parent-child';
   source: 'text' | 'icon'; // text=style color prop, icon=JSX color prop
 }
@@ -465,14 +464,12 @@ function extract(): ExtractResult {
       SyntaxKind.ObjectLiteralExpression,
     )) {
       const { fg, bg, bgPalette } = collectFromStyleObject(obj, varMap);
-      const line = obj.getStartLineNumber();
       for (const f of fg) {
         for (const b of bg) {
           pairs.push({
             fg: f,
             bg: b,
             file,
-            line,
             kind: 'same-style',
             source: 'text',
           });
@@ -482,7 +479,6 @@ function extract(): ExtractResult {
             fg: f,
             bg: `palette:${bp}`,
             file,
-            line,
             kind: 'same-style',
             source: 'text',
           });
@@ -515,7 +511,6 @@ function extract(): ExtractResult {
       const ancestor = findAncestorBg(element, varMap, styleMap);
       if (!ancestor) continue;
 
-      const line = element.getStartLineNumber();
       // Text colors (from style) → 4.5:1 threshold
       for (const fg of styleFg) {
         for (const bg of ancestor.bg) {
@@ -523,7 +518,6 @@ function extract(): ExtractResult {
             fg,
             bg,
             file,
-            line,
             kind: 'parent-child',
             source: 'text',
           });
@@ -533,7 +527,6 @@ function extract(): ExtractResult {
             fg,
             bg: `palette:${bp}`,
             file,
-            line,
             kind: 'parent-child',
             source: 'text',
           });
@@ -546,7 +539,6 @@ function extract(): ExtractResult {
             fg,
             bg,
             file,
-            line,
             kind: 'parent-child',
             source: 'icon',
           });
@@ -556,7 +548,6 @@ function extract(): ExtractResult {
             fg,
             bg: `palette:${bp}`,
             file,
-            line,
             kind: 'parent-child',
             source: 'icon',
           });
@@ -569,7 +560,7 @@ function extract(): ExtractResult {
   const dedup = (arr: ColorPair[]): ColorPair[] => {
     const seen = new Set<string>();
     return arr.filter((p) => {
-      const key = `${p.fg}|${p.bg}|${p.file}|${p.line}`;
+      const key = `${p.fg}|${p.bg}|${p.file}|${p.kind}|${p.source}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
@@ -577,11 +568,9 @@ function extract(): ExtractResult {
   };
 
   return {
-    pairs: dedup(pairs).sort((a, b) =>
-      a.file === b.file ? a.line - b.line : a.file.localeCompare(b.file),
-    ),
+    pairs: dedup(pairs).sort((a, b) => a.file.localeCompare(b.file)),
     palettePairs: dedup(palettePairs).sort((a, b) =>
-      a.file === b.file ? a.line - b.line : a.file.localeCompare(b.file),
+      a.file.localeCompare(b.file),
     ),
     generatedAt: new Date().toISOString(),
   };
