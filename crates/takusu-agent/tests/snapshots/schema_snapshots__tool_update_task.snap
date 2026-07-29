@@ -66,7 +66,7 @@ expression: def
           "type": "boolean"
         },
         "quantity_done": {
-          "description": "Quantity already completed.",
+          "description": "Quantity already completed; defaults to 0.",
           "type": "integer"
         },
         "quantity_total": {

@@ -7,8 +7,8 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use takusu_util::{
-    Date, DependencyList, JsonString, ScheduleMode, Similarity, SleepInput, TimeOfDay,
-    Timestamp, url_encode,
+    Date, DependencyList, JsonString, ScheduleMode, Similarity, SleepInput, TimeOfDay, Timestamp,
+    url_encode,
 };
 use tokio::sync::RwLock;
 
@@ -731,10 +731,7 @@ impl Client {
         Ok(resp.json().await?)
     }
 
-    pub async fn get_oauth_url(
-        &self,
-        redirect_uri: &str,
-    ) -> Result<OAuthUrlResponse, ClientError> {
+    pub async fn get_oauth_url(&self, redirect_uri: &str) -> Result<OAuthUrlResponse, ClientError> {
         let body = serde_json::json!({ "redirect_uri": redirect_uri });
         let resp = self
             .request(reqwest::Method::POST, "/api/sync/oauth/url")

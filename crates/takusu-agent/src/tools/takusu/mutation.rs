@@ -1,14 +1,14 @@
 use async_trait::async_trait;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::Value;
 use std::str::FromStr;
 use takusu_client::{Client, SchedulePreviewRequest, TaskQuery};
 use takusu_util::parse_datetime_tz;
 
 use crate::{
-    ChangeOperation, InferredField, InvalidArgsError, ProposedChange, Target, TargetKind,
-    ToolError, ToolExposure, ToolName, ToolOutput, ToolRegistry, TypedTool,
+    ChangeOperation, InferredField, InvalidArgsError, ProposalContent, ProposedChange, Target,
+    TargetKind, ToolError, ToolExposure, ToolName, ToolOutput, ToolRegistry, TypedTool,
     deserialize_trimmed_optional, deserialize_trimmed_required,
 };
 
@@ -52,27 +52,31 @@ pub(super) fn register_mutation_tools(
     })));
 }
 
-/// JSON schema for a single habit step input used in create/update habit.
-fn habit_step_schema() -> Value {
-    json!({
-        "type": "object",
-        "properties": {
-            "position": {"type": "integer", "description": "1-indexed display position of the step within the habit. On update, matching existing positions update existing steps; new positions create new steps."},
-            "title": {"type": "string"},
-            "description": {"type": "string"},
-            "start_time": {"type": "string", "description": "Time of day (HH:MM)."},
-            "end_time": {"type": "string", "description": "Time of day (HH:MM)."},
-            "avg_minutes": {"type": "integer"},
-            "sigma_minutes": {"type": "integer"},
-            "parallelizable": {"type": "boolean"},
-            "allows_parallel": {"type": "boolean"},
-            "abandonability": {"type": "number", "description": "A value in [0.0, 1.0]; out-of-range values are silently clamped."},
-            "fixed": {"type": "boolean"},
-            "depends_on": {"type": "array", "items": {"type": "integer"}, "description": "Display positions (1-indexed) of steps this step depends on."}
-        },
-        "required": ["position", "title", "start_time", "end_time", "avg_minutes"],
-        "additionalProperties": false
-    })
+// Schema-only struct for a single habit step input. Used by schemars to
+// generate the `steps` items schema in create/update habit tools.
+// NOTE: no doc comment — schemars would embed it as the items `description`,
+// which the hand-written schemas never carried.
+#[derive(schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[allow(dead_code)]
+struct HabitStepSchema {
+    /// 1-indexed display position of the step within the habit. On update, matching existing positions update existing steps; new positions create new steps.
+    position: i64,
+    title: String,
+    description: Option<String>,
+    /// Time of day (HH:MM).
+    start_time: String,
+    /// Time of day (HH:MM).
+    end_time: String,
+    avg_minutes: i64,
+    sigma_minutes: Option<i64>,
+    parallelizable: Option<bool>,
+    allows_parallel: Option<bool>,
+    /// A value in [0.0, 1.0]; out-of-range values are silently clamped.
+    abandonability: Option<f64>,
+    fixed: Option<bool>,
+    /// Display positions (1-indexed) of steps this step depends on.
+    depends_on: Option<Vec<i64>>,
 }
 
 #[derive(Clone, Copy)]
@@ -186,154 +190,178 @@ impl MutationKind {
         }
     }
 
-    fn schema(self) -> Value {
-        let (required, properties) = match self {
+    /// Fields allowed in the schema for each mutation kind, paired with the
+    /// required fields. The full schema is generated from [`MutationArgs`] via
+    /// schemars, then filtered to only include the allowed fields for the
+    /// specific kind.
+    fn allowed_fields(self) -> (&'static [&'static str], &'static [&'static str]) {
+        match self {
             Self::CreateTask => (
-                json!(["title", "end_at", "avg_minutes"]),
-                json!({
-                    "title": {"type": "string"},
-                    "description": {"type": "string"},
-                    "start_at": {"type": "string", "description": "Start time; interpreted in server timezone if no offset is given."},
-                    "end_at": {"type": "string", "description": "Deadline; interpreted in server timezone if no offset is given."},
-                    "avg_minutes": {"type": "integer"},
-                    "sigma_minutes": {"type": "integer"},
-                    "depends": {"type": "array", "items": {"type": "string"}},
-                    "parallelizable": {"type": "boolean"},
-                    "allows_parallel": {"type": "boolean"},
-                    "abandonability": {"type": "number", "description": "A value in [0.0, 1.0]; out-of-range values are silently clamped."},
-                    "fixed": {"type": "boolean", "description": "If true, the start time is fixed and the scheduler will not move the task."},
-                    "quantity_total": {"type": "integer", "description": "Total quantity for a quantitative task (e.g. 30)."},
-                    "quantity_done": {"type": "integer", "description": "Quantity already completed; defaults to 0."},
-                    "quantity_unit": {"type": "string", "description": "Unit for the quantity (e.g. 'pages', 'questions')."},
-                    "inferred_fields": crate::inferred_fields_schema("List of fields that were inferred from ambiguous user input and should be highlighted. Do not include obvious conversions (e.g. '1 hour' -> 60 minutes) or values filled from the current date/time."),
-                }),
+                &[
+                    "title",
+                    "description",
+                    "start_at",
+                    "end_at",
+                    "avg_minutes",
+                    "sigma_minutes",
+                    "depends",
+                    "parallelizable",
+                    "allows_parallel",
+                    "abandonability",
+                    "fixed",
+                    "quantity_total",
+                    "quantity_done",
+                    "quantity_unit",
+                    "inferred_fields",
+                    "why",
+                    "warnings",
+                ],
+                &["title", "end_at", "avg_minutes"],
             ),
             Self::UpdateTask => (
-                json!(["task_ref"]),
-                json!({
-                    "task_ref": {"type": "string"},
-                    "title": {"type": "string"},
-                    "description": {"type": "string"},
-                    "start_at": {"type": "string", "description": "Start time; interpreted in server timezone if no offset is given."},
-                    "end_at": {"type": "string", "description": "Deadline; interpreted in server timezone if no offset is given."},
-                    "avg_minutes": {"type": "integer"},
-                    "sigma_minutes": {"type": "integer"},
-                    "depends": {"type": "array", "items": {"type": "string"}},
-                    "parallelizable": {"type": "boolean"},
-                    "allows_parallel": {"type": "boolean"},
-                    "abandonability": {"type": "number", "description": "A value in [0.0, 1.0]; out-of-range values are silently clamped."},
-                    "status": {
-                        "type": "string",
-                        "enum": ["pending", "scheduled", "in_progress", "completed", "skipped"],
-                        "description": "New task status. 'completed' means done."
-                    },
-                    "fixed": {"type": "boolean", "description": "If true, the start time is fixed and the scheduler will not move the task."},
-                    "quantity_total": {"type": "integer", "description": "Total quantity for a quantitative task (e.g. 30)."},
-                    "quantity_done": {"type": "integer", "description": "Quantity already completed."},
-                    "quantity_unit": {"type": "string", "description": "Unit for the quantity (e.g. 'pages', 'questions')."},
-                    "inferred_fields": crate::inferred_fields_schema("List of fields that were inferred from ambiguous user input and should be highlighted. Do not include obvious conversions (e.g. '1 hour' -> 60 minutes) or values filled from the current date/time."),
-                }),
+                &[
+                    "task_ref",
+                    "title",
+                    "description",
+                    "start_at",
+                    "end_at",
+                    "avg_minutes",
+                    "sigma_minutes",
+                    "depends",
+                    "parallelizable",
+                    "allows_parallel",
+                    "abandonability",
+                    "status",
+                    "fixed",
+                    "quantity_total",
+                    "quantity_done",
+                    "quantity_unit",
+                    "inferred_fields",
+                    "why",
+                    "warnings",
+                ],
+                &["task_ref"],
             ),
-            Self::DeleteTask => (
-                json!(["task_ref"]),
-                json!({
-                    "task_ref": {"type": "string"},
-                }),
-            ),
+            Self::DeleteTask => (["task_ref", "why", "warnings"].as_slice(), &["task_ref"]),
             Self::CreateHabit => (
-                json!([
+                &[
+                    "title",
+                    "description",
+                    "recurrence",
+                    "start_time",
+                    "end_time",
+                    "avg_minutes",
+                    "sigma_minutes",
+                    "parallelizable",
+                    "allows_parallel",
+                    "abandonability",
+                    "fixed",
+                    "window_mode",
+                    "steps",
+                    "inferred_fields",
+                    "why",
+                    "warnings",
+                ],
+                &[
                     "title",
                     "recurrence",
                     "start_time",
                     "end_time",
-                    "avg_minutes"
-                ]),
-                json!({
-                    "title": {"type": "string"},
-                    "description": {"type": "string"},
-                    "recurrence": {"type": "string"},
-                    "start_time": {"type": "string", "description": "Time of day (HH:MM)."},
-                    "end_time": {"type": "string", "description": "Time of day (HH:MM)."},
-                    "avg_minutes": {"type": "integer"},
-                    "sigma_minutes": {"type": "integer"},
-                    "parallelizable": {"type": "boolean"},
-                    "allows_parallel": {"type": "boolean"},
-                    "abandonability": {"type": "number", "description": "A value in [0.0, 1.0]; out-of-range values are silently clamped."},
-                    "fixed": {"type": "boolean", "description": "If true, generated tasks start at a fixed time and the scheduler will not move them."},
-                    "window_mode": {"type": "string", "enum": ["day", "period"], "description": "Scheduling window mode for generated tasks."},
-                    "steps": {"type": "array", "items": habit_step_schema(), "description": "Ordered steps for a multi-step habit. Existing step ids are omitted; match by position on update."},
-                    "inferred_fields": crate::inferred_fields_schema("List of fields that were inferred from ambiguous user input and should be highlighted. Do not include obvious conversions (e.g. '1 hour' -> 60 minutes) or values filled from the current date/time."),
-                }),
+                    "avg_minutes",
+                ],
             ),
             Self::UpdateHabit => (
-                json!(["habit_ref"]),
-                json!({
-                    "habit_ref": {"type": "string"},
-                    "title": {"type": "string"},
-                    "description": {"type": "string"},
-                    "recurrence": {"type": "string"},
-                    "start_time": {"type": "string", "description": "Time of day (HH:MM)."},
-                    "end_time": {"type": "string", "description": "Time of day (HH:MM)."},
-                    "avg_minutes": {"type": "integer"},
-                    "sigma_minutes": {"type": "integer"},
-                    "parallelizable": {"type": "boolean"},
-                    "allows_parallel": {"type": "boolean"},
-                    "abandonability": {"type": "number", "description": "A value in [0.0, 1.0]; out-of-range values are silently clamped."},
-                    "active": {"type": "boolean"},
-                    "fixed": {"type": "boolean", "description": "If true, generated tasks start at a fixed time and the scheduler will not move them."},
-                    "window_mode": {"type": "string", "enum": ["day", "period"], "description": "Scheduling window mode for generated tasks."},
-                    "steps": {"type": "array", "items": habit_step_schema(), "description": "Complete ordered steps to replace existing ones. Match existing steps by position."},
-                    "inferred_fields": crate::inferred_fields_schema("List of fields that were inferred from ambiguous user input and should be highlighted. Do not include obvious conversions (e.g. '1 hour' -> 60 minutes) or values filled from the current date/time."),
-                }),
+                &[
+                    "habit_ref",
+                    "title",
+                    "description",
+                    "recurrence",
+                    "start_time",
+                    "end_time",
+                    "avg_minutes",
+                    "sigma_minutes",
+                    "parallelizable",
+                    "allows_parallel",
+                    "abandonability",
+                    "active",
+                    "fixed",
+                    "window_mode",
+                    "steps",
+                    "inferred_fields",
+                    "why",
+                    "warnings",
+                ],
+                &["habit_ref"],
             ),
-            Self::DeleteHabit => (
-                json!(["habit_ref"]),
-                json!({
-                    "habit_ref": {"type": "string"},
-                }),
-            ),
-            Self::GenerateSchedule => (
-                json!([]),
-                json!({
-                    "task_ids": {"type": "array", "items": {"type": "string"}},
-                    "sleep": {"type": "string"},
-                }),
-            ),
+            Self::DeleteHabit => (["habit_ref", "why", "warnings"].as_slice(), &["habit_ref"]),
+            Self::GenerateSchedule => (["task_ids", "sleep", "why", "warnings"].as_slice(), &[]),
             Self::Reschedule => (
-                json!(["mode"]),
-                json!({
-                    "mode": {"type": "string"},
-                    "from": {"type": "string", "description": "Start of range; interpreted in server timezone if no offset is given."},
-                    "until": {"type": "string", "description": "End of range; interpreted in server timezone if no offset is given."},
-                    "task_ids": {"type": "array", "items": {"type": "string"}},
-                    "pinned": {"type": "array", "items": {"type": "string"}},
-                    "sleep": {"type": "string"},
-                }),
+                &[
+                    "mode", "from", "until", "task_ids", "pinned", "sleep", "why", "warnings",
+                ],
+                &["mode"],
             ),
-        };
-        let properties = properties.as_object().cloned().unwrap_or_default();
-        let mut properties = serde_json::Map::from_iter(properties);
-        properties.insert(
-            "why".into(),
-            json!({"type": "string", "description": "Short user-facing reason for the proposed change."}),
-        );
-        properties.insert(
-            "warnings".into(),
-            json!({"type": "array", "items": {"type": "string"}}),
-        );
-        json!({
-            "type": "object",
-            "properties": properties,
-            "required": required,
-            "additionalProperties": false,
-        })
+        }
     }
+
+    fn schema(self) -> Value {
+        use schemars::generate::{SchemaGenerator, SchemaSettings};
+        let (allowed, required) = self.allowed_fields();
+        let mut settings = SchemaSettings::default();
+        settings.inline_subschemas = true;
+        let mut generator = SchemaGenerator::new(settings);
+        let full_schema = <MutationArgs as schemars::JsonSchema>::json_schema(&mut generator);
+        let mut full_value = full_schema.to_value();
+        // Filter properties to only the allowed fields for this kind.
+        if let Some(obj) = full_value.as_object_mut() {
+            if let Some(Value::Object(props)) = obj.get_mut("properties") {
+                props.retain(|key, _| allowed.contains(&key.as_str()));
+            }
+            obj.insert(
+                "required".to_string(),
+                Value::Array(
+                    required
+                        .iter()
+                        .map(|s| Value::String(s.to_string()))
+                        .collect(),
+                ),
+            );
+            obj.insert("additionalProperties".to_string(), Value::Bool(false));
+        }
+        crate::normalize_schema(full_value)
+    }
+}
+
+/// Schema-only enum for the `status` field in `update_task`.
+#[derive(schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[allow(dead_code)]
+enum StatusSchema {
+    Pending,
+    Scheduled,
+    InProgress,
+    Completed,
+    Skipped,
+}
+
+/// Schema-only enum for the `window_mode` field in create/update habit.
+#[derive(schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[allow(dead_code)]
+enum WindowModeSchema {
+    Day,
+    Period,
 }
 
 /// Typed arguments for all mutation kinds. Fields not relevant to a given
 /// kind are left as `None`/empty and skipped during serialization so the
 /// proposal's `after`/`arguments` only carry keys the caller supplied.
+///
+/// Doc comments on each field provide the JSON Schema `description` that
+/// schemars embeds in the generated schema, replacing the hand-written
+/// `json!` schema blocks.
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub(super) struct MutationArgs {
     // Task fields
     #[serde(default, deserialize_with = "deserialize_trimmed_optional")]
@@ -348,10 +376,12 @@ pub(super) struct MutationArgs {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<String>")]
     description: Option<String>,
+    /// Start time; interpreted in server timezone if no offset is given.
     #[serde(default, deserialize_with = "deserialize_trimmed_optional")]
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<String>")]
     start_at: Option<String>,
+    /// Deadline; interpreted in server timezone if no offset is given.
     #[serde(default, deserialize_with = "deserialize_trimmed_optional")]
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<String>")]
@@ -371,25 +401,31 @@ pub(super) struct MutationArgs {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     allows_parallel: Option<bool>,
+    /// A value in [0.0, 1.0]; out-of-range values are silently clamped.
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     abandonability: Option<f64>,
+    /// If true, the start time is fixed and the scheduler will not move the task.
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     fixed: Option<bool>,
+    /// Total quantity for a quantitative task (e.g. 30).
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     quantity_total: Option<i64>,
+    /// Quantity already completed; defaults to 0.
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     quantity_done: Option<i64>,
+    /// Unit for the quantity (e.g. 'pages', 'questions').
     #[serde(default, deserialize_with = "deserialize_trimmed_optional")]
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<String>")]
     quantity_unit: Option<String>,
+    /// New task status. 'completed' means done.
     #[serde(default, deserialize_with = "deserialize_trimmed_optional")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "Option<String>")]
+    #[schemars(with = "Option<StatusSchema>")]
     status: Option<String>,
 
     // Habit fields
@@ -401,10 +437,12 @@ pub(super) struct MutationArgs {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<String>")]
     recurrence: Option<String>,
+    /// Time of day (HH:MM).
     #[serde(default, deserialize_with = "deserialize_trimmed_optional")]
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<String>")]
     start_time: Option<String>,
+    /// Time of day (HH:MM).
     #[serde(default, deserialize_with = "deserialize_trimmed_optional")]
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<String>")]
@@ -412,12 +450,15 @@ pub(super) struct MutationArgs {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     active: Option<bool>,
+    /// Scheduling window mode for generated tasks.
     #[serde(default, deserialize_with = "deserialize_trimmed_optional")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "Option<String>")]
+    #[schemars(with = "Option<WindowModeSchema>")]
     window_mode: Option<String>,
+    /// Ordered steps for a multi-step habit. Existing step ids are omitted; match by position on update.
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<Vec<HabitStepSchema>>")]
     steps: Option<Vec<Value>>,
 
     // Schedule fields
@@ -425,10 +466,12 @@ pub(super) struct MutationArgs {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<String>")]
     mode: Option<String>,
+    /// Start of range; interpreted in server timezone if no offset is given.
     #[serde(default, deserialize_with = "deserialize_trimmed_optional")]
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<String>")]
     from: Option<String>,
+    /// End of range; interpreted in server timezone if no offset is given.
     #[serde(default, deserialize_with = "deserialize_trimmed_optional")]
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<String>")]
@@ -445,6 +488,7 @@ pub(super) struct MutationArgs {
     sleep: Option<String>,
 
     // Meta fields (for proposals)
+    /// Short user-facing reason for the proposed change.
     #[serde(default, deserialize_with = "deserialize_trimmed_optional")]
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<String>")]
@@ -452,6 +496,7 @@ pub(super) struct MutationArgs {
     #[serde(default)]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     warnings: Vec<String>,
+    /// List of fields that were inferred from ambiguous user input and should be highlighted. Do not include obvious conversions (e.g. '1 hour' -> 60 minutes) or values filled from the current date/time.
     #[serde(default)]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     inferred_fields: Vec<InferredField>,
@@ -844,11 +889,7 @@ impl TypedTool for MutationTool {
             observed_updated_at,
         };
         Ok(ToolOutput {
-            content: serde_json::to_string(&json!({
-                "approval_required": true,
-                "target": proposal.target.to_string(),
-            }))
-            .unwrap(),
+            content: ProposalContent::new(&proposal.target).to_json_string(),
             why,
             warnings,
             proposed_changes: vec![proposal],
@@ -863,19 +904,25 @@ impl TypedTool for MutationTool {
 
 /// Arguments for [`MoveTaskTool`].
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub(super) struct MoveTaskArgs {
+    /// Task reference such as #42 or h1#3.
     #[serde(deserialize_with = "deserialize_trimmed_required")]
     #[schemars(with = "String")]
     task_ref: String,
+    /// New start time; interpreted in server timezone if no offset is given.
     #[serde(deserialize_with = "deserialize_trimmed_required")]
     #[schemars(with = "String")]
     start_at: String,
+    /// Override deadline violation warnings.
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     force: Option<bool>,
+    /// Mark the task as fixed after moving; defaults to true.
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     fixed: Option<bool>,
+    /// Short user-facing reason for the proposed change.
     #[serde(default, deserialize_with = "deserialize_trimmed_optional")]
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<String>")]
@@ -883,6 +930,7 @@ pub(super) struct MoveTaskArgs {
     #[serde(default)]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     warnings: Vec<String>,
+    /// List of fields that were inferred from ambiguous user input and should be highlighted. Do not include obvious conversions (e.g. '1 hour' -> 60 minutes) or values filled from the current date/time.
     #[serde(default)]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     inferred_fields: Vec<InferredField>,
@@ -910,20 +958,12 @@ impl TypedTool for MoveTaskTool {
     }
 
     fn parameters_schema(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "task_ref": {"type": "string", "description": "Task reference such as #42 or h1#3."},
-                "start_at": {"type": "string", "description": "New start time; interpreted in server timezone if no offset is given."},
-                "force": {"type": "boolean", "description": "Override deadline violation warnings."},
-                "fixed": {"type": "boolean", "description": "Mark the task as fixed after moving; defaults to true."},
-                "why": {"type": "string", "description": "Short user-facing reason for the proposed change."},
-                "warnings": {"type": "array", "items": {"type": "string"}},
-                "inferred_fields": crate::inferred_fields_schema("List of fields that were inferred from ambiguous user input and should be highlighted. Do not include obvious conversions (e.g. '1 hour' -> 60 minutes) or values filled from the current date/time."),
-            },
-            "required": ["task_ref", "start_at"],
-            "additionalProperties": false,
-        })
+        use schemars::generate::{SchemaGenerator, SchemaSettings};
+        let mut settings = SchemaSettings::default();
+        settings.inline_subschemas = true;
+        let mut generator = SchemaGenerator::new(settings);
+        let schema = <MoveTaskArgs as schemars::JsonSchema>::json_schema(&mut generator);
+        crate::normalize_schema(schema.to_value())
     }
 
     async fn call_typed(&self, mut args: MoveTaskArgs) -> Result<ToolOutput, ToolError> {
@@ -966,7 +1006,9 @@ impl TypedTool for MoveTaskTool {
             .schedule
             .as_inner()
             .iter()
-            .map(|entry| serde_json::to_value(entry).map_err(|error| ToolError::Other(Box::new(error))))
+            .map(|entry| {
+                serde_json::to_value(entry).map_err(|error| ToolError::Other(Box::new(error)))
+            })
             .collect::<Result<_, _>>()?;
         let current_entry = entries
             .into_iter()
@@ -1049,11 +1091,7 @@ impl TypedTool for MoveTaskTool {
             observed_updated_at: Some(task.updated_at.to_string()),
         };
         Ok(ToolOutput {
-            content: serde_json::to_string(&json!({
-                "approval_required": true,
-                "target": proposal.target.to_string(),
-            }))
-            .unwrap(),
+            content: ProposalContent::new(&proposal.target).to_json_string(),
             why: args.why,
             warnings: args.warnings,
             proposed_changes: vec![proposal],

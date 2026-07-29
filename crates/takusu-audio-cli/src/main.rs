@@ -5,7 +5,7 @@ use clap::{Parser, Subcommand};
 #[cfg(feature = "hush")]
 use takusu_audio::hush::Hush;
 use takusu_audio::{
-    ExecutionProvider, SherpaOnnxModel, SHERPA_SAMPLE_RATE, SttBackend, SttRuntimeConfig, read_wav,
+    ExecutionProvider, SHERPA_SAMPLE_RATE, SherpaOnnxModel, SttBackend, SttRuntimeConfig, read_wav,
     record, write_wav,
 };
 

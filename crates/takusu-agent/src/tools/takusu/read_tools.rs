@@ -11,9 +11,9 @@ use takusu_client::{
 use takusu_util::{parse_date_expression, parse_datetime_to_timestamp, parse_datetime_tz};
 
 use crate::{
-    ChangeOperation, InferredField, InvalidArgsError, ProposedChange, Target, TargetKind,
-    ToolError, ToolExposure, ToolName, ToolOutput, ToolRegistry, TypedTool,
-    deserialize_trimmed_optional, deserialize_trimmed_required, inferred_fields_schema,
+    ChangeOperation, InferredField, InvalidArgsError, ProposalContent, ProposedChange, Target,
+    TargetKind, ToolError, ToolExposure, ToolName, ToolOutput, ToolRegistry, TypedTool,
+    deserialize_trimmed_optional, deserialize_trimmed_required,
 };
 
 use super::common::{
@@ -514,7 +514,9 @@ impl TypedTool for GetSchedule {
             .schedule
             .as_inner()
             .iter()
-            .map(|entry| serde_json::to_value(entry).map_err(|error| ToolError::Other(Box::new(error))))
+            .map(|entry| {
+                serde_json::to_value(entry).map_err(|error| ToolError::Other(Box::new(error)))
+            })
             .collect::<Result<_, _>>()?;
         let entries = entries
             .iter()
@@ -609,6 +611,7 @@ pub(super) struct HabitScheduledSpansArgs {
     why: Option<String>,
     #[serde(default)]
     warnings: Vec<String>,
+    /// List of fields that were inferred from ambiguous user input and should be highlighted. Do not include obvious conversions (e.g. '1 hour' -> 60 minutes) or values filled from the current date/time.
     #[serde(default)]
     inferred_fields: Vec<InferredField>,
 }
@@ -627,17 +630,6 @@ impl TypedTool for HabitScheduledSpans {
 
     fn exposure(&self) -> ToolExposure {
         ToolExposure::Deferred
-    }
-
-    fn parameters_schema(&self) -> Value {
-        let mut schema = self.default_parameters_schema();
-        if let Some(props) = schema.get_mut("properties").and_then(Value::as_object_mut) {
-            props.insert(
-                "inferred_fields".into(),
-                inferred_fields_schema("List of fields that were inferred from ambiguous user input and should be highlighted. Do not include obvious conversions (e.g. '1 hour' -> 60 minutes) or values filled from the current date/time."),
-            );
-        }
-        schema
     }
 
     fn validate_args(&self, args: &Self::Params) -> Result<(), InvalidArgsError> {
@@ -834,13 +826,8 @@ impl HabitScheduledSpans {
             observed_updated_at: None,
         };
 
-        let content = json!({
-            "approval_required": true,
-            "target": proposal.target.to_string(),
-        });
-
         Ok(ToolOutput {
-            content: serde_json::to_string(&content).unwrap(),
+            content: ProposalContent::new(&proposal.target).to_json_string(),
             why: Some(why),
             warnings: args.warnings.clone(),
             proposed_changes: vec![proposal],
@@ -1006,10 +993,7 @@ impl TypedTool for PreviewScheduleTool {
                 .unwrap_or("recommended")
                 .parse()
                 .map_err(|e| {
-                    ToolError::InvalidArgs(InvalidArgsError::new(
-                        "sleep",
-                        format!("invalid: {e}"),
-                    ))
+                    ToolError::InvalidArgs(InvalidArgsError::new("sleep", format!("invalid: {e}")))
                 })?,
         };
 

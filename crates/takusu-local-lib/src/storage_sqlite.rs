@@ -2769,8 +2769,7 @@ fn validate_task_update(body: &UpdateTask, existing: &TaskRow) -> StorageResult<
     // bind None otherwise (or when normalization fails) so COALESCE keeps the
     // stored value (#942).
     let normalized_title = body.title.as_ref().and_then(|t| {
-        takusu_util::memory::normalize_text(t, Some(takusu_util::memory::MAX_CONTENT_SCALARS))
-            .ok()
+        takusu_util::memory::normalize_text(t, Some(takusu_util::memory::MAX_CONTENT_SCALARS)).ok()
     });
 
     // Unpack Option<Option<Timestamp>> for start_at.
@@ -2871,7 +2870,9 @@ where
     E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
 {
     let completed_at = if new_status == TaskStatus::Completed {
-        existing.completed_at.or(Some(takusu_util::Timestamp::now()))
+        existing
+            .completed_at
+            .or(Some(takusu_util::Timestamp::now()))
     } else if existing.status == TaskStatus::Completed {
         None
     } else {
@@ -2888,10 +2889,7 @@ where
 
 /// Close any open work session for `task_id` so active time is not left
 /// dangling when a task reaches a terminal status (#1044).
-async fn cleanup_work_sessions<'c, E>(
-    executor: E,
-    full: &str,
-) -> StorageResult<()>
+async fn cleanup_work_sessions<'c, E>(executor: E, full: &str) -> StorageResult<()>
 where
     E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
 {

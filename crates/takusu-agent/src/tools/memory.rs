@@ -7,8 +7,8 @@ use takusu_util::{MemoryKind, MemorySource, SubjectType};
 
 use crate::tools::{ToolContext, ToolModule};
 use crate::{
-    ChangeOperation, InferredField, InvalidArgsError, ProposedChange, Target, TargetKind,
-    ToolError, ToolExposure, ToolName, ToolOutput, ToolRegistry, TypedTool,
+    ChangeOperation, InferredField, InvalidArgsError, ProposalContent, ProposedChange, Target,
+    TargetKind, ToolError, ToolExposure, ToolName, ToolOutput, ToolRegistry, TypedTool,
     deserialize_trimmed_optional, deserialize_trimmed_required, inferred_fields_schema,
 };
 
@@ -27,20 +27,48 @@ pub fn client_error(error: takusu_client::ClientError) -> ToolError {
     }
 }
 
+/// Serialized form of a memory row returned by memory tools.
+#[derive(Debug, Serialize)]
+struct MemoryResponse<'a> {
+    id: &'a str,
+    kind: &'a MemoryKind,
+    key: &'a str,
+    content: &'a str,
+    subject_type: &'a SubjectType,
+    subject_id: &'a str,
+    source: &'a MemorySource,
+    revision: i64,
+    created_at: &'a takusu_util::Timestamp,
+    updated_at: &'a takusu_util::Timestamp,
+    last_used_at: Option<&'a takusu_util::Timestamp>,
+}
+
+impl<'a> From<&'a MemoryRow> for MemoryResponse<'a> {
+    fn from(row: &'a MemoryRow) -> Self {
+        Self {
+            id: &row.id,
+            kind: &row.kind,
+            key: &row.key,
+            content: &row.content,
+            subject_type: &row.subject_type,
+            subject_id: &row.subject_id,
+            source: &row.source,
+            revision: row.revision,
+            created_at: &row.created_at,
+            updated_at: &row.updated_at,
+            last_used_at: row.last_used_at.as_ref(),
+        }
+    }
+}
+
+/// Wrapper for tool content that returns `{"results": [...]}`.
+#[derive(Debug, Serialize)]
+struct ResultsContent<T> {
+    results: Vec<T>,
+}
+
 fn memory_json(row: &MemoryRow) -> Value {
-    json!({
-        "id": row.id,
-        "kind": row.kind,
-        "key": row.key,
-        "content": row.content,
-        "subject_type": row.subject_type,
-        "subject_id": row.subject_id,
-        "source": row.source,
-        "revision": row.revision,
-        "created_at": row.created_at,
-        "updated_at": row.updated_at,
-        "last_used_at": row.last_used_at,
-    })
+    serde_json::to_value(MemoryResponse::from(row)).unwrap()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -66,11 +94,7 @@ fn make_proposal(
         observed_updated_at,
     };
     ToolOutput {
-        content: serde_json::to_string(&json!({
-            "approval_required": true,
-            "target": proposal.target.to_string(),
-        }))
-        .unwrap(),
+        content: ProposalContent::new(&proposal.target).to_json_string(),
         why,
         warnings: warnings.clone(),
         proposed_changes: vec![proposal],
@@ -165,7 +189,7 @@ impl TypedTool for MemorySearch {
             .map_err(client_error)?;
         let content: Vec<Value> = rows.iter().map(memory_json).collect();
         Ok(ToolOutput {
-            content: serde_json::to_string(&json!({"results": content})).unwrap(),
+            content: serde_json::to_string(&ResultsContent { results: content }).unwrap(),
             ..Default::default()
         })
     }
@@ -213,7 +237,7 @@ impl TypedTool for SimilarTasks {
             .await
             .map_err(client_error)?;
         Ok(ToolOutput {
-            content: serde_json::to_string(&json!({"results": rows})).unwrap(),
+            content: serde_json::to_string(&ResultsContent { results: rows }).unwrap(),
             ..Default::default()
         })
     }

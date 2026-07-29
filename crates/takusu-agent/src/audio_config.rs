@@ -1,5 +1,7 @@
 use serde::Deserialize;
-use takusu_audio::{ExecutionProvider, SherpaOnnxModel, SttBackend, SHERPA_SAMPLE_RATE, TtsBackend};
+use takusu_audio::{
+    ExecutionProvider, SHERPA_SAMPLE_RATE, SherpaOnnxModel, SttBackend, TtsBackend,
+};
 
 #[derive(Debug, Clone, Default, Deserialize, PartialEq)]
 #[serde(default)]

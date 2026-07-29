@@ -624,7 +624,10 @@ fn schedule_preview_response_defaults_when_optional_fields_missing() {
 fn oauth_url_response_deserialization() {
     let json = json!({ "url": "https://accounts.google.com/o/oauth2/auth?scope=calendar" });
     let resp: OAuthUrlResponse = serde_json::from_value(json).unwrap();
-    assert_eq!(resp.url, "https://accounts.google.com/o/oauth2/auth?scope=calendar");
+    assert_eq!(
+        resp.url,
+        "https://accounts.google.com/o/oauth2/auth?scope=calendar"
+    );
 }
 
 #[test]

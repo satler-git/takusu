@@ -41,9 +41,10 @@ pub(crate) async fn resolve_task_id(
             "SELECT t.id AS id FROM tasks t JOIN habits h ON t.habit_id = h.id \
              WHERE h.display_id = ?1 AND t.display_id = ?2",
         );
-        let rows: Vec<IdRow> = safe_all(
-            &stmt.bind(&[JsValue::from_f64(hnum as f64), JsValue::from_f64(tnum as f64)])?,
-        )
+        let rows: Vec<IdRow> = safe_all(&stmt.bind(&[
+            JsValue::from_f64(hnum as f64),
+            JsValue::from_f64(tnum as f64),
+        ])?)
         .await?;
         return rows
             .into_iter()

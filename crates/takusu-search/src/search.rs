@@ -136,7 +136,10 @@ impl EvalContext {
             task_id_to_display.insert(id.clone(), display_id);
 
             for dep in t.depends() {
-                dependents.entry(dep.clone()).or_default().insert(id.clone());
+                dependents
+                    .entry(dep.clone())
+                    .or_default()
+                    .insert(id.clone());
             }
         }
 

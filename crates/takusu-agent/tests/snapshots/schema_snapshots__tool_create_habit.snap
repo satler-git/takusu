@@ -27,7 +27,7 @@ expression: def
           "type": "string"
         },
         "fixed": {
-          "description": "If true, generated tasks start at a fixed time and the scheduler will not move them.",
+          "description": "If true, the start time is fixed and the scheduler will not move the task.",
           "type": "boolean"
         },
         "inferred_fields": {

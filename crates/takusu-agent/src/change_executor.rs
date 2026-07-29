@@ -1,3 +1,4 @@
+#![allow(clippy::manual_async_fn)]
 //! Dispatch table for `execute_proposed_change` arms.
 //!
 //! Each `(TargetKind, ChangeOperation)` pair is implemented as a separate
@@ -13,6 +14,7 @@
 //!   map via `tools::takusu::client_error`, except `Move` which has its own
 //!   409 → `Conflict` mapping.
 
+use std::future::Future;
 use std::str::FromStr;
 
 use async_trait::async_trait;
@@ -70,9 +72,54 @@ impl<'a> ChangeContext<'a> {
 /// Execute one `(TargetKind, ChangeOperation)` arm.
 ///
 /// Implementors are zero-sized markers; all state comes from [`ChangeContext`].
+/// This trait is object-safe: `dispatch` returns `&'static dyn ChangeExecutor`.
 #[async_trait]
 pub(crate) trait ChangeExecutor: Send + Sync {
     async fn execute(&self, ctx: &ChangeContext<'_>) -> Result<ExecutionOutcome, AgentError>;
+}
+
+/// Typed extension of [`ChangeExecutor`] that associates each executor with
+/// the concrete argument type it deserializes from `ChangeContext::args`.
+///
+/// This trait is **not** object-safe (it has an associated type), so it is
+/// only used in concrete impls. A blanket impl bridges every `ChangeHandler`
+/// to the object-safe `ChangeExecutor` by deserializing the args and
+/// forwarding to [`execute_typed`](ChangeHandler::execute_typed).
+///
+/// This replaces the ad-hoc `from_args::<T>(&ctx.args)?` calls that were
+/// scattered inside each `execute` body, making the expected argument type
+/// visible at the trait level and catching type mismatches at compile time.
+///
+/// Uses native `async fn` in trait (stabilized in Rust 1.75 / edition 2024)
+/// instead of `async_trait` or manual `Pin<Box<dyn Future>>` boxing, since
+/// this is a crate-private trait and the object-safety / edition-mismatch
+/// concerns that apply to public traits do not apply here.
+pub(crate) trait ChangeHandler: Send + Sync {
+    /// Concrete type deserialized from `ChangeContext::args`.
+    type Args: DeserializeOwned + Send;
+
+    /// Deserialize typed arguments from the raw JSON value.
+    fn deserialize_args(args: &Value) -> Result<Self::Args, AgentError>;
+
+    /// Execute with typed arguments.
+    fn execute_typed<'a>(
+        &'a self,
+        ctx: &ChangeContext<'a>,
+        args: &'a Self::Args,
+    ) -> impl Future<Output = Result<ExecutionOutcome, AgentError>> + Send;
+}
+
+/// Blanket bridge: every `ChangeHandler` automatically implements the
+/// object-safe `ChangeExecutor` by deserializing args and forwarding.
+#[async_trait]
+impl<T> ChangeExecutor for T
+where
+    T: ChangeHandler,
+{
+    async fn execute(&self, ctx: &ChangeContext<'_>) -> Result<ExecutionOutcome, AgentError> {
+        let args = T::deserialize_args(&ctx.args)?;
+        self.execute_typed(ctx, &args).await
+    }
 }
 
 // --- error-mapping helpers ---------------------------------------------------
@@ -177,448 +224,651 @@ struct MoveArgs {
 // --- Task arms ---------------------------------------------------------------
 
 struct TaskCreate;
-#[async_trait]
-impl ChangeExecutor for TaskCreate {
-    async fn execute(&self, ctx: &ChangeContext<'_>) -> Result<ExecutionOutcome, AgentError> {
-        let id = ctx
-            .client()
-            .create_task(&from_args::<CreateTask>(&ctx.args)?)
-            .await
-            .map_err(other_err)?
-            .id;
-        Ok(ExecutionOutcome {
-            result_id: id,
-            before: None,
-            after: None,
-            target_revision: None,
-        })
+impl ChangeHandler for TaskCreate {
+    type Args = CreateTask;
+
+    fn deserialize_args(args: &Value) -> Result<Self::Args, AgentError> {
+        from_args(args)
+    }
+
+    fn execute_typed<'a>(
+        &'a self,
+        ctx: &ChangeContext<'a>,
+        args: &'a Self::Args,
+    ) -> impl Future<Output = Result<ExecutionOutcome, AgentError>> + Send {
+        async move {
+            let id = ctx.client().create_task(args).await.map_err(other_err)?.id;
+            Ok(ExecutionOutcome {
+                result_id: id,
+                before: None,
+                after: None,
+                target_revision: None,
+            })
+        }
     }
 }
 
 struct TaskUpdate;
-#[async_trait]
-impl ChangeExecutor for TaskUpdate {
-    async fn execute(&self, ctx: &ChangeContext<'_>) -> Result<ExecutionOutcome, AgentError> {
-        let id = ctx
-            .client()
-            .update_task(&ctx.target_id, &from_args::<UpdateTask>(&ctx.args)?)
-            .await
-            .map_err(other_err)?
-            .id;
-        Ok(ExecutionOutcome {
-            result_id: id,
-            before: None,
-            after: None,
-            target_revision: None,
-        })
+impl ChangeHandler for TaskUpdate {
+    type Args = UpdateTask;
+
+    fn deserialize_args(args: &Value) -> Result<Self::Args, AgentError> {
+        from_args(args)
+    }
+
+    fn execute_typed<'a>(
+        &'a self,
+        ctx: &ChangeContext<'a>,
+        args: &'a Self::Args,
+    ) -> impl Future<Output = Result<ExecutionOutcome, AgentError>> + Send {
+        async move {
+            let id = ctx
+                .client()
+                .update_task(&ctx.target_id, args)
+                .await
+                .map_err(other_err)?
+                .id;
+            Ok(ExecutionOutcome {
+                result_id: id,
+                before: None,
+                after: None,
+                target_revision: None,
+            })
+        }
     }
 }
 
 struct TaskDelete;
-#[async_trait]
-impl ChangeExecutor for TaskDelete {
-    async fn execute(&self, ctx: &ChangeContext<'_>) -> Result<ExecutionOutcome, AgentError> {
-        ctx.client()
-            .delete_task(&ctx.target_id)
-            .await
-            .map_err(other_err)?;
-        Ok(ExecutionOutcome {
-            result_id: ctx.target_id.clone(),
-            before: None,
-            after: None,
-            target_revision: None,
-        })
+impl ChangeHandler for TaskDelete {
+    type Args = ();
+
+    fn deserialize_args(_args: &Value) -> Result<Self::Args, AgentError> {
+        Ok(())
+    }
+
+    fn execute_typed<'a>(
+        &'a self,
+        ctx: &ChangeContext<'a>,
+        _args: &'a Self::Args,
+    ) -> impl Future<Output = Result<ExecutionOutcome, AgentError>> + Send {
+        async move {
+            ctx.client()
+                .delete_task(&ctx.target_id)
+                .await
+                .map_err(other_err)?;
+            Ok(ExecutionOutcome {
+                result_id: ctx.target_id.clone(),
+                before: None,
+                after: None,
+                target_revision: None,
+            })
+        }
     }
 }
 
 struct TaskMove;
-#[async_trait]
-impl ChangeExecutor for TaskMove {
-    async fn execute(&self, ctx: &ChangeContext<'_>) -> Result<ExecutionOutcome, AgentError> {
-        let move_args: MoveArgs = from_args(&ctx.args)?;
-        let move_result = ctx
-            .client()
-            .move_entry(
-                &ctx.target_id,
-                &MoveEntry {
-                    start_at: move_args.start_at,
-                    force: move_args.force,
-                },
-            )
-            .await
-            .map_err(|error| match error {
-                takusu_client::ClientError::Api { status: 409, body } => {
-                    AgentError::Tool(ToolError::Conflict(body))
-                }
-                _ => other_err(error),
-            })?;
-        if move_args.fixed {
-            ctx.client()
-                .update_task(
+impl ChangeHandler for TaskMove {
+    type Args = MoveArgs;
+
+    fn deserialize_args(args: &Value) -> Result<Self::Args, AgentError> {
+        from_args(args)
+    }
+
+    fn execute_typed<'a>(
+        &'a self,
+        ctx: &ChangeContext<'a>,
+        args: &'a Self::Args,
+    ) -> impl Future<Output = Result<ExecutionOutcome, AgentError>> + Send {
+        async move {
+            let move_result = ctx
+                .client()
+                .move_entry(
                     &ctx.target_id,
-                    &UpdateTask {
-                        fixed: Some(true),
-                        ..Default::default()
+                    &MoveEntry {
+                        start_at: args.start_at,
+                        force: args.force,
                     },
                 )
                 .await
-                .map_err(other_err)?;
+                .map_err(|error| match error {
+                    takusu_client::ClientError::Api { status: 409, body } => {
+                        AgentError::Tool(ToolError::Conflict(body))
+                    }
+                    _ => other_err(error),
+                })?;
+            if args.fixed {
+                ctx.client()
+                    .update_task(
+                        &ctx.target_id,
+                        &UpdateTask {
+                            fixed: Some(true),
+                            ..Default::default()
+                        },
+                    )
+                    .await
+                    .map_err(other_err)?;
+            }
+            let after = to_after(&move_result)?;
+            Ok(ExecutionOutcome {
+                result_id: ctx.target_id.clone(),
+                before: ctx.change.before.clone(),
+                after,
+                target_revision: None,
+            })
         }
-        let after = to_after(&move_result)?;
-        Ok(ExecutionOutcome {
-            result_id: ctx.target_id.clone(),
-            before: ctx.change.before.clone(),
-            after,
-            target_revision: None,
-        })
     }
 }
 
 struct TaskStart;
-#[async_trait]
-impl ChangeExecutor for TaskStart {
-    async fn execute(&self, ctx: &ChangeContext<'_>) -> Result<ExecutionOutcome, AgentError> {
-        let task = ctx
-            .client()
-            .start_task_work(&ctx.target_id, ctx.operation_id)
-            .await
-            .map_err(|e| AgentError::Tool(takusu_client_error(e)))?;
-        Ok(ExecutionOutcome {
-            result_id: ctx.target_id.clone(),
-            before: ctx.change.before.clone(),
-            after: to_after(&task)?,
-            target_revision: None,
-        })
+impl ChangeHandler for TaskStart {
+    type Args = ();
+
+    fn deserialize_args(_args: &Value) -> Result<Self::Args, AgentError> {
+        Ok(())
+    }
+
+    fn execute_typed<'a>(
+        &'a self,
+        ctx: &ChangeContext<'a>,
+        _args: &'a Self::Args,
+    ) -> impl Future<Output = Result<ExecutionOutcome, AgentError>> + Send {
+        async move {
+            let task = ctx
+                .client()
+                .start_task_work(&ctx.target_id, ctx.operation_id)
+                .await
+                .map_err(|e| AgentError::Tool(takusu_client_error(e)))?;
+            Ok(ExecutionOutcome {
+                result_id: ctx.target_id.clone(),
+                before: ctx.change.before.clone(),
+                after: to_after(&task)?,
+                target_revision: None,
+            })
+        }
     }
 }
 
 struct TaskPause;
-#[async_trait]
-impl ChangeExecutor for TaskPause {
-    async fn execute(&self, ctx: &ChangeContext<'_>) -> Result<ExecutionOutcome, AgentError> {
-        let task = ctx
-            .client()
-            .pause_task_work(&ctx.target_id, ctx.operation_id)
-            .await
-            .map_err(|e| AgentError::Tool(takusu_client_error(e)))?;
-        Ok(ExecutionOutcome {
-            result_id: ctx.target_id.clone(),
-            before: ctx.change.before.clone(),
-            after: to_after(&task)?,
-            target_revision: None,
-        })
+impl ChangeHandler for TaskPause {
+    type Args = ();
+
+    fn deserialize_args(_args: &Value) -> Result<Self::Args, AgentError> {
+        Ok(())
+    }
+
+    fn execute_typed<'a>(
+        &'a self,
+        ctx: &ChangeContext<'a>,
+        _args: &'a Self::Args,
+    ) -> impl Future<Output = Result<ExecutionOutcome, AgentError>> + Send {
+        async move {
+            let task = ctx
+                .client()
+                .pause_task_work(&ctx.target_id, ctx.operation_id)
+                .await
+                .map_err(|e| AgentError::Tool(takusu_client_error(e)))?;
+            Ok(ExecutionOutcome {
+                result_id: ctx.target_id.clone(),
+                before: ctx.change.before.clone(),
+                after: to_after(&task)?,
+                target_revision: None,
+            })
+        }
     }
 }
 
 struct TaskProgress;
-#[async_trait]
-impl ChangeExecutor for TaskProgress {
-    async fn execute(&self, ctx: &ChangeContext<'_>) -> Result<ExecutionOutcome, AgentError> {
-        let record: RecordProgress = from_args(&ctx.args)?;
-        let result = ctx
-            .client()
-            .record_progress(&ctx.target_id, &record, ctx.operation_id)
-            .await
-            .map_err(|e| AgentError::Tool(takusu_client_error(e)))?;
-        Ok(ExecutionOutcome {
-            result_id: ctx.target_id.clone(),
-            before: ctx.change.before.clone(),
-            after: to_after(&result)?,
-            target_revision: None,
-        })
+impl ChangeHandler for TaskProgress {
+    type Args = RecordProgress;
+
+    fn deserialize_args(args: &Value) -> Result<Self::Args, AgentError> {
+        from_args(args)
+    }
+
+    fn execute_typed<'a>(
+        &'a self,
+        ctx: &ChangeContext<'a>,
+        args: &'a Self::Args,
+    ) -> impl Future<Output = Result<ExecutionOutcome, AgentError>> + Send {
+        async move {
+            let result = ctx
+                .client()
+                .record_progress(&ctx.target_id, args, ctx.operation_id)
+                .await
+                .map_err(|e| AgentError::Tool(takusu_client_error(e)))?;
+            Ok(ExecutionOutcome {
+                result_id: ctx.target_id.clone(),
+                before: ctx.change.before.clone(),
+                after: to_after(&result)?,
+                target_revision: None,
+            })
+        }
     }
 }
 
 struct TaskComplete;
-#[async_trait]
-impl ChangeExecutor for TaskComplete {
-    async fn execute(&self, ctx: &ChangeContext<'_>) -> Result<ExecutionOutcome, AgentError> {
-        let task = ctx
-            .client()
-            .complete_task_work(&ctx.target_id, ctx.operation_id)
-            .await
-            .map_err(|e| AgentError::Tool(takusu_client_error(e)))?;
-        Ok(ExecutionOutcome {
-            result_id: ctx.target_id.clone(),
-            before: ctx.change.before.clone(),
-            after: to_after(&task)?,
-            target_revision: None,
-        })
+impl ChangeHandler for TaskComplete {
+    type Args = ();
+
+    fn deserialize_args(_args: &Value) -> Result<Self::Args, AgentError> {
+        Ok(())
+    }
+
+    fn execute_typed<'a>(
+        &'a self,
+        ctx: &ChangeContext<'a>,
+        _args: &'a Self::Args,
+    ) -> impl Future<Output = Result<ExecutionOutcome, AgentError>> + Send {
+        async move {
+            let task = ctx
+                .client()
+                .complete_task_work(&ctx.target_id, ctx.operation_id)
+                .await
+                .map_err(|e| AgentError::Tool(takusu_client_error(e)))?;
+            Ok(ExecutionOutcome {
+                result_id: ctx.target_id.clone(),
+                before: ctx.change.before.clone(),
+                after: to_after(&task)?,
+                target_revision: None,
+            })
+        }
     }
 }
 
 struct TaskSplit;
-#[async_trait]
-impl ChangeExecutor for TaskSplit {
-    async fn execute(&self, ctx: &ChangeContext<'_>) -> Result<ExecutionOutcome, AgentError> {
-        let split: SplitTask = from_args(&ctx.args)?;
-        let result = ctx
-            .client()
-            .split_task(&ctx.target_id, &split, ctx.operation_id)
-            .await
-            .map_err(|e| AgentError::Tool(takusu_client_error(e)))?;
-        Ok(ExecutionOutcome {
-            result_id: ctx.target_id.clone(),
-            before: ctx.change.before.clone(),
-            after: to_after(&result)?,
-            target_revision: None,
-        })
+impl ChangeHandler for TaskSplit {
+    type Args = SplitTask;
+
+    fn deserialize_args(args: &Value) -> Result<Self::Args, AgentError> {
+        from_args(args)
+    }
+
+    fn execute_typed<'a>(
+        &'a self,
+        ctx: &ChangeContext<'a>,
+        args: &'a Self::Args,
+    ) -> impl Future<Output = Result<ExecutionOutcome, AgentError>> + Send {
+        async move {
+            let result = ctx
+                .client()
+                .split_task(&ctx.target_id, args, ctx.operation_id)
+                .await
+                .map_err(|e| AgentError::Tool(takusu_client_error(e)))?;
+            Ok(ExecutionOutcome {
+                result_id: ctx.target_id.clone(),
+                before: ctx.change.before.clone(),
+                after: to_after(&result)?,
+                target_revision: None,
+            })
+        }
     }
 }
 
 // --- Habit arms --------------------------------------------------------------
 
 struct HabitCreate;
-#[async_trait]
-impl ChangeExecutor for HabitCreate {
-    async fn execute(&self, ctx: &ChangeContext<'_>) -> Result<ExecutionOutcome, AgentError> {
-        let id = ctx
-            .client()
-            .create_habit(&from_args::<CreateHabit>(&ctx.args)?)
-            .await
-            .map_err(other_err)?
-            .id;
-        if let Some(steps) = ctx.steps_value.clone() {
-            ctx.session
-                .replace_habit_steps_from_input(&id, steps, &[])
-                .await?;
+impl ChangeHandler for HabitCreate {
+    type Args = CreateHabit;
+
+    fn deserialize_args(args: &Value) -> Result<Self::Args, AgentError> {
+        from_args(args)
+    }
+
+    fn execute_typed<'a>(
+        &'a self,
+        ctx: &ChangeContext<'a>,
+        args: &'a Self::Args,
+    ) -> impl Future<Output = Result<ExecutionOutcome, AgentError>> + Send {
+        async move {
+            let id = ctx.client().create_habit(args).await.map_err(other_err)?.id;
+            if let Some(steps) = ctx.steps_value.clone() {
+                ctx.session
+                    .replace_habit_steps_from_input(&id, steps, &[])
+                    .await?;
+            }
+            Ok(ExecutionOutcome {
+                result_id: id,
+                before: None,
+                after: None,
+                target_revision: None,
+            })
         }
-        Ok(ExecutionOutcome {
-            result_id: id,
-            before: None,
-            after: None,
-            target_revision: None,
-        })
     }
 }
 
 struct HabitUpdate;
-#[async_trait]
-impl ChangeExecutor for HabitUpdate {
-    async fn execute(&self, ctx: &ChangeContext<'_>) -> Result<ExecutionOutcome, AgentError> {
-        let id = ctx
-            .client()
-            .update_habit(&ctx.target_id, &from_args::<UpdateHabit>(&ctx.args)?)
-            .await
-            .map_err(other_err)?
-            .id;
-        if let Some(steps) = ctx.steps_value.clone() {
-            let existing = ctx
-                .existing_habit
-                .as_ref()
-                .map(|h| h.steps.clone())
-                .unwrap_or_default();
-            ctx.session
-                .replace_habit_steps_from_input(&id, steps, &existing)
-                .await?;
+impl ChangeHandler for HabitUpdate {
+    type Args = UpdateHabit;
+
+    fn deserialize_args(args: &Value) -> Result<Self::Args, AgentError> {
+        from_args(args)
+    }
+
+    fn execute_typed<'a>(
+        &'a self,
+        ctx: &ChangeContext<'a>,
+        args: &'a Self::Args,
+    ) -> impl Future<Output = Result<ExecutionOutcome, AgentError>> + Send {
+        async move {
+            let id = ctx
+                .client()
+                .update_habit(&ctx.target_id, args)
+                .await
+                .map_err(other_err)?
+                .id;
+            if let Some(steps) = ctx.steps_value.clone() {
+                let existing = ctx
+                    .existing_habit
+                    .as_ref()
+                    .map(|h| h.steps.clone())
+                    .unwrap_or_default();
+                ctx.session
+                    .replace_habit_steps_from_input(&id, steps, &existing)
+                    .await?;
+            }
+            Ok(ExecutionOutcome {
+                result_id: id,
+                before: None,
+                after: None,
+                target_revision: None,
+            })
         }
-        Ok(ExecutionOutcome {
-            result_id: id,
-            before: None,
-            after: None,
-            target_revision: None,
-        })
     }
 }
 
 struct HabitDelete;
-#[async_trait]
-impl ChangeExecutor for HabitDelete {
-    async fn execute(&self, ctx: &ChangeContext<'_>) -> Result<ExecutionOutcome, AgentError> {
-        ctx.client()
-            .delete_habit(&ctx.target_id)
-            .await
-            .map_err(other_err)?;
-        Ok(ExecutionOutcome {
-            result_id: ctx.target_id.clone(),
-            before: None,
-            after: None,
-            target_revision: None,
-        })
+impl ChangeHandler for HabitDelete {
+    type Args = ();
+
+    fn deserialize_args(_args: &Value) -> Result<Self::Args, AgentError> {
+        Ok(())
+    }
+
+    fn execute_typed<'a>(
+        &'a self,
+        ctx: &ChangeContext<'a>,
+        _args: &'a Self::Args,
+    ) -> impl Future<Output = Result<ExecutionOutcome, AgentError>> + Send {
+        async move {
+            ctx.client()
+                .delete_habit(&ctx.target_id)
+                .await
+                .map_err(other_err)?;
+            Ok(ExecutionOutcome {
+                result_id: ctx.target_id.clone(),
+                before: None,
+                after: None,
+                target_revision: None,
+            })
+        }
     }
 }
 
 struct HabitCreateScheduledSpan;
-#[async_trait]
-impl ChangeExecutor for HabitCreateScheduledSpan {
-    async fn execute(&self, ctx: &ChangeContext<'_>) -> Result<ExecutionOutcome, AgentError> {
-        let span_args: ScheduledSpanArgs = from_args(&ctx.args)?;
-        let row = ctx
-            .client()
-            .create_habit_scheduled_span(
-                &ctx.target_id,
-                &CreateHabitScheduledSpan {
-                    start_date: span_args.start_date,
-                    end_date: span_args.end_date,
-                    reason: span_args.reason,
-                },
-            )
-            .await
-            .map_err(other_err)?;
-        Ok(ExecutionOutcome {
-            result_id: ctx.target_id.clone(),
-            before: None,
-            after: to_after(&row)?,
-            target_revision: None,
-        })
+impl ChangeHandler for HabitCreateScheduledSpan {
+    type Args = ScheduledSpanArgs;
+
+    fn deserialize_args(args: &Value) -> Result<Self::Args, AgentError> {
+        from_args(args)
+    }
+
+    fn execute_typed<'a>(
+        &'a self,
+        ctx: &ChangeContext<'a>,
+        args: &'a Self::Args,
+    ) -> impl Future<Output = Result<ExecutionOutcome, AgentError>> + Send {
+        async move {
+            let row = ctx
+                .client()
+                .create_habit_scheduled_span(
+                    &ctx.target_id,
+                    &CreateHabitScheduledSpan {
+                        start_date: args.start_date,
+                        end_date: args.end_date,
+                        reason: args.reason.clone(),
+                    },
+                )
+                .await
+                .map_err(other_err)?;
+            Ok(ExecutionOutcome {
+                result_id: ctx.target_id.clone(),
+                before: None,
+                after: to_after(&row)?,
+                target_revision: None,
+            })
+        }
     }
 }
 
 struct HabitDeleteScheduledSpan;
-#[async_trait]
-impl ChangeExecutor for HabitDeleteScheduledSpan {
-    async fn execute(&self, ctx: &ChangeContext<'_>) -> Result<ExecutionOutcome, AgentError> {
-        let span_args: DeleteScheduledSpanArgs = from_args(&ctx.args)?;
-        ctx.client()
-            .delete_habit_scheduled_span(&ctx.target_id, &span_args.span_id)
-            .await
-            .map_err(other_err)?;
-        Ok(ExecutionOutcome {
-            result_id: ctx.target_id.clone(),
-            before: ctx.change.before.clone(),
-            after: None,
-            target_revision: None,
-        })
+impl ChangeHandler for HabitDeleteScheduledSpan {
+    type Args = DeleteScheduledSpanArgs;
+
+    fn deserialize_args(args: &Value) -> Result<Self::Args, AgentError> {
+        from_args(args)
+    }
+
+    fn execute_typed<'a>(
+        &'a self,
+        ctx: &ChangeContext<'a>,
+        args: &'a Self::Args,
+    ) -> impl Future<Output = Result<ExecutionOutcome, AgentError>> + Send {
+        async move {
+            ctx.client()
+                .delete_habit_scheduled_span(&ctx.target_id, &args.span_id)
+                .await
+                .map_err(other_err)?;
+            Ok(ExecutionOutcome {
+                result_id: ctx.target_id.clone(),
+                before: ctx.change.before.clone(),
+                after: None,
+                target_revision: None,
+            })
+        }
     }
 }
 
 // --- Skill arms --------------------------------------------------------------
 
 struct SkillCreate;
-#[async_trait]
-impl ChangeExecutor for SkillCreate {
-    async fn execute(&self, ctx: &ChangeContext<'_>) -> Result<ExecutionOutcome, AgentError> {
-        let slug = ctx
-            .client()
-            .create_skill(&from_args::<CreateSkill>(&ctx.args)?)
-            .await
-            .map_err(other_err)?
-            .slug;
-        Ok(ExecutionOutcome {
-            result_id: slug,
-            before: None,
-            after: None,
-            target_revision: None,
-        })
+impl ChangeHandler for SkillCreate {
+    type Args = CreateSkill;
+
+    fn deserialize_args(args: &Value) -> Result<Self::Args, AgentError> {
+        from_args(args)
+    }
+
+    fn execute_typed<'a>(
+        &'a self,
+        ctx: &ChangeContext<'a>,
+        args: &'a Self::Args,
+    ) -> impl Future<Output = Result<ExecutionOutcome, AgentError>> + Send {
+        async move {
+            let slug = ctx
+                .client()
+                .create_skill(args)
+                .await
+                .map_err(other_err)?
+                .slug;
+            Ok(ExecutionOutcome {
+                result_id: slug,
+                before: None,
+                after: None,
+                target_revision: None,
+            })
+        }
     }
 }
 
 struct SkillUpdate;
-#[async_trait]
-impl ChangeExecutor for SkillUpdate {
-    async fn execute(&self, ctx: &ChangeContext<'_>) -> Result<ExecutionOutcome, AgentError> {
-        let slug = ctx
-            .client()
-            .update_skill(&ctx.target_id, &from_args::<UpdateSkill>(&ctx.args)?)
-            .await
-            .map_err(other_err)?
-            .slug;
-        Ok(ExecutionOutcome {
-            result_id: slug,
-            before: None,
-            after: None,
-            target_revision: None,
-        })
+impl ChangeHandler for SkillUpdate {
+    type Args = UpdateSkill;
+
+    fn deserialize_args(args: &Value) -> Result<Self::Args, AgentError> {
+        from_args(args)
+    }
+
+    fn execute_typed<'a>(
+        &'a self,
+        ctx: &ChangeContext<'a>,
+        args: &'a Self::Args,
+    ) -> impl Future<Output = Result<ExecutionOutcome, AgentError>> + Send {
+        async move {
+            let slug = ctx
+                .client()
+                .update_skill(&ctx.target_id, args)
+                .await
+                .map_err(other_err)?
+                .slug;
+            Ok(ExecutionOutcome {
+                result_id: slug,
+                before: None,
+                after: None,
+                target_revision: None,
+            })
+        }
     }
 }
 
 // --- Memory arms -------------------------------------------------------------
 
 struct MemoryCreate;
-#[async_trait]
-impl ChangeExecutor for MemoryCreate {
-    async fn execute(&self, ctx: &ChangeContext<'_>) -> Result<ExecutionOutcome, AgentError> {
-        let row = ctx
-            .client()
-            .create_memory(&from_args::<CreateMemory>(&ctx.args)?, ctx.operation_id)
-            .await
-            .map_err(|e| AgentError::Tool(memory_client_error(e)))?;
-        let after = to_after(&row)?;
-        Ok(ExecutionOutcome {
-            result_id: row.id,
-            before: None,
-            after,
-            target_revision: Some(row.revision),
-        })
+impl ChangeHandler for MemoryCreate {
+    type Args = CreateMemory;
+
+    fn deserialize_args(args: &Value) -> Result<Self::Args, AgentError> {
+        from_args(args)
+    }
+
+    fn execute_typed<'a>(
+        &'a self,
+        ctx: &ChangeContext<'a>,
+        args: &'a Self::Args,
+    ) -> impl Future<Output = Result<ExecutionOutcome, AgentError>> + Send {
+        async move {
+            let row = ctx
+                .client()
+                .create_memory(args, ctx.operation_id)
+                .await
+                .map_err(|e| AgentError::Tool(memory_client_error(e)))?;
+            let after = to_after(&row)?;
+            Ok(ExecutionOutcome {
+                result_id: row.id,
+                before: None,
+                after,
+                target_revision: Some(row.revision),
+            })
+        }
     }
 }
 
 struct MemoryUpdate;
-#[async_trait]
-impl ChangeExecutor for MemoryUpdate {
-    async fn execute(&self, ctx: &ChangeContext<'_>) -> Result<ExecutionOutcome, AgentError> {
-        let update: UpdateMemory = from_args(&ctx.args)?;
-        let row = ctx
-            .client()
-            .update_memory(&ctx.target_id, &update, ctx.operation_id)
-            .await
-            .map_err(|e| AgentError::Tool(memory_client_error(e)))?;
-        let after = to_after(&row)?;
-        Ok(ExecutionOutcome {
-            result_id: row.id,
-            before: ctx.change.before.clone(),
-            after,
-            target_revision: Some(row.revision),
-        })
+impl ChangeHandler for MemoryUpdate {
+    type Args = UpdateMemory;
+
+    fn deserialize_args(args: &Value) -> Result<Self::Args, AgentError> {
+        from_args(args)
+    }
+
+    fn execute_typed<'a>(
+        &'a self,
+        ctx: &ChangeContext<'a>,
+        args: &'a Self::Args,
+    ) -> impl Future<Output = Result<ExecutionOutcome, AgentError>> + Send {
+        async move {
+            let row = ctx
+                .client()
+                .update_memory(&ctx.target_id, args, ctx.operation_id)
+                .await
+                .map_err(|e| AgentError::Tool(memory_client_error(e)))?;
+            let after = to_after(&row)?;
+            Ok(ExecutionOutcome {
+                result_id: row.id,
+                before: ctx.change.before.clone(),
+                after,
+                target_revision: Some(row.revision),
+            })
+        }
     }
 }
 
 struct MemoryDelete;
-#[async_trait]
-impl ChangeExecutor for MemoryDelete {
-    async fn execute(&self, ctx: &ChangeContext<'_>) -> Result<ExecutionOutcome, AgentError> {
-        let del_args: MemoryDeleteArgs = from_args(&ctx.args)?;
-        ctx.client()
-            .delete_memory(&ctx.target_id, del_args.observed_revision, ctx.operation_id)
-            .await
-            .map_err(|e| AgentError::Tool(memory_client_error(e)))?;
-        Ok(ExecutionOutcome {
-            result_id: ctx.target_id.clone(),
-            before: ctx.change.before.clone(),
-            after: None,
-            target_revision: None,
-        })
+impl ChangeHandler for MemoryDelete {
+    type Args = MemoryDeleteArgs;
+
+    fn deserialize_args(args: &Value) -> Result<Self::Args, AgentError> {
+        from_args(args)
+    }
+
+    fn execute_typed<'a>(
+        &'a self,
+        ctx: &ChangeContext<'a>,
+        args: &'a Self::Args,
+    ) -> impl Future<Output = Result<ExecutionOutcome, AgentError>> + Send {
+        async move {
+            ctx.client()
+                .delete_memory(&ctx.target_id, args.observed_revision, ctx.operation_id)
+                .await
+                .map_err(|e| AgentError::Tool(memory_client_error(e)))?;
+            Ok(ExecutionOutcome {
+                result_id: ctx.target_id.clone(),
+                before: ctx.change.before.clone(),
+                after: None,
+                target_revision: None,
+            })
+        }
     }
 }
 
 // --- Schedule arms -----------------------------------------------------------
 
 struct ScheduleGenerate;
-#[async_trait]
-impl ChangeExecutor for ScheduleGenerate {
-    async fn execute(&self, ctx: &ChangeContext<'_>) -> Result<ExecutionOutcome, AgentError> {
-        let entries = ctx.args.get("_preview_entries").cloned().ok_or_else(|| {
-            AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
-                "_preview_entries",
-                "schedule preview is missing",
-            )))
-        })?;
-        let request = SaveScheduleRequest {
-            entries: serde_json::from_value::<Vec<ScheduleEntry>>(entries.clone())
-                .map_err(invalid_args)?,
-            mark_scheduled_task_ids: entries
-                .as_array()
-                .map(|entries| {
-                    entries
-                        .iter()
-                        .filter_map(|entry| entry.get("task_id").and_then(Value::as_str))
-                        .map(ToOwned::to_owned)
-                        .collect()
-                })
-                .unwrap_or_default(),
-        };
-        let id = ctx
-            .client()
-            .replace_schedule(&request)
-            .await
-            .map_err(other_err)?
-            .id;
-        Ok(ExecutionOutcome {
-            result_id: id,
-            before: None,
-            after: None,
-            target_revision: None,
-        })
+impl ChangeHandler for ScheduleGenerate {
+    type Args = ();
+
+    fn deserialize_args(_args: &Value) -> Result<Self::Args, AgentError> {
+        Ok(())
+    }
+
+    fn execute_typed<'a>(
+        &'a self,
+        ctx: &ChangeContext<'a>,
+        _args: &'a Self::Args,
+    ) -> impl Future<Output = Result<ExecutionOutcome, AgentError>> + Send {
+        async move {
+            let entries = ctx.args.get("_preview_entries").cloned().ok_or_else(|| {
+                AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
+                    "_preview_entries",
+                    "schedule preview is missing",
+                )))
+            })?;
+            let request = SaveScheduleRequest {
+                entries: serde_json::from_value::<Vec<ScheduleEntry>>(entries.clone())
+                    .map_err(invalid_args)?,
+                mark_scheduled_task_ids: entries
+                    .as_array()
+                    .map(|entries| {
+                        entries
+                            .iter()
+                            .filter_map(|entry| entry.get("task_id").and_then(Value::as_str))
+                            .map(ToOwned::to_owned)
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+            };
+            let id = ctx
+                .client()
+                .replace_schedule(&request)
+                .await
+                .map_err(other_err)?
+                .id;
+            Ok(ExecutionOutcome {
+                result_id: id,
+                before: None,
+                after: None,
+                target_revision: None,
+            })
+        }
     }
 }
 
