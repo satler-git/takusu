@@ -1744,7 +1744,7 @@ fn generate_neighbor_into(
             true
         }
     } else {
-        neighbor_lns_into(planner, buf, rng)
+        LnsOp.apply_full(planner, buf, rng, span)
     }
 }
 
@@ -1779,29 +1779,29 @@ fn generate_neighbor_partial_into(
     let t_habit_exc = t_habit_anchor + nw.habit_exception;
 
     if r < t_shift {
-        ShiftOp.apply_partial(planner, buf, rng, span, unpinned_positions)
+        ShiftOp.apply_partial(planner, buf, rng, span, unpinned_positions, Some(pinned_ids))
     } else if r < t_swap {
-        SwapOp.apply_partial(planner, buf, rng, span, unpinned_positions)
+        SwapOp.apply_partial(planner, buf, rng, span, unpinned_positions, Some(pinned_ids))
     } else if r < t_duration {
-        DurationOp.apply_partial(planner, buf, rng, span, unpinned_positions)
+        DurationOp.apply_partial(planner, buf, rng, span, unpinned_positions, Some(pinned_ids))
     } else if r < t_reorder {
-        ReorderOp.apply_partial(planner, buf, rng, span, unpinned_positions)
+        ReorderOp.apply_partial(planner, buf, rng, span, unpinned_positions, Some(pinned_ids))
     } else if r < t_repair {
         neighbor_repair_depend_into(planner, buf, rng, Some(pinned_ids))
     } else if r < t_habit_anchor {
         if !neighbor_habit_anchor_into(planner, buf, rng, habit, pinned_ids) {
-            ShiftOp.apply_partial(planner, buf, rng, span, unpinned_positions)
+            ShiftOp.apply_partial(planner, buf, rng, span, unpinned_positions, Some(pinned_ids))
         } else {
             true
         }
     } else if r < t_habit_exc {
         if !neighbor_habit_exception_into(planner, buf, rng, habit, pinned_ids) {
-            ShiftOp.apply_partial(planner, buf, rng, span, unpinned_positions)
+            ShiftOp.apply_partial(planner, buf, rng, span, unpinned_positions, Some(pinned_ids))
         } else {
             true
         }
     } else {
-        neighbor_lns_partial_into(planner, buf, rng, pinned_ids)
+        LnsOp.apply_partial(planner, buf, rng, span, unpinned_positions, Some(pinned_ids))
     }
 }
 
@@ -1810,7 +1810,8 @@ fn generate_neighbor_partial_into(
 // The four simple neighbor types (shift, swap, duration, reorder) share a
 // common skeleton: pick position(s), skip fixed tasks, compute new placement.
 // `NeighborOp` abstracts the full/partial position picking so that adding a
-// new simple neighbor only requires implementing `apply_at`.
+// new simple neighbor only requires implementing `apply_at`. Complex operators
+// such as LNS can override `apply_full` and `apply_partial` directly.
 
 /// Neighbor operator that mutates one or two schedule positions.
 trait NeighborOp {
@@ -1832,7 +1833,7 @@ trait NeighborOp {
     fn apply_full(
         &self,
         planner: &Planner,
-        scheds: &mut [Placement],
+        scheds: &mut Vec<Placement>,
         rng: &mut impl Rng,
         span: i64,
     ) -> bool {
@@ -1841,23 +1842,39 @@ trait NeighborOp {
             return false;
         }
         let positions = pick_positions_full(Self::ARITY, n, rng);
-        self.apply_at(planner, scheds, &positions[..Self::ARITY], rng, span)
+        self.apply_at(
+            planner,
+            &mut scheds[..],
+            &positions[..Self::ARITY],
+            rng,
+            span,
+        )
     }
 
     /// Partial mode: pick positions from the unpinned set.
+    /// `pinned_ids` is passed to operators that need to respect pinned tasks;
+    /// simple operators may ignore it.
     fn apply_partial(
         &self,
         planner: &Planner,
-        scheds: &mut [Placement],
+        scheds: &mut Vec<Placement>,
         rng: &mut impl Rng,
         span: i64,
         unpinned: &[usize],
+        pinned_ids: Option<&FxHashSet<usize>>,
     ) -> bool {
+        let _ = pinned_ids; // simple operators do not need pinned state
         if unpinned.len() < Self::ARITY {
             return false;
         }
         let positions = pick_positions_from(Self::ARITY, unpinned, rng);
-        self.apply_at(planner, scheds, &positions[..Self::ARITY], rng, span)
+        self.apply_at(
+            planner,
+            &mut scheds[..],
+            &positions[..Self::ARITY],
+            rng,
+            span,
+        )
     }
 }
 
@@ -2178,79 +2195,95 @@ fn neighbor_habit_exception_into(
     }
 }
 
-fn neighbor_lns_into(planner: &Planner, scheds: &mut Vec<Placement>, rng: &mut impl Rng) -> bool {
-    if scheds.is_empty() {
-        return false;
+// --- LNS: destroy a time window and greedily rebuild it ---
+
+struct LnsOp;
+
+impl NeighborOp for LnsOp {
+    const ARITY: usize = 1;
+
+    fn apply_at(
+        &self,
+        _planner: &Planner,
+        _scheds: &mut [Placement],
+        _positions: &[usize],
+        _rng: &mut impl Rng,
+        _span: i64,
+    ) -> bool {
+        // LNS is handled by the overridden `apply_full` / `apply_partial`.
+        false
     }
 
-    let pivot_idx = rng.random_range(0..scheds.len());
-    let pivot_p = scheds[pivot_idx];
-    let pivot_start = pivot_p.start;
-    let pivot_end = pivot_p.end;
-
-    let total_dur: i64 = scheds.iter().map(|p| (p.end - p.start).0).sum();
-    let window_size = ((pivot_end - pivot_start).0 * 2)
-        .max(4)
-        .min(total_dur / 3 + 1);
-
-    let window_start = pivot_start.0 - rand_range(rng, 0, window_size / 2 + 1);
-    let window_end = window_start + window_size;
-
-    let mut destroyed_ids = Vec::new();
-    let mut remaining = Vec::new();
-    for sched in scheds.iter() {
-        if planner.tasks[sched.task_id].fixed {
-            remaining.push(*sched);
-        } else if sched.start.0 >= window_start && sched.start.0 < window_end {
-            destroyed_ids.push(sched.task_id);
-        } else {
-            remaining.push(*sched);
+    fn apply_full(
+        &self,
+        planner: &Planner,
+        scheds: &mut Vec<Placement>,
+        rng: &mut impl Rng,
+        _span: i64,
+    ) -> bool {
+        if scheds.is_empty() {
+            return false;
         }
+        let pivot_idx = rng.random_range(0..scheds.len());
+        self.apply_lns(planner, scheds, rng, pivot_idx, None)
     }
 
-    let rebuilt = greedy_rebuild(planner, &remaining, &destroyed_ids);
-    *scheds = rebuilt;
-    true
+    fn apply_partial(
+        &self,
+        planner: &Planner,
+        scheds: &mut Vec<Placement>,
+        rng: &mut impl Rng,
+        _span: i64,
+        unpinned: &[usize],
+        pinned_ids: Option<&FxHashSet<usize>>,
+    ) -> bool {
+        if unpinned.is_empty() {
+            return false;
+        }
+        let pivot_idx = unpinned[rng.random_range(0..unpinned.len())];
+        self.apply_lns(planner, scheds, rng, pivot_idx, pinned_ids)
+    }
 }
 
-fn neighbor_lns_partial_into(
-    planner: &Planner,
-    scheds: &mut Vec<Placement>,
-    rng: &mut impl Rng,
-    pinned_ids: &FxHashSet<usize>,
-) -> bool {
-    if scheds.is_empty() {
-        return false;
-    }
+impl LnsOp {
+    fn apply_lns(
+        &self,
+        planner: &Planner,
+        scheds: &mut Vec<Placement>,
+        rng: &mut impl Rng,
+        pivot_idx: usize,
+        pinned_ids: Option<&FxHashSet<usize>>,
+    ) -> bool {
+        let pivot_p = scheds[pivot_idx];
+        let pivot_start = pivot_p.start;
+        let pivot_end = pivot_p.end;
 
-    let pivot_idx = rng.random_range(0..scheds.len());
-    let pivot_p = scheds[pivot_idx];
-    let pivot_start = pivot_p.start;
-    let pivot_end = pivot_p.end;
+        let total_dur: i64 = scheds.iter().map(|p| (p.end - p.start).0).sum();
+        let window_size = ((pivot_end - pivot_start).0 * 2)
+            .max(4)
+            .min(total_dur / 3 + 1);
 
-    let total_dur: i64 = scheds.iter().map(|p| (p.end - p.start).0).sum();
-    let window_size = ((pivot_end - pivot_start).0 * 2)
-        .max(4)
-        .min(total_dur / 3 + 1);
+        let window_start = pivot_start.0 - rand_range(rng, 0, window_size / 2 + 1);
+        let window_end = window_start + window_size;
 
-    let window_start = pivot_start.0 - rand_range(rng, 0, window_size / 2 + 1);
-    let window_end = window_start + window_size;
-
-    let mut destroyed_ids = Vec::new();
-    let mut remaining = Vec::new();
-    for sched in scheds.iter() {
-        if planner.tasks[sched.task_id].fixed || pinned_ids.contains(&sched.task_id) {
-            remaining.push(*sched);
-        } else if sched.start.0 >= window_start && sched.start.0 < window_end {
-            destroyed_ids.push(sched.task_id);
-        } else {
-            remaining.push(*sched);
+        let mut destroyed_ids = Vec::new();
+        let mut remaining = Vec::new();
+        for sched in scheds.iter() {
+            if planner.tasks[sched.task_id].fixed
+                || pinned_ids.is_some_and(|p| p.contains(&sched.task_id))
+            {
+                remaining.push(*sched);
+            } else if sched.start.0 >= window_start && sched.start.0 < window_end {
+                destroyed_ids.push(sched.task_id);
+            } else {
+                remaining.push(*sched);
+            }
         }
-    }
 
-    let rebuilt = greedy_rebuild(planner, &remaining, &destroyed_ids);
-    *scheds = rebuilt;
-    true
+        let rebuilt = greedy_rebuild(planner, &remaining, &destroyed_ids);
+        *scheds = rebuilt;
+        true
+    }
 }
 
 /// Cached plan_span that works on a slice.
@@ -2638,7 +2671,14 @@ mod tests {
         let unpinned = [0usize, 1];
 
         // Shift should only touch unpinned positions
-        assert!(ShiftOp.apply_partial(&planner, &mut buf, &mut rng, 100, &unpinned));
+        assert!(ShiftOp.apply_partial(
+            &planner,
+            &mut buf,
+            &mut rng,
+            100,
+            &unpinned,
+            None
+        ));
         // Position 2 (fixed) should be unchanged
         assert_eq!(buf[2].start.0, 30);
         assert_eq!(buf[2].end.0, 34);
