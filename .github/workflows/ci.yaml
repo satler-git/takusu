@@ -128,6 +128,52 @@ jobs:
       - run: nix develop .#rust --command bash -c "cargo nextest run --all"
       - run: nix develop .#rust --command bash -c "cargo test --doc --all-features -- --nocapture"
 
+  # Run the parameterized storage-suite tests against both SqliteStorage and
+  # the real takusu-worker (workerd + D1 via `wrangler dev --local`). The
+  # worker is pre-built with `worker-build --release` so `wrangler dev` does
+  # not rebuild on boot. Tests are `#[ignore]`d and run single-threaded so the
+  # whole process shares one wrangler instance.
+  worker-test:
+    needs: changes
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Nix
+        uses: cachix/install-nix-action@02a151ada4993995686f9ed4f1be7cfbb229e56f
+        with:
+          extra_nix_config: |
+            keep-outputs = true
+            keep-env-derivations = true
+
+      - name: Restore and save Nix store
+        uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('flake.lock', 'flake.nix', 'rust-toolchain.toml') }}
+          restore-prefixes-first-match: |
+            nix-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-
+          gc-max-store-size-linux: 6G
+          purge: true
+          purge-prefixes: |
+            nix-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-
+          purge-last-accessed: P6D
+          purge-primary-key: never
+
+      - run: nix profile install .#ci-worker
+      - run: nix build ".#devShells.${{ runner.arch == 'ARM64' && 'aarch64-linux' || 'x86_64-linux' }}.worker" -o /tmp/worker-shell
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build worker (wasm)
+        working-directory: crates/takusu-worker
+        run: nix develop .#worker --command bash -c "worker-build --release"
+
+      - name: Run storage-suite (sqlite + real worker)
+        run: nix develop .#worker --command bash -c "cargo test -p takusu-local --test storage_suite -- --ignored --test-threads=1"
+
   android-build:
     needs: changes
     if: |

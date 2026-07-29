@@ -81,7 +81,7 @@ shared constant. Changing slot granularity requires updating every site.
 
 ## ~~Duplicated integration test patterns~~ NOTED
 
-**Files:** `takusu-local/tests/integration.rs`, `phase4.rs`, `workers_e2e.rs`
+**Files:** `takusu-local/tests/integration.rs`, `phase4.rs`, `storage_suite.rs`
 
 Integration tests share code patterns. Full deduplication into a shared
 test-utils crate is planned.
