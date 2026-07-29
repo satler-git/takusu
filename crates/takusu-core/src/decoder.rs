@@ -246,16 +246,10 @@ fn latest_end_for(
     index: &[Option<TimeWindow>],
     dependents: &[Vec<usize>],
 ) -> Option<Point> {
-    let latest_start = dependents[task_id]
+    dependents[task_id]
         .iter()
         .filter_map(|&d| index[d].map(|tw| tw.start))
         .min()
-        .unwrap_or(Point(i64::MAX));
-    if latest_start.0 == i64::MAX {
-        None
-    } else {
-        Some(latest_start)
-    }
 }
 
 pub(crate) fn fallback_for(
@@ -754,6 +748,11 @@ impl PlacementStrategy for DeadlineStrategy {
     }
 }
 
+/// 前回スケジュールにおける `id` の開始時刻。未配置なら `None`。
+fn prev_start(previous: &[Option<TimeWindow>], id: usize) -> Option<i64> {
+    previous.get(id).and_then(|x| x.map(|tw| tw.start.0))
+}
+
 /// Habit: habit タスクを優先し、前回 anchor 昇順で ready タスクを選んで
 /// `place_task_near_anchor` で配置する。
 struct HabitStrategy;
@@ -766,21 +765,19 @@ impl PlacementStrategy for HabitStrategy {
     ) -> (usize, Point, Point, Option<PlacementFailure>) {
         let previous = ctx.planner.previous_schedule();
         let mut best_id = task_id;
+        let best_prev = prev_start(previous, task_id);
         let mut best_key = (
             ctx.planner.tasks[task_id].habit_group.is_none(),
-            previous
-                .get(task_id)
-                .and_then(|x| x.map(|tw| tw.start.0))
-                .unwrap_or(i64::MAX),
+            best_prev.is_none(),
+            best_prev.unwrap_or(0),
         );
         for &id in ctx.priority.iter() {
             if !ctx.placed[id] && ctx.in_degree[id] == 0 {
+                let prev = prev_start(previous, id);
                 let key = (
                     ctx.planner.tasks[id].habit_group.is_none(),
-                    previous
-                        .get(id)
-                        .and_then(|x| x.map(|tw| tw.start.0))
-                        .unwrap_or(i64::MAX),
+                    prev.is_none(),
+                    prev.unwrap_or(0),
                 );
                 if key < best_key {
                     best_key = key;
@@ -788,10 +785,7 @@ impl PlacementStrategy for HabitStrategy {
                 }
             }
         }
-        let anchor = previous
-            .get(best_id)
-            .and_then(|x| x.map(|tw| tw.start.0))
-            .unwrap_or(ctx.planner.now.0);
+        let anchor = prev_start(previous, best_id).unwrap_or(ctx.planner.now.0);
         let (s, e, err) = place_task_near_anchor(
             ctx.planner,
             ctx.schedules,
@@ -817,26 +811,19 @@ impl PlacementStrategy for StabilityStrategy {
     ) -> (usize, Point, Point, Option<PlacementFailure>) {
         let previous = ctx.planner.previous_schedule();
         let mut best_id = task_id;
-        let mut best_anchor = previous
-            .get(task_id)
-            .and_then(|x| x.map(|tw| tw.start.0))
-            .unwrap_or(i64::MAX);
+        let best_prev = prev_start(previous, task_id);
+        let mut best_key = (best_prev.is_none(), best_prev.unwrap_or(0));
         for &id in ctx.priority.iter() {
             if !ctx.placed[id] && ctx.in_degree[id] == 0 {
-                let anchor = previous
-                    .get(id)
-                    .and_then(|x| x.map(|tw| tw.start.0))
-                    .unwrap_or(i64::MAX);
-                if anchor < best_anchor {
-                    best_anchor = anchor;
+                let prev = prev_start(previous, id);
+                let key = (prev.is_none(), prev.unwrap_or(0));
+                if key < best_key {
+                    best_key = key;
                     best_id = id;
                 }
             }
         }
-        let anchor = previous
-            .get(best_id)
-            .and_then(|x| x.map(|tw| tw.start.0))
-            .unwrap_or(ctx.planner.now.0);
+        let anchor = prev_start(previous, best_id).unwrap_or(ctx.planner.now.0);
         let (s, e, err) = place_task_near_anchor(
             ctx.planner,
             ctx.schedules,
