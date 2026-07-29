@@ -225,9 +225,10 @@ pub async fn compact_history(
 
     let summary = match response.content {
         LlmResponseContent::Text(text) => text,
-        LlmResponseContent::ToolCalls(calls) => {
+        LlmResponseContent::ToolCalls { text, calls } => {
+            let text_part = text.unwrap_or_default();
             return Err(LlmError::Parse(format!(
-                "unexpected tool calls in compaction summary: {calls:?}"
+                "unexpected tool calls in compaction summary: text={text_part:?}, calls={calls:?}"
             )));
         }
     };
@@ -271,13 +272,18 @@ fn serialize_message(msg: &Message) -> String {
         Message::System(text) => format!("[System]: {text}"),
         Message::User(text) => format!("[User]: {text}"),
         Message::Assistant(AssistantContent::Text(text)) => format!("[Assistant]: {text}"),
-        Message::Assistant(AssistantContent::ToolCalls(calls)) => {
+        Message::Assistant(AssistantContent::ToolCalls { text, calls }) => {
             let calls_str = calls
                 .iter()
                 .map(|c| format!("{}({})", c.name, c.arguments))
                 .collect::<Vec<_>>()
                 .join("; ");
-            format!("[Assistant tool calls]: {calls_str}")
+            let prefix = text
+                .as_deref()
+                .filter(|t| !t.is_empty())
+                .map(|t| format!("[Assistant]: {t}\n\n"))
+                .unwrap_or_default();
+            format!("{prefix}[Assistant tool calls]: {calls_str}")
         }
         Message::ToolResult {
             call_id,
@@ -360,11 +366,14 @@ mod tests {
         let messages = vec![
             Message::User("hello".into()),
             Message::Assistant(AssistantContent::Text("hi".into())),
-            Message::Assistant(AssistantContent::ToolCalls(vec![crate::llm::ToolCall {
-                id: "call_1".into(),
-                name: "echo".into(),
-                arguments: serde_json::json!({"message": "hi"}),
-            }])),
+            Message::Assistant(AssistantContent::ToolCalls {
+                text: None,
+                calls: vec![crate::llm::ToolCall {
+                    id: "call_1".into(),
+                    name: "echo".into(),
+                    arguments: serde_json::json!({"message": "hi"}),
+                }],
+            }),
             Message::ToolResult {
                 call_id: "call_1".into(),
                 content: "long result".into(),

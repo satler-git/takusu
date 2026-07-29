@@ -914,6 +914,12 @@ impl AgentSession {
         let mut approval_warnings = Vec::new();
         let mut schedule_dirty = *self.schedule_dirty.lock().unwrap();
         let mut tool_call_count = 0;
+        // Accumulates assistant text emitted alongside tool calls. Non-streaming
+        // callers (CLI, transport) only receive the final `TurnResult.text`, so
+        // intermediate text would be silently dropped without this. The text is
+        // still recorded on the assistant message in history; this preserves a
+        // copy for the caller.
+        let mut intermediate_text = String::new();
 
         loop {
             if tool_call_count >= self.config.read().unwrap().llm.max_tool_calls {
@@ -939,6 +945,14 @@ impl AgentSession {
                         text.clone(),
                     )));
                     self.replace_history(local, response.prompt_tokens, system_estimate);
+                    let final_text = if intermediate_text.is_empty() {
+                        text
+                    } else {
+                        let mut combined = intermediate_text;
+                        combined.push('\n');
+                        combined.push_str(&text);
+                        combined
+                    };
                     let all_allowed =
                         !proposed_changes.is_empty() && self.all_changes_allowed(&proposed_changes);
                     let approval_request = self.make_approval_request(
@@ -953,7 +967,7 @@ impl AgentSession {
                         let mut final_changes = changes;
                         final_changes.extend(result.changes);
                         return Ok(TurnResult {
-                            text,
+                            text: final_text,
                             changes: final_changes,
                             schedule_dirty: result.schedule_dirty,
                             approval_request: None,
@@ -961,22 +975,32 @@ impl AgentSession {
                     }
                     *self.schedule_dirty.lock().unwrap() = schedule_dirty;
                     return Ok(TurnResult {
-                        text,
+                        text: final_text,
                         changes,
                         schedule_dirty,
                         approval_request,
                     });
                 }
-                llm::LlmResponseContent::ToolCalls(calls) => {
+                llm::LlmResponseContent::ToolCalls { text, calls } => {
                     tool_call_count += calls.len();
                     if tool_call_count > self.config.read().unwrap().llm.max_tool_calls {
                         self.replace_history(local, response.prompt_tokens, system_estimate);
                         return Err(AgentError::TooManyToolCalls);
                     }
 
-                    local.push(llm::Message::Assistant(llm::AssistantContent::ToolCalls(
-                        calls.clone(),
-                    )));
+                    if let Some(t) = text.as_ref()
+                        && !t.is_empty()
+                    {
+                        if !intermediate_text.is_empty() {
+                            intermediate_text.push('\n');
+                        }
+                        intermediate_text.push_str(t);
+                    }
+
+                    local.push(llm::Message::Assistant(llm::AssistantContent::ToolCalls {
+                        text,
+                        calls: calls.clone(),
+                    }));
 
                     let is_truncated = response.finish_reason == Some(llm::FinishReason::Length);
                     let tool_results = self
@@ -1247,15 +1271,18 @@ impl AgentSession {
                             tts_emit(block);
                         }
 
-                        if !final_text.is_empty() {
-                            local.push(llm::Message::Assistant(llm::AssistantContent::Text(
-                                final_text.clone(),
-                            )));
-                        }
-
-                        local.push(llm::Message::Assistant(llm::AssistantContent::ToolCalls(
-                            current_calls.clone(),
-                        )));
+                        // Merge any assistant text and tool calls into a single
+                        // assistant message. OpenAI's chat completions format
+                        // expects `content` and `tool_calls` to live on the
+                        // same assistant message; emitting two consecutive
+                        // assistant messages causes some providers to drop the
+                        // text-only one, so the model loses sight of prior
+                        // tool calls and re-issues them.
+                        let text = (!final_text.is_empty()).then(|| final_text.clone());
+                        local.push(llm::Message::Assistant(llm::AssistantContent::ToolCalls {
+                            text,
+                            calls: current_calls.clone(),
+                        }));
 
                         let is_truncated = finish_reason == Some(llm::FinishReason::Length);
                         let calls = std::mem::take(&mut current_calls);
@@ -2520,6 +2547,81 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn run_turn_stream_merges_text_and_tool_calls_into_one_assistant_message() {
+        // Regression for #1303: when the LLM emits both text and tool calls in
+        // a single streaming response, they must be recorded as a single
+        // assistant message carrying both `content` and `tool_calls`. The
+        // previous code pushed two consecutive assistant messages, which some
+        // OpenAI-compatible providers mis-parse, causing the model to lose
+        // sight of prior tool calls and re-issue them.
+        let calls = std::sync::Arc::new(Mutex::new(0));
+        let mut registry = ToolRegistry::new();
+        registry.register(Box::new(EchoTool {
+            calls: calls.clone(),
+        }));
+
+        let mock = MockStreamingLlm {
+            calls: Mutex::new(Vec::new()),
+            events: Mutex::new(vec![
+                vec![
+                    llm::LlmStreamEvent::Text("calling echo".into()),
+                    llm::LlmStreamEvent::ToolCall(llm::ToolCall {
+                        id: "call_1".into(),
+                        name: "echo".into(),
+                        arguments: json!({"message": "hello"}),
+                    }),
+                    llm::LlmStreamEvent::Done {
+                        finish_reason: Some(llm::FinishReason::ToolCalls),
+                        prompt_tokens: Some(10),
+                    },
+                ],
+                vec![
+                    llm::LlmStreamEvent::Text("done".into()),
+                    llm::LlmStreamEvent::Done {
+                        finish_reason: Some(llm::FinishReason::Stop),
+                        prompt_tokens: Some(5),
+                    },
+                ],
+            ]),
+        };
+
+        let agent = AgentSession::new(AgentConfig::default(), registry, mock);
+        let result = agent
+            .run_turn_stream("call echo", |_| {}, |_| {})
+            .await
+            .unwrap();
+        assert_eq!(result.text, "done");
+
+        let history = agent.history.lock().unwrap();
+        // Find the assistant message that carries the tool call.
+        let merged = history.iter().find_map(|m| match m {
+            llm::Message::Assistant(llm::AssistantContent::ToolCalls { text, calls }) => {
+                Some((text.clone(), calls.clone()))
+            }
+            _ => None,
+        });
+        let (text, tool_calls) = merged.expect("assistant tool_calls message should exist");
+        assert_eq!(tool_calls.len(), 1);
+        assert_eq!(tool_calls[0].name, "echo");
+        assert_eq!(text.as_deref(), Some("calling echo"));
+
+        // No separate text-only assistant message should precede the merged
+        // one in the same turn.
+        let merged_index = history
+            .iter()
+            .position(|m| matches!(m, llm::Message::Assistant(llm::AssistantContent::ToolCalls { .. })))
+            .unwrap();
+        let preceding = &history[..merged_index];
+        assert!(
+            !preceding.iter().any(|m| matches!(
+                m,
+                llm::Message::Assistant(llm::AssistantContent::Text(t)) if t == "calling echo"
+            )),
+            "text must live on the same assistant message as tool_calls, not a separate one"
+        );
+    }
+
+    #[tokio::test]
     async fn run_turn_stream_respects_max_tool_calls() {
         let mut cfg = AgentConfig::default();
         cfg.llm.max_tool_calls = 1;
@@ -2715,6 +2817,61 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn run_turn_includes_intermediate_text_alongside_tool_calls() {
+        // Non-streaming callers only see `TurnResult.text`, so intermediate
+        // assistant text emitted alongside tool calls must be accumulated and
+        // returned with the final text. Verify the merge happens and the
+        // history still records the text on the assistant tool_calls message.
+        let calls = std::sync::Arc::new(Mutex::new(0));
+        let mut registry = ToolRegistry::new();
+        registry.register(Box::new(EchoTool {
+            calls: calls.clone(),
+        }));
+
+        let mock = MockLlm {
+            calls: Mutex::new(Vec::new()),
+            responses: Mutex::new(vec![
+                llm::LlmResponse {
+                    content: llm::LlmResponseContent::ToolCalls {
+                        text: Some("スケジュールを確認します".to_string()),
+                        calls: vec![llm::ToolCall {
+                            id: "call_1".to_string(),
+                            name: "echo".to_string(),
+                            arguments: json!({"message": "hello"}),
+                        }],
+                    },
+                    prompt_tokens: None,
+                    finish_reason: None,
+                },
+                llm::LlmResponse {
+                    content: llm::LlmResponseContent::Text("done".to_string()),
+                    prompt_tokens: None,
+                    finish_reason: None,
+                },
+            ]),
+        };
+
+        let agent = AgentSession::new(AgentConfig::default(), registry, mock);
+        let result = agent.run_turn("call echo").await.unwrap();
+
+        assert_eq!(result.text, "スケジュールを確認します\ndone");
+        assert_eq!(*calls.lock().unwrap(), 1);
+
+        // History should record the intermediate text on the assistant
+        // tool_calls message, not as a separate text-only message.
+        let history = agent.history.lock().unwrap();
+        let merged = history.iter().find_map(|m| match m {
+            llm::Message::Assistant(llm::AssistantContent::ToolCalls { text, calls }) => {
+                Some((text.clone(), calls.clone()))
+            }
+            _ => None,
+        });
+        let (text, tool_calls) = merged.expect("assistant tool_calls message should exist");
+        assert_eq!(tool_calls.len(), 1);
+        assert_eq!(text.as_deref(), Some("スケジュールを確認します"));
+    }
+
+    #[tokio::test]
     async fn run_turn_calls_tool_and_returns_turn_result() {
         let calls = std::sync::Arc::new(Mutex::new(0));
         let mut registry = ToolRegistry::new();
@@ -2726,11 +2883,14 @@ mod tests {
             calls: Mutex::new(Vec::new()),
             responses: Mutex::new(vec![
                 llm::LlmResponse {
-                    content: llm::LlmResponseContent::ToolCalls(vec![llm::ToolCall {
-                        id: "call_1".to_string(),
-                        name: "echo".to_string(),
-                        arguments: json!({"message": "hello"}),
-                    }]),
+                    content: llm::LlmResponseContent::ToolCalls {
+                        text: None,
+                        calls: vec![llm::ToolCall {
+                            id: "call_1".to_string(),
+                            name: "echo".to_string(),
+                            arguments: json!({"message": "hello"}),
+                        }],
+                    },
                     prompt_tokens: None,
                     finish_reason: None,
                 },
@@ -2759,11 +2919,14 @@ mod tests {
             calls: Mutex::new(Vec::new()),
             responses: Mutex::new(vec![
                 llm::LlmResponse {
-                    content: llm::LlmResponseContent::ToolCalls(vec![llm::ToolCall {
-                        id: "call_1".to_string(),
-                        name: "fail".to_string(),
-                        arguments: json!({}),
-                    }]),
+                    content: llm::LlmResponseContent::ToolCalls {
+                        text: None,
+                        calls: vec![llm::ToolCall {
+                            id: "call_1".to_string(),
+                            name: "fail".to_string(),
+                            arguments: json!({}),
+                        }],
+                    },
                     prompt_tokens: None,
                     finish_reason: None,
                 },
@@ -2872,11 +3035,14 @@ mod tests {
         let mut responses = Vec::new();
         for i in 0..5 {
             responses.push(llm::LlmResponse {
-                content: llm::LlmResponseContent::ToolCalls(vec![llm::ToolCall {
-                    id: format!("call_{i}"),
-                    name: "echo".to_string(),
-                    arguments: json!({"message": "hello"}),
-                }]),
+                content: llm::LlmResponseContent::ToolCalls {
+                    text: None,
+                    calls: vec![llm::ToolCall {
+                        id: format!("call_{i}"),
+                        name: "echo".to_string(),
+                        arguments: json!({"message": "hello"}),
+                    }],
+                },
                 prompt_tokens: None,
                 finish_reason: None,
             });
@@ -2905,7 +3071,7 @@ mod tests {
         let mut found_pair = false;
         for window in history.windows(2) {
             if let (
-                llm::Message::Assistant(llm::AssistantContent::ToolCalls(calls)),
+                llm::Message::Assistant(llm::AssistantContent::ToolCalls { calls, .. }),
                 llm::Message::ToolResult { call_id, .. },
             ) = (&window[0], &window[1])
                 && calls.len() == 1
@@ -2928,11 +3094,14 @@ mod tests {
         }));
 
         let calls = (0..3).map(|i| llm::LlmResponse {
-            content: llm::LlmResponseContent::ToolCalls(vec![llm::ToolCall {
-                id: format!("call_{i}"),
-                name: "echo".to_string(),
-                arguments: json!({"message": "hello"}),
-            }]),
+            content: llm::LlmResponseContent::ToolCalls {
+                text: None,
+                calls: vec![llm::ToolCall {
+                    id: format!("call_{i}"),
+                    name: "echo".to_string(),
+                    arguments: json!({"message": "hello"}),
+                }],
+            },
             prompt_tokens: None,
             finish_reason: None,
         });
@@ -3009,11 +3178,14 @@ mod tests {
             calls: Mutex::new(Vec::new()),
             responses: Mutex::new(vec![
                 llm::LlmResponse {
-                    content: llm::LlmResponseContent::ToolCalls(vec![llm::ToolCall {
-                        id: "call_1".to_string(),
-                        name: "propose".to_string(),
-                        arguments: json!({"title": "test"}),
-                    }]),
+                    content: llm::LlmResponseContent::ToolCalls {
+                        text: None,
+                        calls: vec![llm::ToolCall {
+                            id: "call_1".to_string(),
+                            name: "propose".to_string(),
+                            arguments: json!({"title": "test"}),
+                        }],
+                    },
                     prompt_tokens: None,
                     finish_reason: None,
                 },
@@ -3071,11 +3243,14 @@ mod tests {
             calls: Mutex::new(Vec::new()),
             responses: Mutex::new(vec![
                 llm::LlmResponse {
-                    content: llm::LlmResponseContent::ToolCalls(vec![llm::ToolCall {
-                        id: "call_1".to_string(),
-                        name: "propose_schedule".to_string(),
-                        arguments: json!({}),
-                    }]),
+                    content: llm::LlmResponseContent::ToolCalls {
+                        text: None,
+                        calls: vec![llm::ToolCall {
+                            id: "call_1".to_string(),
+                            name: "propose_schedule".to_string(),
+                            arguments: json!({}),
+                        }],
+                    },
                     prompt_tokens: None,
                     finish_reason: None,
                 },
@@ -3135,11 +3310,14 @@ mod tests {
             calls: Mutex::new(Vec::new()),
             responses: Mutex::new(vec![
                 llm::LlmResponse {
-                    content: llm::LlmResponseContent::ToolCalls(vec![llm::ToolCall {
-                        id: "call_1".to_string(),
-                        name: "propose_schedule".to_string(),
-                        arguments: json!({}),
-                    }]),
+                    content: llm::LlmResponseContent::ToolCalls {
+                        text: None,
+                        calls: vec![llm::ToolCall {
+                            id: "call_1".to_string(),
+                            name: "propose_schedule".to_string(),
+                            arguments: json!({}),
+                        }],
+                    },
                     prompt_tokens: None,
                     finish_reason: None,
                 },
@@ -3202,11 +3380,14 @@ mod tests {
             calls: Mutex::new(Vec::new()),
             responses: Mutex::new(vec![
                 llm::LlmResponse {
-                    content: llm::LlmResponseContent::ToolCalls(vec![llm::ToolCall {
-                        id: "call_1".to_string(),
-                        name: "propose_schedule".to_string(),
-                        arguments: json!({}),
-                    }]),
+                    content: llm::LlmResponseContent::ToolCalls {
+                        text: None,
+                        calls: vec![llm::ToolCall {
+                            id: "call_1".to_string(),
+                            name: "propose_schedule".to_string(),
+                            arguments: json!({}),
+                        }],
+                    },
                     prompt_tokens: None,
                     finish_reason: None,
                 },
