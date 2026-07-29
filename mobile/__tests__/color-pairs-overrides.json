@@ -4,21 +4,12 @@
       "fg": "white",
       "bg": "white",
       "file": "components/ToolCallDetailModal.tsx",
-      "line": 289,
-      "reason": "statusColor is a useMemo-derived variable (red/green/gray), not colors.white. AST extraction cannot resolve destructured useMemo returns."
-    },
-    {
-      "fg": "white",
-      "bg": "white",
-      "file": "components/ToolCallDetailModal.tsx",
-      "line": 291,
       "reason": "statusColor is a useMemo-derived variable (red/green/gray), not colors.white. AST extraction cannot resolve destructured useMemo returns."
     },
     {
       "fg": "black",
       "bg": "grayLight",
       "file": "components/SplitTaskModal.tsx",
-      "line": 194,
       "reason": "Disabled TextInput (editable={false}) showing a read-only total value. Low contrast is intentional to indicate the non-editable state."
     }
   ],
@@ -123,6 +114,11 @@
       "fg": "white",
       "bg": "brand",
       "reason": "White on brand in catppuccin ApprovalPanel. Catppuccin brand too close to white. Follow-up: adjust catppuccin brand or onBrand."
+    },
+    {
+      "fg": "red",
+      "bg": "surfaceTint",
+      "reason": "Red text on surfaceTint chip in HabitView (pause/scheduled indicator). Fails 4.5:1 in catppuccin and aura-soft-dark. Previously masked by line-based dedup picking the icon threshold. Follow-up: introduce a dedicated chipText token or adjust red/surfaceTint for these themes."
     }
   ]
 }

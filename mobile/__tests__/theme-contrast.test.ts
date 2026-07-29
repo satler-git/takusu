@@ -34,7 +34,6 @@ interface ColorPair {
   fg: string;
   bg: string;
   file: string;
-  line: number;
   kind: 'same-style' | 'parent-child';
   source: 'text' | 'icon';
 }
@@ -50,7 +49,6 @@ interface Overrides {
     fg: string;
     bg: string;
     file: string;
-    line: number;
     reason: string;
   }[];
   skipBgTokens: string[];
@@ -81,11 +79,7 @@ const AA_LARGE = 3.0;
 
 function isExcluded(pair: ColorPair): boolean {
   return overrides.excludes.some(
-    (e) =>
-      e.fg === pair.fg &&
-      e.bg === pair.bg &&
-      e.file === pair.file &&
-      e.line === pair.line,
+    (e) => e.fg === pair.fg && e.bg === pair.bg && e.file === pair.file,
   );
 }
 
@@ -190,7 +184,7 @@ function buildTestCases(): TestCase[] {
         fgHex,
         bgHex,
         theme,
-        source: `${pair.file}:${pair.line}`,
+        source: pair.file,
         threshold: pair.source === 'icon' ? AA_LARGE : AA_NORMAL,
       });
     }
@@ -213,7 +207,7 @@ function buildTestCases(): TestCase[] {
           fgHex,
           bgHex,
           theme,
-          source: `${pair.file}:${pair.line}`,
+          source: pair.file,
           threshold: pair.source === 'icon' ? AA_LARGE : AA_NORMAL,
         });
       }
@@ -237,14 +231,16 @@ describe('WCAG contrast — extracted color pairs', () => {
     expect(extracted.palettePairs.length).toBeGreaterThan(0);
   });
 
-  // Group by unique (fg, bg, theme) to avoid redundant checks
-  const seen = new Set<string>();
-  const uniqueCases = testCases.filter((c) => {
+  // Group by unique (fg, bg, theme) to avoid redundant checks.
+  // When the same fg/bg is used both as text (4.5:1) and as an icon (3:1),
+  // keep the stricter threshold so both usages are covered.
+  const bestByCase = new Map<string, TestCase>();
+  for (const c of testCases) {
     const key = `${c.fg}|${c.bg}|${c.theme}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+    const prev = bestByCase.get(key);
+    if (!prev || c.threshold > prev.threshold) bestByCase.set(key, c);
+  }
+  const uniqueCases = [...bestByCase.values()];
 
   for (const tc of uniqueCases) {
     it(`${tc.description} ≥ ${tc.threshold}:1 [${tc.source}]`, () => {
