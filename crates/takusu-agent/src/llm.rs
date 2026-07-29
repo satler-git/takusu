@@ -206,7 +206,11 @@ pub struct LlmResponse {
 #[derive(Debug, Clone)]
 pub enum LlmResponseContent {
     Text(String),
-    ToolCalls(Vec<ToolCall>),
+    ToolCalls {
+        /// Assistant text produced alongside the tool calls, if any.
+        text: Option<String>,
+        calls: Vec<ToolCall>,
+    },
 }
 
 /// A single chunk emitted by a streaming chat completion.
@@ -224,7 +228,11 @@ pub enum LlmStreamEvent {
 #[derive(Debug, Clone)]
 pub enum AssistantContent {
     Text(String),
-    ToolCalls(Vec<ToolCall>),
+    ToolCalls {
+        /// Assistant text produced alongside the tool calls, if any.
+        text: Option<String>,
+        calls: Vec<ToolCall>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -280,9 +288,9 @@ impl Message {
                 tool_call_id: None,
                 is_error: None,
             },
-            Message::Assistant(AssistantContent::ToolCalls(calls)) => OpenAIMessage {
+            Message::Assistant(AssistantContent::ToolCalls { text, calls }) => OpenAIMessage {
                 role: "assistant",
-                content: None,
+                content: text.clone(),
                 tool_calls: Some(calls.iter().map(ToolCall::to_openai).collect()),
                 tool_call_id: None,
                 is_error: None,
@@ -328,14 +336,17 @@ impl Message {
         let content_len = match self {
             Message::System(c) | Message::User(c) => c.chars().count(),
             Message::Assistant(AssistantContent::Text(c)) => c.chars().count(),
-            Message::Assistant(AssistantContent::ToolCalls(calls)) => calls
-                .iter()
-                .map(|c| {
-                    c.name.chars().count()
-                        + c.arguments.to_string().chars().count()
-                        + c.id.chars().count()
-                })
-                .sum(),
+            Message::Assistant(AssistantContent::ToolCalls { text, calls }) => {
+                let calls_tokens: usize = calls
+                    .iter()
+                    .map(|c| {
+                        c.name.chars().count()
+                            + c.arguments.to_string().chars().count()
+                            + c.id.chars().count()
+                    })
+                    .sum();
+                text.as_deref().map(|t| t.chars().count()).unwrap_or(0) + calls_tokens
+            }
             Message::ToolResult {
                 call_id, content, ..
             } => call_id.chars().count() + content.chars().count(),
@@ -529,7 +540,8 @@ impl OpenAIClient {
                     arguments: serde_json::from_str(&tc.function.arguments).unwrap_or(Value::Null),
                 })
                 .collect();
-            LlmResponseContent::ToolCalls(calls)
+            let text = choice.message.content.filter(|c| !c.is_empty());
+            LlmResponseContent::ToolCalls { text, calls }
         } else {
             LlmResponseContent::Text(choice.message.content.unwrap_or_default())
         };
@@ -1003,7 +1015,10 @@ mod tests {
             name: "echo".into(),
             arguments: json!({"message": "hi"}),
         };
-        let msg = Message::Assistant(AssistantContent::ToolCalls(vec![tool_call]));
+        let msg = Message::Assistant(AssistantContent::ToolCalls {
+            text: None,
+            calls: vec![tool_call],
+        });
         let value: Value = serde_json::to_value(msg.to_openai()).unwrap();
         assert_eq!(value["role"], "assistant");
         // content must be explicitly present as null (not omitted) for
@@ -1012,6 +1027,20 @@ mod tests {
         assert_eq!(value.get("content"), Some(&Value::Null));
         assert_eq!(value["tool_calls"][0]["id"], "call_1");
         assert_eq!(value["tool_calls"][0]["function"]["name"], "echo");
+
+        // When text is present alongside tool calls, both fields serialize.
+        let msg = Message::Assistant(AssistantContent::ToolCalls {
+            text: Some("thinking…".into()),
+            calls: vec![ToolCall {
+                id: "call_2".into(),
+                name: "echo".into(),
+                arguments: json!({"message": "hi"}),
+            }],
+        });
+        let value: Value = serde_json::to_value(msg.to_openai()).unwrap();
+        assert_eq!(value["role"], "assistant");
+        assert_eq!(value["content"], "thinking…");
+        assert_eq!(value["tool_calls"][0]["id"], "call_2");
     }
 
     #[test]
@@ -1222,7 +1251,7 @@ mod tests {
             .await
             .unwrap();
 
-        if let LlmResponseContent::ToolCalls(calls) = response.content {
+        if let LlmResponseContent::ToolCalls { calls, .. } = response.content {
             assert_eq!(calls.len(), 2);
             assert_eq!(calls[0].name, "list_tasks");
             assert_eq!(calls[1].name, "get_schedule");
