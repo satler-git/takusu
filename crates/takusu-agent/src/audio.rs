@@ -31,6 +31,17 @@ pub enum AudioError {
     UnsupportedBackend(String),
     #[error("audio operation timed out")]
     Timeout,
+    /// A `Mutex` / `RwLock` guard was poisoned by a panic while held.
+    #[error("lock poisoned: {0}")]
+    Lock(String),
+}
+
+// Generic `From` so audio call sites can write `.read()?` / `.lock()?`
+// directly against `Result<_, AudioError>`. See `AgentError` for rationale.
+impl<G> From<std::sync::PoisonError<G>> for AudioError {
+    fn from(e: std::sync::PoisonError<G>) -> Self {
+        AudioError::Lock(e.to_string())
+    }
 }
 
 impl From<takusu_audio::tts::TtsError> for AudioError {
@@ -62,7 +73,7 @@ impl AudioAdapter {
     /// Create an audio adapter from an existing agent session.
     pub async fn new(session: AgentSession) -> Result<Self, AudioError> {
         let audio = {
-            let config = session.config.read().unwrap();
+            let config = session.config.read()?;
             config.audio.clone()
         };
         let (stt, tts, voice_id, speed, tts_format) = Self::build_audio(&audio).await?;
@@ -167,7 +178,7 @@ impl AudioAdapter {
 
     async fn reconfigure_if_needed(&mut self) -> Result<(), AudioError> {
         let current = {
-            let config = self.session.config.read().unwrap();
+            let config = self.session.config.read()?;
             config.audio.clone()
         };
         if current == self.last_audio {

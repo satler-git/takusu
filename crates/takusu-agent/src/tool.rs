@@ -809,8 +809,17 @@ impl ToolRegistry {
 
     pub fn register(&mut self, tool: Box<dyn Tool>) {
         self.tools.insert(tool.name().to_string(), tool);
-        *self.definitions_cache.lock().unwrap() = None;
-        *self.search_index.lock().unwrap() = None;
+        // Cache invalidation: a poisoned guard still holds the cache value,
+        // so recovering via `into_inner()` and resetting to `None` is safe
+        // (worst case the cache is rebuilt on next access).
+        *self
+            .definitions_cache
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = None;
+        *self
+            .search_index
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = None;
     }
 
     /// Names of all registered tools, sorted alphabetically (including
@@ -890,14 +899,20 @@ impl ToolRegistry {
     /// Tool definitions in OpenAI function-calling format for all registered tools.
     pub fn definitions(&self) -> Vec<OpenAITool> {
         {
-            let guard = self.definitions_cache.lock().unwrap();
+            let guard = self
+                .definitions_cache
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             if let Some((defs, _)) = guard.as_ref() {
                 return defs.clone();
             }
         }
         let defs = self.build_definitions(None);
         let tokens = estimate_tool_tokens(&defs);
-        let mut guard = self.definitions_cache.lock().unwrap();
+        let mut guard = self
+            .definitions_cache
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         if guard.is_none() {
             *guard = Some((defs.clone(), tokens));
         }
@@ -913,14 +928,20 @@ impl ToolRegistry {
     /// as `llm::Message::estimate_tokens` (4 chars per token + overhead).
     pub fn definitions_estimate_tokens(&self) -> usize {
         {
-            let guard = self.definitions_cache.lock().unwrap();
+            let guard = self
+                .definitions_cache
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             if let Some((_, tokens)) = guard.as_ref() {
                 return *tokens;
             }
         }
         let defs = self.build_definitions(None);
         let tokens = estimate_tool_tokens(&defs);
-        let mut guard = self.definitions_cache.lock().unwrap();
+        let mut guard = self
+            .definitions_cache
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         if guard.is_none() {
             *guard = Some((defs, tokens));
         }
@@ -929,7 +950,10 @@ impl ToolRegistry {
 
     pub(crate) fn build_search_index(&self) -> Vec<SearchEntry> {
         {
-            let guard = self.search_index.lock().unwrap();
+            let guard = self
+                .search_index
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             if let Some(index) = guard.as_ref() {
                 return index.clone();
             }
@@ -962,7 +986,10 @@ impl ToolRegistry {
         }
         index.sort_by(|a, b| a.name.cmp(&b.name));
 
-        let mut guard = self.search_index.lock().unwrap();
+        let mut guard = self
+            .search_index
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         if guard.is_none() {
             *guard = Some(index.clone());
         }

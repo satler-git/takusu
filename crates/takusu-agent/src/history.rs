@@ -19,10 +19,10 @@ use std::collections::BTreeSet;
 use crate::{AgentError, AgentSession, InvalidArgsError, ToolError, llm};
 
 impl AgentSession {
-    pub(crate) fn active_tool_names(&self) -> BTreeSet<String> {
+    pub(crate) fn active_tool_names(&self) -> Result<BTreeSet<String>, AgentError> {
         let mut names = self.registry.direct_tool_names();
-        names.extend(self.discovered_tools.lock().unwrap().iter().cloned());
-        names
+        names.extend(self.discovered_tools.lock()?.iter().cloned());
+        Ok(names)
     }
 
     /// Compacts older conversation history when it exceeds the configured
@@ -30,7 +30,7 @@ impl AgentSession {
     /// into the system prompt on subsequent turns.
     pub(crate) async fn maybe_compact(&self) -> Result<(), AgentError> {
         let (max_context_tokens, settings) = {
-            let cfg = self.config.read().unwrap();
+            let cfg = self.config.read()?;
             let settings = cfg.llm.compaction;
             let reserve = settings.reserve_tokens;
             let keep_recent = settings.keep_recent_tokens;
@@ -42,19 +42,19 @@ impl AgentSession {
             (cfg.llm.max_context_tokens, settings)
         };
 
-        let history = self.history.lock().unwrap().clone();
+        let history = self.history.lock()?.clone();
         if history.is_empty() {
             return Ok(());
         }
 
         let system_estimate = {
-            let last = *self.last_system_estimate.lock().unwrap();
+            let last = *self.last_system_estimate.lock()?;
             match last {
                 Some(est) => est,
-                None => llm::Message::System(self.build_system_prompt().await).estimate_tokens(),
+                None => llm::Message::System(self.build_system_prompt().await?).estimate_tokens(),
             }
         };
-        let active_names = self.active_tool_names();
+        let active_names = self.active_tool_names()?;
         let tools_estimate = self.registry.definitions_estimate_tokens_for(&active_names);
         let system_and_tools = system_estimate + tools_estimate;
 
@@ -67,8 +67,8 @@ impl AgentSession {
             return Ok(());
         }
 
-        let previous_summary = self.compaction_summary.lock().unwrap().clone();
-        let llm = self.llm.read().unwrap().clone();
+        let previous_summary = self.compaction_summary.lock()?.clone();
+        let llm = self.llm.read()?.clone();
         let keep_recent = settings.keep_recent_tokens;
         // Reserve response tokens for the summary itself.
         let max_prompt_tokens = max_context_tokens.saturating_sub(settings.reserve_tokens);
@@ -99,13 +99,13 @@ impl AgentSession {
                     "context compacted"
                 );
                 let kept: Vec<_> = history.into_iter().skip(result.first_kept_index).collect();
-                *self.history.lock().unwrap() = kept;
-                *self.compaction_summary.lock().unwrap() = Some(result.summary);
+                *self.history.lock()? = kept;
+                *self.compaction_summary.lock()? = Some(result.summary);
                 // The system prompt now includes the new summary; force a
                 // re-estimate on the next turn so compaction decisions remain
                 // accurate.
-                *self.last_system_estimate.lock().unwrap() = None;
-                *self.last_prompt_tokens.lock().unwrap() = None;
+                *self.last_system_estimate.lock()? = None;
+                *self.last_prompt_tokens.lock()? = None;
             }
             Ok(None) => {}
             Err(e) => {
@@ -127,7 +127,7 @@ impl AgentSession {
     ) -> Result<(), AgentError> {
         let _guard = self.turn_lock.lock().await;
 
-        let mut history = self.history.lock().unwrap();
+        let mut history = self.history.lock()?;
         let user_positions: Vec<usize> = history
             .iter()
             .enumerate()
@@ -148,14 +148,17 @@ impl AgentSession {
         }
         // If this is the latest turn and we want after_user=false, nothing to truncate.
 
-        *self.pending_approval.lock().unwrap() = None;
+        *self.pending_approval.lock()? = None;
         // Truncated history may have a different token count and schedule state.
-        *self.last_prompt_tokens.lock().unwrap() = None;
-        *self.schedule_dirty.lock().unwrap() = false;
+        *self.last_prompt_tokens.lock()? = None;
+        *self.schedule_dirty.lock()? = false;
         Ok(())
     }
 
-    pub(crate) fn trim_messages(&self, mut messages: Vec<llm::Message>) -> Vec<llm::Message> {
+    pub(crate) fn trim_messages(
+        &self,
+        mut messages: Vec<llm::Message>,
+    ) -> Result<Vec<llm::Message>, AgentError> {
         let system_message = if messages
             .first()
             .map(|m| matches!(m, llm::Message::System(_)))
@@ -170,10 +173,10 @@ impl AgentSession {
             .as_ref()
             .map(|m| m.estimate_tokens())
             .unwrap_or(0);
-        let active_names = self.active_tool_names();
+        let active_names = self.active_tool_names()?;
         let tools_estimate = self.registry.definitions_estimate_tokens_for(&active_names);
         let last_estimate = messages.last().map_or(0, |m| m.estimate_tokens());
-        let config = self.config.read().unwrap();
+        let config = self.config.read()?.clone();
         let target = config
             .llm
             .max_context_tokens
@@ -183,7 +186,7 @@ impl AgentSession {
 
         let current = messages.iter().map(|m| m.estimate_tokens()).sum::<usize>();
         let actual_local = {
-            let last = *self.last_prompt_tokens.lock().unwrap();
+            let last = *self.last_prompt_tokens.lock()?;
             last.map(|p| {
                 p.saturating_sub(system_estimate)
                     .saturating_sub(tools_estimate)
@@ -196,7 +199,7 @@ impl AgentSession {
         if let Some(system) = system_message {
             messages.insert(0, system);
         }
-        messages
+        Ok(messages)
     }
 
     pub(crate) fn replace_history(
@@ -204,11 +207,11 @@ impl AgentSession {
         local: Vec<llm::Message>,
         prompt_tokens: Option<usize>,
         system_estimate: usize,
-    ) {
-        let active_names = self.active_tool_names();
+    ) -> Result<(), AgentError> {
+        let active_names = self.active_tool_names()?;
         let tools_estimate = self.registry.definitions_estimate_tokens_for(&active_names);
         let last_estimate = local.last().map_or(0, |m| m.estimate_tokens());
-        let config = self.config.read().unwrap();
+        let config = self.config.read()?.clone();
         let target = config
             .llm
             .max_context_tokens
@@ -233,8 +236,9 @@ impl AgentSession {
         // trim_messages' behavior for the same case.
         let local = trim_to_target(local, target, current, actual_local, last_estimate);
 
-        let mut guard = self.history.lock().unwrap();
+        let mut guard = self.history.lock()?;
         *guard = local;
+        Ok(())
     }
 }
 
