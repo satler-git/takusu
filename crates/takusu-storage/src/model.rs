@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use takusu_types::{
-    Abandonability, Date, DependencyList, JsonString, Quantity, Similarity, TaskStatusFilter,
-    TimeOfDay, Timestamp,
+    Abandonability, Date, DependencyList, JsonString, Quantity, ScheduleMode, Similarity,
+    SleepInput, TaskStatusFilter, TimeOfDay, Timestamp,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
@@ -506,6 +506,98 @@ pub struct SaveScheduleRequest {
     pub entries: Vec<ScheduleEntry>,
     #[serde(default)]
     pub mark_scheduled_task_ids: Vec<String>,
+}
+
+// ── Schedule request/response types (#1324) ──────────────────────────────
+//
+// Previously duplicated across takusu-client, takusu-local handlers, and
+// takusu-local-lib app layer. Consolidated here so all three layers share
+// a single definition; takusu-client re-exports via `pub use
+// takusu_storage::model::*`.
+
+fn default_sleep() -> SleepInput {
+    SleepInput::Recommended
+}
+
+fn default_schedule_mode() -> ScheduleMode {
+    ScheduleMode::Full
+}
+
+/// Request body for `POST /api/schedule/preview`.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct SchedulePreviewRequest {
+    #[serde(default = "default_schedule_mode")]
+    pub mode: ScheduleMode,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub from: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub until: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub task_ids: Option<Vec<String>>,
+    #[serde(default)]
+    pub pinned: Vec<String>,
+    #[serde(default = "default_sleep")]
+    pub sleep: SleepInput,
+}
+
+/// Response body for `POST /api/schedule/preview`.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct SchedulePreviewResponse {
+    pub entries: Vec<ScheduleEntry>,
+    #[serde(default)]
+    pub unscheduled_task_ids: Vec<String>,
+    #[serde(default)]
+    pub displaced_task_ids: Vec<String>,
+    #[serde(default)]
+    pub sleep_minutes_before: i64,
+    #[serde(default)]
+    pub sleep_minutes_after: i64,
+    #[serde(default)]
+    pub warnings: Vec<String>,
+}
+
+/// Request body for `POST /api/schedule/generate`.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct GenerateSchedule {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub task_ids: Option<Vec<String>>,
+    #[serde(default = "default_sleep")]
+    pub sleep: SleepInput,
+}
+
+/// Request body for `POST /api/schedule/reschedule`.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct Reschedule {
+    pub mode: ScheduleMode,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub from: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub until: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub task_ids: Option<Vec<String>>,
+    #[serde(default)]
+    pub pinned: Vec<String>,
+    #[serde(default = "default_sleep")]
+    pub sleep: SleepInput,
+}
+
+/// Request body for `PATCH /api/schedule/entries/:task_id`.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct MoveEntry {
+    pub start_at: Timestamp,
+    #[serde(default)]
+    #[schemars(default)]
+    pub force: bool,
+}
+
+/// Response body for `PATCH /api/schedule/entries/:task_id`.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct MoveEntryResponse {
+    pub task_id: String,
+    pub start_at: Timestamp,
+    pub end_at: Timestamp,
+    #[serde(default)]
+    pub warnings: Vec<String>,
 }
 
 takusu_search::impl_search_task!(TaskRow);

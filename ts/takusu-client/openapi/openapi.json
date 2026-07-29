@@ -4894,6 +4894,7 @@
     "/schedule/generate": {
       "post": {
         "requestBody": {
+          "description": "Request body for `POST /api/schedule/generate`.",
           "content": {
             "application/json": {
               "schema": {
@@ -5045,10 +5046,11 @@
     "/schedule/preview": {
       "post": {
         "requestBody": {
+          "description": "Request body for `POST /api/schedule/preview`.",
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/PreviewSchedule"
+                "$ref": "#/components/schemas/SchedulePreviewRequest"
               }
             }
           },
@@ -5056,11 +5058,11 @@
         },
         "responses": {
           "200": {
-            "description": "",
+            "description": "Response body for `POST /api/schedule/preview`.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SchedulePreviewOutput"
+                  "$ref": "#/components/schemas/SchedulePreviewResponse"
                 }
               }
             }
@@ -5347,6 +5349,7 @@
     "/schedule/reschedule": {
       "post": {
         "requestBody": {
+          "description": "Request body for `POST /api/schedule/reschedule`.",
           "content": {
             "application/json": {
               "schema": {
@@ -5498,6 +5501,7 @@
     "/schedule/entries/{task_id}": {
       "patch": {
         "requestBody": {
+          "description": "Request body for `PATCH /api/schedule/entries/:task_id`.",
           "content": {
             "application/json": {
               "schema": {
@@ -5509,11 +5513,11 @@
         },
         "responses": {
           "200": {
-            "description": "",
+            "description": "Response body for `PATCH /api/schedule/entries/:task_id`.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/MoveEntryOutput"
+                  "$ref": "#/components/schemas/MoveEntryResponse"
                 }
               }
             }
@@ -9863,6 +9867,7 @@
         ]
       },
       "GenerateSchedule": {
+        "description": "Request body for `POST /api/schedule/generate`.",
         "type": "object",
         "properties": {
           "sleep": {
@@ -10751,6 +10756,7 @@
         ]
       },
       "MoveEntry": {
+        "description": "Request body for `PATCH /api/schedule/entries/:task_id`.",
         "type": "object",
         "properties": {
           "force": {
@@ -10758,27 +10764,29 @@
             "default": false
           },
           "start_at": {
-            "type": "string"
+            "$ref": "#/components/schemas/Timestamp"
           }
         },
         "required": [
           "start_at"
         ]
       },
-      "MoveEntryOutput": {
+      "MoveEntryResponse": {
+        "description": "Response body for `PATCH /api/schedule/entries/:task_id`.",
         "type": "object",
         "properties": {
           "end_at": {
-            "type": "string"
+            "$ref": "#/components/schemas/Timestamp"
           },
           "start_at": {
-            "type": "string"
+            "$ref": "#/components/schemas/Timestamp"
           },
           "task_id": {
             "type": "string"
           },
           "warnings": {
             "type": "array",
+            "default": [],
             "items": {
               "type": "string"
             }
@@ -10787,8 +10795,7 @@
         "required": [
           "task_id",
           "start_at",
-          "end_at",
-          "warnings"
+          "end_at"
         ]
       },
       "OAuthCallbackRequest": {
@@ -10842,55 +10849,6 @@
         "required": [
           "url"
         ]
-      },
-      "PreviewSchedule": {
-        "type": "object",
-        "properties": {
-          "from": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "mode": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/ScheduleMode"
-              }
-            ],
-            "default": "full"
-          },
-          "pinned": {
-            "type": "array",
-            "default": [],
-            "items": {
-              "type": "string"
-            }
-          },
-          "sleep": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/SleepInput"
-              }
-            ],
-            "default": "recommended"
-          },
-          "task_ids": {
-            "type": [
-              "array",
-              "null"
-            ],
-            "items": {
-              "type": "string"
-            }
-          },
-          "until": {
-            "type": [
-              "string",
-              "null"
-            ]
-          }
-        }
       },
       "ProgressEventRow": {
         "type": "object",
@@ -11021,6 +10979,7 @@
         ]
       },
       "Reschedule": {
+        "description": "Request body for `POST /api/schedule/reschedule`.",
         "type": "object",
         "properties": {
           "from": {
@@ -11108,7 +11067,7 @@
         ]
       },
       "ScheduleMode": {
-        "description": "Reschedule / preview mode for schedule operations.\n\n`Range` replans tasks within a time window; `Tasks` replans a specific\nset of task IDs; `Full` regenerates the entire schedule (only valid for\npreview — `reschedule` rejects it). Used by `RescheduleInput`,\n`SchedulePreviewInput`, and the CLI's `ScheduleCommands::Reschedule`.",
+        "description": "Reschedule / preview mode for schedule operations.\n\n`Range` replans tasks within a time window; `Tasks` replans a specific\nset of task IDs; `Full` regenerates the entire schedule (only valid for\npreview — `reschedule` rejects it). Used by `Reschedule`,\n`SchedulePreviewRequest`, and the CLI's `ScheduleCommands::Reschedule`.",
         "type": "string",
         "enum": [
           "range",
@@ -11116,11 +11075,63 @@
           "full"
         ]
       },
-      "SchedulePreviewOutput": {
+      "SchedulePreviewRequest": {
+        "description": "Request body for `POST /api/schedule/preview`.",
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "mode": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ScheduleMode"
+              }
+            ],
+            "default": "full"
+          },
+          "pinned": {
+            "type": "array",
+            "default": [],
+            "items": {
+              "type": "string"
+            }
+          },
+          "sleep": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SleepInput"
+              }
+            ],
+            "default": "recommended"
+          },
+          "task_ids": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "until": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "SchedulePreviewResponse": {
+        "description": "Response body for `POST /api/schedule/preview`.",
         "type": "object",
         "properties": {
           "displaced_task_ids": {
             "type": "array",
+            "default": [],
             "items": {
               "type": "string"
             }
@@ -11133,32 +11144,31 @@
           },
           "sleep_minutes_after": {
             "type": "integer",
-            "format": "int64"
+            "format": "int64",
+            "default": 0
           },
           "sleep_minutes_before": {
             "type": "integer",
-            "format": "int64"
+            "format": "int64",
+            "default": 0
           },
           "unscheduled_task_ids": {
             "type": "array",
+            "default": [],
             "items": {
               "type": "string"
             }
           },
           "warnings": {
             "type": "array",
+            "default": [],
             "items": {
               "type": "string"
             }
           }
         },
         "required": [
-          "entries",
-          "unscheduled_task_ids",
-          "displaced_task_ids",
-          "sleep_minutes_before",
-          "sleep_minutes_after",
-          "warnings"
+          "entries"
         ]
       },
       "ScheduleRow": {

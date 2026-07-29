@@ -24,10 +24,6 @@ pub use gcal::{
     DeleteAllGcalFailure, DeleteAllGcalResult, GoogleCalSettingsOutput, OAuthCallbackResponse,
     OAuthUrlResponse, SyncTriggerResponse,
 };
-pub use schedule::{
-    GenerateScheduleInput, MoveEntryOutput, RescheduleInput, SchedulePreviewInput,
-    SchedulePreviewOutput,
-};
 pub use task::IcalImportResult;
 
 fn default_settings_row() -> SettingsRow {

@@ -3385,6 +3385,7 @@ export interface paths {
                 path?: never;
                 cookie?: never;
             };
+            /** @description Request body for `POST /api/schedule/generate`. */
             requestBody: {
                 content: {
                     "application/json": components["schemas"]["GenerateSchedule"];
@@ -3496,18 +3497,20 @@ export interface paths {
                 path?: never;
                 cookie?: never;
             };
+            /** @description Request body for `POST /api/schedule/preview`. */
             requestBody: {
                 content: {
-                    "application/json": components["schemas"]["PreviewSchedule"];
+                    "application/json": components["schemas"]["SchedulePreviewRequest"];
                 };
             };
             responses: {
+                /** @description Response body for `POST /api/schedule/preview`. */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["SchedulePreviewOutput"];
+                        "application/json": components["schemas"]["SchedulePreviewResponse"];
                     };
                 };
                 /** @description Error */
@@ -3718,6 +3721,7 @@ export interface paths {
                 path?: never;
                 cookie?: never;
             };
+            /** @description Request body for `POST /api/schedule/reschedule`. */
             requestBody: {
                 content: {
                     "application/json": components["schemas"]["Reschedule"];
@@ -3833,18 +3837,20 @@ export interface paths {
                 path?: never;
                 cookie?: never;
             };
+            /** @description Request body for `PATCH /api/schedule/entries/:task_id`. */
             requestBody: {
                 content: {
                     "application/json": components["schemas"]["MoveEntry"];
                 };
             };
             responses: {
+                /** @description Response body for `PATCH /api/schedule/entries/:task_id`. */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["MoveEntryOutput"];
+                        "application/json": components["schemas"]["MoveEntryResponse"];
                     };
                 };
                 /** @description Error */
@@ -6447,6 +6453,7 @@ export interface components {
             id: string;
             title: string;
         };
+        /** @description Request body for `POST /api/schedule/generate`. */
         GenerateSchedule: {
             /** @default recommended */
             sleep: components["schemas"]["SleepInput"];
@@ -6767,15 +6774,18 @@ export interface components {
          * @enum {string}
          */
         MemorySource: "user_confirmed" | "agent_inferred" | "imported";
+        /** @description Request body for `PATCH /api/schedule/entries/:task_id`. */
         MoveEntry: {
             /** @default false */
             force: boolean;
-            start_at: string;
+            start_at: components["schemas"]["Timestamp"];
         };
-        MoveEntryOutput: {
-            end_at: string;
-            start_at: string;
+        /** @description Response body for `PATCH /api/schedule/entries/:task_id`. */
+        MoveEntryResponse: {
+            end_at: components["schemas"]["Timestamp"];
+            start_at: components["schemas"]["Timestamp"];
             task_id: string;
+            /** @default [] */
             warnings: string[];
         };
         OAuthCallbackRequest: {
@@ -6792,17 +6802,6 @@ export interface components {
         /** @description Response for `POST /api/sync/oauth/url`. */
         OAuthUrlResponse: {
             url: string;
-        };
-        PreviewSchedule: {
-            from?: string | null;
-            /** @default full */
-            mode: components["schemas"]["ScheduleMode"];
-            /** @default [] */
-            pinned: string[];
-            /** @default recommended */
-            sleep: components["schemas"]["SleepInput"];
-            task_ids?: string[] | null;
-            until?: string | null;
         };
         ProgressEventRow: {
             /** Format: int64 */
@@ -6852,6 +6851,7 @@ export interface components {
             /** @description Witness path `from → … → to` (endpoints included, length >= 3). */
             via: components["schemas"]["DependencyNode"][];
         };
+        /** @description Request body for `POST /api/schedule/reschedule`. */
         Reschedule: {
             from?: string | null;
             mode: components["schemas"]["ScheduleMode"];
@@ -6877,19 +6877,41 @@ export interface components {
          *
          *     `Range` replans tasks within a time window; `Tasks` replans a specific
          *     set of task IDs; `Full` regenerates the entire schedule (only valid for
-         *     preview — `reschedule` rejects it). Used by `RescheduleInput`,
-         *     `SchedulePreviewInput`, and the CLI's `ScheduleCommands::Reschedule`.
+         *     preview — `reschedule` rejects it). Used by `Reschedule`,
+         *     `SchedulePreviewRequest`, and the CLI's `ScheduleCommands::Reschedule`.
          * @enum {string}
          */
         ScheduleMode: "range" | "tasks" | "full";
-        SchedulePreviewOutput: {
+        /** @description Request body for `POST /api/schedule/preview`. */
+        SchedulePreviewRequest: {
+            from?: string | null;
+            /** @default full */
+            mode: components["schemas"]["ScheduleMode"];
+            /** @default [] */
+            pinned: string[];
+            /** @default recommended */
+            sleep: components["schemas"]["SleepInput"];
+            task_ids?: string[] | null;
+            until?: string | null;
+        };
+        /** @description Response body for `POST /api/schedule/preview`. */
+        SchedulePreviewResponse: {
+            /** @default [] */
             displaced_task_ids: string[];
             entries: components["schemas"]["ScheduleEntry"][];
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @default 0
+             */
             sleep_minutes_after: number;
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @default 0
+             */
             sleep_minutes_before: number;
+            /** @default [] */
             unscheduled_task_ids: string[];
+            /** @default [] */
             warnings: string[];
         };
         ScheduleRow: {
