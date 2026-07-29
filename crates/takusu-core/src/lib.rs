@@ -101,16 +101,22 @@ impl Point {
         Minutes(self.0 * SLOT_MINUTES)
     }
 
-    /// 絶対値の差 (符号なし)。
+    /// 絶対値の差 (符号なし Slots)。
+    ///
+    /// `Point - Point` と同じ意味だが常に非負。`lhs` と `rhs` の前後関係を
+    /// 気にせず距離だけが欲しい場合に使う。
     #[inline(always)]
-    pub fn diff(lhs: Point, rhs: Point) -> i64 {
-        (lhs.0 - rhs.0).abs()
+    pub fn diff(lhs: Point, rhs: Point) -> Slots {
+        Slots((lhs.0 - rhs.0).abs())
     }
 
-    /// 符号付きの差。`lhs - rhs`。前後関係の判定に使う。
+    /// 符号付きの差 (`lhs - rhs`)。前後関係の判定に使う。
+    ///
+    /// `(lhs - rhs).0` と等価。`Point - Point -> Slots` 演算子と同じ意味だが、
+    /// 戻り値を `Slots` として受け取る明示的な名前付き API。
     #[inline(always)]
-    pub fn delta(lhs: Point, rhs: Point) -> i64 {
-        lhs.0 - rhs.0
+    pub fn delta(lhs: Point, rhs: Point) -> Slots {
+        Slots(lhs.0 - rhs.0)
     }
 }
 
@@ -125,6 +131,30 @@ impl std::ops::Sub<i64> for Point {
     type Output = Point;
     fn sub(self, rhs: i64) -> Point {
         Point(self.0 - rhs)
+    }
+}
+
+impl std::ops::Add<Slots> for Point {
+    type Output = Point;
+    #[inline(always)]
+    fn add(self, rhs: Slots) -> Point {
+        Point(self.0 + rhs.0)
+    }
+}
+
+impl std::ops::Sub<Slots> for Point {
+    type Output = Point;
+    #[inline(always)]
+    fn sub(self, rhs: Slots) -> Point {
+        Point(self.0 - rhs.0)
+    }
+}
+
+impl std::ops::Sub for Point {
+    type Output = Slots;
+    #[inline(always)]
+    fn sub(self, rhs: Point) -> Slots {
+        Slots(self.0 - rhs.0)
     }
 }
 
@@ -843,13 +873,13 @@ impl Planner {
             self.tasks[id].end,
             self.tasks[id].start.unwrap_or(Point(0)).max(self.now),
         );
-        if slack < 0 {
+        if slack.0 < 0 {
             return f64::NEG_INFINITY;
         }
-        if slack == 0 {
+        if slack.0 == 0 {
             return 0.;
         }
-        1. - (self.tasks[id].cost_estimate.avg() as f64 / slack as f64)
+        1. - (self.tasks[id].cost_estimate.avg() as f64 / slack.0 as f64)
     }
 }
 
@@ -1294,8 +1324,19 @@ mod tests {
         let p = Point(10);
         assert_eq!((p + 5).0, 15);
         assert_eq!((p - 3).0, 7);
-        assert_eq!(Point::diff(Point(10), Point(20)), 10);
-        assert_eq!(Point::delta(Point(20), Point(10)), 10);
+        assert_eq!(Point::diff(Point(10), Point(20)), Slots(10));
+        assert_eq!(Point::delta(Point(20), Point(10)), Slots(10));
+    }
+
+    #[test]
+    fn point_slots_arithmetic() {
+        let p = Point(10);
+        assert_eq!((p + Slots(5)).0, 15);
+        assert_eq!((p - Slots(3)).0, 7);
+        // Point - Point -> Slots (duration)
+        assert_eq!((Point(20) - Point(5)).0, 15);
+        // Chained: point + duration - duration
+        assert_eq!((Point(10) + Slots(5) - Slots(3)).0, 12);
     }
 
     #[test]

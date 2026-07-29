@@ -156,7 +156,7 @@ fn validate_and_collect_fixed(
         }
         if let Some(start) = task.start {
             let dur = duration_for(task, input.duration_choices.get(task.id));
-            let end = Point(start.0 + dur);
+            let end = start + dur;
 
             if placements.iter().any(|p| p.task_id == task.id) {
                 diagnostics
@@ -256,7 +256,7 @@ pub(crate) fn fallback_for(
     planner: &Planner,
     schedules: &[Placement],
     earliest: Point,
-    dur: i64,
+    dur: Slots,
     latest_end: Option<Point>,
     task: &Task,
     capacity: CapacityMode<'_>,
@@ -273,7 +273,7 @@ pub(crate) fn fallback_for(
     match try_place(planner, schedules, task, start, dur, latest_end, capacity) {
         Ok(tw) => (tw.start, tw.end, None),
         Err(err) => {
-            let end = Point(start.0 + dur);
+            let end = start + dur;
             (start, end, Some(err))
         }
     }
@@ -489,7 +489,7 @@ fn place_regret2(
         }
 
         if scores.is_empty() {
-            let dur = (task.cost_estimate.avg() as i64).max(1);
+            let dur = Slots((task.cost_estimate.avg() as i64).max(1));
             let (s, e, fallback_err) = fallback_for(
                 planner,
                 schedules,
@@ -1036,22 +1036,22 @@ pub fn decode(planner: &Planner, input: DecodeInput<'_>) -> DecodeResult {
     }
 }
 
-fn duration_for(task: &Task, choice: Option<&i64>) -> i64 {
+fn duration_for(task: &Task, choice: Option<&i64>) -> Slots {
     match choice {
-        Some(&d) if d > 0 => d,
-        _ => (task.cost_estimate.avg() as i64).max(1),
+        Some(&d) if d > 0 => Slots(d),
+        _ => Slots((task.cost_estimate.avg() as i64).max(1)),
     }
 }
 
-fn duration_candidates(task: &Task, choice: Option<&i64>) -> Vec<i64> {
+fn duration_candidates(task: &Task, choice: Option<&i64>) -> Vec<Slots> {
     if let Some(&d) = choice {
-        return vec![d.max(1)];
+        return vec![Slots(d.max(1))];
     }
     let avg = task.cost_estimate.avg() as i64;
     let sigma = task.cost_estimate.sigma() as i64;
-    let expected = avg.max(1);
-    let conservative = (avg + sigma).max(1);
-    let short = (avg - sigma).max(1);
+    let expected = Slots(avg.max(1));
+    let conservative = Slots((avg + sigma).max(1));
+    let short = Slots((avg - sigma).max(1));
 
     let mut candidates = vec![expected];
     if conservative != expected {
@@ -1069,7 +1069,7 @@ fn feasible_slots(
     schedules: &[Placement],
     task: &Task,
     earliest: Point,
-    dur: i64,
+    dur: Slots,
     latest_end: Option<Point>,
     max_count: usize,
     scratch: &mut Vec<TimeWindow>,
@@ -1799,7 +1799,7 @@ mod tests {
             &[],
             &task,
             Point(1),
-            10,
+            Slots(10),
             None,
             CapacityMode::True(&mut Vec::new()),
         )
@@ -1826,7 +1826,7 @@ mod tests {
             &[],
             &task,
             Point(0),
-            10,
+            Slots(10),
             Some(Point(5)),
             CapacityMode::True(&mut Vec::new()),
         )
@@ -1858,7 +1858,7 @@ mod tests {
             &[],
             &task,
             Point(20),
-            10,
+            Slots(10),
             None,
             CapacityMode::True(&mut Vec::new()),
         )
@@ -1899,7 +1899,7 @@ mod tests {
             &schedules,
             &guest,
             Point(0),
-            3,
+            Slots(3),
             None,
             CapacityMode::True(&mut Vec::new()),
         )
@@ -2404,7 +2404,7 @@ mod tests {
             &schedules,
             &task,
             Point(7),
-            5,
+            Slots(5),
             None,
             CapacityMode::True(&mut Vec::new()),
         )

@@ -443,7 +443,7 @@ impl super::TakusuApp {
         let old_start = iso_to_point(&entries[idx].start_at.to_string(), &tz)?;
         let old_end = iso_to_point(&entries[idx].end_at.to_string(), &tz)?;
         let duration = Point::delta(old_end, old_start);
-        let new_end = Point(new_start_point.0 + duration);
+        let new_end = new_start_point + duration;
         let new_entry = ScheduleEntry {
             task_id: full_task_id.clone(),
             start_at: point_to_iso(new_start_point.0)?,

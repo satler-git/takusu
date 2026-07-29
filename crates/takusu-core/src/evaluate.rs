@@ -435,23 +435,23 @@ fn task_and_depend_scores(
 
         // deadline_score
         let slack = Point::delta(task.end, sched_end);
-        if slack >= 0 {
-            score += (slack as f64 * w.w_early).min(50.0);
+        if slack.0 >= 0 {
+            score += (slack.0 as f64 * w.w_early).min(50.0);
         } else {
             let weight = 1.0 - task.abandonability.get();
-            score += slack as f64 * w.w_late * weight;
+            score += slack.0 as f64 * w.w_late * weight;
         }
 
         // start_score
         if let Some(task_start) = task.start
             && sched_start < task_start
         {
-            score += Point::delta(sched_start, task_start) as f64 * w.w_start;
+            score += Point::delta(sched_start, task_start).0 as f64 * w.w_start;
         }
 
         // duration_score
         let actual = Point::delta(sched_end, sched_start);
-        let deficit = task.cost_estimate.avg() as i64 - actual;
+        let deficit = task.cost_estimate.avg() as i64 - actual.0;
         if deficit > 0 {
             score += -(deficit * deficit) as f64 * w.w_short;
         } else if deficit < 0 {
@@ -579,15 +579,15 @@ fn sleep_score(
 
     let first_day = day_start_epoch
         + (plan_start.0 - day_start_epoch).div_euclid(slots_per_day) * slots_per_day;
-    let mut day_start_point = Point(first_day - slots_per_day);
+    let mut day_start_point = Point(first_day) - Slots(slots_per_day);
 
     let w = &planner.weights;
     let mut score = 0.0;
     let mut start_idx = 0usize;
 
     while day_start_point.0 + sleep_start_rel <= plan_end.0 {
-        let sleep_window_start = Point(day_start_point.0 + sleep_start_rel);
-        let sleep_window_end = Point(day_start_point.0 + sleep_end_rel);
+        let sleep_window_start = day_start_point + Slots(sleep_start_rel);
+        let sleep_window_end = day_start_point + Slots(sleep_end_rel);
 
         let occupied =
             union_length_in_window(sorted, sleep_window_start, sleep_window_end, &mut start_idx);
@@ -601,7 +601,7 @@ fn sleep_score(
             }
         }
 
-        day_start_point = Point(day_start_point.0 + slots_per_day);
+        day_start_point = day_start_point + Slots(slots_per_day);
     }
 
     score
@@ -645,7 +645,7 @@ fn daily_load_score(
     let mut score = 0.0;
     let mut start_idx = 0usize;
     while day_start.0 < plan_end.0 {
-        let day_end = Point(day_start.0 + slots_per_day);
+        let day_end = day_start + Slots(slots_per_day);
 
         let load = union_length_in_window(sorted, day_start, day_end, &mut start_idx);
 
@@ -657,7 +657,7 @@ fn daily_load_score(
         let maximum_penalty = (maximum_excess * maximum_excess) as f64 * w.w_daily_maximum;
         score -= normal_penalty + overload_penalty + maximum_penalty;
 
-        day_start = Point(day_start.0 + slots_per_day);
+        day_start = day_start + Slots(slots_per_day);
     }
 
     score
@@ -675,14 +675,14 @@ fn union_length(intervals: &mut [TimeWindow]) -> i64 {
     let mut cur_end = intervals[0].end;
     for tw in intervals.iter().skip(1) {
         if tw.start.0 > cur_end.0 {
-            total += cur_end.0 - cur_start.0;
+            total += (cur_end - cur_start).0;
             cur_start = tw.start;
             cur_end = tw.end;
         } else if tw.end.0 > cur_end.0 {
             cur_end = tw.end;
         }
     }
-    total += cur_end.0 - cur_start.0;
+    total += (cur_end - cur_start).0;
     total
 }
 
