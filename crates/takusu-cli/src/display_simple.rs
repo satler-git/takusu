@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use takusu_storage::{
     HabitRow, HabitScheduledSpanRow, HabitStepRow, ScheduleEntry, SkillRow, TaskRow, TokenRow,
 };
-use takusu_util::{TaskStatus, Timestamp};
+use takusu_types::{TaskStatus, Timestamp};
 
 use crate::display_common::{DisplayFormatter, format_duration, habit_label_by_id, progress_text};
 use crate::task_ref::task_reference;

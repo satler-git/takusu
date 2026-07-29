@@ -6,7 +6,7 @@
 
 use futures_util::TryStreamExt;
 use serde::{Deserialize, Serialize};
-use takusu_util::enum_label;
+use takusu_types::enum_label;
 
 use crate::secrets::{ApiKey, EndpointUrl};
 use crate::tts::{TextToSpeech, TtsError, TtsRequest, TtsStream};

@@ -4,7 +4,7 @@ use std::fs;
 use std::io;
 use std::process::Command;
 use takusu_storage::{HabitRow, HabitStepInput, HabitStepRow, TaskRow, UpdateHabit, UpdateTask};
-use takusu_util::{TaskStatus, TimeOfDay, Timestamp, WindowMode, parse_datetime_to_timestamp};
+use takusu_types::{TaskStatus, TimeOfDay, Timestamp, WindowMode, parse_datetime_to_timestamp};
 
 use crate::task_ref::task_reference;
 
@@ -511,7 +511,7 @@ pub fn open_editor(content: &str, suffix: &str) -> io::Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use takusu_util::Quantity;
+    use takusu_types::Quantity;
 
     fn task_row(
         id: &str,

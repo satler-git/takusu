@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::str::FromStr;
 use takusu_client::{Client, SchedulePreviewRequest, TaskQuery};
-use takusu_util::parse_datetime_tz;
+use takusu_types::parse_datetime_tz;
 
 use crate::{
     ChangeOperation, InferredField, InvalidArgsError, ProposalContent, ProposedChange, Target,

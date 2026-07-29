@@ -3,12 +3,12 @@
 
 /// Validate that `start <= end` (#303).
 ///
-/// `takusu_util::Date` already enforces strict `YYYY-MM-DD` formatting and
+/// `takusu_types::Date` already enforces strict `YYYY-MM-DD` formatting and
 /// real calendar dates at parse/deserialization time, so the only remaining
 /// check here is ordering.
 pub(crate) fn validate_scheduled_span_dates(
-    start: &takusu_util::Date,
-    end: &takusu_util::Date,
+    start: &takusu_types::Date,
+    end: &takusu_types::Date,
 ) -> Result<(), String> {
     if start > end {
         return Err(format!("start_date ({start}) must be <= end_date ({end})"));

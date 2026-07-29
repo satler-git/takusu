@@ -11,7 +11,8 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
-takusu-util = { workspace = true }
+takusu-types = { workspace = true }
+takusu-storage = { workspace = true }
 
 [target.'cfg(target_os = "android")'.dependencies]
 webpki-root-certs = "1"

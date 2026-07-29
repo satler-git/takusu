@@ -21,10 +21,10 @@ takusu-client = { workspace = true }
 takusu-local-lib = { workspace = true }
 takusu-storage = { workspace = true }
 tokio = { workspace = true }
-axum = { workspace = true }
+axum = "0.8"
 thiserror = { workspace = true }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uniffi = "0.31.2"
 serde_json = { workspace = true }
 

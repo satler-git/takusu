@@ -7,8 +7,8 @@
 use std::net::{TcpStream, ToSocketAddrs};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::LazyLock;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
@@ -236,9 +236,8 @@ fn http_get(path: &str) -> Result<(u16, String), String> {
     let mut stream =
         TcpStream::connect((host, WRANGLER_PORT)).map_err(|e| format!("connect: {e}"))?;
     stream.set_read_timeout(Some(Duration::from_secs(10))).ok();
-    let request = format!(
-        "GET {path} HTTP/1.1\r\nHost: {host}:{WRANGLER_PORT}\r\nConnection: close\r\n\r\n"
-    );
+    let request =
+        format!("GET {path} HTTP/1.1\r\nHost: {host}:{WRANGLER_PORT}\r\nConnection: close\r\n\r\n");
     stream
         .write_all(request.as_bytes())
         .map_err(|e| format!("write: {e}"))?;

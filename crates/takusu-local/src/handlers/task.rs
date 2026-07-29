@@ -3,12 +3,12 @@ use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use serde::Deserialize;
 use std::str::FromStr;
+use takusu_search::search::Completion;
 use takusu_storage::{
     CreateTask, CreateTaskBatch, CreateTaskBatchResult, ProgressResult, RecordProgress,
     SplitResult, SplitTask, TaskProgress, TaskQuery, TaskRow, UpdateTask,
 };
-use takusu_util::search::Completion;
-use takusu_util::{TaskStatusFilter, Timestamp, parse_datetime_to_timestamp};
+use takusu_types::{TaskStatusFilter, Timestamp, parse_datetime_to_timestamp};
 
 use crate::error::HttpError;
 use crate::handlers::common::operation_id;

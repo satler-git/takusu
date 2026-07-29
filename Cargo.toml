@@ -17,20 +17,13 @@ rayon = "1.10"
 criterion = { package = "codspeed-criterion-compat", version = "5.0.1" }
 
 tokio = { version = "1.52.0", features = ["full"] }
-axum = "0.8"
-sqlx = { version = "0.9", features = ["runtime-tokio", "sqlite"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_path_to_error = "0.1"
 uuid = { version = "1", features = ["v7"] }
 sha2 = "0.11"
-tower-http = { version = "0.7", features = ["cors", "trace"] }
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-sentry = { version = "0.48.4", default-features = false, features = ["backtrace", "contexts", "debug-images", "panic", "rustls", "tracing", "ureq"] }
-config = "0.15"
 async-trait = "0.1"
-schemars = "1"
 strum = { version = "0.28", features = ["derive"] }
 insta = "1"
 inventory = "0.3"
@@ -42,7 +35,7 @@ reqwest = { version = "0.13", features = [
 takusu-core = { path = "crates/takusu-core", default-features = false }
 takusu-ical = { path = "crates/takusu-ical" }
 takusu-client = { path = "crates/takusu-client" }
-takusu-util = { path = "crates/takusu-util" }
+takusu-types = { path = "crates/takusu-types" }
 takusu-search = { path = "crates/takusu-search" }
 takusu-audio = { path = "crates/takusu-audio" }
 takusu-agent = { path = "crates/takusu-agent", default-features = false }
@@ -53,13 +46,6 @@ takusu-local = { path = "crates/takusu-local", default-features = false }
 takusu-web = { path = "crates/takusu-web", default-features = false }
 google-cal = { path = "crates/google-cal" }
 takusu-tui = { path = "crates/takusu-tui" }
-
-futures-util = "0.3"
-petgraph = { version = "0.8", default-features = false }
-web-time = "1.1"
-toml = "0.8"
-rust-embed = "8"
-mime_guess = "2"
 
 [profile.dev.package."tikv-jemalloc-sys"]
 # Build the C jemalloc sources with optimizations even in dev/test. This avoids

@@ -19,23 +19,23 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("clap"))']
 
 [dependencies]
 async-trait = { workspace = true }
-axum = { workspace = true }
+axum = "0.8"
 clap = { version = "4", features = ["derive"] }
-config = { workspace = true }
-futures-util = { workspace = true }
+config = "0.15"
+futures-util = "0.3"
 inventory = { workspace = true }
 jiff = { workspace = true }
 jpholiday = "0.2.0"
 rand = { workspace = true }
 reqwest = { workspace = true, features = ["stream"] }
-schemars = { workspace = true }
+schemars = "1"
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_path_to_error = { workspace = true }
 strum = { workspace = true }
 thiserror = { workspace = true }
 tokio-stream = "0.1"
-toml = { workspace = true }
+toml = "0.8"
 tokio = { workspace = true }
 tracing = { workspace = true }
 uuid = { workspace = true }
@@ -43,9 +43,9 @@ takusu-audio = { path = "../takusu-audio", default-features = false }
 takusu-client = { workspace = true }
 takusu-core = { workspace = true, features = ["jemalloc"] }
 takusu-habit = { workspace = true }
-takusu-util = { workspace = true }
+takusu-types = { workspace = true }
 pulldown-cmark = "0.13.4"
 
 [dev-dependencies]
-axum = { workspace = true }
+axum = "0.8"
 insta = { workspace = true, features = ["json"] }

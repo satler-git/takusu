@@ -8,7 +8,7 @@ use crate::handlers::d1::safe_all;
 use crate::handlers::tokens::{json_ok, parse_json};
 use crate::models::{SettingsRow, UpdateSettings};
 use crate::validate::validate_settings;
-use takusu_util::parse_timezone;
+use takusu_types::parse_timezone;
 
 pub async fn get(_req: worker::Request, env: Env) -> Result<Response, WorkerError> {
     let database = db(&env)?;

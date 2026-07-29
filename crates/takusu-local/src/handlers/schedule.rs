@@ -6,7 +6,7 @@ use takusu_local_lib::app::{
     GenerateScheduleInput, MoveEntryOutput, RescheduleInput, SchedulePreviewInput,
 };
 use takusu_storage::{SaveScheduleRequest, ScheduleRow};
-use takusu_util::{ScheduleMode, SleepInput};
+use takusu_types::{ScheduleMode, SleepInput};
 
 use crate::error::HttpError;
 use crate::state::AppState;

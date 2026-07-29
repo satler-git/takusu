@@ -5,7 +5,7 @@ use std::sync::Mutex;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{Value, json};
 use std::str::FromStr;
-use takusu_util::{UnknownLabel, enum_label};
+use takusu_types::{UnknownLabel, enum_label};
 
 /// Structured recoverable argument error passed back to the LLM.
 ///
@@ -326,7 +326,7 @@ impl<'de> Deserialize<'de> for Target {
 /// Flattened target fields inside `ChangeReceipt`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ReceiptTarget {
-    #[serde(with = "takusu_util::enum_serde")]
+    #[serde(with = "takusu_types::enum_serde")]
     pub target_type: TargetKind,
     pub target_id: String,
 }
@@ -361,7 +361,7 @@ impl ToolError {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProposedChange {
-    #[serde(with = "takusu_util::enum_serde")]
+    #[serde(with = "takusu_types::enum_serde")]
     pub operation: ChangeOperation,
     #[serde(rename = "target_label")]
     pub target: Target,
@@ -410,7 +410,7 @@ pub fn inferred_fields_schema(description: &str) -> Value {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ChangeReceipt {
-    #[serde(with = "takusu_util::enum_serde")]
+    #[serde(with = "takusu_types::enum_serde")]
     pub operation: ChangeOperation,
     #[serde(flatten)]
     pub target: ReceiptTarget,

@@ -16,7 +16,7 @@ use takusu_core::{Planner, PlannerConfig, Point, RescheduleRange, SleepConfig, T
 use takusu_storage::{
     SaveScheduleRequest, ScheduleEntry, ScheduleRow, SettingsRow, TaskQuery, TaskRow,
 };
-use takusu_util::{ScheduleMode, SleepInput, TaskStatus};
+use takusu_types::{ScheduleMode, SleepInput, TaskStatus};
 
 use crate::error::storage_to_app;
 use crate::error::{AppError, BadRequestKind, ConflictKind};
@@ -32,7 +32,7 @@ use crate::validate::{SettingsPlannerExt, parse_recurrence, parse_settings_timez
 /// タイムゾーン。過去にモバイルアプリがオフセットを削除した文字列を保存して
 /// しまった場合などに救済する。
 pub(super) fn iso_to_point(iso: &str, tz: &jiff::tz::TimeZone) -> Result<Point, AppError> {
-    let ts = takusu_util::parse_datetime_to_timestamp(iso, tz).map_err(|e| {
+    let ts = takusu_types::parse_datetime_to_timestamp(iso, tz).map_err(|e| {
         AppError::BadRequest(BadRequestKind::InvalidTime(format!(
             "invalid datetime: {e}"
         )))
@@ -40,11 +40,11 @@ pub(super) fn iso_to_point(iso: &str, tz: &jiff::tz::TimeZone) -> Result<Point, 
     Ok(Point::from_timestamp(ts, 5))
 }
 
-pub(super) fn point_to_iso(slot: i64) -> Result<takusu_util::Timestamp, AppError> {
+pub(super) fn point_to_iso(slot: i64) -> Result<takusu_types::Timestamp, AppError> {
     let secs = slot
         .checked_mul(5 * 60)
         .ok_or_else(|| AppError::Internal("timestamp overflow".into()))?;
-    takusu_util::Timestamp::from_second(secs)
+    takusu_types::Timestamp::from_second(secs)
         .ok_or_else(|| AppError::Internal("invalid timestamp".into()))
 }
 
@@ -603,7 +603,7 @@ impl super::TakusuApp {
             .map_err(storage_to_app)?
             .into_iter()
             .filter(|h| {
-                if h.window_mode != takusu_util::WindowMode::Period {
+                if h.window_mode != takusu_types::WindowMode::Period {
                     return false;
                 }
                 // Only exclude habits whose recurrence interval is > 1 day.

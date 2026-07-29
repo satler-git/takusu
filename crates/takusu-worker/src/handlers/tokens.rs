@@ -42,21 +42,21 @@ pub async fn create(mut req: Request, env: Env) -> Result<Response, WorkerError>
     };
 
     let secret = auth::jwt_secret(&env)?;
-    let (new_token, jti) = takusu_util::jwt::generate_token_jwt(
+    let (new_token, jti) = takusu_types::jwt::generate_token_jwt(
         &secret,
-        takusu_util::SCOPE_READ_WRITE,
+        takusu_types::SCOPE_READ_WRITE,
         label_opt.as_deref(),
         None,
     )
     .map_err(|e| WorkerError::Internal(e.to_string()))?;
     let database = db(&env)?;
 
-    let expires_at = token_expires_at(takusu_util::jwt::DEFAULT_TOKEN_TTL_SECONDS);
+    let expires_at = token_expires_at(takusu_types::jwt::DEFAULT_TOKEN_TTL_SECONDS);
     let stmt = worker::query!(
         &database,
         "INSERT INTO tokens (jti, scope, label, created_by, created_at, expires_at) VALUES (?1, ?2, ?3, 'authenticated', strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), ?4)",
         jti,
-        takusu_util::SCOPE_READ_WRITE,
+        takusu_types::SCOPE_READ_WRITE,
         label_opt,
         expires_at
     )?;

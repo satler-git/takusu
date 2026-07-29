@@ -1,5 +1,5 @@
 use sha2::{Digest, Sha256};
-use takusu_util::{TokenClaims, jwt};
+use takusu_types::{TokenClaims, jwt};
 
 use crate::token_cache::{TokenCache, TokenState};
 
@@ -44,7 +44,7 @@ mod tests {
         TaskRow, TokenCreateResponse, TokenRow, UpdateGoogleCalSettings, UpdateHabit,
         UpdateSettings, UpdateTask,
     };
-    use takusu_util::{DEFAULT_AUD, DEFAULT_ISS};
+    use takusu_types::{DEFAULT_AUD, DEFAULT_ISS};
 
     // hash_token should be deterministic and 64 hex chars (SHA-256).
     #[test]

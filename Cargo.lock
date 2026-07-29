@@ -5196,7 +5196,7 @@ dependencies = [
  "takusu-client",
  "takusu-core",
  "takusu-habit",
- "takusu-util",
+ "takusu-types",
  "thiserror 2.0.18",
  "tokio",
  "tokio-stream",
@@ -5246,7 +5246,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sherpa-onnx",
- "takusu-util",
+ "takusu-types",
  "tar",
  "thiserror 2.0.18",
  "tokio",
@@ -5286,7 +5286,7 @@ dependencies = [
  "takusu-local-lib",
  "takusu-storage",
  "takusu-tui",
- "takusu-util",
+ "takusu-types",
  "takusu-web",
  "tokio",
  "toml 0.8.23",
@@ -5301,7 +5301,8 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
- "takusu-util",
+ "takusu-storage",
+ "takusu-types",
  "thiserror 2.0.18",
  "tokio",
  "webpki-root-certs",
@@ -5318,7 +5319,7 @@ dependencies = [
  "rustc-hash",
  "serde",
  "serde_json",
- "takusu-util",
+ "takusu-types",
  "thiserror 2.0.18",
  "tikv-jemallocator",
 ]
@@ -5332,7 +5333,7 @@ dependencies = [
  "serde",
  "serde_json",
  "takusu-core",
- "takusu-util",
+ "takusu-types",
  "thiserror 2.0.18",
 ]
 
@@ -5363,8 +5364,9 @@ dependencies = [
  "sha2 0.11.0",
  "sqlx",
  "takusu-local-lib",
+ "takusu-search",
  "takusu-storage",
- "takusu-util",
+ "takusu-types",
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
@@ -5392,8 +5394,9 @@ dependencies = [
  "takusu-core",
  "takusu-habit",
  "takusu-ical",
+ "takusu-search",
  "takusu-storage",
- "takusu-util",
+ "takusu-types",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -5409,6 +5412,7 @@ dependencies = [
  "jiff",
  "serde",
  "serde_json",
+ "takusu-types",
  "unicode-normalization",
  "web-time",
 ]
@@ -5421,7 +5425,8 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlx",
- "takusu-util",
+ "takusu-search",
+ "takusu-types",
  "thiserror 2.0.18",
 ]
 
@@ -5437,13 +5442,13 @@ dependencies = [
  "takusu-habit",
  "takusu-local-lib",
  "takusu-storage",
- "takusu-util",
+ "takusu-types",
  "tempfile",
  "tokio",
 ]
 
 [[package]]
-name = "takusu-util"
+name = "takusu-types"
 version = "0.20260729.1"
 dependencies = [
  "base64",
@@ -5455,7 +5460,6 @@ dependencies = [
  "serde_json",
  "sha2 0.11.0",
  "sqlx",
- "takusu-search",
  "thiserror 2.0.18",
  "uuid",
  "web-time",
@@ -5490,7 +5494,9 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.0",
- "takusu-util",
+ "takusu-search",
+ "takusu-storage",
+ "takusu-types",
  "thiserror 2.0.18",
  "uuid",
  "wasm-bindgen",

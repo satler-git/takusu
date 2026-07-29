@@ -3,7 +3,7 @@ use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::str::FromStr;
 use takusu_client::{Client, HabitDetail, HabitRow, HabitStepRow, TaskRow};
-use takusu_util::{TaskStatus, Timestamp, parse_datetime_to_timestamp};
+use takusu_types::{TaskStatus, Timestamp, parse_datetime_to_timestamp};
 
 use crate::{InvalidArgsError, ToolError};
 
@@ -399,15 +399,15 @@ pub(crate) struct TaskResponse {
     pub depends: Vec<String>,
     pub parallelizable: bool,
     pub allows_parallel: bool,
-    pub abandonability: takusu_util::Abandonability,
+    pub abandonability: takusu_types::Abandonability,
     pub status: TaskStatus,
     pub fixed: bool,
-    pub quantity_total: Option<takusu_util::Quantity>,
-    pub quantity_done: takusu_util::Quantity,
+    pub quantity_total: Option<takusu_types::Quantity>,
+    pub quantity_done: takusu_types::Quantity,
     pub quantity_unit: Option<String>,
     pub completed_at: Option<String>,
     pub split_from_task_id: Option<String>,
-    pub original_quantity_total: Option<takusu_util::Quantity>,
+    pub original_quantity_total: Option<takusu_types::Quantity>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub actual_minutes: Option<i64>,
     pub created_at: String,

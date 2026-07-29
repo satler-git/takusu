@@ -108,7 +108,7 @@ pub fn parse_datetime_to_timestamp(s: &str, tz: &TimeZone) -> Result<Timestamp, 
     parse_datetime_to_timestamp_with(s, tz, today, true, now)
 }
 
-pub(crate) fn parse_datetime_to_timestamp_with(
+pub fn parse_datetime_to_timestamp_with(
     s: &str,
     tz: &TimeZone,
     today: Date,

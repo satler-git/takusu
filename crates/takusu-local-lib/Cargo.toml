@@ -7,28 +7,29 @@ repository.workspace = true
 
 [features]
 default = ["sqlite"]
-sqlite = ["dep:sqlx"]
+sqlite = ["dep:sqlx", "takusu-storage/sqlx"]
 
 [dependencies]
 takusu-core = { workspace = true, features = ["jemalloc"] }
 takusu-ical.workspace = true
 takusu-habit.workspace = true
 takusu-storage.workspace = true
-takusu-util.workspace = true
+takusu-types.workspace = true
+takusu-search.workspace = true
 google-cal.workspace = true
 tokio.workspace = true
-sqlx = { workspace = true, optional = true }
+sqlx = { version = "0.9", features = ["runtime-tokio", "sqlite"], optional = true }
 serde.workspace = true
 serde_json.workspace = true
 uuid.workspace = true
 sha2.workspace = true
 tracing.workspace = true
-tracing-subscriber.workspace = true
-sentry.workspace = true
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+sentry = { version = "0.48.4", default-features = false, features = ["backtrace", "contexts", "debug-images", "panic", "rustls", "tracing", "ureq"] }
 thiserror.workspace = true
 jiff.workspace = true
-web-time.workspace = true
+web-time = "1.1"
 async-trait.workspace = true
 reqwest = { workspace = true }
-petgraph.workspace = true
+petgraph = { version = "0.8", default-features = false }
 moka = { version = "0.12.15", features = ["sync"] }

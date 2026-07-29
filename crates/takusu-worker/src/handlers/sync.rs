@@ -8,7 +8,7 @@ use crate::handlers::auth::db;
 use crate::handlers::d1::safe_all;
 use crate::handlers::tokens::{json_ok, parse_json};
 use crate::models::{GoogleCalEventRow, GoogleCalSettingsRow, UpdateGoogleCalSettings};
-use takusu_util::Timestamp;
+use takusu_types::Timestamp;
 
 #[derive(Deserialize)]
 pub struct MappingPair {

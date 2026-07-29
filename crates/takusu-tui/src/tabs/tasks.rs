@@ -1,6 +1,6 @@
 use crossterm::event::{KeyCode, KeyEvent};
 use takusu_storage::{HabitRow, TaskRow};
-use takusu_util::{Abandonability, Quantity, TaskStatus};
+use takusu_types::{Abandonability, Quantity, TaskStatus};
 
 use crate::app::{App, Modal};
 
@@ -222,7 +222,7 @@ fn parse_edit_text(
             "end_at" => {
                 if value != "-" {
                     update.end_at = Some(
-                        takusu_util::Timestamp::parse_with_tz(value, tz)
+                        takusu_types::Timestamp::parse_with_tz(value, tz)
                             .map_err(|e| format!("invalid end_at: {e}"))?,
                     );
                 }
@@ -270,11 +270,11 @@ fn parse_clear_string(value: &str) -> Option<String> {
 fn parse_clear_timestamp(
     value: &str,
     tz: &jiff::tz::TimeZone,
-) -> Result<Option<Option<takusu_util::Timestamp>>, String> {
+) -> Result<Option<Option<takusu_types::Timestamp>>, String> {
     if value == "-" {
         Ok(Some(None))
     } else {
-        let ts = takusu_util::Timestamp::parse_with_tz(value, tz)
+        let ts = takusu_types::Timestamp::parse_with_tz(value, tz)
             .map_err(|e| format!("invalid start_at: {e}"))?;
         Ok(Some(Some(ts)))
     }
@@ -377,7 +377,7 @@ fn open_editor(content: &str) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use takusu_util::DependencyList;
+    use takusu_types::DependencyList;
 
     fn sample_task() -> TaskRow {
         TaskRow {
@@ -484,7 +484,7 @@ mod tests {
             active: true,
             start_time: "08:00".parse().unwrap(),
             end_time: "09:00".parse().unwrap(),
-            window_mode: takusu_util::WindowMode::Day,
+            window_mode: takusu_types::WindowMode::Day,
             avg_minutes: 10,
             sigma_minutes: 2,
             abandonability: 0.5.into(),

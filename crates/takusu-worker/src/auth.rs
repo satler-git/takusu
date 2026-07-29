@@ -13,7 +13,7 @@ pub fn hash_token(token: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(token.as_bytes());
     let result = hasher.finalize();
-    takusu_util::jwt::hex(&result)
+    takusu_types::jwt::hex(&result)
 }
 
 #[cfg(test)]
@@ -21,7 +21,7 @@ pub fn new_token() -> String {
     format!("tsk_{}", uuid::Uuid::now_v7())
 }
 
-pub fn verify_token(req: &Request, env: &Env) -> Result<takusu_util::TokenClaims, WorkerError> {
+pub fn verify_token(req: &Request, env: &Env) -> Result<takusu_types::TokenClaims, WorkerError> {
     let header = req
         .headers()
         .get("authorization")
@@ -30,7 +30,7 @@ pub fn verify_token(req: &Request, env: &Env) -> Result<takusu_util::TokenClaims
         .ok_or(WorkerError::Unauthorized)?;
 
     let secret = jwt_secret(env)?;
-    takusu_util::jwt::verify(&secret, &header, takusu_util::DEFAULT_AUD)
+    takusu_types::jwt::verify(&secret, &header, takusu_types::DEFAULT_AUD)
         .map_err(|_| WorkerError::Unauthorized)
 }
 

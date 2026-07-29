@@ -9,7 +9,7 @@ use std::collections::HashMap;
 
 use serde::Serialize;
 use takusu_storage::{HabitStepRow, TaskQuery, TaskRow};
-use takusu_util::TaskStatus;
+use takusu_types::TaskStatus;
 
 use crate::error::storage_to_app;
 use crate::error::{AppError, BadRequestKind};

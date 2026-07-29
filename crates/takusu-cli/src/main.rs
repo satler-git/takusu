@@ -35,7 +35,7 @@ use takusu_storage::{
     RecordProgress, ScheduleEntry, SimilarTaskQuery, SplitTask, TaskQuery, UpdateHabit,
     UpdateMemory, UpdateSettings,
 };
-use takusu_util::{
+use takusu_types::{
     Abandonability, Date, MemoryKind, Quantity, ScheduleMode, SleepInput, SubjectType, TaskStatus,
     TaskStatusFilter, TimeOfDay, Timestamp, WindowMode, parse_datetime_to_timestamp,
     parse_duration,
@@ -84,7 +84,7 @@ fn parse_date(s: &str) -> Result<Date, AppError> {
 fn parse_reschedule_mode(s: &str) -> Result<ScheduleMode, String> {
     let mode: ScheduleMode = s
         .parse()
-        .map_err(|e: takusu_util::UnknownLabel| format!("invalid mode '{s}': {e}"))?;
+        .map_err(|e: takusu_types::UnknownLabel| format!("invalid mode '{s}': {e}"))?;
     if matches!(mode, ScheduleMode::Full) {
         return Err(
             "full mode is not supported for reschedule; use `takusu schedule generate` instead"
@@ -378,7 +378,7 @@ enum ConfigCommands {
         maximum: Option<f64>,
         /// Solver to use: sa, priority, or auto
         #[arg(long)]
-        solver: Option<takusu_util::Solver>,
+        solver: Option<takusu_types::Solver>,
         /// Time budget for solving in milliseconds
         #[arg(long)]
         time_budget_ms: Option<i64>,
@@ -1000,7 +1000,7 @@ fn main() {
                     eprintln!("Error: TAKUSU_JWT_SECRET (or jwt_secret in config) is required to generate a root token");
                     process::exit(1);
                 });
-            let token = match takusu_util::jwt::generate_root_jwt(&secret, None) {
+            let token = match takusu_types::jwt::generate_root_jwt(&secret, None) {
                 Ok(t) => t,
                 Err(e) => {
                     eprintln!("Error: failed to generate root token: {e}");

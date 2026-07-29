@@ -198,7 +198,7 @@ impl Storage for CountingStorage {
         Ok(TokenCreateResponse {
             id: 1,
             token: "tsk_new".into(),
-            scope: takusu_util::TokenScope::ReadWrite,
+            scope: takusu_types::TokenScope::ReadWrite,
             label: None,
             created_at: "2026-06-22T00:00:00Z".parse().unwrap(),
             expires_at: None,
@@ -534,7 +534,7 @@ async fn spawn_retry_mock(state: RetryMockState) -> String {
             Ok(Json(TokenClaims {
                 sub: "sub".into(),
                 jti: "jti".into(),
-                scope: takusu_util::TokenScope::ReadWrite.to_string(),
+                scope: takusu_types::TokenScope::ReadWrite.to_string(),
                 label: None,
                 aud: takusu_local_lib::DEFAULT_AUD.into(),
                 iss: takusu_local_lib::DEFAULT_ISS.into(),

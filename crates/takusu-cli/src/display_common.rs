@@ -15,7 +15,7 @@ use std::collections::HashMap;
 use takusu_storage::{
     HabitRow, HabitScheduledSpanRow, HabitStepRow, ScheduleEntry, SkillRow, TaskRow, TokenRow,
 };
-use takusu_util::Timestamp;
+use takusu_types::Timestamp;
 
 /// Terminal renderer for the CLI's display commands.
 ///

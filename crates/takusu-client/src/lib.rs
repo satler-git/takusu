@@ -6,10 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use takusu_util::{
-    Date, DependencyList, JsonString, ScheduleMode, Similarity, SleepInput, TimeOfDay, Timestamp,
-    url_encode,
-};
+use takusu_types::{ScheduleMode, SleepInput, TimeOfDay, Timestamp, url_encode};
 use tokio::sync::RwLock;
 
 #[derive(Debug, thiserror::Error)]
@@ -993,351 +990,16 @@ impl Client {
     }
 }
 
-// ── Types (mirrors server model.rs) ──
+// ── Shared domain types (re-exported from takusu-storage) ──
+//
+// `TaskRow` / `CreateTask` / `HabitRow` / `ScheduleRow` / `MemoryRow` and the
+// rest of the request/response domain types live in `takusu-storage::model` so
+// the server, client, and worker share a single definition (#1294). The
+// `sqlx::FromRow` derives there are gated behind the `sqlx` feature, which this
+// crate does not enable, so the re-exported types are plain serde structs here.
+pub use takusu_storage::model::*;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TaskRow {
-    pub id: String,
-    pub display_id: i64,
-    pub title: String,
-    pub description: Option<String>,
-    pub start_at: Option<Timestamp>,
-    pub end_at: Timestamp,
-    pub avg_minutes: i64,
-    pub sigma_minutes: i64,
-    #[serde(default)]
-    pub depends: DependencyList,
-    #[serde(with = "takusu_util::bool_compat", default)]
-    pub parallelizable: bool,
-    #[serde(with = "takusu_util::bool_compat", default)]
-    pub allows_parallel: bool,
-    pub abandonability: takusu_util::Abandonability,
-    #[serde(with = "takusu_util::enum_serde")]
-    pub status: takusu_util::TaskStatus,
-    pub habit_id: Option<String>,
-    pub ical_uid: Option<String>,
-    #[serde(with = "takusu_util::bool_compat", default)]
-    pub user_edited: bool,
-    #[serde(with = "takusu_util::bool_compat", default)]
-    pub fixed: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub habit_step_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub quantity_total: Option<takusu_util::Quantity>,
-    #[serde(default)]
-    pub quantity_done: takusu_util::Quantity,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub quantity_unit: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub completed_at: Option<Timestamp>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub split_from_task_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub original_quantity_total: Option<takusu_util::Quantity>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub actual_minutes: Option<i64>,
-    pub created_at: Timestamp,
-    pub updated_at: Timestamp,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct CreateTask {
-    pub title: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub start_at: Option<Timestamp>,
-    pub end_at: Timestamp,
-    pub avg_minutes: i64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub sigma_minutes: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub depends: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub parallelizable: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub allows_parallel: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub abandonability: Option<takusu_util::Abandonability>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub ical_uid: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub habit_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub fixed: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub habit_step_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub quantity_total: Option<takusu_util::Quantity>,
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub quantity_done: Option<takusu_util::Quantity>,
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub quantity_unit: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub original_quantity_total: Option<takusu_util::Quantity>,
-}
-
-#[derive(Debug, Default, Serialize, Deserialize)]
-pub struct UpdateTask {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub title: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub start_at: Option<Option<Timestamp>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub end_at: Option<Timestamp>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub avg_minutes: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub sigma_minutes: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub depends: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub parallelizable: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub allows_parallel: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub abandonability: Option<takusu_util::Abandonability>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(with = "takusu_util::enum_serde::option")]
-    pub status: Option<takusu_util::TaskStatus>,
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub habit_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub user_edited: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub fixed: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub habit_step_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub quantity_total: Option<takusu_util::Quantity>,
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub quantity_done: Option<takusu_util::Quantity>,
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub quantity_unit: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub original_quantity_total: Option<takusu_util::Quantity>,
-}
-
-#[derive(Debug, Default)]
-pub struct TaskQuery {
-    pub status: Option<takusu_util::TaskStatusFilter>,
-    pub from: Option<takusu_util::Timestamp>,
-    pub until: Option<takusu_util::Timestamp>,
-    pub no_overdue: Option<bool>,
-    pub habit_id: Option<String>,
-    pub ical_uid: Option<String>,
-    pub q: Option<String>,
-    pub limit: Option<i64>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HabitRow {
-    pub id: String,
-    #[serde(default)]
-    pub display_id: i64,
-    pub title: String,
-    pub description: Option<String>,
-    pub recurrence: String,
-    pub start_time: TimeOfDay,
-    pub end_time: TimeOfDay,
-    pub avg_minutes: i64,
-    pub sigma_minutes: i64,
-    #[serde(with = "takusu_util::bool_compat", default)]
-    pub parallelizable: bool,
-    #[serde(with = "takusu_util::bool_compat", default)]
-    pub allows_parallel: bool,
-    pub abandonability: takusu_util::Abandonability,
-    #[serde(with = "takusu_util::bool_compat", default)]
-    pub active: bool,
-    #[serde(with = "takusu_util::bool_compat", default)]
-    pub fixed: bool,
-    #[serde(with = "takusu_util::enum_serde", default)]
-    pub window_mode: takusu_util::WindowMode,
-    pub created_at: Timestamp,
-    pub updated_at: Timestamp,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct CreateHabit {
-    pub title: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-    pub recurrence: String,
-    pub start_time: TimeOfDay,
-    pub end_time: TimeOfDay,
-    pub avg_minutes: i64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub sigma_minutes: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub parallelizable: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub allows_parallel: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub abandonability: Option<takusu_util::Abandonability>,
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub fixed: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(with = "takusu_util::enum_serde::option")]
-    pub window_mode: Option<takusu_util::WindowMode>,
-}
-
-#[derive(Debug, Default, Serialize, Deserialize)]
-pub struct UpdateHabit {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub title: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub recurrence: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub start_time: Option<TimeOfDay>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub end_time: Option<TimeOfDay>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub avg_minutes: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub sigma_minutes: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub parallelizable: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub allows_parallel: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub abandonability: Option<takusu_util::Abandonability>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub active: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub fixed: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(with = "takusu_util::enum_serde::option")]
-    pub window_mode: Option<takusu_util::WindowMode>,
-}
-
-/// A scheduled span for a habit (#303 / #503).
-///
-/// Effect depends on `habits.active`:
-/// - active habit: span dates suppress task generation (a pause).
-/// - disabled habit: span dates enable task generation (an activation window).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HabitScheduledSpanRow {
-    pub id: String,
-    pub habit_id: String,
-    pub start_date: Date,
-    pub end_date: Date,
-    pub reason: Option<String>,
-    pub created_at: Timestamp,
-}
-
-#[derive(Debug, Serialize)]
-pub struct CreateHabitScheduledSpan {
-    pub start_date: Date,
-    pub end_date: Date,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub reason: Option<String>,
-}
-
-/// A step of a multi-step habit (#95).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HabitStepRow {
-    pub id: String,
-    pub habit_id: String,
-    pub position: i64,
-    pub title: String,
-    pub description: Option<String>,
-    pub start_time: TimeOfDay,
-    pub end_time: TimeOfDay,
-    pub avg_minutes: i64,
-    pub sigma_minutes: i64,
-    #[serde(with = "takusu_util::bool_compat", default)]
-    pub parallelizable: bool,
-    #[serde(with = "takusu_util::bool_compat", default)]
-    pub allows_parallel: bool,
-    pub abandonability: takusu_util::Abandonability,
-    #[serde(with = "takusu_util::bool_compat", default)]
-    pub fixed: bool,
-    #[serde(default)]
-    pub depends_on: DependencyList,
-    pub created_at: Timestamp,
-}
-
-/// Input element for `PUT /api/habits/:id/steps` (bulk replace, #95).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HabitStepInput {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: Option<String>,
-    pub position: i64,
-    pub title: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-    pub start_time: TimeOfDay,
-    pub end_time: TimeOfDay,
-    pub avg_minutes: i64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub sigma_minutes: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub parallelizable: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub allows_parallel: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub abandonability: Option<takusu_util::Abandonability>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub fixed: Option<bool>,
-    #[serde(default)]
-    pub depends_on: Vec<String>,
-}
-
-/// Habit detail response: the habit row plus its steps (#95).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HabitDetail {
-    #[serde(flatten)]
-    pub habit: HabitRow,
-    pub steps: Vec<HabitStepRow>,
-}
-
-/// Request body for `POST /api/habits/{id}/estimate` (#919).
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
-pub struct HabitEstimateRequest {
-    #[serde(default)]
-    pub detect_outliers: bool,
-    #[serde(default)]
-    pub apply: bool,
-}
-
-/// One completed task observation included in a habit estimate (#919).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HabitEstimateSample {
-    pub task_id: String,
-    pub title: String,
-    pub actual_minutes: i64,
-    pub excluded: bool,
-}
-
-/// Estimate result for a single habit step (#919).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HabitEstimateStep {
-    pub step_id: String,
-    pub title: String,
-    pub avg_minutes: i64,
-    pub sigma_minutes: i64,
-    pub sample_count: usize,
-    pub excluded_count: usize,
-    pub applied: bool,
-}
-
-/// Response from `POST /api/habits/{id}/estimate` (#919).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HabitEstimateResult {
-    pub avg_minutes: i64,
-    pub sigma_minutes: i64,
-    pub sample_count: usize,
-    pub excluded_count: usize,
-    pub samples: Vec<HabitEstimateSample>,
-    pub steps: Vec<HabitEstimateStep>,
-    pub applied: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub habit: Option<HabitRow>,
-}
+// ── Client-only request/response types ──
 
 /// A node on a dependency witness path (#355).
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1394,32 +1056,6 @@ pub struct SchedulePreviewResponse {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct SaveScheduleRequest {
-    pub entries: Vec<ScheduleEntry>,
-    #[serde(default)]
-    pub mark_scheduled_task_ids: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ScheduleRow {
-    pub id: String,
-    pub created_at: Timestamp,
-    pub updated_at: Timestamp,
-    #[serde(default)]
-    pub schedule: ScheduleData,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ScheduleEntry {
-    pub task_id: String,
-    pub start_at: Timestamp,
-    pub end_at: Timestamp,
-}
-
-/// Type alias for the JSON-string-encoded schedule entries (#1252).
-pub type ScheduleData = JsonString<Vec<ScheduleEntry>>;
-
-#[derive(Debug, Serialize, Deserialize)]
 pub struct GenerateSchedule {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub task_ids: Option<Vec<String>>,
@@ -1463,41 +1099,17 @@ pub struct MoveEntryResponse {
     pub warnings: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TokenRow {
-    pub id: i64,
-    pub jti: String,
-    #[serde(with = "takusu_util::enum_serde")]
-    pub scope: takusu_util::TokenScope,
-    pub label: Option<String>,
-    pub created_by: String,
-    pub created_at: Timestamp,
-    pub revoked_at: Option<Timestamp>,
-    pub expires_at: Option<Timestamp>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct TokenCreateResponse {
-    pub id: i64,
-    pub token: String,
-    #[serde(with = "takusu_util::enum_serde")]
-    pub scope: takusu_util::TokenScope,
-    pub label: Option<String>,
-    pub created_at: Timestamp,
-    pub expires_at: Option<Timestamp>,
-}
-
 // ── Sync types ──
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncSettingsResponse {
-    #[serde(with = "takusu_util::bool_compat", default)]
+    #[serde(with = "takusu_types::bool_compat", default)]
     pub enabled: bool,
     pub calendar_id: String,
     pub client_id: String,
-    #[serde(with = "takusu_util::bool_compat", default)]
+    #[serde(with = "takusu_types::bool_compat", default)]
     pub has_client_secret: bool,
-    #[serde(with = "takusu_util::bool_compat", default)]
+    #[serde(with = "takusu_types::bool_compat", default)]
     pub has_refresh_token: bool,
 }
 
@@ -1520,7 +1132,7 @@ pub struct OAuthUrlResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OAuthCallbackResponse {
-    #[serde(with = "takusu_util::bool_compat", default)]
+    #[serde(with = "takusu_types::bool_compat", default)]
     pub refresh_token_set: bool,
 }
 
@@ -1543,185 +1155,7 @@ pub struct UpdateSyncSettings {
     pub refresh_token: Option<String>,
 }
 
-// ── Skill types (#WI-6) ──
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SkillRow {
-    pub slug: String,
-    pub name: String,
-    pub description: String,
-    pub body: String,
-    #[serde(with = "takusu_util::bool_compat", default)]
-    pub built_in: bool,
-    pub created_at: Timestamp,
-    pub updated_at: Timestamp,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct CreateSkill {
-    pub slug: String,
-    pub name: String,
-    pub description: String,
-    pub body: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub built_in: Option<bool>,
-}
-
-#[derive(Debug, Default, Serialize, Deserialize)]
-pub struct UpdateSkill {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub body: Option<String>,
-}
-
-// ── Memory types (#WI-7) ──
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MemoryRow {
-    pub id: String,
-    #[serde(with = "takusu_util::enum_serde")]
-    pub kind: takusu_util::MemoryKind,
-    pub key: String,
-    pub content: String,
-    #[serde(with = "takusu_util::enum_serde", default)]
-    pub subject_type: takusu_util::SubjectType,
-    #[serde(default)]
-    pub subject_id: String,
-    #[serde(with = "takusu_util::enum_serde", default)]
-    pub source: takusu_util::MemorySource,
-    pub revision: i64,
-    pub created_at: Timestamp,
-    pub updated_at: Timestamp,
-    pub last_used_at: Option<Timestamp>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct CreateMemory {
-    #[serde(with = "takusu_util::enum_serde")]
-    pub kind: takusu_util::MemoryKind,
-    pub key: String,
-    pub content: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(with = "takusu_util::enum_serde::option")]
-    pub subject_type: Option<takusu_util::SubjectType>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub subject_id: Option<String>,
-    #[serde(default)]
-    pub upsert: bool,
-}
-
-#[derive(Debug, Default, Serialize, Deserialize)]
-pub struct UpdateMemory {
-    pub observed_revision: i64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub content: Option<String>,
-}
-
-#[derive(Debug, Default, Serialize, Deserialize)]
-pub struct MemoryQuery {
-    pub q: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[serde(with = "takusu_util::enum_serde::option")]
-    pub kind: Option<takusu_util::MemoryKind>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[serde(with = "takusu_util::enum_serde::option")]
-    pub subject_type: Option<takusu_util::SubjectType>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub subject_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub limit: Option<i64>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SimilarTaskRow {
-    pub task_id: String,
-    pub display_id: i64,
-    pub title: String,
-    pub avg_minutes: i64,
-    pub sigma_minutes: i64,
-    pub actual_minutes: Option<i64>,
-    pub completed_at: Option<Timestamp>,
-    #[serde(default)]
-    pub similarity: Similarity,
-}
-
-#[derive(Debug, Default, Serialize, Deserialize)]
-pub struct SimilarTaskQuery {
-    #[serde(rename = "q")]
-    pub title: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub limit: Option<i64>,
-}
-
-// ── Active-session progress management (#WI-9) ──
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TaskWorkSessionRow {
-    pub id: String,
-    pub task_id: String,
-    pub started_at: Timestamp,
-    pub ended_at: Option<Timestamp>,
-    pub created_at: Timestamp,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProgressEventRow {
-    pub id: String,
-    pub task_id: String,
-    pub at: Timestamp,
-    pub quantity_done: Option<takusu_util::Quantity>,
-    pub delta_quantity: Option<i64>,
-    pub active_minutes: i64,
-    pub note: Option<String>,
-}
-
-#[derive(Debug, Default, Serialize, Deserialize)]
-pub struct RecordProgress {
-    pub quantity_done: takusu_util::Quantity,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub note: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProgressResult {
-    pub task: TaskRow,
-    pub event: Option<ProgressEventRow>,
-    #[serde(default)]
-    pub suggests_completion: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TaskProgress {
-    pub task: TaskRow,
-    pub open_session: Option<TaskWorkSessionRow>,
-    pub sessions: Vec<TaskWorkSessionRow>,
-    pub events: Vec<ProgressEventRow>,
-    pub total_active_minutes: i64,
-}
-
-#[derive(Debug, Default, Serialize, Deserialize)]
-pub struct SplitTask {
-    pub retained_quantity: takusu_util::Quantity,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub set_dependency: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub title: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub end_at: Option<Timestamp>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SplitResult {
-    pub original: TaskRow,
-    pub remainder: TaskRow,
-}
-
-// ── Settings types ──
+// ── Settings response (client-only; UpdateSettings is shared) ──
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SettingsResponse {
@@ -1733,8 +1167,8 @@ pub struct SettingsResponse {
     /// #459: 1 日の最大作業時間（分）。`None` または `0` の場合はデフォルトを使う。
     pub maximum_minutes: Option<i64>,
     /// 使用する solver。`"sa"` / `"priority"` / `"auto"`。未設定の場合は `sa`。未知値はエラー。
-    #[serde(with = "takusu_util::enum_serde", default)]
-    pub solver: takusu_util::Solver,
+    #[serde(with = "takusu_types::enum_serde", default)]
+    pub solver: takusu_types::Solver,
     /// 求解時間の上限（ミリ秒）。`None` または `0` の場合は制限なし。
     #[serde(default)]
     pub time_budget_ms: Option<i64>,
@@ -1742,38 +1176,6 @@ pub struct SettingsResponse {
     #[serde(default)]
     pub seed: Option<i64>,
     /// 前回スケジュールから priority/ALNS の初期解を warm start する。
-    #[serde(with = "takusu_util::bool_compat", default)]
+    #[serde(with = "takusu_types::bool_compat", default)]
     pub warm_start: bool,
-}
-
-#[derive(Debug, Default, Serialize)]
-pub struct UpdateSettings {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tz: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub sleep_start: Option<TimeOfDay>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub sleep_end: Option<TimeOfDay>,
-    /// #459: 1 日の快適な作業時間（分）。`None` または `0` の場合はデフォルトを使う。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub comfortable_minutes: Option<i64>,
-    /// #459: 1 日の最大作業時間（分）。`None` または `0` の場合はデフォルトを使う。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub maximum_minutes: Option<i64>,
-    /// 使用する solver。`"sa"` / `"priority"` / `"auto"`。
-    #[serde(
-        with = "takusu_util::enum_serde::option",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub solver: Option<takusu_util::Solver>,
-    /// 求解時間の上限（ミリ秒）。`None` または `0` で制限なし。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub time_budget_ms: Option<i64>,
-    /// 乱数シード。`None` でデフォルト。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub seed: Option<i64>,
-    /// 前回スケジュールから priority/ALNS の初期解を warm start する。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub warm_start: Option<bool>,
 }

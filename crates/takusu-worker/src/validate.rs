@@ -5,7 +5,7 @@
 //! crashing later (e.g. during schedule generation).
 
 use serde::Deserialize;
-use takusu_util::{Quantity, parse_timezone};
+use takusu_types::{Quantity, parse_timezone};
 
 use crate::error::WorkerError;
 use crate::models::UpdateSettings;
@@ -149,7 +149,7 @@ pub(crate) fn validate_minutes(avg: i64, sigma: Option<i64>) -> Result<(), Worke
 /// stored tasks, so a task is never silently excluded from similar-task search
 /// (#942). Mirrors `takusu-local-lib`'s `validate_title`.
 pub(crate) fn validate_title(title: &str) -> Result<(), WorkerError> {
-    takusu_util::memory::normalize_text(title, Some(takusu_util::memory::MAX_CONTENT_SCALARS))
+    takusu_search::memory::normalize_text(title, Some(takusu_search::memory::MAX_CONTENT_SCALARS))
         .map_err(|e| WorkerError::BadRequest(format!("invalid title: {e}")))?;
     Ok(())
 }
@@ -235,11 +235,11 @@ pub(crate) fn validate_settings(body: &UpdateSettings) -> Result<(), WorkerError
 /// Uses `Option<Option<Timestamp>>` semantics:
 /// `None` = no change, `Some(None)` = clear, `Some(Some(ts))` = set.
 pub(crate) fn validate_task_datetimes(
-    start_at: Option<Option<&takusu_util::Timestamp>>,
-    end_at: Option<&takusu_util::Timestamp>,
+    start_at: Option<Option<&takusu_types::Timestamp>>,
+    end_at: Option<&takusu_types::Timestamp>,
     _tz: &jiff::tz::TimeZone,
-    existing_start: Option<&takusu_util::Timestamp>,
-    existing_end: Option<&takusu_util::Timestamp>,
+    existing_start: Option<&takusu_types::Timestamp>,
+    existing_end: Option<&takusu_types::Timestamp>,
 ) -> Result<(), WorkerError> {
     // start_at: None = no change → use existing; Some(None) = clear; Some(Some(ts)) = set.
     // end_at:   None = no change → use existing; Some(ts) = set (cannot be cleared).
@@ -569,26 +569,26 @@ mod tests {
     #[test]
     fn validate_task_datetimes_accepts_valid_range() {
         let tz = jiff::tz::TimeZone::UTC;
-        let s: takusu_util::Timestamp = "2026-07-22T10:00:00Z".parse().unwrap();
-        let e: takusu_util::Timestamp = "2026-07-22T12:00:00Z".parse().unwrap();
+        let s: takusu_types::Timestamp = "2026-07-22T10:00:00Z".parse().unwrap();
+        let e: takusu_types::Timestamp = "2026-07-22T12:00:00Z".parse().unwrap();
         assert!(validate_task_datetimes(Some(Some(&s)), Some(&e), &tz, None, None,).is_ok());
     }
 
     #[test]
     fn validate_task_datetimes_rejects_reversed() {
         let tz = jiff::tz::TimeZone::UTC;
-        let s: takusu_util::Timestamp = "2026-07-22T12:00:00Z".parse().unwrap();
-        let e: takusu_util::Timestamp = "2026-07-22T10:00:00Z".parse().unwrap();
+        let s: takusu_types::Timestamp = "2026-07-22T12:00:00Z".parse().unwrap();
+        let e: takusu_types::Timestamp = "2026-07-22T10:00:00Z".parse().unwrap();
         assert!(validate_task_datetimes(Some(Some(&s)), Some(&e), &tz, None, None,).is_err());
     }
 
     #[test]
     fn validate_task_datetimes_fills_existing_for_partial_update() {
         let tz = jiff::tz::TimeZone::UTC;
-        let e: takusu_util::Timestamp = "2026-07-22T10:00:00Z".parse().unwrap();
-        let existing: takusu_util::Timestamp = "2026-07-22T08:00:00Z".parse().unwrap();
+        let e: takusu_types::Timestamp = "2026-07-22T10:00:00Z".parse().unwrap();
+        let existing: takusu_types::Timestamp = "2026-07-22T08:00:00Z".parse().unwrap();
         assert!(validate_task_datetimes(None, Some(&e), &tz, Some(&existing), None,).is_ok());
-        let e2: takusu_util::Timestamp = "2026-07-22T07:00:00Z".parse().unwrap();
+        let e2: takusu_types::Timestamp = "2026-07-22T07:00:00Z".parse().unwrap();
         assert!(validate_task_datetimes(None, Some(&e2), &tz, Some(&existing), None,).is_err());
     }
 
@@ -598,7 +598,7 @@ mod tests {
         // This test now verifies that a None existing value with a Some end
         // still works (no existing to compare against).
         let tz = jiff::tz::TimeZone::UTC;
-        let e: takusu_util::Timestamp = "2026-07-22T10:00:00Z".parse().unwrap();
+        let e: takusu_types::Timestamp = "2026-07-22T10:00:00Z".parse().unwrap();
         assert!(validate_task_datetimes(None, Some(&e), &tz, None, None,).is_ok());
     }
 }

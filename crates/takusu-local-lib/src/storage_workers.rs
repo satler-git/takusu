@@ -16,8 +16,8 @@ use takusu_storage::{
     TaskQuery, TaskRow, TokenCreateResponse, TokenRow, UpdateGoogleCalSettings, UpdateHabit,
     UpdateMemory, UpdateSettings, UpdateSkill, UpdateTask, storage::StorageResult,
 };
-use takusu_util::EnumLabel;
-use takusu_util::{TokenClaims, url_encode};
+use takusu_types::EnumLabel;
+use takusu_types::{TokenClaims, url_encode};
 use tokio::sync::RwLock;
 
 const RETRY_STATUSES: &[u16] = &[429, 500, 502, 503, 504];
@@ -31,7 +31,7 @@ const RETRY_DELAYS_MS: &[u64] = &[100, 200, 400];
 /// `/api/...` URL with `format!` directly; query-string assembly is left to
 /// the call site for now.
 mod paths {
-    use takusu_util::url_encode;
+    use takusu_types::url_encode;
 
     // Fixed paths.
     pub const TASKS: &str = "/api/tasks";

@@ -14,7 +14,7 @@ use takusu_storage::{
     CreateTask, HabitPreviewRequest, HabitPreviewTask, HabitRow, HabitStepInput, HabitStepRow,
     TaskQuery, TaskRow, UpdateTask,
 };
-use takusu_util::{Abandonability, TaskStatus, WindowMode};
+use takusu_types::{Abandonability, TaskStatus, WindowMode};
 
 use super::dependency::topo_sort_steps;
 use super::schedule::{iso_to_local_date, point_to_iso, point_to_local_date};
@@ -115,8 +115,8 @@ pub(super) fn step_input_to_preview_row(input: &HabitStepInput) -> HabitStepRow 
         allows_parallel: input.allows_parallel.unwrap_or(false),
         abandonability: input.abandonability.unwrap_or(0.5.into()),
         fixed: input.fixed.unwrap_or(false),
-        depends_on: takusu_util::DependencyList::new(input.depends_on.clone()),
-        created_at: takusu_util::Timestamp::default(),
+        depends_on: takusu_types::DependencyList::new(input.depends_on.clone()),
+        created_at: takusu_types::Timestamp::default(),
     }
 }
 
@@ -182,8 +182,8 @@ pub(super) fn build_habit_from_preview(
 #[allow(clippy::too_many_arguments)]
 fn build_habit_core(
     recurrence: &str,
-    start_time: takusu_util::TimeOfDay,
-    end_time: takusu_util::TimeOfDay,
+    start_time: takusu_types::TimeOfDay,
+    end_time: takusu_types::TimeOfDay,
     avg_minutes: i64,
     sigma_minutes: i64,
     parallelizable: bool,

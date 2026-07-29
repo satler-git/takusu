@@ -3,7 +3,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use takusu_client::{Client, CreateMemory, MemoryQuery, MemoryRow, SimilarTaskQuery, UpdateMemory};
-use takusu_util::{MemoryKind, MemorySource, SubjectType};
+use takusu_types::{MemoryKind, MemorySource, SubjectType};
 
 use crate::tools::{ToolContext, ToolModule};
 use crate::{
@@ -38,9 +38,9 @@ struct MemoryResponse<'a> {
     subject_id: &'a str,
     source: &'a MemorySource,
     revision: i64,
-    created_at: &'a takusu_util::Timestamp,
-    updated_at: &'a takusu_util::Timestamp,
-    last_used_at: Option<&'a takusu_util::Timestamp>,
+    created_at: &'a takusu_types::Timestamp,
+    updated_at: &'a takusu_types::Timestamp,
+    last_used_at: Option<&'a takusu_types::Timestamp>,
 }
 
 impl<'a> From<&'a MemoryRow> for MemoryResponse<'a> {
@@ -305,10 +305,9 @@ impl TypedTool for MemorySave {
     }
 
     fn validate_args(&self, args: &Self::Params) -> Result<(), InvalidArgsError> {
-        let kind: MemoryKind = args
-            .kind
-            .parse()
-            .map_err(|e: takusu_util::UnknownLabel| InvalidArgsError::new("kind", e.to_string()))?;
+        let kind: MemoryKind = args.kind.parse().map_err(|e: takusu_types::UnknownLabel| {
+            InvalidArgsError::new("kind", e.to_string())
+        })?;
         if kind == MemoryKind::TaskNote {
             if args.subject_type.as_deref() != Some("task") {
                 return Err(InvalidArgsError::new(
@@ -324,7 +323,7 @@ impl TypedTool for MemorySave {
             }
         } else if let Some(st) = &args.subject_type {
             st.parse::<SubjectType>()
-                .map_err(|e: takusu_util::UnknownLabel| {
+                .map_err(|e: takusu_types::UnknownLabel| {
                     InvalidArgsError::new("subject_type", e.to_string())
                 })?;
         }
@@ -573,7 +572,9 @@ mod tests {
             id: "m1".into(),
             kind: MemoryKind::ProperNoun,
             key: "研究室".into(),
+            normalized_key: "けんきゅうしつ".into(),
             content: "大学".into(),
+            normalized_content: "だいがく".into(),
             subject_type: SubjectType::Empty,
             subject_id: "".into(),
             source: MemorySource::UserConfirmed,

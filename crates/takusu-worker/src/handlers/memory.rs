@@ -1,4 +1,4 @@
-use takusu_util::EnumLabel;
+use takusu_types::EnumLabel;
 use wasm_bindgen::JsValue;
 use worker::{Env, Request, Response};
 
@@ -101,9 +101,9 @@ async fn record_operation(
 fn validate_create(body: &CreateMemory) -> Result<(), WorkerError> {
     if !matches!(
         body.kind,
-        takusu_util::MemoryKind::ProperNoun
-            | takusu_util::MemoryKind::Fact
-            | takusu_util::MemoryKind::TaskNote
+        takusu_types::MemoryKind::ProperNoun
+            | takusu_types::MemoryKind::Fact
+            | takusu_types::MemoryKind::TaskNote
     ) {
         return Err(WorkerError::BadRequest(
             "kind must be 'proper_noun', 'fact', or 'task_note'".into(),
@@ -123,8 +123,8 @@ fn validate_create(body: &CreateMemory) -> Result<(), WorkerError> {
     if body.subject_id.as_ref().is_some_and(|s| s.len() > 64) {
         return Err(WorkerError::BadRequest("subject_id too long".into()));
     }
-    if body.kind == takusu_util::MemoryKind::TaskNote {
-        if body.subject_type != Some(takusu_util::SubjectType::Task) {
+    if body.kind == takusu_types::MemoryKind::TaskNote {
+        if body.subject_type != Some(takusu_types::SubjectType::Task) {
             return Err(WorkerError::BadRequest(
                 "task_note requires subject_type='task'".into(),
             ));
@@ -163,7 +163,7 @@ pub async fn create(mut req: Request, env: Env) -> Result<Response, WorkerError>
     let normalized_content = memory::normalize_content(&body.content)
         .map_err(|e| WorkerError::BadRequest(format!("invalid content: {e}")))?;
     let subject_type = body.subject_type.unwrap_or_default();
-    let subject_id = if body.kind == takusu_util::MemoryKind::TaskNote {
+    let subject_id = if body.kind == takusu_types::MemoryKind::TaskNote {
         resolve_task_id(&database, &body.subject_id.clone().unwrap_or_default())
             .await
             .map_err(|e| match e {
@@ -597,7 +597,7 @@ pub async fn similar_tasks(req: Request, env: Env) -> Result<Response, WorkerErr
     let mut out: Vec<SimilarTaskRow> = scored
         .into_iter()
         .map(|(score, mut row)| {
-            row.similarity = takusu_util::Similarity::dice(score);
+            row.similarity = takusu_types::Similarity::dice(score);
             row
         })
         .collect();

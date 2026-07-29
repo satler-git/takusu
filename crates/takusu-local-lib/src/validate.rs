@@ -21,7 +21,7 @@ use takusu_storage::{
     CreateHabit, CreateHabitScheduledSpan, CreateMemory, CreateSkill, CreateTask,
     HabitPreviewRequest, HabitStepInput, SettingsRow, UpdateHabit, UpdateSettings, UpdateTask,
 };
-use takusu_util::{EnumLabel, SleepInput};
+use takusu_types::{EnumLabel, SleepInput};
 
 use crate::error::{AppError, BadRequestKind};
 
@@ -69,7 +69,7 @@ pub(crate) fn validate_minutes(avg: i64, sigma: Option<i64>) -> Result<(), AppEr
 /// stored tasks, so a task is never silently excluded from similar-task search
 /// (#942).
 pub(crate) fn validate_title(title: &str) -> Result<(), AppError> {
-    takusu_util::memory::normalize_text(title, Some(takusu_util::memory::MAX_CONTENT_SCALARS))
+    takusu_search::memory::normalize_text(title, Some(takusu_search::memory::MAX_CONTENT_SCALARS))
         .map_err(|e| AppError::BadRequest(BadRequestKind::Other(format!("invalid title: {e}"))))?;
     Ok(())
 }
@@ -88,7 +88,7 @@ pub(crate) fn parse_recurrence(recurrence: &str) -> Result<takusu_habit::Recurre
 /// typos don't silently fall back to UTC (#277). User-supplied timezones are
 /// reported as BadRequest.
 pub(crate) fn validate_timezone(tz: &str) -> Result<(), AppError> {
-    takusu_util::parse_timezone(tz)
+    takusu_types::parse_timezone(tz)
         .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))
         .map(|_| ())
 }
@@ -96,7 +96,7 @@ pub(crate) fn validate_timezone(tz: &str) -> Result<(), AppError> {
 /// Parse the timezone stored in settings. A corrupt stored timezone is a
 /// server-side data error, so it is reported as Internal.
 pub(crate) fn parse_settings_timezone(tz: &str) -> Result<jiff::tz::TimeZone, AppError> {
-    takusu_util::parse_timezone(tz).map_err(AppError::Internal)
+    takusu_types::parse_timezone(tz).map_err(AppError::Internal)
 }
 
 /// Validate `start_at` / `end_at` datetime values and that the effective
@@ -110,10 +110,10 @@ pub(crate) fn parse_settings_timezone(tz: &str) -> Result<jiff::tz::TimeZone, Ap
 /// `end_at`: `None` = no change → use existing; `Some(ts)` = set (cannot be
 /// cleared).
 pub(crate) fn validate_task_datetimes(
-    start_at: Option<Option<&takusu_util::Timestamp>>,
-    end_at: Option<&takusu_util::Timestamp>,
-    existing_start: Option<&takusu_util::Timestamp>,
-    existing_end: Option<&takusu_util::Timestamp>,
+    start_at: Option<Option<&takusu_types::Timestamp>>,
+    end_at: Option<&takusu_types::Timestamp>,
+    existing_start: Option<&takusu_types::Timestamp>,
+    existing_end: Option<&takusu_types::Timestamp>,
 ) -> Result<(), AppError> {
     let effective_start = match &start_at {
         None => existing_start.copied(),
@@ -195,20 +195,20 @@ impl Validate for CreateMemory {
     fn validate(&self) -> Result<(), AppError> {
         if !matches!(
             self.kind,
-            takusu_util::MemoryKind::ProperNoun
-                | takusu_util::MemoryKind::Fact
-                | takusu_util::MemoryKind::TaskNote
+            takusu_types::MemoryKind::ProperNoun
+                | takusu_types::MemoryKind::Fact
+                | takusu_types::MemoryKind::TaskNote
         ) {
             return Err(AppError::BadRequest(BadRequestKind::Other(
                 "kind must be 'proper_noun', 'fact', or 'task_note'".into(),
             )));
         }
-        if takusu_util::memory::normalize_key(&self.key).is_err() {
+        if takusu_search::memory::normalize_key(&self.key).is_err() {
             return Err(AppError::BadRequest(BadRequestKind::Other(
                 "invalid key".into(),
             )));
         }
-        if takusu_util::memory::normalize_content(&self.content).is_err() {
+        if takusu_search::memory::normalize_content(&self.content).is_err() {
             return Err(AppError::BadRequest(BadRequestKind::Other(
                 "invalid content".into(),
             )));
@@ -227,8 +227,8 @@ impl Validate for CreateMemory {
                 "subject_id too long".into(),
             )));
         }
-        if self.kind == takusu_util::MemoryKind::TaskNote {
-            if self.subject_type != Some(takusu_util::SubjectType::Task) {
+        if self.kind == takusu_types::MemoryKind::TaskNote {
+            if self.subject_type != Some(takusu_types::SubjectType::Task) {
                 return Err(AppError::BadRequest(BadRequestKind::Other(
                     "task_note requires subject_type='task'".into(),
                 )));

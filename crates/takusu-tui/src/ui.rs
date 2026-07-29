@@ -1,7 +1,7 @@
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Tabs, Wrap};
 use takusu_storage::{ScheduleEntry, TaskRow};
-use takusu_util::{EnumLabel, TaskStatus, WindowMode};
+use takusu_types::{EnumLabel, TaskStatus, WindowMode};
 
 use crate::app::{App, Modal, Tab};
 use crate::style;
@@ -516,7 +516,7 @@ fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use takusu_util::{DependencyList, Quantity};
+    use takusu_types::{DependencyList, Quantity};
 
     fn task(id: &str) -> TaskRow {
         TaskRow {

@@ -6,7 +6,7 @@
 //!
 //! - [`EnumLabel`]: a trait unifying `Display` / `FromStr` / `Default` so that
 //!   enum values can be round-tripped through DB columns and JSON.
-//! - [`enum_serde`]: a serde adapter usable via `#[serde(with = "takusu_util::enum_serde")]`.
+//! - [`enum_serde`]: a serde adapter usable via `#[serde(with = "takusu_types::enum_serde")]`.
 //! - [`enum_label!`]: a macro generating `Display` / `FromStr` / `TryFrom<String>`
 //!   / `Default` / `EnumLabel` for enum definitions in one shot.
 //! - [`UnknownLabel`]: the error returned when a string does not match any
@@ -17,7 +17,7 @@
 //! - `takusu-storage` enables sqlx with `default-features = false` and no
 //!   driver, so we cannot implement `Type`/`Encode`/`Decode` here. Callers use
 //!   `#[sqlx(try_from = "String")]` instead, which only requires `TryFrom<String>`.
-//! - `takusu-util` is the only shared crate that the storage/client/worker trio
+//! - `takusu-types` is the only shared crate that the storage/client/worker trio
 //!   all depend on and that builds for wasm, so this is the single place to
 //!   host these definitions.
 
@@ -95,7 +95,7 @@ pub trait EnumLabel:
 
 /// Serde adapter for [`EnumLabel`] types.
 ///
-/// Use with `#[serde(with = "takusu_util::enum_serde")]`. The value is
+/// Use with `#[serde(with = "takusu_types::enum_serde")]`. The value is
 /// serialized as its `Display` string and deserialized via `FromStr`, so the
 /// JSON representation stays a plain string.
 pub mod enum_serde {
@@ -124,7 +124,7 @@ pub mod enum_serde {
 
     /// Serde adapter for `Option<EnumLabel>` fields.
     ///
-    /// Use with `#[serde(with = "takusu_util::enum_serde::option")]` on
+    /// Use with `#[serde(with = "takusu_types::enum_serde::option")]` on
     /// `Option<SomeEnum>` fields. `None` is serialized as a missing/null
     /// value; `Some(value)` is serialized as the enum's `Display` string.
     pub mod option {
@@ -165,7 +165,7 @@ pub mod enum_serde {
 /// # Example
 ///
 /// ```
-/// use takusu_util::{enum_label, EnumLabel};
+/// use takusu_types::{enum_label, EnumLabel};
 ///
 /// enum_label! {
 ///     pub enum TaskStatus {
@@ -265,7 +265,7 @@ macro_rules! enum_label {
 enum_label! {
     /// Phase 1 type-safe labels (see `doc/type-safety-issues.md` §3.1 / 3.2 / 3.5 / 3.6).
     ///
-    /// These are intentionally kept in `takusu-util` so that `takusu-storage`,
+    /// These are intentionally kept in `takusu-types` so that `takusu-storage`,
     /// `takusu-client`, and `takusu-worker` can all use them without changing the
     /// crate dependency graph.
     pub enum TaskStatus {
@@ -357,8 +357,8 @@ enum_label! {
 enum_label! {
     /// Phase 5 solver label (see `doc/type-safety-issues.md` §3.3).
     ///
-    /// Kept in `takusu-util` because `takusu-core` does not depend on `serde`,
-    /// and `takusu-storage` / `takusu-client` / `takusu-worker` all depend on `takusu-util`.
+    /// Kept in `takusu-types` because `takusu-core` does not depend on `serde`,
+    /// and `takusu-storage` / `takusu-client` / `takusu-worker` all depend on `takusu-types`.
     pub enum Solver {
         #[default] Sa = "sa",
         Priority = "priority",
@@ -383,7 +383,7 @@ enum_label! {
 enum_label! {
     /// Similarity metric used by `Similarity` (see `doc/code-quality-issues.md` #33).
     ///
-    /// Kept in `takusu-util` so `takusu-storage`, `takusu-client`, and
+    /// Kept in `takusu-types` so `takusu-storage`, `takusu-client`, and
     /// `takusu-worker` can all use it without changing the crate dependency
     /// graph.
     pub enum SimilarityMetric {

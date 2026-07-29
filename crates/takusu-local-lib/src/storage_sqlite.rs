@@ -3,6 +3,7 @@ use jiff::tz::TimeZone;
 use sqlx::SqlitePool;
 use sqlx::sqlite::SqlitePoolOptions;
 use takusu_core::Minutes;
+use takusu_search::search::{EvalContext, filter_tasks};
 use takusu_storage::{
     CreateHabit, CreateHabitScheduledSpan, CreateMemory, CreateSkill, CreateTask,
     GoogleCalEventRow, GoogleCalSettingsRow, HabitRow, HabitScheduledSpanRow,
@@ -13,9 +14,8 @@ use takusu_storage::{
     UpdateGoogleCalSettings, UpdateHabit, UpdateMemory, UpdateSettings, UpdateSkill, UpdateTask,
     storage::StorageResult,
 };
-use takusu_util::search::{EvalContext, filter_tasks};
-use takusu_util::{DEFAULT_AUD, SCOPE_READ_WRITE};
-use takusu_util::{EnumLabel, Quantity, TaskStatus, TaskStatusFilter, Timestamp, WindowMode};
+use takusu_types::{DEFAULT_AUD, SCOPE_READ_WRITE};
+use takusu_types::{EnumLabel, Quantity, TaskStatus, TaskStatusFilter, Timestamp, WindowMode};
 
 use crate::config::LocalConfig;
 use crate::date_utils::validate_scheduled_span_dates;
@@ -404,9 +404,9 @@ impl SqliteStorage {
             if !stale.is_empty() {
                 let mut tx = pool.begin().await?;
                 for (id, title) in stale {
-                    if let Ok(nt) = takusu_util::memory::normalize_text(
+                    if let Ok(nt) = takusu_search::memory::normalize_text(
                         &title,
-                        Some(takusu_util::memory::MAX_CONTENT_SCALARS),
+                        Some(takusu_search::memory::MAX_CONTENT_SCALARS),
                     ) {
                         sqlx::query("UPDATE tasks SET normalized_title = ? WHERE id = ?")
                             .bind(&nt)
@@ -452,8 +452,8 @@ fn map_err(e: sqlx::Error) -> StorageError {
 #[async_trait]
 impl Storage for SqliteStorage {
     /// Verify a JWT and, for non-root tokens, check the jti is not revoked.
-    async fn verify_token(&self, token: &str) -> StorageResult<Option<takusu_util::TokenClaims>> {
-        let claims = match takusu_util::jwt::verify(&self.jwt_secret, token, DEFAULT_AUD) {
+    async fn verify_token(&self, token: &str) -> StorageResult<Option<takusu_types::TokenClaims>> {
+        let claims = match takusu_types::jwt::verify(&self.jwt_secret, token, DEFAULT_AUD) {
             Ok(c) => c,
             Err(e) => {
                 tracing::debug!("JWT verification failed: {e}");
@@ -570,7 +570,7 @@ impl Storage for SqliteStorage {
         validate_quantity(quantity_total, body.quantity_done, original_quantity_total)?;
         let id = uuid::Uuid::now_v7().to_string();
         let resolved_depends = resolve_depends(&self.pool, body.depends.as_deref()).await?;
-        let depends = takusu_util::DependencyList::new(resolved_depends);
+        let depends = takusu_types::DependencyList::new(resolved_depends);
         // sigma 未指定時は avg の 20% をデフォルトにする (確定タスクでない限りある程度バッファを見込む)
         let sigma = body
             .sigma_minutes
@@ -612,9 +612,9 @@ impl Storage for SqliteStorage {
         // A title that fails NFKC normalization (e.g. control-character only)
         // stores NULL, excluding the task from similar-task search rather than
         // matching on a misleading empty string (#942).
-        let normalized_title = takusu_util::memory::normalize_text(
+        let normalized_title = takusu_search::memory::normalize_text(
             &body.title,
-            Some(takusu_util::memory::MAX_CONTENT_SCALARS),
+            Some(takusu_search::memory::MAX_CONTENT_SCALARS),
         )
         .ok();
         sqlx::query(
@@ -656,7 +656,7 @@ impl Storage for SqliteStorage {
     async fn update_task(&self, id: &str, body: &UpdateTask) -> StorageResult<TaskRow> {
         let depends = if let Some(ref deps) = body.depends {
             let resolved = resolve_depends(&self.pool, Some(deps)).await?;
-            Some(takusu_util::DependencyList::new(resolved))
+            Some(takusu_types::DependencyList::new(resolved))
         } else {
             None
         };
@@ -704,7 +704,7 @@ impl Storage for SqliteStorage {
         )?;
         let full = resolve_task_id(&self.pool, id).await?;
         let resolved_depends = resolve_depends(&self.pool, body.depends.as_deref()).await?;
-        let depends = takusu_util::DependencyList::new(resolved_depends);
+        let depends = takusu_types::DependencyList::new(resolved_depends);
         let sigma = body
             .sigma_minutes
             .unwrap_or(Minutes(body.avg_minutes).to_slots().0.max(1));
@@ -713,9 +713,9 @@ impl Storage for SqliteStorage {
         let abandonability = body.abandonability.unwrap_or(0.5.into());
         let fixed = body.fixed.unwrap_or(false);
         let quantity_unit = body.quantity_unit.as_deref();
-        let normalized_title = takusu_util::memory::normalize_text(
+        let normalized_title = takusu_search::memory::normalize_text(
             &body.title,
-            Some(takusu_util::memory::MAX_CONTENT_SCALARS),
+            Some(takusu_search::memory::MAX_CONTENT_SCALARS),
         )
         .ok();
         sqlx::query(
@@ -1020,7 +1020,7 @@ impl Storage for SqliteStorage {
             .map_err(StorageError::BadRequest)?;
         let full = resolve_habit_id(&self.pool, habit_id).await?;
         let id = uuid::Uuid::now_v7().to_string();
-        let now = takusu_util::now_rfc3339();
+        let now = takusu_types::now_rfc3339();
         sqlx::query(
             "INSERT INTO habit_scheduled_spans (id, habit_id, start_date, end_date, reason, created_at) VALUES (?, ?, ?, ?, ?, ?)",
         )
@@ -1103,7 +1103,7 @@ impl Storage for SqliteStorage {
 
         // Track ids present in the input so we can delete the rest.
         let mut input_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
-        let now = takusu_util::now_rfc3339();
+        let now = takusu_types::now_rfc3339();
 
         for s in steps {
             let id =
@@ -1117,7 +1117,7 @@ impl Storage for SqliteStorage {
             let allows_parallel = s.allows_parallel.unwrap_or(false);
             let abandonability = s.abandonability.unwrap_or(0.5.into());
             let fixed = s.fixed.unwrap_or(false);
-            let depends_on = takusu_util::DependencyList::new(s.depends_on.clone());
+            let depends_on = takusu_types::DependencyList::new(s.depends_on.clone());
 
             if existing_set.contains(&id) {
                 sqlx::query(
@@ -1246,7 +1246,7 @@ impl Storage for SqliteStorage {
 
     async fn save_schedule(&self, req: &SaveScheduleRequest) -> StorageResult<ScheduleRow> {
         let schedule = takusu_storage::ScheduleData::new(req.entries.clone());
-        let now = takusu_util::now_rfc3339();
+        let now = takusu_types::now_rfc3339();
         // Wrap the schedule upsert and the task status updates in a single
         // transaction so a failure mid-way cannot leave the schedule saved
         // but some tasks still marked pending (#289).
@@ -1286,14 +1286,14 @@ impl Storage for SqliteStorage {
 
     async fn create_token(&self, label: Option<&str>) -> StorageResult<TokenCreateResponse> {
         let label_opt = label.filter(|s| !s.is_empty());
-        let (new_token, jti) = takusu_util::jwt::generate_token_jwt(
+        let (new_token, jti) = takusu_types::jwt::generate_token_jwt(
             &self.jwt_secret,
             SCOPE_READ_WRITE,
             label_opt,
             None,
         )
         .map_err(|e| StorageError::Internal(e.to_string()))?;
-        let expires_at = token_expires_at(takusu_util::jwt::DEFAULT_TOKEN_TTL_SECONDS);
+        let expires_at = token_expires_at(takusu_types::jwt::DEFAULT_TOKEN_TTL_SECONDS);
         sqlx::query(
             "INSERT INTO tokens (jti, scope, label, created_by, created_at, expires_at) VALUES (?, ?, ?, 'authenticated', strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), ?)",
         )
@@ -1399,8 +1399,8 @@ impl Storage for SqliteStorage {
             client_id: String::new(),
             client_secret: String::new(),
             refresh_token: None,
-            created_at: takusu_util::Timestamp::default(),
-            updated_at: takusu_util::Timestamp::default(),
+            created_at: takusu_types::Timestamp::default(),
+            updated_at: takusu_types::Timestamp::default(),
         }))
     }
 
@@ -1563,9 +1563,9 @@ impl Storage for SqliteStorage {
         body: &CreateMemory,
         operation_id: Option<&str>,
     ) -> StorageResult<MemoryRow> {
-        let normalized_key = takusu_util::memory::normalize_key(&body.key)
+        let normalized_key = takusu_search::memory::normalize_key(&body.key)
             .map_err(|e| StorageError::BadRequest(format!("invalid key: {e}")))?;
-        let normalized_content = takusu_util::memory::normalize_content(&body.content)
+        let normalized_content = takusu_search::memory::normalize_content(&body.content)
             .map_err(|e| StorageError::BadRequest(format!("invalid content: {e}")))?;
         let subject_type = body.subject_type.unwrap_or_default();
         let subject_id = body.subject_id.clone().unwrap_or_default();
@@ -1629,7 +1629,7 @@ impl Storage for SqliteStorage {
         }
 
         let id = uuid::Uuid::now_v7().to_string();
-        let source = takusu_util::MemorySource::UserConfirmed;
+        let source = takusu_types::MemorySource::UserConfirmed;
         sqlx::query(
             "INSERT INTO memories (id, kind, key, normalized_key, content, normalized_content, subject_type, subject_id, source, revision, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))",
         )
@@ -1668,7 +1668,7 @@ impl Storage for SqliteStorage {
             .content
             .as_ref()
             .ok_or_else(|| StorageError::BadRequest("content is required".into()))?;
-        let normalized_content = takusu_util::memory::normalize_content(content)
+        let normalized_content = takusu_search::memory::normalize_content(content)
             .map_err(|e| StorageError::BadRequest(format!("invalid content: {e}")))?;
 
         let mut tx = self.pool.begin().await.map_err(map_err)?;
@@ -1780,9 +1780,9 @@ impl Storage for SqliteStorage {
     }
 
     async fn search_memories(&self, query: &MemoryQuery) -> StorageResult<Vec<MemoryRow>> {
-        let terms = takusu_util::memory::tokenize_query(&query.q)
+        let terms = takusu_search::memory::tokenize_query(&query.q)
             .map_err(|e| StorageError::BadRequest(format!("invalid query: {e}")))?;
-        let patterns = takusu_util::memory::memory_like_patterns(&terms);
+        let patterns = takusu_search::memory::memory_like_patterns(&terms);
 
         let mut sql = String::from("SELECT * FROM memories WHERE ");
         let mut bindings: Vec<String> = Vec::new();
@@ -1818,7 +1818,7 @@ impl Storage for SqliteStorage {
         }
         let mut rows: Vec<MemoryRow> = q.fetch_all(&self.pool).await.map_err(map_err)?;
 
-        takusu_util::memory::sort_memories(&query.q, &mut rows);
+        takusu_search::memory::sort_memories(&query.q, &mut rows);
 
         let limit = query.limit.map_or(10, |n| n.clamp(1, 50) as usize);
         rows.truncate(limit);
@@ -1829,9 +1829,9 @@ impl Storage for SqliteStorage {
         &self,
         query: &SimilarTaskQuery,
     ) -> StorageResult<Vec<SimilarTaskRow>> {
-        let normalized_title = takusu_util::memory::normalize_text(
+        let normalized_title = takusu_search::memory::normalize_text(
             &query.title,
-            Some(takusu_util::memory::MAX_QUERY_SCALARS),
+            Some(takusu_search::memory::MAX_QUERY_SCALARS),
         )
         .map_err(|e| StorageError::BadRequest(format!("invalid title: {e}")))?;
 
@@ -1839,7 +1839,7 @@ impl Storage for SqliteStorage {
         // contain at least one query bigram (a strict superset of non-zero Dice
         // matches, so no true match is dropped — see similar_task_filter_patterns).
         // All patterns are bound as parameters, never interpolated (#942).
-        let patterns = takusu_util::memory::similar_task_filter_patterns(&normalized_title);
+        let patterns = takusu_search::memory::similar_task_filter_patterns(&normalized_title);
         if patterns.is_empty() {
             return Ok(Vec::new());
         }
@@ -1849,7 +1849,7 @@ impl Storage for SqliteStorage {
         // bigram (e.g. a single frequent kanji) cannot transfer an unbounded row
         // set. The cap is far above any personal-scale completed-task count, so
         // it never drops a relevant match in practice (#942).
-        let cap = takusu_util::memory::SIMILAR_TASK_CANDIDATE_CAP;
+        let cap = takusu_search::memory::SIMILAR_TASK_CANDIDATE_CAP;
         let sql = format!(
             "SELECT t.id AS task_id, t.display_id, t.title, t.avg_minutes, t.sigma_minutes, tam.actual_minutes, t.completed_at, t.updated_at FROM tasks t LEFT JOIN task_actual_minutes tam ON tam.task_id = t.id WHERE t.status = 'completed' AND ({filter}) ORDER BY t.updated_at DESC LIMIT {cap}"
         );
@@ -1862,7 +1862,7 @@ impl Storage for SqliteStorage {
         let mut scored: Vec<(f64, SimilarTaskRow)> = rows
             .into_iter()
             .filter_map(|row| {
-                takusu_util::memory::similar_task_score_pre_normalized(
+                takusu_search::memory::similar_task_score_pre_normalized(
                     &normalized_title,
                     &row.title,
                 )
@@ -1882,7 +1882,7 @@ impl Storage for SqliteStorage {
         let mut out: Vec<SimilarTaskRow> = scored
             .into_iter()
             .map(|(score, mut row)| {
-                row.similarity = takusu_util::Similarity::dice(score);
+                row.similarity = takusu_types::Similarity::dice(score);
                 row
             })
             .collect();
@@ -1920,7 +1920,7 @@ impl Storage for SqliteStorage {
         }
 
         let session_id = uuid::Uuid::now_v7().to_string();
-        let now = takusu_util::now_rfc3339();
+        let now = takusu_types::now_rfc3339();
         sqlx::query(
             "INSERT OR IGNORE INTO task_work_sessions (id, task_id, started_at, created_at) VALUES (?, ?, ?, ?)",
         )
@@ -1982,7 +1982,7 @@ impl Storage for SqliteStorage {
             )));
         }
 
-        let now = takusu_util::now_rfc3339();
+        let now = takusu_types::now_rfc3339();
         sqlx::query(
             "UPDATE task_work_sessions SET ended_at = ? WHERE task_id = ? AND ended_at IS NULL",
         )
@@ -2092,7 +2092,7 @@ impl Storage for SqliteStorage {
             return Ok(result);
         }
 
-        let now = takusu_util::now_rfc3339();
+        let now = takusu_types::now_rfc3339();
 
         // Active minutes are measured from the later of the open session start
         // and the most recent progress event, so repeated progress updates in
@@ -2117,7 +2117,7 @@ impl Storage for SqliteStorage {
             } else {
                 session.started_at
             };
-            takusu_util::minutes_between(&base.to_string(), &now)
+            takusu_types::minutes_between(&base.to_string(), &now)
         } else {
             0
         };
@@ -2231,7 +2231,7 @@ impl Storage for SqliteStorage {
             )));
         }
 
-        let now = takusu_util::now_rfc3339();
+        let now = takusu_types::now_rfc3339();
         sqlx::query(
             "UPDATE task_work_sessions SET ended_at = ? WHERE task_id = ? AND ended_at IS NULL",
         )
@@ -2443,12 +2443,12 @@ impl Storage for SqliteStorage {
         } else {
             Vec::new()
         };
-        let depends = takusu_util::DependencyList::new(depends);
+        let depends = takusu_types::DependencyList::new(depends);
 
         let remainder_title = body.title.as_ref().unwrap_or(&original.title);
-        let normalized_title = takusu_util::memory::normalize_text(
+        let normalized_title = takusu_search::memory::normalize_text(
             remainder_title,
-            Some(takusu_util::memory::MAX_CONTENT_SCALARS),
+            Some(takusu_search::memory::MAX_CONTENT_SCALARS),
         )
         .ok();
         sqlx::query(
@@ -2535,8 +2535,8 @@ async fn filter_rows_with_query(
         Err(StorageError::NotFound(_)) => "UTC".to_string(),
         Err(e) => return Err(e),
     };
-    let tz = takusu_util::parse_timezone(&tz_str).unwrap_or(TimeZone::UTC);
-    let now = takusu_util::now_timestamp()
+    let tz = takusu_types::parse_timezone(&tz_str).unwrap_or(TimeZone::UTC);
+    let now = takusu_types::now_timestamp()
         .map_err(|e| StorageError::Internal(format!("current time unavailable: {e}")))?;
 
     let habits = storage.list_habits().await?;
@@ -2769,7 +2769,8 @@ fn validate_task_update(body: &UpdateTask, existing: &TaskRow) -> StorageResult<
     // bind None otherwise (or when normalization fails) so COALESCE keeps the
     // stored value (#942).
     let normalized_title = body.title.as_ref().and_then(|t| {
-        takusu_util::memory::normalize_text(t, Some(takusu_util::memory::MAX_CONTENT_SCALARS)).ok()
+        takusu_search::memory::normalize_text(t, Some(takusu_search::memory::MAX_CONTENT_SCALARS))
+            .ok()
     });
 
     // Unpack Option<Option<Timestamp>> for start_at.
@@ -2796,7 +2797,7 @@ async fn update_task_fields<'c, E>(
     full: &str,
     body: &UpdateTask,
     plan: &TaskUpdatePlan,
-    depends: &Option<takusu_util::DependencyList>,
+    depends: &Option<takusu_types::DependencyList>,
 ) -> StorageResult<()>
 where
     E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
@@ -2872,7 +2873,7 @@ where
     let completed_at = if new_status == TaskStatus::Completed {
         existing
             .completed_at
-            .or(Some(takusu_util::Timestamp::now()))
+            .or(Some(takusu_types::Timestamp::now()))
     } else if existing.status == TaskStatus::Completed {
         None
     } else {
@@ -2893,7 +2894,7 @@ async fn cleanup_work_sessions<'c, E>(executor: E, full: &str) -> StorageResult<
 where
     E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
 {
-    let now = takusu_util::now_rfc3339();
+    let now = takusu_types::now_rfc3339();
     sqlx::query(
         "UPDATE task_work_sessions SET ended_at = ? WHERE task_id = ? AND ended_at IS NULL",
     )
@@ -2909,11 +2910,11 @@ where
 fn session_minutes(session: &TaskWorkSessionRow) -> i64 {
     match &session.ended_at {
         Some(end) => {
-            takusu_util::minutes_between(&session.started_at.to_string(), &end.to_string())
+            takusu_types::minutes_between(&session.started_at.to_string(), &end.to_string())
         }
-        None => takusu_util::minutes_between(
+        None => takusu_types::minutes_between(
             &session.started_at.to_string(),
-            &takusu_util::now_rfc3339(),
+            &takusu_types::now_rfc3339(),
         ),
     }
 }
@@ -2946,7 +2947,7 @@ where
         .map(|e| (e.active_minutes, e.delta_quantity.unwrap_or(1).max(1)))
         .collect();
 
-    Ok(takusu_util::estimate_progress(
+    Ok(takusu_types::estimate_progress(
         avg_minutes,
         sigma_minutes,
         quantity_total,
@@ -3058,7 +3059,7 @@ fn token_expires_at(ttl_seconds: i64) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use takusu_util::Abandonability;
+    use takusu_types::Abandonability;
 
     #[tokio::test]
     async fn foreign_keys_are_enabled_after_init() {

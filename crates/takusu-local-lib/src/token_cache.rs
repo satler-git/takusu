@@ -13,7 +13,7 @@ use web_time::{Duration, SystemTime, UNIX_EPOCH};
 use moka::Expiry;
 use moka::sync::Cache;
 use sha2::{Digest, Sha256};
-use takusu_util::{TokenClaims, jwt};
+use takusu_types::{TokenClaims, jwt};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TokenState {
@@ -175,8 +175,8 @@ mod tests {
             jti: "jti".into(),
             scope: scope.into(),
             label: None,
-            aud: takusu_util::DEFAULT_AUD.into(),
-            iss: takusu_util::DEFAULT_ISS.into(),
+            aud: takusu_types::DEFAULT_AUD.into(),
+            iss: takusu_types::DEFAULT_ISS.into(),
             iat: 0,
             exp: None,
         }

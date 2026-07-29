@@ -1,5 +1,6 @@
 pub mod abandonability;
 pub mod bool_compat;
+pub mod date;
 pub mod duration_seconds;
 pub mod enum_label;
 pub mod json_string;
@@ -13,6 +14,10 @@ pub mod sqlx_impl;
 pub mod time_types;
 
 pub use abandonability::Abandonability;
+pub use date::{
+    later_timestamp, minutes_between, now_rfc3339, now_timestamp, parse_date_expression,
+    parse_datetime, parse_datetime_to_timestamp, parse_datetime_tz,
+};
 pub use enum_label::enum_serde::option as enum_option_serde;
 pub use enum_label::{
     EnumLabel, MemoryKind, MemorySource, ScheduleMode, SimilarityMetric, Solver, SubjectType,
@@ -23,12 +28,6 @@ pub use quantity::{Quantity, QuantityError};
 pub use similarity::Similarity;
 pub use sleep_input::{SleepInput, SleepInputError};
 pub use time_types::{Date, TimeOfDay, TimeParseError, Timestamp, minutes_between_ts};
-
-pub use takusu_search::date::{
-    later_timestamp, minutes_between, now_rfc3339, now_timestamp, parse_date_expression,
-    parse_datetime, parse_datetime_to_timestamp, parse_datetime_tz,
-};
-pub use takusu_search::{impl_search_habit, impl_search_task, memory, search};
 
 use uuid::Uuid;
 
@@ -392,8 +391,8 @@ pub fn url_encode(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::date::now_timestamp;
     use std::str::FromStr;
-    use takusu_search::date::now_timestamp;
 
     #[test]
     fn test_pure_number() {

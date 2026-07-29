@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use jiff::{Timestamp, civil::Date, tz::TimeZone};
 use serde::{Deserialize, Serialize};
 
-use crate::date::parse_date_expression_with;
+use takusu_types::date::parse_date_expression_with;
 
 /// A task that can be searched.
 pub trait Task {

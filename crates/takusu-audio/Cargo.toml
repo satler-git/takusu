@@ -20,7 +20,7 @@ thiserror = { workspace = true }
 async-trait = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-takusu-util = { workspace = true }
+takusu-types = { workspace = true }
 reqwest = { version = "0.13", features = [
   "rustls",
   "blocking",
@@ -36,7 +36,7 @@ flate2 = "1"
 bzip2 = "0.4"
 
 bytes = "1"
-futures-util = { workspace = true }
+futures-util = "0.3"
 url = "2.5"
 
 hound = "3.5"
