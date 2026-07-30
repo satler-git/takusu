@@ -141,7 +141,7 @@ wrangler deploy
    ./scripts/release.sh 1.0.0 --no-push   # ローカル確認のみ
    ```
 
-   このスクリプトは `Cargo.toml` / `Cargo.lock` / `mobile/app.json` / `mobile/package.json` のバージョンを更新し、`main` ブックマークを移動してからタグを push する。
+   このスクリプトは `Cargo.toml` / `Cargo.lock` / `mobile/app.json` / `mobile/package.json` のバージョンを更新し、`ts/takusu-client/openapi/openapi.json` と `ts/takusu-client/src/types.gen.ts` を再生成してから、`main` ブックマークを移動してタグを push する。
 
 2. **GitHub Actions が実行するジョブ**
 

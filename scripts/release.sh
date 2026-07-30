@@ -11,6 +11,8 @@
 #   Cargo.lock              (workspace member version entries, via cargo check)
 #   mobile/app.json         (expo.version)
 #   mobile/package.json     (version)
+#   ts/takusu-client/openapi/openapi.json  (OpenAPI spec, via gen-openapi.sh)
+#   ts/takusu-client/src/types.gen.ts      (TypeScript types, via gen-openapi.sh)
 #
 # The staging branch name (staging-v*) is what triggers .github/workflows/staging-release.yaml.
 set -euo pipefail
@@ -78,6 +80,8 @@ echo "  Cargo.toml              (workspace.package.version)"
 echo "  Cargo.lock              (workspace member version entries)"
 echo "  mobile/app.json         (expo.version)"
 echo "  mobile/package.json     (version)"
+echo "  ts/takusu-client/openapi/openapi.json  (OpenAPI spec)"
+echo "  ts/takusu-client/src/types.gen.ts      (TypeScript types)"
 echo ""
 echo "This will:"
 echo "  1. Create a new change with these version bumps"
@@ -118,6 +122,10 @@ perl -0pi -e \
 # minimally (just the changed workspace member versions) without bumping
 # transitive dependencies.
 cargo check --workspace --quiet
+
+# Regenerate the OpenAPI spec and TypeScript client types so they match
+# the new workspace version and the current router definitions.
+./scripts/gen-openapi.sh
 
 jj describe -m "release ${TAG}"
 
