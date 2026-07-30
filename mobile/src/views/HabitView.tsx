@@ -32,6 +32,7 @@ import { undoRedo } from '@/src/api/undoRedo';
 import { parseRule, summarizeRule } from '@/src/api/rrule';
 import { stepRowToDraft, saveHabitSteps } from '@/src/utils/habitSteps';
 import { todayDateKey } from '@/src/utils/dateKey';
+import { formatDuration } from '@/src/utils/duration';
 
 interface HabitViewProps {
   client: TakusuClient | null;
@@ -630,7 +631,9 @@ const HabitCard = memo(function HabitCardImpl({
             {!hasSteps && (
               <>
                 <Text style={[styles.habitCost, { color: colors.gray }]}>
-                  {habit.avg_minutes}m ±{habit.sigma_minutes}
+                  {`${formatDuration(habit.avg_minutes)} ±${formatDuration(
+                    habit.sigma_minutes,
+                  )}`}
                 </Text>
                 <Text style={[styles.habitParallel, { color: colors.gray }]}>
                   parallel:{' '}

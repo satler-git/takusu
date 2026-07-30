@@ -44,7 +44,7 @@ import { haptic } from '@/src/components/haptics';
 import { useUndoableToast } from '@/src/hooks/useUndoableToast';
 import { CancelConfirmButton } from '@/src/components/CancelConfirmButton';
 import { DeleteConfirmButton } from '@/src/components/DeleteConfirmButton';
-import { parseDuration } from '@/src/utils/duration';
+import { parseDuration, formatDuration } from '@/src/utils/duration';
 import {
   type StepDraft,
   stepRowToDraft,
@@ -1412,7 +1412,7 @@ export function HabitDetailView() {
                       <Text
                         style={[styles.costHint, { color: colors.grayLight }]}
                       >
-                        {habit.sigma_minutes}m
+                        {formatDuration(habit.sigma_minutes)}
                       </Text>
                     )}
                   </View>
@@ -1420,11 +1420,13 @@ export function HabitDetailView() {
               ) : (
                 <>
                   <Text style={[styles.value, { color: colors.black }]}>
-                    avg: {habit.avg_minutes}m, sigma:{' '}
+                    avg: {formatDuration(habit.avg_minutes)}, sigma:{' '}
                     {habit.sigma_minutes > 0 ? (
-                      `${habit.sigma_minutes}m`
+                      formatDuration(habit.sigma_minutes)
                     ) : (
-                      <Text style={{ color: colors.grayLight }}>0m</Text>
+                      <Text style={{ color: colors.grayLight }}>
+                        {formatDuration(0)}
+                      </Text>
                     )}
                   </Text>
                   {!habit.fixed && (
@@ -1645,6 +1647,15 @@ export function HabitDetailView() {
                     (x) =>
                       `${stepDrafts.indexOf(x!) + 1}.${x!.title || '(無題)'}`,
                   );
+                const meta = `${d.start_time}-${d.end_time} · ${formatDuration(
+                  d.avg_minutes,
+                )}${
+                  d.sigma_minutes > 0
+                    ? ` ±${formatDuration(d.sigma_minutes)}`
+                    : ''
+                }${
+                  depLabels.length > 0 ? ` · 依存: ${depLabels.join(', ')}` : ''
+                }`;
                 return (
                   <View
                     key={d.tempId}
@@ -1665,11 +1676,7 @@ export function HabitDetailView() {
                       <Text
                         style={[styles.stepViewMeta, { color: colors.gray }]}
                       >
-                        {d.start_time}-{d.end_time} · {d.avg_minutes}m
-                        {d.sigma_minutes > 0 ? `±${d.sigma_minutes}` : ''}
-                        {depLabels.length > 0
-                          ? ` · 依存: ${depLabels.join(', ')}`
-                          : ''}
+                        {meta}
                       </Text>
                     </View>
                   </View>

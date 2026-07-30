@@ -21,6 +21,7 @@ import {
 } from '@/src/components/PermissionsEditor';
 import { HabitPreviewModal } from '@/src/components/HabitPreviewModal';
 import { haptic } from '@/src/components/haptics';
+import { formatDuration } from '@/src/utils/duration';
 
 const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土'];
 
@@ -280,15 +281,6 @@ export function asArray<T>(
 
 export function asStringArray(value: unknown): string[] {
   return asArray(value, isString) ?? [];
-}
-
-export function formatDuration(minutes: number): string {
-  if (minutes >= 60) {
-    const h = Math.floor(minutes / 60);
-    const m = minutes % 60;
-    return m === 0 ? `${h}時間` : `${h}時間${m}分`;
-  }
-  return `${minutes}分`;
 }
 
 export function parseDateTime(iso: string): {

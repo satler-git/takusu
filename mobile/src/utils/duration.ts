@@ -61,7 +61,12 @@ export function parseDuration(input: string): number | null {
 /// Format minutes back into a human-readable duration string.
 /// e.g. 90 → "1h30m", 60 → "1h", 45 → "45m"
 export function formatDuration(minutes: number): string {
-  if (minutes <= 0) return '0m';
+  if (minutes < 0) {
+    throw new RangeError(
+      `formatDuration: expected non-negative minutes, got ${minutes}`,
+    );
+  }
+  if (minutes === 0) return '0m';
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;
   if (h > 0 && m > 0) return `${h}h${m}m`;

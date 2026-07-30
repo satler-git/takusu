@@ -15,11 +15,11 @@ import {
   asNumber,
   asBoolean,
   asArray,
-  formatDuration,
   parseDateTime,
   formatInstant,
   isRecord,
 } from '@/src/components/ApprovalPanel';
+import { formatDuration } from '@/src/utils/duration';
 import { makeStyles, DetailRow } from './ToolCallDetailCommon';
 import {
   TaskResultView,

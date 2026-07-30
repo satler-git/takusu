@@ -6,8 +6,8 @@ import {
   asStringArray,
   asArray,
   isRecord,
-  formatDuration,
 } from '@/src/components/ApprovalPanel';
+import { formatDuration } from '@/src/utils/duration';
 import {
   ActivityIndicator,
   Modal,
