@@ -264,67 +264,23 @@ fn format_ical_date(
 }
 
 /// Parse an RFC 5545 duration value and return its total seconds.
+///
+/// Uses jiff's duration parser, which handles signs and unit designator
+/// case itself. Calendar units are converted using jiff's
+/// `SpanRelativeTo::days_are_24_hours()` marker, keeping the existing
+/// assumptions that a day is 86400 seconds and a week is 7 days.
+///
+/// Fractional seconds are truncated to whole seconds because this
+/// function returns an `i64` second count.
 fn parse_duration_seconds(dur: &str) -> Result<i64, IcalError> {
-    let mut chars = dur.chars().peekable();
-    let sign = match chars.peek() {
-        Some(&'+') => {
-            chars.next();
-            1
-        }
-        Some(&'-') => {
-            chars.next();
-            -1
-        }
-        _ => 1,
-    };
-    let Some(p) = chars.next() else {
-        return Err(IcalError::InvalidDate(dur.to_string()));
-    };
-    if !p.eq_ignore_ascii_case(&'P') {
-        return Err(IcalError::InvalidDate(dur.to_string()));
-    }
-
-    let mut total: i64 = 0;
-    let mut in_time = false;
-    let mut has_component = false;
-    while let Some(c) = chars.next() {
-        if c.eq_ignore_ascii_case(&'T') {
-            in_time = true;
-            continue;
-        }
-        if !c.is_ascii_digit() {
-            return Err(IcalError::InvalidDate(dur.to_string()));
-        }
-        let mut num = String::new();
-        num.push(c);
-        while let Some(&d) = chars.peek() {
-            if d.is_ascii_digit() || d == '.' {
-                num.push(chars.next().unwrap());
-            } else {
-                break;
-            }
-        }
-        let Some(unit) = chars.next() else {
-            return Err(IcalError::InvalidDate(dur.to_string()));
-        };
-        let value = num
-            .parse::<f64>()
-            .map_err(|_| IcalError::InvalidDate(dur.to_string()))?;
-        let seconds = match unit.to_ascii_uppercase() {
-            'W' if !in_time => (value * 7.0 * 86400.0) as i64,
-            'D' if !in_time => (value * 86400.0) as i64,
-            'H' if in_time => (value * 3600.0) as i64,
-            'M' if in_time => (value * 60.0) as i64,
-            'S' if in_time => value.round() as i64,
-            _ => return Err(IcalError::InvalidDate(dur.to_string())),
-        };
-        total += seconds;
-        has_component = true;
-    }
-    if !has_component {
-        return Err(IcalError::InvalidDate(dur.to_string()));
-    }
-    Ok(total * sign)
+    let span: jiff::Span = dur
+        .parse()
+        .map_err(|_| IcalError::InvalidDate(dur.to_string()))?;
+    let duration = span
+        .to_duration(jiff::SpanRelativeTo::days_are_24_hours())
+        .map_err(|_| IcalError::InvalidDate(dur.to_string()))?;
+    // Truncate any fractional seconds; the caller only needs whole seconds.
+    Ok(duration.as_secs())
 }
 
 fn add_duration_to_timestamp(
@@ -851,5 +807,37 @@ END:VCALENDAR";
         let huge_secs = i64::MAX;
         let err = add_duration_to_timestamp(start, huge_secs).unwrap_err();
         assert!(matches!(err, IcalError::DurationOverflow(_)));
+    }
+
+    #[test]
+    fn parse_duration_seconds_uses_jiff() {
+        assert_eq!(parse_duration_seconds("PT2H").unwrap(), 2 * 3600);
+        assert_eq!(parse_duration_seconds("+PT2H").unwrap(), 2 * 3600);
+        assert_eq!(
+            parse_duration_seconds("PT2H30M").unwrap(),
+            2 * 3600 + 30 * 60
+        );
+        assert_eq!(
+            parse_duration_seconds("P1DT2H3M4S").unwrap(),
+            86400 + 2 * 3600 + 3 * 60 + 4
+        );
+        assert_eq!(parse_duration_seconds("P1W").unwrap(), 7 * 86400);
+        assert_eq!(parse_duration_seconds("P1W3D").unwrap(), 10 * 86400);
+        assert_eq!(parse_duration_seconds("PT0S").unwrap(), 0);
+        assert_eq!(parse_duration_seconds("-PT2H").unwrap(), -7200);
+        // jiff handles unit designator case itself.
+        assert_eq!(parse_duration_seconds("pt2h").unwrap(), 2 * 3600);
+        // Fractional seconds are truncated to whole seconds.
+        assert_eq!(parse_duration_seconds("PT1.5S").unwrap(), 1);
+    }
+
+    #[test]
+    fn parse_duration_seconds_rejects_invalid() {
+        assert!(parse_duration_seconds("").is_err());
+        assert!(parse_duration_seconds("P").is_err());
+        // Months and years are calendar units that cannot be converted to
+        // seconds without a relative date, so they are rejected here.
+        assert!(parse_duration_seconds("P1M").is_err());
+        assert!(parse_duration_seconds("P1Y").is_err());
     }
 }
