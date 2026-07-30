@@ -7,12 +7,12 @@ import {
   asNumber,
   asBoolean,
   asArray,
-  formatDuration,
   formatInstant,
   formatDateTimeRange,
   formatRecurrence,
   STATUS_LABELS,
 } from '@/src/components/ApprovalPanel';
+import { formatDuration } from '@/src/utils/duration';
 import { makeStyles, DetailRow } from './ToolCallDetailCommon';
 
 function taskStatusColor(status: string, colors: ColorSet): string {

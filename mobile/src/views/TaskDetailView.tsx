@@ -1437,7 +1437,7 @@ export function TaskDetailView() {
                 />
                 {sigmaMinutes === '' && (
                   <Text style={[styles.costHint, { color: colors.grayLight }]}>
-                    {task.sigma_minutes}m
+                    {formatDuration(task.sigma_minutes)}
                   </Text>
                 )}
               </View>
@@ -1445,11 +1445,13 @@ export function TaskDetailView() {
           ) : (
             <Pressable onPress={() => handleSectionTap('cost')}>
               <Text style={[styles.sectionValue, { color: colors.black }]}>
-                avg: {task.avg_minutes}m, sigma:{' '}
+                avg: {formatDuration(task.avg_minutes)}, sigma:{' '}
                 {task.sigma_minutes > 0 ? (
-                  `${task.sigma_minutes}m`
+                  formatDuration(task.sigma_minutes)
                 ) : (
-                  <Text style={{ color: colors.grayLight }}>0m</Text>
+                  <Text style={{ color: colors.grayLight }}>
+                    {formatDuration(0)}
+                  </Text>
                 )}
                 {task.actual_minutes != null && task.actual_minutes > 0 ? (
                   <Text style={{ color: colors.gray }}>

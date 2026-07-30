@@ -29,7 +29,7 @@ describe('TaskResultView', () => {
     );
     expect(getByText('[#42] test task')).toBeTruthy();
     expect(getByText('進行中')).toBeTruthy();
-    expect(getByText('1時間 (σ 10分)')).toBeTruthy();
+    expect(getByText('1h (σ 10m)')).toBeTruthy();
     expect(getByText('3/10 pages')).toBeTruthy();
   });
 
@@ -113,7 +113,7 @@ describe('HabitResultView', () => {
     expect(getByText('[h1] running')).toBeTruthy();
     expect(getByText('毎日')).toBeTruthy();
     expect(getByText('1. warmup')).toBeTruthy();
-    expect(getByText('09:00 〜 09:10 / 10分')).toBeTruthy();
+    expect(getByText('09:00 〜 09:10 / 10m')).toBeTruthy();
   });
 
   it('renders get_habit result with habits array', async () => {

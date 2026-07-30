@@ -26,6 +26,7 @@ import type { TaskRow } from '@/src/api/types';
 import { parseDepends } from '@/src/api/types';
 import { taskCardColor, useTheme, type ColorSet, useColors } from '@/src/theme';
 import { haptic } from '@/src/components/haptics';
+import { formatDuration } from '@/src/utils/duration';
 
 interface TaskCardProps {
   task: TaskRow;
@@ -545,7 +546,9 @@ function TaskCardImpl({
                     { color: colors.textOnCardSecondary },
                   ]}
                 >
-                  {task.avg_minutes}m ±{task.sigma_minutes}
+                  {`${formatDuration(task.avg_minutes)} ±${formatDuration(
+                    task.sigma_minutes,
+                  )}`}
                 </Text>
               )}
               {(() => {
