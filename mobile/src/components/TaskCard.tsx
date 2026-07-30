@@ -565,6 +565,45 @@ function TaskCardImpl({
           </Pressable>
         </Reanimated.View>
       </GestureDetector>
+      {ACTION_PANEL_WIDTH > 0 && (
+        <View
+          style={[styles.actionPanel, { width: PANEL_WIDTH }]}
+          pointerEvents={actionsRevealed ? 'auto' : 'none'}
+        >
+          {skipVisible && (
+            <Pressable
+              style={[
+                styles.actionButton,
+                leftActionStyle,
+                { backgroundColor: 'transparent' },
+              ]}
+              onPress={() => {
+                haptic.warning();
+                actionsRevealedSV.value = false;
+                setActionsRevealed(false);
+                translateX.value = withSpring(0);
+                onSkip(task);
+              }}
+            />
+          )}
+          {onDelete && (
+            <Pressable
+              style={[
+                styles.actionButton,
+                skipVisible ? rightActionStyle : leftActionStyle,
+                { backgroundColor: 'transparent' },
+              ]}
+              onPress={() => {
+                haptic.medium();
+                actionsRevealedSV.value = false;
+                setActionsRevealed(false);
+                translateX.value = withSpring(0);
+                onDelete(task);
+              }}
+            />
+          )}
+        </View>
+      )}
     </View>
   );
 }
