@@ -133,6 +133,8 @@ jobs:
           PR_NUMBER: ${{ needs.create-pr.outputs.pr_number }}
           TAG: ${{ needs.validate.outputs.tag }}
         run: |
+          set -euo pipefail
+
           # Merge queue is enabled on main. Auto-merge is enabled on the repo
           # so `gh pr merge` can set the PR to auto-merge when required checks
           # have not yet passed; once they pass, the merge queue merges the PR
@@ -146,19 +148,37 @@ jobs:
           # The merge queue may need to re-run checks on the queued commit.
           # The build job already verified the release builds (45+ min), and
           # PR-triggered checks ran in parallel during the build. Poll for up
-          # to 60 minutes for the merge to complete.
-          # NOTE: a merged PR has state "MERGED", not "CLOSED", so rely on
-          # mergedAt alone to detect completion.
-          for i in $(seq 1 360); do
-            merged_at=$(gh pr view "$PR_NUMBER" --json mergedAt --jq '.mergedAt')
-            if [ "$merged_at" != "null" ]; then
-              echo "PR merged after ${i} polls"
-              break
+          # to 2 hours for the merge to complete.
+          merged=0
+          for i in $(seq 1 240); do
+            pr_json=$(gh pr view "$PR_NUMBER" --json state,mergedAt,mergeCommit --jq '{state, mergedAt, mergeCommit: .mergeCommit.oid}')
+            state=$(jq -r '.state' <<< "$pr_json")
+            merged_at=$(jq -r '.mergedAt' <<< "$pr_json")
+            merge_commit=$(jq -r '.mergeCommit // ""' <<< "$pr_json")
+
+            # A merged PR can transiently show CLOSED while mergedAt is being
+            # populated, so verify the merge commit is actually on origin/main
+            # before deciding the PR has landed.
+            if [ "$merged_at" != "null" ] && [ -n "$merge_commit" ]; then
+              if git fetch --depth=50 origin main >/dev/null 2>&1 && \
+                 git merge-base --is-ancestor "$merge_commit" origin/main 2>/dev/null; then
+                echo "PR merged after ${i} polls"
+                merged=1
+                break
+              fi
             fi
-            sleep 10
+
+            # If the PR was closed without merging, fail immediately instead of
+            # waiting the full polling window.
+            if [ "$state" = "CLOSED" ] && [ "$merged_at" = "null" ]; then
+              echo "PR ${PR_NUMBER} was closed without being merged" >&2
+              exit 1
+            fi
+
+            sleep 30
           done
 
-          if [ "$merged_at" = "null" ]; then
+          if [ "$merged" -ne 1 ]; then
             echo "PR ${PR_NUMBER} was not merged within the polling window" >&2
             exit 1
           fi
@@ -193,8 +213,15 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BRANCH: ${{ github.ref_name }}
         run: |
+          set -euo pipefail
           number=$(gh pr list --head "$BRANCH" --base main --json number --jq '.[0].number')
           if [ -n "$number" ]; then
-            gh pr close "$number" || true
+            state=$(gh pr view "$number" --json state --jq '.state')
+            # Only close the PR if it is still open. If it has already been
+            # merged or closed by the merge queue, leave its state alone and
+            # just delete the staging branch.
+            if [ "$state" = "OPEN" ]; then
+              gh pr close "$number" || true
+            fi
           fi
           git push origin --delete "$BRANCH" || true
