@@ -262,36 +262,165 @@ macro_rules! enum_label {
     };
 }
 
-enum_label! {
-    /// Phase 1 type-safe labels (see `doc/type-safety-issues.md` §3.1 / 3.2 / 3.5 / 3.6).
-    ///
-    /// These are intentionally kept in `takusu-types` so that `takusu-contracts`,
-    /// `takusu-client`, and `takusu-worker` can all use them without changing the
-    /// crate dependency graph.
-    pub enum TaskStatus {
-        #[default] Pending = "pending",
-        Scheduled = "scheduled",
-        InProgress = "in_progress",
-        Completed = "completed",
-        Skipped = "skipped",
+/// Phase 1 type-safe labels (see `doc/type-safety-issues.md` §3.1 / 3.2 / 3.5 / 3.6).
+///
+/// These are intentionally kept in `takusu-types` so that `takusu-contracts`,
+/// `takusu-client`, and `takusu-worker` can all use them without changing the
+/// crate dependency graph.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
+pub enum TaskStatus {
+    #[default]
+    #[serde(rename = "pending")]
+    #[cfg_attr(feature = "clap", value(name = "pending"))]
+    Pending,
+    #[serde(rename = "scheduled")]
+    #[cfg_attr(feature = "clap", value(name = "scheduled"))]
+    Scheduled,
+    #[serde(rename = "in_progress")]
+    #[cfg_attr(feature = "clap", value(name = "in_progress"))]
+    InProgress,
+    #[serde(rename = "completed")]
+    #[cfg_attr(feature = "clap", value(name = "completed"))]
+    Completed,
+    #[serde(rename = "skipped")]
+    #[cfg_attr(feature = "clap", value(name = "skipped"))]
+    Skipped,
+}
+
+impl std::fmt::Display for TaskStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
     }
 }
 
-enum_label! {
-    /// Filter value for task status queries.
-    ///
-    /// Superset of [`TaskStatus`] that adds [`TaskStatusFilter::Overdue`] — a
-    /// virtual pseudo-status that selects tasks whose `end_at` has passed but
-    /// are not `completed` or `skipped`. `Overdue` is never stored in the
-    /// `status` column; it is expanded to a SQL predicate by storage
-    /// implementations.
-    pub enum TaskStatusFilter {
-        #[default] Pending = "pending",
-        Scheduled = "scheduled",
-        InProgress = "in_progress",
-        Completed = "completed",
-        Skipped = "skipped",
-        Overdue = "overdue",
+impl std::str::FromStr for TaskStatus {
+    type Err = UnknownLabel;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "pending" | "todo" | "to-do" | "to_do" => Ok(Self::Pending),
+            "scheduled" | "planned" => Ok(Self::Scheduled),
+            "in_progress" | "in-progress" | "inprogress" | "doing" | "in progress" => {
+                Ok(Self::InProgress)
+            }
+            "completed" | "done" | "complete" => Ok(Self::Completed),
+            "skipped" | "skip" => Ok(Self::Skipped),
+            other => Err(UnknownLabel::new("TaskStatus", other)),
+        }
+    }
+}
+
+impl TryFrom<String> for TaskStatus {
+    type Error = UnknownLabel;
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        s.parse()
+    }
+}
+
+impl EnumLabel for TaskStatus {
+    fn enum_default() -> Self {
+        Self::Pending
+    }
+    fn all_variants() -> &'static [Self] {
+        &[
+            Self::Pending,
+            Self::Scheduled,
+            Self::InProgress,
+            Self::Completed,
+            Self::Skipped,
+        ]
+    }
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Scheduled => "scheduled",
+            Self::InProgress => "in_progress",
+            Self::Completed => "completed",
+            Self::Skipped => "skipped",
+        }
+    }
+}
+
+/// Filter value for task status queries.
+///
+/// Superset of [`TaskStatus`] that adds [`TaskStatusFilter::Overdue`] — a
+/// virtual pseudo-status that selects tasks whose `end_at` has passed but
+/// are not `completed` or `skipped`. `Overdue` is never stored in the
+/// `status` column; it is expanded to a SQL predicate by storage
+/// implementations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
+pub enum TaskStatusFilter {
+    #[default]
+    #[serde(rename = "pending")]
+    #[cfg_attr(feature = "clap", value(name = "pending"))]
+    Pending,
+    #[serde(rename = "scheduled")]
+    #[cfg_attr(feature = "clap", value(name = "scheduled"))]
+    Scheduled,
+    #[serde(rename = "in_progress")]
+    #[cfg_attr(feature = "clap", value(name = "in_progress"))]
+    InProgress,
+    #[serde(rename = "completed")]
+    #[cfg_attr(feature = "clap", value(name = "completed"))]
+    Completed,
+    #[serde(rename = "skipped")]
+    #[cfg_attr(feature = "clap", value(name = "skipped"))]
+    Skipped,
+    #[serde(rename = "overdue")]
+    #[cfg_attr(feature = "clap", value(name = "overdue"))]
+    Overdue,
+}
+
+impl std::fmt::Display for TaskStatusFilter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl std::str::FromStr for TaskStatusFilter {
+    type Err = UnknownLabel;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s == "overdue" {
+            return Ok(Self::Overdue);
+        }
+        match s.parse::<TaskStatus>() {
+            Ok(status) => Ok(status.into()),
+            Err(_) => Err(UnknownLabel::new("TaskStatusFilter", s)),
+        }
+    }
+}
+
+impl TryFrom<String> for TaskStatusFilter {
+    type Error = UnknownLabel;
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        s.parse()
+    }
+}
+
+impl EnumLabel for TaskStatusFilter {
+    fn enum_default() -> Self {
+        Self::Pending
+    }
+    fn all_variants() -> &'static [Self] {
+        &[
+            Self::Pending,
+            Self::Scheduled,
+            Self::InProgress,
+            Self::Completed,
+            Self::Skipped,
+            Self::Overdue,
+        ]
+    }
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Scheduled => "scheduled",
+            Self::InProgress => "in_progress",
+            Self::Completed => "completed",
+            Self::Skipped => "skipped",
+            Self::Overdue => "overdue",
+        }
     }
 }
 
@@ -609,5 +738,47 @@ mod tests {
             let filter: TaskStatusFilter = (*status).into();
             assert_eq!(filter.as_str(), status.as_str());
         }
+    }
+
+    #[test]
+    fn task_status_parses_synonyms() {
+        assert_eq!("done".parse::<TaskStatus>().unwrap(), TaskStatus::Completed);
+        assert_eq!(
+            "complete".parse::<TaskStatus>().unwrap(),
+            TaskStatus::Completed
+        );
+        assert_eq!("todo".parse::<TaskStatus>().unwrap(), TaskStatus::Pending);
+        assert_eq!(
+            "in progress".parse::<TaskStatus>().unwrap(),
+            TaskStatus::InProgress
+        );
+        assert_eq!(
+            "in-progress".parse::<TaskStatus>().unwrap(),
+            TaskStatus::InProgress
+        );
+        assert_eq!("skip".parse::<TaskStatus>().unwrap(), TaskStatus::Skipped);
+        assert_eq!(
+            "planned".parse::<TaskStatus>().unwrap(),
+            TaskStatus::Scheduled
+        );
+    }
+
+    #[test]
+    fn task_status_filter_parses_synonyms_and_overdue() {
+        assert_eq!(
+            "done".parse::<TaskStatusFilter>().unwrap(),
+            TaskStatusFilter::Completed
+        );
+        assert_eq!(
+            "overdue".parse::<TaskStatusFilter>().unwrap(),
+            TaskStatusFilter::Overdue
+        );
+    }
+
+    #[test]
+    fn task_status_filter_rejects_unknown_label() {
+        let err = "deleted".parse::<TaskStatusFilter>().unwrap_err();
+        assert_eq!(err.enum_name(), "TaskStatusFilter");
+        assert_eq!(err.value(), "deleted");
     }
 }

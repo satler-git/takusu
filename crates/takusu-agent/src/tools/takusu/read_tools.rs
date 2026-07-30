@@ -184,15 +184,12 @@ impl TypedTool for ListTasks {
             status: args
                 .status
                 .map(|s| {
-                    let normalized = normalize_status(&s);
-                    normalized
-                        .parse::<takusu_types::TaskStatusFilter>()
-                        .map_err(|e| {
-                            ToolError::InvalidArgs(InvalidArgsError::new(
-                                "status",
-                                format!("invalid: {e}"),
-                            ))
-                        })
+                    normalize_status(&s).map_err(|e| {
+                        ToolError::InvalidArgs(InvalidArgsError::new(
+                            "status",
+                            format!("invalid: {e}"),
+                        ))
+                    })
                 })
                 .transpose()?,
             from: args

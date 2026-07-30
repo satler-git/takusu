@@ -16,7 +16,7 @@ use takusu_client::{
     Client, HabitDetail, HabitRow, HabitScheduledSpanRow, HabitStepRow, ScheduleEntry, ScheduleRow,
     SettingsResponse, TaskRow,
 };
-use takusu_types::{Quantity, TaskStatus, parse_datetime_tz};
+use takusu_types::{Quantity, TaskStatus, TaskStatusFilter, parse_datetime_tz};
 
 // ── test-only helpers (moved from common.rs and mutation.rs) ─────────────
 
@@ -89,7 +89,10 @@ fn normalize_mutation_args(
             normalize_mutation_field(args, "start_at", tz)?;
             normalize_mutation_field(args, "end_at", tz)?;
             if let Some(status) = args.get("status").and_then(Value::as_str) {
-                args.insert("status".into(), Value::String(normalize_status(status)));
+                args.insert(
+                    "status".into(),
+                    Value::String(normalize_status(status)?.to_string()),
+                );
             }
         }
         MutationKind::Reschedule => {
@@ -534,16 +537,44 @@ fn normalize_execution_references_strips_hashes_for_backend() {
 
 #[test]
 fn normalize_status_maps_common_synonyms() {
-    assert_eq!(normalize_status("done"), "completed");
-    assert_eq!(normalize_status("Done"), "completed");
-    assert_eq!(normalize_status("  DONE  "), "completed");
-    assert_eq!(normalize_status("complete"), "completed");
-    assert_eq!(normalize_status("in-progress"), "in_progress");
-    assert_eq!(normalize_status("in progress"), "in_progress");
-    assert_eq!(normalize_status("todo"), "pending");
-    assert_eq!(normalize_status("skip"), "skipped");
-    assert_eq!(normalize_status("completed"), "completed");
-    assert_eq!(normalize_status("pending"), "pending");
+    assert_eq!(normalize_status("done").unwrap(), TaskStatusFilter::Completed);
+    assert_eq!(normalize_status("Done").unwrap(), TaskStatusFilter::Completed);
+    assert_eq!(
+        normalize_status("  DONE  ").unwrap(),
+        TaskStatusFilter::Completed
+    );
+    assert_eq!(
+        normalize_status("complete").unwrap(),
+        TaskStatusFilter::Completed
+    );
+    assert_eq!(
+        normalize_status("in-progress").unwrap(),
+        TaskStatusFilter::InProgress
+    );
+    assert_eq!(
+        normalize_status("in progress").unwrap(),
+        TaskStatusFilter::InProgress
+    );
+    assert_eq!(normalize_status("todo").unwrap(), TaskStatusFilter::Pending);
+    assert_eq!(normalize_status("skip").unwrap(), TaskStatusFilter::Skipped);
+    assert_eq!(
+        normalize_status("completed").unwrap(),
+        TaskStatusFilter::Completed
+    );
+    assert_eq!(
+        normalize_status("pending").unwrap(),
+        TaskStatusFilter::Pending
+    );
+    assert_eq!(
+        normalize_status("overdue").unwrap(),
+        TaskStatusFilter::Overdue
+    );
+}
+
+#[test]
+fn normalize_status_rejects_unknown_values() {
+    assert!(normalize_status("deleted").is_err());
+    assert!(normalize_status("foo").is_err());
 }
 
 #[test]

@@ -3,7 +3,7 @@ use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::str::FromStr;
 use takusu_client::{Client, HabitDetail, HabitRow, HabitStepRow, TaskRow};
-use takusu_types::{TaskStatus, Timestamp, parse_datetime_to_timestamp};
+use takusu_types::{TaskStatus, TaskStatusFilter, Timestamp, parse_datetime_to_timestamp};
 
 use super::client_error;
 use crate::{InvalidArgsError, ToolError};
@@ -261,19 +261,14 @@ pub(crate) fn strip_leading_hash(reference: &str) -> &str {
 }
 
 /// Normalize a task status string to the canonical backend value.
-/// Handles common LLM/user synonyms such as "done" -> "completed".
-pub(crate) fn normalize_status(status: &str) -> String {
-    let lower = status.trim().to_lowercase();
-    match lower.as_str() {
-        "done" | "complete" | "completed" => "completed".to_string(),
-        "todo" | "to-do" | "to_do" | "pending" => "pending".to_string(),
-        "in-progress" | "in_progress" | "inprogress" | "doing" | "in progress" => {
-            "in_progress".to_string()
-        }
-        "skip" | "skipped" => "skipped".to_string(),
-        "planned" | "scheduled" => "scheduled".to_string(),
-        _ => lower,
-    }
+///
+/// Handles common LLM/user synonyms such as "done" -> "completed" and
+/// rejects unknown values immediately by delegating to
+/// [`TaskStatusFilter::from_str`].
+pub(crate) fn normalize_status(
+    status: &str,
+) -> Result<TaskStatusFilter, takusu_types::UnknownLabel> {
+    status.trim().to_lowercase().parse()
 }
 
 /// Normalize an array of task references by stripping leading `#` characters.
