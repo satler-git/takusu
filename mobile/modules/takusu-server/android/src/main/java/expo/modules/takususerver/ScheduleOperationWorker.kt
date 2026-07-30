@@ -182,6 +182,7 @@ class ScheduleOperationWorker(
             NotificationCompat
                 .Builder(applicationContext, CHANNEL_ID)
                 .setSmallIcon(notificationIconResId)
+                .setColor(TakusuNotificationColor.color(applicationContext))
                 .setContentTitle(title)
                 .setContentText(text)
                 .setOngoing(ongoing)

@@ -12,6 +12,7 @@ import { type NotificationSettings, minutesToTime } from './settings';
 import { CHANNELS } from './channels';
 import { CATEGORY_TASK_IN_PROGRESS, CATEGORY_TASK_START } from './categories';
 import { dateKey, todayDateKey } from '@/src/utils/dateKey';
+import { getNotificationIconColor } from './theme';
 
 // Android has a ~64 notification limit for scheduled notifications.
 // We limit per-task notification batches (pre-start, start-overdue, end-time)
@@ -189,10 +190,11 @@ async function scheduleNextOccurrence(
   title: string,
   body: string,
   data: Record<string, unknown>,
+  color: string,
   tz?: string,
 ): Promise<void> {
   const target = nextOccurrenceDate(hour, minute, tz);
-  await scheduleAt(channelId, target, title, body, data);
+  await scheduleAt(channelId, target, title, body, data, color);
 }
 
 // Schedule a one-time notification at a specific date
@@ -202,6 +204,7 @@ async function scheduleAt(
   title: string,
   body: string,
   data: Record<string, unknown>,
+  color: string,
   categoryIdentifier?: string,
 ): Promise<void> {
   await Notifications.scheduleNotificationAsync({
@@ -209,6 +212,7 @@ async function scheduleAt(
       title,
       body,
       data,
+      color,
       categoryIdentifier,
     },
     trigger: {
@@ -231,6 +235,7 @@ export async function rescheduleNotifications(
 
   // Cancel all previously scheduled notifications, then reschedule
   await Notifications.cancelAllScheduledNotificationsAsync();
+  const color = await getNotificationIconColor();
 
   const scheduleMap = new Map<string, ScheduleEntry>();
   for (const e of schedule) scheduleMap.set(e.task_id, e);
@@ -245,7 +250,14 @@ export async function rescheduleNotifications(
         ? 'おはようございます'
         : `今日は${count}個の未完了タスクがあります`;
     const body = count === 0 ? 'タスクを追加しましょう' : 'タップして確認';
-    await scheduleAt(CHANNELS.taskSummary, target, title, body, { url: '/' });
+    await scheduleAt(
+      CHANNELS.taskSummary,
+      target,
+      title,
+      body,
+      { url: '/' },
+      color,
+    );
   }
 
   // ── 2. Pre-start reminder + 3. Start overdue (per-task, today/tomorrow only) ──
@@ -283,6 +295,7 @@ export async function rescheduleNotifications(
           'タスク開始直前',
           `「${task.title}」が${settings.preStartReminderMinutes}分後の${startTime}に開始します`,
           { url: `/task/${task.id}`, taskId: task.id },
+          color,
           CATEGORY_TASK_START,
         );
       }
@@ -296,6 +309,7 @@ export async function rescheduleNotifications(
         'タスク開始時間',
         `「${task.title}」の開始時間です (${startTime})`,
         { url: `/task/${task.id}`, taskId: task.id },
+        color,
         CATEGORY_TASK_START,
       );
     }
@@ -325,6 +339,7 @@ export async function rescheduleNotifications(
         'タスク終了時間',
         `「${task.title}」の終了時間です (${endTime})`,
         { url: `/task/${task.id}`, taskId: task.id },
+        color,
       );
     }
   }
@@ -343,6 +358,7 @@ export async function rescheduleNotifications(
         '未スケジュールのタスクがあります',
         `${idleCount}個のタスクが${settings.unscheduledIdleHours}時間以上放置されています`,
         { url: '/' },
+        color,
         tz,
       );
     }
@@ -352,11 +368,13 @@ export async function rescheduleNotifications(
 // ── In-progress notification (#5) — posted immediately, not scheduled ──
 
 export async function postInProgressNotification(task: TaskRow): Promise<void> {
+  const color = await getNotificationIconColor();
   await Notifications.scheduleNotificationAsync({
     content: {
       title: `実行中: ${task.title}`,
       body: 'タップして詳細を表示',
       data: { url: `/task/${task.id}`, taskId: task.id },
+      color,
       categoryIdentifier: CATEGORY_TASK_IN_PROGRESS,
       // Keep the in-progress notification visible on tap and prevent swipe dismissal
       // so the user can use the DONE/CANCEL actions while the task is running (#416).
@@ -390,11 +408,13 @@ export async function postResultNotification(
   status: 'completed' | 'skipped',
 ): Promise<void> {
   const label = status === 'completed' ? '完了' : 'スキップ';
+  const color = await getNotificationIconColor();
   await Notifications.scheduleNotificationAsync({
     content: {
       title: `タスクを${label}しました`,
       body: `「${taskTitle}」を${label}しました`,
       data: { url: `/task/${taskId}`, taskId },
+      color,
     },
     trigger: { channelId: CHANNELS.taskInProgress },
   });
