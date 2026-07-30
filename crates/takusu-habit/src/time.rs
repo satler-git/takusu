@@ -1,9 +1,8 @@
 use jiff::civil::Date;
 use jiff::tz::TimeZone;
-use takusu_core::Point;
+use takusu_types::Point;
 
-pub use takusu_core::SLOT_MINUTES;
-pub use takusu_types::TimeOfDay;
+pub use takusu_types::{SLOT_MINUTES, TimeOfDay};
 
 pub fn point_to_date(point: Point, tz: &TimeZone) -> Option<Date> {
     let ts = point.to_timestamp(SLOT_MINUTES as u16)?;

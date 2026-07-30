@@ -5,8 +5,7 @@ use crate::error::WorkerError;
 use crate::handlers::auth::storage;
 use crate::handlers::tokens::{json_created, json_ok, parse_json};
 use crate::models::{
-    ApplyHabitEstimateRequest, CreateHabit, CreateHabitScheduledSpan, HabitDetail,
-    UpdateHabit,
+    ApplyHabitEstimateRequest, CreateHabit, CreateHabitScheduledSpan, HabitDetail, UpdateHabit,
 };
 use crate::validate::{validate_minutes, validate_recurrence, validate_scheduled_span_dates};
 use takusu_contracts::{Storage, Validate};

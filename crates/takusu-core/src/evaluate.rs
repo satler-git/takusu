@@ -84,7 +84,8 @@
 //! - w_inclusion=10: タスクをスケジュールから外さない誘因十分。
 
 use super::*;
-use crate::placement::{HabitGroupAnchor, Placement, get_time_window};
+use crate::placement::{HabitGroupAnchor, get_time_window};
+use takusu_types::{ParallelMode, Slots};
 
 /// 評価関数の全重みを集約した構造体。
 ///
@@ -187,10 +188,10 @@ pub fn evaluate(planner: &Planner, plan: &Plan, temperature: f64, t0: f64) -> f6
 /// 呼び出し側が再利用することで、ホットパス（SA ループ）での毎回の allocation を避ける。
 pub(crate) fn evaluate_with_scratch(
     planner: &Planner,
-    schedules: &[Placement],
+    schedules: &[TaskPlacement],
     temperature: f64,
     t0: f64,
-    sorted: &mut Vec<Placement>,
+    sorted: &mut Vec<TaskPlacement>,
     index: &mut Vec<Option<TimeWindow>>,
     habit_entries: &mut Vec<HabitGroupAnchor>,
 ) -> f64 {
@@ -212,10 +213,10 @@ pub(crate) fn evaluate_with_scratch(
 /// 呼び出し側が保証する。SA ホットループで sorted バッファを差分更新して再利用する際に使う。
 pub(crate) fn evaluate_presorted(
     planner: &Planner,
-    schedules: &[Placement],
+    schedules: &[TaskPlacement],
     temperature: f64,
     t0: f64,
-    sorted: &[Placement],
+    sorted: &[TaskPlacement],
     index: &mut Vec<Option<TimeWindow>>,
     habit_entries: &mut Vec<HabitGroupAnchor>,
 ) -> f64 {
@@ -243,10 +244,10 @@ pub(crate) fn evaluate_presorted(
 ///
 /// 変更された要素の (old_entry, old_sorted_pos) を返す。`sorted_revert` で元に戻せる。
 pub(crate) fn sorted_incremental_apply(
-    sorted: &mut Vec<Placement>,
-    old_scheds: &[Placement],
-    new_scheds: &[Placement],
-) -> Vec<(Placement, usize)> {
+    sorted: &mut Vec<TaskPlacement>,
+    old_scheds: &[TaskPlacement],
+    new_scheds: &[TaskPlacement],
+) -> Vec<(TaskPlacement, usize)> {
     debug_assert_eq!(old_scheds.len(), new_scheds.len());
     let mut undo = Vec::new();
 
@@ -272,7 +273,7 @@ pub(crate) fn sorted_incremental_apply(
 }
 
 /// `sorted_incremental_apply` の逆操作。apply 前の状態に戻す。
-pub(crate) fn sorted_revert(sorted: &mut Vec<Placement>, undo: &[(Placement, usize)]) {
+pub(crate) fn sorted_revert(sorted: &mut Vec<TaskPlacement>, undo: &[(TaskPlacement, usize)]) {
     for &(old_entry, _old_pos) in undo.iter().rev() {
         if let Some(pos) = sorted.iter().position(|e| e.task_id == old_entry.task_id) {
             sorted.remove(pos);
@@ -294,7 +295,7 @@ pub(crate) fn sorted_revert(sorted: &mut Vec<Placement>, undo: &[(Placement, usi
 pub(crate) struct EvaluationContext {
     /// start 順ソート済みのスケジュール列。
     /// `evaluate_presorted` はこの列がソート済みであることを前提とする。
-    sorted: Vec<Placement>,
+    sorted: Vec<TaskPlacement>,
     index: Vec<Option<TimeWindow>>,
     habit_entries: Vec<HabitGroupAnchor>,
 }
@@ -314,7 +315,7 @@ impl EvaluationContext {
     pub(crate) fn evaluate(
         &mut self,
         planner: &Planner,
-        schedules: &[Placement],
+        schedules: &[TaskPlacement],
         temperature: f64,
         t0: f64,
     ) -> f64 {
@@ -334,7 +335,7 @@ impl EvaluationContext {
     pub(crate) fn evaluate_presorted(
         &mut self,
         planner: &Planner,
-        schedules: &[Placement],
+        schedules: &[TaskPlacement],
         temperature: f64,
         t0: f64,
     ) -> f64 {
@@ -351,7 +352,7 @@ impl EvaluationContext {
 
     /// `sorted` を `schedules` の start ソート済み状態で初期化する。
     /// SA ループ突入前に一度呼ぶ。
-    pub(crate) fn init_sorted(&mut self, schedules: &[Placement]) {
+    pub(crate) fn init_sorted(&mut self, schedules: &[TaskPlacement]) {
         self.sorted.clear();
         self.sorted.extend_from_slice(schedules);
         self.sorted.sort_unstable_by_key(|p| p.start);
@@ -361,14 +362,14 @@ impl EvaluationContext {
     /// [`sorted_incremental_apply`] のバッファ管理を包んだもの。
     pub(crate) fn sorted_apply(
         &mut self,
-        old_scheds: &[Placement],
-        new_scheds: &[Placement],
-    ) -> Vec<(Placement, usize)> {
+        old_scheds: &[TaskPlacement],
+        new_scheds: &[TaskPlacement],
+    ) -> Vec<(TaskPlacement, usize)> {
         sorted_incremental_apply(&mut self.sorted, old_scheds, new_scheds)
     }
 
     /// [`sorted_apply`] の逆操作。`sorted` を apply 前の状態に戻す。
-    pub(crate) fn sorted_revert(&mut self, undo: &[(Placement, usize)]) {
+    pub(crate) fn sorted_revert(&mut self, undo: &[(TaskPlacement, usize)]) {
         sorted_revert(&mut self.sorted, undo);
     }
 }
@@ -377,7 +378,7 @@ impl EvaluationContext {
 /// 同時にスケジュール全体の [plan_start, plan_end) も返す。
 fn build_index_into(
     planner: &Planner,
-    schedules: &[Placement],
+    schedules: &[TaskPlacement],
     index: &mut Vec<Option<TimeWindow>>,
 ) -> (Point, Point) {
     index.clear();
@@ -410,7 +411,7 @@ fn build_index_into(
 }
 
 #[cfg(test)]
-fn build_index(planner: &Planner, schedules: &[Placement]) -> Vec<Option<TimeWindow>> {
+fn build_index(planner: &Planner, schedules: &[TaskPlacement]) -> Vec<Option<TimeWindow>> {
     let mut index = Vec::with_capacity(planner.tasks.len());
     build_index_into(planner, schedules, &mut index);
     index
@@ -476,7 +477,7 @@ fn task_and_depend_scores(
 /// 条件: other_start < task.end かつ other_end > sched_end のタスクがバッファを遮る。
 /// sched_end より前に開始しても sched_end を超えて終了するタスクがバッファを遮るため、
 /// 走査は sorted[..end_pos] (start < task.end) 全体を対象とし、end > sched_end で絞る。
-fn buffer_score(planner: &Planner, index: &[Option<TimeWindow>], sorted: &[Placement]) -> f64 {
+fn buffer_score(planner: &Planner, index: &[Option<TimeWindow>], sorted: &[TaskPlacement]) -> f64 {
     let w = &planner.weights;
     let mut score = 0.0;
     for task in &planner.tasks {
@@ -518,7 +519,7 @@ fn buffer_score(planner: &Planner, index: &[Option<TimeWindow>], sorted: &[Place
 /// 全ウィンドウ通しで O(n + windows * active) に近づける。
 #[inline(always)]
 fn union_length_in_window(
-    sorted: &[Placement],
+    sorted: &[TaskPlacement],
     window_start: Point,
     window_end: Point,
     start_idx: &mut usize,
@@ -559,7 +560,7 @@ fn union_length_in_window(
 
 fn sleep_score(
     planner: &Planner,
-    sorted: &[Placement],
+    sorted: &[TaskPlacement],
     (plan_start, plan_end): (Point, Point),
 ) -> f64 {
     if !planner.sleep.enabled() {
@@ -621,7 +622,7 @@ fn sleep_score(
 ///   最大容量超過に対する強いペナルティ。
 fn daily_load_score(
     planner: &Planner,
-    sorted: &[Placement],
+    sorted: &[TaskPlacement],
     (plan_start, plan_end): (Point, Point),
 ) -> f64 {
     if planner.workload.comfortable_slots_per_day() == 0
@@ -686,7 +687,7 @@ fn union_length(intervals: &mut [TimeWindow]) -> i64 {
     total
 }
 
-fn parallel_violation_score(planner: &Planner, sorted: &[Placement]) -> f64 {
+fn parallel_violation_score(planner: &Planner, sorted: &[TaskPlacement]) -> f64 {
     let mut penalty_slots = 0i64;
     let n = sorted.len();
     let tasks = &planner.tasks;
@@ -714,7 +715,7 @@ fn parallel_violation_score(planner: &Planner, sorted: &[Placement]) -> f64 {
     -(penalty_slots as f64) * planner.weights.w_parallel_viol
 }
 
-fn inclusion_bonus(planner: &Planner, schedules: &[Placement]) -> f64 {
+fn inclusion_bonus(planner: &Planner, schedules: &[TaskPlacement]) -> f64 {
     schedules.len() as f64 * planner.weights.w_inclusion
 }
 
@@ -830,7 +831,7 @@ fn habit_consistency_score(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::placement::Placement;
+    use takusu_types::NormalDist;
 
     fn make_planner() -> Planner {
         let mut p = Planner::new(PlannerConfig::new(Point(0), SleepConfig::disabled()));
@@ -853,7 +854,7 @@ mod tests {
         .unwrap()
     }
 
-    fn plan_with(schedules: Vec<Placement>) -> Plan {
+    fn plan_with(schedules: Vec<TaskPlacement>) -> Plan {
         Plan { schedules }
     }
 

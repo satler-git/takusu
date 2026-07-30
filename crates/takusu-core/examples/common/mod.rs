@@ -1,4 +1,6 @@
-use takusu_core::{NormalDist, ParallelMode, Planner, PlannerConfig, Point, SleepConfig, Task};
+use takusu_contracts::SleepConfig;
+use takusu_core::{Planner, PlannerConfig};
+use takusu_types::{NormalDist, ParallelMode, Point, Task};
 
 #[derive(serde::Deserialize)]
 struct Fixture {

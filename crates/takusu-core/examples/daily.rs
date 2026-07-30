@@ -9,9 +9,9 @@
 
 use std::collections::HashMap;
 
-use takusu_core::{
-    NormalDist, ParallelMode, Planner, PlannerConfig, Point, SleepConfig, Slots, Task,
-};
+use takusu_contracts::SleepConfig;
+use takusu_core::{Planner, PlannerConfig};
+use takusu_types::{NormalDist, ParallelMode, Point, Slots, Task};
 
 fn fmt_time(slot: i64) -> String {
     let total_minutes = Slots(slot).to_minutes().0;

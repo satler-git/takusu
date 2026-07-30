@@ -537,8 +537,14 @@ fn normalize_execution_references_strips_hashes_for_backend() {
 
 #[test]
 fn normalize_status_maps_common_synonyms() {
-    assert_eq!(normalize_status("done").unwrap(), TaskStatusFilter::Completed);
-    assert_eq!(normalize_status("Done").unwrap(), TaskStatusFilter::Completed);
+    assert_eq!(
+        normalize_status("done").unwrap(),
+        TaskStatusFilter::Completed
+    );
+    assert_eq!(
+        normalize_status("Done").unwrap(),
+        TaskStatusFilter::Completed
+    );
     assert_eq!(
         normalize_status("  DONE  ").unwrap(),
         TaskStatusFilter::Completed

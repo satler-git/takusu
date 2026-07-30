@@ -9,6 +9,7 @@
 use super::evaluate::evaluate_with_scratch;
 use super::*;
 use crate::placement::*;
+use takusu_types::{ParallelMode, Slots};
 
 // ── decode API ───
 
@@ -30,7 +31,7 @@ pub enum RepairMode {
 pub struct DecodeInput<'a> {
     pub priority: &'a [usize],
     pub duration_choices: &'a [i64],
-    pub pinned: &'a [Placement],
+    pub pinned: &'a [TaskPlacement],
     pub repair_mode: RepairMode,
 }
 
@@ -94,9 +95,9 @@ fn validate_and_collect_fixed(
     planner: &Planner,
     input: &DecodeInput<'_>,
     diagnostics: &mut DecodeDiagnostics,
-) -> Vec<Placement> {
+) -> Vec<TaskPlacement> {
     let n = planner.tasks.len();
-    let mut placements: Vec<Placement> = Vec::new();
+    let mut placements: Vec<TaskPlacement> = Vec::new();
 
     for p in input.pinned {
         let s = &p.start;
@@ -254,7 +255,7 @@ fn latest_end_for(
 
 pub(crate) fn fallback_for(
     planner: &Planner,
-    schedules: &[Placement],
+    schedules: &[TaskPlacement],
     earliest: Point,
     dur: Slots,
     latest_end: Option<Point>,
@@ -281,7 +282,7 @@ pub(crate) fn fallback_for(
 
 fn place_task_earliest(
     planner: &Planner,
-    schedules: &[Placement],
+    schedules: &[TaskPlacement],
     input: &DecodeInput<'_>,
     task_id: usize,
     index: &[Option<TimeWindow>],
@@ -327,7 +328,7 @@ fn place_task_earliest(
 #[allow(clippy::too_many_arguments)]
 fn place_task_near_anchor(
     planner: &Planner,
-    schedules: &[Placement],
+    schedules: &[TaskPlacement],
     input: &DecodeInput<'_>,
     task_id: usize,
     index: &[Option<TimeWindow>],
@@ -382,7 +383,7 @@ fn place_task_near_anchor(
 
 fn place_task_lowest_delta(
     planner: &Planner,
-    schedules: &[Placement],
+    schedules: &[TaskPlacement],
     input: &DecodeInput<'_>,
     task_id: usize,
     index: &[Option<TimeWindow>],
@@ -445,7 +446,7 @@ fn place_task_lowest_delta(
 
 fn place_regret2(
     planner: &Planner,
-    schedules: &[Placement],
+    schedules: &[TaskPlacement],
     input: &DecodeInput<'_>,
     ready: &[usize],
     index: &[Option<TimeWindow>],
@@ -550,7 +551,7 @@ fn record_placement(
     end: Point,
     placement_err: Option<PlacementFailure>,
     forced: bool,
-    schedules: &mut Vec<Placement>,
+    schedules: &mut Vec<TaskPlacement>,
     index: &mut [Option<TimeWindow>],
     placed: &mut [bool],
     in_degree: &mut [usize],
@@ -608,7 +609,7 @@ fn record_placement(
 /// `diagnostics`) は戦略からは見えず、`record_placement` でのみ更新される。
 struct PlacementCtx<'a> {
     planner: &'a Planner,
-    schedules: &'a [Placement],
+    schedules: &'a [TaskPlacement],
     input: &'a DecodeInput<'a>,
     priority: &'a [usize],
     index: &'a [Option<TimeWindow>],
@@ -907,7 +908,7 @@ impl RepairMode {
 
 pub fn decode(planner: &Planner, input: DecodeInput<'_>) -> DecodeResult {
     let n = planner.tasks.len();
-    let mut schedules: Vec<Placement> = Vec::with_capacity(n);
+    let mut schedules: Vec<TaskPlacement> = Vec::with_capacity(n);
     let mut placed = vec![false; n];
     let mut diagnostics = DecodeDiagnostics::default();
 
@@ -1066,7 +1067,7 @@ fn duration_candidates(task: &Task, choice: Option<&i64>) -> Vec<Slots> {
 #[allow(clippy::too_many_arguments)]
 fn feasible_slots(
     planner: &Planner,
-    schedules: &[Placement],
+    schedules: &[TaskPlacement],
     task: &Task,
     earliest: Point,
     dur: Slots,
@@ -1124,7 +1125,7 @@ fn feasible_slots(
 
 fn evaluate_insertion(
     planner: &Planner,
-    schedules: &[Placement],
+    schedules: &[TaskPlacement],
     task_id: usize,
     start: Point,
     end: Point,
@@ -1196,6 +1197,7 @@ fn normalize_priority(priority: &[usize], n: usize) -> (Vec<usize>, bool) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use takusu_types::NormalDist;
 
     fn test_planner(tasks: Vec<Task>) -> Planner {
         Planner {
@@ -1209,7 +1211,7 @@ mod tests {
         }
     }
 
-    fn input_with<'a>(priority: &'a [usize], pinned: &'a [Placement]) -> DecodeInput<'a> {
+    fn input_with<'a>(priority: &'a [usize], pinned: &'a [TaskPlacement]) -> DecodeInput<'a> {
         DecodeInput {
             priority,
             duration_choices: &[],
@@ -1220,7 +1222,7 @@ mod tests {
 
     fn input_with_mode<'a>(
         priority: &'a [usize],
-        pinned: &'a [Placement],
+        pinned: &'a [TaskPlacement],
         repair_mode: RepairMode,
     ) -> DecodeInput<'a> {
         DecodeInput {

@@ -260,7 +260,8 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
-    use crate::{NormalDist, Planner, PlannerConfig, SleepConfig, Solver, Task};
+    use crate::{Planner, PlannerConfig, SleepConfig, Solver, Task};
+    use takusu_types::{NormalDist, ParallelMode};
 
     fn make_planner(task_count: usize) -> Planner {
         let mut planner = Planner::new(PlannerConfig::new(Point(0), SleepConfig::disabled()));

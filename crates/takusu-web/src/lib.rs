@@ -11,6 +11,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use config::Settings;
 use embed::Assets;
+use takusu_contracts::Storage;
 use takusu_local::state::AppState;
 use takusu_local_lib::app::TakusuApp;
 use takusu_local_lib::config::{LocalConfig, StorageKind};
@@ -18,7 +19,6 @@ use takusu_local_lib::config::{LocalConfig, StorageKind};
 use takusu_local_lib::storage_sqlite::SqliteStorage;
 use takusu_local_lib::storage_workers::WorkersStorage;
 use takusu_local_lib::token_cache::TokenCache;
-use takusu_contracts::Storage;
 use tokio::sync::RwLock;
 
 /// Build the storage backend described by `cfg`. `workers_token` (resolved from

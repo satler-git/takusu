@@ -67,10 +67,10 @@ async fn wait_for_ready(url: &str, token: &str) -> Result<(), AppError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use takusu_contracts::Storage;
     use takusu_local_lib::config::LocalConfig;
     use takusu_local_lib::storage_sqlite::SqliteStorage;
     use takusu_local_lib::token_cache::TokenCache;
-    use takusu_contracts::Storage;
 
     async fn test_app() -> Arc<TakusuApp> {
         let cfg = LocalConfig {

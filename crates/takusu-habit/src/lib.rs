@@ -13,7 +13,7 @@
 //!
 //! ```no_run
 //! use takusu_habit::*;
-//! use takusu_core::{NormalDist, Point};
+//! use takusu_types::{NormalDist, Point};
 //! use jiff::tz::TimeZone;
 //!
 //! let mut store = HabitStore::new();
@@ -52,7 +52,7 @@ pub use summarize::summarize;
 pub use time::{TimeOfDay, date_time_to_point, date_to_day_number, point_to_date};
 
 use jiff::tz::TimeZone;
-use takusu_core::{Abandonability, NormalDist, Point, Task};
+use takusu_types::{Abandonability, NormalDist, Point, Task};
 
 /// 習慣から生成されたタスク。task.id は Planner.add() で上書きされる
 pub struct GeneratedTask {

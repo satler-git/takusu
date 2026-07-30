@@ -6,8 +6,10 @@
 
 pub mod error;
 pub mod model;
+pub mod sleep;
 pub mod storage;
 pub mod validate;
+pub mod workload;
 
 pub use error::StorageError;
 pub use model::*;

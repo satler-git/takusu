@@ -197,7 +197,11 @@ async fn fetch_target_for_kind(ctx: &FetchContext<'_>) -> Result<TargetInfo, Age
             })
         }
         TargetKind::Habit => {
-            let habit = ctx.client().get_habit(display_id).await.map_err(other_err)?;
+            let habit = ctx
+                .client()
+                .get_habit(display_id)
+                .await
+                .map_err(other_err)?;
             Ok(TargetInfo {
                 target_id: habit.habit.id.clone(),
                 current_updated_at: Some(habit.habit.updated_at),
@@ -205,7 +209,11 @@ async fn fetch_target_for_kind(ctx: &FetchContext<'_>) -> Result<TargetInfo, Age
             })
         }
         TargetKind::Skill => {
-            let skill = ctx.client().get_skill(display_id).await.map_err(other_err)?;
+            let skill = ctx
+                .client()
+                .get_skill(display_id)
+                .await
+                .map_err(other_err)?;
             Ok(TargetInfo {
                 target_id: skill.slug,
                 current_updated_at: Some(skill.updated_at),

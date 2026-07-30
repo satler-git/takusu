@@ -179,10 +179,7 @@ pub fn record(config: &RecordConfig) -> Result<Vec<f32>, RecorderError> {
     // the lock; the callbacks above do not panic, so this is effectively
     // unreachable. Recover the payload on poisoning instead of propagating a
     // panic, so a callback hiccup does not discard the entire recording.
-    let mut raw = samples
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .clone();
+    let mut raw = samples.lock().unwrap_or_else(|e| e.into_inner()).clone();
 
     if channels > 1 {
         raw = mix_to_mono(&raw, channels);

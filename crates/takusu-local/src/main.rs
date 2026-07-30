@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use takusu_contracts::Storage;
 use takusu_local::router::router;
 use takusu_local::state::AppState;
 use takusu_local_lib::app::TakusuApp;
@@ -10,7 +11,6 @@ use takusu_local_lib::config::StorageKind;
 use takusu_local_lib::storage_sqlite::SqliteStorage;
 use takusu_local_lib::storage_workers::WorkersStorage;
 use takusu_local_lib::token_cache::TokenCache;
-use takusu_contracts::Storage;
 use tokio::sync::RwLock;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

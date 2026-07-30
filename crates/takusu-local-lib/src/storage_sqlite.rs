@@ -2,8 +2,6 @@ use async_trait::async_trait;
 use jiff::tz::TimeZone;
 use sqlx::SqlitePool;
 use sqlx::sqlite::SqlitePoolOptions;
-use takusu_core::Minutes;
-use takusu_search::search::{EvalContext, filter_tasks};
 use takusu_contracts::{
     CreateHabit, CreateHabitScheduledSpan, CreateMemory, CreateSkill, CreateTask,
     GoogleCalEventRow, GoogleCalSettingsRow, HabitRow, HabitScheduledSpanRow,
@@ -14,6 +12,8 @@ use takusu_contracts::{
     UpdateGoogleCalSettings, UpdateHabit, UpdateMemory, UpdateSettings, UpdateSkill, UpdateTask,
     storage::StorageResult,
 };
+use takusu_search::search::{EvalContext, filter_tasks};
+use takusu_types::Minutes;
 use takusu_types::{DEFAULT_AUD, SCOPE_READ_WRITE};
 use takusu_types::{EnumLabel, Quantity, TaskStatus, TaskStatusFilter, Timestamp, WindowMode};
 
@@ -156,9 +156,8 @@ impl SqliteStorage {
         if let Some(path) = extract_db_path(&url)
             && let Some(parent) = std::path::Path::new(&path).parent()
         {
-            std::fs::create_dir_all(parent).map_err(|e| {
-                format!("failed to create db directory {}: {e}", parent.display())
-            })?;
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("failed to create db directory {}: {e}", parent.display()))?;
         }
 
         let pool = SqlitePoolOptions::new()
@@ -2941,28 +2940,24 @@ where
     let parsed = takusu_types::TaskRef::try_from(id)
         .map_err(|_| StorageError::NotFound(format!("task {id} not found")))?;
     match parsed {
-        takusu_types::TaskRef::HabitTask { habit, task } => {
-            sqlx::query_scalar::<_, String>(
-                "SELECT t.id FROM tasks t JOIN habits h ON t.habit_id = h.id \
+        takusu_types::TaskRef::HabitTask { habit, task } => sqlx::query_scalar::<_, String>(
+            "SELECT t.id FROM tasks t JOIN habits h ON t.habit_id = h.id \
                  WHERE h.display_id = ? AND t.display_id = ?",
-            )
-            .bind(habit)
-            .bind(task)
-            .fetch_optional(executor)
-            .await
-            .map_err(map_err)?
-            .ok_or_else(|| StorageError::NotFound(format!("task {id} not found")))
-        }
-        takusu_types::TaskRef::Display(num) => {
-            sqlx::query_scalar::<_, String>(
-                "SELECT id FROM tasks WHERE display_id = ? AND habit_id IS NULL",
-            )
-            .bind(num)
-            .fetch_optional(executor)
-            .await
-            .map_err(map_err)?
-            .ok_or_else(|| StorageError::NotFound(format!("task {id} not found")))
-        }
+        )
+        .bind(habit)
+        .bind(task)
+        .fetch_optional(executor)
+        .await
+        .map_err(map_err)?
+        .ok_or_else(|| StorageError::NotFound(format!("task {id} not found"))),
+        takusu_types::TaskRef::Display(num) => sqlx::query_scalar::<_, String>(
+            "SELECT id FROM tasks WHERE display_id = ? AND habit_id IS NULL",
+        )
+        .bind(num)
+        .fetch_optional(executor)
+        .await
+        .map_err(map_err)?
+        .ok_or_else(|| StorageError::NotFound(format!("task {id} not found"))),
         takusu_types::TaskRef::Uuid(uuid) => {
             let exists: bool = sqlx::query_scalar("SELECT COUNT(*) > 0 FROM tasks WHERE id = ?")
                 .bind(&uuid)

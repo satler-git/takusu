@@ -6,7 +6,9 @@
 //! ## 概要
 //!
 //! ```no_run
-//! use takusu_core::{Planner, PlannerConfig, NormalDist, ParallelMode, Point, SleepConfig, Task};
+//! use takusu_contracts::SleepConfig;
+//! use takusu_core::{Planner, PlannerConfig};
+//! use takusu_types::{NormalDist, ParallelMode, Point, Task};
 //! use jiff::Timestamp;
 //!
 //! let mut planner = Planner::new(PlannerConfig::new(Point::now(5), SleepConfig::disabled()));
@@ -54,10 +56,9 @@ pub use decoder::{
     RepairMode,
 };
 pub use evaluate::EvaluationWeights;
-pub use placement::{Placement, PlacementFailure, TaskPlacement, TimeWindow};
+pub use placement::PlacementFailure;
 pub use solver::{AutoSolver, PrioritySolver, SaSolver, SolverStrategy};
 
-use jiff::Timestamp;
 use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error;
@@ -66,443 +67,10 @@ use thiserror::Error;
 #[global_allocator]
 static GLOBAL_ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
-// ── Minutes / Slots ───────────────────────────────────────────────────
+// ── Re-exported primitive types (crate-internal only) ─────────────────
 
-pub use takusu_types::{Abandonability, Minutes, SLOT_MINUTES, Slots};
-
-// ── Point ────────────────────────────────────────────────────────────
-
-/// 離散時間点。1単位 = 5分。
-///
-/// `Point(i64)` で、`i64` はエポックからの 5 分スロット数。
-/// `Point(0)` が Timestamp(0) = UNIX エポック。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Point(pub i64);
-
-impl Point {
-    /// jiff の `Timestamp` から `per` 分単位の Point に変換。
-    /// 通常 `per` は 5。
-    pub fn from_timestamp(ts: Timestamp, per: u16) -> Point {
-        Point(ts.as_second().div_euclid(per as i64 * 60))
-    }
-
-    /// 現在時刻の Point。
-    pub fn now(per: u16) -> Self {
-        Self::from_timestamp(Timestamp::now(), per)
-    }
-
-    /// スロット値から Point を生成。`Point::from_raw(12)` = 60 分後。
-    pub fn from_raw(n: i64) -> Self {
-        Point(n)
-    }
-
-    /// `per` 分単位の Point から jiff の `Timestamp` に変換。
-    ///
-    /// 秒数が `i64` の範囲を超えるか、jiff が扱えない範囲の場合は `None`。
-    pub fn to_timestamp(self, per: u16) -> Option<Timestamp> {
-        let seconds = self.0.checked_mul(per as i64)?.checked_mul(60)?;
-        Timestamp::from_second(seconds).ok()
-    }
-
-    /// エポックからの経過分。
-    pub const fn minutes_since_epoch(self) -> Minutes {
-        Minutes(self.0 * SLOT_MINUTES)
-    }
-
-    /// 絶対値の差 (符号なし Slots)。
-    ///
-    /// `Point - Point` と同じ意味だが常に非負。`lhs` と `rhs` の前後関係を
-    /// 気にせず距離だけが欲しい場合に使う。
-    #[inline(always)]
-    pub fn diff(lhs: Point, rhs: Point) -> Slots {
-        Slots((lhs.0 - rhs.0).abs())
-    }
-
-    /// 符号付きの差 (`lhs - rhs`)。前後関係の判定に使う。
-    ///
-    /// `(lhs - rhs).0` と等価。`Point - Point -> Slots` 演算子と同じ意味だが、
-    /// 戻り値を `Slots` として受け取る明示的な名前付き API。
-    #[inline(always)]
-    pub fn delta(lhs: Point, rhs: Point) -> Slots {
-        Slots(lhs.0 - rhs.0)
-    }
-}
-
-impl std::ops::Add<i64> for Point {
-    type Output = Point;
-    fn add(self, rhs: i64) -> Point {
-        Point(self.0 + rhs)
-    }
-}
-
-impl std::ops::Sub<i64> for Point {
-    type Output = Point;
-    fn sub(self, rhs: i64) -> Point {
-        Point(self.0 - rhs)
-    }
-}
-
-impl std::ops::Add<Slots> for Point {
-    type Output = Point;
-    #[inline(always)]
-    fn add(self, rhs: Slots) -> Point {
-        Point(self.0 + rhs.0)
-    }
-}
-
-impl std::ops::Sub<Slots> for Point {
-    type Output = Point;
-    #[inline(always)]
-    fn sub(self, rhs: Slots) -> Point {
-        Point(self.0 - rhs.0)
-    }
-}
-
-impl std::ops::Sub for Point {
-    type Output = Slots;
-    #[inline(always)]
-    fn sub(self, rhs: Point) -> Slots {
-        Slots(self.0 - rhs.0)
-    }
-}
-
-// ── NormalDist ────────────────────────────────────────────────────────
-
-/// 正規分布（平均と標準偏差）。タスクの所要時間見積りに使う。
-///
-/// - `sigma = 0`: 確定タスク（予定など）
-/// - `sigma` 大: 不安定なタスク。後ろにバッファが取られる
-///
-/// `avg`/`sigma` の単位は 5 分スロット数。
-#[derive(Debug, Clone, Copy)]
-pub struct NormalDist {
-    avg: u64,
-    sigma: u64,
-}
-
-impl NormalDist {
-    /// `avg` スロット、`sigma` スロットの正規分布。
-    pub fn new(avg: u64, sigma: u64) -> Self {
-        Self { avg, sigma }
-    }
-
-    /// 分から構築する。負値は 0 クランプ。
-    pub fn from_minutes(avg: Minutes, sigma: Minutes) -> Self {
-        Self::new(
-            avg.to_slots().0.max(0) as u64,
-            sigma.to_slots().0.max(0) as u64,
-        )
-    }
-
-    /// 平均（スロット数）。
-    pub fn avg(&self) -> u64 {
-        self.avg
-    }
-
-    /// 標準偏差（スロット数）。
-    pub fn sigma(&self) -> u64 {
-        self.sigma
-    }
-}
-
-// ── SleepConfig ───────────────────────────────────────────────────────
-
-/// 睡眠設定。
-///
-/// 一日の基点 (`day_start`) からの相対スロット数で睡眠時間帯を指定する。
-/// 例: `day_start=0` (0:00基点), `start=264` (22:00), `end=360` (翌6:00) → 8時間睡眠。
-///
-/// 不変条件: `enabled == true` のとき `end > start`。
-#[derive(Debug, Clone, Copy)]
-pub struct SleepConfig {
-    /// 一日の基点 (エポックからのスロット)。通常 0。
-    day_start: i64,
-    /// 睡眠開始 (基点からの相対スロット)。
-    start: i64,
-    /// 睡眠終了 (基点からの相対スロット)。enabled のとき end > start。
-    end: i64,
-    /// 睡眠制約が有効かどうか。
-    enabled: bool,
-}
-
-impl SleepConfig {
-    /// 全フィールドを指定して構築。
-    ///
-    /// `enabled == true` のとき `end > start` でなければならない。
-    pub fn new(day_start: i64, start: i64, end: i64, enabled: bool) -> Self {
-        if enabled {
-            assert!(
-                end > start,
-                "SleepConfig::new: end ({end}) must be greater than start ({start}) when enabled"
-            );
-        }
-        Self {
-            day_start,
-            start,
-            end,
-            enabled,
-        }
-    }
-
-    /// 推奨設定: 22:00–06:00 (8時間), 一日は 0:00 基点。
-    pub fn recommended() -> Self {
-        Self::new(0, 264, 360, true) // 22 * 12, 30 * 12 = 6:00 next day
-    }
-
-    /// 睡眠制約なし。
-    pub fn disabled() -> Self {
-        Self::new(0, 0, 0, false)
-    }
-
-    /// タイムゾーンとローカル時計時刻から SleepConfig を構築。
-    ///
-    /// `per` は 1 スロットの分数 (通常 5)。`tz` は jiff タイムゾーン。
-    /// `start_h`/`start_m` と `end_h`/`end_m` はローカル時刻による睡眠窓。
-    /// 日跨ぎ (例: 22:00–06:00) は自動で処理される。
-    pub fn from_local(
-        per: u16,
-        tz: &jiff::tz::TimeZone,
-        start_h: u8,
-        start_m: u8,
-        end_h: u8,
-        end_m: u8,
-    ) -> Self {
-        let slots_per_hour: i64 = 60 / per as i64;
-        let slots_per_day: i64 = 24 * slots_per_hour;
-
-        let offset_secs: i64 = tz.to_offset(jiff::Timestamp::now()).seconds().into();
-        let offset_slots = offset_secs / (per as i64 * 60);
-
-        let day_start = (slots_per_day - offset_slots).rem_euclid(slots_per_day);
-
-        let start = start_h as i64 * slots_per_hour + start_m as i64 / per as i64;
-        let mut end = end_h as i64 * slots_per_hour + end_m as i64 / per as i64;
-
-        if end <= start {
-            end += slots_per_day;
-        }
-
-        Self::new(day_start, start, end, true)
-    }
-
-    /// 一日の基点 (エポックからのスロット)。通常 0。
-    pub fn day_start(&self) -> i64 {
-        self.day_start
-    }
-
-    /// 睡眠開始 (基点からの相対スロット)。
-    pub fn start(&self) -> i64 {
-        self.start
-    }
-
-    /// 睡眠終了 (基点からの相対スロット)。enabled のとき end > start。
-    pub fn end(&self) -> i64 {
-        self.end
-    }
-
-    /// 睡眠制約が有効かどうか。
-    pub fn enabled(&self) -> bool {
-        self.enabled
-    }
-}
-
-impl Default for SleepConfig {
-    fn default() -> Self {
-        Self::disabled()
-    }
-}
-
-// ── WorkloadConfig ────────────────────────────────────────────────────
-
-/// 1 日あたりの作業負荷設定。
-///
-/// ユーザーの「1 日にどれくらいのタスクを入れたいか」を表す。
-/// デフォルトでは内部で決定された値を使い、詳細を指定したい場合だけ
-/// `PlannerConfig` 経由で上書きする。
-///
-/// 不変条件: `comfortable_slots_per_day <= maximum_slots_per_day`。
-#[derive(Debug, Clone, Copy)]
-pub struct WorkloadConfig {
-    /// 快適な 1 日あたりの作業スロット数（5 分単位）。
-    /// この値を超えると緩やかなペナルティがかかる。
-    comfortable_slots_per_day: i64,
-    /// 1 日あたりの作業スロット数の上限（5 分単位）。
-    /// この値を超えると強いペナルティがかかる。
-    maximum_slots_per_day: i64,
-}
-
-impl WorkloadConfig {
-    /// 負荷評価を無効化する。
-    pub fn disabled() -> Self {
-        Self::new(0, 0)
-    }
-
-    /// 任意の閾値を指定する。
-    ///
-    /// `comfortable_slots_per_day <= maximum_slots_per_day` でなければならない。
-    pub fn new(comfortable_slots_per_day: i64, maximum_slots_per_day: i64) -> Self {
-        assert!(
-            comfortable_slots_per_day <= maximum_slots_per_day,
-            "WorkloadConfig::new: comfortable ({comfortable_slots_per_day}) \
-             must be <= maximum ({maximum_slots_per_day})"
-        );
-        Self {
-            comfortable_slots_per_day,
-            maximum_slots_per_day,
-        }
-    }
-
-    /// 快適な 1 日あたりの作業スロット数（5 分単位）。
-    pub fn comfortable_slots_per_day(&self) -> i64 {
-        self.comfortable_slots_per_day
-    }
-
-    /// 1 日あたりの作業スロット数の上限（5 分単位）。
-    pub fn maximum_slots_per_day(&self) -> i64 {
-        self.maximum_slots_per_day
-    }
-}
-
-impl Default for WorkloadConfig {
-    /// デフォルト設定: 快適 8 時間（96 スロット）、上限 12 時間（144 スロット）。
-    fn default() -> Self {
-        Self::new(96, 144)
-    }
-}
-
-// ── Task ──────────────────────────────────────────────────────────────
-
-/// タスクの並行実行モード。
-///
-/// `parallelizable`（他タスク実行中に動ける）と `allows_parallel`（自タスク
-/// 実行中に他を許す）の 2 つの bool を意味のある 4 状態にまとめたもの。
-/// 無意味な組み合わせを型レベルで排除できる。
-///
-/// 二つのタスクが同時に実行されてよい（オーバーラップ可能）のは、
-/// どちらかが `Host`/`Bidirectional`（許す側）で、かつもう一方が
-/// `Guest`/`Bidirectional`（動ける側）のときだけ。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum ParallelMode {
-    /// 他タスクと並行実行できない。`parallelizable=false, allows_parallel=false`。
-    #[default]
-    Exclusive,
-    /// 他タスク実行中に動ける（ゲスト）。`parallelizable=true, allows_parallel=false`。
-    /// 例: スマホでできるタスク。
-    Guest,
-    /// 自タスク実行中に他のタスクの並行実行を許す（ホスト）。`parallelizable=false, allows_parallel=true`。
-    /// 例: 電車移動。
-    Host,
-    /// ゲストかつホスト。`parallelizable=true, allows_parallel=true`。
-    Bidirectional,
-}
-
-impl ParallelMode {
-    /// 2 つの bool から `ParallelMode` を構築する。
-    /// 境界層（DB や API が bool 2 つで保持している場合）の変換用。
-    #[inline]
-    pub fn from_bools(parallelizable: bool, allows_parallel: bool) -> Self {
-        match (parallelizable, allows_parallel) {
-            (false, false) => ParallelMode::Exclusive,
-            (true, false) => ParallelMode::Guest,
-            (false, true) => ParallelMode::Host,
-            (true, true) => ParallelMode::Bidirectional,
-        }
-    }
-
-    /// 他タスク実行中に動ける（`parallelizable`）か。
-    #[inline]
-    pub fn is_guest(self) -> bool {
-        matches!(self, ParallelMode::Guest | ParallelMode::Bidirectional)
-    }
-
-    /// 自タスク実行中に他のタスクの並行実行を許す（`allows_parallel`）か。
-    #[inline]
-    pub fn is_host(self) -> bool {
-        matches!(self, ParallelMode::Host | ParallelMode::Bidirectional)
-    }
-
-    /// 二つのタスクがオーバーラップ実行可能か。
-    /// どちらかがホストで、かつもう一方がゲストなら許可される。
-    #[inline]
-    pub fn can_overlap(a: Self, b: Self) -> bool {
-        (a.is_host() && b.is_guest()) || (b.is_host() && a.is_guest())
-    }
-}
-
-/// プランナーに渡すタスク。
-///
-/// タスクは 5 分スロットに離散化された時間軸上に配置される。
-/// `start <= task < end`。
-#[derive(Debug, Clone)]
-pub struct Task {
-    /// タスク ID。add_task 時に自動設定されるが、外部で管理したい場合は任意の値。
-    pub id: usize,
-
-    /// 開始可能時間。None の場合は即時開始可能。
-    pub start: Option<Point>,
-
-    /// 締切。この時刻までに終了している必要がある。
-    pub end: Point,
-
-    /// 所要時間の見積り (正規分布)。
-    pub cost_estimate: NormalDist,
-
-    /// 依存タスクの ID リスト。これらのタスクがすべて終了してから開始可能。
-    pub depends: Vec<usize>,
-
-    /// 並行実行モード。他タスクとのオーバーラップ可否を表す。
-    /// 詳細は [`ParallelMode`] を参照。
-    pub parallel_mode: ParallelMode,
-
-    /// 諦めやすさ [0.0, 1.0]。大きいほど諦められやすい。
-    /// 全タスクが収まらない場合、この値が大きいタスクからドロップされる。
-    pub abandonability: Abandonability,
-
-    /// 開始時刻を固定するか。true の場合、Planner は now 以前の
-    /// 配置も許可し、SA の近傍操作でも移動しない。
-    /// 学校など開始時刻が厳密なタスクに使う。
-    pub fixed: bool,
-
-    /// #306: Habit 由来のタスクの場合、habit グループのインデックス。
-    /// 同じ habit_id のタスクは日ごとに近い時刻に配置されるとボーナス。
-    /// 非 habit タスクは None。
-    pub habit_group: Option<usize>,
-}
-
-// ── Plan ──────────────────────────────────────────────────────────────
-
-/// プランナーの出力。タスクの割り当て結果。
-///
-/// タスクは常に全数スケジュールされる。
-/// `abandonability` が高いタスクは deadline 超過が許容されるが、諦められない。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Plan {
-    /// スケジュールされたタスク。各要素は `TaskPlacement { start, end, task_id }`。
-    pub schedules: Vec<TaskPlacement>,
-}
-
-impl Plan {
-    /// タスクの開始時刻。
-    pub fn task_start(&self, task_id: usize) -> Option<Point> {
-        self.schedules
-            .iter()
-            .find(|p| p.task_id == task_id)
-            .map(|p| p.start)
-    }
-
-    /// タスクの終了時刻。
-    pub fn task_end(&self, task_id: usize) -> Option<Point> {
-        self.schedules
-            .iter()
-            .find(|p| p.task_id == task_id)
-            .map(|p| p.end)
-    }
-
-    /// タスクがスケジュールされているか（常に true のはず）。
-    pub fn is_scheduled(&self, task_id: usize) -> bool {
-        self.schedules.iter().any(|p| p.task_id == task_id)
-    }
-}
+pub(crate) use takusu_contracts::{SleepConfig, WorkloadConfig};
+pub(crate) use takusu_types::{Plan, Point, Task, TaskPlacement, TimeWindow};
 
 // ── Solver ─────────────────────────────────────────────────────────────
 
@@ -562,7 +130,9 @@ type ResultE<T> = Result<T, Error>;
 /// ## 使用例
 ///
 /// ```
-/// use takusu_core::{Planner, PlannerConfig, Point, SleepConfig, Solver};
+/// use takusu_contracts::SleepConfig;
+/// use takusu_core::{Planner, PlannerConfig, Solver};
+/// use takusu_types::Point;
 /// use std::time::Duration;
 ///
 /// let config = PlannerConfig {
@@ -619,7 +189,9 @@ impl PlannerConfig {
 /// ## 使用例
 ///
 /// ```
-/// use takusu_core::{Planner, PlannerConfig, Task, NormalDist, ParallelMode, Point, SleepConfig};
+/// use takusu_contracts::SleepConfig;
+/// use takusu_core::{Planner, PlannerConfig};
+/// use takusu_types::{NormalDist, ParallelMode, Point, Task};
 ///
 /// let mut p = Planner::new(PlannerConfig::new(Point::from_raw(0), SleepConfig::disabled()));
 ///
@@ -676,7 +248,9 @@ impl Planner {
     /// 簡易ケースでは [`PlannerConfig::new`] を使う:
     ///
     /// ```
-    /// use takusu_core::{Planner, PlannerConfig, Point, SleepConfig};
+    /// use takusu_contracts::SleepConfig;
+    /// use takusu_core::{Planner, PlannerConfig};
+    /// use takusu_types::Point;
     /// let mut p = Planner::new(PlannerConfig::new(Point::from_raw(0), SleepConfig::disabled()));
     /// ```
     pub fn new(config: PlannerConfig) -> Self {
@@ -900,6 +474,7 @@ impl Default for Planner {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use takusu_types::{NormalDist, ParallelMode};
 
     #[test]
     fn planner_simple_two_tasks() {
@@ -998,18 +573,6 @@ mod tests {
             plan.schedules
         );
     }
-
-    #[test]
-    fn plan_convenience_methods() {
-        let plan = Plan {
-            schedules: vec![TaskPlacement::new(Point(1), Point(3), 42)],
-        };
-        assert_eq!(plan.task_start(42), Some(Point(1)));
-        assert_eq!(plan.task_end(42), Some(Point(3)));
-        assert!(plan.is_scheduled(42));
-        assert!(!plan.is_scheduled(99));
-    }
-
     #[test]
     fn plan_partial_keeps_pinned() {
         let mut p = Planner::default();
@@ -1326,178 +889,6 @@ mod tests {
         let pinned_2 = replanned.schedules.iter().find(|p| p.task_id == 2).unwrap();
         assert_eq!(pinned_2.start, Point(50), "task 2 pinned start unchanged");
     }
-
-    #[test]
-    fn point_arithmetic() {
-        let p = Point(10);
-        assert_eq!((p + 5).0, 15);
-        assert_eq!((p - 3).0, 7);
-        assert_eq!(Point::diff(Point(10), Point(20)), Slots(10));
-        assert_eq!(Point::delta(Point(20), Point(10)), Slots(10));
-    }
-
-    #[test]
-    fn point_slots_arithmetic() {
-        let p = Point(10);
-        assert_eq!((p + Slots(5)).0, 15);
-        assert_eq!((p - Slots(3)).0, 7);
-        // Point - Point -> Slots (duration)
-        assert_eq!((Point(20) - Point(5)).0, 15);
-        // Chained: point + duration - duration
-        assert_eq!((Point(10) + Slots(5) - Slots(3)).0, 12);
-    }
-
-    #[test]
-    fn point_from_raw() {
-        let p = Point::from_raw(42);
-        assert_eq!(p.0, 42);
-    }
-
-    #[test]
-    fn normal_dist_new() {
-        let nd = NormalDist::new(10, 3);
-        assert_eq!(nd.avg(), 10);
-        assert_eq!(nd.sigma(), 3);
-    }
-
-    #[test]
-    fn normal_dist_sigma_can_exceed_avg() {
-        let nd = NormalDist::new(5, 8);
-        assert_eq!(nd.avg(), 5);
-        assert_eq!(nd.sigma(), 8);
-    }
-
-    #[test]
-    fn normal_dist_zero_avg() {
-        let nd = NormalDist::new(0, 0);
-        assert_eq!(nd.avg(), 0);
-        assert_eq!(nd.sigma(), 0);
-    }
-
-    #[test]
-    fn sleep_config_disabled() {
-        let sc = SleepConfig::disabled();
-        assert!(!sc.enabled());
-    }
-
-    #[test]
-    fn sleep_config_recommended() {
-        let sc = SleepConfig::recommended();
-        assert!(sc.enabled());
-    }
-
-    // ── Characterization tests for invariant work (#1195) ───────────────
-    // These tests pin down the current behaviour of the three config structs
-    // so that the encapsulation / validation change can be verified to not
-    // alter existing semantics.
-
-    #[test]
-    fn sleep_config_recommended_values() {
-        let sc = SleepConfig::recommended();
-        assert_eq!(sc.day_start(), 0);
-        assert_eq!(sc.start(), 264);
-        assert_eq!(sc.end(), 360);
-        assert!(sc.enabled());
-        assert!(
-            sc.end() > sc.start(),
-            "recommended sleep must have end > start"
-        );
-    }
-
-    #[test]
-    fn sleep_config_disabled_values() {
-        let sc = SleepConfig::disabled();
-        assert_eq!(sc.day_start(), 0);
-        assert_eq!(sc.start(), 0);
-        assert_eq!(sc.end(), 0);
-        assert!(!sc.enabled());
-    }
-
-    #[test]
-    fn workload_config_new_preserves_values() {
-        let wc = WorkloadConfig::new(48, 96);
-        assert_eq!(wc.comfortable_slots_per_day(), 48);
-        assert_eq!(wc.maximum_slots_per_day(), 96);
-    }
-
-    #[test]
-    fn workload_config_default_values() {
-        let wc = WorkloadConfig::default();
-        assert_eq!(wc.comfortable_slots_per_day(), 96);
-        assert_eq!(wc.maximum_slots_per_day(), 144);
-        assert!(
-            wc.comfortable_slots_per_day() <= wc.maximum_slots_per_day(),
-            "default must satisfy comfortable <= maximum"
-        );
-    }
-
-    #[test]
-    fn workload_config_disabled_values() {
-        let wc = WorkloadConfig::disabled();
-        assert_eq!(wc.comfortable_slots_per_day(), 0);
-        assert_eq!(wc.maximum_slots_per_day(), 0);
-    }
-
-    #[test]
-    fn normal_dist_from_minutes_clamps_negative() {
-        let nd = NormalDist::from_minutes(Minutes(-5), Minutes(-3));
-        assert_eq!(nd.avg(), 0);
-        assert_eq!(nd.sigma(), 0);
-    }
-
-    // ── End characterization tests ──────────────────────────────────────
-
-    // ── Invariant validation tests (#1195) ──────────────────────────────
-
-    #[test]
-    #[should_panic(expected = "end (10) must be greater than start (20)")]
-    fn sleep_config_new_rejects_end_le_start_when_enabled() {
-        let _ = SleepConfig::new(0, 20, 10, true);
-    }
-
-    #[test]
-    #[should_panic(expected = "end (20) must be greater than start (20)")]
-    fn sleep_config_new_rejects_end_eq_start_when_enabled() {
-        let _ = SleepConfig::new(0, 20, 20, true);
-    }
-
-    #[test]
-    fn sleep_config_new_allows_end_le_start_when_disabled() {
-        // disabled のときは end <= start でもよい（推奨されないがパニックしない）
-        let sc = SleepConfig::new(0, 20, 10, false);
-        assert!(!sc.enabled());
-        assert_eq!(sc.start(), 20);
-        assert_eq!(sc.end(), 10);
-    }
-
-    #[test]
-    fn sleep_config_new_valid_when_end_gt_start() {
-        let sc = SleepConfig::new(0, 22, 30, true);
-        assert!(sc.enabled());
-        assert_eq!(sc.start(), 22);
-        assert_eq!(sc.end(), 30);
-    }
-
-    #[test]
-    #[should_panic(expected = "comfortable (100)")]
-    fn workload_config_new_rejects_comfortable_gt_maximum() {
-        let _ = WorkloadConfig::new(100, 50);
-    }
-
-    #[test]
-    fn workload_config_new_allows_comfortable_eq_maximum() {
-        let wc = WorkloadConfig::new(80, 80);
-        assert_eq!(wc.comfortable_slots_per_day(), 80);
-        assert_eq!(wc.maximum_slots_per_day(), 80);
-    }
-
-    #[test]
-    fn workload_config_new_valid_when_comfortable_lt_maximum() {
-        let wc = WorkloadConfig::new(48, 96);
-        assert_eq!(wc.comfortable_slots_per_day(), 48);
-        assert_eq!(wc.maximum_slots_per_day(), 96);
-    }
-
     // ── End invariant validation tests ───────────────────────────────────
 
     #[test]
@@ -1626,45 +1017,6 @@ mod tests {
             "past-deadline task should be more urgent than a tight but feasible task: late={late_freeness} tight={tight_freeness}"
         );
     }
-
-    #[test]
-    fn plan_is_scheduled() {
-        let planner = simple_two_task_planner();
-        let plan = planner.plan();
-        assert!(plan.is_scheduled(0));
-        assert!(plan.is_scheduled(1));
-    }
-
-    #[test]
-    fn plan_task_start_end_not_scheduled() {
-        let plan = Plan { schedules: vec![] };
-        assert!(plan.task_start(0).is_none());
-        assert!(plan.task_end(0).is_none());
-        assert!(!plan.is_scheduled(0));
-    }
-
-    #[test]
-    fn point_from_timestamp_and_now() {
-        let ts = jiff::Timestamp::from_second(0).unwrap();
-        let p = Point::from_timestamp(ts, 5);
-        assert_eq!(p.0, 0);
-    }
-
-    // Regression (#780): Point::from_timestamp must use Euclidean (floor)
-    // division so timestamps before the epoch map to the correct slot. The
-    // current left-associative integer division truncates toward zero,
-    // collapsing the slot immediately before the epoch into slot 0.
-    #[test]
-    fn regression_point_from_timestamp_negative_floor() {
-        // -1s falls in the slot [-300, 0) -> Point(-1).
-        let just_before = jiff::Timestamp::from_second(-1).unwrap();
-        assert_eq!(Point::from_timestamp(just_before, 5).0, -1);
-
-        // -599s falls in the slot [-600, -300) -> Point(-2).
-        let well_before = jiff::Timestamp::from_second(-599).unwrap();
-        assert_eq!(Point::from_timestamp(well_before, 5).0, -2);
-    }
-
     #[test]
     fn evaluate_empty_schedule_is_inclusion_loss() {
         let planner = simple_two_task_planner();

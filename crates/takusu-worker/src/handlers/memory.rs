@@ -125,10 +125,10 @@ pub async fn search(req: Request, env: Env) -> Result<Response, WorkerError> {
                 );
             }
             "subject_type" => {
-                subject_type = Some(
-                    SubjectType::from_str(v.as_ref())
-                        .map_err(|e| WorkerError::BadRequest(format!("invalid subject_type: {e}")))?,
-                );
+                subject_type =
+                    Some(SubjectType::from_str(v.as_ref()).map_err(|e| {
+                        WorkerError::BadRequest(format!("invalid subject_type: {e}"))
+                    })?);
             }
             "subject_id" => subject_id = Some(v.into_owned()),
             "limit" => {
@@ -173,10 +173,7 @@ pub async fn similar_tasks(req: Request, env: Env) -> Result<Response, WorkerErr
     // Validate the title normalizes before delegating to storage.
     memory::normalize_text(&title, Some(memory::MAX_QUERY_SCALARS))
         .map_err(|e| WorkerError::BadRequest(format!("invalid title: {e}")))?;
-    let query = SimilarTaskQuery {
-        title,
-        limit,
-    };
+    let query = SimilarTaskQuery { title, limit };
     let store = storage(&env)?;
     let rows = store.find_similar_tasks(&query).await?;
     json_ok(&rows)

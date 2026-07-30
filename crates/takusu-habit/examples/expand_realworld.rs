@@ -11,10 +11,11 @@ use jiff::tz::TimeZone;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
-use takusu_core::{Minutes, NormalDist, ParallelMode, Point, SleepConfig, Task};
+use takusu_contracts::SleepConfig;
 use takusu_habit::{
     Habit, HabitStore, RecurrenceRule, TimeOfDay, date_time_to_point, point_to_date,
 };
+use takusu_types::{Minutes, NormalDist, ParallelMode, Point, Task};
 
 #[derive(Deserialize)]
 struct Fixture {

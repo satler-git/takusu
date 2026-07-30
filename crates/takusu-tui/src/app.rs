@@ -1,9 +1,11 @@
 use std::sync::Arc;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use takusu_contracts::{
+    GenerateSchedule, HabitRow, Reschedule, ScheduleEntry, SettingsRow, SleepInput, TaskRow,
+};
 use takusu_local_lib::app::TakusuApp;
-use takusu_contracts::{GenerateSchedule, HabitRow, Reschedule, ScheduleEntry, SettingsRow, TaskRow};
-use takusu_types::{EnumLabel, ScheduleMode, SleepInput};
+use takusu_types::{EnumLabel, ScheduleMode};
 
 use crate::tabs::{habits, schedule, settings, tasks};
 use crate::widgets::list::StatefulList;

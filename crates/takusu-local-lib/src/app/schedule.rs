@@ -11,11 +11,13 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use jiff::Timestamp;
-use takusu_core::{Planner, PlannerConfig, Point, RescheduleRange, SleepConfig, TaskPlacement};
 use takusu_contracts::{
     GenerateSchedule, MoveEntryResponse, Reschedule, SaveScheduleRequest, ScheduleEntry,
-    SchedulePreviewRequest, SchedulePreviewResponse, ScheduleRow, SettingsRow, TaskQuery, TaskRow,
+    SchedulePreviewRequest, SchedulePreviewResponse, ScheduleRow, SettingsRow, SleepConfig,
+    TaskQuery, TaskRow,
 };
+use takusu_core::{Planner, PlannerConfig, RescheduleRange};
+use takusu_types::{Point, TaskPlacement};
 use takusu_types::{ScheduleMode, TaskStatus};
 
 use crate::error::storage_to_app;
@@ -603,16 +605,16 @@ impl super::TakusuApp {
                 .map(|s| iso_to_point(&s.to_string(), tz))
                 .transpose()?;
             let end = iso_to_point(&row.end_at.to_string(), tz)?;
-            let core_task = takusu_core::Task {
+            let core_task = takusu_types::Task {
                 id: planner.tasks().len(),
                 start: start_opt,
                 end,
-                cost_estimate: takusu_core::NormalDist::from_minutes(
-                    takusu_core::Minutes(row.avg_minutes),
-                    takusu_core::Minutes(row.sigma_minutes),
+                cost_estimate: takusu_types::NormalDist::from_minutes(
+                    takusu_types::Minutes(row.avg_minutes),
+                    takusu_types::Minutes(row.sigma_minutes),
                 ),
                 depends: all_depends[i].clone(),
-                parallel_mode: takusu_core::ParallelMode::from_bools(
+                parallel_mode: takusu_types::ParallelMode::from_bools(
                     row.parallelizable,
                     row.allows_parallel,
                 ),
@@ -635,7 +637,7 @@ impl super::TakusuApp {
 
     fn plan_to_entries(
         &self,
-        plan: &takusu_core::Plan,
+        plan: &takusu_types::Plan,
         id_map: &[String],
     ) -> Result<Vec<ScheduleEntry>, AppError> {
         plan.schedules

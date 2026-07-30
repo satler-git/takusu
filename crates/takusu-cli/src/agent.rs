@@ -37,7 +37,8 @@ pub async fn run(
     .map_err(|e| AppError::Internal(format!("failed to build agent session: {e}")))?;
 
     if !session_permissions.allow.is_empty() {
-        session.set_session_permissions(session_permissions)
+        session
+            .set_session_permissions(session_permissions)
             .map_err(|e| AppError::Internal(format!("failed to set session permissions: {e}")))?;
     }
 
@@ -561,8 +562,17 @@ mod tests {
 
     #[test]
     fn validate_permission_key_accepts_valid_keys() {
-        for key in ["task:create", "*:*", "task:*", "*:create", "schedule:generate"] {
-            assert!(validate_permission_key(key).is_ok(), "{key} should be valid");
+        for key in [
+            "task:create",
+            "*:*",
+            "task:*",
+            "*:create",
+            "schedule:generate",
+        ] {
+            assert!(
+                validate_permission_key(key).is_ok(),
+                "{key} should be valid"
+            );
         }
     }
 
@@ -611,10 +621,7 @@ mod tests {
         )
         .unwrap();
         assert!(perms.is_allowed(TargetKind::Task, ChangeOperation::Create));
-        assert!(perms.is_allowed(
-            TargetKind::Schedule,
-            ChangeOperation::Generate
-        ));
+        assert!(perms.is_allowed(TargetKind::Schedule, ChangeOperation::Generate));
         assert!(!perms.is_allowed(TargetKind::Task, ChangeOperation::Delete));
         assert!(!perms.is_allowed(TargetKind::Memory, ChangeOperation::Create));
     }

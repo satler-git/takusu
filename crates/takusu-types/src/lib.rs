@@ -7,9 +7,9 @@ pub mod id_ref;
 pub mod json_string;
 pub mod jwt;
 pub mod option_bool_compat;
+pub mod planner;
 pub mod quantity;
 pub mod similarity;
-pub mod sleep_input;
 #[cfg(feature = "sqlx")]
 pub mod sqlx_impl;
 pub mod time_types;
@@ -26,9 +26,9 @@ pub use enum_label::{
 };
 pub use id_ref::{HabitRef, IdRefError, TaskRef};
 pub use json_string::{DependencyList, JsonString};
+pub use planner::{NormalDist, ParallelMode, Plan, Point, Task, TaskPlacement, TimeWindow};
 pub use quantity::{Quantity, QuantityError};
 pub use similarity::Similarity;
-pub use sleep_input::{SleepInput, SleepInputError};
 pub use time_types::{Date, TimeOfDay, TimeParseError, Timestamp, minutes_between_ts};
 
 use uuid::Uuid;

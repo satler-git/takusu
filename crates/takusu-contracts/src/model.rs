@@ -1,8 +1,11 @@
 use serde::{Deserialize, Serialize};
 use takusu_types::{
     Abandonability, Date, DependencyList, JsonString, Quantity, ScheduleMode, Similarity,
-    SleepInput, TaskStatusFilter, TimeOfDay, Timestamp,
+    TaskStatusFilter, TimeOfDay, Timestamp,
 };
+
+pub use crate::sleep::{SleepConfig, SleepInput, SleepInputError};
+pub use crate::workload::WorkloadConfig;
 
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]

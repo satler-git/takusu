@@ -9,11 +9,11 @@ use std::collections::HashMap;
 
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
-use takusu_search::search::{Completion, complete};
 use takusu_contracts::{
     CreateTask, CreateTaskBatch, CreateTaskBatchItem, CreateTaskBatchResult, ProgressResult,
     RecordProgress, SplitResult, SplitTask, TaskProgress, TaskQuery, TaskRow, UpdateTask,
 };
+use takusu_search::search::{Completion, complete};
 
 use super::dependency;
 use crate::error::storage_to_app;

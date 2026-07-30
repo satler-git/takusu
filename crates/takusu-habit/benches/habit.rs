@@ -2,8 +2,8 @@ use criterion::{Criterion, criterion_group, criterion_main};
 use jiff::civil::Date;
 use jiff::tz::TimeZone;
 use std::hint::black_box;
-use takusu_core::{Minutes, NormalDist, Point};
 use takusu_habit::{Habit, HabitStore, RecurrenceRule, TimeOfDay};
+use takusu_types::{Minutes, NormalDist, Point};
 
 #[derive(serde::Deserialize)]
 struct Fixture {

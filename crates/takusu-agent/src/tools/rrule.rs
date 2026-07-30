@@ -9,11 +9,11 @@ use async_trait::async_trait;
 use jiff::{ToSpan, civil::Date};
 use schemars::JsonSchema;
 use serde::Deserialize;
-use takusu_core::{NormalDist, Point, SLOT_MINUTES};
 use takusu_habit::{
     Frequency, NWeekday, ParsedRule, RecurrenceGenerator, TimeOfDay, Until, Weekday,
     date_time_to_point, date_to_day_number, parse_rrule, point_to_date,
 };
+use takusu_types::{NormalDist, Point, SLOT_MINUTES};
 
 use crate::tools::other_error;
 use crate::tools::takusu::TimeZoneCache;

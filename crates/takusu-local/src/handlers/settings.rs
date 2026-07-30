@@ -3,8 +3,8 @@ use std::sync::Arc;
 use axum::Json;
 use axum::extract::{Extension, State};
 use serde::{Deserialize, Serialize};
-use takusu_local_lib::TokenClaims;
 use takusu_contracts::{SettingsRow, UpdateSettings};
+use takusu_local_lib::TokenClaims;
 
 use crate::error::HttpError;
 use crate::state::AppState;
