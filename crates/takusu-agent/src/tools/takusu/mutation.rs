@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::str::FromStr;
 use takusu_client::{Client, SchedulePreviewRequest, TaskQuery};
-use takusu_types::parse_datetime_tz;
+use takusu_types::{TaskStatusFilter, parse_datetime_tz};
 
 use crate::{
     ChangeOperation, InferredField, InvalidArgsError, ProposalContent, ProposedChange, Target,
@@ -743,7 +743,19 @@ impl TypedTool for MutationTool {
                 if let MutationKind::UpdateTask = self.kind
                     && let Some(s) = args.status.take()
                 {
-                    args.status = Some(normalize_status(&s));
+                    let status = normalize_status(&s).map_err(|e| {
+                        ToolError::InvalidArgs(InvalidArgsError::new(
+                            "status",
+                            format!("invalid: {e}"),
+                        ))
+                    })?;
+                    if status == TaskStatusFilter::Overdue {
+                        return Err(ToolError::InvalidArgs(InvalidArgsError::new(
+                            "status",
+                            "overdue is not a valid task status",
+                        )));
+                    }
+                    args.status = Some(status.to_string());
                 }
             }
             MutationKind::Reschedule => {
