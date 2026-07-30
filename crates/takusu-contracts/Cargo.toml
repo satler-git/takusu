@@ -1,5 +1,5 @@
 [package]
-name = "takusu-storage"
+name = "takusu-contracts"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

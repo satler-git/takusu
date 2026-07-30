@@ -12,7 +12,7 @@
 //! plain-text status markers) live in their respective renderer modules.
 use std::collections::HashMap;
 
-use takusu_storage::{
+use takusu_contracts::{
     HabitRow, HabitScheduledSpanRow, HabitStepRow, ScheduleEntry, SkillRow, TaskRow, TokenRow,
 };
 use takusu_types::Timestamp;

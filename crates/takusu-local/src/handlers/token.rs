@@ -3,7 +3,7 @@ use axum::extract::{Extension, Path, State};
 use axum::http::StatusCode;
 use serde::Deserialize;
 use takusu_local_lib::TokenClaims;
-use takusu_storage::{TokenCreateResponse, TokenRow};
+use takusu_contracts::{TokenCreateResponse, TokenRow};
 
 use crate::error::{HttpError, NoContent};
 use crate::state::AppState;

@@ -1,4 +1,4 @@
-//! # takusu-storage — pluggable storage backend
+//! # takusu-contracts — pluggable storage backend
 //!
 //! Async `Storage` trait with shared request/response types. The local server
 //! (`takusu-local`) is the only consumer; backends are `SqliteStorage` (direct

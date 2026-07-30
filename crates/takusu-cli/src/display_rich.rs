@@ -6,7 +6,7 @@
 use comfy_table::{Cell, Color, ContentArrangement, Table, presets::UTF8_FULL};
 use std::collections::HashMap;
 use takusu_habit::{RecurrenceRule, summarize};
-use takusu_storage::{
+use takusu_contracts::{
     HabitRow, HabitScheduledSpanRow, HabitStepRow, ScheduleEntry, SkillRow, TaskRow, TokenRow,
 };
 use takusu_types::{TaskStatus, Timestamp, WindowMode};

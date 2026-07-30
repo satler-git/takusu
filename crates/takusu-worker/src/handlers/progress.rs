@@ -4,7 +4,7 @@ use crate::error::WorkerError;
 use crate::handlers::auth::storage;
 use crate::handlers::tokens::{json_ok, parse_json};
 use crate::models::{RecordProgress, SplitTask};
-use takusu_storage::Storage;
+use takusu_contracts::Storage;
 
 fn operation_id(req: &Request) -> Option<String> {
     req.headers()

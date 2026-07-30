@@ -25,7 +25,7 @@
 
 ### 1.1 `takusu-worker` が `Storage` trait を実装せず、ビジネスロジックが全面重複している
 
-- **問題の要約**: `takusu-storage::Storage` trait は `SqliteStorage` と `WorkersStorage`（HTTP クライアント）の 2 実装を持ち、`TakusuApp` はこの trait に依存してビジネスロジックを集約している。一方 `takusu-worker` はこの trait を一切実装せず、各ハンドラが D1 の生 SQL と `JsValue` バインディングで永続化とビジネスロジックを両方再実装している。その結果、タスク CRUD、進捗管理、ハビット CRUD、メモリ、スキル、設定、スケジュール、トークン、同期マッピングの全エンドポイントで同一の業務ロジックが 2 箇所に並行して存在する。片方を修正する際にもう片方を忘れると、ローカルとクラウドで挙動が乖離する。
+- **問題の要約**: `takusu-contracts::Storage` trait は `SqliteStorage` と `WorkersStorage`（HTTP クライアント）の 2 実装を持ち、`TakusuApp` はこの trait に依存してビジネスロジックを集約している。一方 `takusu-worker` はこの trait を一切実装せず、各ハンドラが D1 の生 SQL と `JsValue` バインディングで永続化とビジネスロジックを両方再実装している。その結果、タスク CRUD、進捗管理、ハビット CRUD、メモリ、スキル、設定、スケジュール、トークン、同期マッピングの全エンドポイントで同一の業務ロジックが 2 箇所に並行して存在する。片方を修正する際にもう片方を忘れると、ローカルとクラウドで挙動が乖離する。
 - **該当箇所**:
   - `crates/takusu-worker/src/handlers/tasks.rs:39-583`（タスク CRUD, 656 行）↔ `crates/takusu-local-lib/src/app/task.rs:32-365` + `crates/takusu-local-lib/src/storage_sqlite.rs:554-790`
   - `crates/takusu-worker/src/handlers/progress.rs:147-730`（進捗・ワークセッション・分割, 730 行）↔ `crates/takusu-local-lib/src/storage_sqlite.rs:1893-2470`
@@ -54,7 +54,7 @@
   - `crates/takusu-worker/src/validate.rs:305-329`（`detect_cycle`）↔ `crates/takusu-local-lib/src/graph.rs`（`detect_cycle`）
   - `crates/takusu-worker/src/handlers/memory.rs:101-152`（`validate_create` / `validate_update`）↔ `crates/takusu-local-lib/src/validate.rs:194-244`
   - `crates/takusu-worker/src/handlers/skills.rs:16-56`（`validate_slug` / `validate_create`）↔ `crates/takusu-local-lib/src/validate.rs:149-192`
-- **推奨される改善**: `Validate` trait と各バリデータを `takusu-storage`（または新設の `takusu-validate` クレート）に切り出し、worker と local-lib の両方から利用する。worker が WASM バンドルサイズを気にする部分（`takusu-habit` 依存の `RecurrenceRule`）は feature flag で分離する。
+- **推奨される改善**: `Validate` trait と各バリデータを `takusu-contracts`（または新設の `takusu-validate` クレート）に切り出し、worker と local-lib の両方から利用する。worker が WASM バンドルサイズを気にする部分（`takusu-habit` 依存の `RecurrenceRule`）は feature flag で分離する。
 - **修正の重み**: 中
 
 ### 1.3 ID 解決ロジックが重複し、文字列 prefix マッチで型安全性を損なっている
@@ -69,7 +69,7 @@
   - `crates/takusu-worker/src/handlers/id_resolver.rs:89-119`（`resolve_habit_id`）
   - `crates/takusu-worker/src/handlers/tasks.rs:587-599`（`resolve_depends`）
   - `crates/takusu-local-lib/src/config.rs:41-44`（`storage_kind` の文字列マッチ）
-- **推奨される改善**: ID 参照のパース規則を `takusu-storage`（または `takusu-types`）に `TaskRef` / `HabitRef` のような enum として切り出す。各バックエンドは「解決された参照から UUID」のルックアップだけを実装する。`storage_kind` も enum にする。
+- **推奨される改善**: ID 参照のパース規則を `takusu-contracts`（または `takusu-types`）に `TaskRef` / `HabitRef` のような enum として切り出す。各バックエンドは「解決された参照から UUID」のルックアップだけを実装する。`storage_kind` も enum にする。
 - **修正の重み**: 中
 
 ### 1.4 スケジュール要求型が 3 層に重複定義されている
@@ -80,7 +80,7 @@
   - `crates/takusu-local/src/handlers/schedule.rs:15-62`（同名型、`MoveEntry.start_at: String`）
   - `crates/takusu-local-lib/src/app/schedule.rs:100-123`（`GenerateScheduleInput` / `RescheduleInput` / `SchedulePreviewInput`）
   - `crates/takusu-client/src/lib.rs:1093-1100`（`MoveEntryResponse`、`start_at: Timestamp`）↔ `crates/takusu-local-lib/src/app/schedule.rs:136-141`（`MoveEntryOutput`、`start_at: String`）
-- **推奨される改善**: クライアント・サーバ間で共有すべき型を `takusu-storage::model` に集約し、クライアントは再エクスポートのみ行う。`from` / `until` / `start_at` は `Option<Timestamp>` に統一し、ハンドラ層で `String` から `Timestamp` のパースを一度だけ行う。
+- **推奨される改善**: クライアント・サーバ間で共有すべき型を `takusu-contracts::model` に集約し、クライアントは再エクスポートのみ行う。`from` / `until` / `start_at` は `Option<Timestamp>` に統一し、ハンドラ層で `String` から `Timestamp` のパースを一度だけ行う。
 - **修正の重み**: 中
 
 ---

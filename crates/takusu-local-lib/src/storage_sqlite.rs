@@ -4,7 +4,7 @@ use sqlx::SqlitePool;
 use sqlx::sqlite::SqlitePoolOptions;
 use takusu_core::Minutes;
 use takusu_search::search::{EvalContext, filter_tasks};
-use takusu_storage::{
+use takusu_contracts::{
     CreateHabit, CreateHabitScheduledSpan, CreateMemory, CreateSkill, CreateTask,
     GoogleCalEventRow, GoogleCalSettingsRow, HabitRow, HabitScheduledSpanRow,
     HabitStepEstimateInput, HabitStepInput, HabitStepRow, MemoryQuery, MemoryRow, ProgressEventRow,
@@ -18,7 +18,7 @@ use takusu_types::{DEFAULT_AUD, SCOPE_READ_WRITE};
 use takusu_types::{EnumLabel, Quantity, TaskStatus, TaskStatusFilter, Timestamp, WindowMode};
 
 use crate::config::LocalConfig;
-use takusu_storage::validate::{validate_quantity, validate_scheduled_span_dates};
+use takusu_contracts::validate::{validate_quantity, validate_scheduled_span_dates};
 
 /// SQL predicate for tasks whose deadline has passed but are not finished.
 const OVERDUE_SQL: &str =
@@ -1249,7 +1249,7 @@ impl Storage for SqliteStorage {
     }
 
     async fn save_schedule(&self, req: &SaveScheduleRequest) -> StorageResult<ScheduleRow> {
-        let schedule = takusu_storage::ScheduleData::new(req.entries.clone());
+        let schedule = takusu_contracts::ScheduleData::new(req.entries.clone());
         let now = takusu_types::now_rfc3339();
         // Wrap the schedule upsert and the task status updates in a single
         // transaction so a failure mid-way cannot leave the schedule saved

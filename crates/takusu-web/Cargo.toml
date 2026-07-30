@@ -19,7 +19,7 @@ sqlite = ["takusu-local/sqlite", "takusu-local-lib/sqlite"]
 [dependencies]
 takusu-local = { workspace = true, default-features = false }
 takusu-local-lib = { workspace = true, default-features = false }
-takusu-storage = { workspace = true }
+takusu-contracts = { workspace = true }
 axum = "0.8"
 tokio = { workspace = true }
 tracing = { workspace = true }

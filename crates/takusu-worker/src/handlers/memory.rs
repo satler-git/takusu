@@ -7,7 +7,7 @@ use crate::handlers::auth::storage;
 use crate::handlers::tokens::{json_created, json_ok, parse_json};
 use crate::memory;
 use crate::models::{CreateMemory, UpdateMemory};
-use takusu_storage::{MemoryQuery, SimilarTaskQuery, Storage};
+use takusu_contracts::{MemoryQuery, SimilarTaskQuery, Storage};
 use takusu_types::{EnumLabel, MemoryKind, SubjectType};
 
 fn operation_id(req: &Request) -> Option<String> {

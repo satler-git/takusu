@@ -1,6 +1,6 @@
 //! Shared enum foundation for type-safe label handling across crates.
 //!
-//! Many `takusu` crates (`takusu-storage`, `takusu-client`, `takusu-worker`) model
+//! Many `takusu` crates (`takusu-contracts`, `takusu-client`, `takusu-worker`) model
 //! the same fixed-vocabulary fields (`status`, `window_mode`, `scope`, ...) as
 //! `String`. This module provides:
 //!
@@ -14,7 +14,7 @@
 //!
 //! Design constraints (see `doc/type-safety-issues.md` §8.2):
 //!
-//! - `takusu-storage` enables sqlx with `default-features = false` and no
+//! - `takusu-contracts` enables sqlx with `default-features = false` and no
 //!   driver, so we cannot implement `Type`/`Encode`/`Decode` here. Callers use
 //!   `#[sqlx(try_from = "String")]` instead, which only requires `TryFrom<String>`.
 //! - `takusu-types` is the only shared crate that the storage/client/worker trio
@@ -265,7 +265,7 @@ macro_rules! enum_label {
 enum_label! {
     /// Phase 1 type-safe labels (see `doc/type-safety-issues.md` §3.1 / 3.2 / 3.5 / 3.6).
     ///
-    /// These are intentionally kept in `takusu-types` so that `takusu-storage`,
+    /// These are intentionally kept in `takusu-types` so that `takusu-contracts`,
     /// `takusu-client`, and `takusu-worker` can all use them without changing the
     /// crate dependency graph.
     pub enum TaskStatus {
@@ -358,7 +358,7 @@ enum_label! {
     /// Phase 5 solver label (see `doc/type-safety-issues.md` §3.3).
     ///
     /// Kept in `takusu-types` because `takusu-core` does not depend on `serde`,
-    /// and `takusu-storage` / `takusu-client` / `takusu-worker` all depend on `takusu-types`.
+    /// and `takusu-contracts` / `takusu-client` / `takusu-worker` all depend on `takusu-types`.
     pub enum Solver {
         #[default] Sa = "sa",
         Priority = "priority",
@@ -383,7 +383,7 @@ enum_label! {
 enum_label! {
     /// Similarity metric used by `Similarity` (see `doc/code-quality-issues.md` #33).
     ///
-    /// Kept in `takusu-types` so `takusu-storage`, `takusu-client`, and
+    /// Kept in `takusu-types` so `takusu-contracts`, `takusu-client`, and
     /// `takusu-worker` can all use it without changing the crate dependency
     /// graph.
     pub enum SimilarityMetric {

@@ -30,7 +30,7 @@ use takusu_local_lib::{
     storage_workers::WorkersStorage,
     token_cache::TokenCache,
 };
-use takusu_storage::{
+use takusu_contracts::{
     CreateHabit, CreateHabitScheduledSpan, CreateMemory, CreateSkill, CreateTask, GenerateSchedule,
     MemoryQuery, RecordProgress, Reschedule, ScheduleEntry, SimilarTaskQuery, SplitTask, TaskQuery,
     UpdateHabit, UpdateMemory, UpdateSettings,
@@ -1171,7 +1171,7 @@ fn main() {
             .or_else(|| cfg.root_token.clone())
             .unwrap_or_default();
 
-        let storage: Arc<dyn takusu_storage::Storage> = match local_cfg.storage {
+        let storage: Arc<dyn takusu_contracts::Storage> = match local_cfg.storage {
             StorageKind::Workers => {
                 let url = local_cfg.workers_url().to_string();
                 if url.is_empty() {
@@ -1464,7 +1464,7 @@ async fn run_task(
                 .map(Quantity::new)
                 .transpose()
                 .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
-            let body = takusu_storage::UpdateTask {
+            let body = takusu_contracts::UpdateTask {
                 title,
                 description,
                 start_at: start_at.map(|s| parse_dt(&s, tz)).transpose()?.map(Some),
@@ -1554,7 +1554,7 @@ async fn run_task(
             println!("Task {id} deleted.");
         }
         TaskCommands::Status { id, status } => {
-            let body = takusu_storage::UpdateTask {
+            let body = takusu_contracts::UpdateTask {
                 status: Some(status),
                 ..Default::default()
             };
@@ -1998,7 +1998,7 @@ async fn run_skill(mode: DisplayMode, app: &TakusuApp, cmd: SkillCommands) -> Re
             let updated = app
                 .update_skill(
                     &slug,
-                    &takusu_storage::UpdateSkill {
+                    &takusu_contracts::UpdateSkill {
                         name,
                         description,
                         body,
@@ -2317,7 +2317,7 @@ async fn run_sync(app: &TakusuApp, cmd: SyncCommands) -> Result<(), AppError> {
                     refresh_token,
                 )
             };
-            let body = takusu_storage::UpdateGoogleCalSettings {
+            let body = takusu_contracts::UpdateGoogleCalSettings {
                 enabled,
                 calendar_id,
                 client_id,
@@ -2551,7 +2551,7 @@ async fn oauth_login(
         settings.calendar_id
     };
 
-    app.update_gcal_settings(&takusu_storage::UpdateGoogleCalSettings {
+    app.update_gcal_settings(&takusu_contracts::UpdateGoogleCalSettings {
         enabled: Some(true),
         calendar_id: Some(calendar_id.clone()),
         client_id: Some(client_id.clone()),
@@ -2686,7 +2686,7 @@ async fn remove_task_dep(app: &TakusuApp, from_id: &str, to_id: &str) -> Result<
     let task = app.get_task(from_id).await?;
     let mut deps: Vec<String> = task.depends.to_vec();
     deps.retain(|d| d != to_id);
-    let body = takusu_storage::UpdateTask {
+    let body = takusu_contracts::UpdateTask {
         depends: Some(deps),
         ..Default::default()
     };
@@ -2791,14 +2791,14 @@ async fn remove_step_dep(
     to_id: &str,
 ) -> Result<(), AppError> {
     let steps = app.list_habit_steps(habit_id).await?;
-    let inputs: Vec<takusu_storage::HabitStepInput> = steps
+    let inputs: Vec<takusu_contracts::HabitStepInput> = steps
         .iter()
         .map(|s| {
             let mut deps: Vec<String> = s.depends_on.to_vec();
             if s.id == from_id {
                 deps.retain(|d| d != to_id);
             }
-            takusu_storage::HabitStepInput {
+            takusu_contracts::HabitStepInput {
                 id: Some(s.id.clone()),
                 position: s.position,
                 title: s.title.clone(),

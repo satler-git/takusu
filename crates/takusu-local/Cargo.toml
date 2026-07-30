@@ -20,7 +20,7 @@ sqlite = ["dep:sqlx", "takusu-local-lib/sqlite"]
 takusu-local-lib = { workspace = true, default-features = false }
 takusu-types.workspace = true
 takusu-search.workspace = true
-takusu-storage.workspace = true
+takusu-contracts.workspace = true
 axum = "0.8"
 aide.workspace = true
 schemars.workspace = true

@@ -1,7 +1,7 @@
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
-use takusu_storage::{
+use takusu_contracts::{
     GenerateSchedule, MoveEntry, MoveEntryResponse, Reschedule, SaveScheduleRequest,
     SchedulePreviewRequest, SchedulePreviewResponse, ScheduleRow,
 };

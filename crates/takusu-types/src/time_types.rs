@@ -2,7 +2,7 @@
 //!
 //! These types wrap `jiff` types and provide `Display` / `FromStr` / `Serialize`
 //! / `Deserialize` / sqlx integration so they can replace raw `String` fields in
-//! `takusu-storage`, `takusu-client`, and `takusu-worker` model structs.
+//! `takusu-contracts`, `takusu-client`, and `takusu-worker` model structs.
 //!
 //! - [`TimeOfDay`]: `HH:MM` with 5-minute slot snapping (moved from `takusu-habit`).
 //! - [`Date`]: `YYYY-MM-DD` calendar date.
@@ -27,7 +27,7 @@ use crate::SLOT_MINUTES;
 ///
 /// Serialized as a `"HH:MM"` string for JSON and stored as `TEXT` in SQLite.
 /// This type was originally defined in `takusu-habit` and has been moved here
-/// so that `takusu-storage` / `takusu-client` / `takusu-worker` can use it
+/// so that `takusu-contracts` / `takusu-client` / `takusu-worker` can use it
 /// without depending on `takusu-habit`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, schemars::JsonSchema)]
 #[schemars(with = "String")]

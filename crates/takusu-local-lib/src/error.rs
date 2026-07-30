@@ -70,8 +70,8 @@ pub enum SkillOp {
     Delete,
 }
 
-pub(crate) fn storage_to_app(e: takusu_storage::StorageError) -> AppError {
-    use takusu_storage::StorageError;
+pub(crate) fn storage_to_app(e: takusu_contracts::StorageError) -> AppError {
+    use takusu_contracts::StorageError;
     match e {
         StorageError::NotFound(m) => AppError::NotFound(m),
         StorageError::BadRequest(m) => AppError::BadRequest(BadRequestKind::Other(m)),

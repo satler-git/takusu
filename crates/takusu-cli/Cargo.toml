@@ -27,7 +27,7 @@ takusu-local = { workspace = true }
 takusu-agent = { workspace = true }
 takusu-client = { workspace = true }
 takusu-types = { workspace = true, features = ["clap"] }
-takusu-storage = { workspace = true }
+takusu-contracts = { workspace = true }
 takusu-habit = { workspace = true }
 takusu-tui = { workspace = true }
 takusu-web = { workspace = true, optional = true, features = ["sqlite"] }

@@ -8,7 +8,7 @@ use crate::handlers::tokens::{json_created, json_ok, parse_json};
 use crate::models::{CreateTask, UpdateTask};
 use crate::util::parse_boolish;
 use crate::validate::{validate_minutes, validate_title};
-use takusu_storage::{Storage, TaskQuery};
+use takusu_contracts::{Storage, TaskQuery};
 use takusu_types::TaskStatusFilter;
 
 pub async fn list(req: Request, env: Env) -> Result<Response, WorkerError> {

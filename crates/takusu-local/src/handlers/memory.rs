@@ -1,7 +1,7 @@
 use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
-use takusu_storage::{CreateMemory, MemoryQuery, SimilarTaskQuery, UpdateMemory};
+use takusu_contracts::{CreateMemory, MemoryQuery, SimilarTaskQuery, UpdateMemory};
 
 use crate::error::{HttpError, NoContent};
 use crate::handlers::common::operation_id;
@@ -11,7 +11,7 @@ pub async fn create_memory(
     State(state): State<AppState>,
     headers: HeaderMap,
     Json(body): Json<CreateMemory>,
-) -> Result<Json<takusu_storage::MemoryRow>, HttpError> {
+) -> Result<Json<takusu_contracts::MemoryRow>, HttpError> {
     let memory = state
         .app
         .create_memory(&body, operation_id(&headers))
@@ -22,7 +22,7 @@ pub async fn create_memory(
 pub async fn get_memory(
     State(state): State<AppState>,
     Path(id): Path<String>,
-) -> Result<Json<takusu_storage::MemoryRow>, HttpError> {
+) -> Result<Json<takusu_contracts::MemoryRow>, HttpError> {
     let memory = state.app.get_memory(&id).await?;
     Ok(Json(memory))
 }
@@ -32,7 +32,7 @@ pub async fn update_memory(
     Path(id): Path<String>,
     headers: HeaderMap,
     Json(body): Json<UpdateMemory>,
-) -> Result<Json<takusu_storage::MemoryRow>, HttpError> {
+) -> Result<Json<takusu_contracts::MemoryRow>, HttpError> {
     let memory = state
         .app
         .update_memory(&id, &body, operation_id(&headers))
@@ -61,7 +61,7 @@ pub async fn delete_memory(
 pub async fn search_memory(
     State(state): State<AppState>,
     Query(query): Query<MemoryQuery>,
-) -> Result<Json<Vec<takusu_storage::MemoryRow>>, HttpError> {
+) -> Result<Json<Vec<takusu_contracts::MemoryRow>>, HttpError> {
     let memories = state.app.search_memories(&query).await?;
     Ok(Json(memories))
 }
@@ -69,7 +69,7 @@ pub async fn search_memory(
 pub async fn find_similar_tasks(
     State(state): State<AppState>,
     Query(query): Query<SimilarTaskQuery>,
-) -> Result<Json<Vec<takusu_storage::SimilarTaskRow>>, HttpError> {
+) -> Result<Json<Vec<takusu_contracts::SimilarTaskRow>>, HttpError> {
     let tasks = state.app.find_similar_tasks(&query).await?;
     Ok(Json(tasks))
 }

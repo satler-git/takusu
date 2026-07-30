@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use takusu_search::search::{Completion, complete};
-use takusu_storage::{
+use takusu_contracts::{
     CreateTask, CreateTaskBatch, CreateTaskBatchItem, CreateTaskBatchResult, ProgressResult,
     RecordProgress, SplitResult, SplitTask, TaskProgress, TaskQuery, TaskRow, UpdateTask,
 };

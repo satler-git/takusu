@@ -1,5 +1,5 @@
 use crossterm::event::{KeyCode, KeyEvent};
-use takusu_storage::{HabitRow, TaskRow};
+use takusu_contracts::{HabitRow, TaskRow};
 use takusu_types::{Abandonability, Quantity, TaskStatus};
 
 use crate::app::{App, Modal};
@@ -58,7 +58,7 @@ async fn change_status(app: &mut App) {
         TaskStatus::Completed => TaskStatus::Skipped,
         _ => TaskStatus::Pending,
     };
-    let body = takusu_storage::UpdateTask {
+    let body = takusu_contracts::UpdateTask {
         status: Some(next),
         ..Default::default()
     };
@@ -197,8 +197,8 @@ fn task_ref(id: &str, all_tasks: &[TaskRow], habits: &[HabitRow]) -> Option<Stri
 fn parse_edit_text(
     content: &str,
     tz: &jiff::tz::TimeZone,
-) -> Result<takusu_storage::UpdateTask, String> {
-    let mut update = takusu_storage::UpdateTask::default();
+) -> Result<takusu_contracts::UpdateTask, String> {
+    let mut update = takusu_contracts::UpdateTask::default();
     for line in content.lines() {
         let line = line.trim();
         if line.is_empty() || line.starts_with('#') {

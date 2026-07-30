@@ -7002,7 +7002,7 @@ export interface components {
         /**
          * @description Similarity metric used by `Similarity` (see `doc/code-quality-issues.md` #33).
          *
-         *     Kept in `takusu-types` so `takusu-storage`, `takusu-client`, and
+         *     Kept in `takusu-types` so `takusu-contracts`, `takusu-client`, and
          *     `takusu-worker` can all use it without changing the crate dependency
          *     graph.
          * @enum {string}
@@ -7029,7 +7029,7 @@ export interface components {
          * @description Phase 5 solver label (see `doc/type-safety-issues.md` §3.3).
          *
          *     Kept in `takusu-types` because `takusu-core` does not depend on `serde`,
-         *     and `takusu-storage` / `takusu-client` / `takusu-worker` all depend on `takusu-types`.
+         *     and `takusu-contracts` / `takusu-client` / `takusu-worker` all depend on `takusu-types`.
          * @enum {string}
          */
         Solver: "sa" | "priority" | "auto";
@@ -7134,7 +7134,7 @@ export interface components {
         /**
          * @description Phase 1 type-safe labels (see `doc/type-safety-issues.md` §3.1 / 3.2 / 3.5 / 3.6).
          *
-         *     These are intentionally kept in `takusu-types` so that `takusu-storage`,
+         *     These are intentionally kept in `takusu-types` so that `takusu-contracts`,
          *     `takusu-client`, and `takusu-worker` can all use them without changing the
          *     crate dependency graph.
          * @enum {string}
@@ -7152,7 +7152,7 @@ export interface components {
          *
          *     Serialized as a `"HH:MM"` string for JSON and stored as `TEXT` in SQLite.
          *     This type was originally defined in `takusu-habit` and has been moved here
-         *     so that `takusu-storage` / `takusu-client` / `takusu-worker` can use it
+         *     so that `takusu-contracts` / `takusu-client` / `takusu-worker` can use it
          *     without depending on `takusu-habit`.
          */
         TimeOfDay: string;

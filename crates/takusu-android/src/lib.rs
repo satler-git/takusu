@@ -18,7 +18,7 @@ use takusu_local::state::AppState;
 use takusu_local_lib::app::TakusuApp;
 use takusu_local_lib::storage_workers::WorkersStorage;
 use takusu_local_lib::token_cache::TokenCache;
-use takusu_storage::Storage;
+use takusu_contracts::Storage;
 use tokio::net::TcpListener;
 
 /// Error type for FFI

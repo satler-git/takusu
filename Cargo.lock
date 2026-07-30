@@ -5271,9 +5271,9 @@ dependencies = [
  "takusu-agent",
  "takusu-audio",
  "takusu-client",
+ "takusu-contracts",
  "takusu-local",
  "takusu-local-lib",
- "takusu-storage",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -5339,10 +5339,10 @@ dependencies = [
  "serde_json",
  "takusu-agent",
  "takusu-client",
+ "takusu-contracts",
  "takusu-habit",
  "takusu-local",
  "takusu-local-lib",
- "takusu-storage",
  "takusu-tui",
  "takusu-types",
  "takusu-web",
@@ -5359,11 +5359,25 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
- "takusu-storage",
+ "takusu-contracts",
  "takusu-types",
  "thiserror 2.0.18",
  "tokio",
  "webpki-root-certs",
+]
+
+[[package]]
+name = "takusu-contracts"
+version = "0.20260729.1"
+dependencies = [
+ "async-trait",
+ "schemars",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "takusu-search",
+ "takusu-types",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -5424,9 +5438,9 @@ dependencies = [
  "serde_json",
  "sha2 0.11.0",
  "sqlx",
+ "takusu-contracts",
  "takusu-local-lib",
  "takusu-search",
- "takusu-storage",
  "takusu-types",
  "tempfile",
  "thiserror 2.0.18",
@@ -5453,11 +5467,11 @@ dependencies = [
  "serde_json",
  "sha2 0.11.0",
  "sqlx",
+ "takusu-contracts",
  "takusu-core",
  "takusu-habit",
  "takusu-ical",
  "takusu-search",
- "takusu-storage",
  "takusu-types",
  "thiserror 2.0.18",
  "tokio",
@@ -5481,20 +5495,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "takusu-storage"
-version = "0.20260729.1"
-dependencies = [
- "async-trait",
- "schemars",
- "serde",
- "serde_json",
- "sqlx",
- "takusu-search",
- "takusu-types",
- "thiserror 2.0.18",
-]
-
-[[package]]
 name = "takusu-tui"
 version = "0.20260729.1"
 dependencies = [
@@ -5503,9 +5503,9 @@ dependencies = [
  "ratatui",
  "serde_json",
  "shell-words",
+ "takusu-contracts",
  "takusu-habit",
  "takusu-local-lib",
- "takusu-storage",
  "takusu-types",
  "tempfile",
  "tokio",
@@ -5539,9 +5539,9 @@ dependencies = [
  "rust-embed",
  "serde",
  "serde_json",
+ "takusu-contracts",
  "takusu-local",
  "takusu-local-lib",
- "takusu-storage",
  "tokio",
  "toml 0.8.23",
  "tracing",
@@ -5560,8 +5560,8 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.0",
+ "takusu-contracts",
  "takusu-search",
- "takusu-storage",
  "takusu-types",
  "thiserror 2.0.18",
  "uuid",

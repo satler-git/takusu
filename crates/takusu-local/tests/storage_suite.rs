@@ -20,7 +20,7 @@ use rstest::rstest;
 use takusu_local_lib::config::LocalConfig;
 use takusu_local_lib::storage_sqlite::SqliteStorage;
 use takusu_local_lib::storage_workers::WorkersStorage;
-use takusu_storage::{
+use takusu_contracts::{
     CreateHabit, CreateHabitScheduledSpan, CreateMemory, CreateTask, MemoryQuery, Storage,
     StorageError, TaskQuery, UpdateMemory, UpdateTask,
 };

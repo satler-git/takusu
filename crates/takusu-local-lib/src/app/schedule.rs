@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use jiff::Timestamp;
 use takusu_core::{Planner, PlannerConfig, Point, RescheduleRange, SleepConfig, TaskPlacement};
-use takusu_storage::{
+use takusu_contracts::{
     GenerateSchedule, MoveEntryResponse, Reschedule, SaveScheduleRequest, ScheduleEntry,
     SchedulePreviewRequest, SchedulePreviewResponse, ScheduleRow, SettingsRow, TaskQuery, TaskRow,
 };

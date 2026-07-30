@@ -513,7 +513,7 @@ pub struct SaveScheduleRequest {
 // Previously duplicated across takusu-client, takusu-local handlers, and
 // takusu-local-lib app layer. Consolidated here so all three layers share
 // a single definition; takusu-client re-exports via `pub use
-// takusu_storage::model::*`.
+// takusu_contracts::model::*`.
 
 fn default_sleep() -> SleepInput {
     SleepInput::Recommended

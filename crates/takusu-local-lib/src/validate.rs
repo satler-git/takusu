@@ -1,11 +1,11 @@
 //! Validation trait and helpers for `takusu-local-lib`.
 //!
-//! The shared validation logic lives in [`takusu_storage::validate`] so the
+//! The shared validation logic lives in [`takusu_contracts::validate`] so the
 //! local server and the Cloudflare Worker use a single implementation
 //! (#1322). This module provides:
 //!
 //! - A local [`Validate`] trait that blanket-impls for every type that
-//!   implements `takusu_storage::Validate`, mapping `StorageError` to
+//!   implements `takusu_contracts::Validate`, mapping `StorageError` to
 //!   `AppError`. This lets existing `body.validate()?` call sites work
 //!   unchanged.
 //! - Thin wrappers around the shared free functions (`validate_minutes`,
@@ -17,7 +17,7 @@
 //!   `takusu-core` / `jiff` and are local-server-specific.
 
 use takusu_core::{Minutes, SleepConfig, WorkloadConfig};
-use takusu_storage::SettingsRow;
+use takusu_contracts::SettingsRow;
 use takusu_types::SleepInput;
 
 use crate::error::{AppError, storage_to_app};
@@ -26,16 +26,16 @@ use crate::error::{AppError, storage_to_app};
 
 /// Validate self-contained input before it reaches storage.
 ///
-/// This trait is blanket-implemented for every `T: takusu_storage::Validate`,
+/// This trait is blanket-implemented for every `T: takusu_contracts::Validate`,
 /// mapping `StorageError` to `AppError`. Call `body.validate()?` as before;
 /// the compiler resolves to this blanket impl.
 pub trait Validate {
     fn validate(&self) -> Result<(), AppError>;
 }
 
-impl<T: ?Sized + takusu_storage::Validate> Validate for T {
+impl<T: ?Sized + takusu_contracts::Validate> Validate for T {
     fn validate(&self) -> Result<(), AppError> {
-        takusu_storage::Validate::validate(self).map_err(storage_to_app)
+        takusu_contracts::Validate::validate(self).map_err(storage_to_app)
     }
 }
 
@@ -44,7 +44,7 @@ impl<T: ?Sized + takusu_storage::Validate> Validate for T {
 /// Reject negative or unrealistically large `avg_minutes` / `sigma_minutes`
 /// (#269, #604). Delegates to the shared implementation.
 pub(crate) fn validate_minutes(avg: i64, sigma: Option<i64>) -> Result<(), AppError> {
-    takusu_storage::validate::validate_minutes(avg, sigma).map_err(storage_to_app)
+    takusu_contracts::validate::validate_minutes(avg, sigma).map_err(storage_to_app)
 }
 
 /// Validate `start_at` / `end_at` datetime values and that the effective
@@ -56,7 +56,7 @@ pub(crate) fn validate_task_datetimes(
     existing_start: Option<&takusu_types::Timestamp>,
     existing_end: Option<&takusu_types::Timestamp>,
 ) -> Result<(), AppError> {
-    takusu_storage::validate::validate_task_datetimes(
+    takusu_contracts::validate::validate_task_datetimes(
         start_at,
         end_at,
         existing_start,
@@ -170,7 +170,7 @@ mod tests {
 
     // ── recurrence mirror vs. real type agreement (#1322) ─────────────
     //
-    // `takusu_storage::validate::validate_recurrence` validates JSON shape
+    // `takusu_contracts::validate::validate_recurrence` validates JSON shape
     // using a lightweight mirror of `takusu_habit::RecurrenceRule` to avoid
     // pulling `takusu-habit` into the WASM bundle. `parse_recurrence` (this
     // crate) deserialises the real `takusu_habit::RecurrenceRule`. If the
@@ -188,7 +188,7 @@ mod tests {
             r#"{"freq":"yearly","interval":3,"by_day":[],"by_month":[12],"by_month_day":[31],"count":null,"exdates":["2026-01-01","2026-07-04"]}"#,
         ];
         for json in &valid {
-            let mirror_ok = takusu_storage::validate::validate_recurrence(json).is_ok();
+            let mirror_ok = takusu_contracts::validate::validate_recurrence(json).is_ok();
             let real_ok = parse_recurrence(json).is_ok();
             assert!(
                 mirror_ok && real_ok,
@@ -212,7 +212,7 @@ mod tests {
             r#"{"freq":"daily","interval":1,"by_day":[],"by_month":[],"by_month_day":[],"count":null,"exdates":["2026-02-30"]}"#,
         ];
         for json in &invalid {
-            let mirror_err = takusu_storage::validate::validate_recurrence(json).is_err();
+            let mirror_err = takusu_contracts::validate::validate_recurrence(json).is_err();
             let real_err = parse_recurrence(json).is_err();
             assert!(
                 mirror_err && real_err,

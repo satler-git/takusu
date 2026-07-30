@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use takusu_local_lib::app::TakusuApp;
-use takusu_storage::{GenerateSchedule, HabitRow, Reschedule, ScheduleEntry, SettingsRow, TaskRow};
+use takusu_contracts::{GenerateSchedule, HabitRow, Reschedule, ScheduleEntry, SettingsRow, TaskRow};
 use takusu_types::{EnumLabel, ScheduleMode, SleepInput};
 
 use crate::tabs::{habits, schedule, settings, tasks};
@@ -306,7 +306,7 @@ impl App {
                 return;
             }
         };
-        let body = takusu_storage::CreateTask {
+        let body = takusu_contracts::CreateTask {
             title,
             description: None,
             start_at: None,

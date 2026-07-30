@@ -28,7 +28,7 @@ CLI client using clap derive with nested subcommands: `task`, `schedule`,
 Standalone HTTP client library for the takusu REST API. Reused by any future
 client (Android Kotlin, etc.).
 
-- Types mirror `takusu-storage` model.rs request/response structs (`TaskRow`,
+- Types mirror `takusu-contracts` model.rs request/response structs (`TaskRow`,
   `CreateTask`, `UpdateTask`, etc.)
 - `Client` struct holds `base_url` + `token`, all methods are async
 - Error type: `ClientError { Http, Api { status, body } }` — no `thiserror`

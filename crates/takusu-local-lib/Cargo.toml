@@ -7,13 +7,13 @@ repository.workspace = true
 
 [features]
 default = ["sqlite"]
-sqlite = ["dep:sqlx", "takusu-storage/sqlx"]
+sqlite = ["dep:sqlx", "takusu-contracts/sqlx"]
 
 [dependencies]
 takusu-core = { workspace = true, features = ["jemalloc"] }
 takusu-ical.workspace = true
 takusu-habit.workspace = true
-takusu-storage.workspace = true
+takusu-contracts.workspace = true
 takusu-types.workspace = true
 takusu-search.workspace = true
 google-cal.workspace = true

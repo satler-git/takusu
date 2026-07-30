@@ -1,7 +1,7 @@
 //! sqlx integration for [`Quantity`] and [`Abandonability`].
 //!
 //! This module is only compiled when the `sqlx` feature is enabled, which
-//! `takusu-storage` turns on. Keeping it behind a feature avoids pulling sqlx
+//! `takusu-contracts` turns on. Keeping it behind a feature avoids pulling sqlx
 //! into the WASM `takusu-worker` bundle.
 
 use crate::time_types::{Date, TimeOfDay, Timestamp};
