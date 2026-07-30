@@ -99,6 +99,7 @@ class ModelDownloadWorker(
             NotificationCompat
                 .Builder(applicationContext, channelId)
                 .setSmallIcon(android.R.drawable.stat_sys_download)
+                .setColor(TakusuNotificationColor.color(applicationContext))
                 .setContentTitle(title)
                 .setContentText(text)
                 .setOngoing(!done)
