@@ -35,24 +35,6 @@ function isKnownAction(actionId: string): boolean {
   );
 }
 
-export async function registerNotificationBackgroundTask(): Promise<void> {
-  const isRegistered = await TaskManager.isTaskRegisteredAsync(
-    BACKGROUND_NOTIFICATION_TASK,
-  );
-  if (!isRegistered) {
-    await Notifications.registerTaskAsync(BACKGROUND_NOTIFICATION_TASK);
-  }
-}
-
-export async function unregisterNotificationBackgroundTask(): Promise<void> {
-  const isRegistered = await TaskManager.isTaskRegisteredAsync(
-    BACKGROUND_NOTIFICATION_TASK,
-  );
-  if (isRegistered) {
-    await Notifications.unregisterTaskAsync(BACKGROUND_NOTIFICATION_TASK);
-  }
-}
-
 TaskManager.defineTask<Notifications.NotificationTaskPayload>(
   BACKGROUND_NOTIFICATION_TASK,
   async ({ data }) => {
@@ -68,7 +50,7 @@ TaskManager.defineTask<Notifications.NotificationTaskPayload>(
         workersUrl: settings.workersUrl,
         rootToken: settings.workersToken,
       });
-      await waitForLocalServerReady(client, { maxWaitMs: 3000 });
+      await waitForLocalServerReady(client);
       await handleActionButtonResponse(data, {
         client,
         inProgressNotifications: settings.notifications.inProgress,
@@ -87,3 +69,5 @@ TaskManager.defineTask<Notifications.NotificationTaskPayload>(
     }
   },
 );
+
+Notifications.registerTaskAsync(BACKGROUND_NOTIFICATION_TASK).catch(() => {});

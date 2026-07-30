@@ -35,10 +35,6 @@ import {
   ensureNotificationPermissions,
 } from '@/src/notifications';
 import { handleActionButtonResponse } from '@/src/notifications/actionHandler';
-import {
-  registerNotificationBackgroundTask,
-  unregisterNotificationBackgroundTask,
-} from '@/src/notifications/backgroundTask';
 
 function buildPaperTheme(base: typeof MD3LightTheme, colors: ColorSet) {
   return {
@@ -160,21 +156,13 @@ function ThemedApp() {
   const processedResponseOrder = useRef<string[]>([]);
   const lastNotificationResponse = Notifications.useLastNotificationResponse();
 
-  // Set up notification channels, categories, permissions, action categories,
-  // and the background task that handles action buttons on Android.
+  // Set up notification channels, categories, and permissions.
   useEffect(() => {
     async function setupNotifications() {
       await ensureNotificationPermissions();
       await setupNotificationCategories();
-      await registerNotificationBackgroundTask();
     }
-    setupNotifications();
-
-    return () => {
-      unregisterNotificationBackgroundTask().catch(() => {
-        // ignore cleanup errors
-      });
-    };
+    setupNotifications().catch(() => {});
   }, []);
 
   // Show the welcome overlay once per hour on cold start, and also whenever
