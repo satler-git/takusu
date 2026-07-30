@@ -23,14 +23,6 @@ pub(crate) fn optional_string(
     }
 }
 
-pub(super) fn summary_string(args: &serde_json::Map<String, Value>, name: &str) -> Option<String> {
-    args.get(name)
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(ToOwned::to_owned)
-}
-
 /// Cache for the configured timezone, shared across tools in a session.
 ///
 /// Successful `get_settings()` calls are cached for the lifetime of the
