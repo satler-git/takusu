@@ -6,13 +6,11 @@ on:
       - '**'
       - '!regression-*-discover-*'
       - '!regression-*-fix-*'
-  merge_group:
   workflow_dispatch:
 
 jobs:
   # Detect which areas of the repo changed so unrelated jobs can be skipped.
-  # On workflow_dispatch and merge_group every job runs (manual triggers and
-  # merge queue builds ignore the filter).
+  # On workflow_dispatch every job runs (manual triggers ignore the filter).
   changes:
     runs-on: ubuntu-latest
     outputs:
@@ -26,9 +24,6 @@ jobs:
         with:
           fetch-depth: 0
       - uses: dorny/paths-filter@v3
-        # Path filtering is not useful for merge_group events (the merge group
-        # ref combines changes from multiple PRs); required checks run anyway.
-        if: github.event_name != 'merge_group'
         id: filter
         with:
           filters: |
@@ -60,7 +55,6 @@ jobs:
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' ||
-      github.event_name == 'merge_group' ||
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
@@ -99,7 +93,6 @@ jobs:
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' ||
-      github.event_name == 'merge_group' ||
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
@@ -240,7 +233,6 @@ jobs:
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' ||
-      github.event_name == 'merge_group' ||
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       needs.changes.outputs.mobile == 'true'
     runs-on: ubuntu-latest
@@ -283,7 +275,6 @@ jobs:
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' ||
-      github.event_name == 'merge_group' ||
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       needs.changes.outputs.ts-client == 'true' ||
       needs.changes.outputs.rust == 'true'
@@ -371,7 +362,6 @@ jobs:
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' ||
-      github.event_name == 'merge_group' ||
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
@@ -410,7 +400,6 @@ jobs:
     needs: changes
     if: |
       github.event_name == 'workflow_dispatch' ||
-      github.event_name == 'merge_group' ||
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       needs.changes.outputs.kotlin == 'true'
     runs-on: ubuntu-latest
