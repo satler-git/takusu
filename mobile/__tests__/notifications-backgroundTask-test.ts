@@ -2,13 +2,10 @@ jest.resetModules();
 
 jest.doMock('expo-task-manager', () => ({
   defineTask: jest.fn(),
-  isTaskRegisteredAsync: jest.fn(),
-  unregisterTaskAsync: jest.fn(),
 }));
 
 jest.doMock('expo-notifications', () => ({
-  registerTaskAsync: jest.fn(),
-  unregisterTaskAsync: jest.fn(),
+  registerTaskAsync: jest.fn().mockResolvedValue(null),
 }));
 
 jest.doMock('@sentry/react-native', () => ({
@@ -47,15 +44,12 @@ const {
 const backgroundTask = require('@/src/notifications/backgroundTask');
 
 const mockedDefineTask = TaskManager.defineTask as jest.Mock;
-const mockedIsTaskRegisteredAsync =
-  TaskManager.isTaskRegisteredAsync as jest.Mock;
 const mockedRegisterTaskAsync = Notifications.registerTaskAsync as jest.Mock;
-const mockedNotificationsUnregister =
-  Notifications.unregisterTaskAsync as jest.Mock;
 
-// Capture the defineTask call and executor at module-load time before any test clears mocks.
+// Capture the module-scope calls before any test clears mocks.
 const defineTaskCall = mockedDefineTask.mock.calls[0];
 const taskExecutor = defineTaskCall?.[1];
+const registerTaskCall = mockedRegisterTaskAsync.mock.calls[0];
 
 describe('isActionResponse', () => {
   it('returns true for a notification response payload', () => {
@@ -81,47 +75,8 @@ describe('isActionResponse', () => {
   });
 });
 
-describe('registerNotificationBackgroundTask', () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
-  });
-
-  it('registers the task when it is not already registered', async () => {
-    mockedIsTaskRegisteredAsync.mockResolvedValue(false);
-    await backgroundTask.registerNotificationBackgroundTask();
-    expect(mockedIsTaskRegisteredAsync).toHaveBeenCalledWith(
-      backgroundTask.BACKGROUND_NOTIFICATION_TASK,
-    );
-    expect(mockedRegisterTaskAsync).toHaveBeenCalledWith(
-      backgroundTask.BACKGROUND_NOTIFICATION_TASK,
-    );
-  });
-
-  it('does not register the task when already registered', async () => {
-    mockedIsTaskRegisteredAsync.mockResolvedValue(true);
-    await backgroundTask.registerNotificationBackgroundTask();
-    expect(mockedRegisterTaskAsync).not.toHaveBeenCalled();
-  });
-});
-
-describe('unregisterNotificationBackgroundTask', () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
-  });
-
-  it('unregisters the task when it is registered', async () => {
-    mockedIsTaskRegisteredAsync.mockResolvedValue(true);
-    await backgroundTask.unregisterNotificationBackgroundTask();
-    expect(mockedNotificationsUnregister).toHaveBeenCalledWith(
-      backgroundTask.BACKGROUND_NOTIFICATION_TASK,
-    );
-  });
-
-  it('does not unregister the task when not registered', async () => {
-    mockedIsTaskRegisteredAsync.mockResolvedValue(false);
-    await backgroundTask.unregisterNotificationBackgroundTask();
-    expect(mockedNotificationsUnregister).not.toHaveBeenCalled();
-  });
+it('registers the background task at module scope', () => {
+  expect(registerTaskCall[0]).toBe(backgroundTask.BACKGROUND_NOTIFICATION_TASK);
 });
 
 it('defines a task with the expected name', () => {
@@ -170,9 +125,7 @@ describe('background notification task executor', () => {
       workersUrl: 'https://example.com',
       rootToken: 'token',
     });
-    expect(waitForLocalServerReady).toHaveBeenCalledWith(mockClient, {
-      maxWaitMs: 3000,
-    });
+    expect(waitForLocalServerReady).toHaveBeenCalledWith(mockClient);
     expect(handleActionButtonResponse).toHaveBeenCalledWith(
       response,
       expect.objectContaining({
