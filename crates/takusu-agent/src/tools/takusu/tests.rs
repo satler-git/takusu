@@ -1,13 +1,21 @@
 use super::common::{
     TaskContext, TimeZoneCache, entry_in_range, format_datetime_for_display,
     format_display_datetime_args, habit_json, normalize_reference_array, normalize_status,
-    optional_string, overdue_in_range, schedule_entry_value, strip_leading_hash, task_json,
-    task_reference, transform_preview, transitive_dependencies,
+    overdue_in_range, schedule_entry_value, strip_leading_hash, task_json, task_reference,
+    transform_preview, transitive_dependencies,
 };
-use super::mutation::{MoveTaskTool, MutationKind, MutationTool, normalize_task_ref};
+use super::mutation::{
+    CreateHabit, CreateHabitArgs, CreateTask, CreateTaskArgs, DeleteHabit, DeleteHabitArgs,
+    DeleteTask, DeleteTaskArgs, GenerateSchedule, GenerateScheduleArgs, MoveTaskTool, MutationSpec,
+    MutationTool, Reschedule, RescheduleArgs, UpdateHabit, UpdateHabitArgs, UpdateTask,
+    UpdateTaskArgs,
+};
 use super::read_tools::{GetHabit, GetSchedule, GetTask, HabitScheduledSpans, ListTasks};
 use crate::{ChangeOperation, InvalidArgsError, Tool, ToolError, TypedTool};
-use axum::{Json, Router, routing::get};
+use axum::{
+    Json, Router,
+    routing::{get, post},
+};
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
@@ -16,7 +24,7 @@ use takusu_client::{
     Client, HabitDetail, HabitRow, HabitScheduledSpanRow, HabitStepRow, ScheduleEntry, ScheduleRow,
     SettingsResponse, TaskRow,
 };
-use takusu_types::{Quantity, TaskStatus, TaskStatusFilter, parse_datetime_tz};
+use takusu_types::{Quantity, TaskStatus, TaskStatusFilter};
 
 // ── test-only helpers (moved from common.rs and mutation.rs) ─────────────
 
@@ -63,74 +71,6 @@ fn refs_from_args(
             "must be a string or an array of strings",
         ))),
     }
-}
-
-fn normalize_mutation_field(
-    args: &mut serde_json::Map<String, Value>,
-    name: &str,
-    tz: &jiff::tz::TimeZone,
-) -> Result<(), ToolError> {
-    if let Some(value) = optional_string(args, name)? {
-        let normalized = parse_datetime_tz(&value, tz).map_err(|error| {
-            ToolError::InvalidArgs(InvalidArgsError::new(name, format!("invalid: {error}")))
-        })?;
-        args.insert(name.into(), Value::String(normalized));
-    }
-    Ok(())
-}
-
-fn normalize_mutation_args(
-    kind: MutationKind,
-    args: &mut serde_json::Map<String, Value>,
-    tz: &jiff::tz::TimeZone,
-) -> Result<(), ToolError> {
-    match kind {
-        MutationKind::CreateTask | MutationKind::UpdateTask => {
-            normalize_mutation_field(args, "start_at", tz)?;
-            normalize_mutation_field(args, "end_at", tz)?;
-            if let Some(status) = args.get("status").and_then(Value::as_str) {
-                args.insert(
-                    "status".into(),
-                    Value::String(normalize_status(status)?.to_string()),
-                );
-            }
-        }
-        MutationKind::Reschedule => {
-            normalize_mutation_field(args, "from", tz)?;
-            normalize_mutation_field(args, "until", tz)?;
-        }
-        _ => {}
-    }
-    Ok(())
-}
-
-/// Strip leading `#` characters from reference fields used for backend execution.
-/// Display-facing `args` keep the original user input so approval diffs stay clean.
-fn normalize_execution_references(
-    kind: MutationKind,
-    args: &mut serde_json::Map<String, Value>,
-) -> Result<(), ToolError> {
-    match kind {
-        MutationKind::CreateTask => {
-            normalize_reference_array(args, "depends")?;
-        }
-        MutationKind::UpdateTask => {
-            normalize_task_ref(args, "task_ref")?;
-            normalize_reference_array(args, "depends")?;
-        }
-        MutationKind::DeleteTask => {
-            normalize_task_ref(args, "task_ref")?;
-        }
-        MutationKind::GenerateSchedule => {
-            normalize_reference_array(args, "task_ids")?;
-        }
-        MutationKind::Reschedule => {
-            normalize_reference_array(args, "task_ids")?;
-            normalize_reference_array(args, "pinned")?;
-        }
-        _ => {}
-    }
-    Ok(())
 }
 
 fn task_row(
@@ -468,24 +408,22 @@ fn transform_preview_replaces_internal_task_ids_with_references() {
 }
 
 #[test]
-fn normalize_mutation_field_interprets_naive_datetime_in_server_timezone() {
+fn normalize_interprets_naive_datetime_in_server_timezone() {
     let tz = jiff::tz::TimeZone::get("Asia/Tokyo").unwrap();
-    let mut args = serde_json::Map::new();
-    args.insert(
-        "end_at".to_string(),
-        Value::String("2025-06-05T14:00".to_string()),
-    );
+    let mut args: CreateTaskArgs = serde_json::from_value(json!({
+        "title": "test",
+        "end_at": "2025-06-05T14:00",
+        "avg_minutes": 30,
+    }))
+    .unwrap();
 
-    normalize_mutation_field(&mut args, "end_at", &tz).unwrap();
+    <CreateTask as MutationSpec>::normalize(&mut args, &tz).unwrap();
 
+    let value = serde_json::to_value(&args).unwrap();
+    let end_at = value["end_at"].as_str().unwrap();
     // 2025-06-05 14:00 JST == 2025-06-05 05:00 UTC
-    assert!(
-        args["end_at"]
-            .as_str()
-            .unwrap()
-            .starts_with("2025-06-05T05:00:00")
-    );
-    assert!(args["end_at"].as_str().unwrap().ends_with('Z'));
+    assert!(end_at.starts_with("2025-06-05T05:00:00"));
+    assert!(end_at.ends_with('Z'));
 }
 
 #[test]
@@ -518,19 +456,13 @@ fn normalize_reference_array_rejects_non_string_entries() {
 }
 
 #[test]
-fn normalize_execution_references_strips_hashes_for_backend() {
-    let tz = jiff::tz::TimeZone::get("UTC").unwrap();
-    let mut display_args = serde_json::Map::new();
-    display_args.insert("task_ref".to_string(), Value::String("#42".to_string()));
-    display_args.insert("depends".to_string(), json!(["#1", "h2#3"]));
+fn normalize_refs_strips_hashes_for_backend() {
+    let mut execution_args = serde_json::Map::new();
+    execution_args.insert("task_ref".to_string(), Value::String("#42".to_string()));
+    execution_args.insert("depends".to_string(), json!(["#1", "h2#3"]));
 
-    normalize_mutation_args(MutationKind::UpdateTask, &mut display_args, &tz).unwrap();
+    <UpdateTask as MutationSpec>::normalize_refs(&mut execution_args).unwrap();
 
-    let mut execution_args = display_args.clone();
-    normalize_execution_references(MutationKind::UpdateTask, &mut execution_args).unwrap();
-
-    assert_eq!(display_args["task_ref"], "#42");
-    assert_eq!(display_args["depends"], json!(["#1", "h2#3"]));
     assert_eq!(execution_args["task_ref"], "42");
     assert_eq!(execution_args["depends"], json!(["1", "h2#3"]));
 }
@@ -578,14 +510,18 @@ fn normalize_status_rejects_unknown_values() {
 }
 
 #[test]
-fn normalize_mutation_args_normalizes_status_for_update_task() {
+fn normalize_normalizes_status_for_update_task() {
     let tz = jiff::tz::TimeZone::get("UTC").unwrap();
-    let mut args = serde_json::Map::new();
-    args.insert("status".to_string(), Value::String("done".to_string()));
+    let mut args: UpdateTaskArgs = serde_json::from_value(json!({
+        "task_ref": "#1",
+        "status": "done",
+    }))
+    .unwrap();
 
-    normalize_mutation_args(MutationKind::UpdateTask, &mut args, &tz).unwrap();
+    <UpdateTask as MutationSpec>::normalize(&mut args, &tz).unwrap();
 
-    assert_eq!(args["status"], "completed");
+    let value = serde_json::to_value(&args).unwrap();
+    assert_eq!(value["status"], "completed");
 }
 
 #[test]
@@ -606,11 +542,7 @@ fn list_tasks_status_schema_has_enum() {
 #[test]
 fn update_task_status_schema_has_enum() {
     let client = Client::new("http://localhost", "");
-    let tool = MutationTool {
-        client: client.clone(),
-        tz_cache: TimeZoneCache::new(client),
-        kind: MutationKind::UpdateTask,
-    };
+    let tool = MutationTool::<UpdateTask>::new(client.clone(), TimeZoneCache::new(client));
     let schema = tool.parameters_schema();
     let values: Vec<String> =
         serde_json::from_value(schema["properties"]["status"]["enum"].clone()).unwrap();
@@ -618,70 +550,76 @@ fn update_task_status_schema_has_enum() {
 }
 
 #[test]
-fn change_summary_covers_all_kinds_and_fallbacks() {
-    fn args(pairs: &[(&str, &str)]) -> serde_json::Map<String, Value> {
-        pairs
-            .iter()
-            .map(|(k, v)| (k.to_string(), Value::String(v.to_string())))
-            .collect()
-    }
-
+fn change_summary_covers_all_kinds() {
+    let create_task: CreateTaskArgs = serde_json::from_value(json!({
+        "title": "演習30題追加", "end_at": "2026-07-30", "avg_minutes": 30,
+    }))
+    .unwrap();
     assert_eq!(
-        MutationKind::CreateTask.change_summary(&args(&[("title", "演習30題追加")])),
+        <CreateTask as MutationSpec>::change_summary(&create_task),
         (
             "演習30題追加".to_owned(),
             "「演習30題追加」を作成".to_owned()
         ),
     );
+
+    let update_task_titled: UpdateTaskArgs =
+        serde_json::from_value(json!({ "task_ref": "#42", "title": "予習" })).unwrap();
     assert_eq!(
-        MutationKind::UpdateTask.change_summary(&args(&[("task_ref", "#42"), ("title", "予習")])),
+        <UpdateTask as MutationSpec>::change_summary(&update_task_titled),
         ("#42".to_owned(), "「予習」を更新".to_owned()),
     );
+
+    let update_task_ref_only: UpdateTaskArgs =
+        serde_json::from_value(json!({ "task_ref": "#42" })).unwrap();
     assert_eq!(
-        MutationKind::UpdateTask.change_summary(&args(&[("task_ref", "#42")])),
+        <UpdateTask as MutationSpec>::change_summary(&update_task_ref_only),
         ("#42".to_owned(), "#42を更新".to_owned()),
     );
+
+    let delete_task: DeleteTaskArgs = serde_json::from_value(json!({ "task_ref": "#7" })).unwrap();
     assert_eq!(
-        MutationKind::DeleteTask.change_summary(&args(&[("task_ref", "#7")])),
+        <DeleteTask as MutationSpec>::change_summary(&delete_task),
         ("#7".to_owned(), "#7を削除".to_owned()),
     );
+
+    let create_habit: CreateHabitArgs = serde_json::from_value(json!({
+        "title": "毎朝ジョギング", "recurrence": "FREQ=DAILY",
+        "start_time": "06:00", "end_time": "07:00", "avg_minutes": 60,
+    }))
+    .unwrap();
     assert_eq!(
-        MutationKind::CreateHabit.change_summary(&args(&[("title", "毎朝ジョギング")])),
+        <CreateHabit as MutationSpec>::change_summary(&create_habit),
         (
             "毎朝ジョギング".to_owned(),
             "「毎朝ジョギング」を作成".to_owned()
         ),
     );
+
+    let update_habit: UpdateHabitArgs =
+        serde_json::from_value(json!({ "habit_ref": "h3", "title": "夜ジョギング" })).unwrap();
     assert_eq!(
-        MutationKind::UpdateHabit
-            .change_summary(&args(&[("habit_ref", "h3"), ("title", "夜ジョギング")])),
+        <UpdateHabit as MutationSpec>::change_summary(&update_habit),
         ("h3".to_owned(), "「夜ジョギング」を更新".to_owned()),
     );
+
+    let delete_habit: DeleteHabitArgs =
+        serde_json::from_value(json!({ "habit_ref": "h1" })).unwrap();
     assert_eq!(
-        MutationKind::DeleteHabit.change_summary(&args(&[("habit_ref", "h1")])),
+        <DeleteHabit as MutationSpec>::change_summary(&delete_habit),
         ("h1".to_owned(), "h1を削除".to_owned()),
     );
+
+    let generate: GenerateScheduleArgs = serde_json::from_value(json!({})).unwrap();
     assert_eq!(
-        MutationKind::GenerateSchedule.change_summary(&serde_json::Map::new()),
+        <GenerateSchedule as MutationSpec>::change_summary(&generate),
         (String::new(), "スケジュールを生成".to_owned()),
     );
-    assert_eq!(
-        MutationKind::Reschedule.change_summary(&serde_json::Map::new()),
-        (String::new(), "スケジュールを再調整".to_owned()),
-    );
 
-    let mut blank_title = serde_json::Map::new();
-    blank_title.insert("title".to_string(), Value::String("   ".to_string()));
+    let reschedule: RescheduleArgs = serde_json::from_value(json!({ "mode": "full" })).unwrap();
     assert_eq!(
-        MutationKind::CreateTask.change_summary(&blank_title),
-        (
-            "(名称未設定)".to_owned(),
-            "「(名称未設定)」を作成".to_owned()
-        ),
-    );
-    assert_eq!(
-        MutationKind::UpdateTask.change_summary(&serde_json::Map::new()),
-        ("(参照不明)".to_owned(), "(参照不明)を更新".to_owned()),
+        <Reschedule as MutationSpec>::change_summary(&reschedule),
+        (String::new(), "スケジュールを再調整".to_owned()),
     );
 }
 
@@ -988,6 +926,110 @@ async fn move_task_tool_proposes_move_with_existing_entry() {
     assert_eq!(execution["task_ref"], "42");
 }
 
+fn settings_response() -> SettingsResponse {
+    SettingsResponse {
+        tz: "Asia/Tokyo".into(),
+        sleep_start: "23:00".parse().unwrap(),
+        sleep_end: "07:00".parse().unwrap(),
+        comfortable_minutes: None,
+        maximum_minutes: None,
+        solver: takusu_types::Solver::Auto,
+        time_budget_ms: None,
+        seed: None,
+        warm_start: false,
+    }
+}
+
+#[tokio::test]
+async fn update_task_tool_fetches_before_and_normalizes() {
+    let task = Arc::new(task_row("task-uuid", 42, "買い物", None, &[]));
+    let task_for_get = task.as_ref().clone();
+    let task_for_list = vec![task.as_ref().clone()];
+    let habits: Vec<HabitRow> = vec![];
+
+    let app = Router::new()
+        .route("/api/tasks/{id}", get(move || async { Json(task_for_get) }))
+        .route("/api/tasks", get(move || async { Json(task_for_list) }))
+        .route("/api/habits", get(move || async { Json(habits) }))
+        .route("/api/settings", get(|| async { Json(settings_response()) }));
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+    let client = Client::new(&format!("http://{addr}"), "");
+    let tz_cache = TimeZoneCache::new(client.clone());
+    let tool = crate::tool::Typed(MutationTool::<UpdateTask>::new(client, tz_cache));
+    let args = json!({
+        "task_ref": "#42",
+        "title": "予習",
+        "end_at": "2026-07-30T10:00",
+        "status": "done",
+    });
+    let output = tool.call(args).await.unwrap();
+
+    assert_eq!(output.proposed_changes.len(), 1);
+    let change = &output.proposed_changes[0];
+    assert_eq!(change.operation, ChangeOperation::Update);
+    assert_eq!(change.target.to_string(), "task #42");
+    assert_eq!(change.description, "「予習」を更新");
+    assert!(change.observed_updated_at.is_some());
+
+    // "before" state is fetched from the server.
+    let before = change.before.as_ref().unwrap();
+    assert_eq!(before["title"], "買い物");
+
+    // Display args keep the user-facing reference; status is normalized.
+    let after = change.after.as_ref().unwrap().as_object().unwrap();
+    assert_eq!(after["task_ref"], "#42");
+    assert_eq!(after["status"], "completed");
+
+    // Execution args strip the leading `#`.
+    let execution = change.arguments.as_ref().unwrap().as_object().unwrap();
+    assert_eq!(execution["task_ref"], "42");
+    assert_eq!(execution["status"], "completed");
+}
+
+#[tokio::test]
+async fn reschedule_tool_runs_preview_and_proposes() {
+    let tasks: Vec<TaskRow> = vec![];
+    let habits: Vec<HabitRow> = vec![];
+
+    let app = Router::new()
+        .route(
+            "/api/schedule/preview",
+            post(|| async { Json(json!({ "entries": [] })) }),
+        )
+        .route("/api/tasks", get(move || async { Json(tasks) }))
+        .route("/api/habits", get(move || async { Json(habits) }))
+        .route("/api/settings", get(|| async { Json(settings_response()) }));
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+    let client = Client::new(&format!("http://{addr}"), "");
+    let tz_cache = TimeZoneCache::new(client.clone());
+    let tool = crate::tool::Typed(MutationTool::<Reschedule>::new(client, tz_cache));
+    let args = json!({ "mode": "full", "from": "2026-07-30T09:00" });
+    let output = tool.call(args).await.unwrap();
+
+    assert_eq!(output.proposed_changes.len(), 1);
+    let change = &output.proposed_changes[0];
+    assert_eq!(change.operation, ChangeOperation::Reschedule);
+    assert_eq!(change.description, "スケジュールを再調整");
+
+    // Execution args normalize the naive datetime to UTC and carry the preview.
+    let execution = change.arguments.as_ref().unwrap().as_object().unwrap();
+    assert_eq!(execution["mode"], "full");
+    assert!(execution["from"].as_str().unwrap().ends_with('Z'));
+    assert!(execution.get("_preview_entries").is_some());
+
+    // Display args carry the transformed preview.
+    let after = change.after.as_ref().unwrap().as_object().unwrap();
+    assert!(after.get("_preview").is_some());
+}
+
 #[tokio::test]
 async fn habit_scheduled_spans_tool_lists_and_proposes() {
     let habit = habit_row("habit-uuid", 1, "朝のランニング");
@@ -1092,88 +1134,73 @@ async fn habit_scheduled_spans_tool_lists_and_proposes() {
     assert_eq!(args["habit_ref"], "h1");
 }
 
-// ── validate_no_foreign_fields tests ────────────────────────────────────
-
-fn mutation_tool(kind: MutationKind) -> MutationTool {
-    let client = Client::new("http://localhost", "");
-    MutationTool {
-        client: client.clone(),
-        tz_cache: TimeZoneCache::new(client),
-        kind,
-    }
-}
-
-fn parse_args(json: Value) -> super::mutation::MutationArgs {
-    serde_json::from_value(json).unwrap()
-}
+// ── foreign-field rejection tests ───────────────────────────────────────
+//
+// Each mutation kind has its own args struct with `deny_unknown_fields`, so a
+// field that belongs to another kind is rejected at deserialization time
+// (surfaced with a field name by `serde_path_to_error` in the `Typed` wrapper).
 
 #[test]
-fn validate_rejects_habit_ref_on_create_task() {
-    let tool = mutation_tool(MutationKind::CreateTask);
-    let args = parse_args(json!({
+fn create_task_rejects_habit_ref() {
+    let err = serde_json::from_value::<CreateTaskArgs>(json!({
         "title": "test",
         "end_at": "2026-07-30",
         "avg_minutes": 30,
         "habit_ref": "h1",
-    }));
-    let err = tool.validate_args(&args).unwrap_err();
-    assert_eq!(err.field(), Some("habit_ref"));
+    }))
+    .unwrap_err();
+    assert!(err.to_string().contains("habit_ref"));
 }
 
 #[test]
-fn validate_rejects_steps_on_update_task() {
-    let tool = mutation_tool(MutationKind::UpdateTask);
-    let args = parse_args(json!({
+fn update_task_rejects_steps() {
+    let err = serde_json::from_value::<UpdateTaskArgs>(json!({
         "task_ref": "#1",
         "steps": [{"position": 1, "title": "s", "start_time": "09:00", "end_time": "10:00", "avg_minutes": 60}],
-    }));
-    let err = tool.validate_args(&args).unwrap_err();
-    assert_eq!(err.field(), Some("steps"));
+    }))
+    .unwrap_err();
+    assert!(err.to_string().contains("steps"));
 }
 
 #[test]
-fn validate_rejects_status_on_create_task() {
-    let tool = mutation_tool(MutationKind::CreateTask);
-    let args = parse_args(json!({
+fn create_task_rejects_status() {
+    let err = serde_json::from_value::<CreateTaskArgs>(json!({
         "title": "test",
         "end_at": "2026-07-30",
         "avg_minutes": 30,
         "status": "completed",
-    }));
-    let err = tool.validate_args(&args).unwrap_err();
-    assert_eq!(err.field(), Some("status"));
+    }))
+    .unwrap_err();
+    assert!(err.to_string().contains("status"));
 }
 
 #[test]
-fn validate_rejects_task_fields_on_create_habit() {
-    let tool = mutation_tool(MutationKind::CreateHabit);
-    let args = parse_args(json!({
+fn create_habit_rejects_task_fields() {
+    let err = serde_json::from_value::<CreateHabitArgs>(json!({
         "title": "jogging",
         "recurrence": "FREQ=DAILY",
         "start_time": "06:00",
         "end_time": "07:00",
         "avg_minutes": 60,
         "task_ref": "#1",
-    }));
-    let err = tool.validate_args(&args).unwrap_err();
-    assert_eq!(err.field(), Some("task_ref"));
+    }))
+    .unwrap_err();
+    assert!(err.to_string().contains("task_ref"));
 }
 
 #[test]
-fn validate_rejects_schedule_fields_on_delete_task() {
-    let tool = mutation_tool(MutationKind::DeleteTask);
-    let args = parse_args(json!({
+fn delete_task_rejects_schedule_fields() {
+    let err = serde_json::from_value::<DeleteTaskArgs>(json!({
         "task_ref": "#1",
         "mode": "full",
-    }));
-    let err = tool.validate_args(&args).unwrap_err();
-    assert_eq!(err.field(), Some("mode"));
+    }))
+    .unwrap_err();
+    assert!(err.to_string().contains("mode"));
 }
 
 #[test]
-fn validate_allows_relevant_fields_on_create_task() {
-    let tool = mutation_tool(MutationKind::CreateTask);
-    let args = parse_args(json!({
+fn create_task_accepts_relevant_fields() {
+    let args = serde_json::from_value::<CreateTaskArgs>(json!({
         "title": "test",
         "end_at": "2026-07-30",
         "avg_minutes": 30,
@@ -1188,15 +1215,23 @@ fn validate_allows_relevant_fields_on_create_task() {
         "why": "reason",
         "warnings": ["watch out"],
     }));
-    assert!(tool.validate_args(&args).is_ok());
+    assert!(args.is_ok());
 }
 
 #[test]
-fn validate_allows_only_task_ref_on_delete_task() {
-    let tool = mutation_tool(MutationKind::DeleteTask);
-    let args = parse_args(json!({
+fn delete_task_accepts_only_task_ref() {
+    let args = serde_json::from_value::<DeleteTaskArgs>(json!({
         "task_ref": "#1",
         "why": "done",
     }));
-    assert!(tool.validate_args(&args).is_ok());
+    assert!(args.is_ok());
+}
+
+#[test]
+fn create_task_requires_mandatory_fields() {
+    let err = serde_json::from_value::<CreateTaskArgs>(json!({
+        "title": "test",
+    }))
+    .unwrap_err();
+    assert!(err.to_string().contains("end_at"));
 }

@@ -156,7 +156,7 @@ pub enum ToolExposure {
 /// Type-safe name for every tool registered with [`ToolRegistry`].
 ///
 /// Replaces the scattered `&'static str` literals that were previously returned
-/// by `Tool::name()` / `MutationKind::name()`. The string representation
+/// by `Tool::name()`. The string representation
 /// (`into()`, provided by strum's `IntoStaticStr`) is the wire format sent to
 /// the LLM; the enum variants give compile-time protection against typos at
 /// registration and call sites.
