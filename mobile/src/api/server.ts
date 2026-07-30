@@ -20,7 +20,8 @@ function isAlreadyRunningError(err: unknown): boolean {
   const message = err instanceof Error ? err.message : String(err);
   return (
     message.includes('already running') ||
-    message.includes('ERR_ALREADY_RUNNING')
+    message.includes('ERR_ALREADY_RUNNING') ||
+    message.includes('Address already in use')
   );
 }
 
