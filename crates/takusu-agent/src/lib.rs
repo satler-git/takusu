@@ -8,6 +8,7 @@ pub mod llm;
 pub mod permissions;
 pub mod runner;
 pub mod tool;
+pub mod tool_stats;
 pub mod tools;
 pub mod transport;
 pub mod tts_queue;
@@ -28,6 +29,7 @@ pub use tool::{
     deserialize_trimmed_optional, deserialize_trimmed_required, inferred_field_schema,
     inferred_fields_schema, normalize_schema,
 };
+pub use tool_stats::{ToolStat, ToolStats, ToolStatsSnapshot};
 pub use user_input::{
     StubUserInputProvider, UserInputAnswer, UserInputProvider, UserInputQuestion,
 };
@@ -230,6 +232,7 @@ pub struct AgentSession {
     skills_index: Mutex<Option<String>>,
     /// Tools discovered via `tool_search` during the current turn.
     discovered_tools: Mutex<HashSet<String>>,
+    tool_stats: Arc<ToolStats>,
 }
 
 impl AgentSession {
@@ -289,6 +292,7 @@ impl AgentSession {
             bundled_skills_synced: std::sync::atomic::AtomicBool::new(false),
             skills_index: Mutex::new(None),
             discovered_tools: Mutex::new(HashSet::new()),
+            tool_stats: ToolStats::shared(),
         };
         tracing::info!(session_id = %session.session_id, "agent session created");
         session
@@ -763,6 +767,7 @@ impl AgentSession {
                 {
                     Ok(output) => {
                         tracing::info!(session_id = %self.session_id, tool = %call.name, is_error = output.is_error, "tool call completed");
+                        self.tool_stats.record(&call.name, output.is_error);
                         if output.why.is_some() {
                             *approval_why = output.why;
                         }
@@ -788,6 +793,7 @@ impl AgentSession {
                     }
                     Err(e) if e.is_recoverable() => {
                         tracing::warn!(session_id = %self.session_id, tool = %call.name, error = %e, "tool call recoverable error");
+                        self.tool_stats.record(&call.name, true);
                         let content = e.to_llm_content(&call.name);
                         emit(TurnEvent::ToolResult {
                             call_id: tool_call_id,
@@ -806,6 +812,7 @@ impl AgentSession {
             };
             results.push(msg);
         }
+        self.tool_stats.flush();
         Ok(results)
     }
 

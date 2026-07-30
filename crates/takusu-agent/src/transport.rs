@@ -403,6 +403,8 @@ pub fn router(state: Arc<AgentApiState>) -> Router {
             post(resolve_user_input),
         )
         .route("/sessions/{id}", delete(delete_session))
+        .route("/stats/tools", get(get_tool_stats))
+        .route("/stats/tools", delete(clear_tool_stats))
         .with_state(state)
 }
 
@@ -982,6 +984,32 @@ async fn delete_session(
         }
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
+}
+
+async fn get_tool_stats(
+    State(state): State<Arc<AgentApiState>>,
+    headers: HeaderMap,
+) -> Response {
+    if let Err(status) = auth_token(&state, &headers).await {
+        return status.into_response();
+    }
+    let snapshot = crate::ToolStats::shared().snapshot();
+    Json(Versioned {
+        version: API_VERSION,
+        value: snapshot,
+    })
+    .into_response()
+}
+
+async fn clear_tool_stats(
+    State(state): State<Arc<AgentApiState>>,
+    headers: HeaderMap,
+) -> Response {
+    if let Err(status) = auth_token(&state, &headers).await {
+        return status.into_response();
+    }
+    crate::ToolStats::shared().clear();
+    StatusCode::NO_CONTENT.into_response()
 }
 
 fn authorized(headers: &HeaderMap, token: &str) -> bool {

@@ -60,6 +60,16 @@ export interface AgentUpdateSettings {
   audio?: AgentAudioSettings;
 }
 
+export interface ToolStat {
+  count: number;
+  error_count: number;
+  last_used: string | null;
+}
+
+export interface ToolStatsSnapshot {
+  tools: Record<string, ToolStat>;
+}
+
 export class AgentClient {
   private readonly baseUrl: string;
   private readonly token: string;
@@ -368,5 +378,13 @@ export class AgentClient {
       '/api/agent/v1/settings',
       { version: 1, ...settings },
     );
+  }
+
+  async getToolStats(): Promise<ToolStatsSnapshot> {
+    return this.request<ToolStatsSnapshot>('GET', '/api/agent/v1/stats/tools');
+  }
+
+  async clearToolStats(): Promise<void> {
+    await this.request<void>('DELETE', '/api/agent/v1/stats/tools');
   }
 }

@@ -23,13 +23,16 @@ import {
 import { useIsFocused, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { IconButton, SegmentedButtons } from 'react-native-paper';
-import { useServer } from '@/src/api/ServerProvider';
+import * as Clipboard from 'expo-clipboard';
+import { useServer, DEFAULT_PORT } from '@/src/api/ServerProvider';
+import { AgentClient, type ToolStatsSnapshot } from '@/src/api/agentClient';
 import { logError, showError } from '@/src/api/errors';
 import { parseSchedule } from '@/src/api/types';
 import type { HabitRow, ScheduleEntry, TaskRow } from '@/src/api/types';
 import { formatDuration } from '@/src/utils/duration';
 import { useTheme, habitColorFor, type ColorSet } from '@/src/theme';
 import { haptic } from '@/src/components/haptics';
+import { useTopToast } from '@/src/components/TopToast';
 import { dateKey, todayDateKey } from '@/src/utils/dateKey';
 
 type Period = '7' | '30' | '90' | 'all';
@@ -521,6 +524,153 @@ function FutureForecast({
   );
 }
 
+function relativeTime(iso: string | null): string {
+  if (!iso) return '';
+  const then = Date.parse(iso);
+  if (Number.isNaN(then)) return '';
+  const diffSec = Math.max(0, Math.round((Date.now() - then) / 1000));
+  if (diffSec < 60) return 'たった今';
+  const diffMin = Math.round(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}分前`;
+  const diffHr = Math.round(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}時間前`;
+  const diffDay = Math.round(diffHr / 24);
+  return `${diffDay}日前`;
+}
+
+function ToolUsageSection({
+  snapshot,
+  onCopy,
+  onClear,
+  copying,
+  clearing,
+}: {
+  snapshot: ToolStatsSnapshot | null;
+  onCopy: () => void;
+  onClear: () => void;
+  copying: boolean;
+  clearing: boolean;
+}) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+
+  const entries = useMemo(() => {
+    if (!snapshot) return [];
+    return Object.entries(snapshot.tools).sort(
+      (a, b) => b[1].count - a[1].count,
+    );
+  }, [snapshot]);
+
+  const totals = useMemo(() => {
+    let calls = 0;
+    let errors = 0;
+    for (const [, stat] of entries) {
+      calls += stat.count;
+      errors += stat.error_count;
+    }
+    return { calls, errors };
+  }, [entries]);
+
+  const maxCount = entries.length > 0 ? entries[0][1].count : 1;
+
+  return (
+    <View style={styles.section}>
+      <View style={styles.toolHeader}>
+        <Text style={[styles.sectionTitle, { color: colors.black }]}>
+          ツール使用状況
+        </Text>
+        {entries.length > 0 && (
+          <Text style={[styles.toolTotal, { color: colors.gray }]}>
+            {totals.calls} 回・{entries.length} ツール
+            {totals.errors > 0 ? `・${totals.errors} エラー` : ''}
+          </Text>
+        )}
+      </View>
+
+      {entries.length === 0 ? (
+        <Text style={[styles.toolEmpty, { color: colors.gray }]}>
+          まだツール使用の記録がありません
+        </Text>
+      ) : (
+        <View style={styles.toolList}>
+          {entries.map(([name, stat]) => {
+            const ratio = maxCount > 0 ? stat.count / maxCount : 0;
+            return (
+              <View key={name} style={styles.toolRow}>
+                <View style={styles.toolRowTop}>
+                  <Text
+                    style={[styles.toolName, { color: colors.black }]}
+                    numberOfLines={1}
+                  >
+                    {name}
+                  </Text>
+                  <Text style={[styles.toolCount, { color: colors.brand }]}>
+                    {stat.count}
+                  </Text>
+                </View>
+                <View
+                  style={[
+                    styles.toolTrack,
+                    { backgroundColor: colors.grayLight },
+                  ]}
+                >
+                  <View
+                    style={[
+                      styles.toolBar,
+                      {
+                        width: `${Math.max(ratio * 100, 4)}%`,
+                        backgroundColor:
+                          stat.error_count > 0 ? colors.warning : colors.brand,
+                      },
+                    ]}
+                  />
+                </View>
+                <View style={styles.toolRowBottom}>
+                  <Text style={[styles.toolMeta, { color: colors.gray }]}>
+                    {relativeTime(stat.last_used)}
+                  </Text>
+                  {stat.error_count > 0 && (
+                    <Text style={[styles.toolError, { color: colors.red }]}>
+                      {stat.error_count} エラー
+                    </Text>
+                  )}
+                </View>
+              </View>
+            );
+          })}
+        </View>
+      )}
+
+      <View style={styles.toolActions}>
+        <View style={styles.toolActionButton}>
+          <IconButton
+            icon={copying ? 'loading' : 'content-copy'}
+            iconColor={colors.brand}
+            size={20}
+            onPress={onCopy}
+            disabled={copying || entries.length === 0}
+          />
+          <Text style={[styles.toolActionLabel, { color: colors.brand }]}>
+            JSON コピー
+          </Text>
+        </View>
+        <View style={styles.toolActionButton}>
+          <IconButton
+            icon={clearing ? 'loading' : 'delete-outline'}
+            iconColor={colors.red}
+            size={20}
+            onPress={onClear}
+            disabled={clearing || entries.length === 0}
+          />
+          <Text style={[styles.toolActionLabel, { color: colors.red }]}>
+            クリア
+          </Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
 const makeStyles = (colors: ColorSet) =>
   StyleSheet.create({
     container: {
@@ -711,14 +861,84 @@ const makeStyles = (colors: ColorSet) =>
       fontSize: 15,
       fontWeight: '600',
     },
+    toolHeader: {
+      flexDirection: 'row',
+      alignItems: 'baseline',
+      justifyContent: 'space-between',
+      marginBottom: 8,
+    },
+    toolTotal: {
+      fontSize: 12,
+    },
+    toolEmpty: {
+      fontSize: 13,
+      paddingVertical: 8,
+    },
+    toolList: {
+      gap: 12,
+    },
+    toolRow: {
+      gap: 4,
+    },
+    toolRowTop: {
+      flexDirection: 'row',
+      alignItems: 'baseline',
+      justifyContent: 'space-between',
+    },
+    toolName: {
+      flex: 1,
+      fontSize: 13,
+      fontFamily: 'monospace',
+    },
+    toolCount: {
+      fontSize: 15,
+      fontWeight: '700',
+      fontVariant: ['tabular-nums'],
+    },
+    toolTrack: {
+      height: 6,
+      borderRadius: 3,
+      overflow: 'hidden',
+    },
+    toolBar: {
+      height: '100%',
+      borderRadius: 3,
+    },
+    toolRowBottom: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    toolMeta: {
+      fontSize: 11,
+    },
+    toolError: {
+      fontSize: 11,
+      fontWeight: '600',
+    },
+    toolActions: {
+      flexDirection: 'row',
+      gap: 24,
+      marginTop: 16,
+      justifyContent: 'center',
+    },
+    toolActionButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    toolActionLabel: {
+      fontSize: 13,
+      fontWeight: '600',
+    },
   });
 
 export function StatsView() {
-  const { client } = useServer();
+  const { client, workersToken, ready } = useServer();
   const router = useRouter();
   const { theme, colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const insets = useSafeAreaInsets();
+  const { showTopToast } = useTopToast();
 
   const [tasks, setTasks] = useState<TaskRow[]>([]);
   const [schedule, setSchedule] = useState<ScheduleEntry[]>([]);
@@ -726,12 +946,20 @@ export function StatsView() {
   const [serverTz, setServerTz] = useState<string | undefined>();
   const [loading, setLoading] = useState(false);
   const [period, setPeriod] = useState<Period>('30');
+  const [toolStats, setToolStats] = useState<ToolStatsSnapshot | null>(null);
+  const [copying, setCopying] = useState(false);
+  const [clearing, setClearing] = useState(false);
+
+  const agentClient = useMemo(
+    () => new AgentClient(`http://127.0.0.1:${DEFAULT_PORT}`, workersToken),
+    [workersToken],
+  );
 
   const refresh = useCallback(async () => {
     if (!client) return;
     setLoading(true);
     try {
-      const [taskList, sched, habitList, settings] = await Promise.all([
+      const [taskList, sched, habitList, settings, tools] = await Promise.all([
         client.listTasks(),
         client.getSchedule().catch((e) => {
           logError('スケジュール取得', e);
@@ -745,17 +973,24 @@ export function StatsView() {
           logError('設定取得', e);
           return null;
         }),
+        ready && workersToken
+          ? agentClient.getToolStats().catch((e) => {
+              logError('ツール統計取得', e);
+              return null;
+            })
+          : Promise.resolve(null),
       ]);
       setTasks(taskList);
       setSchedule(sched ? parseSchedule(sched.schedule) : []);
       setHabits(habitList);
       setServerTz(settings?.tz);
+      setToolStats(tools);
     } catch (e) {
       showError(e, '統計データの取得に失敗');
     } finally {
       setLoading(false);
     }
-  }, [client]);
+  }, [client, agentClient, ready, workersToken]);
 
   const isFocused = useIsFocused();
   useEffect(() => {
@@ -791,6 +1026,34 @@ export function StatsView() {
   function handlePeriodChange(value: string) {
     haptic.select();
     setPeriod(value as Period);
+  }
+
+  async function handleCopyToolStats() {
+    if (!toolStats) return;
+    setCopying(true);
+    try {
+      await Clipboard.setStringAsync(JSON.stringify(toolStats, null, 2));
+      haptic.success();
+      showTopToast('ツール統計の JSON をコピーしました');
+    } catch (e) {
+      showError(e, 'コピーに失敗');
+    } finally {
+      setCopying(false);
+    }
+  }
+
+  async function handleClearToolStats() {
+    setClearing(true);
+    try {
+      await agentClient.clearToolStats();
+      setToolStats({ tools: {} });
+      haptic.success();
+      showTopToast('ツール統計をクリアしました');
+    } catch (e) {
+      showError(e, 'クリアに失敗');
+    } finally {
+      setClearing(false);
+    }
   }
 
   return (
@@ -1005,6 +1268,14 @@ export function StatsView() {
                 })}
               </View>
             )}
+
+            <ToolUsageSection
+              snapshot={toolStats}
+              onCopy={handleCopyToolStats}
+              onClear={handleClearToolStats}
+              copying={copying}
+              clearing={clearing}
+            />
           </>
         )}
       </ScrollView>

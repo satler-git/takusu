@@ -266,6 +266,12 @@ enum AgentCommands {
         #[command(subcommand)]
         command: AgentConfigCommands,
     },
+    /// Show or clear tool usage statistics
+    Stats {
+        /// Clear all statistics
+        #[arg(long)]
+        clear: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -1262,6 +1268,7 @@ async fn run(
                     AgentPermissionsCommands::Unset { key } => agent::permissions_unset(&key)?,
                 },
             },
+            AgentCommands::Stats { clear } => agent::stats(clear)?,
         },
         #[cfg(feature = "mcp")]
         Commands::Mcp => mcp::run(app).await?,
