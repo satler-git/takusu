@@ -4,7 +4,7 @@ use crate::auth;
 use crate::error::WorkerError;
 use crate::handlers::auth::storage;
 use crate::models::TokenRow;
-use takusu_storage::Storage;
+use takusu_contracts::Storage;
 
 #[derive(serde::Deserialize)]
 pub struct CreateTokenBody {

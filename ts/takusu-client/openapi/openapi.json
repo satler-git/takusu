@@ -11379,7 +11379,7 @@
         ]
       },
       "SimilarityMetric": {
-        "description": "Similarity metric used by `Similarity` (see `doc/code-quality-issues.md` #33).\n\nKept in `takusu-types` so `takusu-storage`, `takusu-client`, and\n`takusu-worker` can all use it without changing the crate dependency\ngraph.",
+        "description": "Similarity metric used by `Similarity` (see `doc/code-quality-issues.md` #33).\n\nKept in `takusu-types` so `takusu-contracts`, `takusu-client`, and\n`takusu-worker` can all use it without changing the crate dependency\ngraph.",
         "type": "string",
         "enum": [
           "dice"
@@ -11425,7 +11425,7 @@
         "type": "string"
       },
       "Solver": {
-        "description": "Phase 5 solver label (see `doc/type-safety-issues.md` §3.3).\n\nKept in `takusu-types` because `takusu-core` does not depend on `serde`,\nand `takusu-storage` / `takusu-client` / `takusu-worker` all depend on `takusu-types`.",
+        "description": "Phase 5 solver label (see `doc/type-safety-issues.md` §3.3).\n\nKept in `takusu-types` because `takusu-core` does not depend on `serde`,\nand `takusu-contracts` / `takusu-client` / `takusu-worker` all depend on `takusu-types`.",
         "type": "string",
         "enum": [
           "sa",
@@ -11786,7 +11786,7 @@
         ]
       },
       "TaskStatus": {
-        "description": "Phase 1 type-safe labels (see `doc/type-safety-issues.md` §3.1 / 3.2 / 3.5 / 3.6).\n\nThese are intentionally kept in `takusu-types` so that `takusu-storage`,\n`takusu-client`, and `takusu-worker` can all use them without changing the\ncrate dependency graph.",
+        "description": "Phase 1 type-safe labels (see `doc/type-safety-issues.md` §3.1 / 3.2 / 3.5 / 3.6).\n\nThese are intentionally kept in `takusu-types` so that `takusu-contracts`,\n`takusu-client`, and `takusu-worker` can all use them without changing the\ncrate dependency graph.",
         "type": "string",
         "enum": [
           "pending",
@@ -11830,7 +11830,7 @@
         ]
       },
       "TimeOfDay": {
-        "description": "A time of day in `HH:MM` format with minutes snapped to 5-minute slots.\n\nSerialized as a `\"HH:MM\"` string for JSON and stored as `TEXT` in SQLite.\nThis type was originally defined in `takusu-habit` and has been moved here\nso that `takusu-storage` / `takusu-client` / `takusu-worker` can use it\nwithout depending on `takusu-habit`.",
+        "description": "A time of day in `HH:MM` format with minutes snapped to 5-minute slots.\n\nSerialized as a `\"HH:MM\"` string for JSON and stored as `TEXT` in SQLite.\nThis type was originally defined in `takusu-habit` and has been moved here\nso that `takusu-contracts` / `takusu-client` / `takusu-worker` can use it\nwithout depending on `takusu-habit`.",
         "type": "string"
       },
       "Timestamp": {

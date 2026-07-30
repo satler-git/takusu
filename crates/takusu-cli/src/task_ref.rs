@@ -1,6 +1,6 @@
 //! Display reference helpers for tasks.
 use std::collections::HashMap;
-use takusu_storage::TaskRow;
+use takusu_contracts::TaskRow;
 
 /// Build the display reference for a task.
 /// Habit-generated tasks show `h{habit_display_id}#{task_display_id}` (#305 / #933);

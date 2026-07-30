@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 
 use serde::Serialize;
-use takusu_storage::{
+use takusu_contracts::{
     GoogleCalEventRow, GoogleCalSettingsRow, ScheduleEntry, UpdateGoogleCalSettings,
 };
 

@@ -11,7 +11,7 @@ ratatui = "0.30"
 tokio = { workspace = true }
 jiff = { workspace = true }
 takusu-local-lib = { workspace = true, features = ["sqlite"] }
-takusu-storage = { workspace = true }
+takusu-contracts = { workspace = true }
 takusu-habit = { workspace = true }
 takusu-types = { workspace = true }
 serde_json = { workspace = true }

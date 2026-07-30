@@ -9,7 +9,7 @@ use crate::models::{
     UpdateHabit,
 };
 use crate::validate::{validate_minutes, validate_recurrence, validate_scheduled_span_dates};
-use takusu_storage::{Storage, Validate};
+use takusu_contracts::{Storage, Validate};
 
 pub async fn list(_req: worker::Request, env: Env) -> Result<Response, WorkerError> {
     let store = storage(&env)?;

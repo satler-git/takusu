@@ -20,7 +20,7 @@ takusu/
 │   ├── takusu-core/        # プランナー本体（データ型・スケジューリング算法）
 │   ├── takusu-local/       # ローカルサーバー (axum + SQLite)
 │   ├── takusu-local-lib/   # ビジネスロジック（サーバーと CLI の共通）
-│   ├── takusu-storage/     # プラガブル Storage trait + 共有型
+│   ├── takusu-contracts/     # プラガブル Storage trait + 共有型
 │   ├── takusu-ical/        # iCalendar パーサー
 │   ├── takusu-habit/       # RRULE 展開エンジン
 │   ├── takusu-audio/       # 録音 + STT バックエンド + TTS トレイト

@@ -18,7 +18,7 @@ use takusu_local_lib::config::{LocalConfig, StorageKind};
 use takusu_local_lib::storage_sqlite::SqliteStorage;
 use takusu_local_lib::storage_workers::WorkersStorage;
 use takusu_local_lib::token_cache::TokenCache;
-use takusu_storage::Storage;
+use takusu_contracts::Storage;
 use tokio::sync::RwLock;
 
 /// Build the storage backend described by `cfg`. `workers_token` (resolved from

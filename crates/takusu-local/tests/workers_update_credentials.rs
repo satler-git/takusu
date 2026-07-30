@@ -6,7 +6,7 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::routing::get;
 use axum::{Json, Router};
 use takusu_local_lib::storage_workers::WorkersStorage;
-use takusu_storage::{Storage, TaskQuery, TaskRow};
+use takusu_contracts::{Storage, TaskQuery, TaskRow};
 use tokio::net::TcpListener;
 
 #[derive(Clone, Default)]

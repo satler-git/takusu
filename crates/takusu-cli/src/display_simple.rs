@@ -4,7 +4,7 @@
 //! [`crate::display_common`]; this module only owns the line-oriented output
 //! and the simple-specific datetime format.
 use std::collections::HashMap;
-use takusu_storage::{
+use takusu_contracts::{
     HabitRow, HabitScheduledSpanRow, HabitStepRow, ScheduleEntry, SkillRow, TaskRow, TokenRow,
 };
 use takusu_types::{TaskStatus, Timestamp};

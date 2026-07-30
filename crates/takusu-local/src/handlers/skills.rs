@@ -2,7 +2,7 @@ use axum::Json;
 use axum::extract::{Extension, Path, State};
 use axum::http::StatusCode;
 use takusu_local_lib::TokenClaims;
-use takusu_storage::{CreateSkill, SkillRow, UpdateSkill};
+use takusu_contracts::{CreateSkill, SkillRow, UpdateSkill};
 
 use crate::error::{HttpError, NoContent};
 use crate::state::AppState;

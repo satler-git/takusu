@@ -328,7 +328,7 @@ detection; integration test event → notification with actions → immediate-la
 
 ### WI-8: Multi-device arbitration
 
-**Files**: new migration in both backends (`devices` table), `takusu-storage` trait + models,
+**Files**: new migration in both backends (`devices` table), `takusu-contracts` trait + models,
 `takusu-local-lib` app/routes, `takusu-worker` parity, `takusu-client`, daemon and Android service
 heartbeat loops, settings UI for the priority list.
 

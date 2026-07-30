@@ -41,7 +41,7 @@ takusu-types = { path = "crates/takusu-types" }
 takusu-search = { path = "crates/takusu-search" }
 takusu-audio = { path = "crates/takusu-audio" }
 takusu-agent = { path = "crates/takusu-agent", default-features = false }
-takusu-storage = { path = "crates/takusu-storage" }
+takusu-contracts = { path = "crates/takusu-contracts" }
 takusu-habit = { path = "crates/takusu-habit" }
 takusu-local-lib = { path = "crates/takusu-local-lib", default-features = false }
 takusu-local = { path = "crates/takusu-local", default-features = false }

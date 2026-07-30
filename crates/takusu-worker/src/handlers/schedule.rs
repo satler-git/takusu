@@ -5,7 +5,7 @@ use crate::error::WorkerError;
 use crate::handlers::auth::storage;
 use crate::handlers::tokens::{json_created, json_ok, parse_json};
 use crate::models::SaveScheduleRequest;
-use takusu_storage::Storage;
+use takusu_contracts::Storage;
 
 pub async fn get(_req: worker::Request, env: Env) -> Result<Response, WorkerError> {
     let store = storage(&env)?;

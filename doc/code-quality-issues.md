@@ -248,7 +248,7 @@
 
 ---
 
-## 14. `TaskQuery.status` が `Option<String>` で `"overdue"` を特別扱いしている（`takusu-local-lib` / `takusu-storage`）
+## 14. `TaskQuery.status` が `Option<String>` で `"overdue"` を特別扱いしている（`takusu-local-lib` / `takusu-contracts`）
 
 - **問題の要約**: `TaskQuery.status` が `Option<String>` で、`storage_sqlite.rs` が `if v == "overdue"` だけ特別ルートを持ち、それ以外は `WHERE status = ?` に流す。`"overdue"` は `TaskStatus` enum に存在しない疑似状態で、文字列だからこそ混入できる。
 - **現在の型**: `Option<String>`
@@ -256,7 +256,7 @@
   - `Option<TaskStatus>` にし、`overdue` は別フィールド（`include_overdue: bool` または `overdue_only: bool`）で表現する
 - **修正の重み**: 小
 - **該当箇所**:
-  - `crates/takusu-storage/src/model.rs:184`（`TaskQuery.status`）
+  - `crates/takusu-contracts/src/model.rs:184`（`TaskQuery.status`）
   - `crates/takusu-local-lib/src/storage_sqlite.rs:480-488`（`"overdue"` 特別扱い）
 
 ---
@@ -504,7 +504,7 @@
 
 ---
 
-## ~~31. クレートのレイヤー違反とドメイン型の 3 crate 重複（`takusu-storage` / `takusu-client` / `takusu-worker`）~~ FIXED
+## ~~31. クレートのレイヤー違反とドメイン型の 3 crate 重複（`takusu-contracts` / `takusu-client` / `takusu-worker`）~~ FIXED
 
 > **関連 issue**: [takusu-dev/takusu#1294](https://github.com/takusu-dev/takusu/issues/1294)「Crate layer violations and 3-crate duplication of domain types」
 
@@ -512,36 +512,36 @@
 
 - `takusu-util` を `takusu-types` に rename し、L0（foundation）に配置。
 - `takusu-search/src/date.rs`（日付 parse）を `takusu-types/src/date.rs` に統合。`takusu-search` は `takusu-types` に依存する独立 L0 に残留（`search.rs` / `memory.rs` は検索ドメインロジックのため）。
-- `takusu-types` からの `takusu-search` re-export を廃止。消費者（`takusu-storage` / `takusu-worker` / `takusu-local-lib` / `takusu-local`）は `takusu-search` を直接依存に持ち、facade 反パターンを解消。
+- `takusu-types` からの `takusu-search` re-export を廃止。消費者（`takusu-contracts` / `takusu-worker` / `takusu-local-lib` / `takusu-local`）は `takusu-search` を直接依存に持ち、facade 反パターンを解消。
 - 最終依存グラフ:
   ```
   L0: takusu-types (← date.rs 統合), takusu-search (→ types), takusu-ical, takusu-audio
-  L1: takusu-storage (→ types, search), takusu-core (→ types), takusu-client (→ types, storage)
+  L1: takusu-contracts (→ types, search), takusu-core (→ types), takusu-client (→ types, storage)
   L2: takusu-habit (→ core, types), google-cal (→ client)
   L3: takusu-agent (→ audio, client, core, habit, types), takusu-local-lib (→ core, ical, habit, storage, types, search, google-cal)
   L4: takusu-local (→ local-lib, types, search, storage), takusu-tui (→ local-lib, storage, habit, types)
   L5: takusu-web (→ local, local-lib, storage), takusu-cli (→ ほぼ全部), takusu-android (→ local, agent, audio, client, local-lib, storage)
   特殊: takusu-worker (wasm, → types, search, storage), takusu-audio-cli (→ audio)
   ```
-- `takusu-storage` は rename せずそのまま（issue #1294 の方針に従い `takusu-types` のみ rename）。
+- `takusu-contracts` は rename せずそのまま（issue #1294 の方針に従い `takusu-types` のみ rename）。
 
 ### 31.2 workspace `Cargo.toml` の依存集中 — FIXED
 
 - 広く使われるもの（`thiserror` / `serde` / `serde_json` / `jiff` / `uuid` / `sha2` / `tracing` / `async-trait` / `rand` / `tokio` / `reqwest` / `strum` / `insta` / `inventory` / `serde_path_to_error`）は workspace 残置。
 - 少数 crate しか使わない 13 依存（`axum` / `sqlx` / `tower-http` / `sentry` / `config` / `schemars` / `petgraph` / `rust-embed` / `mime_guess` / `futures-util` / `toml` / `tracing-subscriber` / `web-time`）を個別 crate の `Cargo.toml` に移動。
-- `sqlx` は feature が crate ごとに異なるため個別化（`takusu-storage` は `derive` / `macros` のみ、`takusu-local` / `takusu-local-lib` は `runtime-tokio` / `sqlite`）。
+- `sqlx` は feature が crate ごとに異なるため個別化（`takusu-contracts` は `derive` / `macros` のみ、`takusu-local` / `takusu-local-lib` は `runtime-tokio` / `sqlite`）。
 
 ### 31.3 ドメイン型の 3 crate 重複 — FIXED
 
-- `takusu-storage/src/model.rs` をドメイン型の単一定義場所にする。
-- `#[derive(sqlx::FromRow)]` と `#[sqlx(...)]` 属性を `#[cfg_attr(feature = "sqlx", ...)]` で gate。`takusu-storage` の `sqlx` feature が `dep:sqlx` と `takusu-types/sqlx` を有効化する。
-- `takusu-client/src/lib.rs` は `pub use takusu_storage::model::*;` で共有型を re-export。クライアント専用型（`DependencyAnalysisResponse` / `SchedulePreviewRequest|Response` / `GenerateSchedule` / `Reschedule` / `MoveEntry|Response` / `SyncSettingsResponse` / `UpdateSyncSettings` / `OAuthUrlResponse|CallbackResponse` / `TriggerSyncResponse` / `DeleteAllGcalResponse|Failure` / `SettingsResponse`）のみ残置。
-- `takusu-worker/src/models.rs` は `pub use takusu_storage::model::*;` と `pub use takusu_types::{DependencyList, Quantity};` のみ。`MemoryRow` の `normalized_key` / `normalized_content` フィールド（`#[serde(skip_serializing)]`）が共有型に統合され、agent テストも更新。
+- `takusu-contracts/src/model.rs` をドメイン型の単一定義場所にする。
+- `#[derive(sqlx::FromRow)]` と `#[sqlx(...)]` 属性を `#[cfg_attr(feature = "sqlx", ...)]` で gate。`takusu-contracts` の `sqlx` feature が `dep:sqlx` と `takusu-types/sqlx` を有効化する。
+- `takusu-client/src/lib.rs` は `pub use takusu_contracts::model::*;` で共有型を re-export。クライアント専用型（`DependencyAnalysisResponse` / `SchedulePreviewRequest|Response` / `GenerateSchedule` / `Reschedule` / `MoveEntry|Response` / `SyncSettingsResponse` / `UpdateSyncSettings` / `OAuthUrlResponse|CallbackResponse` / `TriggerSyncResponse` / `DeleteAllGcalResponse|Failure` / `SettingsResponse`）のみ残置。
+- `takusu-worker/src/models.rs` は `pub use takusu_contracts::model::*;` と `pub use takusu_types::{DependencyList, Quantity};` のみ。`MemoryRow` の `normalized_key` / `normalized_content` フィールド（`#[serde(skip_serializing)]`）が共有型に統合され、agent テストも更新。
 - wasm ビルド確認済み: `cargo check -p takusu-worker --target wasm32-unknown-unknown` が通り、`sqlx` は WASM バンドルに入らない。
 
 ---
 
-## 32. `depends` / `depends_on` / `schedule` が JSON 文字列で保存されている（`takusu-storage` / `takusu-worker`）
+## 32. `depends` / `depends_on` / `schedule` が JSON 文字列で保存されている（`takusu-contracts` / `takusu-worker`）
 
 - **問題の要約**: `TaskRow.depends` / `HabitStepRow.depends_on` が `Vec<String>` を JSON 文字列化した `String` で保存されている。`ScheduleRow.schedule` も `Vec<ScheduleEntry>` の JSON 文字列。読み出し側が毎回 `serde_json::from_str` で parse し、書き込み側が `serde_json::to_string` で serialize する。parse 失敗が実行時まで検出されず、型安全性がない。
 - **現在の型**: `String`（JSON 文字列）
@@ -550,16 +550,16 @@
   - または `DependencyList(Vec<TaskId>)` / `ScheduleData(Vec<ScheduleEntry>)` newtype を定義し、serde アダプタで JSON 文字列との互換性を保つ
 - **修正の重み**: 中
 - **該当箇所**:
-  - `crates/takusu-storage/src/model.rs:20`（`TaskRow.depends`）
-  - `crates/takusu-storage/src/model.rs:354`（`HabitStepRow.depends_on`）
-  - `crates/takusu-storage/src/model.rs:465`（`ScheduleRow.schedule`）
+  - `crates/takusu-contracts/src/model.rs:20`（`TaskRow.depends`）
+  - `crates/takusu-contracts/src/model.rs:354`（`HabitStepRow.depends_on`）
+  - `crates/takusu-contracts/src/model.rs:465`（`ScheduleRow.schedule`）
   - `crates/takusu-worker/src/models.rs:21, 259, 318`（同上）
   - `crates/takusu-worker/src/handlers/tasks.rs:184, 485`（`serde_json::to_string`）
   - `crates/takusu-worker/src/handlers/schedule.rs:26, 148`（同上）
 
 ---
 
-## 33. `SimilarTaskRow.similarity` が `"dice:0.xxx"` の文字列（`takusu-storage` / `takusu-worker`）
+## 33. `SimilarTaskRow.similarity` が `"dice:0.xxx"` の文字列（`takusu-contracts` / `takusu-worker`）
 
 - **問題の要約**: 類似度スコアが `"dice:0.85"` のような文字列で保存されている。数値比較や集計ができず、metric 名とスコアが一つの文字列に詰め込まれているため、取り出す側が split して parse する必要がある。
 - **現在の型**: `String`
@@ -570,19 +570,19 @@
   ```
 - **修正の重み**: 小
 - **該当箇所**:
-  - `crates/takusu-storage/src/model.rs:689`
+  - `crates/takusu-contracts/src/model.rs:689`
   - `crates/takusu-worker/src/models.rs:520`
 
 ---
 
-## 34. `MemoryRow.source` が `String` で未検証（`takusu-storage`）
+## 34. `MemoryRow.source` が `String` で未検証（`takusu-contracts`）
 
 - **問題の要約**: Memory の `source` が `String` で、`"user_confirmed"` / `"llm_proposed"` 等の固定値のはずが型で保証されていない。
 - **現在の型**: `String`
 - **推奨型**: `MemorySource` enum（`UserConfirmed` / `LlmProposed` / `SystemGenerated`）
 - **修正の重み**: 小
 - **該当箇所**:
-  - `crates/takusu-storage/src/model.rs:619`
+  - `crates/takusu-contracts/src/model.rs:619`
 
 ---
 
@@ -775,7 +775,7 @@
 
 ---
 
-## 48. `Storage` trait の query パラメータが stringly-typed（`takusu-storage`）
+## 48. `Storage` trait の query パラメータが stringly-typed（`takusu-contracts`）
 
 - **問題の要約**: `TaskQuery` / `MemoryQuery` が `status: Option<String>` / `kind: Option<String>` / `subject_type: Option<String>` / `from: Option<String>` / `until: Option<String>` を持つ。`Storage` trait の境界で型安全性が失われ、各実装が文字列を再 parse する。`from` / `until` はタイムスタンプなのに文字列で、日付形式の違いを各実装が独自に処理している。
 - **現在の型**: `Option<String>` 各種
@@ -784,8 +784,8 @@
   - `from: Option<jiff::Timestamp>` / `until: Option<jiff::Timestamp>`
 - **修正の重み**: 中
 - **該当箇所**:
-  - `crates/takusu-storage/src/model.rs:183-192`（`TaskQuery`）
-  - `crates/takusu-storage/src/model.rs:664-676`（`MemoryQuery`）
+  - `crates/takusu-contracts/src/model.rs:183-192`（`TaskQuery`）
+  - `crates/takusu-contracts/src/model.rs:664-676`（`MemoryQuery`）
 
 ---
 
@@ -907,9 +907,9 @@
 
 - **問題の要約**: ドメイン型が 3 箇所に手動重複しており、OpenAPI spec もコード生成も存在しない。フィールド追加時に 3 箇所を手動で同期する必要がある。
 - **重複箇所**:
-  - `crates/takusu-storage/src/model.rs`（1001 行、DB モデル）
+  - `crates/takusu-contracts/src/model.rs`（1001 行、DB モデル）
   - `crates/takusu-client/src/lib.rs`（1977 行、`// Types (mirrors server model.rs)`）
-  - `ts/takusu-client/src/types.ts`（539 行、`// Types mirroring takusu-client/src/lib.rs and takusu-storage/src/model.rs`）
+  - `ts/takusu-client/src/types.ts`（539 行、`// Types mirroring takusu-client/src/lib.rs and takusu-contracts/src/model.rs`）
 - **現状の依存**: `schemars = "1"` が workspace dep にあるが `takusu-agent` の LLM ツールスキーマ生成にしか使われていない。Axum（`takusu-local`）にも Cloudflare Worker（`takusu-worker`）にも OpenAPI 生成フレームワークはない。
 
 ### 54.2 `aide` vs `axum-openapi3` の比較
@@ -1008,7 +1008,7 @@
 | #26 | takusu-audio | 小 | なし | Cartesia container/encoding/emotion |
 | #27 | takusu-audio | 小 | なし | API key/URL の String 型 |
 | #29 | takusu-audio | 小 | なし | sample rate 16000 ハードコード |
-| #48 | takusu-storage | 中 | なし | Storage trait の query パラメータ型付き化 |
+| #48 | takusu-contracts | 中 | なし | Storage trait の query パラメータ型付き化 |
 | #16 | takusu-local-lib | 小 | なし | WorkersStorage HTTP メソッド統合 |
 | #17 | takusu-local-lib | 小 | なし | AppError の String 型改善 |
 
@@ -1025,9 +1025,9 @@
 | #36 | takusu-worker / local-lib | 中 | なし | UUID prefix 削除 |
 | #37 | takusu-worker | 中 | #36 | serde_json::Value in D1 query。#36 が ID 解決を単純化した後 |
 | #38 | takusu-worker | 中 | #36 | ID 解決重複。#36 と同じ handler |
-| #32 | takusu-storage / worker | 中 | なし | depends/depends_on/schedule JSON → 型付き |
-| #33 | takusu-storage / worker | 小 | なし | SimilarTaskRow.similarity 文字列 |
-| #34 | takusu-storage | 小 | なし | MemoryRow.source String |
+| #32 | takusu-contracts / worker | 中 | なし | depends/depends_on/schedule JSON → 型付き |
+| #33 | takusu-contracts / worker | 小 | なし | SimilarTaskRow.similarity 文字列 |
+| #34 | takusu-contracts | 小 | なし | MemoryRow.source String |
 | #12 | takusu-local-lib | 中 | なし | validate/parse 関数の struct 統合 |
 | #13 | takusu-local-lib | 小 | なし | RescheduleInput.mode String → enum |
 | #49 | takusu-local-lib | 中 | なし | update_task 150 行分割 |

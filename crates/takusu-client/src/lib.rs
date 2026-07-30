@@ -990,14 +990,14 @@ impl Client {
     }
 }
 
-// ── Shared domain types (re-exported from takusu-storage) ──
+// ── Shared domain types (re-exported from takusu-contracts) ──
 //
 // `TaskRow` / `CreateTask` / `HabitRow` / `ScheduleRow` / `MemoryRow` and the
-// rest of the request/response domain types live in `takusu-storage::model` so
+// rest of the request/response domain types live in `takusu-contracts::model` so
 // the server, client, and worker share a single definition (#1294). The
 // `sqlx::FromRow` derives there are gated behind the `sqlx` feature, which this
 // crate does not enable, so the re-exported types are plain serde structs here.
-pub use takusu_storage::model::*;
+pub use takusu_contracts::model::*;
 
 // ── Client-only request/response types ──
 

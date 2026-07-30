@@ -10,7 +10,7 @@ use std::collections::HashMap;
 
 use jiff::Timestamp;
 use takusu_core::{Minutes, NormalDist, ParallelMode, Point, Slots, Task as CoreTask};
-use takusu_storage::{
+use takusu_contracts::{
     CreateTask, HabitPreviewRequest, HabitPreviewTask, HabitRow, HabitStepInput, HabitStepRow,
     TaskQuery, TaskRow, UpdateTask,
 };
@@ -244,7 +244,7 @@ impl super::TakusuApp {
             for id in ids {
                 match self.storage.get_task(id).await {
                     Ok(t) => out.push(t),
-                    Err(takusu_storage::StorageError::NotFound(_)) => continue,
+                    Err(takusu_contracts::StorageError::NotFound(_)) => continue,
                     Err(e) => return Err(storage_to_app(e)),
                 }
             }

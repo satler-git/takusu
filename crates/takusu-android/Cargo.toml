@@ -19,7 +19,7 @@ takusu-agent = { path = "../takusu-agent", default-features = false }
 takusu-audio = { path = "../takusu-audio", default-features = false, features = ["hush", "sherpa"] }
 takusu-client = { workspace = true }
 takusu-local-lib = { workspace = true }
-takusu-storage = { workspace = true }
+takusu-contracts = { workspace = true }
 tokio = { workspace = true }
 axum = "0.8"
 thiserror = { workspace = true }

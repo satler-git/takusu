@@ -1,8 +1,8 @@
 //! Storage trait implementation for D1Storage — split out for readability.
 
 use async_trait::async_trait;
-use takusu_storage::storage::StorageResult;
-use takusu_storage::{
+use takusu_contracts::storage::StorageResult;
+use takusu_contracts::{
     CreateHabit, CreateHabitScheduledSpan, CreateMemory, CreateSkill, CreateTask,
     GoogleCalEventRow, GoogleCalSettingsRow, HabitRow, HabitScheduledSpanRow,
     HabitStepEstimateInput, HabitStepInput, HabitStepRow, MemoryQuery, MemoryRow, ProgressResult,
@@ -11,7 +11,7 @@ use takusu_storage::{
     TaskQuery, TaskRow, TokenCreateResponse, TokenRow, UpdateGoogleCalSettings, UpdateHabit,
     UpdateMemory, UpdateSettings, UpdateSkill, UpdateTask,
 };
-use takusu_storage::validate::validate_task_datetimes;
+use takusu_contracts::validate::validate_task_datetimes;
 use takusu_types::{
     DependencyList, EnumLabel, Minutes, Quantity, TaskStatus, TaskStatusFilter, TokenClaims,
     WindowMode,
@@ -641,7 +641,7 @@ impl Storage for D1Storage {
     }
 
     async fn save_schedule(&self, req: &SaveScheduleRequest) -> StorageResult<ScheduleRow> {
-        let schedule_json = takusu_storage::ScheduleData::new(req.entries.clone()).to_json_string();
+        let schedule_json = takusu_contracts::ScheduleData::new(req.entries.clone()).to_json_string();
         let mut stmts: Vec<worker::D1PreparedStatement> = Vec::with_capacity(1 + req.mark_scheduled_task_ids.len());
         let upsert = self.db.prepare(
             "INSERT INTO schedules (id, created_at, updated_at, schedule) VALUES ('active', strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), ?1) ON CONFLICT(id) DO UPDATE SET schedule=excluded.schedule, updated_at=excluded.updated_at",
@@ -1136,7 +1136,7 @@ impl Storage for D1Storage {
         let open_stmt = self.db.prepare(
             "SELECT id, task_id, started_at, ended_at, created_at FROM task_work_sessions WHERE task_id = ?1 AND ended_at IS NULL ORDER BY started_at ASC LIMIT 1",
         );
-        let open: Option<takusu_storage::TaskWorkSessionRow> = open_stmt.bind(&[JsValue::from_str(&full)]).map_err(d1_err)?.first(None).await.map_err(d1_err)?;
+        let open: Option<takusu_contracts::TaskWorkSessionRow> = open_stmt.bind(&[JsValue::from_str(&full)]).map_err(d1_err)?.first(None).await.map_err(d1_err)?;
         if open.is_none() && body.quantity_done > task.quantity_done {
             return Err(StorageError::BadRequest("no open work session; start work first".into()));
         }
@@ -1154,7 +1154,7 @@ impl Storage for D1Storage {
         let last_event_stmt = self.db.prepare(
             "SELECT id, task_id, at, quantity_done, delta_quantity, active_minutes, note FROM progress_events WHERE task_id = ?1 ORDER BY id DESC LIMIT 1",
         );
-        let last_event: Option<takusu_storage::ProgressEventRow> = last_event_stmt.bind(&[JsValue::from_str(&full)]).map_err(d1_err)?.first(None).await.map_err(d1_err)?;
+        let last_event: Option<takusu_contracts::ProgressEventRow> = last_event_stmt.bind(&[JsValue::from_str(&full)]).map_err(d1_err)?.first(None).await.map_err(d1_err)?;
         let active_minutes = if let Some(ref session) = open {
             let base = if let Some(ref ev) = last_event { std::cmp::max(session.started_at, ev.at) } else { session.started_at };
             takusu_types::minutes_between(&base.to_string(), &now)
@@ -1197,7 +1197,7 @@ impl Storage for D1Storage {
         .await
         .map_err(d1_err)?;
         let event_stmt = self.db.prepare("SELECT id, task_id, at, quantity_done, delta_quantity, active_minutes, note FROM progress_events WHERE id = ?1");
-        let event: takusu_storage::ProgressEventRow = event_stmt.bind(&[JsValue::from_str(&event_id)]).map_err(d1_err)?.first(None).await.map_err(d1_err)?.ok_or_else(|| StorageError::Internal("inserted progress event not found".into()))?;
+        let event: takusu_contracts::ProgressEventRow = event_stmt.bind(&[JsValue::from_str(&event_id)]).map_err(d1_err)?.first(None).await.map_err(d1_err)?.ok_or_else(|| StorageError::Internal("inserted progress event not found".into()))?;
         let task = select_one_task(&self.db, &full).await?;
         let result = ProgressResult { task, event: Some(event), suggests_completion };
         if let Some(op_id) = operation_id {
@@ -1227,7 +1227,7 @@ impl Storage for D1Storage {
         let session_stmt = self.db.prepare(
             "SELECT id, task_id, started_at, ended_at, created_at FROM task_work_sessions WHERE task_id = ?1 ORDER BY started_at ASC",
         );
-        let sessions: Vec<takusu_storage::TaskWorkSessionRow> = d1_all(&session_stmt.bind(&[JsValue::from_str(&full)]).map_err(d1_err)?).await?;
+        let sessions: Vec<takusu_contracts::TaskWorkSessionRow> = d1_all(&session_stmt.bind(&[JsValue::from_str(&full)]).map_err(d1_err)?).await?;
         let total_active_minutes: i64 = sessions.iter().map(session_minutes).sum();
         let quantity_done = original.quantity_total.unwrap_or(original.quantity_done);
         let delta_quantity = quantity_done.get() - original.quantity_done.get();
@@ -1280,11 +1280,11 @@ impl Storage for D1Storage {
         let session_stmt = self.db.prepare(
             "SELECT id, task_id, started_at, ended_at, created_at FROM task_work_sessions WHERE task_id = ?1 ORDER BY started_at ASC",
         );
-        let sessions: Vec<takusu_storage::TaskWorkSessionRow> = d1_all(&session_stmt.bind(&[JsValue::from_str(&full)]).map_err(d1_err)?).await?;
+        let sessions: Vec<takusu_contracts::TaskWorkSessionRow> = d1_all(&session_stmt.bind(&[JsValue::from_str(&full)]).map_err(d1_err)?).await?;
         let event_stmt = self.db.prepare(
             "SELECT id, task_id, at, quantity_done, delta_quantity, active_minutes, note FROM progress_events WHERE task_id = ?1 ORDER BY id ASC",
         );
-        let events: Vec<takusu_storage::ProgressEventRow> = d1_all(&event_stmt.bind(&[JsValue::from_str(&full)]).map_err(d1_err)?).await?;
+        let events: Vec<takusu_contracts::ProgressEventRow> = d1_all(&event_stmt.bind(&[JsValue::from_str(&full)]).map_err(d1_err)?).await?;
         let open_session = sessions.iter().find(|s| s.ended_at.is_none()).cloned();
         let total_active_minutes = sessions.iter().map(session_minutes).sum();
         Ok(TaskProgress { task, open_session, sessions, events, total_active_minutes })

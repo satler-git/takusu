@@ -3,7 +3,7 @@ use std::env;
 use std::fs;
 use std::io;
 use std::process::Command;
-use takusu_storage::{HabitRow, HabitStepInput, HabitStepRow, TaskRow, UpdateHabit, UpdateTask};
+use takusu_contracts::{HabitRow, HabitStepInput, HabitStepRow, TaskRow, UpdateHabit, UpdateTask};
 use takusu_types::{TaskStatus, TimeOfDay, Timestamp, WindowMode, parse_datetime_to_timestamp};
 
 use crate::task_ref::task_reference;
@@ -815,7 +815,7 @@ mod tests {
     async fn parse_and_resolve_habit_dependency_reference_round_trip() {
         use takusu_local_lib::config::LocalConfig;
         use takusu_local_lib::storage_sqlite::SqliteStorage;
-        use takusu_storage::{CreateHabit, CreateTask, Storage};
+        use takusu_contracts::{CreateHabit, CreateTask, Storage};
 
         let cfg = LocalConfig {
             db: "sqlite::memory:".into(),

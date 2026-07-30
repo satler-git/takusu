@@ -4,7 +4,7 @@ use axum::Json;
 use axum::extract::{Extension, State};
 use serde::{Deserialize, Serialize};
 use takusu_local_lib::TokenClaims;
-use takusu_storage::{SettingsRow, UpdateSettings};
+use takusu_contracts::{SettingsRow, UpdateSettings};
 
 use crate::error::HttpError;
 use crate::state::AppState;

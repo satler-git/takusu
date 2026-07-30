@@ -24,7 +24,7 @@ use takusu_local_lib::app::TakusuApp;
 use takusu_local_lib::generate_root_jwt;
 use takusu_local_lib::storage_workers::WorkersStorage;
 use takusu_local_lib::token_cache::TokenCache;
-use takusu_storage::{
+use takusu_contracts::{
     CreateHabit, CreateHabitScheduledSpan, CreateTask, GoogleCalEventRow, GoogleCalSettingsRow,
     HabitRow, HabitScheduledSpanRow, HabitStepInput, HabitStepRow, SaveScheduleRequest,
     ScheduleRow, SettingsRow, Storage, StorageError, TaskQuery, TaskRow, TokenCreateResponse,
@@ -241,44 +241,44 @@ impl Storage for CountingStorage {
     async fn health_check(&self) -> StorageResult<String> {
         Ok("mock ok".into())
     }
-    async fn list_skills(&self) -> StorageResult<Vec<takusu_storage::SkillRow>> {
+    async fn list_skills(&self) -> StorageResult<Vec<takusu_contracts::SkillRow>> {
         Ok(vec![])
     }
-    async fn get_skill(&self, _id: &str) -> StorageResult<takusu_storage::SkillRow> {
+    async fn get_skill(&self, _id: &str) -> StorageResult<takusu_contracts::SkillRow> {
         Err(StorageError::NotFound("n/a".into()))
     }
     async fn create_skill(
         &self,
-        _b: &takusu_storage::CreateSkill,
-    ) -> StorageResult<takusu_storage::SkillRow> {
+        _b: &takusu_contracts::CreateSkill,
+    ) -> StorageResult<takusu_contracts::SkillRow> {
         Err(StorageError::Internal("n/a".into()))
     }
     async fn update_skill(
         &self,
         _id: &str,
-        _b: &takusu_storage::UpdateSkill,
-    ) -> StorageResult<takusu_storage::SkillRow> {
+        _b: &takusu_contracts::UpdateSkill,
+    ) -> StorageResult<takusu_contracts::SkillRow> {
         Err(StorageError::Internal("n/a".into()))
     }
     async fn delete_skill(&self, _id: &str) -> StorageResult<()> {
         Ok(())
     }
-    async fn get_memory(&self, _id: &str) -> StorageResult<takusu_storage::MemoryRow> {
+    async fn get_memory(&self, _id: &str) -> StorageResult<takusu_contracts::MemoryRow> {
         Err(StorageError::NotFound("n/a".into()))
     }
     async fn create_memory(
         &self,
-        _b: &takusu_storage::CreateMemory,
+        _b: &takusu_contracts::CreateMemory,
         _op: Option<&str>,
-    ) -> StorageResult<takusu_storage::MemoryRow> {
+    ) -> StorageResult<takusu_contracts::MemoryRow> {
         Err(StorageError::Internal("n/a".into()))
     }
     async fn update_memory(
         &self,
         _id: &str,
-        _b: &takusu_storage::UpdateMemory,
+        _b: &takusu_contracts::UpdateMemory,
         _op: Option<&str>,
-    ) -> StorageResult<takusu_storage::MemoryRow> {
+    ) -> StorageResult<takusu_contracts::MemoryRow> {
         Err(StorageError::Internal("n/a".into()))
     }
     async fn delete_memory(&self, _id: &str, _rev: i64, _op: Option<&str>) -> StorageResult<()> {
@@ -286,14 +286,14 @@ impl Storage for CountingStorage {
     }
     async fn search_memories(
         &self,
-        _q: &takusu_storage::MemoryQuery,
-    ) -> StorageResult<Vec<takusu_storage::MemoryRow>> {
+        _q: &takusu_contracts::MemoryQuery,
+    ) -> StorageResult<Vec<takusu_contracts::MemoryRow>> {
         Ok(vec![])
     }
     async fn find_similar_tasks(
         &self,
-        _q: &takusu_storage::SimilarTaskQuery,
-    ) -> StorageResult<Vec<takusu_storage::SimilarTaskRow>> {
+        _q: &takusu_contracts::SimilarTaskQuery,
+    ) -> StorageResult<Vec<takusu_contracts::SimilarTaskRow>> {
         Ok(vec![])
     }
     async fn start_task_work(
@@ -313,9 +313,9 @@ impl Storage for CountingStorage {
     async fn record_progress(
         &self,
         _id: &str,
-        _body: &takusu_storage::RecordProgress,
+        _body: &takusu_contracts::RecordProgress,
         _operation_id: Option<&str>,
-    ) -> StorageResult<takusu_storage::ProgressResult> {
+    ) -> StorageResult<takusu_contracts::ProgressResult> {
         Err(StorageError::Internal("n/a".into()))
     }
     async fn complete_task_work(
@@ -325,15 +325,15 @@ impl Storage for CountingStorage {
     ) -> StorageResult<TaskRow> {
         Err(StorageError::Internal("n/a".into()))
     }
-    async fn get_task_progress(&self, _id: &str) -> StorageResult<takusu_storage::TaskProgress> {
+    async fn get_task_progress(&self, _id: &str) -> StorageResult<takusu_contracts::TaskProgress> {
         Err(StorageError::Internal("n/a".into()))
     }
     async fn split_task(
         &self,
         _id: &str,
-        _body: &takusu_storage::SplitTask,
+        _body: &takusu_contracts::SplitTask,
         _operation_id: Option<&str>,
-    ) -> StorageResult<takusu_storage::SplitResult> {
+    ) -> StorageResult<takusu_contracts::SplitResult> {
         Err(StorageError::Internal("n/a".into()))
     }
 }

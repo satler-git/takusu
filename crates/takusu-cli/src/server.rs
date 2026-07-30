@@ -70,7 +70,7 @@ mod tests {
     use takusu_local_lib::config::LocalConfig;
     use takusu_local_lib::storage_sqlite::SqliteStorage;
     use takusu_local_lib::token_cache::TokenCache;
-    use takusu_storage::Storage;
+    use takusu_contracts::Storage;
 
     async fn test_app() -> Arc<TakusuApp> {
         let cfg = LocalConfig {

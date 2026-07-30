@@ -1,6 +1,6 @@
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
-use takusu_storage::TaskRow;
+use takusu_contracts::TaskRow;
 use takusu_types::EnumLabel;
 
 use crate::style;

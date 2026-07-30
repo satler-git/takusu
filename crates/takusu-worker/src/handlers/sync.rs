@@ -6,7 +6,7 @@ use crate::error::WorkerError;
 use crate::handlers::auth::storage;
 use crate::handlers::tokens::{json_ok, parse_json};
 use crate::models::UpdateGoogleCalSettings;
-use takusu_storage::Storage;
+use takusu_contracts::Storage;
 
 #[derive(Deserialize)]
 pub struct MappingPair {

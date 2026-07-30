@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use takusu_storage::{
+use takusu_contracts::{
     CreateMemory, CreateSkill, MemoryQuery, MemoryRow, SettingsRow, SimilarTaskQuery,
     SimilarTaskRow, SkillRow, Storage, TokenCreateResponse, TokenRow, UpdateMemory, UpdateSettings,
     UpdateSkill,

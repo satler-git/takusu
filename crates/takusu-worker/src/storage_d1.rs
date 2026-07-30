@@ -6,8 +6,8 @@
 //! idempotency, work-session cleanup, estimate recomputation, etc.) lives here
 //! so that handler modules stay as thin parse → validate → serialize wrappers.
 
-use takusu_storage::storage::StorageResult;
-use takusu_storage::{
+use takusu_contracts::storage::StorageResult;
+use takusu_contracts::{
     HabitRow, HabitStepRow, MemoryRow, ScheduleRow, SettingsRow, SkillRow, StorageError, TaskRow,
 };
 use takusu_types::{Quantity, parse_timezone};
@@ -336,7 +336,7 @@ pub(super) async fn filter_rows_with_query(
     let habits_stmt = database.prepare(format!("SELECT {HABIT_COLS} FROM habits"));
     let habits: Vec<HabitRow> = d1_all(&habits_stmt).await?;
 
-    let schedule_entries: Vec<takusu_storage::ScheduleEntry> = {
+    let schedule_entries: Vec<takusu_contracts::ScheduleEntry> = {
         let stmt = database.prepare(
             "SELECT id, created_at, updated_at, schedule FROM schedules WHERE id = 'active'",
         );
@@ -376,7 +376,7 @@ pub(super) fn parse_timestamp(s: &str) -> StorageResult<i64> {
     Ok(zdt.timestamp().as_second())
 }
 
-pub(super) fn session_minutes(session: &takusu_storage::TaskWorkSessionRow) -> i64 {
+pub(super) fn session_minutes(session: &takusu_contracts::TaskWorkSessionRow) -> i64 {
     match session.ended_at {
         Some(end) => {
             takusu_types::minutes_between(&session.started_at.to_string(), &end.to_string())
@@ -401,7 +401,7 @@ pub(super) async fn compute_updated_estimate(
     let stmt = database.prepare(
         "SELECT id, task_id, at, quantity_done, delta_quantity, active_minutes, note FROM progress_events WHERE task_id = ?1 AND delta_quantity > 0 AND active_minutes > 0 ORDER BY id ASC",
     );
-    let events: Vec<takusu_storage::ProgressEventRow> =
+    let events: Vec<takusu_contracts::ProgressEventRow> =
         d1_all(&stmt.bind(&[JsValue::from_str(task_id)]).map_err(d1_err)?).await?;
 
     let observations: Vec<(i64, i64)> = events

@@ -8,7 +8,7 @@ use std::collections::HashSet;
 
 use jiff::Timestamp;
 use takusu_core::{Minutes, NormalDist, ParallelMode, Point};
-use takusu_storage::{
+use takusu_contracts::{
     CreateHabit, CreateHabitBatch, CreateHabitBatchResult, CreateHabitScheduledSpan, HabitDetail,
     HabitEstimateRequest, HabitEstimateResult, HabitEstimateSample, HabitEstimateStep,
     HabitPreviewRequest, HabitPreviewTask, HabitRow, HabitScheduledSpanRow, HabitStepEstimateInput,

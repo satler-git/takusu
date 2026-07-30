@@ -27,7 +27,7 @@ external HTTP server needed. Run with `cargo nextest run -p takusu-local`.
 
 - **takusu-local-lib** is the core business logic, used by both `takusu-local`
   (server) and `takusu-cli` (client).
-- **Pluggable storage**: `takusu-storage` provides the `Storage` trait. Two
+- **Pluggable storage**: `takusu-contracts` provides the `Storage` trait. Two
   implementations: `SqliteStorage` (direct sqlx) and `WorkersStorage`
   (HTTP → Cloudflare Worker).
 - **CLI uses takusu-local-lib directly**: No network round-trip; `takusu-cli`

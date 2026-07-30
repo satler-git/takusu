@@ -47,7 +47,7 @@ takusu-local
   ├── takusu-ical     (iCal パース)
   ├── google-cal      (Google Calendar API)
   ├── takusu-util     (日付解析、トークン生成)
-  ├── takusu-storage  (Storage trait)
+  ├── takusu-contracts  (Storage trait)
   └── takusu-local-lib (ビジネスロジック)
 
 takusu-cli
@@ -62,10 +62,10 @@ takusu-local
   ├── takusu-ical
   ├── google-cal
   ├── takusu-util
-  └── takusu-storage  (Storage trait)
+  └── takusu-contracts  (Storage trait)
 
 takusu-worker
-  └── takusu-storage  (Storage trait, WASM/D1用)
+  └── takusu-contracts  (Storage trait, WASM/D1用)
 ```
 
 ## 2. コアアルゴリズム: takusu-core
@@ -414,7 +414,7 @@ let gen = rule.create_generator(start, until)?;
 `takusu-worker` は `worker-build` で WASM にコンパイルされ、Cloudflare Workers 上で動作。
 D1 (SQLite互換) をストレージに使用。
 
-`takusu-storage` クレートの `Storage` トレイトを実装することで、
+`takusu-contracts` クレートの `Storage` トレイトを実装することで、
 Worker とローカルサーバーで同一のハンドラコードを使用可能。
 
 ```
@@ -484,7 +484,7 @@ takusu-worker (WASM / cdylib)
 | 2 | `crates/takusu-core/src/evaluate.rs` | 評価関数（何が良いスケジュールか） |
 | 3 | `crates/takusu-core/src/anneal.rs` | SA+LNS+Tabu の実装 |
 | 4 | `crates/takusu-local-lib/src/app.rs` | サーバーでの使い方 |
-| 5 | `crates/takusu-storage/src/model.rs` | APIのデータモデル |
+| 5 | `crates/takusu-contracts/src/model.rs` | APIのデータモデル |
 | 6 | `crates/takusu-client/src/lib.rs` | クライアントから見たAPI |
 
 ### 主要な型の定義場所
@@ -498,10 +498,10 @@ takusu-worker (WASM / cdylib)
 | `SleepConfig` | `takusu-core/src/lib.rs:113` |
 | `RescheduleRange` | `takusu-core/src/lib.rs:483` |
 | `NormalDist` | `takusu-core/src/lib.rs:41` |
-| `TaskRow`, `CreateTask`, `UpdateTask` | `takusu-storage/src/model.rs` |
-| `ScheduleRow`, `ScheduleEntry` | `takusu-storage/src/model.rs` |
+| `TaskRow`, `CreateTask`, `UpdateTask` | `takusu-contracts/src/model.rs` |
+| `ScheduleRow`, `ScheduleEntry` | `takusu-contracts/src/model.rs` |
 | `AppError` | `takusu-local-lib/src/error.rs` |
-| `Storage` trait | `takusu-storage/src/storage.rs` |
+| `Storage` trait | `takusu-contracts/src/storage.rs` |
 | `Client` | `takusu-client/src/lib.rs` |
 | `SherpaOnnxAsr` | `takusu-audio/src/sherpa.rs` |
 | `TtsClient` | `takusu-audio/src/tts.rs` |

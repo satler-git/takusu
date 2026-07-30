@@ -217,7 +217,7 @@ mobile の UI をそのまま移植しない。デスクトップの武器 (横�
 
 ### 1.3 API Client (`web/src/api/`)
 
-- takusu-storage の model.rs の型を TS にポーティング (`types.ts`)
+- takusu-contracts の model.rs の型を TS にポーティング (`types.ts`)
 - `client.ts`: fetch wrapper (baseURL, error handling)
 - エンドポイント: tasks CRUD, schedule get/generate/reschedule/move/clear, settings, habits CRUD, progress
 
@@ -393,7 +393,7 @@ mobile の UI をそのまま移植しない。デスクトップの武器 (横�
 - `web/src/main.tsx`
 - `web/src/App.tsx`
 - `web/src/api/client.ts` — fetch wrapper
-- `web/src/api/types.ts` — TS types (from takusu-storage model.rs)
+- `web/src/api/types.ts` — TS types (from takusu-contracts model.rs)
 - `web/src/hooks/useKeyboard.ts` — vim shortcuts
 - `web/src/hooks/useTasks.ts` — task state
 - `web/src/hooks/useSchedule.ts` — schedule state

@@ -7,7 +7,7 @@ use reqwest::Client;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::json;
-use takusu_storage::{
+use takusu_contracts::{
     ApplyHabitEstimateRequest, CreateHabit, CreateHabitScheduledSpan, CreateMemory, CreateSkill,
     CreateTask, GoogleCalEventRow, GoogleCalSettingsRow, HabitRow, HabitScheduledSpanRow,
     HabitStepEstimateInput, HabitStepInput, HabitStepRow, MemoryQuery, MemoryRow, ProgressResult,

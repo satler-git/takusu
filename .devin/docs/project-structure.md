@@ -34,7 +34,7 @@ takusu/
 │   │       ├── 002_google_cal.sql  # Google Calendar settings & event mappings
 │   │       ├── 003_settings.sql   # User settings (tz, sleep_start, sleep_end)
 │   │       └── 004_indexes.sql
-│   ├── takusu-storage/       # Pluggable storage trait + shared types
+│   ├── takusu-contracts/       # Pluggable storage trait + shared types
 │   │   └── src/
 │   │       ├── storage.rs    #   Async Storage trait
 │   │       ├── model.rs      #   Shared types (TaskRow, HabitRow, ScheduleEntry, etc.)

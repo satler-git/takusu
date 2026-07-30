@@ -4,7 +4,7 @@ use crate::error::WorkerError;
 use crate::handlers::auth::{is_root, storage};
 use crate::handlers::tokens::{json_created, json_ok, parse_json};
 use crate::models::{CreateSkill, SkillRow, UpdateSkill};
-use takusu_storage::Storage;
+use takusu_contracts::Storage;
 
 fn validate_slug(slug: &str) -> Result<(), WorkerError> {
     if slug.is_empty() || slug.len() > 64 {
@@ -62,7 +62,7 @@ pub async fn create(mut req: Request, env: Env) -> Result<Response, WorkerError>
     }
     let store = storage(&env)?;
     match store.get_skill(&body.slug).await {
-        Err(takusu_storage::StorageError::NotFound(_)) => {}
+        Err(takusu_contracts::StorageError::NotFound(_)) => {}
         Ok(_) => {
             return Err(WorkerError::Conflict(format!(
                 "skill {} already exists",

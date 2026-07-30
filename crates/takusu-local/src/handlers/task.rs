@@ -5,7 +5,7 @@ use serde::Deserialize;
 use std::str::FromStr;
 use takusu_local_lib::app::{DependencyAnalysisResponse, IcalImportResult};
 use takusu_search::search::Completion;
-use takusu_storage::{
+use takusu_contracts::{
     CreateTask, CreateTaskBatch, CreateTaskBatchResult, ProgressResult, RecordProgress,
     SplitResult, SplitTask, TaskProgress, TaskQuery, TaskRow, UpdateTask,
 };

@@ -134,7 +134,7 @@
 - **推奨型**: `TaskStatus` enum
 - **修正の重み**: 小
 - **該当箇所**:
-  - `crates/takusu-storage/src/model.rs:30, 160, 185`
+  - `crates/takusu-contracts/src/model.rs:30, 160, 185`
   - `crates/takusu-client/src/lib.rs:1244, 1331, 1352`
   - `crates/takusu-worker/src/models.rs:26, 113, 135`
   - `crates/takusu-local/src/handlers/task.rs:23` (`TaskQueryParams`)
@@ -148,7 +148,7 @@
 - **推奨型**: `WindowMode` enum
 - **修正の重み**: 小
 - **該当箇所**:
-  - `crates/takusu-storage/src/model.rs:220, 246, 301, 409`
+  - `crates/takusu-contracts/src/model.rs:220, 246, 301, 409`
   - `crates/takusu-client/src/lib.rs:1384, 1409, 1439`
   - `crates/takusu-worker/src/models.rs:154, 179, 209`
   - `crates/takusu-local-lib/src/app.rs:106-112` (`validate_window_mode`)
@@ -161,7 +161,7 @@
 - **推奨型**: `takusu_core::Solver`（serde アダプタで DB/JSON 互換）
 - **修正の重み**: 小
 - **該当箇所**:
-  - `crates/takusu-storage/src/model.rs:550, 701`
+  - `crates/takusu-contracts/src/model.rs:550, 701`
   - `crates/takusu-client/src/lib.rs:1917, 1945`
   - `crates/takusu-worker/src/models.rs:397-401`
   - `crates/takusu-local-lib/src/app.rs:560-571` (`parse_solver`)
@@ -173,7 +173,7 @@
 - **推奨型**: `takusu_habit::RecurrenceRule`（serde JSON 文字列アダプタで `sqlx` 対応）
 - **修正の重み**: 中
 - **該当箇所**:
-  - `crates/takusu-storage/src/model.rs:202, 230, 280, 393`
+  - `crates/takusu-contracts/src/model.rs:202, 230, 280, 393`
   - `crates/takusu-client/src/lib.rs:1369, 1394, 1419`
   - `crates/takusu-worker/src/models.rs:139, 164, 189`
   - `crates/takusu-local-lib/src/app.rs:722-723, 1693-1694`（`serde_json::from_str`）
@@ -185,7 +185,7 @@
 - **推奨型**: `TokenScope` enum
 - **修正の重み**: 小
 - **該当箇所**:
-  - `crates/takusu-storage/src/model.rs:486, 498`
+  - `crates/takusu-contracts/src/model.rs:486, 498`
   - `crates/takusu-client/src/lib.rs:1675, 1687`
   - `crates/takusu-worker/src/models.rs:334, 346`
   - `crates/takusu-util/src/jwt.rs:43-62` (`Claims.scope`)
@@ -197,7 +197,7 @@
 - **推奨型**: `MemoryKind` / `SubjectType` enum
 - **修正の重み**: 小
 - **該当箇所**:
-  - `crates/takusu-storage/src/model.rs:599, 632, 636, 654, 656`
+  - `crates/takusu-contracts/src/model.rs:599, 632, 636, 654, 656`
   - `crates/takusu-client/src/lib.rs:1772, 1788, 1792, 1812`
   - `crates/takusu-worker/src/models.rs:454, 484`
   - `crates/takusu-local-lib/src/app.rs:162-183`（バリデーション）
@@ -254,7 +254,7 @@
 - **該当箇所**:
   - `crates/takusu-core/src/lib.rs:298` (`Task.abandonability`)
   - `crates/takusu-habit/src/lib.rs:83` (`Habit.abandonability`)
-  - `crates/takusu-storage/src/model.rs:29, 211, 348` (`TaskRow` / `HabitRow` / `HabitStepRow`)
+  - `crates/takusu-contracts/src/model.rs:29, 211, 348` (`TaskRow` / `HabitRow` / `HabitStepRow`)
   - `crates/takusu-client/src/lib.rs:1243, 1378, 1481`
   - `crates/takusu-worker/src/models.rs:25, 148, 251`
   - `crates/takusu-cli/src/main.rs:399-400, 482, 599-600, 676-677`
@@ -266,7 +266,7 @@
 - **推奨型**: `Quantity`（非負 i64）と `QuantityUnit` newtype
 - **修正の重み**: 小
 - **該当箇所**:
-  - `crates/takusu-storage/src/model.rs:43-49, 741, 769`
+  - `crates/takusu-contracts/src/model.rs:43-49, 741, 769`
   - `crates/takusu-client/src/lib.rs:1254-1258, 1340-1346`
   - `crates/takusu-worker/src/models.rs:36-46, 81-87, 123-129`
   - `crates/takusu-cli/src/main.rs:542, 555`
@@ -279,7 +279,7 @@
 - **推奨型**: `Option<std::time::Duration>` または `Option<jiff::SignedDuration>`（serde アダプタ付き）
 - **修正の重み**: 小
 - **該当箇所**:
-  - `crates/takusu-storage/src/model.rs:553, 704`
+  - `crates/takusu-contracts/src/model.rs:553, 704`
   - `crates/takusu-client/src/lib.rs:1920, 1948`
   - `crates/takusu-worker/src/models.rs:401`
   - `crates/takusu-local-lib/src/app.rs:577-581`
@@ -294,7 +294,7 @@
   - `SLOT_MINUTES` 定数を単一箇所に集約
 - **修正の重み**: 中
 - **該当箇所**:
-  - `crates/takusu-storage/src/model.rs`（`avg_minutes` / `sigma_minutes` / `active_minutes` 等）
+  - `crates/takusu-contracts/src/model.rs`（`avg_minutes` / `sigma_minutes` / `active_minutes` 等）
   - `crates/takusu-client/src/lib.rs`（同上）
   - `crates/takusu-worker/src/models.rs`（同上）
   - `crates/takusu-local-lib/src/app.rs:353, 385, 527-529, 577, 727-734`
@@ -310,7 +310,7 @@
 - **推奨型**: `Minutes` newtype
 - **修正の重み**: 小
 - **該当箇所**:
-  - `crates/takusu-storage/src/model.rs:545-547, 733`
+  - `crates/takusu-contracts/src/model.rs:545-547, 733`
   - `crates/takusu-client/src/lib.rs:1911-1920, 1939-1948`
   - `crates/takusu-local-lib/src/app.rs:523-550` (`parse_workload`)
   - `crates/takusu-local-lib/src/app.rs:788-792` (`SchedulePreviewOutput`)
@@ -335,7 +335,7 @@
 - **推奨型**: `jiff::Timestamp`（RFC3339 serde アダプタ付き）
 - **修正の重み**: 中〜大
 - **該当箇所**（代表例。`takusu-client` / `takusu-worker` でも同一構造がミラーされている）:
-  - `crates/takusu-storage/src/model.rs:20-21, 52-53, 63-64, 222-223, 319-320, 353, 461-462, 489-491, 560-561, 610-612, 671-673, 722-725, 732`
+  - `crates/takusu-contracts/src/model.rs:20-21, 52-53, 63-64, 222-223, 319-320, 353, 461-462, 489-491, 560-561, 610-612, 671-673, 722-725, 732`
   - `crates/takusu-client/src/lib.rs:1234-1235, 1267-1268, 1367-1370, 1392-1396, 1451-1455, 1485, 1615-1618, 1622-1625, 1677-1690`
   - `crates/takusu-worker/src/models.rs:16-50, 155, 224-225, 255, 313-314, 337-340, 458-459`
   - `crates/takusu-local-lib/src/app.rs:799-800` (`MoveEntryOutput`)
@@ -349,7 +349,7 @@
 - **推奨型**: `takusu_habit::TimeOfDay`（Serialize/Deserialize derive 追加）
 - **修正の重み**: 中
 - **該当箇所**:
-  - `crates/takusu-storage/src/model.rs:203-204, 231-232, 282-283, 340-341, 394-395, 542-543`
+  - `crates/takusu-contracts/src/model.rs:203-204, 231-232, 282-283, 340-341, 394-395, 542-543`
   - `crates/takusu-client/src/lib.rs:1369-1370, 1394-1396, 1420-1422, 1473-1474`
   - `crates/takusu-worker/src/models.rs:140-141, 165-166, 190-191, 243-244`
   - `crates/takusu-habit/src/time.rs:12-38`（既存 `TimeOfDay`）
@@ -362,7 +362,7 @@
 - **推奨型**: `jiff::civil::Date`
 - **修正の重み**: 小
 - **該当箇所**:
-  - `crates/takusu-storage/src/model.rs:316-317, 324-325`
+  - `crates/takusu-contracts/src/model.rs:316-317, 324-325`
   - `crates/takusu-client/src/lib.rs:1451-1452, 1459-1460`
   - `crates/takusu-worker/src/models.rs:221-222, 229-230`
 
@@ -373,7 +373,7 @@
 - **推奨型**: `jiff::tz::TimeZone`（serde アダプタ付き）
 - **修正の重み**: 小
 - **該当箇所**:
-  - `crates/takusu-storage/src/model.rs:541`
+  - `crates/takusu-contracts/src/model.rs:541`
   - `crates/takusu-client/src/lib.rs:1908`
   - `crates/takusu-worker/src/models.rs:389`
   - `crates/takusu-local-lib/src/app.rs:257-268` (`parse_settings_timezone`)
@@ -385,7 +385,7 @@
 - **推奨型**: `Vec<ScheduleEntry>` / `Vec<String>` にして `sqlx::types::Json` または serde アダプタで保存
 - **修正の重み**: 小
 - **該当箇所**:
-  - `crates/takusu-storage/src/model.rs:24, 352, 462`
+  - `crates/takusu-contracts/src/model.rs:24, 352, 462`
   - `crates/takusu-client/src/lib.rs:1238, 1484, 1617`
   - `crates/takusu-worker/src/models.rs:20, 254, 313`
   - `crates/takusu-local-lib/src/storage_sqlite.rs:99, 571, 1214, 2549`
@@ -397,7 +397,7 @@
 - **推奨型**: 統一して `jiff::Timestamp`（serde アダプタで ISO / Unix 両対応）
 - **修正の重み**: 小
 - **該当箇所**:
-  - `crates/takusu-storage/src/model.rs:489-491`
+  - `crates/takusu-contracts/src/model.rs:489-491`
   - `crates/takusu-client/src/lib.rs:1677-1690`
   - `crates/takusu-util/src/jwt.rs:52-55`
 
@@ -444,7 +444,7 @@
 - **推奨型**: `Similarity { metric: SimilarityMetric, score: f64 }` または `Similarity` newtype
 - **修正の重み**: 小
 - **該当箇所**:
-  - `crates/takusu-storage/src/model.rs:674`
+  - `crates/takusu-contracts/src/model.rs:674`
   - `crates/takusu-local-lib/src/storage_sqlite.rs:1996`
 
 ### 7.2 `Reschedule.mode` / `GenerateSchedule.sleep`
@@ -577,14 +577,14 @@ impl<T: TypedTool> Tool for T {
 
 #### 問題の要約
 - 既存項目: 3.1–3.7 (status, window_mode, solver, scope, kind, recurrence, operation/target_type)
-- `takusu-storage` / `takusu-client` / `takusu-worker` で同一の enum 相当フィールドが `String` で重複定義されている。
+- `takusu-contracts` / `takusu-client` / `takusu-worker` で同一の enum 相当フィールドが `String` で重複定義されている。
 - DB 保存時・JSON シリアライズ時・API リクエスト時でそれぞれ文字列変換が分散している。
 
 #### 提案する trait / struct
 
 > **制約（監査で判明）**
 >
-> - `takusu-storage` の sqlx は `default-features = false, features = ["derive", "macros"]`。
+> - `takusu-contracts` の sqlx は `default-features = false, features = ["derive", "macros"]`。
 >   **ドライバ（`sqlite`）を有効にしていない**ため、`Type<Sqlite>` / `Encode<Sqlite>` / `Decode<Sqlite>` の
 >   手書き実装はこの crate ではできない。使えるのは `#[derive(sqlx::FromRow)]` と、その
 >   `#[sqlx(try_from = "String")]` 属性まで。
@@ -595,7 +595,7 @@ impl<T: TypedTool> Tool for T {
 > - `all_variants() -> &'static [Self]` には `Self: Sized` が要る。
 
 ```rust
-// 置き場所: takusu-util（takusu-storage / takusu-client / takusu-worker がいずれも依存しており、
+// 置き場所: takusu-util（takusu-contracts / takusu-client / takusu-worker がいずれも依存しており、
 // wasm でもビルドできる唯一の共有 crate）
 
 use serde::{Deserialize, Deserializer, Serializer};
@@ -740,18 +740,18 @@ pub struct TaskRow {
   2. `takusu-util` に `Solver` を `enum_label!` で定義し、`takusu-local-lib` の境界で
      `takusu_core::Solver` へ変換する（**推奨**。core の依存を増やさない）。
   3. 現状の `parse_solver` を残す（改善なし）。
-- `takusu_habit::RecurrenceRule` は serde derive 済みだが、`takusu-storage` / `takusu-client` /
+- `takusu_habit::RecurrenceRule` は serde derive 済みだが、`takusu-contracts` / `takusu-client` /
   `takusu-worker` はいずれも `takusu-habit` に依存していない。
   依存を足すと `takusu-core` まで引きずり込むことになり、とくに wasm ターゲットの
   `takusu-worker` には重い。**3.4 は当面 `String` のままとし、`takusu-local-lib` の境界でのみ
   `RecurrenceRule` に変換する**のが現実的。
 
 #### 適用先ファイル・行番号
-- `crates/takusu-storage/src/model.rs:30, 160, 185` (TaskRow.status)
-- `crates/takusu-storage/src/model.rs:220, 246, 301, 409` (HabitRow.window_mode)
-- `crates/takusu-storage/src/model.rs:550, 701` (SettingsRow.solver)
-- `crates/takusu-storage/src/model.rs:486, 498` (TokenRow.scope)
-- `crates/takusu-storage/src/model.rs:599, 632, 636, 654, 656` (MemoryRow.kind/subject_type)
+- `crates/takusu-contracts/src/model.rs:30, 160, 185` (TaskRow.status)
+- `crates/takusu-contracts/src/model.rs:220, 246, 301, 409` (HabitRow.window_mode)
+- `crates/takusu-contracts/src/model.rs:550, 701` (SettingsRow.solver)
+- `crates/takusu-contracts/src/model.rs:486, 498` (TokenRow.scope)
+- `crates/takusu-contracts/src/model.rs:599, 632, 636, 654, 656` (MemoryRow.kind/subject_type)
 - `crates/takusu-client/src/lib.rs` (対応するフィールド全体)
 - `crates/takusu-worker/src/models.rs` (対応するフィールド全体)
 
@@ -1325,13 +1325,13 @@ impl AgentSession {
 | 項目 | 補正内容 |
 |------|----------|
 | 3.3 `solver` | `takusu_core::Solver` は存在するが、**`takusu-core` は serde に依存していない**（serde は dev-dependencies のみ）。そのまま Row / Request 型には使えない。 |
-| 3.4 `recurrence` | `takusu_habit::RecurrenceRule` は serde derive 済みだが、`takusu-storage` / `takusu-client` / `takusu-worker` はいずれも `takusu-habit` に依存していない。依存を足すと `takusu-core` まで引き込む。 |
+| 3.4 `recurrence` | `takusu_habit::RecurrenceRule` は serde derive 済みだが、`takusu-contracts` / `takusu-client` / `takusu-worker` はいずれも `takusu-habit` に依存していない。依存を足すと `takusu-core` まで引き込む。 |
 | 4.4 分↔スロット | `takusu-core` は 5 をハードコードしていない（`Point::from_timestamp(ts, per)` / `Planner.per` で引数化済み）。重複しているのは core の **外側**。`takusu-agent/src/tools/rrule.rs:179` にローカル定数の重複がある。 |
 
 ### 9.2 依存グラフ（型の置き場所の判断材料）
 
 ```
-takusu-search ── takusu-util ─┬─ takusu-storage ─┐
+takusu-search ── takusu-util ─┬─ takusu-contracts ─┐
                               ├─ takusu-client ──┤
                               ├─ takusu-worker   │  (wasm / Cloudflare Workers, sqlx なし)
                               └─ google-cal      │
@@ -1344,7 +1344,7 @@ takusu-client ── takusu-agent
 
 判断の指針。
 
-- **共有 enum / newtype の置き場所は `takusu-util` 一択**。`takusu-storage` / `takusu-client` /
+- **共有 enum / newtype の置き場所は `takusu-util` 一択**。`takusu-contracts` / `takusu-client` /
   `takusu-worker` が共通して依存する唯一の crate で、wasm ビルドにも対応している。
 - **`takusu-core` に serde を持ち込まない**。core は純粋なプランナとして依存を絞っている。
   `Solver` を共有したい場合は `takusu-util` に別定義を置き、`takusu-local-lib` の境界で変換する。
@@ -1361,7 +1361,7 @@ takusu-client ── takusu-agent
 | 8.1 | `ToolOutput` を trait として定義していたが、**同名の struct が既に存在**（`tool.rs:180-197`） | 既存 struct をそのまま使う設計に変更 |
 | 8.1 | `schemars` がワークスペース依存に無い | 前提作業として明記 |
 | 8.2 | `#[sqlx(try_from = ..., with = ...)]` という併用構文は存在しない | `TryFrom<String>` + `#[sqlx(try_from = "String")]` に変更 |
-| 8.2 | `HasValueRef` ベースの汎用 sqlx アダプタは sqlx 0.9 の API と不一致。そもそも `takusu-storage` はドライバ feature を有効にしておらず `Encode`/`Decode` を書けない | 汎用 sqlx アダプタを廃止 |
+| 8.2 | `HasValueRef` ベースの汎用 sqlx アダプタは sqlx 0.9 の API と不一致。そもそも `takusu-contracts` はドライバ feature を有効にしておらず `Encode`/`Decode` を書けない | 汎用 sqlx アダプタを廃止 |
 | 8.2 | `EnumLabel::default()` が `Default::default()` と曖昧 | `enum_default()` に改名。`Sized` bound も追加 |
 | 8.4 | `impl AsMinutes for Point` は orphan rule 違反（`Point` は `takusu-core`） | 定義を `takusu-core` に移し、trait をやめて inherent method に変更 |
 | 8.4 | `impl AsSlots for i64` は primitive への外部 impl で不可、かつ単位の取り違えを助長 | 削除 |
@@ -1407,7 +1407,7 @@ takusu-client ── takusu-agent
 最も費用対効果が高い。`status` / `window_mode` / `scope` / `kind` / `subject_type` を対象にする。
 
 1. `takusu-util` に `TaskStatus` / `WindowMode` / `TokenScope` / `MemoryKind` / `SubjectType` を `enum_label!` で定義する。
-2. `takusu-storage/src/model.rs` の該当フィールドを差し替え、`#[sqlx(try_from = "String")]` を付ける。
+2. `takusu-contracts/src/model.rs` の該当フィールドを差し替え、`#[sqlx(try_from = "String")]` を付ける。
 3. `takusu-client/src/lib.rs`、`takusu-worker/src/models.rs` の対応フィールドを差し替える。
 4. `takusu-local-lib/src/app.rs` の `validate_window_mode` など、enum 化で不要になった検証を削除する。
 5. `takusu-agent/src/tools/takusu.rs:455-464` の `normalize_status` を `TaskStatus::from_str` に置き換える。
@@ -1431,7 +1431,7 @@ takusu-client ── takusu-agent
 ### フェーズ 3: 値域を持つプリミティブの newtype 化（4.1 / 4.2 / 4.6）
 
 1. `takusu-util` に `Abandonability`（`[0,1]` に clamp）、`Quantity`（非負）を追加する。
-2. `takusu-storage` / `takusu-client` / `takusu-worker` / `takusu-core` / `takusu-habit` の該当フィールドを差し替える。
+2. `takusu-contracts` / `takusu-client` / `takusu-worker` / `takusu-core` / `takusu-habit` の該当フィールドを差し替える。
 3. `takusu-agent/src/llm.rs:57` の `request_timeout_seconds: u64` を `Duration` に変える。
 
 **検証**: `cargo nextest run`。境界値（0、1、負値、NaN）のテストを追加する。
@@ -1451,7 +1451,7 @@ takusu-client ── takusu-agent
 ### フェーズ 5: 依存グラフの調整を伴うもの（3.3 / 3.4）
 
 1. `takusu-util` に `Solver` を `enum_label!` で定義し、`takusu-local-lib` の境界で `takusu_core::Solver` へ変換する。`parse_solver` を削除する。
-2. `recurrence` は `takusu-storage` / `takusu-client` / `takusu-worker` では `String` のまま維持し、`takusu-local-lib` の境界でのみ `RecurrenceRule` に変換する。境界を 1 箇所に集約する。
+2. `recurrence` は `takusu-contracts` / `takusu-client` / `takusu-worker` では `String` のまま維持し、`takusu-local-lib` の境界でのみ `RecurrenceRule` に変換する。境界を 1 箇所に集約する。
 
 **検証**: `cargo check --workspace --target wasm32-unknown-unknown`（worker が壊れていないこと）
 **リスク**: 中

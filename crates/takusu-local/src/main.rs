@@ -10,7 +10,7 @@ use takusu_local_lib::config::StorageKind;
 use takusu_local_lib::storage_sqlite::SqliteStorage;
 use takusu_local_lib::storage_workers::WorkersStorage;
 use takusu_local_lib::token_cache::TokenCache;
-use takusu_storage::Storage;
+use takusu_contracts::Storage;
 use tokio::sync::RwLock;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

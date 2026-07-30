@@ -1,6 +1,6 @@
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Tabs, Wrap};
-use takusu_storage::{ScheduleEntry, TaskRow};
+use takusu_contracts::{ScheduleEntry, TaskRow};
 use takusu_types::{EnumLabel, TaskStatus, WindowMode};
 
 use crate::app::{App, Modal, Tab};

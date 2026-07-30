@@ -3,7 +3,7 @@ use axum::http::StatusCode;
 use axum::routing::{delete, get, post};
 use serde_json::json;
 use takusu_local_lib::storage_workers::WorkersStorage;
-use takusu_storage::Storage;
+use takusu_contracts::Storage;
 use tokio::net::TcpListener;
 
 #[tokio::test]

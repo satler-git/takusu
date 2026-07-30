@@ -17,9 +17,9 @@ pub enum WorkerError {
     Worker(#[from] worker::Error),
 }
 
-impl From<takusu_storage::StorageError> for WorkerError {
-    fn from(e: takusu_storage::StorageError) -> Self {
-        use takusu_storage::StorageError;
+impl From<takusu_contracts::StorageError> for WorkerError {
+    fn from(e: takusu_contracts::StorageError) -> Self {
+        use takusu_contracts::StorageError;
         match e {
             StorageError::NotFound(m) => WorkerError::NotFound(m),
             StorageError::BadRequest(m) => WorkerError::BadRequest(m),

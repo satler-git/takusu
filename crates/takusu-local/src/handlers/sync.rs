@@ -6,7 +6,7 @@ use takusu_local_lib::app::{
     SyncTriggerResponse,
 };
 use takusu_local_lib::error::AppError;
-use takusu_storage::{GoogleCalEventRow, UpdateGoogleCalSettings};
+use takusu_contracts::{GoogleCalEventRow, UpdateGoogleCalSettings};
 
 use crate::error::HttpError;
 use crate::state::AppState;
