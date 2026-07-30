@@ -96,6 +96,14 @@ impl Point {
         Point(n)
     }
 
+    /// `per` 分単位の Point から jiff の `Timestamp` に変換。
+    ///
+    /// 秒数が `i64` の範囲を超えるか、jiff が扱えない範囲の場合は `None`。
+    pub fn to_timestamp(self, per: u16) -> Option<Timestamp> {
+        let seconds = self.0.checked_mul(per as i64)?.checked_mul(60)?;
+        Timestamp::from_second(seconds).ok()
+    }
+
     /// エポックからの経過分。
     pub const fn minutes_since_epoch(self) -> Minutes {
         Minutes(self.0 * SLOT_MINUTES)
