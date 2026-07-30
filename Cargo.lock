@@ -5251,7 +5251,6 @@ dependencies = [
  "strum 0.28.0",
  "takusu-audio",
  "takusu-client",
- "takusu-core",
  "takusu-habit",
  "takusu-types",
  "thiserror 2.0.18",
@@ -5371,6 +5370,7 @@ name = "takusu-contracts"
 version = "0.20260729.1"
 dependencies = [
  "async-trait",
+ "jiff",
  "schemars",
  "serde",
  "serde_json",
@@ -5391,6 +5391,7 @@ dependencies = [
  "rustc-hash",
  "serde",
  "serde_json",
+ "takusu-contracts",
  "takusu-types",
  "thiserror 2.0.18",
  "tikv-jemallocator",
@@ -5404,7 +5405,7 @@ dependencies = [
  "jiff",
  "serde",
  "serde_json",
- "takusu-core",
+ "takusu-contracts",
  "takusu-types",
  "thiserror 2.0.18",
 ]

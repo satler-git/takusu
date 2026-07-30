@@ -2,8 +2,8 @@ use axum::Json;
 use axum::extract::{Extension, Path, State};
 use axum::http::StatusCode;
 use serde::Deserialize;
-use takusu_local_lib::TokenClaims;
 use takusu_contracts::{TokenCreateResponse, TokenRow};
+use takusu_local_lib::TokenClaims;
 
 use crate::error::{HttpError, NoContent};
 use crate::state::AppState;

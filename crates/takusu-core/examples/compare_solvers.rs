@@ -13,7 +13,8 @@ mod common;
 use std::collections::BTreeMap;
 use std::time::Instant;
 
-use takusu_core::{ParallelMode, Plan, Planner, Point, Slots, Task, TaskPlacement};
+use takusu_core::Planner;
+use takusu_types::{ParallelMode, Plan, Point, Slots, Task, TaskPlacement};
 
 fn env_or(key: &str, default: &str) -> String {
     std::env::var(key).unwrap_or_else(|_| default.to_string())

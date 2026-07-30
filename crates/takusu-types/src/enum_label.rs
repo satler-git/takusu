@@ -267,7 +267,20 @@ macro_rules! enum_label {
 /// These are intentionally kept in `takusu-types` so that `takusu-contracts`,
 /// `takusu-client`, and `takusu-worker` can all use them without changing the
 /// crate dependency graph.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Default,
+    serde::Serialize,
+    serde::Deserialize,
+    schemars::JsonSchema,
+)]
 #[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
 pub enum TaskStatus {
     #[default]
@@ -348,7 +361,20 @@ impl EnumLabel for TaskStatus {
 /// are not `completed` or `skipped`. `Overdue` is never stored in the
 /// `status` column; it is expanded to a SQL predicate by storage
 /// implementations.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Default,
+    serde::Serialize,
+    serde::Deserialize,
+    schemars::JsonSchema,
+)]
 #[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
 pub enum TaskStatusFilter {
     #[default]

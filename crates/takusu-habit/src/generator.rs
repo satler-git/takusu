@@ -2,7 +2,7 @@ use jiff::Timestamp;
 use jiff::ToSpan;
 use jiff::civil::Date;
 use jiff::tz::TimeZone;
-use takusu_core::{Abandonability, NormalDist, ParallelMode, Point, Task};
+use takusu_types::{Abandonability, NormalDist, ParallelMode, Point, Task};
 
 use crate::GeneratedTask;
 use crate::rule::{Frequency, NWeekday, RecurrenceRule, Weekday};

@@ -3,7 +3,8 @@ use std::time::Instant;
 
 use rayon::prelude::*;
 
-use takusu_core::ParallelMode;
+use takusu_core::{Planner, RescheduleRange};
+use takusu_types::{ParallelMode, Plan, Point};
 
 mod common;
 
@@ -23,7 +24,7 @@ struct Metrics {
     elapsed_ms: f64,
 }
 
-type FixtureBuilder = (&'static str, fn() -> takusu_core::Planner);
+type FixtureBuilder = (&'static str, fn() -> Planner);
 
 fn main() {
     let seeds = std::env::var("TAKUSU_QUALITY_SEEDS")
@@ -155,9 +156,9 @@ fn main() {
         eprintln!("[quality] {name}: baseline completed");
 
         let pinned: Vec<_> = baseline.schedules.iter().take(5).copied().collect();
-        let range = takusu_core::RescheduleRange {
-            from: takusu_core::Point::from_raw(planner.tasks()[0].end.0 / 4),
-            until: takusu_core::Point::from_raw(planner.tasks()[0].end.0 * 3 / 4),
+        let range = RescheduleRange {
+            from: Point::from_raw(planner.tasks()[0].end.0 / 4),
+            until: Point::from_raw(planner.tasks()[0].end.0 * 3 / 4),
         };
 
         if modes_to_run.contains(&"full") {
@@ -226,13 +227,13 @@ fn main() {
 fn report(
     fixture: &str,
     mode: &str,
-    planner: &takusu_core::Planner,
+    planner: &Planner,
     seeds: u64,
     fixture_index: usize,
     fixture_count: usize,
     overall_completed: &AtomicU64,
     overall_total: u64,
-    make_plan: impl Fn(u64) -> takusu_core::Plan + Sync,
+    make_plan: impl Fn(u64) -> Plan + Sync,
 ) {
     let start = Instant::now();
     let progress_interval = if rayon::current_num_threads() <= 1 {
@@ -293,7 +294,7 @@ fn report(
     );
 }
 
-fn metrics(planner: &takusu_core::Planner, plan: &takusu_core::Plan) -> Metrics {
+fn metrics(planner: &Planner, plan: &Plan) -> Metrics {
     let mut by_id = vec![None; planner.tasks().len()];
     let mut duplicates = 0;
     for p in &plan.schedules {
@@ -352,7 +353,7 @@ fn metrics(planner: &takusu_core::Planner, plan: &takusu_core::Plan) -> Metrics 
     }
 }
 
-fn sleep_shortage(planner: &takusu_core::Planner, plan: &takusu_core::Plan) -> (usize, i64) {
+fn sleep_shortage(planner: &Planner, plan: &Plan) -> (usize, i64) {
     let sleep = planner.sleep_config();
     if !sleep.enabled() || plan.schedules.is_empty() {
         return (0, 0);
@@ -386,7 +387,7 @@ fn sleep_shortage(planner: &takusu_core::Planner, plan: &takusu_core::Plan) -> (
     (shortage_days, shortage_slots)
 }
 
-fn daily_maximum_excess(planner: &takusu_core::Planner, plan: &takusu_core::Plan) -> i64 {
+fn daily_maximum_excess(planner: &Planner, plan: &Plan) -> i64 {
     let mut loads = std::collections::BTreeMap::<i64, Vec<(i64, i64)>>::new();
     for p in &plan.schedules {
         let mut cursor = p.start.0;

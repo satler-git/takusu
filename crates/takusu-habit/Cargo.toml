@@ -6,7 +6,6 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-takusu-core = { workspace = true, features = ["jemalloc"] }
 takusu-types.workspace = true
 jiff.workspace = true
 serde.workspace = true
@@ -15,6 +14,7 @@ thiserror.workspace = true
 
 [dev-dependencies]
 criterion.workspace = true
+takusu-contracts.workspace = true
 
 [[bench]]
 name = "habit"

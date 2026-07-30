@@ -226,6 +226,7 @@ pub(crate) fn apply_member_shift(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use takusu_types::{NormalDist, ParallelMode, Slots};
 
     const SPD: i64 = 288; // per = 5
 

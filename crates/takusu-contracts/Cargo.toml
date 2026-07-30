@@ -11,6 +11,7 @@ sqlx = ["dep:sqlx", "takusu-types/sqlx"]
 
 [dependencies]
 async-trait.workspace = true
+jiff.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 schemars.workspace = true

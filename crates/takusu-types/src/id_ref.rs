@@ -122,10 +122,7 @@ mod tests {
     fn task_ref_habit_task() {
         assert_eq!(
             TaskRef::try_from("h1#3").unwrap(),
-            TaskRef::HabitTask {
-                habit: 1,
-                task: 3
-            }
+            TaskRef::HabitTask { habit: 1, task: 3 }
         );
     }
 
@@ -133,10 +130,7 @@ mod tests {
     fn task_ref_habit_task_uppercase() {
         assert_eq!(
             TaskRef::try_from("H2#10").unwrap(),
-            TaskRef::HabitTask {
-                habit: 2,
-                task: 10
-            }
+            TaskRef::HabitTask { habit: 2, task: 10 }
         );
     }
 
@@ -144,10 +138,7 @@ mod tests {
     fn task_ref_habit_task_with_hash_prefix() {
         assert_eq!(
             TaskRef::try_from("#h1#3").unwrap(),
-            TaskRef::HabitTask {
-                habit: 1,
-                task: 3
-            }
+            TaskRef::HabitTask { habit: 1, task: 3 }
         );
     }
 

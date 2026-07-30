@@ -325,7 +325,7 @@ impl TakusuApp {
 #[cfg(test)]
 mod tests {
     use crate::validate::{validate_minutes, validate_task_datetimes};
-    use takusu_types::SleepInput;
+    use takusu_contracts::SleepInput;
     use takusu_types::parse_timezone;
 
     // ── parse_timezone accepts IANA and fixed-offset timezones (#607) ────

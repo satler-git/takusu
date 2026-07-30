@@ -1,12 +1,12 @@
 use axum::Json;
 use axum::extract::State;
 use serde::Deserialize;
+use takusu_contracts::{GoogleCalEventRow, UpdateGoogleCalSettings};
 use takusu_local_lib::app::{
     DeleteAllGcalResult, GoogleCalSettingsOutput, OAuthCallbackResponse, OAuthUrlResponse,
     SyncTriggerResponse,
 };
 use takusu_local_lib::error::AppError;
-use takusu_contracts::{GoogleCalEventRow, UpdateGoogleCalSettings};
 
 use crate::error::HttpError;
 use crate::state::AppState;

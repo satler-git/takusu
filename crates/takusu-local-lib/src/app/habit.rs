@@ -7,14 +7,13 @@
 use std::collections::HashSet;
 
 use jiff::Timestamp;
-use takusu_core::{Minutes, NormalDist, ParallelMode, Point};
 use takusu_contracts::{
     CreateHabit, CreateHabitBatch, CreateHabitBatchResult, CreateHabitScheduledSpan, HabitDetail,
     HabitEstimateRequest, HabitEstimateResult, HabitEstimateSample, HabitEstimateStep,
     HabitPreviewRequest, HabitPreviewTask, HabitRow, HabitScheduledSpanRow, HabitStepEstimateInput,
     HabitStepInput, HabitStepRow, TaskQuery, TaskRow, UpdateHabit,
 };
-use takusu_types::{TaskStatusFilter, WindowMode};
+use takusu_types::{Minutes, NormalDist, ParallelMode, Point, TaskStatusFilter, WindowMode};
 
 use super::dependency::topo_sort_steps;
 use super::habit_sync::{
@@ -166,7 +165,7 @@ impl super::TakusuApp {
             } else {
                 let sigma = request.sigma_minutes.unwrap_or(0);
                 let cost = NormalDist::from_minutes(Minutes(request.avg_minutes), Minutes(sigma));
-                let core = takusu_core::Task {
+                let core = takusu_types::Task {
                     id: 0,
                     start: Some(occ_start),
                     end: deadline,

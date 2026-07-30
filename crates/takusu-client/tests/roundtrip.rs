@@ -1,6 +1,6 @@
 use serde_json::json;
 use takusu_client::*;
-use takusu_types::{ScheduleMode, SleepInput, TaskStatus};
+use takusu_types::{ScheduleMode, TaskStatus};
 
 #[test]
 fn create_task_serialization() {

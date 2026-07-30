@@ -199,7 +199,11 @@ mod tests {
     #[test]
     fn round_trips_through_json() {
         let mut perms = Permissions::default();
-        perms.set(Some(TargetKind::Schedule), Some(ChangeOperation::Generate), true);
+        perms.set(
+            Some(TargetKind::Schedule),
+            Some(ChangeOperation::Generate),
+            true,
+        );
         perms.set(Some(TargetKind::Task), None, false);
         let json = serde_json::to_string(&perms).unwrap();
         assert!(json.contains("\"schedule:generate\":true"));
@@ -225,7 +229,10 @@ mod tests {
     #[test]
     fn permission_key_parse_rejects_invalid() {
         for bad in ["invalid", "task", "task:", ":create", "task:create:sub"] {
-            assert!(PermissionKey::from_str(bad).is_err(), "{bad} should be rejected");
+            assert!(
+                PermissionKey::from_str(bad).is_err(),
+                "{bad} should be rejected"
+            );
         }
     }
 }

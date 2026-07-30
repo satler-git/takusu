@@ -2,6 +2,7 @@
 
 use async_trait::async_trait;
 use takusu_contracts::storage::StorageResult;
+use takusu_contracts::validate::validate_task_datetimes;
 use takusu_contracts::{
     CreateHabit, CreateHabitScheduledSpan, CreateMemory, CreateSkill, CreateTask,
     GoogleCalEventRow, GoogleCalSettingsRow, HabitRow, HabitScheduledSpanRow,
@@ -11,12 +12,11 @@ use takusu_contracts::{
     TaskQuery, TaskRow, TokenCreateResponse, TokenRow, UpdateGoogleCalSettings, UpdateHabit,
     UpdateMemory, UpdateSettings, UpdateSkill, UpdateTask,
 };
-use takusu_contracts::validate::validate_task_datetimes;
+use takusu_types::jwt::{DEFAULT_TOKEN_TTL_SECONDS, generate_token_jwt};
 use takusu_types::{
     DependencyList, EnumLabel, Minutes, Quantity, TaskStatus, TaskStatusFilter, TokenClaims,
     WindowMode,
 };
-use takusu_types::jwt::{DEFAULT_TOKEN_TTL_SECONDS, generate_token_jwt};
 use wasm_bindgen::JsValue;
 
 use super::storage_d1::*;
@@ -37,7 +37,8 @@ impl Storage for D1Storage {
             .db
             .prepare("SELECT COUNT(*) AS c FROM tokens WHERE jti = ?1 AND revoked_at IS NULL");
         let row: Option<CountRow> = stmt
-            .bind(&[JsValue::from_str(&claims.jti)]).map_err(d1_err)?
+            .bind(&[JsValue::from_str(&claims.jti)])
+            .map_err(d1_err)?
             .first(None)
             .await
             .map_err(d1_err)?;
@@ -147,8 +148,13 @@ impl Storage for D1Storage {
             JsValue::from_str(&id),
             JsValue::from_f64(display_id as f64),
             JsValue::from_str(&body.title),
-            body.description.as_deref().map(JsValue::from_str).unwrap_or(JsValue::NULL),
-            body.start_at.map(|t| JsValue::from_str(&t.to_string())).unwrap_or(JsValue::NULL),
+            body.description
+                .as_deref()
+                .map(JsValue::from_str)
+                .unwrap_or(JsValue::NULL),
+            body.start_at
+                .map(|t| JsValue::from_str(&t.to_string()))
+                .unwrap_or(JsValue::NULL),
             JsValue::from_str(&body.end_at.to_string()),
             JsValue::from_f64(body.avg_minutes as f64),
             JsValue::from_f64(sigma as f64),
@@ -156,18 +162,38 @@ impl Storage for D1Storage {
             JsValue::from_bool(parallelizable),
             JsValue::from_bool(allows_parallel),
             JsValue::from_f64(abandonability.into()),
-            body.ical_uid.as_deref().map(JsValue::from_str).unwrap_or(JsValue::NULL),
-            body.habit_id.as_deref().map(JsValue::from_str).unwrap_or(JsValue::NULL),
+            body.ical_uid
+                .as_deref()
+                .map(JsValue::from_str)
+                .unwrap_or(JsValue::NULL),
+            body.habit_id
+                .as_deref()
+                .map(JsValue::from_str)
+                .unwrap_or(JsValue::NULL),
             JsValue::from_bool(body.fixed.unwrap_or(false)),
-            body.habit_step_id.as_deref().map(JsValue::from_str).unwrap_or(JsValue::NULL),
-            quantity_total.map(|n| JsValue::from_f64(f64::from(n))).unwrap_or(JsValue::NULL),
+            body.habit_step_id
+                .as_deref()
+                .map(JsValue::from_str)
+                .unwrap_or(JsValue::NULL),
+            quantity_total
+                .map(|n| JsValue::from_f64(f64::from(n)))
+                .unwrap_or(JsValue::NULL),
             JsValue::from_f64(f64::from(quantity_done)),
-            body.quantity_unit.as_deref().map(JsValue::from_str).unwrap_or(JsValue::NULL),
+            body.quantity_unit
+                .as_deref()
+                .map(JsValue::from_str)
+                .unwrap_or(JsValue::NULL),
             JsValue::NULL,
             JsValue::NULL,
-            original_quantity_total.map(|n| JsValue::from_f64(f64::from(n))).unwrap_or(JsValue::NULL),
-            normalized_title.as_deref().map(JsValue::from_str).unwrap_or(JsValue::NULL),
-        ]).map_err(d1_err)?
+            original_quantity_total
+                .map(|n| JsValue::from_f64(f64::from(n)))
+                .unwrap_or(JsValue::NULL),
+            normalized_title
+                .as_deref()
+                .map(JsValue::from_str)
+                .unwrap_or(JsValue::NULL),
+        ])
+        .map_err(d1_err)?
         .run()
         .await
         .map_err(d1_err)?;
@@ -203,7 +229,11 @@ impl Storage for D1Storage {
 
         let status = body.status.unwrap_or(existing.status);
         let normalized_title = body.title.as_deref().and_then(|t| {
-            takusu_search::memory::normalize_text(t, Some(takusu_search::memory::MAX_CONTENT_SCALARS)).ok()
+            takusu_search::memory::normalize_text(
+                t,
+                Some(takusu_search::memory::MAX_CONTENT_SCALARS),
+            )
+            .ok()
         });
 
         let (upd_start, start_val) = match body.start_at {
@@ -215,47 +245,98 @@ impl Storage for D1Storage {
         let main_stmt = self.db.prepare(
             "UPDATE tasks SET title=COALESCE(?1,title), description=CASE WHEN ?2='' THEN NULL ELSE COALESCE(?2,description) END, start_at=CASE WHEN ?3=0 THEN start_at ELSE ?4 END, end_at=COALESCE(?5,end_at), avg_minutes=COALESCE(?6,avg_minutes), sigma_minutes=COALESCE(?7,sigma_minutes), depends=COALESCE(?8,depends), parallelizable=COALESCE(?9,parallelizable), allows_parallel=COALESCE(?10,allows_parallel), abandonability=COALESCE(?11,abandonability), status=?12, habit_id=COALESCE(?14,habit_id), user_edited=COALESCE(?15,user_edited), fixed=COALESCE(?16,fixed), habit_step_id=COALESCE(?17,habit_step_id), quantity_total=CASE WHEN ?18=0 THEN NULL ELSE COALESCE(?18,quantity_total) END, quantity_done=COALESCE(?19,quantity_done), quantity_unit=CASE WHEN ?20='' THEN NULL ELSE COALESCE(?20,quantity_unit) END, original_quantity_total=COALESCE(?21,original_quantity_total), normalized_title=COALESCE(?22,normalized_title), updated_at=strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?13",
         );
-        let main_stmt = main_stmt.bind(&[
-            body.title.as_deref().map(JsValue::from_str).unwrap_or(JsValue::NULL),
-            body.description.as_deref().map(JsValue::from_str).unwrap_or(JsValue::NULL),
-            JsValue::from_f64(upd_start as f64),
-            start_val,
-            body.end_at.map(|t| JsValue::from_str(&t.to_string())).unwrap_or(JsValue::NULL),
-            body.avg_minutes.map(|n| JsValue::from_f64(n as f64)).unwrap_or(JsValue::NULL),
-            body.sigma_minutes.map(|n| JsValue::from_f64(n as f64)).unwrap_or(JsValue::NULL),
-            depends_json.as_deref().map(JsValue::from_str).unwrap_or(JsValue::NULL),
-            body.parallelizable.map(JsValue::from_bool).unwrap_or(JsValue::NULL),
-            body.allows_parallel.map(JsValue::from_bool).unwrap_or(JsValue::NULL),
-            body.abandonability.map(|a| JsValue::from_f64(a.into())).unwrap_or(JsValue::NULL),
-            JsValue::from_str(&status.to_string()),
-            JsValue::from_str(&full),
-            body.habit_id.as_deref().map(JsValue::from_str).unwrap_or(JsValue::NULL),
-            body.user_edited.map(JsValue::from_bool).unwrap_or(JsValue::NULL),
-            body.fixed.map(JsValue::from_bool).unwrap_or(JsValue::NULL),
-            body.habit_step_id.as_deref().map(JsValue::from_str).unwrap_or(JsValue::NULL),
-            body.quantity_total.map(|n| JsValue::from_f64(f64::from(n))).unwrap_or(JsValue::NULL),
-            body.quantity_done.map(|n| JsValue::from_f64(f64::from(n))).unwrap_or(JsValue::NULL),
-            body.quantity_unit.as_deref().map(JsValue::from_str).unwrap_or(JsValue::NULL),
-            original_quantity_total.map(|n| JsValue::from_f64(f64::from(n))).unwrap_or(JsValue::NULL),
-            normalized_title.as_deref().map(JsValue::from_str).unwrap_or(JsValue::NULL),
-        ]).map_err(d1_err)?;
+        let main_stmt = main_stmt
+            .bind(&[
+                body.title
+                    .as_deref()
+                    .map(JsValue::from_str)
+                    .unwrap_or(JsValue::NULL),
+                body.description
+                    .as_deref()
+                    .map(JsValue::from_str)
+                    .unwrap_or(JsValue::NULL),
+                JsValue::from_f64(upd_start as f64),
+                start_val,
+                body.end_at
+                    .map(|t| JsValue::from_str(&t.to_string()))
+                    .unwrap_or(JsValue::NULL),
+                body.avg_minutes
+                    .map(|n| JsValue::from_f64(n as f64))
+                    .unwrap_or(JsValue::NULL),
+                body.sigma_minutes
+                    .map(|n| JsValue::from_f64(n as f64))
+                    .unwrap_or(JsValue::NULL),
+                depends_json
+                    .as_deref()
+                    .map(JsValue::from_str)
+                    .unwrap_or(JsValue::NULL),
+                body.parallelizable
+                    .map(JsValue::from_bool)
+                    .unwrap_or(JsValue::NULL),
+                body.allows_parallel
+                    .map(JsValue::from_bool)
+                    .unwrap_or(JsValue::NULL),
+                body.abandonability
+                    .map(|a| JsValue::from_f64(a.into()))
+                    .unwrap_or(JsValue::NULL),
+                JsValue::from_str(&status.to_string()),
+                JsValue::from_str(&full),
+                body.habit_id
+                    .as_deref()
+                    .map(JsValue::from_str)
+                    .unwrap_or(JsValue::NULL),
+                body.user_edited
+                    .map(JsValue::from_bool)
+                    .unwrap_or(JsValue::NULL),
+                body.fixed.map(JsValue::from_bool).unwrap_or(JsValue::NULL),
+                body.habit_step_id
+                    .as_deref()
+                    .map(JsValue::from_str)
+                    .unwrap_or(JsValue::NULL),
+                body.quantity_total
+                    .map(|n| JsValue::from_f64(f64::from(n)))
+                    .unwrap_or(JsValue::NULL),
+                body.quantity_done
+                    .map(|n| JsValue::from_f64(f64::from(n)))
+                    .unwrap_or(JsValue::NULL),
+                body.quantity_unit
+                    .as_deref()
+                    .map(JsValue::from_str)
+                    .unwrap_or(JsValue::NULL),
+                original_quantity_total
+                    .map(|n| JsValue::from_f64(f64::from(n)))
+                    .unwrap_or(JsValue::NULL),
+                normalized_title
+                    .as_deref()
+                    .map(JsValue::from_str)
+                    .unwrap_or(JsValue::NULL),
+            ])
+            .map_err(d1_err)?;
 
         let mut stmts = vec![main_stmt];
         if body.status.is_some() {
             let completed_stmt = self.db.prepare(
                 "UPDATE tasks SET completed_at = CASE WHEN ?1 = 'completed' AND completed_at IS NULL THEN strftime('%Y-%m-%dT%H:%M:%SZ','now') WHEN ?1 != 'completed' AND completed_at IS NOT NULL THEN NULL ELSE completed_at END WHERE id = ?2",
             );
-            stmts.push(completed_stmt.bind(&[
-                JsValue::from_str(&status.to_string()),
-                JsValue::from_str(&full),
-            ]).map_err(d1_err)?);
+            stmts.push(
+                completed_stmt
+                    .bind(&[
+                        JsValue::from_str(&status.to_string()),
+                        JsValue::from_str(&full),
+                    ])
+                    .map_err(d1_err)?,
+            );
 
             if status == TaskStatus::Skipped || status == TaskStatus::Completed {
                 let now = takusu_types::now_rfc3339();
                 let session_stmt = self.db.prepare(
                     "UPDATE task_work_sessions SET ended_at = ?1 WHERE task_id = ?2 AND ended_at IS NULL",
                 );
-                stmts.push(session_stmt.bind(&[JsValue::from_str(&now), JsValue::from_str(&full)]).map_err(d1_err)?);
+                stmts.push(
+                    session_stmt
+                        .bind(&[JsValue::from_str(&now), JsValue::from_str(&full)])
+                        .map_err(d1_err)?,
+                );
             }
         }
 
@@ -266,7 +347,11 @@ impl Storage for D1Storage {
     async fn replace_task(&self, id: &str, body: &CreateTask) -> StorageResult<TaskRow> {
         let quantity_total = body.quantity_total.filter(|t| *t != 0);
         let original_quantity_total = body.original_quantity_total.filter(|t| *t != 0);
-        validate_quantity(quantity_total, Some(Quantity::default()), original_quantity_total)?;
+        validate_quantity(
+            quantity_total,
+            Some(Quantity::default()),
+            original_quantity_total,
+        )?;
         validate_task_datetimes(
             body.start_at.as_ref().map(Some),
             Some(&body.end_at),
@@ -292,8 +377,13 @@ impl Storage for D1Storage {
         );
         stmt.bind(&[
             JsValue::from_str(&body.title),
-            body.description.as_deref().map(JsValue::from_str).unwrap_or(JsValue::NULL),
-            body.start_at.map(|t| JsValue::from_str(&t.to_string())).unwrap_or(JsValue::NULL),
+            body.description
+                .as_deref()
+                .map(JsValue::from_str)
+                .unwrap_or(JsValue::NULL),
+            body.start_at
+                .map(|t| JsValue::from_str(&t.to_string()))
+                .unwrap_or(JsValue::NULL),
             JsValue::from_str(&body.end_at.to_string()),
             JsValue::from_f64(body.avg_minutes as f64),
             JsValue::from_f64(sigma as f64),
@@ -301,17 +391,34 @@ impl Storage for D1Storage {
             JsValue::from_bool(parallelizable),
             JsValue::from_bool(allows_parallel),
             JsValue::from_f64(abandonability.into()),
-            body.habit_id.as_deref().map(JsValue::from_str).unwrap_or(JsValue::NULL),
+            body.habit_id
+                .as_deref()
+                .map(JsValue::from_str)
+                .unwrap_or(JsValue::NULL),
             JsValue::from_bool(body.fixed.unwrap_or(false)),
-            body.habit_step_id.as_deref().map(JsValue::from_str).unwrap_or(JsValue::NULL),
-            quantity_total.map(|n| JsValue::from_f64(f64::from(n))).unwrap_or(JsValue::NULL),
-            body.quantity_unit.as_deref().map(JsValue::from_str).unwrap_or(JsValue::NULL),
+            body.habit_step_id
+                .as_deref()
+                .map(JsValue::from_str)
+                .unwrap_or(JsValue::NULL),
+            quantity_total
+                .map(|n| JsValue::from_f64(f64::from(n)))
+                .unwrap_or(JsValue::NULL),
+            body.quantity_unit
+                .as_deref()
+                .map(JsValue::from_str)
+                .unwrap_or(JsValue::NULL),
             JsValue::NULL,
             JsValue::NULL,
-            original_quantity_total.map(|n| JsValue::from_f64(f64::from(n))).unwrap_or(JsValue::NULL),
-            normalized_title.as_deref().map(JsValue::from_str).unwrap_or(JsValue::NULL),
+            original_quantity_total
+                .map(|n| JsValue::from_f64(f64::from(n)))
+                .unwrap_or(JsValue::NULL),
+            normalized_title
+                .as_deref()
+                .map(JsValue::from_str)
+                .unwrap_or(JsValue::NULL),
             JsValue::from_str(&full),
-        ]).map_err(d1_err)?
+        ])
+        .map_err(d1_err)?
         .run()
         .await
         .map_err(d1_err)?;
@@ -321,26 +428,46 @@ impl Storage for D1Storage {
     async fn delete_task(&self, id: &str) -> StorageResult<()> {
         let full = resolve_task_id(&self.db, id).await?;
         let stmts = vec![
-            self.db.prepare("UPDATE tasks SET split_from_task_id = NULL WHERE split_from_task_id = ?1").bind(&[JsValue::from_str(&full)]).map_err(d1_err)?,
-            self.db.prepare("DELETE FROM google_cal_events WHERE task_id = ?1").bind(&[JsValue::from_str(&full)]).map_err(d1_err)?,
-            self.db.prepare("DELETE FROM task_work_sessions WHERE task_id = ?1").bind(&[JsValue::from_str(&full)]).map_err(d1_err)?,
-            self.db.prepare("DELETE FROM progress_events WHERE task_id = ?1").bind(&[JsValue::from_str(&full)]).map_err(d1_err)?,
-            self.db.prepare("DELETE FROM tasks WHERE id = ?1").bind(&[JsValue::from_str(&full)]).map_err(d1_err)?,
+            self.db
+                .prepare("UPDATE tasks SET split_from_task_id = NULL WHERE split_from_task_id = ?1")
+                .bind(&[JsValue::from_str(&full)])
+                .map_err(d1_err)?,
+            self.db
+                .prepare("DELETE FROM google_cal_events WHERE task_id = ?1")
+                .bind(&[JsValue::from_str(&full)])
+                .map_err(d1_err)?,
+            self.db
+                .prepare("DELETE FROM task_work_sessions WHERE task_id = ?1")
+                .bind(&[JsValue::from_str(&full)])
+                .map_err(d1_err)?,
+            self.db
+                .prepare("DELETE FROM progress_events WHERE task_id = ?1")
+                .bind(&[JsValue::from_str(&full)])
+                .map_err(d1_err)?,
+            self.db
+                .prepare("DELETE FROM tasks WHERE id = ?1")
+                .bind(&[JsValue::from_str(&full)])
+                .map_err(d1_err)?,
         ];
         self.db.batch(stmts).await.map_err(d1_err)?;
         Ok(())
     }
 
     async fn task_exists_by_ical_uid(&self, uid: &str) -> StorageResult<bool> {
-        let stmt = self.db.prepare("SELECT 1 FROM tasks WHERE ical_uid = ?1 LIMIT 1");
-        let rows: Vec<IdRow> = d1_all(&stmt.bind(&[JsValue::from_str(uid)]).map_err(d1_err)?).await?;
+        let stmt = self
+            .db
+            .prepare("SELECT 1 FROM tasks WHERE ical_uid = ?1 LIMIT 1");
+        let rows: Vec<IdRow> =
+            d1_all(&stmt.bind(&[JsValue::from_str(uid)]).map_err(d1_err)?).await?;
         Ok(!rows.is_empty())
     }
 
     // ── Habits ──────────────────────────────────────────────────────────
 
     async fn list_habits(&self) -> StorageResult<Vec<HabitRow>> {
-        let stmt = self.db.prepare(format!("{} ORDER BY created_at DESC", select_habits()));
+        let stmt = self
+            .db
+            .prepare(format!("{} ORDER BY created_at DESC", select_habits()));
         d1_all(&stmt).await
     }
 
@@ -351,7 +478,9 @@ impl Storage for D1Storage {
 
     async fn create_habit(&self, body: &CreateHabit) -> StorageResult<HabitRow> {
         let id = uuid::Uuid::now_v7().to_string();
-        let sigma = body.sigma_minutes.unwrap_or(Minutes(body.avg_minutes).to_slots().0.max(1));
+        let sigma = body
+            .sigma_minutes
+            .unwrap_or(Minutes(body.avg_minutes).to_slots().0.max(1));
         let parallelizable = body.parallelizable.unwrap_or(false);
         let allows_parallel = body.allows_parallel.unwrap_or(false);
         let abandonability = body.abandonability.unwrap_or(0.5.into());
@@ -373,7 +502,10 @@ impl Storage for D1Storage {
             JsValue::from_str(&id),
             JsValue::from_f64(display_id as f64),
             JsValue::from_str(&body.title),
-            body.description.as_deref().map(JsValue::from_str).unwrap_or(JsValue::NULL),
+            body.description
+                .as_deref()
+                .map(JsValue::from_str)
+                .unwrap_or(JsValue::NULL),
             JsValue::from_str(&body.recurrence),
             JsValue::from_str(&body.start_time.to_string()),
             JsValue::from_str(&body.end_time.to_string()),
@@ -384,7 +516,8 @@ impl Storage for D1Storage {
             JsValue::from_f64(abandonability.into()),
             JsValue::from_bool(fixed),
             JsValue::from_str(&window_mode.to_string()),
-        ]).map_err(d1_err)?
+        ])
+        .map_err(d1_err)?
         .run()
         .await
         .map_err(d1_err)?;
@@ -397,21 +530,48 @@ impl Storage for D1Storage {
             "UPDATE habits SET title=COALESCE(?1,title), description=COALESCE(?2,description), recurrence=COALESCE(?3,recurrence), start_time=COALESCE(?4,start_time), end_time=COALESCE(?5,end_time), avg_minutes=COALESCE(?6,avg_minutes), sigma_minutes=COALESCE(?7,sigma_minutes), parallelizable=COALESCE(?8,parallelizable), allows_parallel=COALESCE(?9,allows_parallel), abandonability=COALESCE(?10,abandonability), active=COALESCE(?11,active), fixed=COALESCE(?12,fixed), window_mode=COALESCE(?13,window_mode), updated_at=strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?14",
         );
         stmt.bind(&[
-            body.title.as_deref().map(JsValue::from_str).unwrap_or(JsValue::NULL),
-            body.description.as_deref().map(JsValue::from_str).unwrap_or(JsValue::NULL),
-            body.recurrence.as_deref().map(JsValue::from_str).unwrap_or(JsValue::NULL),
-            body.start_time.map(|t| JsValue::from_str(&t.to_string())).unwrap_or(JsValue::NULL),
-            body.end_time.map(|t| JsValue::from_str(&t.to_string())).unwrap_or(JsValue::NULL),
-            body.avg_minutes.map(|n| JsValue::from_f64(n as f64)).unwrap_or(JsValue::NULL),
-            body.sigma_minutes.map(|n| JsValue::from_f64(n as f64)).unwrap_or(JsValue::NULL),
-            body.parallelizable.map(JsValue::from_bool).unwrap_or(JsValue::NULL),
-            body.allows_parallel.map(JsValue::from_bool).unwrap_or(JsValue::NULL),
-            body.abandonability.map(|a| JsValue::from_f64(a.into())).unwrap_or(JsValue::NULL),
+            body.title
+                .as_deref()
+                .map(JsValue::from_str)
+                .unwrap_or(JsValue::NULL),
+            body.description
+                .as_deref()
+                .map(JsValue::from_str)
+                .unwrap_or(JsValue::NULL),
+            body.recurrence
+                .as_deref()
+                .map(JsValue::from_str)
+                .unwrap_or(JsValue::NULL),
+            body.start_time
+                .map(|t| JsValue::from_str(&t.to_string()))
+                .unwrap_or(JsValue::NULL),
+            body.end_time
+                .map(|t| JsValue::from_str(&t.to_string()))
+                .unwrap_or(JsValue::NULL),
+            body.avg_minutes
+                .map(|n| JsValue::from_f64(n as f64))
+                .unwrap_or(JsValue::NULL),
+            body.sigma_minutes
+                .map(|n| JsValue::from_f64(n as f64))
+                .unwrap_or(JsValue::NULL),
+            body.parallelizable
+                .map(JsValue::from_bool)
+                .unwrap_or(JsValue::NULL),
+            body.allows_parallel
+                .map(JsValue::from_bool)
+                .unwrap_or(JsValue::NULL),
+            body.abandonability
+                .map(|a| JsValue::from_f64(a.into()))
+                .unwrap_or(JsValue::NULL),
             body.active.map(JsValue::from_bool).unwrap_or(JsValue::NULL),
             body.fixed.map(JsValue::from_bool).unwrap_or(JsValue::NULL),
-            body.window_mode.as_ref().map(|w| JsValue::from_str(&w.to_string())).unwrap_or(JsValue::NULL),
+            body.window_mode
+                .as_ref()
+                .map(|w| JsValue::from_str(&w.to_string()))
+                .unwrap_or(JsValue::NULL),
             JsValue::from_str(&full),
-        ]).map_err(d1_err)?
+        ])
+        .map_err(d1_err)?
         .run()
         .await
         .map_err(d1_err)?;
@@ -420,7 +580,9 @@ impl Storage for D1Storage {
 
     async fn replace_habit(&self, id: &str, body: &CreateHabit) -> StorageResult<HabitRow> {
         let full = resolve_habit_id(&self.db, id).await?;
-        let sigma = body.sigma_minutes.unwrap_or(Minutes(body.avg_minutes).to_slots().0.max(1));
+        let sigma = body
+            .sigma_minutes
+            .unwrap_or(Minutes(body.avg_minutes).to_slots().0.max(1));
         let parallelizable = body.parallelizable.unwrap_or(false);
         let allows_parallel = body.allows_parallel.unwrap_or(false);
         let abandonability = body.abandonability.unwrap_or(0.5.into());
@@ -431,7 +593,10 @@ impl Storage for D1Storage {
         );
         stmt.bind(&[
             JsValue::from_str(&body.title),
-            body.description.as_deref().map(JsValue::from_str).unwrap_or(JsValue::NULL),
+            body.description
+                .as_deref()
+                .map(JsValue::from_str)
+                .unwrap_or(JsValue::NULL),
             JsValue::from_str(&body.recurrence),
             JsValue::from_str(&body.start_time.to_string()),
             JsValue::from_str(&body.end_time.to_string()),
@@ -443,7 +608,8 @@ impl Storage for D1Storage {
             JsValue::from_bool(fixed),
             JsValue::from_str(&window_mode.to_string()),
             JsValue::from_str(&full),
-        ]).map_err(d1_err)?
+        ])
+        .map_err(d1_err)?
         .run()
         .await
         .map_err(d1_err)?;
@@ -469,7 +635,10 @@ impl Storage for D1Storage {
 
     // ── Habit scheduled spans ───────────────────────────────────────────
 
-    async fn list_habit_scheduled_spans(&self, habit_id: &str) -> StorageResult<Vec<HabitScheduledSpanRow>> {
+    async fn list_habit_scheduled_spans(
+        &self,
+        habit_id: &str,
+    ) -> StorageResult<Vec<HabitScheduledSpanRow>> {
         let full = resolve_habit_id(&self.db, habit_id).await?;
         let stmt = self.db.prepare(format!(
             "SELECT {SCHEDULED_SPAN_COLS} FROM habit_scheduled_spans WHERE habit_id = ?1 ORDER BY start_date ASC, created_at ASC"
@@ -484,7 +653,11 @@ impl Storage for D1Storage {
         d1_all(&stmt).await
     }
 
-    async fn create_habit_scheduled_span(&self, habit_id: &str, body: &CreateHabitScheduledSpan) -> StorageResult<HabitScheduledSpanRow> {
+    async fn create_habit_scheduled_span(
+        &self,
+        habit_id: &str,
+        body: &CreateHabitScheduledSpan,
+    ) -> StorageResult<HabitScheduledSpanRow> {
         let full = resolve_habit_id(&self.db, habit_id).await?;
         let span_id = uuid::Uuid::now_v7().to_string();
         let stmt = self.db.prepare(
@@ -495,23 +668,51 @@ impl Storage for D1Storage {
             JsValue::from_str(&full),
             JsValue::from_str(&body.start_date.to_string()),
             JsValue::from_str(&body.end_date.to_string()),
-            body.reason.as_deref().map(JsValue::from_str).unwrap_or(JsValue::NULL),
-        ]).map_err(d1_err)?
+            body.reason
+                .as_deref()
+                .map(JsValue::from_str)
+                .unwrap_or(JsValue::NULL),
+        ])
+        .map_err(d1_err)?
         .run()
         .await
         .map_err(d1_err)?;
-        let sel_stmt = self.db.prepare(format!("SELECT {SCHEDULED_SPAN_COLS} FROM habit_scheduled_spans WHERE id = ?1"));
-        let row: Option<HabitScheduledSpanRow> = sel_stmt.bind(&[JsValue::from_str(&span_id)]).map_err(d1_err)?.first(None).await.map_err(d1_err)?;
+        let sel_stmt = self.db.prepare(format!(
+            "SELECT {SCHEDULED_SPAN_COLS} FROM habit_scheduled_spans WHERE id = ?1"
+        ));
+        let row: Option<HabitScheduledSpanRow> = sel_stmt
+            .bind(&[JsValue::from_str(&span_id)])
+            .map_err(d1_err)?
+            .first(None)
+            .await
+            .map_err(d1_err)?;
         row.ok_or_else(|| StorageError::Internal("inserted scheduled span not found".into()))
     }
 
-    async fn delete_habit_scheduled_span(&self, habit_id: &str, span_id: &str) -> StorageResult<()> {
+    async fn delete_habit_scheduled_span(
+        &self,
+        habit_id: &str,
+        span_id: &str,
+    ) -> StorageResult<()> {
         let full = resolve_habit_id(&self.db, habit_id).await?;
-        let stmt = self.db.prepare("DELETE FROM habit_scheduled_spans WHERE id = ?1 AND habit_id = ?2");
-        let result = stmt.bind(&[JsValue::from_str(span_id), JsValue::from_str(&full)]).map_err(d1_err)?.run().await.map_err(d1_err)?;
-        let affected = result.meta().map_err(d1_err)?.and_then(|m| m.rows_written).unwrap_or(0);
+        let stmt = self
+            .db
+            .prepare("DELETE FROM habit_scheduled_spans WHERE id = ?1 AND habit_id = ?2");
+        let result = stmt
+            .bind(&[JsValue::from_str(span_id), JsValue::from_str(&full)])
+            .map_err(d1_err)?
+            .run()
+            .await
+            .map_err(d1_err)?;
+        let affected = result
+            .meta()
+            .map_err(d1_err)?
+            .and_then(|m| m.rows_written)
+            .unwrap_or(0);
         if affected == 0 {
-            return Err(not_found(format!("scheduled span {span_id} not found for habit {habit_id}")));
+            return Err(not_found(format!(
+                "scheduled span {span_id} not found for habit {habit_id}"
+            )));
         }
         Ok(())
     }
@@ -524,24 +725,38 @@ impl Storage for D1Storage {
     }
 
     async fn list_all_habit_steps(&self) -> StorageResult<Vec<HabitStepRow>> {
-        let stmt = self.db.prepare(format!("SELECT {STEP_COLS} FROM habit_steps ORDER BY habit_id, position ASC, created_at ASC"));
+        let stmt = self.db.prepare(format!(
+            "SELECT {STEP_COLS} FROM habit_steps ORDER BY habit_id, position ASC, created_at ASC"
+        ));
         d1_all(&stmt).await
     }
 
-    async fn replace_habit_steps(&self, habit_id: &str, steps: &[HabitStepInput]) -> StorageResult<Vec<HabitStepRow>> {
+    async fn replace_habit_steps(
+        &self,
+        habit_id: &str,
+        steps: &[HabitStepInput],
+    ) -> StorageResult<Vec<HabitStepRow>> {
         let full = resolve_habit_id(&self.db, habit_id).await?;
 
-        let id_stmt = self.db.prepare("SELECT id FROM habit_steps WHERE habit_id = ?1");
-        let existing: Vec<IdRow> = d1_all(&id_stmt.bind(&[JsValue::from_str(&full)]).map_err(d1_err)?).await?;
-        let existing_ids: std::collections::HashSet<String> = existing.into_iter().map(|r| r.id).collect();
+        let id_stmt = self
+            .db
+            .prepare("SELECT id FROM habit_steps WHERE habit_id = ?1");
+        let existing: Vec<IdRow> =
+            d1_all(&id_stmt.bind(&[JsValue::from_str(&full)]).map_err(d1_err)?).await?;
+        let existing_ids: std::collections::HashSet<String> =
+            existing.into_iter().map(|r| r.id).collect();
 
         let mut input_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
         let mut stmts: Vec<worker::D1PreparedStatement> = Vec::new();
 
         for s in steps {
-            let id = s.id.clone().unwrap_or_else(|| uuid::Uuid::now_v7().to_string());
+            let id =
+                s.id.clone()
+                    .unwrap_or_else(|| uuid::Uuid::now_v7().to_string());
             input_ids.insert(id.clone());
-            let sigma = s.sigma_minutes.unwrap_or(Minutes(s.avg_minutes).to_slots().0.max(1));
+            let sigma = s
+                .sigma_minutes
+                .unwrap_or(Minutes(s.avg_minutes).to_slots().0.max(1));
             let parallelizable = s.parallelizable.unwrap_or(false);
             let allows_parallel = s.allows_parallel.unwrap_or(false);
             let abandonability = s.abandonability.unwrap_or(0.5.into());
@@ -552,49 +767,66 @@ impl Storage for D1Storage {
                 let stmt = self.db.prepare(
                     "UPDATE habit_steps SET position=?1, title=?2, description=?3, start_time=?4, end_time=?5, avg_minutes=?6, sigma_minutes=?7, parallelizable=?8, allows_parallel=?9, abandonability=?10, fixed=?11, depends_on=?12 WHERE id = ?13 AND habit_id = ?14",
                 );
-                stmts.push(stmt.bind(&[
-                    JsValue::from_f64(s.position as f64),
-                    JsValue::from_str(&s.title),
-                    s.description.as_deref().map(JsValue::from_str).unwrap_or(JsValue::NULL),
-                    JsValue::from_str(&s.start_time.to_string()),
-                    JsValue::from_str(&s.end_time.to_string()),
-                    JsValue::from_f64(s.avg_minutes as f64),
-                    JsValue::from_f64(sigma as f64),
-                    JsValue::from_bool(parallelizable),
-                    JsValue::from_bool(allows_parallel),
-                    JsValue::from_f64(abandonability.into()),
-                    JsValue::from_bool(fixed),
-                    JsValue::from_str(&depends_json),
-                    JsValue::from_str(&id),
-                    JsValue::from_str(&full),
-                ]).map_err(d1_err)?);
+                stmts.push(
+                    stmt.bind(&[
+                        JsValue::from_f64(s.position as f64),
+                        JsValue::from_str(&s.title),
+                        s.description
+                            .as_deref()
+                            .map(JsValue::from_str)
+                            .unwrap_or(JsValue::NULL),
+                        JsValue::from_str(&s.start_time.to_string()),
+                        JsValue::from_str(&s.end_time.to_string()),
+                        JsValue::from_f64(s.avg_minutes as f64),
+                        JsValue::from_f64(sigma as f64),
+                        JsValue::from_bool(parallelizable),
+                        JsValue::from_bool(allows_parallel),
+                        JsValue::from_f64(abandonability.into()),
+                        JsValue::from_bool(fixed),
+                        JsValue::from_str(&depends_json),
+                        JsValue::from_str(&id),
+                        JsValue::from_str(&full),
+                    ])
+                    .map_err(d1_err)?,
+                );
             } else {
                 let stmt = self.db.prepare(
                     "INSERT INTO habit_steps (id, habit_id, position, title, description, start_time, end_time, avg_minutes, sigma_minutes, parallelizable, allows_parallel, abandonability, fixed, depends_on, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))",
                 );
-                stmts.push(stmt.bind(&[
-                    JsValue::from_str(&id),
-                    JsValue::from_str(&full),
-                    JsValue::from_f64(s.position as f64),
-                    JsValue::from_str(&s.title),
-                    s.description.as_deref().map(JsValue::from_str).unwrap_or(JsValue::NULL),
-                    JsValue::from_str(&s.start_time.to_string()),
-                    JsValue::from_str(&s.end_time.to_string()),
-                    JsValue::from_f64(s.avg_minutes as f64),
-                    JsValue::from_f64(sigma as f64),
-                    JsValue::from_bool(parallelizable),
-                    JsValue::from_bool(allows_parallel),
-                    JsValue::from_f64(abandonability.into()),
-                    JsValue::from_bool(fixed),
-                    JsValue::from_str(&depends_json),
-                ]).map_err(d1_err)?);
+                stmts.push(
+                    stmt.bind(&[
+                        JsValue::from_str(&id),
+                        JsValue::from_str(&full),
+                        JsValue::from_f64(s.position as f64),
+                        JsValue::from_str(&s.title),
+                        s.description
+                            .as_deref()
+                            .map(JsValue::from_str)
+                            .unwrap_or(JsValue::NULL),
+                        JsValue::from_str(&s.start_time.to_string()),
+                        JsValue::from_str(&s.end_time.to_string()),
+                        JsValue::from_f64(s.avg_minutes as f64),
+                        JsValue::from_f64(sigma as f64),
+                        JsValue::from_bool(parallelizable),
+                        JsValue::from_bool(allows_parallel),
+                        JsValue::from_f64(abandonability.into()),
+                        JsValue::from_bool(fixed),
+                        JsValue::from_str(&depends_json),
+                    ])
+                    .map_err(d1_err)?,
+                );
             }
         }
 
         for old_id in &existing_ids {
             if !input_ids.contains(old_id) {
-                let stmt = self.db.prepare("DELETE FROM habit_steps WHERE id = ?1 AND habit_id = ?2");
-                stmts.push(stmt.bind(&[JsValue::from_str(old_id), JsValue::from_str(&full)]).map_err(d1_err)?);
+                let stmt = self
+                    .db
+                    .prepare("DELETE FROM habit_steps WHERE id = ?1 AND habit_id = ?2");
+                stmts.push(
+                    stmt.bind(&[JsValue::from_str(old_id), JsValue::from_str(&full)])
+                        .map_err(d1_err)?,
+                );
             }
         }
 
@@ -604,30 +836,47 @@ impl Storage for D1Storage {
         select_steps_for_habit(&self.db, &full).await
     }
 
-    async fn apply_habit_estimate(&self, habit_id: &str, avg_minutes: i64, sigma_minutes: i64, step_estimates: &[HabitStepEstimateInput]) -> StorageResult<()> {
+    async fn apply_habit_estimate(
+        &self,
+        habit_id: &str,
+        avg_minutes: i64,
+        sigma_minutes: i64,
+        step_estimates: &[HabitStepEstimateInput],
+    ) -> StorageResult<()> {
         let full = resolve_habit_id(&self.db, habit_id).await?;
         let habit = select_one_habit(&self.db, &full).await?;
         if habit.fixed {
-            return Err(StorageError::BadRequest("cannot apply estimate to fixed habit".into()));
+            return Err(StorageError::BadRequest(
+                "cannot apply estimate to fixed habit".into(),
+            ));
         }
         let mut stmts: Vec<worker::D1PreparedStatement> = Vec::new();
         for step in step_estimates {
             let stmt = self.db.prepare(
                 "UPDATE habit_steps SET avg_minutes = ?1, sigma_minutes = ?2 WHERE id = ?3 AND habit_id = ?4 AND fixed = 0",
             );
-            stmts.push(stmt.bind(&[
-                JsValue::from_f64(step.avg_minutes as f64),
-                JsValue::from_f64(step.sigma_minutes as f64),
-                JsValue::from_str(&step.step_id),
-                JsValue::from_str(&full),
-            ]).map_err(d1_err)?);
+            stmts.push(
+                stmt.bind(&[
+                    JsValue::from_f64(step.avg_minutes as f64),
+                    JsValue::from_f64(step.sigma_minutes as f64),
+                    JsValue::from_str(&step.step_id),
+                    JsValue::from_str(&full),
+                ])
+                .map_err(d1_err)?,
+            );
         }
-        let habit_stmt = self.db.prepare("UPDATE habits SET avg_minutes = ?1, sigma_minutes = ?2 WHERE id = ?3");
-        stmts.push(habit_stmt.bind(&[
-            JsValue::from_f64(avg_minutes as f64),
-            JsValue::from_f64(sigma_minutes as f64),
-            JsValue::from_str(&full),
-        ]).map_err(d1_err)?);
+        let habit_stmt = self
+            .db
+            .prepare("UPDATE habits SET avg_minutes = ?1, sigma_minutes = ?2 WHERE id = ?3");
+        stmts.push(
+            habit_stmt
+                .bind(&[
+                    JsValue::from_f64(avg_minutes as f64),
+                    JsValue::from_f64(sigma_minutes as f64),
+                    JsValue::from_str(&full),
+                ])
+                .map_err(d1_err)?,
+        );
         self.db.batch(stmts).await.map_err(d1_err)?;
         Ok(())
     }
@@ -635,14 +884,18 @@ impl Storage for D1Storage {
     // ── Schedule ────────────────────────────────────────────────────────
 
     async fn get_schedule(&self) -> StorageResult<Option<ScheduleRow>> {
-        let stmt = self.db.prepare("SELECT id, created_at, updated_at, schedule FROM schedules WHERE id = 'active'");
+        let stmt = self.db.prepare(
+            "SELECT id, created_at, updated_at, schedule FROM schedules WHERE id = 'active'",
+        );
         let rows: Vec<ScheduleRow> = d1_all(&stmt).await?;
         Ok(rows.into_iter().next())
     }
 
     async fn save_schedule(&self, req: &SaveScheduleRequest) -> StorageResult<ScheduleRow> {
-        let schedule_json = takusu_contracts::ScheduleData::new(req.entries.clone()).to_json_string();
-        let mut stmts: Vec<worker::D1PreparedStatement> = Vec::with_capacity(1 + req.mark_scheduled_task_ids.len());
+        let schedule_json =
+            takusu_contracts::ScheduleData::new(req.entries.clone()).to_json_string();
+        let mut stmts: Vec<worker::D1PreparedStatement> =
+            Vec::with_capacity(1 + req.mark_scheduled_task_ids.len());
         let upsert = self.db.prepare(
             "INSERT INTO schedules (id, created_at, updated_at, schedule) VALUES ('active', strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), ?1) ON CONFLICT(id) DO UPDATE SET schedule=excluded.schedule, updated_at=excluded.updated_at",
         )
@@ -656,9 +909,13 @@ impl Storage for D1Storage {
             stmts.push(stmt);
         }
         self.db.batch(stmts).await.map_err(d1_err)?;
-        let stmt = self.db.prepare("SELECT id, created_at, updated_at, schedule FROM schedules WHERE id = 'active'");
+        let stmt = self.db.prepare(
+            "SELECT id, created_at, updated_at, schedule FROM schedules WHERE id = 'active'",
+        );
         let rows: Vec<ScheduleRow> = d1_all(&stmt).await?;
-        rows.into_iter().next().ok_or_else(|| StorageError::Internal("schedule not found after save".into()))
+        rows.into_iter()
+            .next()
+            .ok_or_else(|| StorageError::Internal("schedule not found after save".into()))
     }
 
     async fn clear_schedule(&self) -> StorageResult<()> {
@@ -671,8 +928,13 @@ impl Storage for D1Storage {
 
     async fn create_token(&self, label: Option<&str>) -> StorageResult<TokenCreateResponse> {
         let label_opt: Option<String> = label.map(|s| s.to_string());
-        let (new_token, jti) = generate_token_jwt(&self.jwt_secret, takusu_types::SCOPE_READ_WRITE, label_opt.as_deref(), None)
-            .map_err(|e| StorageError::Internal(e.to_string()))?;
+        let (new_token, jti) = generate_token_jwt(
+            &self.jwt_secret,
+            takusu_types::SCOPE_READ_WRITE,
+            label_opt.as_deref(),
+            None,
+        )
+        .map_err(|e| StorageError::Internal(e.to_string()))?;
         let expires_at = token_expires_at(DEFAULT_TOKEN_TTL_SECONDS);
         let stmt = self.db.prepare(
             "INSERT INTO tokens (jti, scope, label, created_by, created_at, expires_at) VALUES (?1, ?2, ?3, 'authenticated', strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), ?4)",
@@ -680,16 +942,35 @@ impl Storage for D1Storage {
         stmt.bind(&[
             JsValue::from_str(&jti),
             JsValue::from_str(takusu_types::SCOPE_READ_WRITE),
-            label_opt.as_deref().map(JsValue::from_str).unwrap_or(JsValue::NULL),
-            expires_at.as_deref().map(JsValue::from_str).unwrap_or(JsValue::NULL),
-        ]).map_err(d1_err)?
+            label_opt
+                .as_deref()
+                .map(JsValue::from_str)
+                .unwrap_or(JsValue::NULL),
+            expires_at
+                .as_deref()
+                .map(JsValue::from_str)
+                .unwrap_or(JsValue::NULL),
+        ])
+        .map_err(d1_err)?
         .run()
         .await
         .map_err(d1_err)?;
         let lookup = self.db.prepare("SELECT id, jti, scope, label, created_by, created_at, revoked_at, expires_at FROM tokens WHERE jti = ?1");
-        let row: Option<TokenRow> = lookup.bind(&[JsValue::from_str(&jti)]).map_err(d1_err)?.first(None).await.map_err(d1_err)?;
+        let row: Option<TokenRow> = lookup
+            .bind(&[JsValue::from_str(&jti)])
+            .map_err(d1_err)?
+            .first(None)
+            .await
+            .map_err(d1_err)?;
         let row = row.ok_or_else(|| StorageError::Internal("inserted token not found".into()))?;
-        Ok(TokenCreateResponse { id: row.id, token: new_token, scope: row.scope, label: row.label, created_at: row.created_at, expires_at: row.expires_at })
+        Ok(TokenCreateResponse {
+            id: row.id,
+            token: new_token,
+            scope: row.scope,
+            label: row.label,
+            created_at: row.created_at,
+            expires_at: row.expires_at,
+        })
     }
 
     async fn list_tokens(&self) -> StorageResult<Vec<TokenRow>> {
@@ -699,10 +980,21 @@ impl Storage for D1Storage {
 
     async fn revoke_token(&self, id: i64) -> StorageResult<()> {
         let stmt = self.db.prepare("UPDATE tokens SET revoked_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?1 AND revoked_at IS NULL");
-        let result = stmt.bind(&[JsValue::from_f64(id as f64)]).map_err(d1_err)?.run().await.map_err(d1_err)?;
-        let affected = result.meta().map_err(d1_err)?.and_then(|m| m.rows_written).unwrap_or(0);
+        let result = stmt
+            .bind(&[JsValue::from_f64(id as f64)])
+            .map_err(d1_err)?
+            .run()
+            .await
+            .map_err(d1_err)?;
+        let affected = result
+            .meta()
+            .map_err(d1_err)?
+            .and_then(|m| m.rows_written)
+            .unwrap_or(0);
         if affected == 0 {
-            return Err(not_found(format!("token {id} not found or already revoked")));
+            return Err(not_found(format!(
+                "token {id} not found or already revoked"
+            )));
         }
         Ok(())
     }
@@ -712,7 +1004,9 @@ impl Storage for D1Storage {
     async fn get_settings(&self) -> StorageResult<SettingsRow> {
         let stmt = self.db.prepare("SELECT id, tz, sleep_start, sleep_end, comfortable_minutes, maximum_minutes, solver, time_budget_ms, seed, warm_start, created_at, updated_at FROM settings WHERE id = 'active'");
         let rows: Vec<SettingsRow> = d1_all(&stmt).await?;
-        rows.into_iter().next().ok_or_else(|| not_found("settings not found"))
+        rows.into_iter()
+            .next()
+            .ok_or_else(|| not_found("settings not found"))
     }
 
     async fn update_settings(&self, body: &UpdateSettings) -> StorageResult<SettingsRow> {
@@ -724,7 +1018,10 @@ impl Storage for D1Storage {
         let maximum_minutes = body.maximum_minutes.or(existing.maximum_minutes);
         let solver = body.solver.unwrap_or(existing.solver);
         let solver = solver.to_string();
-        let time_budget_ms = body.time_budget_ms.filter(|&v| v > 0).or(existing.time_budget_ms);
+        let time_budget_ms = body
+            .time_budget_ms
+            .filter(|&v| v > 0)
+            .or(existing.time_budget_ms);
         let seed = body.seed.filter(|&v| v >= 0).or(existing.seed);
         let warm_start = body.warm_start.unwrap_or(existing.warm_start);
         let stmt = self.db.prepare(
@@ -734,13 +1031,21 @@ impl Storage for D1Storage {
             JsValue::from_str(&tz),
             JsValue::from_str(&sleep_start.to_string()),
             JsValue::from_str(&sleep_end.to_string()),
-            comfortable_minutes.map(|v| JsValue::from_f64(v as f64)).unwrap_or(JsValue::NULL),
-            maximum_minutes.map(|v| JsValue::from_f64(v as f64)).unwrap_or(JsValue::NULL),
+            comfortable_minutes
+                .map(|v| JsValue::from_f64(v as f64))
+                .unwrap_or(JsValue::NULL),
+            maximum_minutes
+                .map(|v| JsValue::from_f64(v as f64))
+                .unwrap_or(JsValue::NULL),
             JsValue::from_str(&solver),
-            time_budget_ms.map(|v| JsValue::from_f64(v as f64)).unwrap_or(JsValue::NULL),
-            seed.map(|v| JsValue::from_f64(v as f64)).unwrap_or(JsValue::NULL),
+            time_budget_ms
+                .map(|v| JsValue::from_f64(v as f64))
+                .unwrap_or(JsValue::NULL),
+            seed.map(|v| JsValue::from_f64(v as f64))
+                .unwrap_or(JsValue::NULL),
             JsValue::from_bool(warm_start),
-        ]).map_err(d1_err)?
+        ])
+        .map_err(d1_err)?
         .run()
         .await
         .map_err(d1_err)?;
@@ -750,7 +1055,9 @@ impl Storage for D1Storage {
     // ── Skills ──────────────────────────────────────────────────────────
 
     async fn list_skills(&self) -> StorageResult<Vec<SkillRow>> {
-        let stmt = self.db.prepare(format!("{} ORDER BY created_at DESC", select_skills()));
+        let stmt = self
+            .db
+            .prepare(format!("{} ORDER BY created_at DESC", select_skills()));
         d1_all(&stmt).await
     }
 
@@ -769,7 +1076,8 @@ impl Storage for D1Storage {
             JsValue::from_str(&body.description),
             JsValue::from_str(&body.body),
             JsValue::from_bool(built_in),
-        ]).map_err(d1_err)?
+        ])
+        .map_err(d1_err)?
         .run()
         .await
         .map_err(d1_err)?;
@@ -781,11 +1089,21 @@ impl Storage for D1Storage {
             "UPDATE skills SET name=COALESCE(?1,name), description=COALESCE(?2,description), body=COALESCE(?3,body), updated_at=strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE slug = ?4",
         );
         stmt.bind(&[
-            body.name.as_deref().map(JsValue::from_str).unwrap_or(JsValue::NULL),
-            body.description.as_deref().map(JsValue::from_str).unwrap_or(JsValue::NULL),
-            body.body.as_deref().map(JsValue::from_str).unwrap_or(JsValue::NULL),
+            body.name
+                .as_deref()
+                .map(JsValue::from_str)
+                .unwrap_or(JsValue::NULL),
+            body.description
+                .as_deref()
+                .map(JsValue::from_str)
+                .unwrap_or(JsValue::NULL),
+            body.body
+                .as_deref()
+                .map(JsValue::from_str)
+                .unwrap_or(JsValue::NULL),
             JsValue::from_str(slug),
-        ]).map_err(d1_err)?
+        ])
+        .map_err(d1_err)?
         .run()
         .await
         .map_err(d1_err)?;
@@ -794,7 +1112,11 @@ impl Storage for D1Storage {
 
     async fn delete_skill(&self, slug: &str) -> StorageResult<()> {
         let stmt = self.db.prepare("DELETE FROM skills WHERE slug = ?1");
-        stmt.bind(&[JsValue::from_str(slug)]).map_err(d1_err)?.run().await.map_err(d1_err)?;
+        stmt.bind(&[JsValue::from_str(slug)])
+            .map_err(d1_err)?
+            .run()
+            .await
+            .map_err(d1_err)?;
         Ok(())
     }
 
@@ -804,7 +1126,11 @@ impl Storage for D1Storage {
         select_one_memory(&self.db, id).await
     }
 
-    async fn create_memory(&self, body: &CreateMemory, operation_id: Option<&str>) -> StorageResult<MemoryRow> {
+    async fn create_memory(
+        &self,
+        body: &CreateMemory,
+        operation_id: Option<&str>,
+    ) -> StorageResult<MemoryRow> {
         let normalized_key = takusu_search::memory::normalize_key(&body.key)
             .map_err(|e| StorageError::BadRequest(format!("invalid key: {e}")))?;
         let normalized_content = takusu_search::memory::normalize_content(&body.content)
@@ -817,8 +1143,9 @@ impl Storage for D1Storage {
         if let Some(op_id) = operation_id
             && let Some(json) = check_memory_idempotency(&self.db, op_id, &hash).await?
         {
-            let row: MemoryRow = serde_json::from_str(&json)
-                .map_err(|e| StorageError::Internal(format!("corrupt idempotency response: {e}")))?;
+            let row: MemoryRow = serde_json::from_str(&json).map_err(|e| {
+                StorageError::Internal(format!("corrupt idempotency response: {e}"))
+            })?;
             return Ok(row);
         }
 
@@ -826,12 +1153,16 @@ impl Storage for D1Storage {
             "{} WHERE kind = ?1 AND normalized_key = ?2 AND subject_type = ?3 AND subject_id = ?4",
             memory_select()
         ));
-        let existing: Vec<MemoryRow> = d1_all(&find_stmt.bind(&[
-            JsValue::from_str(body.kind.as_str()),
-            JsValue::from_str(&normalized_key),
-            JsValue::from_str(subject_type.as_str()),
-            JsValue::from_str(&subject_id),
-        ]).map_err(d1_err)?)
+        let existing: Vec<MemoryRow> = d1_all(
+            &find_stmt
+                .bind(&[
+                    JsValue::from_str(body.kind.as_str()),
+                    JsValue::from_str(&normalized_key),
+                    JsValue::from_str(subject_type.as_str()),
+                    JsValue::from_str(&subject_id),
+                ])
+                .map_err(d1_err)?,
+        )
         .await?;
 
         if let Some(existing) = existing.into_iter().next() {
@@ -852,49 +1183,68 @@ impl Storage for D1Storage {
                 .map_err(d1_err)?;
                 let meta = result.meta().map_err(d1_err)?;
                 if meta.and_then(|m| m.rows_written).unwrap_or(0) == 0 {
-                    return Err(StorageError::Conflict("memory changed after proposal".into()));
+                    return Err(StorageError::Conflict(
+                        "memory changed after proposal".into(),
+                    ));
                 }
                 let row = select_one_memory(&self.db, &existing.id).await?;
                 if let Some(op_id) = operation_id {
-                    let response_json = serde_json::to_string(&row).map_err(|e| StorageError::Internal(format!("serialize response: {e}")))?;
+                    let response_json = serde_json::to_string(&row)
+                        .map_err(|e| StorageError::Internal(format!("serialize response: {e}")))?;
                     record_memory_operation(&self.db, op_id, &hash, &response_json).await?;
                 }
                 return Ok(row);
             }
-            return Err(StorageError::Conflict(format!("memory {} already exists", body.key)));
+            return Err(StorageError::Conflict(format!(
+                "memory {} already exists",
+                body.key
+            )));
         }
 
         let id = uuid::Uuid::now_v7().to_string();
         let insert = self.db.prepare(
             "INSERT INTO memories (id, kind, key, normalized_key, content, normalized_content, subject_type, subject_id, source, revision, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'user_confirmed', 1, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))",
         );
-        let result = insert.bind(&[
-            JsValue::from_str(&id),
-            JsValue::from_str(body.kind.as_str()),
-            JsValue::from_str(&body.key),
-            JsValue::from_str(&normalized_key),
-            JsValue::from_str(&body.content),
-            JsValue::from_str(&normalized_content),
-            JsValue::from_str(subject_type.as_str()),
-            JsValue::from_str(&subject_id),
-        ]).map_err(d1_err)?
-        .run()
-        .await
-        .map_err(d1_err)?;
+        let result = insert
+            .bind(&[
+                JsValue::from_str(&id),
+                JsValue::from_str(body.kind.as_str()),
+                JsValue::from_str(&body.key),
+                JsValue::from_str(&normalized_key),
+                JsValue::from_str(&body.content),
+                JsValue::from_str(&normalized_content),
+                JsValue::from_str(subject_type.as_str()),
+                JsValue::from_str(&subject_id),
+            ])
+            .map_err(d1_err)?
+            .run()
+            .await
+            .map_err(d1_err)?;
         let meta = result.meta().map_err(d1_err)?;
         if meta.and_then(|m| m.rows_written).unwrap_or(0) == 0 {
-            return Err(StorageError::Internal("memory insert did not write a row".into()));
+            return Err(StorageError::Internal(
+                "memory insert did not write a row".into(),
+            ));
         }
         let row = select_one_memory(&self.db, &id).await?;
         if let Some(op_id) = operation_id {
-            let response_json = serde_json::to_string(&row).map_err(|e| StorageError::Internal(format!("serialize response: {e}")))?;
+            let response_json = serde_json::to_string(&row)
+                .map_err(|e| StorageError::Internal(format!("serialize response: {e}")))?;
             record_memory_operation(&self.db, op_id, &hash, &response_json).await?;
         }
         Ok(row)
     }
 
-    async fn update_memory(&self, id: &str, body: &UpdateMemory, operation_id: Option<&str>) -> StorageResult<MemoryRow> {
-        let content = body.content.as_ref().ok_or_else(|| StorageError::BadRequest("content is required".into()))?;
+    async fn update_memory(
+        &self,
+        id: &str,
+        body: &UpdateMemory,
+        operation_id: Option<&str>,
+    ) -> StorageResult<MemoryRow> {
+        let content = body
+            .content
+            .as_ref()
+            .ok_or_else(|| StorageError::BadRequest("content is required".into()))?;
         if content.is_empty() {
             return Err(StorageError::BadRequest("content is required".into()));
         }
@@ -903,7 +1253,9 @@ impl Storage for D1Storage {
 
         let existing = select_one_memory(&self.db, id).await?;
         if existing.revision != body.observed_revision {
-            return Err(StorageError::Conflict("memory changed after proposal".into()));
+            return Err(StorageError::Conflict(
+                "memory changed after proposal".into(),
+            ));
         }
 
         let payload = serde_json::to_string(body).unwrap_or_default();
@@ -911,8 +1263,9 @@ impl Storage for D1Storage {
         if let Some(op_id) = operation_id
             && let Some(json) = check_memory_idempotency(&self.db, op_id, &hash).await?
         {
-            let row: MemoryRow = serde_json::from_str(&json)
-                .map_err(|e| StorageError::Internal(format!("corrupt idempotency response: {e}")))?;
+            let row: MemoryRow = serde_json::from_str(&json).map_err(|e| {
+                StorageError::Internal(format!("corrupt idempotency response: {e}"))
+            })?;
             return Ok(row);
         }
 
@@ -932,20 +1285,30 @@ impl Storage for D1Storage {
         .map_err(d1_err)?;
         let meta = result.meta().map_err(d1_err)?;
         if meta.and_then(|m| m.rows_written).unwrap_or(0) == 0 {
-            return Err(StorageError::Conflict("memory changed after proposal".into()));
+            return Err(StorageError::Conflict(
+                "memory changed after proposal".into(),
+            ));
         }
         let row = select_one_memory(&self.db, id).await?;
         if let Some(op_id) = operation_id {
-            let response_json = serde_json::to_string(&row).map_err(|e| StorageError::Internal(format!("serialize response: {e}")))?;
+            let response_json = serde_json::to_string(&row)
+                .map_err(|e| StorageError::Internal(format!("serialize response: {e}")))?;
             record_memory_operation(&self.db, op_id, &hash, &response_json).await?;
         }
         Ok(row)
     }
 
-    async fn delete_memory(&self, id: &str, observed_revision: i64, operation_id: Option<&str>) -> StorageResult<()> {
+    async fn delete_memory(
+        &self,
+        id: &str,
+        observed_revision: i64,
+        operation_id: Option<&str>,
+    ) -> StorageResult<()> {
         let existing = select_one_memory(&self.db, id).await?;
         if existing.revision != observed_revision {
-            return Err(StorageError::Conflict("memory changed after proposal".into()));
+            return Err(StorageError::Conflict(
+                "memory changed after proposal".into(),
+            ));
         }
         let hash = memory_request_hash(&format!("delete:{id}:{observed_revision}"), operation_id);
         if let Some(op_id) = operation_id
@@ -953,13 +1316,29 @@ impl Storage for D1Storage {
         {
             return Ok(());
         }
-        let stmt = self.db.prepare("DELETE FROM memories WHERE id = ?1 AND revision = ?2");
-        let result = stmt.bind(&[JsValue::from_str(id), JsValue::from_f64(observed_revision as f64)]).map_err(d1_err)?.run().await.map_err(d1_err)?;
-        let affected = result.meta().map_err(d1_err)?.and_then(|m| m.rows_written).unwrap_or(0);
+        let stmt = self
+            .db
+            .prepare("DELETE FROM memories WHERE id = ?1 AND revision = ?2");
+        let result = stmt
+            .bind(&[
+                JsValue::from_str(id),
+                JsValue::from_f64(observed_revision as f64),
+            ])
+            .map_err(d1_err)?
+            .run()
+            .await
+            .map_err(d1_err)?;
+        let affected = result
+            .meta()
+            .map_err(d1_err)?
+            .and_then(|m| m.rows_written)
+            .unwrap_or(0);
         if affected == 0 {
             let current = select_one_memory(&self.db, id).await?;
             if current.revision != observed_revision {
-                return Err(StorageError::Conflict("memory changed after proposal".into()));
+                return Err(StorageError::Conflict(
+                    "memory changed after proposal".into(),
+                ));
             }
             return Err(not_found(format!("memory {id} not found")));
         }
@@ -977,7 +1356,9 @@ impl Storage for D1Storage {
         let mut bindings: Vec<JsValue> = Vec::new();
         let mut idx = 1;
         for (i, pat) in patterns.iter().enumerate() {
-            if i > 0 { sql.push_str(" AND "); }
+            if i > 0 {
+                sql.push_str(" AND ");
+            }
             sql.push_str(&format!("(normalized_key LIKE ?{idx} ESCAPE '\\' OR normalized_content LIKE ?{} ESCAPE '\\')", idx + 1));
             bindings.push(JsValue::from_str(pat));
             bindings.push(JsValue::from_str(pat));
@@ -1008,11 +1389,19 @@ impl Storage for D1Storage {
         Ok(rows)
     }
 
-    async fn find_similar_tasks(&self, query: &SimilarTaskQuery) -> StorageResult<Vec<SimilarTaskRow>> {
-        let normalized_title = takusu_search::memory::normalize_text(&query.title, Some(takusu_search::memory::MAX_QUERY_SCALARS))
-            .map_err(|e| StorageError::BadRequest(format!("invalid title: {e}")))?;
+    async fn find_similar_tasks(
+        &self,
+        query: &SimilarTaskQuery,
+    ) -> StorageResult<Vec<SimilarTaskRow>> {
+        let normalized_title = takusu_search::memory::normalize_text(
+            &query.title,
+            Some(takusu_search::memory::MAX_QUERY_SCALARS),
+        )
+        .map_err(|e| StorageError::BadRequest(format!("invalid title: {e}")))?;
         let patterns = takusu_search::memory::similar_task_filter_patterns(&normalized_title);
-        if patterns.is_empty() { return Ok(Vec::new()); }
+        if patterns.is_empty() {
+            return Ok(Vec::new());
+        }
         let mut clauses = Vec::with_capacity(patterns.len());
         let mut bindings: Vec<JsValue> = Vec::with_capacity(patterns.len());
         for (i, p) in patterns.iter().enumerate() {
@@ -1026,11 +1415,19 @@ impl Storage for D1Storage {
         );
         let stmt = self.db.prepare(sql).bind(&bindings).map_err(d1_err)?;
         let rows: Vec<SimilarTaskRow> = d1_all(&stmt).await?;
-        let mut scored: Vec<(f64, SimilarTaskRow)> = rows.into_iter().filter_map(|row| {
-            takusu_search::memory::similar_task_score_pre_normalized(&normalized_title, &row.title).map(|score| (score, row))
-        }).collect();
+        let mut scored: Vec<(f64, SimilarTaskRow)> = rows
+            .into_iter()
+            .filter_map(|row| {
+                takusu_search::memory::similar_task_score_pre_normalized(
+                    &normalized_title,
+                    &row.title,
+                )
+                .map(|score| (score, row))
+            })
+            .collect();
         scored.sort_by(|(sa, a), (sb, b)| {
-            sa.total_cmp(sb).reverse()
+            sa.total_cmp(sb)
+                .reverse()
                 .then_with(|| {
                     let a_str = a.completed_at.map(|t| t.to_string());
                     let b_str = b.completed_at.map(|t| t.to_string());
@@ -1040,28 +1437,44 @@ impl Storage for D1Storage {
                 .then_with(|| a.task_id.cmp(&b.task_id))
         });
         let limit = query.limit.unwrap_or(10).clamp(1, 50);
-        let mut out: Vec<SimilarTaskRow> = scored.into_iter().map(|(score, mut row)| {
-            row.similarity = takusu_types::Similarity::dice(score);
-            row
-        }).collect();
+        let mut out: Vec<SimilarTaskRow> = scored
+            .into_iter()
+            .map(|(score, mut row)| {
+                row.similarity = takusu_types::Similarity::dice(score);
+                row
+            })
+            .collect();
         out.truncate(limit as usize);
         Ok(out)
     }
 
     // ── Progress / work sessions ────────────────────────────────────────
 
-    async fn start_task_work(&self, id: &str, operation_id: Option<&str>) -> StorageResult<TaskRow> {
+    async fn start_task_work(
+        &self,
+        id: &str,
+        operation_id: Option<&str>,
+    ) -> StorageResult<TaskRow> {
         let payload = serde_json::json!({"op": "start", "id": id}).to_string();
         let request_hash = progress_request_hash(&payload, operation_id);
         if let Some(op_id) = operation_id
-            && let Some(stored) = check_progress_idempotency::<TaskRow>(&self.db, op_id, &request_hash).await?
+            && let Some(stored) =
+                check_progress_idempotency::<TaskRow>(&self.db, op_id, &request_hash).await?
         {
             return Ok(stored);
         }
         let full = resolve_task_id(&self.db, id).await?;
         let status_stmt = self.db.prepare("SELECT status FROM tasks WHERE id = ?1");
-        let status: Option<StatusRow> = status_stmt.bind(&[JsValue::from_str(&full)]).map_err(d1_err)?.first(None).await.map_err(d1_err)?;
-        if status.as_ref().is_some_and(|s| s.status == "completed" || s.status == "skipped") {
+        let status: Option<StatusRow> = status_stmt
+            .bind(&[JsValue::from_str(&full)])
+            .map_err(d1_err)?
+            .first(None)
+            .await
+            .map_err(d1_err)?;
+        if status
+            .as_ref()
+            .is_some_and(|s| s.status == "completed" || s.status == "skipped")
+        {
             return Err(StorageError::BadRequest(format!(
                 "cannot start work on a {} task",
                 status.map(|s| s.status).unwrap_or_default()
@@ -1071,11 +1484,21 @@ impl Storage for D1Storage {
         let insert = self.db.prepare(
             "INSERT OR IGNORE INTO task_work_sessions (id, task_id, started_at, created_at) VALUES (?1, ?2, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))",
         );
-        insert.bind(&[JsValue::from_str(&session_id), JsValue::from_str(&full)]).map_err(d1_err)?.run().await.map_err(d1_err)?;
+        insert
+            .bind(&[JsValue::from_str(&session_id), JsValue::from_str(&full)])
+            .map_err(d1_err)?
+            .run()
+            .await
+            .map_err(d1_err)?;
         let update = self.db.prepare(
             "UPDATE tasks SET status = 'in_progress', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?1",
         );
-        update.bind(&[JsValue::from_str(&full)]).map_err(d1_err)?.run().await.map_err(d1_err)?;
+        update
+            .bind(&[JsValue::from_str(&full)])
+            .map_err(d1_err)?
+            .run()
+            .await
+            .map_err(d1_err)?;
         let task = select_one_task(&self.db, &full).await?;
         if let Some(op_id) = operation_id {
             record_progress_operation(&self.db, op_id, &request_hash, &task).await?;
@@ -1083,18 +1506,31 @@ impl Storage for D1Storage {
         Ok(task)
     }
 
-    async fn pause_task_work(&self, id: &str, operation_id: Option<&str>) -> StorageResult<TaskRow> {
+    async fn pause_task_work(
+        &self,
+        id: &str,
+        operation_id: Option<&str>,
+    ) -> StorageResult<TaskRow> {
         let payload = serde_json::json!({"op": "pause", "id": id}).to_string();
         let request_hash = progress_request_hash(&payload, operation_id);
         if let Some(op_id) = operation_id
-            && let Some(stored) = check_progress_idempotency::<TaskRow>(&self.db, op_id, &request_hash).await?
+            && let Some(stored) =
+                check_progress_idempotency::<TaskRow>(&self.db, op_id, &request_hash).await?
         {
             return Ok(stored);
         }
         let full = resolve_task_id(&self.db, id).await?;
         let status_stmt = self.db.prepare("SELECT status FROM tasks WHERE id = ?1");
-        let status: Option<StatusRow> = status_stmt.bind(&[JsValue::from_str(&full)]).map_err(d1_err)?.first(None).await.map_err(d1_err)?;
-        if status.as_ref().is_some_and(|s| s.status == "completed" || s.status == "skipped") {
+        let status: Option<StatusRow> = status_stmt
+            .bind(&[JsValue::from_str(&full)])
+            .map_err(d1_err)?
+            .first(None)
+            .await
+            .map_err(d1_err)?;
+        if status
+            .as_ref()
+            .is_some_and(|s| s.status == "completed" || s.status == "skipped")
+        {
             return Err(StorageError::BadRequest(format!(
                 "cannot pause work on a {} task",
                 status.map(|s| s.status).unwrap_or_default()
@@ -1103,11 +1539,21 @@ impl Storage for D1Storage {
         let close = self.db.prepare(
             "UPDATE task_work_sessions SET ended_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE task_id = ?1 AND ended_at IS NULL",
         );
-        close.bind(&[JsValue::from_str(&full)]).map_err(d1_err)?.run().await.map_err(d1_err)?;
+        close
+            .bind(&[JsValue::from_str(&full)])
+            .map_err(d1_err)?
+            .run()
+            .await
+            .map_err(d1_err)?;
         let update = self.db.prepare(
             "UPDATE tasks SET status = 'scheduled', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?1",
         );
-        update.bind(&[JsValue::from_str(&full)]).map_err(d1_err)?.run().await.map_err(d1_err)?;
+        update
+            .bind(&[JsValue::from_str(&full)])
+            .map_err(d1_err)?
+            .run()
+            .await
+            .map_err(d1_err)?;
         let task = select_one_task(&self.db, &full).await?;
         if let Some(op_id) = operation_id {
             record_progress_operation(&self.db, op_id, &request_hash, &task).await?;
@@ -1115,124 +1561,224 @@ impl Storage for D1Storage {
         Ok(task)
     }
 
-    async fn record_progress(&self, id: &str, body: &RecordProgress, operation_id: Option<&str>) -> StorageResult<ProgressResult> {
+    async fn record_progress(
+        &self,
+        id: &str,
+        body: &RecordProgress,
+        operation_id: Option<&str>,
+    ) -> StorageResult<ProgressResult> {
         let payload = serde_json::json!({"op": "progress", "id": id, "body": body}).to_string();
         let request_hash = progress_request_hash(&payload, operation_id);
         if let Some(op_id) = operation_id
-            && let Some(stored) = check_progress_idempotency::<ProgressResult>(&self.db, op_id, &request_hash).await?
+            && let Some(stored) =
+                check_progress_idempotency::<ProgressResult>(&self.db, op_id, &request_hash).await?
         {
             return Ok(stored);
         }
         let full = resolve_task_id(&self.db, id).await?;
         let task = select_one_task(&self.db, &full).await?;
         if task.status == TaskStatus::Completed || task.status == TaskStatus::Skipped {
-            return Err(StorageError::BadRequest(format!("cannot record progress on a {} task", task.status)));
+            return Err(StorageError::BadRequest(format!(
+                "cannot record progress on a {} task",
+                task.status
+            )));
         }
         if let Some(total) = task.quantity_total
             && body.quantity_done > total
         {
-            return Err(StorageError::BadRequest(format!("quantity_done cannot exceed quantity_total ({} > {})", body.quantity_done, total)));
+            return Err(StorageError::BadRequest(format!(
+                "quantity_done cannot exceed quantity_total ({} > {})",
+                body.quantity_done, total
+            )));
         }
         let open_stmt = self.db.prepare(
             "SELECT id, task_id, started_at, ended_at, created_at FROM task_work_sessions WHERE task_id = ?1 AND ended_at IS NULL ORDER BY started_at ASC LIMIT 1",
         );
-        let open: Option<takusu_contracts::TaskWorkSessionRow> = open_stmt.bind(&[JsValue::from_str(&full)]).map_err(d1_err)?.first(None).await.map_err(d1_err)?;
+        let open: Option<takusu_contracts::TaskWorkSessionRow> = open_stmt
+            .bind(&[JsValue::from_str(&full)])
+            .map_err(d1_err)?
+            .first(None)
+            .await
+            .map_err(d1_err)?;
         if open.is_none() && body.quantity_done > task.quantity_done {
-            return Err(StorageError::BadRequest("no open work session; start work first".into()));
+            return Err(StorageError::BadRequest(
+                "no open work session; start work first".into(),
+            ));
         }
         let delta_quantity = body.quantity_done.get() - task.quantity_done.get();
         if delta_quantity == 0 {
-            let result = ProgressResult { task: task.clone(), event: None, suggests_completion: false };
+            let result = ProgressResult {
+                task: task.clone(),
+                event: None,
+                suggests_completion: false,
+            };
             if let Some(op_id) = operation_id {
                 record_progress_operation(&self.db, op_id, &request_hash, &result).await?;
             }
             return Ok(result);
         }
-        let now_stmt = self.db.prepare("SELECT strftime('%Y-%m-%dT%H:%M:%SZ', 'now') AS now");
+        let now_stmt = self
+            .db
+            .prepare("SELECT strftime('%Y-%m-%dT%H:%M:%SZ', 'now') AS now");
         let now_row: Option<NowRow> = now_stmt.first(None).await.map_err(d1_err)?;
-        let now = now_row.map(|r| r.now).ok_or_else(|| StorageError::Internal("failed to get current time".into()))?;
+        let now = now_row
+            .map(|r| r.now)
+            .ok_or_else(|| StorageError::Internal("failed to get current time".into()))?;
         let last_event_stmt = self.db.prepare(
             "SELECT id, task_id, at, quantity_done, delta_quantity, active_minutes, note FROM progress_events WHERE task_id = ?1 ORDER BY id DESC LIMIT 1",
         );
-        let last_event: Option<takusu_contracts::ProgressEventRow> = last_event_stmt.bind(&[JsValue::from_str(&full)]).map_err(d1_err)?.first(None).await.map_err(d1_err)?;
+        let last_event: Option<takusu_contracts::ProgressEventRow> = last_event_stmt
+            .bind(&[JsValue::from_str(&full)])
+            .map_err(d1_err)?
+            .first(None)
+            .await
+            .map_err(d1_err)?;
         let active_minutes = if let Some(ref session) = open {
-            let base = if let Some(ref ev) = last_event { std::cmp::max(session.started_at, ev.at) } else { session.started_at };
+            let base = if let Some(ref ev) = last_event {
+                std::cmp::max(session.started_at, ev.at)
+            } else {
+                session.started_at
+            };
             takusu_types::minutes_between(&base.to_string(), &now)
-        } else { 0 };
+        } else {
+            0
+        };
         let event_id = uuid::Uuid::now_v7().to_string();
         let insert = self.db.prepare(
             "INSERT INTO progress_events (id, task_id, at, quantity_done, delta_quantity, active_minutes, note) VALUES (?1, ?2, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), ?3, ?4, ?5, ?6)",
         );
-        insert.bind(&[
-            JsValue::from_str(&event_id),
-            JsValue::from_str(&full),
-            JsValue::from_f64(f64::from(body.quantity_done)),
-            JsValue::from_f64(delta_quantity as f64),
-            JsValue::from_f64(active_minutes as f64),
-            body.note.as_deref().map(JsValue::from_str).unwrap_or(JsValue::NULL),
-        ]).map_err(d1_err)?
-        .run()
-        .await
-        .map_err(d1_err)?;
+        insert
+            .bind(&[
+                JsValue::from_str(&event_id),
+                JsValue::from_str(&full),
+                JsValue::from_f64(f64::from(body.quantity_done)),
+                JsValue::from_f64(delta_quantity as f64),
+                JsValue::from_f64(active_minutes as f64),
+                body.note
+                    .as_deref()
+                    .map(JsValue::from_str)
+                    .unwrap_or(JsValue::NULL),
+            ])
+            .map_err(d1_err)?
+            .run()
+            .await
+            .map_err(d1_err)?;
         let mut new_avg = task.avg_minutes;
         let mut new_sigma = task.sigma_minutes;
         if delta_quantity > 0 && active_minutes > 0 {
-            let (avg, sigma) = compute_updated_estimate(&self.db, &full, task.avg_minutes, task.sigma_minutes, task.quantity_total.map(|q| q.get()), active_minutes, delta_quantity).await?;
+            let (avg, sigma) = compute_updated_estimate(
+                &self.db,
+                &full,
+                task.avg_minutes,
+                task.sigma_minutes,
+                task.quantity_total.map(|q| q.get()),
+                active_minutes,
+                delta_quantity,
+            )
+            .await?;
             new_avg = avg;
             new_sigma = sigma;
         }
-        let status = if task.status == TaskStatus::Completed { TaskStatus::Completed } else if delta_quantity < 0 { task.status } else { TaskStatus::InProgress };
-        let suggests_completion = task.quantity_total.map(|total| body.quantity_done >= total).unwrap_or(false);
+        let status = if task.status == TaskStatus::Completed {
+            TaskStatus::Completed
+        } else if delta_quantity < 0 {
+            task.status
+        } else {
+            TaskStatus::InProgress
+        };
+        let suggests_completion = task
+            .quantity_total
+            .map(|total| body.quantity_done >= total)
+            .unwrap_or(false);
         let update = self.db.prepare(
             "UPDATE tasks SET quantity_done = ?1, avg_minutes = ?2, sigma_minutes = ?3, status = ?4, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?5",
         );
-        update.bind(&[
-            JsValue::from_f64(f64::from(body.quantity_done)),
-            JsValue::from_f64(new_avg as f64),
-            JsValue::from_f64(new_sigma as f64),
-            JsValue::from_str(&status.to_string()),
-            JsValue::from_str(&full),
-        ]).map_err(d1_err)?
-        .run()
-        .await
-        .map_err(d1_err)?;
+        update
+            .bind(&[
+                JsValue::from_f64(f64::from(body.quantity_done)),
+                JsValue::from_f64(new_avg as f64),
+                JsValue::from_f64(new_sigma as f64),
+                JsValue::from_str(&status.to_string()),
+                JsValue::from_str(&full),
+            ])
+            .map_err(d1_err)?
+            .run()
+            .await
+            .map_err(d1_err)?;
         let event_stmt = self.db.prepare("SELECT id, task_id, at, quantity_done, delta_quantity, active_minutes, note FROM progress_events WHERE id = ?1");
-        let event: takusu_contracts::ProgressEventRow = event_stmt.bind(&[JsValue::from_str(&event_id)]).map_err(d1_err)?.first(None).await.map_err(d1_err)?.ok_or_else(|| StorageError::Internal("inserted progress event not found".into()))?;
+        let event: takusu_contracts::ProgressEventRow = event_stmt
+            .bind(&[JsValue::from_str(&event_id)])
+            .map_err(d1_err)?
+            .first(None)
+            .await
+            .map_err(d1_err)?
+            .ok_or_else(|| StorageError::Internal("inserted progress event not found".into()))?;
         let task = select_one_task(&self.db, &full).await?;
-        let result = ProgressResult { task, event: Some(event), suggests_completion };
+        let result = ProgressResult {
+            task,
+            event: Some(event),
+            suggests_completion,
+        };
         if let Some(op_id) = operation_id {
             record_progress_operation(&self.db, op_id, &request_hash, &result).await?;
         }
         Ok(result)
     }
 
-    async fn complete_task_work(&self, id: &str, operation_id: Option<&str>) -> StorageResult<TaskRow> {
+    async fn complete_task_work(
+        &self,
+        id: &str,
+        operation_id: Option<&str>,
+    ) -> StorageResult<TaskRow> {
         let payload = serde_json::json!({"op": "complete", "id": id}).to_string();
         let request_hash = progress_request_hash(&payload, operation_id);
         if let Some(op_id) = operation_id
-            && let Some(stored) = check_progress_idempotency::<TaskRow>(&self.db, op_id, &request_hash).await?
+            && let Some(stored) =
+                check_progress_idempotency::<TaskRow>(&self.db, op_id, &request_hash).await?
         {
             return Ok(stored);
         }
         let full = resolve_task_id(&self.db, id).await?;
         let original = select_one_task(&self.db, &full).await?;
         if original.status == TaskStatus::Completed || original.status == TaskStatus::Skipped {
-            return Err(StorageError::BadRequest(format!("cannot complete a {} task", original.status)));
+            return Err(StorageError::BadRequest(format!(
+                "cannot complete a {} task",
+                original.status
+            )));
         }
         let close = self.db.prepare(
             "UPDATE task_work_sessions SET ended_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE task_id = ?1 AND ended_at IS NULL",
         );
-        close.bind(&[JsValue::from_str(&full)]).map_err(d1_err)?.run().await.map_err(d1_err)?;
+        close
+            .bind(&[JsValue::from_str(&full)])
+            .map_err(d1_err)?
+            .run()
+            .await
+            .map_err(d1_err)?;
         let original = select_one_task(&self.db, &full).await?;
         let session_stmt = self.db.prepare(
             "SELECT id, task_id, started_at, ended_at, created_at FROM task_work_sessions WHERE task_id = ?1 ORDER BY started_at ASC",
         );
-        let sessions: Vec<takusu_contracts::TaskWorkSessionRow> = d1_all(&session_stmt.bind(&[JsValue::from_str(&full)]).map_err(d1_err)?).await?;
+        let sessions: Vec<takusu_contracts::TaskWorkSessionRow> = d1_all(
+            &session_stmt
+                .bind(&[JsValue::from_str(&full)])
+                .map_err(d1_err)?,
+        )
+        .await?;
         let total_active_minutes: i64 = sessions.iter().map(session_minutes).sum();
         let quantity_done = original.quantity_total.unwrap_or(original.quantity_done);
         let delta_quantity = quantity_done.get() - original.quantity_done.get();
         let (new_avg, new_sigma) = if delta_quantity > 0 && total_active_minutes > 0 {
-            compute_updated_estimate(&self.db, &full, original.avg_minutes, original.sigma_minutes, original.quantity_total.map(|q| q.get()), total_active_minutes, delta_quantity).await?
+            compute_updated_estimate(
+                &self.db,
+                &full,
+                original.avg_minutes,
+                original.sigma_minutes,
+                original.quantity_total.map(|q| q.get()),
+                total_active_minutes,
+                delta_quantity,
+            )
+            .await?
         } else if original.quantity_total.is_none() && total_active_minutes > 0 {
             (total_active_minutes, original.sigma_minutes)
         } else {
@@ -1241,31 +1787,35 @@ impl Storage for D1Storage {
         let update = self.db.prepare(
             "UPDATE tasks SET status = 'completed', completed_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), quantity_done = ?1, avg_minutes = ?2, sigma_minutes = ?3, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?4",
         );
-        update.bind(&[
-            JsValue::from_f64(f64::from(quantity_done)),
-            JsValue::from_f64(new_avg as f64),
-            JsValue::from_f64(new_sigma as f64),
-            JsValue::from_str(&full),
-        ]).map_err(d1_err)?
-        .run()
-        .await
-        .map_err(d1_err)?;
+        update
+            .bind(&[
+                JsValue::from_f64(f64::from(quantity_done)),
+                JsValue::from_f64(new_avg as f64),
+                JsValue::from_f64(new_sigma as f64),
+                JsValue::from_str(&full),
+            ])
+            .map_err(d1_err)?
+            .run()
+            .await
+            .map_err(d1_err)?;
         if total_active_minutes > 0 {
             let event_id = uuid::Uuid::now_v7().to_string();
             let insert = self.db.prepare(
                 "INSERT INTO progress_events (id, task_id, at, quantity_done, delta_quantity, active_minutes, note) VALUES (?1, ?2, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), ?3, ?4, ?5, ?6)",
             );
-            insert.bind(&[
-                JsValue::from_str(&event_id),
-                JsValue::from_str(&full),
-                JsValue::from_f64(f64::from(quantity_done)),
-                JsValue::from_f64(delta_quantity as f64),
-                JsValue::from_f64(total_active_minutes as f64),
-                JsValue::from_str("completed"),
-            ]).map_err(d1_err)?
-            .run()
-            .await
-            .map_err(d1_err)?;
+            insert
+                .bind(&[
+                    JsValue::from_str(&event_id),
+                    JsValue::from_str(&full),
+                    JsValue::from_f64(f64::from(quantity_done)),
+                    JsValue::from_f64(delta_quantity as f64),
+                    JsValue::from_f64(total_active_minutes as f64),
+                    JsValue::from_str("completed"),
+                ])
+                .map_err(d1_err)?
+                .run()
+                .await
+                .map_err(d1_err)?;
         }
         let task = select_one_task(&self.db, &full).await?;
         if let Some(op_id) = operation_id {
@@ -1280,109 +1830,174 @@ impl Storage for D1Storage {
         let session_stmt = self.db.prepare(
             "SELECT id, task_id, started_at, ended_at, created_at FROM task_work_sessions WHERE task_id = ?1 ORDER BY started_at ASC",
         );
-        let sessions: Vec<takusu_contracts::TaskWorkSessionRow> = d1_all(&session_stmt.bind(&[JsValue::from_str(&full)]).map_err(d1_err)?).await?;
+        let sessions: Vec<takusu_contracts::TaskWorkSessionRow> = d1_all(
+            &session_stmt
+                .bind(&[JsValue::from_str(&full)])
+                .map_err(d1_err)?,
+        )
+        .await?;
         let event_stmt = self.db.prepare(
             "SELECT id, task_id, at, quantity_done, delta_quantity, active_minutes, note FROM progress_events WHERE task_id = ?1 ORDER BY id ASC",
         );
-        let events: Vec<takusu_contracts::ProgressEventRow> = d1_all(&event_stmt.bind(&[JsValue::from_str(&full)]).map_err(d1_err)?).await?;
+        let events: Vec<takusu_contracts::ProgressEventRow> = d1_all(
+            &event_stmt
+                .bind(&[JsValue::from_str(&full)])
+                .map_err(d1_err)?,
+        )
+        .await?;
         let open_session = sessions.iter().find(|s| s.ended_at.is_none()).cloned();
         let total_active_minutes = sessions.iter().map(session_minutes).sum();
-        Ok(TaskProgress { task, open_session, sessions, events, total_active_minutes })
+        Ok(TaskProgress {
+            task,
+            open_session,
+            sessions,
+            events,
+            total_active_minutes,
+        })
     }
 
-    async fn split_task(&self, id: &str, body: &SplitTask, operation_id: Option<&str>) -> StorageResult<SplitResult> {
+    async fn split_task(
+        &self,
+        id: &str,
+        body: &SplitTask,
+        operation_id: Option<&str>,
+    ) -> StorageResult<SplitResult> {
         if body.retained_quantity < 0 {
-            return Err(StorageError::BadRequest("retained_quantity cannot be negative".into()));
+            return Err(StorageError::BadRequest(
+                "retained_quantity cannot be negative".into(),
+            ));
         }
         let payload = serde_json::json!({"op": "split", "id": id, "body": body}).to_string();
         let request_hash = progress_request_hash(&payload, operation_id);
         if let Some(op_id) = operation_id
-            && let Some(stored) = check_progress_idempotency::<SplitResult>(&self.db, op_id, &request_hash).await?
+            && let Some(stored) =
+                check_progress_idempotency::<SplitResult>(&self.db, op_id, &request_hash).await?
         {
             return Ok(stored);
         }
         let full = resolve_task_id(&self.db, id).await?;
         let original = select_one_task(&self.db, &full).await?;
         if body.end_at.is_some() {
-            validate_task_datetimes(
-                None,
-                body.end_at.as_ref(),
-                original.start_at.as_ref(),
-                None,
-            )?;
+            validate_task_datetimes(None, body.end_at.as_ref(), original.start_at.as_ref(), None)?;
         }
         if original.status == TaskStatus::Completed || original.status == TaskStatus::Skipped {
-            return Err(StorageError::BadRequest(format!("cannot split a {} task", original.status)));
+            return Err(StorageError::BadRequest(format!(
+                "cannot split a {} task",
+                original.status
+            )));
         }
-        let total = original.quantity_total.ok_or_else(|| StorageError::BadRequest("cannot split a task with no quantity_total".into()))?;
+        let total = original.quantity_total.ok_or_else(|| {
+            StorageError::BadRequest("cannot split a task with no quantity_total".into())
+        })?;
         if body.retained_quantity <= 0 {
-            return Err(StorageError::BadRequest("retained_quantity must be greater than 0".into()));
+            return Err(StorageError::BadRequest(
+                "retained_quantity must be greater than 0".into(),
+            ));
         }
         if body.retained_quantity > total {
-            return Err(StorageError::BadRequest("retained_quantity cannot exceed quantity_total".into()));
+            return Err(StorageError::BadRequest(
+                "retained_quantity cannot exceed quantity_total".into(),
+            ));
         }
         if body.retained_quantity == total {
-            return Err(StorageError::BadRequest("retained_quantity must be less than quantity_total".into()));
+            return Err(StorageError::BadRequest(
+                "retained_quantity must be less than quantity_total".into(),
+            ));
         }
         if body.retained_quantity < original.quantity_done {
-            return Err(StorageError::BadRequest("retained_quantity cannot be less than quantity_done".into()));
+            return Err(StorageError::BadRequest(
+                "retained_quantity cannot be less than quantity_done".into(),
+            ));
         }
         let remainder_quantity = Quantity::new(total.get() - body.retained_quantity.get())
             .expect("retained_quantity is less than total, so remainder is non-negative");
-        let original_quantity_total = original.original_quantity_total.filter(|t| *t != 0).unwrap_or(total);
+        let original_quantity_total = original
+            .original_quantity_total
+            .filter(|t| *t != 0)
+            .unwrap_or(total);
         let remainder_id = uuid::Uuid::now_v7().to_string();
         let display_id = allocate_display_id(&self.db, None).await?;
-        let depends = if body.set_dependency.unwrap_or(false) { vec![full.clone()] } else { Vec::new() };
+        let depends = if body.set_dependency.unwrap_or(false) {
+            vec![full.clone()]
+        } else {
+            Vec::new()
+        };
         let depends_json = DependencyList::new(depends).to_json_string();
         let remainder_title = body.title.as_ref().unwrap_or(&original.title);
-        let normalized_title = takusu_search::memory::normalize_text(remainder_title, Some(takusu_search::memory::MAX_CONTENT_SCALARS)).ok();
+        let normalized_title = takusu_search::memory::normalize_text(
+            remainder_title,
+            Some(takusu_search::memory::MAX_CONTENT_SCALARS),
+        )
+        .ok();
         let insert = self.db.prepare(
             "INSERT INTO tasks (id, display_id, title, normalized_title, description, start_at, end_at, avg_minutes, sigma_minutes, depends, parallelizable, allows_parallel, abandonability, status, ical_uid, habit_id, fixed, habit_step_id, quantity_total, quantity_done, quantity_unit, completed_at, split_from_task_id, original_quantity_total, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, 'pending', ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))",
         );
-        insert.bind(&[
-            JsValue::from_str(&remainder_id),
-            JsValue::from_f64(display_id as f64),
-            JsValue::from_str(remainder_title.as_str()),
-            normalized_title.as_deref().map(JsValue::from_str).unwrap_or(JsValue::NULL),
-            body.description.as_ref().or(original.description.as_ref()).map(|s| JsValue::from_str(s.as_str())).unwrap_or(JsValue::NULL),
-            original.start_at.as_ref().map(|s| JsValue::from_str(&s.to_string())).unwrap_or(JsValue::NULL),
-            JsValue::from_str(&body.end_at.unwrap_or(original.end_at).to_string()),
-            JsValue::from_f64(original.avg_minutes as f64),
-            JsValue::from_f64(original.sigma_minutes as f64),
-            JsValue::from_str(&depends_json),
-            JsValue::from_bool(original.parallelizable),
-            JsValue::from_bool(original.allows_parallel),
-            JsValue::from_f64(original.abandonability.into()),
-            JsValue::NULL,
-            JsValue::NULL,
-            JsValue::from_bool(original.fixed),
-            JsValue::NULL,
-            JsValue::from_f64(f64::from(remainder_quantity)),
-            JsValue::from_f64(0.0),
-            original.quantity_unit.as_deref().map(JsValue::from_str).unwrap_or(JsValue::NULL),
-            JsValue::NULL,
-            JsValue::from_str(&full),
-            JsValue::from_f64(f64::from(original_quantity_total)),
-        ]).map_err(d1_err)?
-        .run()
-        .await
-        .map_err(d1_err)?;
+        insert
+            .bind(&[
+                JsValue::from_str(&remainder_id),
+                JsValue::from_f64(display_id as f64),
+                JsValue::from_str(remainder_title.as_str()),
+                normalized_title
+                    .as_deref()
+                    .map(JsValue::from_str)
+                    .unwrap_or(JsValue::NULL),
+                body.description
+                    .as_ref()
+                    .or(original.description.as_ref())
+                    .map(|s| JsValue::from_str(s.as_str()))
+                    .unwrap_or(JsValue::NULL),
+                original
+                    .start_at
+                    .as_ref()
+                    .map(|s| JsValue::from_str(&s.to_string()))
+                    .unwrap_or(JsValue::NULL),
+                JsValue::from_str(&body.end_at.unwrap_or(original.end_at).to_string()),
+                JsValue::from_f64(original.avg_minutes as f64),
+                JsValue::from_f64(original.sigma_minutes as f64),
+                JsValue::from_str(&depends_json),
+                JsValue::from_bool(original.parallelizable),
+                JsValue::from_bool(original.allows_parallel),
+                JsValue::from_f64(original.abandonability.into()),
+                JsValue::NULL,
+                JsValue::NULL,
+                JsValue::from_bool(original.fixed),
+                JsValue::NULL,
+                JsValue::from_f64(f64::from(remainder_quantity)),
+                JsValue::from_f64(0.0),
+                original
+                    .quantity_unit
+                    .as_deref()
+                    .map(JsValue::from_str)
+                    .unwrap_or(JsValue::NULL),
+                JsValue::NULL,
+                JsValue::from_str(&full),
+                JsValue::from_f64(f64::from(original_quantity_total)),
+            ])
+            .map_err(d1_err)?
+            .run()
+            .await
+            .map_err(d1_err)?;
         let new_done = original.quantity_done.min(body.retained_quantity);
         let update = self.db.prepare(
             "UPDATE tasks SET quantity_total = ?1, quantity_done = ?2, original_quantity_total = ?3, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?4",
         );
-        update.bind(&[
-            JsValue::from_f64(f64::from(body.retained_quantity)),
-            JsValue::from_f64(f64::from(new_done)),
-            JsValue::from_f64(f64::from(original_quantity_total)),
-            JsValue::from_str(&full),
-        ]).map_err(d1_err)?
-        .run()
-        .await
-        .map_err(d1_err)?;
+        update
+            .bind(&[
+                JsValue::from_f64(f64::from(body.retained_quantity)),
+                JsValue::from_f64(f64::from(new_done)),
+                JsValue::from_f64(f64::from(original_quantity_total)),
+                JsValue::from_str(&full),
+            ])
+            .map_err(d1_err)?
+            .run()
+            .await
+            .map_err(d1_err)?;
         let original = select_one_task(&self.db, &full).await?;
         let remainder = select_one_task(&self.db, &remainder_id).await?;
-        let result = SplitResult { original, remainder };
+        let result = SplitResult {
+            original,
+            remainder,
+        };
         if let Some(op_id) = operation_id {
             record_progress_operation(&self.db, op_id, &request_hash, &result).await?;
         }
@@ -1394,25 +2009,43 @@ impl Storage for D1Storage {
     async fn get_gcal_settings(&self) -> StorageResult<GoogleCalSettingsRow> {
         let stmt = self.db.prepare("SELECT id, enabled, calendar_id, client_id, client_secret, refresh_token, created_at, updated_at FROM google_cal_settings WHERE id = 'active'");
         let rows: Vec<GoogleCalSettingsRow> = d1_all(&stmt).await?;
-        Ok(rows.into_iter().next().unwrap_or_else(|| GoogleCalSettingsRow {
-            id: "active".to_string(),
-            enabled: false,
-            calendar_id: "primary".to_string(),
-            client_id: String::new(),
-            client_secret: String::new(),
-            refresh_token: None,
-            created_at: takusu_types::Timestamp::default(),
-            updated_at: takusu_types::Timestamp::default(),
-        }))
+        Ok(rows
+            .into_iter()
+            .next()
+            .unwrap_or_else(|| GoogleCalSettingsRow {
+                id: "active".to_string(),
+                enabled: false,
+                calendar_id: "primary".to_string(),
+                client_id: String::new(),
+                client_secret: String::new(),
+                refresh_token: None,
+                created_at: takusu_types::Timestamp::default(),
+                updated_at: takusu_types::Timestamp::default(),
+            }))
     }
 
-    async fn update_gcal_settings(&self, body: &UpdateGoogleCalSettings) -> StorageResult<GoogleCalSettingsRow> {
+    async fn update_gcal_settings(
+        &self,
+        body: &UpdateGoogleCalSettings,
+    ) -> StorageResult<GoogleCalSettingsRow> {
         let existing = self.get_gcal_settings().await?;
         let enabled = body.enabled.unwrap_or(existing.enabled);
-        let calendar_id = body.calendar_id.clone().unwrap_or_else(|| existing.calendar_id.clone());
-        let client_id = body.client_id.clone().unwrap_or_else(|| existing.client_id.clone());
-        let client_secret = body.client_secret.clone().unwrap_or_else(|| existing.client_secret.clone());
-        let refresh_token = body.refresh_token.clone().or_else(|| existing.refresh_token.clone());
+        let calendar_id = body
+            .calendar_id
+            .clone()
+            .unwrap_or_else(|| existing.calendar_id.clone());
+        let client_id = body
+            .client_id
+            .clone()
+            .unwrap_or_else(|| existing.client_id.clone());
+        let client_secret = body
+            .client_secret
+            .clone()
+            .unwrap_or_else(|| existing.client_secret.clone());
+        let refresh_token = body
+            .refresh_token
+            .clone()
+            .or_else(|| existing.refresh_token.clone());
         let stmt = self.db.prepare(
             "INSERT INTO google_cal_settings (id, enabled, calendar_id, client_id, client_secret, refresh_token, created_at, updated_at) VALUES ('active', ?1, ?2, ?3, ?4, ?5, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), strftime('%Y-%m-%dT%H:%M:%SZ', 'now')) ON CONFLICT(id) DO UPDATE SET enabled=excluded.enabled, calendar_id=excluded.calendar_id, client_id=excluded.client_id, client_secret=excluded.client_secret, refresh_token=excluded.refresh_token, updated_at=strftime('%Y-%m-%dT%H:%M:%SZ', 'now')",
         );
@@ -1421,8 +2054,12 @@ impl Storage for D1Storage {
             JsValue::from_str(&calendar_id),
             JsValue::from_str(&client_id),
             JsValue::from_str(&client_secret),
-            refresh_token.as_deref().map(JsValue::from_str).unwrap_or(JsValue::NULL),
-        ]).map_err(d1_err)?
+            refresh_token
+                .as_deref()
+                .map(JsValue::from_str)
+                .unwrap_or(JsValue::NULL),
+        ])
+        .map_err(d1_err)?
         .run()
         .await
         .map_err(d1_err)?;
@@ -1430,7 +2067,9 @@ impl Storage for D1Storage {
     }
 
     async fn list_gcal_mappings(&self) -> StorageResult<Vec<GoogleCalEventRow>> {
-        let stmt = self.db.prepare("SELECT task_id, google_event_id, updated_at FROM google_cal_events");
+        let stmt = self
+            .db
+            .prepare("SELECT task_id, google_event_id, updated_at FROM google_cal_events");
         d1_all(&stmt).await
     }
 
@@ -1439,18 +2078,28 @@ impl Storage for D1Storage {
             let stmt = self.db.prepare(
                 "INSERT INTO google_cal_events (task_id, google_event_id, updated_at) VALUES (?1, ?2, strftime('%Y-%m-%dT%H:%M:%SZ', 'now')) ON CONFLICT(task_id) DO UPDATE SET google_event_id=excluded.google_event_id, updated_at=strftime('%Y-%m-%dT%H:%M:%SZ', 'now')",
             );
-            stmt.bind(&[JsValue::from_str(task_id), JsValue::from_str(google_event_id)]).map_err(d1_err)?
-                .run()
-                .await
-                .map_err(d1_err)?;
+            stmt.bind(&[
+                JsValue::from_str(task_id),
+                JsValue::from_str(google_event_id),
+            ])
+            .map_err(d1_err)?
+            .run()
+            .await
+            .map_err(d1_err)?;
         }
         Ok(())
     }
 
     async fn delete_gcal_mappings(&self, task_ids: &[String]) -> StorageResult<()> {
         for id in task_ids {
-            let stmt = self.db.prepare("DELETE FROM google_cal_events WHERE task_id = ?1");
-            stmt.bind(&[JsValue::from_str(id)]).map_err(d1_err)?.run().await.map_err(d1_err)?;
+            let stmt = self
+                .db
+                .prepare("DELETE FROM google_cal_events WHERE task_id = ?1");
+            stmt.bind(&[JsValue::from_str(id)])
+                .map_err(d1_err)?
+                .run()
+                .await
+                .map_err(d1_err)?;
         }
         Ok(())
     }

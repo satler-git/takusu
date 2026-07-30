@@ -813,9 +813,9 @@ mod tests {
 
     #[tokio::test]
     async fn parse_and_resolve_habit_dependency_reference_round_trip() {
+        use takusu_contracts::{CreateHabit, CreateTask, Storage};
         use takusu_local_lib::config::LocalConfig;
         use takusu_local_lib::storage_sqlite::SqliteStorage;
-        use takusu_contracts::{CreateHabit, CreateTask, Storage};
 
         let cfg = LocalConfig {
             db: "sqlite::memory:".into(),

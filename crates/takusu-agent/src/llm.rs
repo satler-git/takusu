@@ -409,9 +409,7 @@ impl<T: LlmClient + ?Sized> LlmClient for Arc<T> {
 /// This is the single construction site for LLM clients. Adding a new
 /// non-OpenAI-compatible provider means adding a variant to [`LlmProviderKind`]
 /// and a match arm here — callers never need to change.
-pub fn build_llm_client(
-    config: &LlmConfig,
-) -> Result<Arc<dyn LlmClient + Send + Sync>, LlmError> {
+pub fn build_llm_client(config: &LlmConfig) -> Result<Arc<dyn LlmClient + Send + Sync>, LlmError> {
     match config.provider {
         LlmProviderKind::OpenAICompatible => Ok(Arc::new(OpenAIClient::new(config)?)),
     }
@@ -1031,7 +1029,10 @@ mod tests {
 
     #[test]
     fn llm_provider_kind_default_is_openai_compatible() {
-        assert_eq!(LlmProviderKind::default(), LlmProviderKind::OpenAICompatible);
+        assert_eq!(
+            LlmProviderKind::default(),
+            LlmProviderKind::OpenAICompatible
+        );
     }
 
     #[test]

@@ -52,12 +52,13 @@ use super::*;
 use crate::decoder::{DecodeInput, RepairMode, decode, decode_status, fallback_for};
 use crate::habit;
 use crate::placement::{
-    CapacityMode, Placement, capacity_exceeded_for, compute_earliest, compute_earliest_indexed,
+    CapacityMode, capacity_exceeded_for, compute_earliest, compute_earliest_indexed,
     get_time_window, try_place,
 };
 use evaluate::EvaluationContext;
 #[cfg(test)]
 use evaluate::evaluate;
+use takusu_types::{ParallelMode, Slots};
 
 /// タブーリストのキー。`(task_id, start, duration)` の各要素を型付きで保持し、
 /// `start` と `duration` の取り違えを型レベルで防ぐ。
@@ -217,7 +218,7 @@ fn topological_order_by_freeness(planner: &Planner, active: &FxHashSet<usize>) -
 /// SA はその後、評価関数の勾配に従って改善する。
 fn push_fallback(
     planner: &Planner,
-    schedules: &mut Vec<Placement>,
+    schedules: &mut Vec<TaskPlacement>,
     earliest: Point,
     dur: Slots,
     task_id: usize,
@@ -241,7 +242,7 @@ fn build_initial(planner: &Planner) -> Plan {
             .unwrap_or(std::cmp::Ordering::Equal)
     });
 
-    let mut schedules: Vec<Placement> = Vec::new();
+    let mut schedules: Vec<TaskPlacement> = Vec::new();
     let mut last_end = planner.now;
 
     // 固定タスクを先に配置して、通常タスクの try_place が重複を避けられるようにする
@@ -480,7 +481,7 @@ fn sa_polish_inner(
 
     let mut current = plan;
     let mut best = current.clone();
-    let mut neighbor_scheds: Vec<Placement> = Vec::with_capacity(n);
+    let mut neighbor_scheds: Vec<TaskPlacement> = Vec::with_capacity(n);
 
     ctx.init_sorted(&current.schedules);
 
@@ -563,7 +564,7 @@ fn sa_polish_inner(
 /// priority decoder + ALNS。`pinned` を固定配置として扱う。
 pub(crate) fn alns_search_pinned(
     planner: &Planner,
-    pinned: &[Placement],
+    pinned: &[TaskPlacement],
     rng: &mut impl Rng,
 ) -> DecodeResult {
     let config = AlnsConfig::default();
@@ -978,7 +979,7 @@ pub(crate) fn destroy_priority(
             chosen.into_iter().collect()
         }
         DestroyOperator::Worst => {
-            let mut sorted_scheds: Vec<&Placement> = plan.schedules.iter().collect();
+            let mut sorted_scheds: Vec<&TaskPlacement> = plan.schedules.iter().collect();
             sorted_scheds.sort_unstable_by_key(|p| p.start.0);
 
             let mut badness: Vec<(usize, i64)> = movable
@@ -1281,7 +1282,7 @@ pub fn sa_lns(planner: &Planner, rng: &mut impl Rng) -> Plan {
     let mut ctx = EvaluationContext::new(task_count);
     let habit_index = habit::build_index(planner);
 
-    let mut neighbor_scheds: Vec<Placement> = Vec::with_capacity(task_count);
+    let mut neighbor_scheds: Vec<TaskPlacement> = Vec::with_capacity(task_count);
 
     let total_avg: i64 = planner
         .tasks
@@ -1376,7 +1377,7 @@ pub fn sa_lns(planner: &Planner, rng: &mut impl Rng) -> Plan {
 
     repair_polish(planner, best, None)
 }
-pub fn sa_lns_partial(planner: &Planner, pinned: &[Placement], rng: &mut impl Rng) -> Plan {
+pub fn sa_lns_partial(planner: &Planner, pinned: &[TaskPlacement], rng: &mut impl Rng) -> Plan {
     if pinned.is_empty() {
         return sa_lns(planner, rng);
     }
@@ -1396,7 +1397,7 @@ pub fn sa_lns_partial(planner: &Planner, pinned: &[Placement], rng: &mut impl Rn
     let mut ctx = EvaluationContext::new(task_count);
     let habit_index = habit::build_index(planner);
 
-    let mut neighbor_scheds: Vec<Placement> = Vec::with_capacity(task_count);
+    let mut neighbor_scheds: Vec<TaskPlacement> = Vec::with_capacity(task_count);
 
     let unpinned_positions: Vec<usize> = current
         .schedules
@@ -1586,7 +1587,7 @@ fn repair_polish(planner: &Planner, best: Plan, pinned_ids: Option<&FxHashSet<us
     }
 }
 
-fn build_initial_partial(planner: &Planner, pinned: &[Placement]) -> Plan {
+fn build_initial_partial(planner: &Planner, pinned: &[TaskPlacement]) -> Plan {
     let pinned_ids: FxHashSet<usize> = pinned.iter().map(|p| p.task_id).collect();
 
     let unpinned_ids: FxHashSet<usize> = planner
@@ -1598,7 +1599,7 @@ fn build_initial_partial(planner: &Planner, pinned: &[Placement]) -> Plan {
 
     let unpinned = topological_order_by_freeness(planner, &unpinned_ids);
 
-    let mut schedules: Vec<Placement> = pinned.to_vec();
+    let mut schedules: Vec<TaskPlacement> = pinned.to_vec();
 
     // 固定タスクを先に配置して、通常タスクの try_place が重複を避けられるようにする
     // (#391)。pinned に含まれない固定タスクを先に処理する。
@@ -1655,7 +1656,7 @@ fn build_initial_partial(planner: &Planner, pinned: &[Placement]) -> Plan {
     Plan { schedules }
 }
 
-fn is_tabu_scheds(tabu: &TabuList, schedules: &[Placement]) -> bool {
+fn is_tabu_scheds(tabu: &TabuList, schedules: &[TaskPlacement]) -> bool {
     schedules
         .iter()
         .any(|p| tabu.contains(p.task_id, p.start, p.end - p.start))
@@ -1664,8 +1665,8 @@ fn is_tabu_scheds(tabu: &TabuList, schedules: &[Placement]) -> bool {
 /// O(n) tabu marking: scratch buffer を再利用して allocation を避ける。
 fn mark_tabu_scheds(
     tabu: &mut TabuList,
-    current: &[Placement],
-    neighbor: &[Placement],
+    current: &[TaskPlacement],
+    neighbor: &[TaskPlacement],
     scratch: &mut Vec<Option<(i64, i64)>>,
 ) {
     let max_id = current
@@ -1701,8 +1702,8 @@ fn mark_tabu_scheds(
 /// by reusing the pre-allocated buffer.
 fn generate_neighbor_into(
     planner: &Planner,
-    current: &[Placement],
-    buf: &mut Vec<Placement>,
+    current: &[TaskPlacement],
+    buf: &mut Vec<TaskPlacement>,
     rng: &mut impl Rng,
     habit: &habit::HabitIndex,
     span: i64,
@@ -1752,8 +1753,8 @@ fn generate_neighbor_into(
 #[allow(clippy::too_many_arguments)]
 fn generate_neighbor_partial_into(
     planner: &Planner,
-    current: &[Placement],
-    buf: &mut Vec<Placement>,
+    current: &[TaskPlacement],
+    buf: &mut Vec<TaskPlacement>,
     rng: &mut impl Rng,
     pinned_ids: &FxHashSet<usize>,
     habit: &habit::HabitIndex,
@@ -1779,29 +1780,78 @@ fn generate_neighbor_partial_into(
     let t_habit_exc = t_habit_anchor + nw.habit_exception;
 
     if r < t_shift {
-        ShiftOp.apply_partial(planner, buf, rng, span, unpinned_positions, Some(pinned_ids))
+        ShiftOp.apply_partial(
+            planner,
+            buf,
+            rng,
+            span,
+            unpinned_positions,
+            Some(pinned_ids),
+        )
     } else if r < t_swap {
-        SwapOp.apply_partial(planner, buf, rng, span, unpinned_positions, Some(pinned_ids))
+        SwapOp.apply_partial(
+            planner,
+            buf,
+            rng,
+            span,
+            unpinned_positions,
+            Some(pinned_ids),
+        )
     } else if r < t_duration {
-        DurationOp.apply_partial(planner, buf, rng, span, unpinned_positions, Some(pinned_ids))
+        DurationOp.apply_partial(
+            planner,
+            buf,
+            rng,
+            span,
+            unpinned_positions,
+            Some(pinned_ids),
+        )
     } else if r < t_reorder {
-        ReorderOp.apply_partial(planner, buf, rng, span, unpinned_positions, Some(pinned_ids))
+        ReorderOp.apply_partial(
+            planner,
+            buf,
+            rng,
+            span,
+            unpinned_positions,
+            Some(pinned_ids),
+        )
     } else if r < t_repair {
         neighbor_repair_depend_into(planner, buf, rng, Some(pinned_ids))
     } else if r < t_habit_anchor {
         if !neighbor_habit_anchor_into(planner, buf, rng, habit, pinned_ids) {
-            ShiftOp.apply_partial(planner, buf, rng, span, unpinned_positions, Some(pinned_ids))
+            ShiftOp.apply_partial(
+                planner,
+                buf,
+                rng,
+                span,
+                unpinned_positions,
+                Some(pinned_ids),
+            )
         } else {
             true
         }
     } else if r < t_habit_exc {
         if !neighbor_habit_exception_into(planner, buf, rng, habit, pinned_ids) {
-            ShiftOp.apply_partial(planner, buf, rng, span, unpinned_positions, Some(pinned_ids))
+            ShiftOp.apply_partial(
+                planner,
+                buf,
+                rng,
+                span,
+                unpinned_positions,
+                Some(pinned_ids),
+            )
         } else {
             true
         }
     } else {
-        LnsOp.apply_partial(planner, buf, rng, span, unpinned_positions, Some(pinned_ids))
+        LnsOp.apply_partial(
+            planner,
+            buf,
+            rng,
+            span,
+            unpinned_positions,
+            Some(pinned_ids),
+        )
     }
 }
 
@@ -1823,7 +1873,7 @@ trait NeighborOp {
     fn apply_at(
         &self,
         planner: &Planner,
-        scheds: &mut [Placement],
+        scheds: &mut [TaskPlacement],
         positions: &[usize],
         rng: &mut impl Rng,
         span: i64,
@@ -1833,7 +1883,7 @@ trait NeighborOp {
     fn apply_full(
         &self,
         planner: &Planner,
-        scheds: &mut Vec<Placement>,
+        scheds: &mut Vec<TaskPlacement>,
         rng: &mut impl Rng,
         span: i64,
     ) -> bool {
@@ -1857,7 +1907,7 @@ trait NeighborOp {
     fn apply_partial(
         &self,
         planner: &Planner,
-        scheds: &mut Vec<Placement>,
+        scheds: &mut Vec<TaskPlacement>,
         rng: &mut impl Rng,
         span: i64,
         unpinned: &[usize],
@@ -1922,7 +1972,7 @@ impl NeighborOp for ShiftOp {
     fn apply_at(
         &self,
         planner: &Planner,
-        scheds: &mut [Placement],
+        scheds: &mut [TaskPlacement],
         positions: &[usize],
         rng: &mut impl Rng,
         span: i64,
@@ -1952,7 +2002,7 @@ impl NeighborOp for SwapOp {
     fn apply_at(
         &self,
         planner: &Planner,
-        scheds: &mut [Placement],
+        scheds: &mut [TaskPlacement],
         positions: &[usize],
         _rng: &mut impl Rng,
         _span: i64,
@@ -1984,7 +2034,7 @@ impl NeighborOp for DurationOp {
     fn apply_at(
         &self,
         planner: &Planner,
-        scheds: &mut [Placement],
+        scheds: &mut [TaskPlacement],
         positions: &[usize],
         rng: &mut impl Rng,
         _span: i64,
@@ -2019,7 +2069,7 @@ impl NeighborOp for ReorderOp {
     fn apply_at(
         &self,
         planner: &Planner,
-        scheds: &mut [Placement],
+        scheds: &mut [TaskPlacement],
         positions: &[usize],
         _rng: &mut impl Rng,
         _span: i64,
@@ -2047,7 +2097,7 @@ impl NeighborOp for ReorderOp {
 
 fn neighbor_repair_depend_into(
     planner: &Planner,
-    scheds: &mut [Placement],
+    scheds: &mut [TaskPlacement],
     rng: &mut impl Rng,
     pinned_ids: Option<&FxHashSet<usize>>,
 ) -> bool {
@@ -2118,7 +2168,7 @@ fn habit_anchor_delta(planner: &Planner, rng: &mut impl Rng) -> i64 {
 
 fn neighbor_habit_anchor_into(
     planner: &Planner,
-    scheds: &mut Vec<Placement>,
+    scheds: &mut Vec<TaskPlacement>,
     rng: &mut impl Rng,
     habit: &habit::HabitIndex,
     pinned_ids: &FxHashSet<usize>,
@@ -2149,7 +2199,7 @@ fn neighbor_habit_anchor_into(
 
 fn neighbor_habit_exception_into(
     planner: &Planner,
-    scheds: &mut Vec<Placement>,
+    scheds: &mut Vec<TaskPlacement>,
     rng: &mut impl Rng,
     habit: &habit::HabitIndex,
     pinned_ids: &FxHashSet<usize>,
@@ -2205,7 +2255,7 @@ impl NeighborOp for LnsOp {
     fn apply_at(
         &self,
         _planner: &Planner,
-        _scheds: &mut [Placement],
+        _scheds: &mut [TaskPlacement],
         _positions: &[usize],
         _rng: &mut impl Rng,
         _span: i64,
@@ -2217,7 +2267,7 @@ impl NeighborOp for LnsOp {
     fn apply_full(
         &self,
         planner: &Planner,
-        scheds: &mut Vec<Placement>,
+        scheds: &mut Vec<TaskPlacement>,
         rng: &mut impl Rng,
         _span: i64,
     ) -> bool {
@@ -2231,7 +2281,7 @@ impl NeighborOp for LnsOp {
     fn apply_partial(
         &self,
         planner: &Planner,
-        scheds: &mut Vec<Placement>,
+        scheds: &mut Vec<TaskPlacement>,
         rng: &mut impl Rng,
         _span: i64,
         unpinned: &[usize],
@@ -2249,7 +2299,7 @@ impl LnsOp {
     fn apply_lns(
         &self,
         planner: &Planner,
-        scheds: &mut Vec<Placement>,
+        scheds: &mut Vec<TaskPlacement>,
         rng: &mut impl Rng,
         pivot_idx: usize,
         pinned_ids: Option<&FxHashSet<usize>>,
@@ -2287,7 +2337,7 @@ impl LnsOp {
 }
 
 /// Cached plan_span that works on a slice.
-fn plan_span_scheds(schedules: &[Placement]) -> i64 {
+fn plan_span_scheds(schedules: &[TaskPlacement]) -> i64 {
     let min_s = schedules.iter().map(|p| p.start.0).min();
     let max_e = schedules.iter().map(|p| p.end.0).max();
     match (min_s, max_e) {
@@ -2316,15 +2366,15 @@ fn shift_range_from_span(dur: i64, rng: &mut impl Rng, span: i64, long_shift_one
 /// O(n²) に戻るため、incremental decode では簡略化している。
 fn incremental_decode(
     planner: &Planner,
-    current_schedules: &[Placement],
+    current_schedules: &[TaskPlacement],
     removed: &[usize],
     dependents: &[Vec<usize>],
-) -> Vec<Placement> {
+) -> Vec<TaskPlacement> {
     let n = planner.tasks.len();
     let removed_set: FxHashSet<usize> = removed.iter().copied().collect();
 
     // 生存タスクの配置を維持
-    let mut scheds: Vec<Placement> = current_schedules
+    let mut scheds: Vec<TaskPlacement> = current_schedules
         .iter()
         .filter(|p| !removed_set.contains(&p.task_id))
         .copied()
@@ -2422,7 +2472,11 @@ fn incremental_decode(
     scheds
 }
 
-fn greedy_rebuild(planner: &Planner, existing: &[Placement], task_ids: &[usize]) -> Vec<Placement> {
+fn greedy_rebuild(
+    planner: &Planner,
+    existing: &[TaskPlacement],
+    task_ids: &[usize],
+) -> Vec<TaskPlacement> {
     let mut scheds = existing.to_vec();
 
     let mut pending: Vec<usize> = task_ids.to_vec();
@@ -2480,7 +2534,7 @@ fn greedy_rebuild(planner: &Planner, existing: &[Placement], task_ids: &[usize])
     scheds
 }
 
-fn place_one(planner: &Planner, scheds: &mut Vec<Placement>, task_id: usize) {
+fn place_one(planner: &Planner, scheds: &mut Vec<TaskPlacement>, task_id: usize) {
     let task = &planner.tasks[task_id];
     // build_initial と同様、avg=0 のタスクは dur=1 として配置する。
     // さもないと iCal 由来の avg=0 タスクが LNS/repair_polish の再構築で
@@ -2522,6 +2576,7 @@ fn place_one(planner: &Planner, scheds: &mut Vec<Placement>, task_id: usize) {
 mod tests {
     use super::*;
     use rand::rng;
+    use takusu_types::NormalDist;
 
     fn test_planner(tasks: Vec<Task>) -> Planner {
         Planner {
@@ -2671,14 +2726,7 @@ mod tests {
         let unpinned = [0usize, 1];
 
         // Shift should only touch unpinned positions
-        assert!(ShiftOp.apply_partial(
-            &planner,
-            &mut buf,
-            &mut rng,
-            100,
-            &unpinned,
-            None
-        ));
+        assert!(ShiftOp.apply_partial(&planner, &mut buf, &mut rng, 100, &unpinned, None));
         // Position 2 (fixed) should be unchanged
         assert_eq!(buf[2].start.0, 30);
         assert_eq!(buf[2].end.0, 34);

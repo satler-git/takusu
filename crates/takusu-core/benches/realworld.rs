@@ -1,9 +1,9 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 use std::time::Duration;
-use takusu_core::{
-    NormalDist, ParallelMode, Planner, PlannerConfig, Point, RescheduleRange, SleepConfig, Task,
-};
+use takusu_contracts::SleepConfig;
+use takusu_core::{Planner, PlannerConfig, RescheduleRange};
+use takusu_types::{NormalDist, ParallelMode, Point, Task};
 
 #[derive(serde::Deserialize)]
 struct Fixture {

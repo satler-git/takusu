@@ -17,7 +17,8 @@ use worker::D1Database;
 // ── SQL column constants ────────────────────────────────────────────────
 
 pub(super) const TASK_COLS: &str = "id, display_id, title, description, start_at, end_at, avg_minutes, sigma_minutes, depends, parallelizable, allows_parallel, abandonability, status, habit_id, ical_uid, user_edited, fixed, habit_step_id, quantity_total, quantity_done, quantity_unit, completed_at, split_from_task_id, original_quantity_total, created_at, updated_at, tam.actual_minutes";
-pub(super) const TASK_FROM: &str = "tasks LEFT JOIN task_actual_minutes tam ON tam.task_id = tasks.id";
+pub(super) const TASK_FROM: &str =
+    "tasks LEFT JOIN task_actual_minutes tam ON tam.task_id = tasks.id";
 pub(super) const OVERDUE_SQL: &str =
     "status NOT IN ('completed', 'skipped') AND datetime(end_at) < datetime('now')";
 pub(super) const NOT_OVERDUE_SQL: &str =
@@ -25,8 +26,10 @@ pub(super) const NOT_OVERDUE_SQL: &str =
 
 pub(super) const HABIT_COLS: &str = "id, display_id, title, description, recurrence, start_time, end_time, avg_minutes, sigma_minutes, parallelizable, allows_parallel, abandonability, active, fixed, window_mode, created_at, updated_at";
 pub(super) const STEP_COLS: &str = "id, habit_id, position, title, description, start_time, end_time, avg_minutes, sigma_minutes, parallelizable, allows_parallel, abandonability, fixed, depends_on, created_at";
-pub(super) const SCHEDULED_SPAN_COLS: &str = "id, habit_id, start_date, end_date, reason, created_at";
-pub(super) const SKILL_COLS: &str = "slug, name, description, body, built_in, created_at, updated_at";
+pub(super) const SCHEDULED_SPAN_COLS: &str =
+    "id, habit_id, start_date, end_date, reason, created_at";
+pub(super) const SKILL_COLS: &str =
+    "slug, name, description, body, built_in, created_at, updated_at";
 pub(super) const MEMORY_COLS: &str = "id, kind, key, normalized_key, content, normalized_content, subject_type, subject_id, source, revision, created_at, updated_at, last_used_at";
 
 pub(super) fn select_tasks() -> String {
@@ -103,7 +106,11 @@ pub(super) struct NowRow {
 pub(super) async fn d1_all<T: serde::de::DeserializeOwned>(
     stmt: &worker::D1PreparedStatement,
 ) -> StorageResult<Vec<T>> {
-    stmt.all().await.map_err(d1_err)?.results::<T>().map_err(d1_err)
+    stmt.all()
+        .await
+        .map_err(d1_err)?
+        .results::<T>()
+        .map_err(d1_err)
 }
 
 // ── ID resolution helpers ───────────────────────────────────────────────
@@ -119,10 +126,14 @@ pub(super) async fn resolve_task_id(database: &D1Database, id: &str) -> StorageR
             "SELECT t.id AS id FROM tasks t JOIN habits h ON t.habit_id = h.id \
              WHERE h.display_id = ?1 AND t.display_id = ?2",
         );
-        let rows: Vec<IdRow> = d1_all(&stmt.bind(&[
-            JsValue::from_f64(hnum as f64),
-            JsValue::from_f64(tnum as f64),
-        ]).map_err(d1_err)?)
+        let rows: Vec<IdRow> = d1_all(
+            &stmt
+                .bind(&[
+                    JsValue::from_f64(hnum as f64),
+                    JsValue::from_f64(tnum as f64),
+                ])
+                .map_err(d1_err)?,
+        )
         .await?;
         return rows
             .into_iter()
@@ -134,8 +145,12 @@ pub(super) async fn resolve_task_id(database: &D1Database, id: &str) -> StorageR
     if let Ok(num) = id.parse::<i64>() {
         let stmt =
             database.prepare("SELECT id FROM tasks WHERE display_id = ?1 AND habit_id IS NULL");
-        let rows: Vec<IdRow> =
-            d1_all(&stmt.bind(&[JsValue::from_f64(num as f64)]).map_err(d1_err)?).await?;
+        let rows: Vec<IdRow> = d1_all(
+            &stmt
+                .bind(&[JsValue::from_f64(num as f64)])
+                .map_err(d1_err)?,
+        )
+        .await?;
         return rows
             .into_iter()
             .next()
@@ -145,7 +160,8 @@ pub(super) async fn resolve_task_id(database: &D1Database, id: &str) -> StorageR
 
     if id.contains('-') {
         let stmt = database.prepare("SELECT id FROM tasks WHERE id = ?1");
-        let rows: Vec<IdRow> = d1_all(&stmt.bind(&[JsValue::from_str(id)]).map_err(d1_err)?).await?;
+        let rows: Vec<IdRow> =
+            d1_all(&stmt.bind(&[JsValue::from_str(id)]).map_err(d1_err)?).await?;
         return rows
             .into_iter()
             .next()
@@ -161,8 +177,12 @@ pub(super) async fn resolve_habit_id(database: &D1Database, id: &str) -> Storage
         && let Ok(num) = rest.parse::<i64>()
     {
         let stmt = database.prepare("SELECT id FROM habits WHERE display_id = ?1");
-        let rows: Vec<IdRow> =
-            d1_all(&stmt.bind(&[JsValue::from_f64(num as f64)]).map_err(d1_err)?).await?;
+        let rows: Vec<IdRow> = d1_all(
+            &stmt
+                .bind(&[JsValue::from_f64(num as f64)])
+                .map_err(d1_err)?,
+        )
+        .await?;
         return rows
             .into_iter()
             .next()
@@ -172,7 +192,8 @@ pub(super) async fn resolve_habit_id(database: &D1Database, id: &str) -> Storage
 
     if id.contains('-') {
         let stmt = database.prepare("SELECT id FROM habits WHERE id = ?1");
-        let rows: Vec<IdRow> = d1_all(&stmt.bind(&[JsValue::from_str(id)]).map_err(d1_err)?).await?;
+        let rows: Vec<IdRow> =
+            d1_all(&stmt.bind(&[JsValue::from_str(id)]).map_err(d1_err)?).await?;
         return rows
             .into_iter()
             .next()
@@ -206,7 +227,8 @@ pub(super) async fn allocate_display_id(
             "INSERT OR IGNORE INTO habit_task_display_id_seq (habit_id, next_id) VALUES (?1, 1)",
         );
         insert_stmt
-            .bind(&[JsValue::from_str(habit_id)]).map_err(d1_err)?
+            .bind(&[JsValue::from_str(habit_id)])
+            .map_err(d1_err)?
             .run()
             .await
             .map_err(d1_err)?;
@@ -214,7 +236,8 @@ pub(super) async fn allocate_display_id(
             "UPDATE habit_task_display_id_seq SET next_id = next_id + 1 WHERE habit_id = ?1 RETURNING next_id - 1 AS display_id",
         );
         let row: Option<DisplayIdRow> = seq_stmt
-            .bind(&[JsValue::from_str(habit_id)]).map_err(d1_err)?
+            .bind(&[JsValue::from_str(habit_id)])
+            .map_err(d1_err)?
             .first(None)
             .await
             .map_err(d1_err)?;
@@ -233,7 +256,8 @@ pub(super) async fn allocate_display_id(
 pub(super) async fn select_one_task(database: &D1Database, id: &str) -> StorageResult<TaskRow> {
     let stmt = database.prepare(format!("{select} WHERE id = ?1", select = select_tasks()));
     let row: Option<TaskRow> = stmt
-        .bind(&[JsValue::from_str(id)]).map_err(d1_err)?
+        .bind(&[JsValue::from_str(id)])
+        .map_err(d1_err)?
         .first(None)
         .await
         .map_err(d1_err)?;
@@ -243,7 +267,8 @@ pub(super) async fn select_one_task(database: &D1Database, id: &str) -> StorageR
 pub(super) async fn select_one_habit(database: &D1Database, id: &str) -> StorageResult<HabitRow> {
     let stmt = database.prepare(format!("{select} WHERE id = ?1", select = select_habits()));
     let row: Option<HabitRow> = stmt
-        .bind(&[JsValue::from_str(id)]).map_err(d1_err)?
+        .bind(&[JsValue::from_str(id)])
+        .map_err(d1_err)?
         .first(None)
         .await
         .map_err(d1_err)?;
@@ -262,16 +287,21 @@ pub(super) async fn select_steps_for_habit(
 
 pub(super) async fn select_one_memory(database: &D1Database, id: &str) -> StorageResult<MemoryRow> {
     let stmt = database.prepare(format!("{select} WHERE id = ?1", select = memory_select()));
-    let rows: Vec<MemoryRow> = d1_all(&stmt.bind(&[JsValue::from_str(id)]).map_err(d1_err)?).await?;
+    let rows: Vec<MemoryRow> =
+        d1_all(&stmt.bind(&[JsValue::from_str(id)]).map_err(d1_err)?).await?;
     rows.into_iter()
         .next()
         .ok_or_else(|| not_found(format!("memory {id} not found")))
 }
 
 pub(super) async fn select_one_skill(database: &D1Database, slug: &str) -> StorageResult<SkillRow> {
-    let stmt = database.prepare(format!("{select} WHERE slug = ?1", select = select_skills()));
+    let stmt = database.prepare(format!(
+        "{select} WHERE slug = ?1",
+        select = select_skills()
+    ));
     let row: Option<SkillRow> = stmt
-        .bind(&[JsValue::from_str(slug)]).map_err(d1_err)?
+        .bind(&[JsValue::from_str(slug)])
+        .map_err(d1_err)?
         .first(None)
         .await
         .map_err(d1_err)?;
@@ -440,7 +470,8 @@ pub(super) async fn check_progress_idempotency<T: serde::de::DeserializeOwned>(
         "SELECT request_hash, response_json FROM progress_operations WHERE operation_id = ?1",
     );
     let row: Option<ProgressOpRow> = stmt
-        .bind(&[JsValue::from_str(operation_id)]).map_err(d1_err)?
+        .bind(&[JsValue::from_str(operation_id)])
+        .map_err(d1_err)?
         .first(None)
         .await
         .map_err(d1_err)?;
@@ -472,7 +503,8 @@ pub(super) async fn record_progress_operation<T: serde::Serialize>(
         JsValue::from_str(operation_id),
         JsValue::from_str(request_hash),
         JsValue::from_str(&response_json),
-    ]).map_err(d1_err)?
+    ])
+    .map_err(d1_err)?
     .run()
     .await
     .map_err(d1_err)?;
@@ -523,7 +555,8 @@ pub(super) async fn record_memory_operation(
         JsValue::from_str(op_id),
         JsValue::from_str(request_hash),
         JsValue::from_str(response_json),
-    ]).map_err(d1_err)?
+    ])
+    .map_err(d1_err)?
     .run()
     .await
     .map_err(d1_err)?;

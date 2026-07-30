@@ -816,10 +816,7 @@ impl ToolRegistry {
             .definitions_cache
             .lock()
             .unwrap_or_else(|e| e.into_inner()) = None;
-        *self
-            .search_index
-            .lock()
-            .unwrap_or_else(|e| e.into_inner()) = None;
+        *self.search_index.lock().unwrap_or_else(|e| e.into_inner()) = None;
     }
 
     /// Names of all registered tools, sorted alphabetically (including
@@ -950,10 +947,7 @@ impl ToolRegistry {
 
     pub(crate) fn build_search_index(&self) -> Vec<SearchEntry> {
         {
-            let guard = self
-                .search_index
-                .lock()
-                .unwrap_or_else(|e| e.into_inner());
+            let guard = self.search_index.lock().unwrap_or_else(|e| e.into_inner());
             if let Some(index) = guard.as_ref() {
                 return index.clone();
             }
@@ -986,10 +980,7 @@ impl ToolRegistry {
         }
         index.sort_by(|a, b| a.name.cmp(&b.name));
 
-        let mut guard = self
-            .search_index
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let mut guard = self.search_index.lock().unwrap_or_else(|e| e.into_inner());
         if guard.is_none() {
             *guard = Some(index.clone());
         }

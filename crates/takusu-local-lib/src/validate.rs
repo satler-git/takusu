@@ -16,9 +16,8 @@
 //! - `parse_settings_timezone` and [`SettingsPlannerExt`], which depend on
 //!   `takusu-core` / `jiff` and are local-server-specific.
 
-use takusu_core::{Minutes, SleepConfig, WorkloadConfig};
-use takusu_contracts::SettingsRow;
-use takusu_types::SleepInput;
+use takusu_contracts::{SettingsRow, SleepConfig, SleepInput, WorkloadConfig};
+use takusu_types::Minutes;
 
 use crate::error::{AppError, storage_to_app};
 
@@ -221,4 +220,3 @@ mod tests {
         }
     }
 }
-

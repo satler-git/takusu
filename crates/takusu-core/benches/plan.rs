@@ -2,9 +2,9 @@ use criterion::{Criterion, criterion_group, criterion_main};
 use rand::rngs::StdRng;
 use rand::{Rng, RngExt, SeedableRng};
 use std::hint::black_box;
-use takusu_core::{
-    NormalDist, ParallelMode, Planner, PlannerConfig, Point, SleepConfig, Solver, Task,
-};
+use takusu_contracts::SleepConfig;
+use takusu_core::{Planner, PlannerConfig, Solver};
+use takusu_types::{NormalDist, ParallelMode, Point, Task};
 
 fn generate_tasks(rng: &mut impl Rng, count: usize) -> Planner {
     generate_tasks_with(

@@ -36,9 +36,7 @@ pub async fn record_progress(
     let body: RecordProgress = parse_json(&mut req).await?;
     let op_id = operation_id(&req);
     let store = storage(&env)?;
-    let result = store
-        .record_progress(id, &body, op_id.as_deref())
-        .await?;
+    let result = store.record_progress(id, &body, op_id.as_deref()).await?;
     json_ok(&result)
 }
 

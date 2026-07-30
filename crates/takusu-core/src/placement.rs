@@ -3,39 +3,7 @@
 use std::cell::RefCell;
 
 use super::*;
-
-/// タスクの配置。`(start, end, task_id)` を意味付きで表現する。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct TaskPlacement {
-    pub start: Point,
-    pub end: Point,
-    pub task_id: usize,
-}
-
-impl TaskPlacement {
-    #[inline]
-    pub const fn new(start: Point, end: Point, task_id: usize) -> Self {
-        Self {
-            start,
-            end,
-            task_id,
-        }
-    }
-}
-
-/// 時間窓 `(start, end)`。`previous_schedule` や index の要素。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct TimeWindow {
-    pub start: Point,
-    pub end: Point,
-}
-
-impl TimeWindow {
-    #[inline]
-    pub const fn new(start: Point, end: Point) -> Self {
-        Self { start, end }
-    }
-}
+use takusu_types::Slots;
 
 /// `Vec<Option<TimeWindow>>` 形式の task_id → TimeWindow 索引から、
 /// 指定 task_id の `TimeWindow` を借用で取得する。
@@ -54,17 +22,13 @@ pub struct HabitGroupAnchor {
     pub tod: i64,
 }
 
-/// 後方互換用 alias。既存コードで `Placement` を使っている箇所の移行期間中に
-/// 使用する。最終的には `TaskPlacement` に統一する。
-pub type Placement = TaskPlacement;
-
 thread_local! {
     /// `evaluate_insertion` 用の scratch buffer。
     /// 候補スケジュールを `evaluate` に渡す際の allocate を避ける。
-    pub static INSERTION_PLAN: RefCell<Vec<Placement>> = RefCell::new(Vec::with_capacity(64));
+    pub static INSERTION_PLAN: RefCell<Vec<TaskPlacement>> = RefCell::new(Vec::with_capacity(64));
     /// `evaluate_insertion` 用の `evaluate_with_scratch` buffer。
     /// 候補評価のたびに sorted / index / habit_entries を allocate するのを避ける。
-    pub static INSERTION_SORTED: RefCell<Vec<Placement>> = RefCell::new(Vec::with_capacity(64));
+    pub static INSERTION_SORTED: RefCell<Vec<TaskPlacement>> = RefCell::new(Vec::with_capacity(64));
     pub static INSERTION_INDEX: RefCell<Vec<Option<TimeWindow>>> = RefCell::new(Vec::with_capacity(64));
     pub static INSERTION_HABIT: RefCell<Vec<HabitGroupAnchor>> = RefCell::new(Vec::with_capacity(64));
 }
@@ -83,7 +47,11 @@ pub(crate) enum CapacityMode<'a> {
 
 // ── placement primitives (shared with anneal.rs) ───────────────────────
 
-pub(crate) fn compute_earliest(planner: &Planner, schedules: &[Placement], task: &Task) -> Point {
+pub(crate) fn compute_earliest(
+    planner: &Planner,
+    schedules: &[TaskPlacement],
+    task: &Task,
+) -> Point {
     // 固定タスクは start があれば now 以前の配置も許可する (学校など)。
     // start がない固定タスクは通常タスクと同様に now から配置する。
     let mut earliest = if task.fixed && task.start.is_some() {
@@ -133,9 +101,7 @@ fn sleep_window_conflict(planner: &Planner, start: Point, end: Point) -> Option<
     }
     let spd: i64 = (24 * 60) / planner.per as i64;
     let base = sleep.day_start();
-    let mut day = base
-        + (start.0 - base).div_euclid(spd) * spd
-        - spd;
+    let mut day = base + (start.0 - base).div_euclid(spd) * spd - spd;
     while day + sleep.start() < end.0 {
         let w_start = day + sleep.start();
         let w_end = day + sleep.end();
@@ -167,7 +133,7 @@ pub(crate) fn next_day_start(planner: &Planner, p: Point) -> Point {
 /// `scratch` は呼び出し側が管理する再利用バッファ（`evaluate_with_scratch` と同じ方針）。
 /// 関数内で clear → push → sort して使う。
 fn day_load_with_candidate(
-    schedules: &[Placement],
+    schedules: &[TaskPlacement],
     candidate: TimeWindow,
     day_start: Point,
     day_end: Point,
@@ -206,7 +172,11 @@ fn day_load_with_candidate(
 
 /// 与えられた時刻が属する日の、既存スケジュールの最大終了時刻を返す。
 /// cursor 以降にタスクがなければ cursor を返す。
-pub(crate) fn max_end_in_day(planner: &Planner, schedules: &[Placement], cursor: Point) -> Point {
+pub(crate) fn max_end_in_day(
+    planner: &Planner,
+    schedules: &[TaskPlacement],
+    cursor: Point,
+) -> Point {
     let spd = slots_per_day(planner);
     let day_start = day_start_for(planner, cursor);
     let day_end = day_start + Slots(spd);
@@ -221,7 +191,7 @@ pub(crate) fn max_end_in_day(planner: &Planner, schedules: &[Placement], cursor:
 
 pub(crate) fn capacity_exceeded_for(
     planner: &Planner,
-    schedules: &[Placement],
+    schedules: &[TaskPlacement],
     start: Point,
     end: Point,
     scratch: &mut Vec<TimeWindow>,
@@ -251,7 +221,7 @@ pub(crate) fn capacity_exceeded_for(
 
 pub(crate) fn try_place(
     planner: &Planner,
-    schedules: &[Placement],
+    schedules: &[TaskPlacement],
     task: &Task,
     earliest: Point,
     dur: Slots,
@@ -294,9 +264,7 @@ pub(crate) fn try_place(
             return Err(PlacementFailure::DailyCapacityExceeded);
         }
 
-        if avoid_sleep
-            && let Some(w_end) = sleep_window_conflict(planner, cursor, candidate_end)
-        {
+        if avoid_sleep && let Some(w_end) = sleep_window_conflict(planner, cursor, candidate_end) {
             // sleep を避けた先が latest_end / deadline を超える場合、
             // 実際の失敗原因を SleepConflict ではなく正しく報告する。
             let next_end = w_end + dur;

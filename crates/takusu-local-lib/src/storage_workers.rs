@@ -343,10 +343,9 @@ impl Storage for WorkersStorage {
                 .map_err(|e| StorageError::Internal(format!("invalid verify response: {e}"))),
             401 => Ok(None),
             other => {
-                let body = resp
-                    .text()
-                    .await
-                    .map_err(|e| StorageError::Io(format!("read verify body (status {other}): {e}")))?;
+                let body = resp.text().await.map_err(|e| {
+                    StorageError::Io(format!("read verify body (status {other}): {e}"))
+                })?;
                 Err(StorageError::Internal(format!(
                     "verify status {other}: {body}"
                 )))
@@ -637,10 +636,9 @@ impl Storage for WorkersStorage {
             }
             404 => Ok(None),
             other => {
-                let body = resp
-                    .text()
-                    .await
-                    .map_err(|e| StorageError::Io(format!("read schedule body (status {other}): {e}")))?;
+                let body = resp.text().await.map_err(|e| {
+                    StorageError::Io(format!("read schedule body (status {other}): {e}"))
+                })?;
                 Err(StorageError::Internal(format!(
                     "schedule status {other}: {body}"
                 )))

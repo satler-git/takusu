@@ -219,7 +219,9 @@ mod tests {
         ) -> Result<Vec<takusu_contracts::HabitStepRow>, takusu_contracts::StorageError> {
             unimplemented()
         }
-        async fn get_schedule(&self) -> Result<Option<ScheduleRow>, takusu_contracts::StorageError> {
+        async fn get_schedule(
+            &self,
+        ) -> Result<Option<ScheduleRow>, takusu_contracts::StorageError> {
             unimplemented()
         }
         async fn save_schedule(

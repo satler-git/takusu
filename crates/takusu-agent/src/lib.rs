@@ -420,7 +420,8 @@ impl AgentSession {
                 llm::LlmResponseContent::ToolCalls { text, calls } => {
                     tool_call_count += calls.len();
                     if tool_call_count > self.config.read()?.llm.max_tool_calls {
-                        let _ = self.replace_history(local, response.prompt_tokens, system_estimate);
+                        let _ =
+                            self.replace_history(local, response.prompt_tokens, system_estimate);
                         return Err(AgentError::TooManyToolCalls);
                     }
 
