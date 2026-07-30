@@ -238,6 +238,20 @@ fn agent_err(e: AgentError) -> AppError {
     AppError::Internal(e.to_string())
 }
 
+pub fn stats(clear: bool) -> Result<(), AppError> {
+    let tool_stats = takusu_agent::ToolStats::load();
+    if clear {
+        tool_stats.clear();
+        println!("Tool statistics cleared.");
+        return Ok(());
+    }
+    let snapshot = tool_stats.snapshot();
+    let json = serde_json::to_string_pretty(&snapshot)
+        .map_err(|e| AppError::Internal(format!("failed to serialize stats: {e}")))?;
+    println!("{json}");
+    Ok(())
+}
+
 fn agent_config_dir() -> Option<PathBuf> {
     std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
