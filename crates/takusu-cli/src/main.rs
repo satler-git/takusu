@@ -10,7 +10,7 @@ mod mcp;
 mod server;
 mod task_ref;
 
-use clap::{CommandFactory, Parser, Subcommand};
+use clap::{Args, CommandFactory, Parser, Subcommand};
 use config::CliConfig;
 use std::io::{self, Read, Write};
 use std::process;
@@ -53,8 +53,26 @@ fn prompt(label: &str) -> Result<String, AppError> {
     Ok(buf.trim().to_string())
 }
 
+fn require_or_prompt(
+    label: &str,
+    value: Option<String>,
+    interactive: bool,
+) -> Result<String, AppError> {
+    match value.filter(|v| !v.is_empty()) {
+        Some(v) => Ok(v),
+        None if interactive => prompt(label),
+        None => Err(AppError::BadRequest(BadRequestKind::Other(format!(
+            "{label} is required"
+        )))),
+    }
+}
+
 fn is_interactive() -> bool {
     atty::is(atty::Stream::Stdin) && atty::is(atty::Stream::Stdout)
+}
+
+fn is_stdout_tty() -> bool {
+    atty::is(atty::Stream::Stdout)
 }
 
 fn parse_dt(s: &str, tz: &jiff::tz::TimeZone) -> Result<Timestamp, AppError> {
@@ -75,33 +93,19 @@ fn parse_date(s: &str) -> Result<Date, AppError> {
     })
 }
 
-/// Parse `--schedule-mode` for `reschedule`, rejecting `full` at parse time.
-///
-/// `full` regenerates the entire schedule and is only valid for
-/// `generate_schedule`; `reschedule` is a partial reconfiguration. Rejecting
-/// here keeps the error at clap parse time rather than deferring it to a
-/// 400 from the app layer.
-fn parse_reschedule_mode(s: &str) -> Result<ScheduleMode, String> {
-    let mode: ScheduleMode = s
-        .parse()
-        .map_err(|e: takusu_types::UnknownLabel| format!("invalid mode '{s}': {e}"))?;
-    if matches!(mode, ScheduleMode::Full) {
-        return Err(
-            "full mode is not supported for reschedule; use `takusu schedule generate` instead"
-                .to_string(),
-        );
-    }
-    Ok(mode)
-}
-
 #[derive(Parser)]
 #[command(name = "takusu", version, about = "CLI client for takusu scheduler")]
 struct Cli {
     #[arg(long, env = "TAKUSU_TIMEZONE", global = true)]
     tz: Option<String>,
 
-    #[arg(long, default_value = "rich", global = true)]
-    mode: DisplayMode,
+    /// Output mode (rich or simple). Auto-detected from TTY if omitted.
+    #[arg(long, global = true)]
+    mode: Option<DisplayMode>,
+
+    /// Force plain/simple output.
+    #[arg(long, global = true)]
+    plain: bool,
 
     #[command(subcommand)]
     command: Option<Commands>,
@@ -141,9 +145,6 @@ impl From<SubjectTypeArg> for SubjectType {
 
 impl DisplayMode {
     /// Return the active display renderer.
-    ///
-    /// Lets call sites write `mode.formatter().display_*(...)` instead of
-    /// repeating a `match` arm per renderer at every call site.
     fn formatter(&self) -> &'static dyn display_common::DisplayFormatter {
         match self {
             DisplayMode::Rich => &display_rich::RichFormatter,
@@ -152,834 +153,1010 @@ impl DisplayMode {
     }
 }
 
+fn effective_display_mode(cli: &Cli) -> DisplayMode {
+    if cli.plain {
+        return DisplayMode::Simple;
+    }
+    if let Some(mode) = cli.mode.as_ref() {
+        return mode.clone();
+    }
+    if is_stdout_tty() {
+        DisplayMode::Rich
+    } else {
+        DisplayMode::Simple
+    }
+}
+
 #[derive(Subcommand)]
 enum Commands {
-    /// Check server health (no token required)
-    Health,
+    /// Task verbs, available at the top level.
+    #[command(flatten)]
+    Task(TaskVerbs),
 
-    /// Generate a root token
-    GenRootToken,
+    /// Schedule verbs, available at the top level.
+    #[command(flatten)]
+    Schedule(ScheduleVerbs),
 
-    /// Task management
-    Task {
-        #[command(subcommand)]
-        command: TaskCommands,
-    },
-
-    /// Schedule management
-    Schedule {
-        #[command(subcommand)]
-        command: ScheduleCommands,
-    },
-
-    /// Token management
-    Token {
-        #[command(subcommand)]
-        command: TokenCommands,
-    },
-
-    /// Generate shell completions
-    Completion {
-        #[arg(value_name = "SHELL")]
-        shell: clap_complete::Shell,
-    },
-
-    /// Google Calendar sync
-    Sync {
-        #[command(subcommand)]
-        command: SyncCommands,
-    },
-
-    /// Show or initialize config file
-    Config {
-        #[command(subcommand)]
-        command: ConfigCommands,
-    },
-
-    /// Habit management
+    /// Habit management.
     Habit {
         #[command(subcommand)]
         command: HabitCommands,
     },
 
-    /// Skill management
-    Skill {
-        #[command(subcommand)]
-        command: SkillCommands,
-    },
-
-    /// Memory and similar-task search
+    /// Memory and similar-task search.
     Memory {
         #[command(subcommand)]
         command: MemoryCommands,
     },
 
-    /// Agent assistant
-    Agent {
+    /// Skill management.
+    Skill {
         #[command(subcommand)]
-        command: AgentCommands,
+        command: SkillCommands,
     },
 
-    /// MCP server over stdio
+    /// Token management.
+    Token {
+        #[command(subcommand)]
+        command: TokenCommands,
+    },
+
+    /// Google Calendar sync.
+    Sync {
+        #[command(subcommand)]
+        command: SyncCommands,
+    },
+
+    /// Show or initialize config file.
+    Config {
+        #[command(subcommand)]
+        command: ConfigCommands,
+    },
+
+    /// System utilities.
+    System {
+        #[command(subcommand)]
+        command: SystemCommands,
+    },
+
+    /// Agent assistant.
+    Agent(AgentArgs),
+
+    /// MCP server over stdio.
     #[cfg(feature = "mcp")]
     Mcp,
 
-    /// Launch the interactive TUI
+    /// Launch the interactive TUI.
     Tui,
 
-    /// Launch the web UI server (localhost)
+    /// Launch the web UI server (localhost).
     #[cfg(feature = "web")]
     Web {
         /// Bind address (overrides config / TAKUSU_BIND), e.g. 127.0.0.1:3000
         #[arg(long)]
         bind: Option<String>,
     },
-
-    /// Show third-party licenses
-    License,
 }
 
+// ── Top-level task verbs ─────────────────────────────────────────────────
+
 #[derive(Subcommand)]
-enum AgentCommands {
-    /// Run the agent assistant
-    Run {
-        /// Single text input for one agent turn
-        #[arg(short, long)]
-        text: Option<String>,
+enum TaskVerbs {
+    /// Create a task (interactive if title is not given in a terminal).
+    Add(AddArgs),
 
-        /// Auto-approve any pending changes without prompting
-        #[arg(long)]
-        yes: bool,
+    /// List tasks.
+    Ls(LsArgs),
 
-        /// Auto-approve a permission for this session (e.g. task:create, *:*).
-        /// If the same key is also passed to --deny, --deny wins.
-        #[arg(long, value_name = "PERM")]
-        allow: Vec<String>,
+    /// Show task detail.
+    Show(RefArgs),
 
-        /// Deny a permission for this session, overriding provider settings
-        /// and any --allow for the same key
-        #[arg(long, value_name = "PERM")]
-        deny: Vec<String>,
-    },
-    /// Show or edit agent configuration
-    Config {
-        #[command(subcommand)]
-        command: AgentConfigCommands,
-    },
-    /// Show or clear tool usage statistics
-    Stats {
-        /// Clear all statistics
-        #[arg(long)]
-        clear: bool,
-    },
+    /// Start work on a task (creates a session, status -> in_progress).
+    Start(RefArgs),
+
+    /// Pause work on a task (closes the open session).
+    Pause(RefArgs),
+
+    /// Complete work on a task (closes the session, status -> completed).
+    Done(RefArgs),
+
+    /// Mark a task as skipped.
+    Skip(RefArgs),
+
+    /// Edit a task in $EDITOR, or PATCH with flags.
+    Edit(EditArgs),
+
+    /// Delete a task.
+    Rm(RefArgs),
+
+    /// Record progress on a task.
+    Progress(ProgressArgs),
+
+    /// Split a task into the original (retained quantity) and a remainder.
+    Split(SplitArgs),
+
+    /// Import tasks from an iCalendar (.ics) file.
+    Import(ImportArgs),
+
+    /// Show task dependencies or detect redundant edges with --check.
+    Deps(DepsArgs),
 }
 
+#[derive(Args)]
+struct RefArgs {
+    #[arg(value_name = "REF")]
+    id: String,
+}
+
+#[derive(Args)]
+struct AddArgs {
+    /// Task title.
+    title: Option<String>,
+
+    #[arg(
+        short = 'd',
+        long,
+        help = "Deadline (e.g. 2025-06-05, 2025-06-05T23:59:00Z)"
+    )]
+    due: Option<String>,
+
+    #[arg(short = 'a', long, help = "Start time (same format as --due)")]
+    at: Option<String>,
+
+    #[arg(
+        short = 't',
+        long,
+        default_value = "30m",
+        help = "Average duration (e.g. 30m, 1h30m, 6s=6slots(30min))"
+    )]
+    time: String,
+
+    #[arg(
+        long,
+        default_value = "0",
+        help = "Std dev of duration (same format as --time). 0 = auto (time/5)"
+    )]
+    sigma: String,
+
+    #[arg(long, default_value_t = 0.5, help = "Abandonability 0.0-1.0")]
+    abandonability: f64,
+
+    #[arg(long)]
+    description: Option<String>,
+
+    #[arg(long)]
+    depends: Option<Vec<String>>,
+
+    #[arg(long)]
+    parallelizable: Option<bool>,
+
+    #[arg(long)]
+    allows_parallel: Option<bool>,
+
+    #[arg(long, help = "Lock start time (scheduler cannot move)")]
+    fixed: Option<bool>,
+
+    #[arg(long)]
+    quantity_total: Option<i64>,
+
+    #[arg(long)]
+    quantity_done: Option<i64>,
+
+    #[arg(long)]
+    quantity_unit: Option<String>,
+
+    #[arg(long)]
+    original_quantity_total: Option<i64>,
+}
+
+#[derive(Args)]
+struct LsArgs {
+    #[arg(
+        long,
+        help = "Filter by status (pending, scheduled, in_progress, completed, skipped, overdue, actionable)"
+    )]
+    status: Option<TaskStatusFilter>,
+
+    #[arg(
+        long,
+        help = "Filter by start date (e.g. 2025-06-05, 2025-06-05T14:00)"
+    )]
+    from: Option<String>,
+
+    #[arg(long, help = "Filter by end date (e.g. 2025-06-05, 2025-06-05T14:00)")]
+    until: Option<String>,
+
+    /// Show all tasks (do not filter to actionable statuses).
+    #[arg(long)]
+    all: bool,
+
+    #[arg(long, help = "Maximum number of tasks to return")]
+    limit: Option<i64>,
+
+    #[arg(long, help = "Exclude overdue tasks")]
+    no_overdue: bool,
+
+    #[arg(long, help = "Filter by habit id")]
+    habit_id: Option<String>,
+
+    #[arg(long, help = "Filter by iCalendar UID")]
+    ical_uid: Option<String>,
+
+    #[arg(
+        help = "Search query (e.g. status:pending OR 買い物)",
+        trailing_var_arg = true,
+        num_args = 0..,
+    )]
+    query: Vec<String>,
+}
+
+#[derive(Args)]
+struct EditArgs {
+    #[arg(value_name = "REF")]
+    id: String,
+
+    #[arg(long)]
+    title: Option<String>,
+
+    #[arg(long)]
+    description: Option<String>,
+
+    #[arg(
+        short = 'a',
+        long,
+        help = "Start time (e.g. 2025-06-05, 2025-06-05T14:00)"
+    )]
+    at: Option<String>,
+
+    #[arg(
+        short = 'd',
+        long,
+        help = "Deadline (e.g. 2025-06-05, 2025-06-05T14:00)"
+    )]
+    due: Option<String>,
+
+    #[arg(short = 't', long, help = "Average duration (e.g. 30m, 1h30m)")]
+    time: Option<String>,
+
+    #[arg(long, help = "Std dev of duration (same format as --time)")]
+    sigma: Option<String>,
+
+    #[arg(long)]
+    depends: Option<Vec<String>>,
+
+    #[arg(long)]
+    parallelizable: Option<bool>,
+
+    #[arg(long)]
+    allows_parallel: Option<bool>,
+
+    #[arg(long)]
+    abandonability: Option<f64>,
+
+    #[arg(long)]
+    status: Option<TaskStatus>,
+
+    #[arg(long, help = "Lock start time (scheduler cannot move)")]
+    fixed: Option<bool>,
+
+    #[arg(long)]
+    quantity_total: Option<i64>,
+
+    #[arg(long)]
+    quantity_done: Option<i64>,
+
+    #[arg(long)]
+    quantity_unit: Option<String>,
+
+    #[arg(long)]
+    original_quantity_total: Option<i64>,
+}
+
+impl EditArgs {
+    fn has_patch_flag(&self) -> bool {
+        self.title.is_some()
+            || self.description.is_some()
+            || self.at.is_some()
+            || self.due.is_some()
+            || self.time.is_some()
+            || self.sigma.is_some()
+            || self.depends.is_some()
+            || self.parallelizable.is_some()
+            || self.allows_parallel.is_some()
+            || self.abandonability.is_some()
+            || self.status.is_some()
+            || self.fixed.is_some()
+            || self.quantity_total.is_some()
+            || self.quantity_done.is_some()
+            || self.quantity_unit.is_some()
+            || self.original_quantity_total.is_some()
+    }
+}
+
+#[derive(Args)]
+struct ProgressArgs {
+    #[arg(value_name = "REF")]
+    id: String,
+
+    #[arg(value_name = "QUANTITY")]
+    quantity: i64,
+
+    #[arg(long)]
+    note: Option<String>,
+}
+
+#[derive(Args)]
+struct SplitArgs {
+    #[arg(value_name = "REF")]
+    id: String,
+
+    #[arg(short = 'k', long, help = "Quantity to keep on the original task")]
+    keep: i64,
+
+    #[arg(long, help = "Make the remainder depend on the original task")]
+    dep: bool,
+
+    #[arg(long, help = "Title for the remainder task")]
+    title: Option<String>,
+
+    #[arg(long, help = "Description for the remainder task")]
+    description: Option<String>,
+
+    #[arg(short = 'd', long, help = "Deadline for the remainder task")]
+    due: Option<String>,
+}
+
+#[derive(Args)]
+struct ImportArgs {
+    /// Path to the .ics file, or "-" to read from stdin.
+    file: String,
+}
+
+#[derive(Args)]
+struct DepsArgs {
+    /// Detect and offer to remove redundant (composite) dependency edges.
+    #[arg(long)]
+    check: bool,
+}
+
+// ── Top-level schedule verbs ─────────────────────────────────────────────
+
 #[derive(Subcommand)]
-enum AgentConfigCommands {
-    /// Show current agent config file
-    Show,
-    /// Set a config value by key path (e.g. llm.base_url https://api.openai.com/v1).
-    /// Use the `permissions` subcommand for llm.permissions.
-    Set { key: String, value: String },
-    /// Manage agent permissions
+enum ScheduleVerbs {
+    /// Show active schedule. This is the default when no subcommand is given.
+    Agenda(AgendaArgs),
+
+    /// Generate or reschedule the active schedule.
+    Plan(PlanArgs),
+
+    /// Move a schedule entry.
+    Move(MoveArgs),
+
+    /// Clear active schedule.
+    Unplan,
+}
+
+#[derive(Args)]
+struct AgendaArgs {
+    #[arg(
+        long,
+        help = "Show only schedule entries for the given day (YYYY-MM-DD)"
+    )]
+    day: Option<String>,
+}
+
+#[derive(Args)]
+struct PlanArgs {
+    #[arg(long, help = "Start time (e.g. 2025-06-05, 2025-06-05T06:00Z)")]
+    from: Option<String>,
+
+    #[arg(long, help = "End time (e.g. 2025-06-06, 2025-06-06T06:00Z)")]
+    until: Option<String>,
+
+    #[arg(long, num_args = 1.., help = "Reschedule only these task refs")]
+    tasks: Option<Vec<String>>,
+
+    #[arg(long, num_args = 1.., help = "Task refs to keep pinned")]
+    pin: Option<Vec<String>>,
+
+    #[arg(long, default_value = "recommended")]
+    sleep: SleepInput,
+}
+
+#[derive(Args)]
+struct MoveArgs {
+    #[arg(value_name = "REF")]
+    task_id: String,
+
+    #[arg(value_name = "START_AT")]
+    start_at: String,
+
+    #[arg(long)]
+    force: bool,
+}
+
+// ── Noun groups ──────────────────────────────────────────────────────────
+
+#[derive(Subcommand)]
+enum HabitCommands {
+    /// Create a habit (interactive if no args in terminal).
+    Add(HabitAddArgs),
+
+    /// List habits.
+    Ls,
+
+    /// Show habit detail.
+    Show(RefArgs),
+
+    /// Edit a habit in $EDITOR, or PATCH with flags.
+    Edit(HabitEditArgs),
+
+    /// Delete a habit.
+    Rm(RefArgs),
+
+    /// Add a pause (scheduled span) to a habit.
+    Pause(HabitPauseArgs),
+
+    /// Manage habit pauses (scheduled spans).
     #[command(subcommand)]
-    Permissions(AgentPermissionsCommands),
+    Pauses(HabitPausesCommands),
+
+    /// Manage habit steps.
+    #[command(subcommand)]
+    Steps(HabitStepsCommands),
+}
+
+#[derive(Args)]
+struct HabitAddArgs {
+    #[arg(short, long, help = "Habit title")]
+    title: Option<String>,
+
+    #[arg(long, short, help = "Recurrence (daily, weekdays, Mon,Wed,Fri)")]
+    recurrence: Option<String>,
+
+    #[arg(long, help = "Start time (HH:MM)")]
+    start_time: Option<String>,
+
+    #[arg(long, help = "End time (HH:MM)")]
+    end_time: Option<String>,
+
+    #[arg(
+        long,
+        default_value = "30m",
+        help = "Average duration (e.g. 30m, 1h30m)"
+    )]
+    avg_time: String,
+
+    #[arg(
+        long,
+        default_value = "0",
+        help = "Std dev of duration (same format as avg_time). 0 = auto (avg/5)"
+    )]
+    sigma_time: String,
+
+    #[arg(long, default_value_t = 0.5, help = "Abandonability 0.0-1.0")]
+    abandonability: f64,
+
+    #[arg(long)]
+    description: Option<String>,
+
+    #[arg(long)]
+    parallelizable: bool,
+
+    #[arg(long)]
+    allows_parallel: bool,
+
+    #[arg(long, help = "Lock start time (scheduler cannot move)")]
+    fixed: bool,
+
+    #[arg(
+        long,
+        help = "Window mode: 'day' (occurrence day) or 'period' (until next occurrence)"
+    )]
+    window: Option<WindowMode>,
+}
+
+#[derive(Args)]
+struct HabitEditArgs {
+    #[arg(value_name = "REF")]
+    id: String,
+
+    #[arg(long)]
+    title: Option<String>,
+
+    #[arg(long)]
+    description: Option<String>,
+
+    #[arg(long)]
+    recurrence: Option<String>,
+
+    #[arg(long, help = "Start time (HH:MM)")]
+    start_time: Option<String>,
+
+    #[arg(long, help = "End time (HH:MM)")]
+    end_time: Option<String>,
+
+    #[arg(long, help = "Average duration (e.g. 30m, 1h30m)")]
+    avg_time: Option<String>,
+
+    #[arg(long, help = "Std dev of duration (same format as avg_time)")]
+    sigma_time: Option<String>,
+
+    #[arg(long)]
+    parallelizable: Option<bool>,
+
+    #[arg(long)]
+    allows_parallel: Option<bool>,
+
+    #[arg(long)]
+    abandonability: Option<f64>,
+
+    #[arg(long)]
+    active: Option<bool>,
+
+    #[arg(long, help = "Lock start time (scheduler cannot move)")]
+    fixed: Option<bool>,
+
+    #[arg(
+        long,
+        help = "Window mode: 'day' (occurrence day) or 'period' (until next occurrence)"
+    )]
+    window: Option<WindowMode>,
+}
+
+impl HabitEditArgs {
+    fn has_patch_flag(&self) -> bool {
+        self.title.is_some()
+            || self.description.is_some()
+            || self.recurrence.is_some()
+            || self.start_time.is_some()
+            || self.end_time.is_some()
+            || self.avg_time.is_some()
+            || self.sigma_time.is_some()
+            || self.parallelizable.is_some()
+            || self.allows_parallel.is_some()
+            || self.abandonability.is_some()
+            || self.active.is_some()
+            || self.fixed.is_some()
+            || self.window.is_some()
+    }
+}
+
+#[derive(Args)]
+struct HabitPauseArgs {
+    #[arg(value_name = "REF")]
+    id: String,
+
+    #[arg(long, help = "Start date (YYYY-MM-DD, inclusive)")]
+    from: String,
+
+    #[arg(long, help = "End date (YYYY-MM-DD, inclusive)")]
+    to: String,
+
+    #[arg(long, help = "Optional reason (e.g. 休暇)")]
+    reason: Option<String>,
 }
 
 #[derive(Subcommand)]
-enum AgentPermissionsCommands {
-    /// Show current permissions
-    Show,
-    /// Set a permission (e.g. task:create true)
-    Set { key: String, value: String },
-    /// Unset a permission
-    Unset { key: String },
+enum HabitPausesCommands {
+    /// List pauses for a habit, or all habits if no id is given.
+    Ls(HabitPausesLsArgs),
+
+    /// Remove a pause.
+    Rm(HabitPausesRmArgs),
+}
+
+#[derive(Args)]
+struct HabitPausesLsArgs {
+    #[arg(value_name = "REF")]
+    id: Option<String>,
+}
+
+#[derive(Args)]
+struct HabitPausesRmArgs {
+    habit_id: String,
+    span_id: String,
+}
+
+#[derive(Subcommand)]
+enum HabitStepsCommands {
+    /// List steps for a habit, or all habits if no id is given.
+    Ls(HabitStepsLsArgs),
+
+    /// Edit steps for a habit in $EDITOR (JSON array).
+    Edit(RefArgs),
+
+    /// Replace steps from a JSON file or stdin ("-"; // comments ignored).
+    Set(HabitStepsSetArgs),
+
+    /// Detect and offer to remove redundant step dependency edges.
+    Check(RefArgs),
+}
+
+#[derive(Args)]
+struct HabitStepsLsArgs {
+    #[arg(value_name = "REF")]
+    id: Option<String>,
+}
+
+#[derive(Args)]
+struct HabitStepsSetArgs {
+    #[arg(value_name = "REF")]
+    id: String,
+
+    #[arg(help = "JSON file path or '-' for stdin (// comments are ignored)")]
+    file: String,
 }
 
 #[derive(Subcommand)]
 enum MemoryCommands {
-    /// Show a memory entry
-    Show { id: String },
+    /// Create a memory entry.
+    Add(MemoryAddArgs),
 
-    /// Create a memory entry
-    Create {
-        kind: MemoryKind,
-        key: String,
-        content: String,
-        #[arg(long)]
-        subject_type: Option<SubjectTypeArg>,
-        #[arg(long)]
-        subject_id: Option<String>,
-        #[arg(long)]
-        upsert: bool,
-    },
+    /// List memory entries.
+    Ls(MemoryLsArgs),
 
-    /// Update a memory entry
-    Update {
-        id: String,
-        #[arg(long)]
-        revision: i64,
-        #[arg(long)]
-        content: String,
-    },
+    /// Show a memory entry.
+    Show(RefArgs),
 
-    /// Delete a memory entry
-    Delete {
-        id: String,
-        #[arg(long)]
-        revision: i64,
-    },
+    /// Update a memory entry.
+    Edit(MemoryEditArgs),
 
-    /// Search memory entries
-    Search {
-        q: String,
-        #[arg(long)]
-        kind: Option<MemoryKind>,
-        #[arg(long)]
-        subject_type: Option<SubjectTypeArg>,
-        #[arg(long)]
-        subject_id: Option<String>,
-        #[arg(long)]
-        limit: Option<i64>,
-    },
+    /// Delete a memory entry.
+    Rm(RefArgs),
 
-    /// Find completed tasks similar to a title
-    Similar {
-        title: String,
-        #[arg(long)]
-        limit: Option<i64>,
-    },
+    /// Search memory entries.
+    Search(MemorySearchArgs),
+
+    /// Find completed tasks similar to a title.
+    Similar(SimilarArgs),
 }
 
-#[derive(Subcommand)]
-#[allow(clippy::large_enum_variant)]
-enum ConfigCommands {
-    /// Show config file path and contents
-    Show,
-    /// Initialize config file with defaults
-    Init,
-    /// Set a local config value
-    Set {
-        #[arg(long)]
-        storage: Option<String>,
-        #[arg(long)]
-        db: Option<String>,
-        #[arg(long)]
-        worker_url: Option<String>,
-        #[arg(long)]
-        workers_token: Option<String>,
-        #[arg(long)]
-        root_token: Option<String>,
-        #[arg(long)]
-        tz: Option<String>,
-        #[arg(long)]
-        sleep_start: Option<String>,
-        #[arg(long)]
-        sleep_end: Option<String>,
-        /// Comfortable daily workload in hours (stored as minutes)
-        #[arg(long)]
-        comfortable: Option<f64>,
-        /// Maximum daily workload in hours (stored as minutes)
-        #[arg(long)]
-        maximum: Option<f64>,
-        /// Solver to use: sa, priority, or auto
-        #[arg(long)]
-        solver: Option<takusu_types::Solver>,
-        /// Time budget for solving in milliseconds
-        #[arg(long)]
-        time_budget_ms: Option<i64>,
-        /// Random seed for the solver
-        #[arg(long)]
-        seed: Option<i64>,
-        /// Warm-start priority/ALNS from the previous schedule
-        #[arg(long)]
-        warm_start: Option<bool>,
-    },
+#[derive(Args)]
+struct MemoryAddArgs {
+    #[arg(value_name = "KIND")]
+    kind: MemoryKind,
 
-    /// Worker storage configuration
-    #[command(subcommand)]
-    Workers(WorkersCommands),
+    #[arg(value_name = "KEY")]
+    key: String,
+
+    #[arg(value_name = "CONTENT")]
+    content: String,
+
+    #[arg(long)]
+    subject_type: Option<SubjectTypeArg>,
+
+    #[arg(long)]
+    subject_id: Option<String>,
+
+    #[arg(long)]
+    upsert: bool,
 }
 
-#[derive(Subcommand)]
-enum WorkersCommands {
-    /// Update Worker endpoint and token at runtime
-    Set {
-        #[arg(long)]
-        url: String,
-        #[arg(long)]
-        token: String,
-    },
-
-    /// Check storage backend health
-    Health,
+#[derive(Args)]
+struct MemoryLsArgs {
+    #[arg(long)]
+    limit: Option<i64>,
 }
 
-#[derive(Subcommand)]
-enum TaskCommands {
-    /// List tasks
-    #[command(visible_alias = "ls")]
-    List {
-        #[arg(
-            long,
-            help = "Filter by status (pending, scheduled, in_progress, completed, skipped, overdue)"
-        )]
-        status: Option<TaskStatusFilter>,
-        #[arg(
-            long,
-            help = "Filter by start date (e.g. 2025-06-05, 2025-06-05T14:00)"
-        )]
-        from: Option<String>,
-        #[arg(long, help = "Filter by end date (e.g. 2025-06-05, 2025-06-05T14:00)")]
-        until: Option<String>,
-        #[arg(
-            long,
-            help = "Exclude tasks whose end_at has passed. Do not use with --status overdue"
-        )]
-        no_overdue: bool,
-        #[arg(long)]
-        habit_id: Option<String>,
-        #[arg(long)]
-        ical_uid: Option<String>,
-        #[arg(long, help = "Maximum number of tasks to return")]
-        limit: Option<i64>,
-        #[arg(
-            help = "Search query (e.g. status:pending OR 買い物)",
-            trailing_var_arg = true,
-            num_args = 0..,
-        )]
-        query: Vec<String>,
-    },
+#[derive(Args)]
+struct MemoryEditArgs {
+    #[arg(value_name = "ID")]
+    id: String,
 
-    /// Show task detail
-    #[command(visible_alias = "get")]
-    Show { id: String },
-
-    /// Create a task (interactive if no args in terminal)
-    Create {
-        #[arg(short, long, help = "Task title")]
-        title: Option<String>,
-        #[arg(
-            short,
-            long,
-            help = "Deadline (e.g. 2025-06-05, 2025-06-05T23:59, 2025-06-05T23:59:00Z)"
-        )]
-        end_at: Option<String>,
-        #[arg(long, help = "Start time (same format as end_at)")]
-        start_at: Option<String>,
-        #[arg(
-            long,
-            default_value = "30m",
-            help = "Average duration (e.g. 30m, 1h30m, 6s=6slots(30min))"
-        )]
-        avg_time: String,
-        #[arg(
-            long,
-            default_value = "0",
-            help = "Std dev of duration (same format as avg_time). 0 = auto (avg/5)"
-        )]
-        sigma_time: String,
-        #[arg(long, default_value_t = 0.5, help = "Abandonability 0.0-1.0")]
-        abandonability: f64,
-        #[arg(long)]
-        description: Option<String>,
-        #[arg(long)]
-        depends: Option<Vec<String>>,
-        #[arg(long)]
-        parallelizable: Option<bool>,
-        #[arg(long)]
-        allows_parallel: Option<bool>,
-        #[arg(long, help = "Lock start time (scheduler cannot move)")]
-        fixed: Option<bool>,
-        #[arg(long)]
-        quantity_total: Option<i64>,
-        #[arg(long)]
-        quantity_done: Option<i64>,
-        #[arg(long)]
-        quantity_unit: Option<String>,
-        #[arg(long)]
-        original_quantity_total: Option<i64>,
-    },
-
-    /// Edit a task in $EDITOR
-    Edit { id: String },
-
-    /// Partially update a task (PATCH)
-    Update {
-        id: String,
-        #[arg(long)]
-        title: Option<String>,
-        #[arg(long)]
-        description: Option<String>,
-        #[arg(long, help = "Start time (e.g. 2025-06-05, 2025-06-05T14:00)")]
-        start_at: Option<String>,
-        #[arg(long, help = "Deadline (e.g. 2025-06-05, 2025-06-05T14:00)")]
-        end_at: Option<String>,
-        #[arg(long, help = "Average duration (e.g. 30m, 1h30m, 6s=6slots)")]
-        avg_time: Option<String>,
-        #[arg(long, help = "Std dev of duration (same format as avg_time)")]
-        sigma_time: Option<String>,
-        #[arg(long)]
-        depends: Option<Vec<String>>,
-        #[arg(long)]
-        parallelizable: Option<bool>,
-        #[arg(long)]
-        allows_parallel: Option<bool>,
-        #[arg(long)]
-        abandonability: Option<f64>,
-        #[arg(long)]
-        status: Option<TaskStatus>,
-        #[arg(long, help = "Lock start time (scheduler cannot move)")]
-        fixed: Option<bool>,
-        #[arg(long)]
-        quantity_total: Option<i64>,
-        #[arg(long)]
-        quantity_done: Option<i64>,
-        #[arg(long)]
-        quantity_unit: Option<String>,
-        #[arg(long)]
-        original_quantity_total: Option<i64>,
-    },
-
-    /// Full replace a task (PUT)
-    Replace {
-        id: String,
-        #[arg(long)]
-        title: String,
-        #[arg(long, help = "Deadline (e.g. 2025-06-05, 2025-06-05T23:59Z)")]
-        end_at: String,
-        #[arg(long, help = "Start time (same format as end_at)")]
-        start_at: Option<String>,
-        #[arg(
-            long,
-            default_value = "30m",
-            help = "Average duration (e.g. 30m, 1h30m, 6s=6slots)"
-        )]
-        avg_time: String,
-        #[arg(
-            long,
-            default_value = "0",
-            help = "Std dev of duration (same format as avg_time). 0 = auto (avg/5)"
-        )]
-        sigma_time: String,
-        #[arg(long, default_value_t = 0.5)]
-        abandonability: f64,
-        #[arg(long)]
-        description: Option<String>,
-        #[arg(long)]
-        depends: Option<Vec<String>>,
-        #[arg(long)]
-        parallelizable: Option<bool>,
-        #[arg(long)]
-        allows_parallel: Option<bool>,
-        #[arg(long, help = "Lock start time (scheduler cannot move)")]
-        fixed: Option<bool>,
-        #[arg(long)]
-        quantity_total: Option<i64>,
-        #[arg(long)]
-        quantity_done: Option<i64>,
-        #[arg(long)]
-        quantity_unit: Option<String>,
-        #[arg(long)]
-        original_quantity_total: Option<i64>,
-    },
-
-    /// Delete a task
-    #[command(visible_alias = "rm")]
-    Delete { id: String },
-
-    /// Change task status (pending, scheduled, in_progress, completed, skipped)
-    Status { id: String, status: TaskStatus },
-
-    /// Detect and offer to remove redundant (composite) dependency edges
-    #[command(visible_alias = "deps")]
-    DepsCheck, // (#355)
-
-    /// Import tasks from an iCalendar (.ics) file
-    #[command(name = "import-ical", visible_alias = "ical")]
-    ImportIcal {
-        /// Path to the .ics file, or "-" to read from stdin
-        file: String,
-    },
-
-    /// Active-session work commands
-    #[command(subcommand)]
-    Work(WorkCommands),
+    #[arg(long)]
+    content: String,
 }
 
-#[derive(Subcommand)]
-enum WorkCommands {
-    /// Start work on a task (creates a session, status -> in_progress)
-    Start { id: String },
+#[derive(Args)]
+struct MemorySearchArgs {
+    #[arg(value_name = "QUERY")]
+    q: String,
 
-    /// Pause work on a task (closes the open session)
-    Pause { id: String },
+    #[arg(long)]
+    kind: Option<MemoryKind>,
 
-    /// Complete work on a task (closes the session, status -> completed)
-    Complete { id: String },
+    #[arg(long)]
+    subject_type: Option<SubjectTypeArg>,
 
-    /// Record progress on a task
-    Progress {
-        id: String,
-        #[arg(long)]
-        quantity: i64,
-        #[arg(long)]
-        note: Option<String>,
-    },
+    #[arg(long)]
+    subject_id: Option<String>,
 
-    /// Show work sessions and progress events for a task
-    #[command(name = "progress-show")]
-    ProgressShow { id: String },
-
-    /// Split a task into the original (retained quantity) and a remainder
-    Split {
-        id: String,
-        #[arg(long)]
-        retained_quantity: i64,
-        #[arg(long)]
-        set_dependency: bool,
-        #[arg(long)]
-        title: Option<String>,
-        #[arg(long)]
-        description: Option<String>,
-        #[arg(long, help = "Deadline for the remainder task")]
-        end_at: Option<String>,
-    },
+    #[arg(long)]
+    limit: Option<i64>,
 }
 
-#[derive(Subcommand)]
-enum HabitCommands {
-    /// List habits
-    #[command(visible_alias = "ls")]
-    List,
+#[derive(Args)]
+struct SimilarArgs {
+    #[arg(value_name = "TITLE")]
+    title: String,
 
-    /// Show habit detail
-    #[command(visible_alias = "get")]
-    Show { id: String },
-
-    /// Create a habit (interactive if no args in terminal)
-    Create {
-        #[arg(short, long, help = "Habit title")]
-        title: Option<String>,
-        #[arg(long, short, help = "Recurrence (daily, weekdays, Mon,Wed,Fri)")]
-        recurrence: Option<String>,
-        #[arg(long, help = "Start time (HH:MM)")]
-        start_time: Option<String>,
-        #[arg(long, help = "End time (HH:MM)")]
-        end_time: Option<String>,
-        #[arg(
-            long,
-            default_value = "30m",
-            help = "Average duration (e.g. 30m, 1h30m)"
-        )]
-        avg_time: String,
-        #[arg(
-            long,
-            default_value = "0",
-            help = "Std dev of duration (same format as avg_time). 0 = auto (avg/5)"
-        )]
-        sigma_time: String,
-        #[arg(long, default_value_t = 0.5, help = "Abandonability 0.0-1.0")]
-        abandonability: f64,
-        #[arg(long)]
-        description: Option<String>,
-        #[arg(long)]
-        parallelizable: bool,
-        #[arg(long)]
-        allows_parallel: bool,
-        #[arg(long, help = "Lock start time (scheduler cannot move)")]
-        fixed: bool,
-        #[arg(
-            long,
-            help = "Window mode: 'day' (occurrence day) or 'period' (until next occurrence)"
-        )]
-        window: Option<WindowMode>,
-    },
-
-    /// Edit a habit in $EDITOR
-    Edit { id: String },
-
-    /// Partially update a habit (PATCH)
-    Update {
-        id: String,
-        #[arg(long)]
-        title: Option<String>,
-        #[arg(long)]
-        description: Option<String>,
-        #[arg(long)]
-        recurrence: Option<String>,
-        #[arg(long, help = "Start time (HH:MM)")]
-        start_time: Option<String>,
-        #[arg(long, help = "End time (HH:MM)")]
-        end_time: Option<String>,
-        #[arg(long, help = "Average duration (e.g. 30m, 1h30m)")]
-        avg_time: Option<String>,
-        #[arg(long, help = "Std dev of duration (same format as avg_time)")]
-        sigma_time: Option<String>,
-        #[arg(long)]
-        parallelizable: Option<bool>,
-        #[arg(long)]
-        allows_parallel: Option<bool>,
-        #[arg(long)]
-        abandonability: Option<f64>,
-        #[arg(long)]
-        active: Option<bool>,
-        #[arg(long, help = "Lock start time (scheduler cannot move)")]
-        fixed: Option<bool>,
-        #[arg(
-            long,
-            help = "Window mode: 'day' (occurrence day) or 'period' (until next occurrence)"
-        )]
-        window: Option<WindowMode>,
-    },
-
-    /// Full replace a habit (PUT)
-    Replace {
-        id: String,
-        #[arg(long)]
-        title: String,
-        #[arg(long)]
-        recurrence: String,
-        #[arg(long, help = "Start time (HH:MM)")]
-        start_time: String,
-        #[arg(long, help = "End time (HH:MM)")]
-        end_time: String,
-        #[arg(
-            long,
-            default_value = "30m",
-            help = "Average duration (e.g. 30m, 1h30m)"
-        )]
-        avg_time: String,
-        #[arg(
-            long,
-            default_value = "0",
-            help = "Std dev of duration (same format as avg_time). 0 = auto (avg/5)"
-        )]
-        sigma_time: String,
-        #[arg(long, default_value_t = 0.5)]
-        abandonability: f64,
-        #[arg(long)]
-        description: Option<String>,
-        #[arg(long)]
-        parallelizable: bool,
-        #[arg(long)]
-        allows_parallel: bool,
-        #[arg(long, help = "Lock start time (scheduler cannot move)")]
-        fixed: bool,
-        #[arg(
-            long,
-            help = "Window mode: 'day' (occurrence day) or 'period' (until next occurrence)"
-        )]
-        window: Option<WindowMode>,
-    },
-
-    /// Delete a habit
-    #[command(visible_alias = "rm")]
-    Delete { id: String },
-
-    /// Manage habit scheduled spans
-    #[command(name = "scheduled-spans", visible_aliases = ["spans", "pause"])]
-    ScheduledSpans {
-        #[command(subcommand)]
-        command: ScheduledSpanCommands,
-    }, // (#303 / #503)
-
-    /// Detect and offer to remove redundant step dependency edges
-    StepsCheck { id: String }, // (#355)
-
-    /// Manage habit steps
-    Steps {
-        #[command(subcommand)]
-        command: StepsCommands,
-    }, // (#95)
+    #[arg(long)]
+    limit: Option<i64>,
 }
 
 #[derive(Subcommand)]
 enum SkillCommands {
-    /// List skills
-    #[command(visible_alias = "ls")]
-    List,
+    /// Create a skill (interactive if no args in terminal).
+    Add(SkillAddArgs),
 
-    /// Show skill detail
-    #[command(visible_alias = "get")]
-    Show { slug: String },
+    /// List skills.
+    Ls,
 
-    /// Create a skill (interactive if no args in terminal)
-    Create {
-        #[arg(short, long, help = "Skill slug")]
-        slug: Option<String>,
-        #[arg(short, long, help = "Skill name")]
-        name: Option<String>,
-        #[arg(long, help = "Skill description")]
-        description: Option<String>,
-        #[arg(long, help = "Skill body file or '-' for stdin")]
-        body: Option<String>,
-    },
+    /// Show skill detail.
+    Show(SkillShowArgs),
 
-    /// Update a skill (interactive if no args in terminal)
-    Update {
-        slug: String,
-        #[arg(short, long, help = "Skill name")]
-        name: Option<String>,
-        #[arg(long, help = "Skill description")]
-        description: Option<String>,
-        #[arg(long, help = "Skill body file or '-' for stdin")]
-        body: Option<String>,
-    },
+    /// Edit a skill (flags), or edit the body in $EDITOR with no flags.
+    Edit(SkillEditArgs),
 
-    /// Delete a skill
-    #[command(visible_alias = "rm")]
-    Delete { slug: String },
+    /// Delete a skill.
+    Rm(SkillRmArgs),
 }
 
-#[derive(Subcommand)]
-enum ScheduledSpanCommands {
-    /// Add a scheduled span to a habit
-    Add {
-        id: String,
-        #[arg(long, help = "Start date (YYYY-MM-DD, inclusive)")]
-        from: String,
-        #[arg(long, help = "End date (YYYY-MM-DD, inclusive)")]
-        to: String,
-        #[arg(long, help = "Optional reason (e.g. 休暇)")]
-        reason: Option<String>,
-    },
-    /// List scheduled spans for a habit
-    #[command(visible_alias = "ls")]
-    List { id: String },
-    /// List scheduled spans for all habits
-    #[command(name = "list-all", visible_alias = "ls-all")]
-    ListAll,
-    /// Remove a scheduled span
-    #[command(visible_alias = "rm")]
-    Remove { id: String, span_id: String },
+#[derive(Args)]
+struct SkillAddArgs {
+    #[arg(short, long, help = "Skill slug")]
+    slug: Option<String>,
+
+    #[arg(short, long, help = "Skill name")]
+    name: Option<String>,
+
+    #[arg(long, help = "Skill description")]
+    description: Option<String>,
+
+    #[arg(long, help = "Skill body file or '-' for stdin")]
+    body: Option<String>,
 }
 
-#[derive(Subcommand)]
-enum StepsCommands {
-    /// List steps for a habit
-    #[command(visible_alias = "ls")]
-    List { id: String },
-    /// List steps for all habits
-    #[command(name = "list-all", visible_alias = "ls-all")]
-    ListAll,
-
-    /// Edit steps for a habit in $EDITOR (JSON array)
-    Edit { id: String },
-
-    /// Replace steps from a JSON file or stdin ("-"; // comments ignored)
-    Set {
-        id: String,
-        #[arg(help = "JSON file path or '-' for stdin (// comments are ignored)")]
-        file: String,
-    },
+#[derive(Args)]
+struct SkillShowArgs {
+    slug: String,
 }
 
-#[derive(Subcommand)]
-enum ScheduleCommands {
-    /// Get active schedule
-    Get,
+#[derive(Args)]
+struct SkillEditArgs {
+    slug: String,
 
-    /// Generate a new schedule
-    Generate {
-        #[arg(long)]
-        task_ids: Option<Vec<String>>,
-        #[arg(long, default_value = "recommended")]
-        sleep: SleepInput,
-    },
+    #[arg(short, long, help = "Skill name")]
+    name: Option<String>,
 
-    /// Reschedule (partial)
-    Reschedule {
-        #[arg(long = "schedule-mode", value_parser = parse_reschedule_mode)]
-        schedule_mode: ScheduleMode,
-        #[arg(long, help = "Start time (e.g. 2025-06-05, 2025-06-05T06:00Z)")]
-        from: Option<String>,
-        #[arg(long, help = "End time (e.g. 2025-06-06, 2025-06-06T06:00Z)")]
-        until: Option<String>,
-        #[arg(long)]
-        task_ids: Option<Vec<String>>,
-        #[arg(long)]
-        pinned: Option<Vec<String>>,
-        #[arg(long, default_value = "recommended")]
-        sleep: SleepInput,
-    },
+    #[arg(long, help = "Skill description")]
+    description: Option<String>,
 
-    /// Move a schedule entry
-    Move {
-        task_id: String,
-        #[arg(
-            long,
-            help = "New start time (e.g. 2025-06-05T14:00, 2025-06-05T14:00:00Z)"
-        )]
-        start_at: String,
-        #[arg(long, default_value_t = false)]
-        force: bool,
-    },
+    #[arg(long, help = "Skill body file or '-' for stdin")]
+    body: Option<String>,
+}
 
-    /// Clear active schedule
-    Clear,
+#[derive(Args)]
+struct SkillRmArgs {
+    slug: String,
 }
 
 #[derive(Subcommand)]
 enum TokenCommands {
-    /// Issue a new token
-    Create {
-        #[arg(long)]
-        label: Option<String>,
-    },
+    /// Issue a new token.
+    Add(TokenAddArgs),
 
-    /// List tokens
-    #[command(visible_alias = "ls")]
-    List,
+    /// List tokens.
+    Ls,
 
-    /// Revoke a token
-    Revoke { id: i64 },
+    /// Revoke a token.
+    Rm(TokenRmArgs),
+}
+
+#[derive(Args)]
+struct TokenAddArgs {
+    #[arg(long)]
+    label: Option<String>,
+}
+
+#[derive(Args)]
+struct TokenRmArgs {
+    id: i64,
 }
 
 #[derive(Subcommand)]
 enum SyncCommands {
-    /// Show Google Calendar sync settings
-    Settings,
+    /// Show Google Calendar sync settings.
+    Status,
 
-    /// Update Google Calendar sync settings (prompts for missing values)
-    Setup {
-        #[arg(long)]
-        enabled: Option<bool>,
-        #[arg(long)]
-        calendar_id: Option<String>,
-        #[arg(long)]
-        client_id: Option<String>,
-        #[arg(long)]
-        client_secret: Option<String>,
-        #[arg(long)]
-        refresh_token: Option<String>,
-        #[arg(long, help = "Do not prompt for missing values")]
-        no_ask: bool,
-    },
+    /// Update Google Calendar sync settings (prompts for missing values).
+    Setup(SyncSetupArgs),
 
-    /// Start a local server and complete Google OAuth2 login in one step
-    Login {
-        #[arg(long)]
-        client_id: Option<String>,
-        #[arg(long)]
-        client_secret: Option<String>,
-        #[arg(long)]
-        calendar_id: Option<String>,
-        #[arg(long, default_value_t = 8765)]
-        port: u16,
-        #[arg(long)]
-        no_browser: bool,
-    },
+    /// Start a local server and complete Google OAuth2 login in one step.
+    Login(SyncLoginArgs),
 
-    /// Manually trigger Google Calendar sync
-    Trigger,
+    /// Manually trigger Google Calendar sync.
+    Run,
 
-    /// Delete all mapped Google Calendar events and clear local mappings
-    #[command(visible_alias = "cleanup")]
-    DeleteAll,
-
-    /// List Google Calendar event mappings
+    /// List Google Calendar event mappings.
     Mappings,
+
+    /// Delete all mapped Google Calendar events and clear local mappings.
+    Purge,
+}
+
+#[derive(Args)]
+struct SyncSetupArgs {
+    #[arg(long)]
+    enabled: Option<bool>,
+
+    #[arg(long)]
+    calendar_id: Option<String>,
+
+    #[arg(long)]
+    client_id: Option<String>,
+
+    #[arg(long)]
+    client_secret: Option<String>,
+
+    #[arg(long)]
+    refresh_token: Option<String>,
+
+    #[arg(long, help = "Do not prompt for missing values")]
+    no_ask: bool,
+}
+
+#[derive(Args)]
+struct SyncLoginArgs {
+    #[arg(long)]
+    client_id: Option<String>,
+
+    #[arg(long)]
+    client_secret: Option<String>,
+
+    #[arg(long)]
+    calendar_id: Option<String>,
+
+    #[arg(long, default_value_t = 8765)]
+    port: u16,
+
+    #[arg(long)]
+    no_browser: bool,
+}
+
+#[derive(Subcommand)]
+enum ConfigCommands {
+    /// Show config file path and contents.
+    Show,
+
+    /// Initialize config file with defaults.
+    Init,
+
+    /// Set a local or app setting value.
+    Set(ConfigSetArgs),
+
+    /// Worker storage configuration.
+    #[command(subcommand)]
+    Workers(ConfigWorkersCommands),
+}
+
+#[derive(Args)]
+struct ConfigSetArgs {
+    key: String,
+    value: String,
+}
+
+#[derive(Subcommand)]
+enum ConfigWorkersCommands {
+    /// Update Worker endpoint and token at runtime.
+    Set(WorkersSetArgs),
+
+    /// Check storage backend health.
+    Health,
+}
+
+#[derive(Args)]
+struct WorkersSetArgs {
+    url: String,
+    token: String,
+}
+
+#[derive(Subcommand)]
+enum SystemCommands {
+    /// Check server health (no token required).
+    Health,
+
+    /// Generate a root token.
+    GenRootToken,
+
+    /// Show third-party licenses.
+    License,
+
+    /// Generate shell completions.
+    Completion(SystemCompletionArgs),
+}
+
+#[derive(Args)]
+struct SystemCompletionArgs {
+    #[arg(value_name = "SHELL")]
+    shell: clap_complete::Shell,
+}
+
+#[derive(Args)]
+#[command(args_conflicts_with_subcommands = true)]
+struct AgentArgs {
+    /// Single text input for one agent turn.
+    text: Option<String>,
+
+    /// Auto-approve any pending changes without prompting.
+    #[arg(long)]
+    yes: bool,
+
+    /// Auto-approve a permission for this session (e.g. task:create, *:*).
+    #[arg(long, value_name = "PERM")]
+    allow: Vec<String>,
+
+    /// Deny a permission for this session, overriding provider settings.
+    #[arg(long, value_name = "PERM")]
+    deny: Vec<String>,
+
+    #[command(subcommand)]
+    command: Option<AgentSubCommands>,
+}
+
+#[derive(Subcommand)]
+enum AgentSubCommands {
+    /// Show or edit agent configuration.
+    #[command(subcommand)]
+    Config(AgentConfigCommands),
+
+    /// Allow a permission persistently.
+    Allow { key: String },
+
+    /// Deny a permission persistently.
+    Deny { key: String },
+
+    /// Show or clear tool usage statistics.
+    Stats(AgentStatsArgs),
+}
+
+#[derive(Subcommand)]
+enum AgentConfigCommands {
+    /// Show current agent config file.
+    Show,
+
+    /// Set a config value by key path.
+    Set { key: String, value: String },
+}
+
+#[derive(Args)]
+struct AgentStatsArgs {
+    /// Clear all statistics.
+    #[arg(long)]
+    clear: bool,
+}
+
+fn is_local_config_key(key: &str) -> bool {
+    matches!(
+        key,
+        "storage"
+            | "db"
+            | "worker_url"
+            | "url"
+            | "workers_token"
+            | "token"
+            | "root_token"
+            | "jwt_secret"
+            | "tz"
+            | "sleep_start"
+            | "sleep_end"
+    )
+}
+
+fn is_app_settings_key(key: &str) -> bool {
+    matches!(
+        key,
+        "comfortable"
+            | "maximum"
+            | "solver"
+            | "time_budget_ms"
+            | "seed"
+            | "warm_start"
+            | "tz"
+            | "sleep_start"
+            | "sleep_end"
+    )
 }
 
 fn main() {
@@ -995,48 +1172,49 @@ fn main() {
 
     runtime.block_on(async {
         let cli = Cli::parse();
+        let mode = effective_display_mode(&cli);
         let mut cfg = config::load();
 
-        if matches!(cli.command, Some(Commands::GenRootToken)) {
-            let secret = std::env::var("TAKUSU_JWT_SECRET")
-                .ok()
-                .filter(|s| !s.is_empty())
-                .or_else(|| cfg.jwt_secret.clone().filter(|s| !s.is_empty()))
-                .unwrap_or_else(|| {
-                    eprintln!("Error: TAKUSU_JWT_SECRET (or jwt_secret in config) is required to generate a root token");
-                    process::exit(1);
-                });
-            let token = match takusu_types::jwt::generate_root_jwt(&secret, None) {
-                Ok(t) => t,
-                Err(e) => {
-                    eprintln!("Error: failed to generate root token: {e}");
-                    process::exit(1);
+        let cmd = match cli.command {
+            Some(cmd) => cmd,
+            None => Commands::Schedule(ScheduleVerbs::Agenda(AgendaArgs { day: None })),
+        };
+
+        // Early-return commands that do not need an app/storage.
+        match &cmd {
+            Commands::System { command } => match command {
+                SystemCommands::GenRootToken => {
+                    let secret = std::env::var("TAKUSU_JWT_SECRET")
+                        .ok()
+                        .filter(|s| !s.is_empty())
+                        .or_else(|| cfg.jwt_secret.clone().filter(|s| !s.is_empty()))
+                        .unwrap_or_else(|| {
+                            eprintln!("Error: TAKUSU_JWT_SECRET (or jwt_secret in config) is required to generate a root token");
+                            process::exit(1);
+                        });
+                    let token = match takusu_types::jwt::generate_root_jwt(&secret, None) {
+                        Ok(t) => t,
+                        Err(e) => {
+                            eprintln!("Error: failed to generate root token: {e}");
+                            process::exit(1);
+                        }
+                    };
+                    println!("{token}");
+                    eprintln!("\nSet this as TAKUSU_ROOT_TOKEN env var or root_token in config for takusu.");
+                    return;
                 }
-            };
-            println!("{token}");
-            eprintln!("\nSet this as TAKUSU_ROOT_TOKEN env var or root_token in config for takusu.");
-            return;
-        }
-
-        if matches!(cli.command, Some(Commands::Completion { .. })) {
-            let shell = match cli.command {
-                Some(Commands::Completion { shell }) => shell,
-                _ => unreachable!(),
-            };
-            let mut cmd = Cli::command();
-            clap_complete::generate(shell, &mut cmd, "takusu", &mut io::stdout());
-            return;
-        }
-
-        if matches!(cli.command, Some(Commands::License)) {
-            licenses::print_licenses();
-            return;
-        }
-
-        // Handle config commands before building the app so storage/worker_url
-        // changes are reflected immediately.
-        if let Some(Commands::Config { command }) = &cli.command {
-            match command {
+                SystemCommands::Completion(args) => {
+                    let mut cmd = Cli::command();
+                    clap_complete::generate(args.shell, &mut cmd, "takusu", &mut io::stdout());
+                    return;
+                }
+                SystemCommands::License => {
+                    licenses::print_licenses();
+                    return;
+                }
+                _ => {}
+            },
+            Commands::Config { command } => match command {
                 ConfigCommands::Show => {
                     config::show();
                     return;
@@ -1045,80 +1223,22 @@ fn main() {
                     config::init();
                     return;
                 }
-                ConfigCommands::Set {
-                    storage,
-                    db,
-                    worker_url,
-                    workers_token,
-                    root_token,
-                    tz,
-                    sleep_start,
-                    sleep_end,
-                    comfortable: _,
-                    maximum: _,
-                    solver: _,
-                    time_budget_ms: _,
-                    seed: _,
-                    warm_start: _,
-                } => {
-                    if let Some(v) = storage {
-                        config::set("storage", v).unwrap_or_else(|e| {
-                            eprintln!("Error: {e}");
-                            process::exit(1);
-                        });
-                    }
-                    if let Some(v) = db {
-                        config::set("db", v).unwrap_or_else(|e| {
-                            eprintln!("Error: {e}");
-                            process::exit(1);
-                        });
-                    }
-                    if let Some(v) = worker_url {
-                        config::set("worker_url", v).unwrap_or_else(|e| {
-                            eprintln!("Error: {e}");
-                            process::exit(1);
-                        });
-                    }
-                    if let Some(v) = workers_token {
-                        config::set("workers_token", v).unwrap_or_else(|e| {
-                            eprintln!("Error: {e}");
-                            process::exit(1);
-                        });
-                    }
-                    if let Some(v) = root_token {
-                        config::set("root_token", v).unwrap_or_else(|e| {
-                            eprintln!("Error: {e}");
-                            process::exit(1);
-                        });
-                    }
-                    if let Some(v) = tz {
-                        config::set("tz", v).unwrap_or_else(|e| {
-                            eprintln!("Error: {e}");
-                            process::exit(1);
-                        });
-                    }
-                    if let Some(v) = sleep_start {
-                        config::set("sleep_start", v).unwrap_or_else(|e| {
-                            eprintln!("Error: {e}");
-                            process::exit(1);
-                        });
-                    }
-                    if let Some(v) = sleep_end {
-                        config::set("sleep_end", v).unwrap_or_else(|e| {
-                            eprintln!("Error: {e}");
-                            process::exit(1);
-                        });
-                    }
+                ConfigCommands::Set(args) if is_local_config_key(&args.key) => {
+                    config::set(&args.key, &args.value).unwrap_or_else(|e| {
+                        eprintln!("Error: {e}");
+                        process::exit(1);
+                    });
                     cfg = config::load();
                 }
-                ConfigCommands::Workers(_) => {}
-            }
+                _ => {}
+            },
+            _ => {}
         }
 
         // The web subcommand runs its own server (building its own app from the
         // shared config), so dispatch it before the CLI constructs storage.
         #[cfg(feature = "web")]
-        if let Some(Commands::Web { bind }) = &cli.command {
+        if let Commands::Web { bind } = &cmd {
             if let Err(e) = takusu_web::run(bind.clone()).await {
                 eprintln!("Error: {e}");
                 process::exit(1);
@@ -1139,8 +1259,6 @@ fn main() {
                 process::exit(1);
             });
         } else if env_db.is_some() {
-            // TAKUSU_DB only makes sense for the sqlite backend, so prefer it
-            // over a config file that may point at production workers.
             local_cfg.storage = StorageKind::Sqlite;
         } else if let Some(v) = cfg.storage {
             local_cfg.storage = v;
@@ -1213,18 +1331,7 @@ fn main() {
             process::exit(1);
         });
 
-        let cmd = match cli.command {
-            Some(cmd) => cmd,
-            None => {
-                if let Err(e) = takusu_tui::run(Arc::clone(&app), tz).await {
-                    eprintln!("Error: {e}");
-                    process::exit(1);
-                }
-                return;
-            }
-        };
-
-        if let Err(e) = run(cli.mode, Arc::clone(&app), tz, cmd, &cfg).await {
+        if let Err(e) = run(mode, Arc::clone(&app), tz, cmd, &cfg).await {
             eprintln!("Error: {e}");
             process::exit(1);
         }
@@ -1239,43 +1346,18 @@ async fn run(
     cfg: &CliConfig,
 ) -> Result<(), AppError> {
     match cmd {
-        Commands::Health => {
-            let status = app.health_check().await?;
-            println!("{status}");
-        }
-        Commands::Task { command } => run_task(mode, app.as_ref(), &tz, command).await?,
-        Commands::Schedule { command } => run_schedule(mode, app.as_ref(), &tz, command).await?,
+        Commands::Task(verbs) => run_task_verbs(mode, app.as_ref(), &tz, verbs).await?,
+        Commands::Schedule(verbs) => run_schedule_verbs(mode, app.as_ref(), &tz, verbs).await?,
+        Commands::Habit { command } => run_habit(mode, app.as_ref(), command).await?,
+        Commands::Memory { command } => run_memory(app.as_ref(), command).await?,
+        Commands::Skill { command } => run_skill(mode, app.as_ref(), command).await?,
         Commands::Token { command } => run_token(mode, app.as_ref(), command).await?,
         Commands::Sync { command } => run_sync(app.as_ref(), command).await?,
-        Commands::Habit { command } => run_habit(mode, app.as_ref(), command).await?,
-        Commands::Skill { command } => run_skill(mode, app.as_ref(), command).await?,
-        Commands::Memory { command } => run_memory(app.as_ref(), command).await?,
-        Commands::Agent { command } => match command {
-            AgentCommands::Run {
-                text,
-                yes,
-                allow,
-                deny,
-            } => agent::run(app, text, yes, allow, deny).await?,
-            AgentCommands::Config { command } => match command {
-                AgentConfigCommands::Show => agent::config_show()?,
-                AgentConfigCommands::Set { key, value } => agent::config_set(&key, &value)?,
-                AgentConfigCommands::Permissions(command) => match command {
-                    AgentPermissionsCommands::Show => agent::permissions_show()?,
-                    AgentPermissionsCommands::Set { key, value } => {
-                        agent::permissions_set(&key, &value)?
-                    }
-                    AgentPermissionsCommands::Unset { key } => agent::permissions_unset(&key)?,
-                },
-            },
-            AgentCommands::Stats { clear } => agent::stats(clear)?,
-        },
+        Commands::Config { command } => run_config(command, app.as_ref(), cfg).await?,
+        Commands::System { command } => run_system(app.as_ref(), command).await?,
+        Commands::Agent(args) => run_agent(app, args).await?,
         #[cfg(feature = "mcp")]
         Commands::Mcp => mcp::run(app).await?,
-        Commands::GenRootToken => unreachable!(),
-        Commands::Completion { .. } => unreachable!(),
-        Commands::License => unreachable!(),
-        Commands::Config { command } => run_config(command, app.as_ref(), cfg).await?,
         Commands::Tui => {
             takusu_tui::run(app, tz)
                 .await
@@ -1283,8 +1365,6 @@ async fn run(
         }
         #[cfg(feature = "web")]
         Commands::Web { .. } => {
-            // Dispatched in `main` before storage is constructed; the server
-            // builds its own app from the shared config.
             unreachable!("web subcommand is handled before run()")
         }
     }
@@ -1301,46 +1381,45 @@ async fn habit_display_map(app: &TakusuApp) -> std::collections::HashMap<String,
         .unwrap_or_default()
 }
 
-async fn run_task(
+async fn run_task_verbs(
     mode: DisplayMode,
     app: &TakusuApp,
     tz: &jiff::tz::TimeZone,
-    cmd: TaskCommands,
+    cmd: TaskVerbs,
 ) -> Result<(), AppError> {
-    // Build habit_id → display_id map once for task ID labels (h1#5, #305).
-    // Habits are few, so fetching on every task command is cheap.
     let habit_map = habit_display_map(app).await;
     match cmd {
-        TaskCommands::List {
-            status,
-            from,
-            until,
-            no_overdue,
-            habit_id,
-            ical_uid,
-            limit,
-            query,
-        } => {
-            let q = if query.is_empty() {
+        TaskVerbs::Ls(args) => {
+            let q = if args.query.is_empty() {
                 None
             } else {
-                Some(query.join(" "))
+                Some(args.query.join(" "))
             };
+
+            let status = if args.all {
+                None
+            } else {
+                Some(args.status.unwrap_or(TaskStatusFilter::Actionable))
+            };
+
             let query = TaskQuery {
                 status,
-                from: from.map(|s| parse_dt(&s, tz)).transpose()?,
-                until: until.map(|s| parse_dt(&s, tz)).transpose()?,
-                no_overdue: Some(no_overdue).filter(|x| *x),
-                habit_id,
-                ical_uid,
+                from: args.from.map(|s| parse_dt(&s, tz)).transpose()?,
+                until: args.until.map(|s| parse_dt(&s, tz)).transpose()?,
+                no_overdue: if args.no_overdue { Some(true) } else { None },
+                habit_id: args.habit_id,
+                ical_uid: args.ical_uid,
                 q,
-                limit,
+                limit: args.limit,
             };
+
             let tasks = app.list_tasks(&query).await?;
+
             mode.formatter().display_tasks(&tasks, tz, &habit_map);
         }
-        TaskCommands::Show { id } => {
-            let task = app.get_task(&id).await?;
+
+        TaskVerbs::Show(args) => {
+            let task = app.get_task(&args.id).await?;
             let entry = match app.get_schedule().await {
                 Ok(schedule) => {
                     let entries: Vec<ScheduleEntry> = schedule.schedule.as_inner().clone();
@@ -1350,280 +1429,211 @@ async fn run_task(
             };
             mode.formatter()
                 .display_task_detail(&task, entry.as_ref(), tz, &habit_map);
+
+            // Show work sessions and progress events.
+            let progress = app.get_task_progress(&args.id).await?;
+            if !progress.sessions.is_empty() || !progress.events.is_empty() {
+                println!("work sessions: {}", progress.sessions.len());
+                for s in &progress.sessions {
+                    println!(
+                        "  {} - {}",
+                        s.started_at,
+                        s.ended_at
+                            .as_ref()
+                            .map(|t| t.to_string())
+                            .unwrap_or_else(|| "(open)".into()),
+                    );
+                }
+                println!("progress events: {}", progress.events.len());
+                for e in &progress.events {
+                    let q = e.quantity_done.map(|q| q.to_string()).unwrap_or_default();
+                    let delta = e
+                        .delta_quantity
+                        .map(|d| format!("(+{d})"))
+                        .unwrap_or_default();
+                    println!(
+                        "  {} {} {} (active {}min)",
+                        e.at, q, delta, e.active_minutes
+                    );
+                }
+            }
         }
-        TaskCommands::Create {
-            title,
-            end_at,
-            start_at,
-            avg_time,
-            sigma_time,
-            abandonability,
-            description,
-            depends,
-            parallelizable,
-            allows_parallel,
-            fixed,
-            quantity_total,
-            quantity_done,
-            quantity_unit,
-            original_quantity_total,
-        } => {
-            let (title, end_at) = if is_interactive() && title.is_none() && end_at.is_none() {
-                let t = prompt("Title")?;
-                let e = prompt("End at (e.g. 2025-06-05 or 2025-06-05T23:59)")?;
-                (Some(t), Some(e))
+
+        TaskVerbs::Add(args) => {
+            let (title, due) = if is_interactive() {
+                let title = match args.title.as_deref() {
+                    Some(t) if !t.is_empty() => t.to_string(),
+                    _ => prompt("Title")?,
+                };
+                let due = match args.due.as_deref() {
+                    Some(d) if !d.is_empty() => d.to_string(),
+                    _ => prompt("Due (e.g. 2025-06-05 or 2025-06-05T23:59)")?,
+                };
+                (title, due)
             } else {
-                (title, end_at)
+                let title = args.title.ok_or_else(|| {
+                    AppError::BadRequest(BadRequestKind::Other("title is required".into()))
+                })?;
+                let due = args.due.ok_or_else(|| {
+                    AppError::BadRequest(BadRequestKind::Other("due is required".into()))
+                })?;
+                (title, due)
             };
-            let avg_minutes = parse_duration(&avg_time)
+
+            let avg_minutes = parse_duration(&args.time)
                 .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
-            let sigma_minutes: i64 = parse_duration(&sigma_time)
+            let sigma_minutes: i64 = parse_duration(&args.sigma)
                 .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
-            let quantity_total = quantity_total
+            let quantity_total = args
+                .quantity_total
                 .map(Quantity::new)
                 .transpose()
                 .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
-            let quantity_done = quantity_done
+            let quantity_done = args
+                .quantity_done
                 .map(Quantity::new)
                 .transpose()
                 .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
-            let original_quantity_total = original_quantity_total
+            let original_quantity_total = args
+                .original_quantity_total
                 .map(Quantity::new)
                 .transpose()
                 .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
+
             let body = CreateTask {
-                title: title.unwrap_or_default(),
-                end_at: parse_dt(&end_at.unwrap_or_default(), tz)?,
-                start_at: start_at.map(|s| parse_dt(&s, tz)).transpose()?,
+                title,
+                end_at: parse_dt(&due, tz)?,
+                start_at: args.at.map(|s| parse_dt(&s, tz)).transpose()?,
                 avg_minutes,
                 sigma_minutes: if sigma_minutes > 0 {
                     Some(sigma_minutes)
                 } else {
                     None
                 },
-                depends,
-                parallelizable,
-                allows_parallel,
-                abandonability: Some(abandonability.into()),
-                description,
+                depends: args.depends,
+                parallelizable: args.parallelizable,
+                allows_parallel: args.allows_parallel,
+                abandonability: Some(args.abandonability.into()),
+                description: args.description,
                 ical_uid: None,
                 habit_id: None,
-                fixed,
+                fixed: args.fixed,
                 habit_step_id: None,
                 quantity_total,
                 quantity_done,
-                quantity_unit,
+                quantity_unit: args.quantity_unit,
                 original_quantity_total,
             };
             let task = app.create_task(&body).await?;
             mode.formatter().display_tasks(&[task], tz, &habit_map);
         }
-        TaskCommands::Edit { id } => {
-            let task = app.get_task(&id).await?;
-            let all_tasks = app.list_tasks(&Default::default()).await?;
-            let original = editor::format_task_for_editing(&task, &all_tasks, &habit_map, tz);
-            let edited = editor::open_editor(&original, &task.id)
-                .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
-            let update = editor::parse_edited_task(&edited, tz)
-                .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
-            let updated = app.update_task(&id, &update).await?;
-            mode.formatter().display_tasks(&[updated], tz, &habit_map);
-        }
-        TaskCommands::Update {
-            id,
-            title,
-            description,
-            start_at,
-            end_at,
-            avg_time,
-            sigma_time,
-            depends,
-            parallelizable,
-            allows_parallel,
-            abandonability,
-            status,
-            fixed,
-            quantity_total,
-            quantity_done,
-            quantity_unit,
-            original_quantity_total,
-        } => {
-            let avg_minutes = avg_time
-                .as_ref()
-                .map(|s| parse_duration(s))
-                .transpose()
-                .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
-            let sigma_minutes = sigma_time
-                .as_ref()
-                .map(|s| parse_duration(s))
-                .transpose()
-                .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
-            let abandonability = abandonability.map(Abandonability::new);
-            let quantity_total = quantity_total
-                .map(Quantity::new)
-                .transpose()
-                .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
-            let quantity_done = quantity_done
-                .map(Quantity::new)
-                .transpose()
-                .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
-            let original_quantity_total = original_quantity_total
-                .map(Quantity::new)
-                .transpose()
-                .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
-            let body = takusu_contracts::UpdateTask {
-                title,
-                description,
-                start_at: start_at.map(|s| parse_dt(&s, tz)).transpose()?.map(Some),
-                end_at: end_at.map(|s| parse_dt(&s, tz)).transpose()?,
-                avg_minutes,
-                sigma_minutes,
-                depends,
-                parallelizable,
-                allows_parallel,
-                abandonability,
-                status,
-                habit_id: None,
-                user_edited: None,
-                fixed,
-                habit_step_id: None,
-                quantity_total,
-                quantity_done,
-                quantity_unit,
-                original_quantity_total,
-            };
-            let task = app.update_task(&id, &body).await?;
-            mode.formatter().display_tasks(&[task], tz, &habit_map);
-        }
-        TaskCommands::Replace {
-            id,
-            title,
-            end_at,
-            start_at,
-            avg_time,
-            sigma_time,
-            abandonability,
-            description,
-            depends,
-            parallelizable,
-            allows_parallel,
-            fixed,
-            quantity_total,
-            quantity_done,
-            quantity_unit,
-            original_quantity_total,
-        } => {
-            let avg_minutes = parse_duration(&avg_time)
-                .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
-            let sigma_minutes: i64 = parse_duration(&sigma_time)
-                .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
-            let quantity_total = quantity_total
-                .map(Quantity::new)
-                .transpose()
-                .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
-            let quantity_done = quantity_done
-                .map(Quantity::new)
-                .transpose()
-                .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
-            let original_quantity_total = original_quantity_total
-                .map(Quantity::new)
-                .transpose()
-                .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
-            let body = CreateTask {
-                title,
-                end_at: parse_dt(&end_at, tz)?,
-                start_at: start_at.map(|s| parse_dt(&s, tz)).transpose()?,
-                avg_minutes,
-                sigma_minutes: if sigma_minutes > 0 {
-                    Some(sigma_minutes)
-                } else {
-                    None
-                },
-                depends,
-                parallelizable,
-                allows_parallel,
-                abandonability: Some(abandonability.into()),
-                description,
-                ical_uid: None,
-                habit_id: None,
-                fixed,
-                habit_step_id: None,
-                quantity_total,
-                quantity_done,
-                quantity_unit,
-                original_quantity_total,
-            };
-            let task = app.replace_task(&id, &body).await?;
-            mode.formatter().display_tasks(&[task], tz, &habit_map);
-        }
-        TaskCommands::Delete { id } => {
-            app.delete_task(&id).await?;
-            println!("Task {id} deleted.");
-        }
-        TaskCommands::Status { id, status } => {
-            let body = takusu_contracts::UpdateTask {
-                status: Some(status),
-                ..Default::default()
-            };
-            let task = app.update_task(&id, &body).await?;
-            mode.formatter().display_tasks(&[task], tz, &habit_map);
-        }
-        TaskCommands::DepsCheck => {
-            deps_check_tasks(app).await?;
-        }
-        TaskCommands::ImportIcal { file } => {
-            let content = read_text_file(&file).await?;
-            let result = app.import_ical(&content).await?;
-            if result.task_ids.is_empty() {
-                println!("No tasks imported.");
+
+        TaskVerbs::Edit(args) => {
+            let task = app.get_task(&args.id).await?;
+            if !args.has_patch_flag() {
+                let all_tasks = app.list_tasks(&Default::default()).await?;
+                let original = editor::format_task_for_editing(&task, &all_tasks, &habit_map, tz);
+                let edited = editor::open_editor(&original, &task.id)
+                    .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
+                let update = editor::parse_edited_task(&edited, tz)
+                    .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
+                let updated = app.update_task(&args.id, &update).await?;
+                mode.formatter().display_tasks(&[updated], tz, &habit_map);
             } else {
-                let id_set: std::collections::HashSet<String> =
-                    result.task_ids.iter().cloned().collect();
-                let all_tasks = app.list_tasks(&TaskQuery::default()).await?;
-                let tasks: Vec<_> = all_tasks
-                    .into_iter()
-                    .filter(|t| id_set.contains(&t.id))
-                    .collect();
-                mode.formatter().display_tasks(&tasks, tz, &habit_map);
+                let avg_minutes = args
+                    .time
+                    .as_ref()
+                    .map(|s| parse_duration(s))
+                    .transpose()
+                    .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
+                let sigma_minutes = args
+                    .sigma
+                    .as_ref()
+                    .map(|s| parse_duration(s))
+                    .transpose()
+                    .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
+                let abandonability = args.abandonability.map(Abandonability::new);
+                let quantity_total = args
+                    .quantity_total
+                    .map(Quantity::new)
+                    .transpose()
+                    .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
+                let quantity_done = args
+                    .quantity_done
+                    .map(Quantity::new)
+                    .transpose()
+                    .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
+                let original_quantity_total = args
+                    .original_quantity_total
+                    .map(Quantity::new)
+                    .transpose()
+                    .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
+
+                let body = takusu_contracts::UpdateTask {
+                    title: args.title,
+                    description: args.description,
+                    start_at: args.at.map(|s| parse_dt(&s, tz)).transpose()?.map(Some),
+                    end_at: args.due.map(|s| parse_dt(&s, tz)).transpose()?,
+                    avg_minutes,
+                    sigma_minutes,
+                    depends: args.depends,
+                    parallelizable: args.parallelizable,
+                    allows_parallel: args.allows_parallel,
+                    abandonability,
+                    status: args.status,
+                    habit_id: None,
+                    user_edited: None,
+                    fixed: args.fixed,
+                    habit_step_id: None,
+                    quantity_total,
+                    quantity_done,
+                    quantity_unit: args.quantity_unit,
+                    original_quantity_total,
+                };
+                let updated = app.update_task(&args.id, &body).await?;
+                mode.formatter().display_tasks(&[updated], tz, &habit_map);
             }
         }
-        TaskCommands::Work(command) => {
-            run_work(mode, app, tz, &habit_map, command).await?;
-        }
-    }
-    Ok(())
-}
 
-async fn run_work(
-    mode: DisplayMode,
-    app: &TakusuApp,
-    tz: &jiff::tz::TimeZone,
-    habit_map: &std::collections::HashMap<String, i64>,
-    cmd: WorkCommands,
-) -> Result<(), AppError> {
-    match cmd {
-        WorkCommands::Start { id } => {
-            let task = app.start_task_work(&id, None).await?;
-            mode.formatter().display_tasks(&[task], tz, habit_map);
+        TaskVerbs::Rm(args) => {
+            app.delete_task(&args.id).await?;
+            println!("Task {} deleted.", args.id);
         }
-        WorkCommands::Pause { id } => {
-            let task = app.pause_task_work(&id, None).await?;
-            mode.formatter().display_tasks(&[task], tz, habit_map);
+
+        TaskVerbs::Start(args) => {
+            let task = app.start_task_work(&args.id, None).await?;
+            mode.formatter().display_tasks(&[task], tz, &habit_map);
         }
-        WorkCommands::Complete { id } => {
-            let task = app.complete_task_work(&id, None).await?;
-            mode.formatter().display_tasks(&[task], tz, habit_map);
+
+        TaskVerbs::Pause(args) => {
+            let task = app.pause_task_work(&args.id, None).await?;
+            mode.formatter().display_tasks(&[task], tz, &habit_map);
         }
-        WorkCommands::Progress { id, quantity, note } => {
-            let quantity_done = Quantity::new(quantity)
+
+        TaskVerbs::Done(args) => {
+            let task = app.complete_task_work(&args.id, None).await?;
+            mode.formatter().display_tasks(&[task], tz, &habit_map);
+        }
+
+        TaskVerbs::Skip(args) => {
+            let body = takusu_contracts::UpdateTask {
+                status: Some(TaskStatus::Skipped),
+                ..Default::default()
+            };
+            let task = app.update_task(&args.id, &body).await?;
+            mode.formatter().display_tasks(&[task], tz, &habit_map);
+        }
+
+        TaskVerbs::Progress(args) => {
+            let quantity_done = Quantity::new(args.quantity)
                 .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
             let body = RecordProgress {
                 quantity_done,
-                note,
+                note: args.note,
             };
-            let result = app.record_progress(&id, &body, None).await?;
+            let result = app.record_progress(&args.id, &body, None).await?;
             mode.formatter()
-                .display_tasks(&[result.task], tz, habit_map);
+                .display_tasks(&[result.task], tz, &habit_map);
             if let Some(event) = result.event {
                 println!(
                     "recorded: quantity {} (+{}), active {}min",
@@ -1638,47 +1648,226 @@ async fn run_work(
                 println!("suggests completion");
             }
         }
-        WorkCommands::ProgressShow { id } => {
-            let progress = app.get_task_progress(&id).await?;
-            println!("{}", serde_json::to_string_pretty(&progress).unwrap());
-        }
-        WorkCommands::Split {
-            id,
-            retained_quantity,
-            set_dependency,
-            title,
-            description,
-            end_at,
-        } => {
-            let retained_quantity = Quantity::new(retained_quantity)
+
+        TaskVerbs::Split(args) => {
+            let retained_quantity = Quantity::new(args.keep)
                 .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
-            let end_at = end_at.map(|s| parse_dt(&s, tz)).transpose()?;
+            let end_at = args.due.map(|s| parse_dt(&s, tz)).transpose()?;
             let body = SplitTask {
                 retained_quantity,
-                set_dependency: Some(set_dependency),
-                title,
-                description,
+                set_dependency: Some(args.dep),
+                title: args.title,
+                description: args.description,
                 end_at,
             };
-            let result = app.split_task(&id, &body, None).await?;
+            let result = app.split_task(&args.id, &body, None).await?;
             let (original, remainder) = (result.original, result.remainder);
             let tasks = vec![original, remainder];
-            mode.formatter().display_tasks(&tasks, tz, habit_map);
+            mode.formatter().display_tasks(&tasks, tz, &habit_map);
+        }
+
+        TaskVerbs::Import(args) => {
+            let content = read_text_file(&args.file).await?;
+            let result = app.import_ical(&content).await?;
+            if result.task_ids.is_empty() {
+                println!("No tasks imported.");
+            } else {
+                let id_set: std::collections::HashSet<String> =
+                    result.task_ids.iter().cloned().collect();
+                let all_tasks = app.list_tasks(&TaskQuery::default()).await?;
+                let tasks: Vec<_> = all_tasks
+                    .into_iter()
+                    .filter(|t| id_set.contains(&t.id))
+                    .collect();
+                mode.formatter().display_tasks(&tasks, tz, &habit_map);
+            }
+        }
+
+        TaskVerbs::Deps(args) => {
+            if args.check {
+                deps_check_tasks(app).await?;
+            } else {
+                display_task_dependencies(app, &habit_map).await?;
+            }
         }
     }
     Ok(())
 }
 
+async fn display_task_dependencies(
+    app: &TakusuApp,
+    habit_map: &std::collections::HashMap<String, i64>,
+) -> Result<(), AppError> {
+    let tasks = app.list_tasks(&Default::default()).await?;
+    let task_map: std::collections::HashMap<String, &takusu_contracts::TaskRow> =
+        tasks.iter().map(|t| (t.id.clone(), t)).collect();
+
+    let mut printed = false;
+    for t in &tasks {
+        if !t.depends.is_empty() {
+            printed = true;
+            let deps: Vec<String> = t
+                .depends
+                .iter()
+                .map(|dep_id| {
+                    task_map
+                        .get(dep_id)
+                        .map(|dep| task_ref::task_reference(dep, habit_map))
+                        .unwrap_or_else(|| dep_id.clone())
+                })
+                .collect();
+            println!(
+                "{} -> {}",
+                task_ref::task_reference(t, habit_map),
+                deps.join(", ")
+            );
+        }
+    }
+    if !printed {
+        println!("No dependencies found.");
+    }
+    Ok(())
+}
+
+async fn run_schedule_verbs(
+    mode: DisplayMode,
+    app: &TakusuApp,
+    tz: &jiff::tz::TimeZone,
+    cmd: ScheduleVerbs,
+) -> Result<(), AppError> {
+    let habit_map = habit_display_map(app).await;
+    match cmd {
+        ScheduleVerbs::Agenda(args) => {
+            let schedule = app.get_schedule().await?;
+            let mut entries: Vec<ScheduleEntry> = schedule.schedule.as_inner().clone();
+
+            if let Some(day) = args.day {
+                let (start, end) = day_range(&day, tz)?;
+                entries.retain(|e| !(e.end_at < start || e.start_at > end));
+            }
+
+            let tasks = app
+                .list_tasks(&TaskQuery::default())
+                .await
+                .unwrap_or_default();
+            mode.formatter()
+                .display_schedule(&entries, &tasks, tz, &habit_map);
+        }
+
+        ScheduleVerbs::Plan(args) => {
+            let has_tasks = args.tasks.as_ref().is_some_and(|v| !v.is_empty());
+            let has_range = args.from.is_some() || args.until.is_some();
+            let has_pin = args.pin.as_ref().is_some_and(|v| !v.is_empty());
+
+            if has_pin && !has_range && !has_tasks {
+                return Err(AppError::BadRequest(BadRequestKind::Other(
+                    "--pin requires --from/--until or --tasks".into(),
+                )));
+            }
+
+            let has_partial = has_range || has_tasks || has_pin;
+
+            if !has_partial {
+                let body = GenerateSchedule {
+                    task_ids: None,
+                    sleep: args.sleep,
+                };
+                let schedule = app.generate_schedule(&body).await?;
+                let entries: Vec<ScheduleEntry> = schedule.schedule.as_inner().clone();
+                let tasks = app
+                    .list_tasks(&TaskQuery::default())
+                    .await
+                    .unwrap_or_default();
+                mode.formatter()
+                    .display_schedule(&entries, &tasks, tz, &habit_map);
+            } else {
+                let schedule_mode = if has_tasks {
+                    ScheduleMode::Tasks
+                } else if has_range {
+                    ScheduleMode::Range
+                } else {
+                    unreachable!("pin-only case is handled above")
+                };
+
+                if schedule_mode == ScheduleMode::Range
+                    && (args.from.is_none() || args.until.is_none())
+                {
+                    return Err(AppError::BadRequest(BadRequestKind::Other(
+                        "--from and --until are both required for range mode".into(),
+                    )));
+                }
+
+                let body = Reschedule {
+                    mode: schedule_mode,
+                    from: args
+                        .from
+                        .map(|s| parse_dt(&s, tz).map(|t| t.to_string()))
+                        .transpose()?,
+                    until: args
+                        .until
+                        .map(|s| parse_dt(&s, tz).map(|t| t.to_string()))
+                        .transpose()?,
+                    task_ids: if schedule_mode == ScheduleMode::Tasks {
+                        args.tasks
+                    } else {
+                        None
+                    },
+                    pinned: args.pin.unwrap_or_default(),
+                    sleep: args.sleep,
+                };
+                let schedule = app.reschedule(&body).await?;
+                let entries: Vec<ScheduleEntry> = schedule.schedule.as_inner().clone();
+                let tasks = app
+                    .list_tasks(&TaskQuery::default())
+                    .await
+                    .unwrap_or_default();
+                mode.formatter()
+                    .display_schedule(&entries, &tasks, tz, &habit_map);
+            }
+        }
+
+        ScheduleVerbs::Move(args) => {
+            let result = app
+                .move_entry(&args.task_id, parse_dt(&args.start_at, tz)?, args.force)
+                .await?;
+            println!("{}", serde_json::to_string_pretty(&result).unwrap());
+        }
+
+        ScheduleVerbs::Unplan => {
+            app.clear_schedule().await?;
+            println!("Schedule cleared.");
+        }
+    }
+    Ok(())
+}
+
+fn day_range(day: &str, tz: &jiff::tz::TimeZone) -> Result<(Timestamp, Timestamp), AppError> {
+    let date = parse_date(day)?.to_jiff();
+    let start = date
+        .at(0, 0, 0, 0)
+        .to_zoned(tz.clone())
+        .map_err(|e| AppError::BadRequest(BadRequestKind::Other(format!("invalid day: {e}"))))?
+        .timestamp()
+        .into();
+    let end = date
+        .at(23, 59, 59, 0)
+        .to_zoned(tz.clone())
+        .map_err(|e| AppError::BadRequest(BadRequestKind::Other(format!("invalid day: {e}"))))?
+        .timestamp()
+        .into();
+    Ok((start, end))
+}
+
 async fn run_habit(mode: DisplayMode, app: &TakusuApp, cmd: HabitCommands) -> Result<(), AppError> {
     match cmd {
-        HabitCommands::List => {
+        HabitCommands::Ls => {
             let habits = app.list_habits().await?;
             mode.formatter().display_habits(&habits);
         }
-        HabitCommands::Show { id } => {
-            let detail = app.get_habit(&id).await?;
+
+        HabitCommands::Show(args) => {
+            let detail = app.get_habit(&args.id).await?;
             mode.formatter().display_habit_detail(&detail.habit);
-            // Show steps (#95) if any.
             if !detail.steps.is_empty() {
                 println!("   steps:");
                 for s in &detail.steps {
@@ -1699,9 +1888,8 @@ async fn run_habit(mode: DisplayMode, app: &TakusuApp, cmd: HabitCommands) -> Re
                     );
                 }
             }
-            // Show scheduled spans (#303 / #503) if any.
             let spans = app
-                .list_habit_scheduled_spans(&id)
+                .list_habit_scheduled_spans(&args.id)
                 .await
                 .unwrap_or_default();
             if !spans.is_empty() {
@@ -1722,133 +1910,20 @@ async fn run_habit(mode: DisplayMode, app: &TakusuApp, cmd: HabitCommands) -> Re
                 }
             }
         }
-        HabitCommands::Create {
-            title,
-            recurrence,
-            start_time,
-            end_time,
-            avg_time,
-            sigma_time,
-            abandonability,
-            description,
-            parallelizable,
-            allows_parallel,
-            fixed,
-            window,
-        } => {
-            let (title, recurrence, start_time, end_time) = if is_interactive()
-                && title.is_none()
-                && recurrence.is_none()
-                && start_time.is_none()
-                && end_time.is_none()
-            {
-                let t = prompt("Title")?;
-                let r = prompt("Recurrence (e.g. daily, weekdays, Mon,Wed,Fri)")?;
-                let s = prompt("Start time (HH:MM)")?;
-                let e = prompt("End time (HH:MM)")?;
-                (Some(t), Some(r), Some(s), Some(e))
-            } else {
-                (title, recurrence, start_time, end_time)
-            };
-            let avg_minutes = parse_duration(&avg_time)
+
+        HabitCommands::Add(args) => {
+            let interactive = is_interactive();
+            let title = require_or_prompt("Title", args.title, interactive)?;
+            let recurrence = require_or_prompt(
+                "Recurrence (e.g. daily, weekdays, Mon,Wed,Fri)",
+                args.recurrence,
+                interactive,
+            )?;
+            let start_time = require_or_prompt("Start time (HH:MM)", args.start_time, interactive)?;
+            let end_time = require_or_prompt("End time (HH:MM)", args.end_time, interactive)?;
+            let avg_minutes = parse_duration(&args.avg_time)
                 .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
-            let sigma_minutes: i64 = parse_duration(&sigma_time)
-                .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
-            let body = CreateHabit {
-                title: title.unwrap_or_default(),
-                recurrence: recurrence.unwrap_or_default(),
-                start_time: parse_time(&start_time.unwrap_or_default())?,
-                end_time: parse_time(&end_time.unwrap_or_default())?,
-                avg_minutes,
-                sigma_minutes: if sigma_minutes > 0 {
-                    Some(sigma_minutes)
-                } else {
-                    None
-                },
-                parallelizable: if parallelizable { Some(true) } else { None },
-                allows_parallel: if allows_parallel { Some(true) } else { None },
-                abandonability: Some(abandonability.into()),
-                description,
-                fixed: if fixed { Some(true) } else { None },
-                window_mode: window,
-            };
-            let habit = app.create_habit(&body).await?;
-            mode.formatter().display_habit_detail(&habit);
-        }
-        HabitCommands::Edit { id } => {
-            let detail = app.get_habit(&id).await?;
-            let habit = &detail.habit;
-            let original = editor::format_habit_for_editing(habit);
-            let edited = editor::open_editor(&original, &habit.id)
-                .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
-            let update = editor::parse_edited_habit(&edited)
-                .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
-            let updated = app.update_habit(&id, &update).await?;
-            mode.formatter().display_habit_detail(&updated);
-        }
-        HabitCommands::Update {
-            id,
-            title,
-            description,
-            recurrence,
-            start_time,
-            end_time,
-            avg_time,
-            sigma_time,
-            parallelizable,
-            allows_parallel,
-            abandonability,
-            active,
-            fixed,
-            window,
-        } => {
-            let avg_minutes = avg_time
-                .as_ref()
-                .map(|s| parse_duration(s))
-                .transpose()
-                .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
-            let sigma_minutes = sigma_time
-                .as_ref()
-                .map(|s| parse_duration(s))
-                .transpose()
-                .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
-            let abandonability = abandonability.map(Abandonability::new);
-            let body = UpdateHabit {
-                title,
-                description,
-                recurrence,
-                start_time: start_time.map(|s| parse_time(&s)).transpose()?,
-                end_time: end_time.map(|s| parse_time(&s)).transpose()?,
-                avg_minutes,
-                sigma_minutes,
-                parallelizable,
-                allows_parallel,
-                abandonability,
-                active,
-                fixed,
-                window_mode: window,
-            };
-            let habit = app.update_habit(&id, &body).await?;
-            mode.formatter().display_habit_detail(&habit);
-        }
-        HabitCommands::Replace {
-            id,
-            title,
-            recurrence,
-            start_time,
-            end_time,
-            avg_time,
-            sigma_time,
-            abandonability,
-            description,
-            parallelizable,
-            allows_parallel,
-            fixed,
-            window,
-        } => {
-            let avg_minutes = parse_duration(&avg_time)
-                .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
-            let sigma_minutes: i64 = parse_duration(&sigma_time)
+            let sigma_minutes: i64 = parse_duration(&args.sigma_time)
                 .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
             let body = CreateHabit {
                 title,
@@ -1861,27 +1936,133 @@ async fn run_habit(mode: DisplayMode, app: &TakusuApp, cmd: HabitCommands) -> Re
                 } else {
                     None
                 },
-                parallelizable: if parallelizable { Some(true) } else { None },
-                allows_parallel: if allows_parallel { Some(true) } else { None },
-                abandonability: Some(abandonability.into()),
-                description,
-                fixed: if fixed { Some(true) } else { None },
-                window_mode: window,
+                parallelizable: if args.parallelizable {
+                    Some(true)
+                } else {
+                    None
+                },
+                allows_parallel: if args.allows_parallel {
+                    Some(true)
+                } else {
+                    None
+                },
+                abandonability: Some(args.abandonability.into()),
+                description: args.description,
+                fixed: if args.fixed { Some(true) } else { None },
+                window_mode: args.window,
             };
-            let habit = app.replace_habit(&id, &body).await?;
+            let habit = app.create_habit(&body).await?;
             mode.formatter().display_habit_detail(&habit);
         }
-        HabitCommands::Delete { id } => {
-            app.delete_habit(&id).await?;
-            println!("Habit {id} deleted.");
+
+        HabitCommands::Edit(args) => {
+            let detail = app.get_habit(&args.id).await?;
+            let habit = &detail.habit;
+
+            if !args.has_patch_flag() {
+                let original = editor::format_habit_for_editing(habit);
+                let edited = editor::open_editor(&original, &habit.id)
+                    .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
+                let update = editor::parse_edited_habit(&edited)
+                    .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
+                let updated = app.update_habit(&args.id, &update).await?;
+                mode.formatter().display_habit_detail(&updated);
+            } else {
+                let avg_minutes = args
+                    .avg_time
+                    .as_ref()
+                    .map(|s| parse_duration(s))
+                    .transpose()
+                    .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
+                let sigma_minutes = args
+                    .sigma_time
+                    .as_ref()
+                    .map(|s| parse_duration(s))
+                    .transpose()
+                    .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
+                let abandonability = args.abandonability.map(Abandonability::new);
+                let body = UpdateHabit {
+                    title: args.title,
+                    description: args.description,
+                    recurrence: args.recurrence,
+                    start_time: args.start_time.map(|s| parse_time(&s)).transpose()?,
+                    end_time: args.end_time.map(|s| parse_time(&s)).transpose()?,
+                    avg_minutes,
+                    sigma_minutes,
+                    parallelizable: args.parallelizable,
+                    allows_parallel: args.allows_parallel,
+                    abandonability,
+                    active: args.active,
+                    fixed: args.fixed,
+                    window_mode: args.window,
+                };
+                let updated = app.update_habit(&args.id, &body).await?;
+                mode.formatter().display_habit_detail(&updated);
+            }
         }
-        HabitCommands::ScheduledSpans { command } => {
-            run_scheduled_spans(mode, app, command).await?
+
+        HabitCommands::Rm(args) => {
+            app.delete_habit(&args.id).await?;
+            println!("Habit {} deleted.", args.id);
         }
-        HabitCommands::StepsCheck { id } => {
-            deps_check_steps(app, &id).await?;
+
+        HabitCommands::Pause(args) => {
+            let body = CreateHabitScheduledSpan {
+                start_date: parse_date(&args.from)?,
+                end_date: parse_date(&args.to)?,
+                reason: args.reason,
+            };
+            let span = app.create_habit_scheduled_span(&args.id, &body).await?;
+            println!(
+                "Pause added: {} {}..{} ({})",
+                span.id,
+                span.start_date,
+                span.end_date,
+                span.reason.as_deref().unwrap_or("")
+            );
         }
-        HabitCommands::Steps { command } => run_habit_steps(mode, app, command).await?,
+
+        HabitCommands::Pauses(command) => run_habit_pauses(mode, app, command).await?,
+
+        HabitCommands::Steps(command) => run_habit_steps(mode, app, command).await?,
+    }
+    Ok(())
+}
+
+async fn run_habit_pauses(
+    mode: DisplayMode,
+    app: &TakusuApp,
+    cmd: HabitPausesCommands,
+) -> Result<(), AppError> {
+    match cmd {
+        HabitPausesCommands::Ls(args) => {
+            if let Some(id) = args.id {
+                let spans = app.list_habit_scheduled_spans(&id).await?;
+                if spans.is_empty() {
+                    println!("No pauses for habit {id}.");
+                } else {
+                    for s in &spans {
+                        println!(
+                            "{}\t{}\t{}\t{}",
+                            s.id,
+                            s.start_date,
+                            s.end_date,
+                            s.reason.as_deref().unwrap_or("")
+                        );
+                    }
+                }
+            } else {
+                let (spans, habits) =
+                    tokio::try_join!(app.list_all_habit_scheduled_spans(), app.list_habits())?;
+                mode.formatter()
+                    .display_all_habit_scheduled_spans(&spans, &habits);
+            }
+        }
+        HabitPausesCommands::Rm(args) => {
+            app.delete_habit_scheduled_span(&args.habit_id, &args.span_id)
+                .await?;
+            println!("Pause {} removed.", args.span_id);
+        }
     }
     Ok(())
 }
@@ -1889,19 +2070,21 @@ async fn run_habit(mode: DisplayMode, app: &TakusuApp, cmd: HabitCommands) -> Re
 async fn run_habit_steps(
     mode: DisplayMode,
     app: &TakusuApp,
-    cmd: StepsCommands,
+    cmd: HabitStepsCommands,
 ) -> Result<(), AppError> {
     match cmd {
-        StepsCommands::List { id } => {
-            let steps = app.list_habit_steps(&id).await?;
-            mode.formatter().display_habit_steps(&steps);
+        HabitStepsCommands::Ls(args) => {
+            if let Some(id) = args.id {
+                let steps = app.list_habit_steps(&id).await?;
+                mode.formatter().display_habit_steps(&steps);
+            } else {
+                let (steps, habits) =
+                    tokio::try_join!(app.list_all_habit_steps(), app.list_habits())?;
+                mode.formatter().display_all_habit_steps(&steps, &habits);
+            }
         }
-        StepsCommands::ListAll => {
-            let (steps, habits) = tokio::try_join!(app.list_all_habit_steps(), app.list_habits())?;
-            mode.formatter().display_all_habit_steps(&steps, &habits);
-        }
-        StepsCommands::Edit { id } => {
-            let steps = app.list_habit_steps(&id).await?;
+        HabitStepsCommands::Edit(args) => {
+            let steps = app.list_habit_steps(&args.id).await?;
             let original = editor::format_steps_for_editing(&steps)
                 .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
             let suffix = format!("{}", uuid::Uuid::now_v7());
@@ -1909,15 +2092,18 @@ async fn run_habit_steps(
                 .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
             let inputs = editor::parse_edited_steps(&edited)
                 .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
-            let replaced = app.replace_habit_steps(&id, &inputs).await?;
+            let replaced = app.replace_habit_steps(&args.id, &inputs).await?;
             mode.formatter().display_habit_steps(&replaced);
         }
-        StepsCommands::Set { id, file } => {
-            let content = read_text_file(&file).await?;
+        HabitStepsCommands::Set(args) => {
+            let content = read_text_file(&args.file).await?;
             let inputs = editor::parse_edited_steps(&content)
                 .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
-            let replaced = app.replace_habit_steps(&id, &inputs).await?;
+            let replaced = app.replace_habit_steps(&args.id, &inputs).await?;
             mode.formatter().display_habit_steps(&replaced);
+        }
+        HabitStepsCommands::Check(args) => {
+            deps_check_steps(app, &args.id).await?;
         }
     }
     Ok(())
@@ -1940,42 +2126,26 @@ async fn read_text_file(path: &str) -> Result<String, AppError> {
 
 async fn run_skill(mode: DisplayMode, app: &TakusuApp, cmd: SkillCommands) -> Result<(), AppError> {
     match cmd {
-        SkillCommands::List => {
+        SkillCommands::Ls => {
             let skills = app.list_skills().await?;
             mode.formatter().display_skills(&skills);
         }
-        SkillCommands::Show { slug } => {
-            let skill = app.get_skill(&slug).await?;
+        SkillCommands::Show(args) => {
+            let skill = app.get_skill(&args.slug).await?;
             mode.formatter().display_skill_detail(&skill);
         }
-        SkillCommands::Create {
-            slug,
-            name,
-            description,
-            body,
-        } => {
-            let (slug, name, description, body) = if is_interactive()
-                && slug.is_none()
-                && name.is_none()
-                && description.is_none()
-                && body.is_none()
-            {
-                let slug = prompt("Slug")?;
-                let name = prompt("Name")?;
-                let description = prompt("Description")?;
-                let body_path = prompt("Body file (or - for stdin)")?;
-                (Some(slug), Some(name), Some(description), Some(body_path))
-            } else {
-                (slug, name, description, body)
+        SkillCommands::Add(args) => {
+            let interactive = is_interactive();
+            let slug = require_or_prompt("Slug", args.slug, interactive)?;
+            let name = require_or_prompt("Name", args.name, interactive)?;
+            let description = match args.description {
+                Some(d) => d,
+                None if interactive => prompt("Description (optional)")?,
+                None => String::new(),
             };
-            let slug = slug.ok_or_else(|| {
-                AppError::BadRequest(BadRequestKind::Other("slug is required".into()))
-            })?;
-            let name = name.ok_or_else(|| {
-                AppError::BadRequest(BadRequestKind::Other("name is required".into()))
-            })?;
-            let description = description.unwrap_or_default();
-            let body = read_skill_body(body).await?;
+            let body_path =
+                require_or_prompt("Body file (or - for stdin)", args.body, interactive)?;
+            let body = read_skill_body(Some(body_path)).await?;
             let body = body.ok_or_else(|| {
                 AppError::BadRequest(BadRequestKind::Other("body is required".into()))
             })?;
@@ -1990,102 +2160,59 @@ async fn run_skill(mode: DisplayMode, app: &TakusuApp, cmd: SkillCommands) -> Re
                 .await?;
             mode.formatter().display_skill_detail(&created);
         }
-        SkillCommands::Update {
-            slug,
-            name,
-            description,
-            body,
-        } => {
-            let body = read_skill_body(body).await?;
-            if name.is_none() && description.is_none() && body.is_none() {
-                return Err(AppError::BadRequest(BadRequestKind::Other(
-                    "at least one of name, description, or body is required".into(),
-                )));
+        SkillCommands::Edit(args) => {
+            if args.name.is_none() && args.description.is_none() && args.body.is_none() {
+                let skill = app.get_skill(&args.slug).await?;
+                let original = format!(
+                    "# Edit skill body. Lines starting with '#' are comments.\n{}",
+                    skill.body
+                );
+                let edited = editor::open_editor(&original, &args.slug)
+                    .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
+                let body = edited
+                    .lines()
+                    .filter(|line| !line.trim_start().starts_with('#'))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                let body = body.trim().to_string();
+                if body == skill.body {
+                    println!("No changes.");
+                    return Ok(());
+                }
+                let updated = app
+                    .update_skill(
+                        &args.slug,
+                        &takusu_contracts::UpdateSkill {
+                            name: None,
+                            description: None,
+                            body: Some(body),
+                        },
+                    )
+                    .await?;
+                mode.formatter().display_skill_detail(&updated);
+            } else {
+                let body = read_skill_body(args.body).await?;
+                if args.name.is_none() && args.description.is_none() && body.is_none() {
+                    return Err(AppError::BadRequest(BadRequestKind::Other(
+                        "at least one of --name, --description, or --body is required".into(),
+                    )));
+                }
+                let updated = app
+                    .update_skill(
+                        &args.slug,
+                        &takusu_contracts::UpdateSkill {
+                            name: args.name,
+                            description: args.description,
+                            body,
+                        },
+                    )
+                    .await?;
+                mode.formatter().display_skill_detail(&updated);
             }
-            let updated = app
-                .update_skill(
-                    &slug,
-                    &takusu_contracts::UpdateSkill {
-                        name,
-                        description,
-                        body,
-                    },
-                )
-                .await?;
-            mode.formatter().display_skill_detail(&updated);
         }
-        SkillCommands::Delete { slug } => {
-            app.delete_skill(&slug).await?;
-            println!("Skill {slug} deleted.");
-        }
-    }
-    Ok(())
-}
-
-async fn run_memory(app: &TakusuApp, cmd: MemoryCommands) -> Result<(), AppError> {
-    match cmd {
-        MemoryCommands::Show { id } => {
-            let memory = app.get_memory(&id).await?;
-            println!("{}", serde_json::to_string_pretty(&memory).unwrap());
-        }
-        MemoryCommands::Create {
-            kind,
-            key,
-            content,
-            subject_type,
-            subject_id,
-            upsert,
-        } => {
-            let subject_type = subject_type.map(SubjectType::from);
-            let body = CreateMemory {
-                kind,
-                key,
-                content,
-                subject_type,
-                subject_id,
-                upsert,
-            };
-            let memory = app.create_memory(&body, None).await?;
-            println!("{}", serde_json::to_string_pretty(&memory).unwrap());
-        }
-        MemoryCommands::Update {
-            id,
-            revision,
-            content,
-        } => {
-            let body = UpdateMemory {
-                observed_revision: revision,
-                content: Some(content),
-            };
-            let memory = app.update_memory(&id, &body, None).await?;
-            println!("{}", serde_json::to_string_pretty(&memory).unwrap());
-        }
-        MemoryCommands::Delete { id, revision } => {
-            app.delete_memory(&id, revision, None).await?;
-            println!("Memory {id} deleted.");
-        }
-        MemoryCommands::Search {
-            q,
-            kind,
-            subject_type,
-            subject_id,
-            limit,
-        } => {
-            let subject_type = subject_type.map(SubjectType::from);
-            let query = MemoryQuery {
-                q,
-                kind,
-                subject_type,
-                subject_id,
-                limit,
-            };
-            let rows = app.search_memories(&query).await?;
-            println!("{}", serde_json::to_string_pretty(&rows).unwrap());
-        }
-        MemoryCommands::Similar { title, limit } => {
-            let query = SimilarTaskQuery { title, limit };
-            let rows = app.find_similar_tasks(&query).await?;
-            println!("{}", serde_json::to_string_pretty(&rows).unwrap());
+        SkillCommands::Rm(args) => {
+            app.delete_skill(&args.slug).await?;
+            println!("Skill {} deleted.", args.slug);
         }
     }
     Ok(())
@@ -2110,133 +2237,69 @@ async fn read_skill_body(path: Option<String>) -> Result<Option<String>, AppErro
     }
 }
 
-async fn run_scheduled_spans(
-    mode: DisplayMode,
-    app: &TakusuApp,
-    cmd: ScheduledSpanCommands,
-) -> Result<(), AppError> {
+async fn run_memory(app: &TakusuApp, cmd: MemoryCommands) -> Result<(), AppError> {
     match cmd {
-        ScheduledSpanCommands::Add {
-            id,
-            from,
-            to,
-            reason,
-        } => {
-            let body = CreateHabitScheduledSpan {
-                start_date: parse_date(&from)?,
-                end_date: parse_date(&to)?,
-                reason,
+        MemoryCommands::Show(args) => {
+            let memory = app.get_memory(&args.id).await?;
+            println!("{}", serde_json::to_string_pretty(&memory).unwrap());
+        }
+        MemoryCommands::Add(args) => {
+            let subject_type = args.subject_type.map(SubjectType::from);
+            let body = CreateMemory {
+                kind: args.kind,
+                key: args.key,
+                content: args.content,
+                subject_type,
+                subject_id: args.subject_id,
+                upsert: args.upsert,
             };
-            let span = app.create_habit_scheduled_span(&id, &body).await?;
-            println!(
-                "Scheduled span added: {} {}..{} ({})",
-                span.id,
-                span.start_date,
-                span.end_date,
-                span.reason.as_deref().unwrap_or("")
-            );
+            let memory = app.create_memory(&body, None).await?;
+            println!("{}", serde_json::to_string_pretty(&memory).unwrap());
         }
-        ScheduledSpanCommands::List { id } => {
-            let spans = app.list_habit_scheduled_spans(&id).await?;
-            if spans.is_empty() {
-                println!("No scheduled spans for habit {id}.");
-            } else {
-                for s in &spans {
-                    println!(
-                        "{}\t{}\t{}\t{}",
-                        s.id,
-                        s.start_date,
-                        s.end_date,
-                        s.reason.as_deref().unwrap_or("")
-                    );
-                }
-            }
-        }
-        ScheduledSpanCommands::ListAll => {
-            let (spans, habits) =
-                tokio::try_join!(app.list_all_habit_scheduled_spans(), app.list_habits())?;
-            mode.formatter()
-                .display_all_habit_scheduled_spans(&spans, &habits);
-        }
-        ScheduledSpanCommands::Remove { id, span_id } => {
-            app.delete_habit_scheduled_span(&id, &span_id).await?;
-            println!("Scheduled span {span_id} removed.");
-        }
-    }
-    Ok(())
-}
-
-async fn run_schedule(
-    mode: DisplayMode,
-    app: &TakusuApp,
-    tz: &jiff::tz::TimeZone,
-    cmd: ScheduleCommands,
-) -> Result<(), AppError> {
-    let habit_map = habit_display_map(app).await;
-    match cmd {
-        ScheduleCommands::Get => {
-            let schedule = app.get_schedule().await?;
-            let entries: Vec<ScheduleEntry> = schedule.schedule.as_inner().clone();
-            let tasks = app
-                .list_tasks(&TaskQuery::default())
-                .await
-                .unwrap_or_default();
-            mode.formatter()
-                .display_schedule(&entries, &tasks, tz, &habit_map);
-        }
-        ScheduleCommands::Generate { task_ids, sleep } => {
-            let body = GenerateSchedule { task_ids, sleep };
-            let schedule = app.generate_schedule(&body).await?;
-            let entries: Vec<ScheduleEntry> = schedule.schedule.as_inner().clone();
-            let tasks = app
-                .list_tasks(&TaskQuery::default())
-                .await
-                .unwrap_or_default();
-            mode.formatter()
-                .display_schedule(&entries, &tasks, tz, &habit_map);
-        }
-        ScheduleCommands::Reschedule {
-            schedule_mode: rmode,
-            from,
-            until,
-            task_ids,
-            pinned,
-            sleep,
-        } => {
-            let body = Reschedule {
-                mode: rmode,
-                from: from
-                    .map(|s| parse_dt(&s, tz).map(|t| t.to_string()))
-                    .transpose()?,
-                until: until
-                    .map(|s| parse_dt(&s, tz).map(|t| t.to_string()))
-                    .transpose()?,
-                task_ids,
-                pinned: pinned.unwrap_or_default(),
-                sleep,
+        MemoryCommands::Edit(args) => {
+            let memory = app.get_memory(&args.id).await?;
+            let body = UpdateMemory {
+                observed_revision: memory.revision,
+                content: Some(args.content),
             };
-            let schedule = app.reschedule(&body).await?;
-            let entries: Vec<ScheduleEntry> = schedule.schedule.as_inner().clone();
-            let tasks = app
-                .list_tasks(&TaskQuery::default())
-                .await
-                .unwrap_or_default();
-            mode.formatter()
-                .display_schedule(&entries, &tasks, tz, &habit_map);
+            let memory = app.update_memory(&args.id, &body, None).await?;
+            println!("{}", serde_json::to_string_pretty(&memory).unwrap());
         }
-        ScheduleCommands::Move {
-            task_id,
-            start_at,
-            force,
-        } => {
-            let result = app
-                .move_entry(&task_id, parse_dt(&start_at, tz)?, force)
-                .await?;
-            println!("{}", serde_json::to_string_pretty(&result).unwrap());
+        MemoryCommands::Rm(args) => {
+            let memory = app.get_memory(&args.id).await?;
+            app.delete_memory(&args.id, memory.revision, None).await?;
+            println!("Memory {} deleted.", args.id);
         }
-        ScheduleCommands::Clear => {
-            app.clear_schedule().await?;
-            println!("Schedule cleared.");
+        MemoryCommands::Ls(args) => {
+            let query = MemoryQuery {
+                q: String::new(),
+                kind: None,
+                subject_type: None,
+                subject_id: None,
+                limit: args.limit,
+            };
+            let rows = app.search_memories(&query).await?;
+            println!("{}", serde_json::to_string_pretty(&rows).unwrap());
+        }
+        MemoryCommands::Search(args) => {
+            let subject_type = args.subject_type.map(SubjectType::from);
+            let query = MemoryQuery {
+                q: args.q,
+                kind: args.kind,
+                subject_type,
+                subject_id: args.subject_id,
+                limit: args.limit,
+            };
+            let rows = app.search_memories(&query).await?;
+            println!("{}", serde_json::to_string_pretty(&rows).unwrap());
+        }
+        MemoryCommands::Similar(args) => {
+            let query = SimilarTaskQuery {
+                title: args.title,
+                limit: args.limit,
+            };
+            let rows = app.find_similar_tasks(&query).await?;
+            println!("{}", serde_json::to_string_pretty(&rows).unwrap());
         }
     }
     Ok(())
@@ -2244,22 +2307,22 @@ async fn run_schedule(
 
 async fn run_token(mode: DisplayMode, app: &TakusuApp, cmd: TokenCommands) -> Result<(), AppError> {
     match cmd {
-        TokenCommands::Create { label } => {
-            let resp = app.create_token(label.as_deref()).await?;
+        TokenCommands::Add(args) => {
+            let resp = app.create_token(args.label.as_deref()).await?;
             println!("Token issued:");
             println!("  ID:    {}", resp.id);
             println!("  Token: {}", resp.token);
             println!("  Label: {}", resp.label.as_deref().unwrap_or("—"));
             println!("  Created: {}", resp.created_at);
-            eprintln!("\n⚠ Save the token value; it won't be shown again.");
+            eprintln!("\nWarning: Save the token value; it won't be shown again.");
         }
-        TokenCommands::List => {
+        TokenCommands::Ls => {
             let tokens = app.list_tokens().await?;
             mode.formatter().display_tokens(&tokens);
         }
-        TokenCommands::Revoke { id } => {
-            app.revoke_token(id).await?;
-            println!("Token {id} revoked.");
+        TokenCommands::Rm(args) => {
+            app.revoke_token(args.id).await?;
+            println!("Token {} revoked.", args.id);
         }
     }
     Ok(())
@@ -2267,7 +2330,7 @@ async fn run_token(mode: DisplayMode, app: &TakusuApp, cmd: TokenCommands) -> Re
 
 async fn run_sync(app: &TakusuApp, cmd: SyncCommands) -> Result<(), AppError> {
     match cmd {
-        SyncCommands::Settings => {
+        SyncCommands::Status => {
             let settings = app.get_gcal_settings().await?;
             println!("Google Calendar sync settings:");
             println!("  enabled:          {}", settings.enabled);
@@ -2276,35 +2339,28 @@ async fn run_sync(app: &TakusuApp, cmd: SyncCommands) -> Result<(), AppError> {
             println!("  has_client_secret: {}", settings.has_client_secret);
             println!("  has_refresh_token:  {}", settings.has_refresh_token);
         }
-        SyncCommands::Setup {
-            enabled,
-            calendar_id,
-            client_id,
-            client_secret,
-            refresh_token,
-            no_ask,
-        } => {
-            let (enabled, calendar_id, client_id, client_secret, refresh_token) = if !no_ask
+        SyncCommands::Setup(args) => {
+            let (enabled, calendar_id, client_id, client_secret, refresh_token) = if !args.no_ask
                 && is_interactive()
             {
                 let settings = app.get_gcal_settings().await?;
-                let enabled = match enabled {
+                let enabled = match args.enabled {
                     Some(v) => Some(v),
                     None => prompt_bool("enabled", settings.enabled)?,
                 };
-                let calendar_id = match calendar_id {
+                let calendar_id = match args.calendar_id {
                     Some(v) => Some(v),
                     None => prompt_optional("calendar_id", &settings.calendar_id)?,
                 };
-                let client_id = match client_id {
+                let client_id = match args.client_id {
                     Some(v) => Some(v),
                     None => prompt_optional("client_id", &settings.client_id)?,
                 };
-                let client_secret = match client_secret {
+                let client_secret = match args.client_secret {
                     Some(v) => Some(v),
                     None => prompt_secret_optional("client_secret", settings.has_client_secret)?,
                 };
-                let refresh_token = match refresh_token {
+                let refresh_token = match args.refresh_token {
                     Some(v) => Some(v),
                     None => prompt_secret_optional("refresh_token", settings.has_refresh_token)?,
                 };
@@ -2317,11 +2373,11 @@ async fn run_sync(app: &TakusuApp, cmd: SyncCommands) -> Result<(), AppError> {
                 )
             } else {
                 (
-                    enabled,
-                    calendar_id,
-                    client_id,
-                    client_secret,
-                    refresh_token,
+                    args.enabled,
+                    args.calendar_id,
+                    args.client_id,
+                    args.client_secret,
+                    args.refresh_token,
                 )
             };
             let body = takusu_contracts::UpdateGoogleCalSettings {
@@ -2338,20 +2394,22 @@ async fn run_sync(app: &TakusuApp, cmd: SyncCommands) -> Result<(), AppError> {
             println!("  has_client_secret: {}", settings.has_client_secret);
             println!("  has_refresh_token:  {}", settings.has_refresh_token);
         }
-        SyncCommands::Login {
-            client_id,
-            client_secret,
-            calendar_id,
-            port,
-            no_browser,
-        } => {
-            oauth_login(app, client_id, client_secret, calendar_id, port, no_browser).await?;
+        SyncCommands::Login(args) => {
+            oauth_login(
+                app,
+                args.client_id,
+                args.client_secret,
+                args.calendar_id,
+                args.port,
+                args.no_browser,
+            )
+            .await?;
         }
-        SyncCommands::Trigger => {
+        SyncCommands::Run => {
             app.do_sync().await.map_err(AppError::Internal)?;
             println!("Sync triggered.");
         }
-        SyncCommands::DeleteAll => {
+        SyncCommands::Purge => {
             let result = app.delete_all_gcal_events().await?;
             println!("Deleted {} Google Calendar event(s).", result.deleted);
             if !result.failed.is_empty() {
@@ -2613,29 +2671,72 @@ async fn run_config(cmd: ConfigCommands, app: &TakusuApp, cfg: &CliConfig) -> Re
     match cmd {
         ConfigCommands::Show => config::show(),
         ConfigCommands::Init => config::init(),
-        ConfigCommands::Set {
-            tz,
-            sleep_start,
-            sleep_end,
-            comfortable,
-            maximum,
-            solver,
-            time_budget_ms,
-            seed,
-            warm_start,
-            ..
-        } => {
-            let mut update = UpdateSettings {
-                tz,
-                sleep_start: sleep_start.map(|s| parse_time(&s)).transpose()?,
-                sleep_end: sleep_end.map(|s| parse_time(&s)).transpose()?,
-                comfortable_minutes: comfortable.map(|h| (h * 60.0).round() as i64),
-                maximum_minutes: maximum.map(|h| (h * 60.0).round() as i64),
-                solver,
-                time_budget_ms,
-                seed,
-                warm_start,
-            };
+        ConfigCommands::Set(args) => {
+            if !is_app_settings_key(&args.key) && !is_local_config_key(&args.key) {
+                return Err(AppError::BadRequest(BadRequestKind::Other(format!(
+                    "unknown config key: {}",
+                    args.key
+                ))));
+            }
+
+            if is_local_config_key(&args.key) && !is_app_settings_key(&args.key) {
+                println!("Config updated: {} = {}", args.key, args.value);
+                return Ok(());
+            }
+
+            let mut update = UpdateSettings::default();
+            let value = &args.value;
+            match args.key.as_str() {
+                "tz" => update.tz = Some(value.clone()),
+                "sleep_start" => update.sleep_start = Some(parse_time(value)?),
+                "sleep_end" => update.sleep_end = Some(parse_time(value)?),
+                "comfortable" => {
+                    let h: f64 = value.parse().map_err(|e| {
+                        AppError::BadRequest(BadRequestKind::Other(format!(
+                            "invalid comfortable value '{value}': {e}"
+                        )))
+                    })?;
+                    update.comfortable_minutes = Some((h * 60.0).round() as i64);
+                }
+                "maximum" => {
+                    let h: f64 = value.parse().map_err(|e| {
+                        AppError::BadRequest(BadRequestKind::Other(format!(
+                            "invalid maximum value '{value}': {e}"
+                        )))
+                    })?;
+                    update.maximum_minutes = Some((h * 60.0).round() as i64);
+                }
+                "solver" => {
+                    update.solver = Some(value.parse().map_err(|e| {
+                        AppError::BadRequest(BadRequestKind::Other(format!(
+                            "invalid solver '{value}': {e}"
+                        )))
+                    })?);
+                }
+                "time_budget_ms" => {
+                    update.time_budget_ms = Some(value.parse().map_err(|e| {
+                        AppError::BadRequest(BadRequestKind::Other(format!(
+                            "invalid time_budget_ms '{value}': {e}"
+                        )))
+                    })?);
+                }
+                "seed" => {
+                    update.seed = Some(value.parse().map_err(|e| {
+                        AppError::BadRequest(BadRequestKind::Other(format!(
+                            "invalid seed '{value}': {e}"
+                        )))
+                    })?);
+                }
+                "warm_start" => {
+                    update.warm_start = Some(value.parse().map_err(|e| {
+                        AppError::BadRequest(BadRequestKind::Other(format!(
+                            "invalid warm_start '{value}': {e}"
+                        )))
+                    })?);
+                }
+                _ => {}
+            }
+
             if update.tz.is_none() && cfg.tz.is_some() {
                 update.tz = cfg.tz.clone();
             }
@@ -2645,6 +2746,7 @@ async fn run_config(cmd: ConfigCommands, app: &TakusuApp, cfg: &CliConfig) -> Re
             if update.sleep_end.is_none() && cfg.sleep_end.is_some() {
                 update.sleep_end = Some(parse_time(cfg.sleep_end.as_deref().unwrap())?);
             }
+
             let resp = app.update_settings(&update).await?;
             let comfortable_h = resp.comfortable_minutes.unwrap_or(0) as f64 / 60.0;
             let maximum_h = resp.maximum_minutes.unwrap_or(0) as f64 / 60.0;
@@ -2662,17 +2764,50 @@ async fn run_config(cmd: ConfigCommands, app: &TakusuApp, cfg: &CliConfig) -> Re
             );
         }
         ConfigCommands::Workers(cmd) => match cmd {
-            WorkersCommands::Set { url, token } => {
-                app.update_workers_credentials(&url, &token).await?;
-                config::set("worker_url", &url).map_err(AppError::Internal)?;
-                config::set("workers_token", &token).map_err(AppError::Internal)?;
+            ConfigWorkersCommands::Set(args) => {
+                app.update_workers_credentials(&args.url, &args.token)
+                    .await?;
+                config::set("worker_url", &args.url).map_err(AppError::Internal)?;
+                config::set("workers_token", &args.token).map_err(AppError::Internal)?;
                 println!("Worker config updated.");
             }
-            WorkersCommands::Health => {
+            ConfigWorkersCommands::Health => {
                 let status = app.health_check().await?;
                 println!("{status}");
             }
         },
+    }
+    Ok(())
+}
+
+async fn run_system(app: &TakusuApp, cmd: SystemCommands) -> Result<(), AppError> {
+    match cmd {
+        SystemCommands::Health => {
+            let status = app.health_check().await?;
+            println!("{status}");
+        }
+        SystemCommands::GenRootToken | SystemCommands::License | SystemCommands::Completion(_) => {
+            unreachable!("system subcommand is handled before run()")
+        }
+    }
+    Ok(())
+}
+
+async fn run_agent(app: Arc<TakusuApp>, args: AgentArgs) -> Result<(), AppError> {
+    if let Some(text) = args.text {
+        agent::run(app, Some(text), args.yes, args.allow, args.deny).await?;
+    } else if let Some(command) = args.command {
+        match command {
+            AgentSubCommands::Config(cmd) => match cmd {
+                AgentConfigCommands::Show => agent::config_show()?,
+                AgentConfigCommands::Set { key, value } => agent::config_set(&key, &value)?,
+            },
+            AgentSubCommands::Allow { key } => agent::permissions_set(&key, "true")?,
+            AgentSubCommands::Deny { key } => agent::permissions_set(&key, "false")?,
+            AgentSubCommands::Stats(args) => agent::stats(args.clear)?,
+        }
+    } else {
+        agent::run(app, None, args.yes, args.allow, args.deny).await?;
     }
     Ok(())
 }
@@ -2737,7 +2872,6 @@ async fn deps_check_tasks(app: &TakusuApp) -> Result<(), AppError> {
             r.from_title,
             r.to_title
         );
-        // [1] remove redundant edge; [2.N] remove the Nth path edge
         let path_pairs: Vec<(String, String)> = r
             .via
             .windows(2)
@@ -2761,15 +2895,12 @@ async fn deps_check_tasks(app: &TakusuApp) -> Result<(), AppError> {
         if choice == "1" {
             remove_task_dep(app, &r.from, &r.to).await?;
             println!("削除しました: {}→{}", r.from_title, r.to_title);
-            // Re-analyze: deletion may change the set.
             redundant = app.analyze_task_dependencies().await?;
-            // Keep current index if still valid, otherwise restart from 0.
             if idx >= redundant.len() {
                 idx = 0;
             }
             continue;
         }
-        // Try 2.1, 2.2, ...
         if let Some(rest) = choice.strip_prefix("2.")
             && let Ok(n) = rest.parse::<usize>()
             && n >= 1
@@ -2915,94 +3046,183 @@ async fn deps_check_steps(app: &TakusuApp, habit_id: &str) -> Result<(), AppErro
 mod tests {
     use super::*;
 
-    /// `--schedule-mode range` parses to `ScheduleMode::Range` without
-    /// colliding with the global `--mode` (regression test for #1276).
     #[test]
-    fn reschedule_schedule_mode_range_parses() {
+    fn task_verb_add_parses_positional_title() {
+        let cli = Cli::parse_from(["takusu", "add", "hello"]);
+        let Commands::Task(TaskVerbs::Add(args)) = cli.command.expect("subcommand") else {
+            panic!("expected TaskVerbs::Add");
+        };
+        assert_eq!(args.title.as_deref(), Some("hello"));
+    }
+
+    #[test]
+    fn schedule_verb_plan_range_parses() {
         let cli = Cli::parse_from([
             "takusu",
-            "schedule",
-            "reschedule",
-            "--schedule-mode",
-            "range",
+            "plan",
             "--from",
             "2025-06-05T08:00Z",
             "--until",
             "2025-06-05T18:00Z",
         ]);
-        let Commands::Schedule {
-            command: ScheduleCommands::Reschedule { schedule_mode, .. },
-        } = cli.command.expect("subcommand")
-        else {
-            panic!("expected ScheduleCommands::Reschedule");
+        let Commands::Schedule(ScheduleVerbs::Plan(args)) = cli.command.expect("subcommand") else {
+            panic!("expected ScheduleVerbs::Plan");
         };
-        assert_eq!(schedule_mode, ScheduleMode::Range);
+        assert!(args.from.is_some());
+        assert!(args.until.is_some());
     }
 
-    /// `--schedule-mode tasks` parses to `ScheduleMode::Tasks`.
     #[test]
-    fn reschedule_schedule_mode_tasks_parses() {
+    fn global_plain_forces_simple() {
+        let cli = Cli::parse_from(["takusu", "--plain", "ls"]);
+        assert!(cli.plain);
+    }
+
+    #[test]
+    fn bare_takusu_is_agenda() {
+        let cli = Cli::parse_from(["takusu"]);
+        assert!(
+            cli.command.is_none(),
+            "bare takusu should have no subcommand"
+        );
+    }
+
+    #[test]
+    fn task_verb_ls_default_status_is_actionable() {
+        let cli = Cli::parse_from(["takusu", "ls"]);
+        let Commands::Task(TaskVerbs::Ls(args)) = cli.command.expect("subcommand") else {
+            panic!("expected TaskVerbs::Ls");
+        };
+        assert!(args.status.is_none());
+        assert!(!args.all);
+    }
+
+    #[test]
+    fn task_verb_ls_filter_flags_parse() {
         let cli = Cli::parse_from([
             "takusu",
-            "schedule",
-            "reschedule",
-            "--schedule-mode",
-            "tasks",
+            "ls",
+            "--status",
+            "in_progress",
+            "--no-overdue",
+            "--habit-id",
+            "h1",
+            "--ical-uid",
+            "uid@example",
+            "--limit",
+            "10",
+            "buy",
+            "milk",
         ]);
-        let Commands::Schedule {
-            command: ScheduleCommands::Reschedule { schedule_mode, .. },
+        let Commands::Task(TaskVerbs::Ls(args)) = cli.command.expect("subcommand") else {
+            panic!("expected TaskVerbs::Ls");
+        };
+        assert_eq!(args.status, Some(TaskStatusFilter::InProgress));
+        assert!(args.no_overdue);
+        assert_eq!(args.habit_id.as_deref(), Some("h1"));
+        assert_eq!(args.ical_uid.as_deref(), Some("uid@example"));
+        assert_eq!(args.limit, Some(10));
+        assert_eq!(args.query, vec!["buy", "milk"]);
+    }
+
+    #[test]
+    fn schedule_verb_move_positionals_parse() {
+        let cli = Cli::parse_from(["takusu", "move", "#5", "2025-06-05T08:00Z"]);
+        let Commands::Schedule(ScheduleVerbs::Move(args)) = cli.command.expect("subcommand") else {
+            panic!("expected ScheduleVerbs::Move");
+        };
+        assert_eq!(args.task_id, "#5");
+        assert_eq!(args.start_at, "2025-06-05T08:00Z");
+    }
+
+    #[test]
+    fn schedule_verb_plan_pin_requires_range_or_tasks() {
+        let cli = Cli::parse_from(["takusu", "plan", "--pin", "#5"]);
+        let Commands::Schedule(ScheduleVerbs::Plan(args)) = cli.command.expect("subcommand") else {
+            panic!("expected ScheduleVerbs::Plan");
+        };
+        assert_eq!(args.pin.as_deref().unwrap(), &["#5"]);
+        assert!(args.from.is_none() && args.until.is_none() && args.tasks.is_none());
+    }
+
+    #[test]
+    fn habit_steps_set_positionals_parse() {
+        let cli = Cli::parse_from(["takusu", "habit", "steps", "set", "h1", "steps.json"]);
+        let Commands::Habit {
+            command: HabitCommands::Steps(HabitStepsCommands::Set(args)),
         } = cli.command.expect("subcommand")
         else {
-            panic!("expected ScheduleCommands::Reschedule");
+            panic!("expected HabitStepsCommands::Set");
         };
-        assert_eq!(schedule_mode, ScheduleMode::Tasks);
+        assert_eq!(args.id, "h1");
+        assert_eq!(args.file, "steps.json");
     }
 
-    /// `--schedule-mode full` is rejected at parse time by the value parser.
     #[test]
-    fn reschedule_schedule_mode_full_rejected() {
-        let result = Cli::try_parse_from([
-            "takusu",
-            "schedule",
-            "reschedule",
-            "--schedule-mode",
-            "full",
-        ]);
-        assert!(result.is_err(), "full should be rejected at parse time");
-    }
-
-    /// Global `--mode simple` and `--schedule-mode range` coexist without
-    /// panic — the arg-id collision that caused #1276 is resolved.
-    #[test]
-    fn global_mode_and_schedule_mode_coexist() {
-        let cli = Cli::parse_from([
-            "takusu",
-            "--mode",
-            "simple",
-            "schedule",
-            "reschedule",
-            "--schedule-mode",
-            "range",
-        ]);
-        assert!(matches!(cli.mode, DisplayMode::Simple));
-        let Commands::Schedule {
-            command: ScheduleCommands::Reschedule { schedule_mode, .. },
+    fn config_set_positionals_parse() {
+        let cli = Cli::parse_from(["takusu", "config", "set", "comfortable", "4"]);
+        let Commands::Config {
+            command: ConfigCommands::Set(args),
         } = cli.command.expect("subcommand")
         else {
-            panic!("expected ScheduleCommands::Reschedule");
+            panic!("expected ConfigCommands::Set");
         };
-        assert_eq!(schedule_mode, ScheduleMode::Range);
+        assert_eq!(args.key, "comfortable");
+        assert_eq!(args.value, "4");
     }
 
-    /// `--mode range` on reschedule is now a clean clap error (not a panic)
-    /// because `--mode` is the global `DisplayMode` flag, which only accepts
-    /// `rich` / `simple`.
     #[test]
-    fn reschedule_legacy_mode_flag_is_clean_error() {
-        let result = Cli::try_parse_from(["takusu", "schedule", "reschedule", "--mode", "range"]);
+    fn config_workers_set_positionals_parse() {
+        let cli = Cli::parse_from(["takusu", "config", "workers", "set", "http://w", "tok"]);
+        let Commands::Config {
+            command: ConfigCommands::Workers(ConfigWorkersCommands::Set(args)),
+        } = cli.command.expect("subcommand")
+        else {
+            panic!("expected ConfigWorkersCommands::Set");
+        };
+        assert_eq!(args.url, "http://w");
+        assert_eq!(args.token, "tok");
+    }
+
+    #[test]
+    fn system_completion_positional_parse() {
+        let cli = Cli::parse_from(["takusu", "system", "completion", "bash"]);
+        let Commands::System {
+            command: SystemCommands::Completion(args),
+        } = cli.command.expect("subcommand")
+        else {
+            panic!("expected SystemCommands::Completion");
+        };
+        assert_eq!(args.shell, clap_complete::Shell::Bash);
+    }
+
+    #[test]
+    fn agent_repl_flags_and_subcommand_differ() {
+        let cli = Cli::parse_from(["takusu", "agent", "--allow", "task:create"]);
+        let Commands::Agent(args) = cli.command.expect("subcommand") else {
+            panic!("expected Agent");
+        };
+        assert!(args.text.is_none());
+        assert!(args.command.is_none());
+        assert_eq!(args.allow, vec!["task:create"]);
+
+        let cli = Cli::parse_from(["takusu", "agent", "allow", "task:create"]);
+        let Commands::Agent(args) = cli.command.expect("subcommand") else {
+            panic!("expected Agent");
+        };
+        assert!(args.text.is_none());
+        assert!(args.allow.is_empty());
+        assert!(
+            matches!(args.command, Some(AgentSubCommands::Allow { key }) if key == "task:create")
+        );
+    }
+
+    #[test]
+    fn agent_text_positional_conflicts_with_subcommand() {
+        let result = Cli::try_parse_from(["takusu", "agent", "hello", "config"]);
         assert!(
             result.is_err(),
-            "--mode range should be a clap error, not accepted"
+            "positional text and subcommand must conflict"
         );
     }
 }

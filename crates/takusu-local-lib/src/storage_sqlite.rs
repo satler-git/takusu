@@ -26,6 +26,8 @@ const OVERDUE_SQL: &str =
 /// SQL predicate that excludes overdue tasks (completed/skipped or end_at is now or later).
 const NOT_OVERDUE_SQL: &str =
     "(status IN ('completed', 'skipped') OR datetime(end_at) >= datetime('now'))";
+/// SQL predicate for actionable tasks (pending, scheduled, or in_progress).
+const ACTIONABLE_SQL: &str = "status IN ('pending', 'scheduled', 'in_progress')";
 /// Static `SELECT ... FROM tasks` fragments for queries that require an
 /// audited `&'static str` (`SqlSafeStr`) and avoid `SELECT *` brittleness.
 const SELECT_TASKS: &str = "SELECT id, display_id, title, description, start_at, end_at, avg_minutes, sigma_minutes, depends, parallelizable, allows_parallel, abandonability, status, habit_id, ical_uid, user_edited, fixed, habit_step_id, quantity_total, quantity_done, quantity_unit, completed_at, split_from_task_id, original_quantity_total, created_at, updated_at, tam.actual_minutes FROM tasks LEFT JOIN task_actual_minutes tam ON tam.task_id = tasks.id";
@@ -483,6 +485,9 @@ impl Storage for SqliteStorage {
             if status == TaskStatusFilter::Overdue {
                 sql.push_str(" AND ");
                 sql.push_str(OVERDUE_SQL);
+            } else if status == TaskStatusFilter::Actionable {
+                sql.push_str(" AND ");
+                sql.push_str(ACTIONABLE_SQL);
             } else {
                 sql.push_str(" AND status = ?");
                 bindings.push(status.as_str().to_string());

@@ -55,6 +55,9 @@ impl Storage for D1Storage {
             if status == TaskStatusFilter::Overdue {
                 sql.push_str(" AND ");
                 sql.push_str(OVERDUE_SQL);
+            } else if status == TaskStatusFilter::Actionable {
+                sql.push_str(" AND ");
+                sql.push_str(ACTIONABLE_SQL);
             } else {
                 sql.push_str(" AND status = ?");
                 bindings.push(JsValue::from_str(status.as_str()));

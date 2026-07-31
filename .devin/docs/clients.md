@@ -2,26 +2,41 @@
 
 ## takusu-cli
 
-CLI client using clap derive with nested subcommands: `task`, `schedule`,
-`token`, `sync`.
+CLI client using clap derive with verb-first top-level commands. Task and
+schedule operations are flat top-level verbs; lower-frequency domains are
+`noun`-grouped.
 
 - **Uses takusu-local-lib directly**: no network round-trip
 - **Storage backends**: `TAKUSU_STORAGE=sqlite` (default) or
   `TAKUSU_STORAGE=workers`
-- **Display modes**: `--mode rich` (comfy-table) / `--mode simple` (plain text)
+- **Display modes**: `--mode rich` or `--mode simple`; auto-detected from TTY
+  (`--plain` forces simple)
 - **Status display**: colored in rich mode (Yellow=pending, Green=scheduled,
   DarkYellow=in_progress, DarkCyan=completed, DarkGrey=skipped); simple mode
   uses markers ([ ], [~], [>], [x], [-])
-- **Status update**: `task update --status <value>` or `task edit` includes
-  status field
-- **Task list filter**: `task list --status <value>`
-- **Editor-based editing**: `task edit <ID>` writes task fields to a temp file,
-  opens `$EDITOR` (default `vi`), then parses the saved file and sends PATCH.
-  Lines starting with `#` are comments. Empty values are not updated.
-- **Subcommands**: `task {list,show,create,edit,update,replace,delete,status}`,
-  `schedule {get,generate,reschedule,move,clear}`,
-  `token {create,list,revoke}`, `sync {settings,setup,login,trigger}`,
-  `habit {list,show,create,edit,update,replace,delete}`
+- **Status update**: `start`, `pause`, `done`, `skip` verbs; `edit --status`
+  for other status transitions
+- **Task list filter**: `ls [query...] [--status <value>] [--all] [--no-overdue]
+  [--habit-id <id>] [--ical-uid <uid>]` (default shows actionable tasks)
+- **Editor-based editing**: `edit <REF>` with no flags opens `$EDITOR`
+  (default `vi`) and sends PATCH; with flags it sends PATCH directly.
+- **Subcommands**:
+  - Task verbs: `add <title>`, `ls [query...]`, `show <ref>`, `start <ref>`,
+    `pause <ref>`, `done <ref>`, `skip <ref>`, `edit <ref> [--flags]`,
+    `rm <ref>`, `progress <ref> <quantity>`, `split <ref> --keep <quantity>`,
+    `import <file.ics|->`, `deps [--check]`
+  - Schedule verbs: `agenda [--day <date>]`, `plan [--from <dt>] [--until <dt>]
+    [--tasks ref...] [--pin ref...] [--sleep s]`, `move <ref> <start_at>`,
+    `unplan`
+  - Default with no subcommand: **`agenda`**. This replaces the previous
+    `takusu` → TUI behavior and is a breaking change for existing users.
+  - Noun groups: `habit {add, ls, show, edit, rm, pause, pauses {ls, rm},
+    steps {ls, edit, set, check}}`, `memory {add, ls, show, edit, rm,
+    search <q>, similar <title>}`, `skill {add, ls, show, edit, rm}`,
+    `token {add, ls, rm}`, `sync {status, setup, login, run, mappings, purge}`,
+    `config {show, init, set <key> <value>, workers {set <url> <token>,
+    health}}`, `system {health, gen-root-token, license, completion <shell>}`
+  - Top level: `tui`, `web [--bind addr]`, `mcp`
 
 ## takusu-client
 

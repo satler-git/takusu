@@ -23,6 +23,7 @@ pub(super) const OVERDUE_SQL: &str =
     "status NOT IN ('completed', 'skipped') AND datetime(end_at) < datetime('now')";
 pub(super) const NOT_OVERDUE_SQL: &str =
     "(status IN ('completed', 'skipped') OR datetime(end_at) >= datetime('now'))";
+pub(super) const ACTIONABLE_SQL: &str = "status IN ('pending', 'scheduled', 'in_progress')";
 
 pub(super) const HABIT_COLS: &str = "id, display_id, title, description, recurrence, start_time, end_time, avg_minutes, sigma_minutes, parallelizable, allows_parallel, abandonability, active, fixed, window_mode, created_at, updated_at";
 pub(super) const STEP_COLS: &str = "id, habit_id, position, title, description, start_time, end_time, avg_minutes, sigma_minutes, parallelizable, allows_parallel, abandonability, fixed, depends_on, created_at";
@@ -162,9 +163,11 @@ pub(super) async fn d1_all<T: serde::de::DeserializeOwned>(
     let mut out = Vec::with_capacity(raw.len());
     for mut value in raw {
         normalize_d1_bools(&mut value);
-        out.push(serde_json::from_value(value).map_err(|e| {
-            StorageError::Internal(format!("D1 row deserialization failed: {e}"))
-        })?);
+        out.push(
+            serde_json::from_value(value).map_err(|e| {
+                StorageError::Internal(format!("D1 row deserialization failed: {e}"))
+            })?,
+        );
     }
     Ok(out)
 }
