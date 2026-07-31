@@ -364,10 +364,7 @@ fn set_toml_path(doc: &mut toml_edit::DocumentMut, path: &str, value: &str) -> R
     Ok(())
 }
 
-pub fn permissions_show() -> Result<(), AppError> {
-    permissions_show_at(&agent_config_path())
-}
-
+#[allow(dead_code)]
 fn permissions_show_at(path: &std::path::Path) -> Result<(), AppError> {
     if !path.exists() {
         println!(
@@ -444,10 +441,7 @@ fn permissions_set_at(path: &std::path::Path, key: &str, value: &str) -> Result<
     Ok(())
 }
 
-pub fn permissions_unset(key: &str) -> Result<(), AppError> {
-    permissions_unset_at(&agent_config_path(), key)
-}
-
+#[allow(dead_code)]
 fn permissions_unset_at(path: &std::path::Path, key: &str) -> Result<(), AppError> {
     validate_permission_key(key)?;
     if !path.exists() {

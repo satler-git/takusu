@@ -396,6 +396,10 @@ pub enum TaskStatusFilter {
     #[serde(rename = "overdue")]
     #[cfg_attr(feature = "clap", value(name = "overdue"))]
     Overdue,
+    /// Pseudo-status that selects any task that is not completed or skipped.
+    #[serde(rename = "actionable")]
+    #[cfg_attr(feature = "clap", value(name = "actionable"))]
+    Actionable,
 }
 
 impl std::fmt::Display for TaskStatusFilter {
@@ -409,6 +413,9 @@ impl std::str::FromStr for TaskStatusFilter {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if s == "overdue" {
             return Ok(Self::Overdue);
+        }
+        if s == "actionable" {
+            return Ok(Self::Actionable);
         }
         match s.parse::<TaskStatus>() {
             Ok(status) => Ok(status.into()),
@@ -436,6 +443,7 @@ impl EnumLabel for TaskStatusFilter {
             Self::Completed,
             Self::Skipped,
             Self::Overdue,
+            Self::Actionable,
         ]
     }
     fn as_str(&self) -> &'static str {
@@ -446,6 +454,7 @@ impl EnumLabel for TaskStatusFilter {
             Self::Completed => "completed",
             Self::Skipped => "skipped",
             Self::Overdue => "overdue",
+            Self::Actionable => "actionable",
         }
     }
 }
