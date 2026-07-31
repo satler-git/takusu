@@ -32,7 +32,13 @@ import type {
   HabitStepInput,
 } from '@/src/api/types';
 import { WINDOW_MODE_DAY, WINDOW_MODE_PERIOD } from '@/src/api/types';
-import { useColors, type ColorSet } from '@/src/theme';
+import {
+  useColors,
+  useTheme,
+  habitColorFor,
+  filledPips,
+  type ColorSet,
+} from '@/src/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RruleBuilderModal } from '@/src/components/RruleBuilderModal';
 import { DateTimePickerModal } from '@/src/components/DateTimePickerModal';
@@ -40,6 +46,7 @@ import { HabitEstimateModal } from '@/src/components/HabitEstimateModal';
 import { HabitStepEditor } from '@/src/components/HabitStepEditor';
 import { RedundantDepWarning } from '@/src/components/RedundantDepWarning';
 import { parseRule, summarizeRule } from '@/src/api/rrule';
+import { formatDate } from '@/src/formatDate';
 import { haptic } from '@/src/components/haptics';
 import { useUndoableToast } from '@/src/hooks/useUndoableToast';
 import { CancelConfirmButton } from '@/src/components/CancelConfirmButton';
@@ -51,6 +58,21 @@ import {
   saveHabitSteps,
 } from '@/src/utils/habitSteps';
 import { dateKey, todayDateKey } from '@/src/utils/dateKey';
+
+// Compact status labels for the recent-task rows (#1146).
+const TASK_STATUS_LABELS: Record<string, string> = {
+  pending: '未スケジュール',
+  scheduled: '予定',
+  in_progress: '進行中',
+  completed: '完了',
+  skipped: 'スキップ',
+};
+
+// "8/2" — compact month/day for dense rows.
+function md(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+}
 
 const makeStyles = (colors: ColorSet) =>
   StyleSheet.create({
@@ -71,74 +93,6 @@ const makeStyles = (colors: ColorSet) =>
       textAlign: 'center',
       marginTop: 40,
     },
-    title: {
-      fontSize: 24,
-      fontWeight: '600',
-    },
-    titleInput: {
-      fontSize: 20,
-    },
-    section: {
-      gap: 4,
-    },
-    foldToggle: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 6,
-    },
-    label: {
-      fontSize: 13,
-      fontWeight: '500',
-    },
-    hint: {
-      fontSize: 11,
-      marginTop: 2,
-    },
-    value: {
-      fontSize: 16,
-    },
-    estimateButton: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 6,
-      alignSelf: 'flex-start',
-      marginTop: 8,
-      paddingHorizontal: 12,
-      paddingVertical: 8,
-      borderRadius: 10,
-    },
-    estimateButtonText: {
-      fontSize: 13,
-      fontWeight: '600',
-    },
-    descriptionInput: {
-      minHeight: 80,
-    },
-    rruleHeader: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 4,
-    },
-    helpButton: {
-      padding: 2,
-    },
-    dateField: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      borderWidth: 1,
-      borderRadius: 8,
-      paddingHorizontal: 12,
-      paddingVertical: 12,
-      gap: 8,
-    },
-    dateText: {
-      flex: 1,
-      fontSize: 16,
-    },
-    row: {
-      flexDirection: 'row',
-      gap: 12,
-    },
     timeField: {
       flex: 1,
       borderWidth: 1,
@@ -153,51 +107,6 @@ const makeStyles = (colors: ColorSet) =>
     },
     timeFieldValue: {
       fontSize: 16,
-    },
-    costInput: {},
-    costHint: {
-      fontSize: 11,
-      marginTop: 2,
-      marginLeft: 4,
-    },
-    sliderContainer: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 12,
-    },
-    slider: {
-      flex: 1,
-    },
-    sliderValue: {
-      fontSize: 14,
-      fontVariant: ['tabular-nums'],
-    },
-    toggleRow: {
-      flexDirection: 'row',
-      gap: 24,
-    },
-    toggleItem: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 8,
-    },
-    toggleLabel: {
-      fontSize: 14,
-    },
-    taskItem: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      paddingVertical: 12,
-      paddingHorizontal: 12,
-      borderRadius: 8,
-      marginTop: 4,
-    },
-    taskItemTitle: {
-      fontSize: 14,
-      flex: 1,
-    },
-    taskItemStatus: {
-      fontSize: 12,
     },
     saveBar: {
       paddingHorizontal: 16,
@@ -216,9 +125,6 @@ const makeStyles = (colors: ColorSet) =>
     saveBarText: {
       fontSize: 18,
       fontWeight: '700',
-    },
-    sectionDimmed: {
-      opacity: 0.45,
     },
     spanRow: {
       flexDirection: 'row',
@@ -250,33 +156,301 @@ const makeStyles = (colors: ColorSet) =>
       fontSize: 13,
       fontWeight: '500',
     },
-    stepList: {
-      gap: 6,
-      marginTop: 4,
+    // ── redesign (#1146) ──
+    topBarId: {
+      fontSize: 12,
+      fontWeight: '700',
+      fontVariant: ['tabular-nums'],
+      marginLeft: 2,
     },
-    stepViewCard: {
+    headerCard: {
+      marginHorizontal: 12,
+      marginTop: 6,
+      borderRadius: 18,
+      paddingHorizontal: 16,
+      paddingTop: 14,
+      paddingBottom: 16,
+      overflow: 'hidden',
+    },
+    headerChips: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 6,
+      marginBottom: 10,
+    },
+    tintChip: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 10,
-      borderRadius: 8,
+      gap: 5,
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+      borderRadius: 999,
+    },
+    tintChipText: {
+      fontSize: 12,
+      fontWeight: '700',
+    },
+    headerTitle: {
+      fontSize: 22,
+      fontWeight: '800',
+      lineHeight: 28,
+    },
+    headerTitleInput: {
+      fontSize: 18,
+    },
+    habitSummary: {
+      marginTop: 10,
+      fontSize: 14,
+      fontWeight: '700',
+      fontVariant: ['tabular-nums'],
+    },
+    nextLine: {
+      marginTop: 10,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 7,
+      alignSelf: 'flex-start',
+      borderRadius: 10,
+      paddingHorizontal: 12,
+      paddingVertical: 7,
+    },
+    nextLineText: {
+      fontSize: 13,
+      fontWeight: '700',
+    },
+    recurField: {
+      marginTop: 10,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 9,
+      borderRadius: 10,
+      paddingHorizontal: 12,
+      paddingVertical: 9,
+      borderWidth: 1.5,
+    },
+    recurFieldText: {
+      flex: 1,
+      fontSize: 13,
+      fontWeight: '700',
+    },
+    slabel: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      marginTop: 18,
+      marginBottom: 7,
+      marginHorizontal: 12,
+    },
+    slabelText: {
+      flex: 1,
+      fontSize: 11,
+      fontWeight: '800',
+      letterSpacing: 1,
+    },
+    hist: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      flexWrap: 'wrap',
+      gap: 7,
+      marginHorizontal: 12,
+    },
+    hdot: {
+      width: 14,
+      height: 14,
+      borderRadius: 7,
+      borderWidth: 2,
+    },
+    stepsWrap: {
+      marginHorizontal: 12,
+    },
+    step: {
+      flexDirection: 'row',
+      gap: 12,
+      paddingBottom: 14,
+      position: 'relative',
+    },
+    stepLine: {
+      position: 'absolute',
+      left: 13,
+      top: 30,
+      bottom: -2,
+      width: 2,
+    },
+    stepNum: {
+      width: 28,
+      height: 28,
+      borderRadius: 14,
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 1,
+    },
+    stepNumText: {
+      fontSize: 13,
+      fontWeight: '800',
+      fontVariant: ['tabular-nums'],
+    },
+    stepBody: {
+      flex: 1,
+      minWidth: 0,
+    },
+    stepTitle: {
+      fontSize: 14,
+      fontWeight: '700',
+    },
+    stepMeta: {
+      fontSize: 11.5,
+      marginTop: 2,
+      fontVariant: ['tabular-nums'],
+      fontWeight: '600',
+    },
+    statsRow: {
+      flexDirection: 'row',
+      gap: 8,
+      marginHorizontal: 12,
+      marginBottom: 8,
+    },
+    cell: {
+      flex: 1,
+      borderRadius: 13,
+      borderWidth: 1,
       paddingHorizontal: 12,
       paddingVertical: 10,
     },
-    stepViewIdx: {
+    cellWide: {
+      marginHorizontal: 12,
+      marginBottom: 8,
+      borderRadius: 13,
+      borderWidth: 1,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+    },
+    cellK: {
+      fontSize: 10,
+      fontWeight: '800',
+      letterSpacing: 1,
+    },
+    cellV: {
       fontSize: 16,
+      fontWeight: '800',
+      marginTop: 3,
+      fontVariant: ['tabular-nums'],
+    },
+    cellVUnit: {
+      fontSize: 11,
+      fontWeight: '600',
+    },
+    cellSub: {
+      fontSize: 11,
+      fontWeight: '600',
+      marginTop: 2,
+    },
+    costInputs: {
+      flexDirection: 'row',
+      gap: 6,
+      marginTop: 7,
+    },
+    flagrow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 6,
+      marginTop: 5,
+    },
+    flagChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      paddingHorizontal: 9,
+      paddingVertical: 4,
+      borderRadius: 999,
+      borderWidth: 1,
+    },
+    flagChipText: {
+      fontSize: 11,
       fontWeight: '700',
-      minWidth: 20,
     },
-    stepViewBody: {
-      flex: 1,
-      gap: 2,
+    pips: {
+      flexDirection: 'row',
+      gap: 3,
+      marginLeft: 4,
     },
-    stepViewTitle: {
-      fontSize: 15,
-      fontWeight: '500',
+    pip: {
+      width: 9,
+      height: 9,
+      borderRadius: 3,
     },
-    stepViewMeta: {
+    flagEditor: {
+      gap: 9,
+      marginTop: 8,
+    },
+    tog: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 9,
+    },
+    togLabel: {
+      fontSize: 13,
+      fontWeight: '600',
+    },
+    abandonEdit: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 9,
+    },
+    abandonLabel: {
       fontSize: 12,
+      fontWeight: '600',
+    },
+    abandonSlider: {
+      flex: 1,
+    },
+    abandonVal: {
+      fontSize: 13,
+      fontWeight: '800',
+      fontVariant: ['tabular-nums'],
+    },
+    rrows: {
+      marginHorizontal: 12,
+      gap: 6,
+    },
+    rrow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      borderRadius: 11,
+      borderWidth: 1,
+      paddingHorizontal: 12,
+      paddingVertical: 9,
+    },
+    rrowDate: {
+      fontSize: 11,
+      fontWeight: '700',
+      fontVariant: ['tabular-nums'],
+      width: 38,
+    },
+    rdot: {
+      width: 9,
+      height: 9,
+      borderRadius: 5,
+    },
+    rtitle: {
+      flex: 1,
+      fontSize: 13,
+      fontWeight: '600',
+    },
+    rst: {
+      fontSize: 11,
+      fontWeight: '700',
+    },
+    descBox: {
+      marginHorizontal: 12,
+    },
+    descText: {
+      fontSize: 13,
+      lineHeight: 22,
+    },
+    linkBtnText: {
+      fontSize: 13,
+      fontWeight: '700',
     },
   });
 
@@ -351,6 +525,7 @@ export function HabitDetailView() {
   const { client } = useServer();
   const router = useRouter();
   const colors = useColors();
+  const { theme } = useTheme();
   const spanStyles = useMemo(() => makeSpanStyles(colors), [colors]);
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const insets = useSafeAreaInsets();
@@ -358,6 +533,8 @@ export function HabitDetailView() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const [habit, setHabit] = useState<HabitDetail | null>(null);
   const [tasks, setTasks] = useState<TaskRow[]>([]);
+  const [history, setHistory] = useState<TaskRow[]>([]);
+  const [streak, setStreak] = useState(0);
   const [spans, setSpans] = useState<HabitScheduledSpanRow[]>([]);
 
   // edit state
@@ -380,7 +557,7 @@ export function HabitDetailView() {
   const [stepRedundantEdges, setStepRedundantEdges] = useState<
     RedundantDependency[]
   >([]);
-  const [simpleInfoExpanded, setSimpleInfoExpanded] = useState(false);
+  const [descExpanded, setDescExpanded] = useState(false);
   const [showEstimateModal, setShowEstimateModal] = useState(false);
   const [saving, setSaving] = useState(false);
   const [menuVisible, setMenuVisible] = useState(false);
@@ -478,7 +655,7 @@ export function HabitDetailView() {
       }
       try {
         const allTasks = await client.listTasks({ habit_id: targetId });
-        // Show upcoming tasks in chronological order.
+        // Upcoming tasks in chronological order (soonest first).
         // Server returns tasks ordered by created_at DESC (generation order),
         // not by date. Sort by start_at ascending so the user sees the earliest
         // upcoming task first. Exclude completed/skipped tasks so past finished
@@ -488,9 +665,24 @@ export function HabitDetailView() {
           .sort((a, b) => (a.start_at ?? '').localeCompare(b.start_at ?? ''))
           .slice(0, 10);
         setTasks(sorted);
+        // History (#1146): the 14 most recent completed/skipped occurrences
+        // (oldest → newest) for the dot strip, plus the current completion
+        // streak (consecutive completed occurrences counting back from now).
+        const past = [...allTasks]
+          .filter((t) => t.status === 'completed' || t.status === 'skipped')
+          .sort((a, b) => (b.start_at ?? '').localeCompare(a.start_at ?? ''));
+        setHistory(past.slice(0, 14).reverse());
+        let s = 0;
+        for (const t of past) {
+          if (t.status === 'completed') s += 1;
+          else break;
+        }
+        setStreak(s);
       } catch (e) {
         logError('ハビットのタスク取得', e);
         setTasks([]);
+        setHistory([]);
+        setStreak(0);
       }
     },
     [client, id],
@@ -978,7 +1170,6 @@ export function HabitDetailView() {
   }
 
   const hasSteps = stepDrafts.length > 0;
-  const showSimpleInfo = !hasSteps || simpleInfoExpanded;
 
   // Labels for scheduled spans depend on `habit.active` (#503):
   // active habit → pause, disabled habit → activation window.
@@ -992,6 +1183,15 @@ export function HabitDetailView() {
     : 'play-circle-outline';
   const spanActiveColor = habit.active ? colors.red : colors.brand;
 
+  // ── redesign (#1146): derived display values ──
+  const headerBg = habitColorFor(habit.display_id, theme);
+  const isLight = theme === 'light';
+  const headerText = colors.textOnCard;
+  const headerSub = colors.textOnCardSecondary;
+  const chipOnTintBg = isLight ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.28)';
+  const recurrenceSummary = summarizeRule(parseRule(habit.recurrence));
+  const nextTask = tasks[0] ?? null;
+
   return (
     <View style={[styles.container, { backgroundColor: colors.white }]}>
       <View style={[styles.topBar, { paddingTop: 4 + insets.top }]}>
@@ -1004,6 +1204,9 @@ export function HabitDetailView() {
             router.back();
           }}
         />
+        <Text style={[styles.topBarId, { color: colors.gray }]}>
+          #{habit.display_id}
+        </Text>
         <View style={{ flex: 1 }} />
         {editing && (
           <>
@@ -1098,621 +1301,799 @@ export function HabitDetailView() {
           { paddingBottom: 16 + insets.bottom },
         ]}
       >
-        {/* Title */}
-        {editing ? (
-          <PaperTextInput
-            mode="outlined"
-            value={title}
-            onChangeText={setTitle}
-            label="タイトル"
-            outlineColor={colors.separator}
-            activeOutlineColor={colors.brand}
-            style={styles.titleInput}
-            contentStyle={{ fontSize: 20, fontWeight: '600' }}
-          />
-        ) : (
-          <Text style={[styles.title, { color: colors.black }]}>
-            {habit.title}
-          </Text>
-        )}
+        {/* Header card (#1146) */}
+        <View style={[styles.headerCard, { backgroundColor: headerBg }]}>
+          <View style={styles.headerChips}>
+            <View style={[styles.tintChip, { backgroundColor: chipOnTintBg }]}>
+              <Ionicons
+                name={habit.active ? 'checkmark-circle' : 'pause-circle'}
+                size={13}
+                color={headerText}
+              />
+              <Text style={[styles.tintChipText, { color: headerText }]}>
+                {habit.active ? 'アクティブ' : '停止中'}
+              </Text>
+            </View>
+          </View>
 
-        {/* Description */}
-        <View style={styles.section}>
-          <Text style={[styles.label, { color: colors.gray }]}>説明</Text>
           {editing ? (
             <PaperTextInput
               mode="outlined"
-              value={description}
-              onChangeText={setDescription}
-              multiline
-              numberOfLines={4}
-              outlineColor={colors.separator}
-              activeOutlineColor={colors.brand}
-              style={styles.descriptionInput}
+              value={title}
+              onChangeText={setTitle}
+              label="タイトル"
+              outlineColor={headerSub}
+              activeOutlineColor={headerText}
+              textColor={headerText}
+              style={styles.headerTitleInput}
+              contentStyle={{ fontSize: 18, fontWeight: '700' }}
             />
           ) : (
-            <Text style={[styles.value, { color: colors.black }]}>
-              {habit.description || '(なし)'}
+            <Text style={[styles.headerTitle, { color: headerText }]}>
+              {habit.title}
             </Text>
           )}
-        </View>
 
-        {/* Scheduled spans (#303 / #503) */}
-        <View style={styles.section}>
-          <Text style={[styles.label, { color: colors.gray }]}>
-            {spanLabel}
-          </Text>
-          {spans.length === 0 ? (
-            <Text style={[styles.value, { color: colors.black }]}>(なし)</Text>
-          ) : (
-            spans.map((p) => (
-              <View
-                key={p.id}
-                style={[
-                  styles.spanRow,
-                  {
-                    backgroundColor: spanIsActive(p)
-                      ? colors.surfaceTint
-                      : colors.surface,
-                    borderColor: spanIsActive(p)
-                      ? spanActiveColor
-                      : colors.separator,
-                  },
-                ]}
-              >
-                <Ionicons
-                  name={spanIcon}
-                  size={18}
-                  color={spanIsActive(p) ? spanActiveColor : colors.gray}
-                />
-                <Text style={[styles.spanText, { color: colors.black }]}>
-                  {formatSpanDate(p.start_date)} 〜 {formatSpanDate(p.end_date)}
-                  {p.reason ? `  ${p.reason}` : ''}
-                </Text>
-                <DeleteConfirmButton
-                  onConfirm={() => deleteSpan(p.id)}
-                  size={34}
-                  iconSize={18}
-                  hitSlop={8}
-                />
-              </View>
-            ))
-          )}
-          <Pressable
-            style={[styles.addSpanButton, { borderColor: colors.brand }]}
-            onPress={openSpanModal}
-          >
-            <Ionicons name="add" size={18} color={colors.brand} />
-            <Text style={styles.addSpanText}>{spanAddLabel}を追加</Text>
-          </Pressable>
-        </View>
-
-        {/* Recurrence */}
-        <View style={styles.section}>
-          <View style={styles.rruleHeader}>
-            <Text style={[styles.label, { color: colors.gray }]}>
-              周期 (RRULE)
-            </Text>
-            {editing && (
-              <Pressable
-                style={styles.helpButton}
-                onPress={() => setShowRruleBuilder(true)}
-                hitSlop={8}
-              >
-                <Ionicons
-                  name="help-circle-outline"
-                  size={18}
-                  color={colors.brand}
-                />
-              </Pressable>
-            )}
-          </View>
           {editing ? (
             <Pressable
               style={[
-                styles.dateField,
-                {
-                  borderColor: colors.separator,
-                  backgroundColor: colors.white,
-                },
+                styles.recurField,
+                { backgroundColor: chipOnTintBg, borderColor: headerSub },
               ]}
-              onPress={() => setShowRruleBuilder(true)}
-            >
-              <Ionicons name="repeat" size={20} color={colors.brand} />
-              <Text
-                style={[styles.dateText, { color: colors.black }]}
-                numberOfLines={2}
-              >
-                {summarizeRule(parseRule(recurrence))}
-              </Text>
-              <Ionicons
-                name="chevron-forward"
-                size={18}
-                color={colors.grayLight}
-              />
-            </Pressable>
-          ) : (
-            <Text style={[styles.value, { color: colors.black }]}>
-              {summarizeRule(parseRule(habit.recurrence))}
-            </Text>
-          )}
-        </View>
-
-        {/* Window mode (#window_mode) */}
-        <View style={styles.section}>
-          <Text style={[styles.label, { color: colors.gray }]}>
-            スケジュール枠
-          </Text>
-          {editing ? (
-            <>
-              <SegmentedButtons
-                value={windowMode}
-                onValueChange={(v) => setWindowMode(v as WindowMode)}
-                buttons={[
-                  {
-                    value: WINDOW_MODE_DAY,
-                    label: '当日',
-                  },
-                  {
-                    value: WINDOW_MODE_PERIOD,
-                    label: '期間内どこでも',
-                  },
-                ]}
-                theme={{ colors: { primary: colors.brand } }}
-              />
-              {windowMode === WINDOW_MODE_PERIOD && (
-                <Text style={[styles.hint, { color: colors.grayLight }]}>
-                  次の周期の直前が締め切りになります
-                  {stepDrafts.length > 0 && '・全ステップが期間枠を共有します'}
-                </Text>
-              )}
-            </>
-          ) : (
-            <Text style={[styles.value, { color: colors.black }]}>
-              {habit.window_mode === WINDOW_MODE_PERIOD
-                ? '期間内どこでも'
-                : '当日'}
-            </Text>
-          )}
-        </View>
-
-        {hasSteps && (
-          <View style={styles.section}>
-            <Pressable
-              style={styles.foldToggle}
               onPress={() => {
                 haptic.light();
-                setSimpleInfoExpanded((v) => !v);
+                setShowRruleBuilder(true);
+              }}
+            >
+              <Ionicons name="repeat" size={17} color={headerText} />
+              <Text style={[styles.recurFieldText, { color: headerText }]}>
+                {recurrenceSummary}
+              </Text>
+              <Ionicons name="chevron-forward" size={16} color={headerSub} />
+            </Pressable>
+          ) : (
+            <Text style={[styles.habitSummary, { color: headerText }]}>
+              {recurrenceSummary} · {habit.start_time}–{habit.end_time}
+            </Text>
+          )}
+
+          {!editing && nextTask && nextTask.start_at && (
+            <Pressable
+              style={[styles.nextLine, { backgroundColor: chipOnTintBg }]}
+              onPress={() => {
+                haptic.light();
+                router.push(`/task/${nextTask.id}`);
               }}
             >
               <Ionicons
-                name={simpleInfoExpanded ? 'chevron-down' : 'chevron-forward'}
-                size={16}
-                color={colors.brand}
+                name="notifications-outline"
+                size={15}
+                color={headerText}
               />
-              <Text style={[styles.label, { color: colors.brand }]}>
-                Habit 本体の設定（ステップが有効なため無視）
+              <Text style={[styles.nextLineText, { color: headerText }]}>
+                次回: {formatDate(new Date(nextTask.start_at))}
               </Text>
+              <Ionicons name="chevron-forward" size={14} color={headerSub} />
             </Pressable>
-          </View>
-        )}
+          )}
+        </View>
 
-        {showSimpleInfo && (
+        {/* History dots (#1146) */}
+        {!editing && history.length > 0 && (
           <>
-            {/* Time */}
-            <View
-              style={[
-                styles.section,
-                hasSteps && editing && styles.sectionDimmed,
-              ]}
-              pointerEvents={hasSteps && editing ? 'none' : 'auto'}
-            >
-              <Text style={[styles.label, { color: colors.gray }]}>時間</Text>
-              {editing ? (
-                <View style={styles.row}>
-                  <Pressable
-                    style={[
-                      styles.timeField,
-                      {
-                        borderColor: colors.separator,
-                        backgroundColor: colors.white,
-                      },
-                    ]}
-                    onPress={() => {
-                      haptic.select();
-                      setPickerField('start');
-                    }}
+            <View style={styles.slabel}>
+              <Text style={[styles.slabelText, { color: colors.gray }]}>
+                直近 {history.length} 回
+              </Text>
+              {streak > 1 && (
+                <View
+                  style={[
+                    styles.flagChip,
+                    {
+                      backgroundColor: colors.success + '22',
+                      borderColor: colors.success + '55',
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[styles.flagChipText, { color: colors.success }]}
                   >
-                    <Text
-                      style={[styles.timeFieldLabel, { color: colors.gray }]}
-                    >
-                      開始
-                    </Text>
-                    <Text
-                      style={[styles.timeFieldValue, { color: colors.black }]}
-                    >
-                      {startTime}
-                    </Text>
-                  </Pressable>
-                  <Pressable
-                    style={[
-                      styles.timeField,
-                      {
-                        borderColor: colors.separator,
-                        backgroundColor: colors.white,
-                      },
-                      windowMode === WINDOW_MODE_PERIOD && { opacity: 0.4 },
-                    ]}
-                    disabled={windowMode === WINDOW_MODE_PERIOD}
-                    onPress={() => {
-                      haptic.select();
-                      setPickerField('end');
-                    }}
-                  >
-                    <Text
-                      style={[styles.timeFieldLabel, { color: colors.gray }]}
-                    >
-                      終了
-                    </Text>
-                    <Text
-                      style={[styles.timeFieldValue, { color: colors.black }]}
-                    >
-                      {endTime}
-                    </Text>
-                  </Pressable>
+                    連続 {streak} 回
+                  </Text>
                 </View>
-              ) : (
-                <Text style={[styles.value, { color: colors.black }]}>
-                  {habit.start_time} → {habit.end_time}
-                </Text>
-              )}
-              {editing && windowMode === WINDOW_MODE_PERIOD && (
-                <Text style={[styles.hint, { color: colors.grayLight }]}>
-                  終了時刻は次の周期の直前が自動設定されます
-                </Text>
               )}
             </View>
+            <View style={styles.hist}>
+              {history.map((t) => (
+                <View
+                  key={t.id}
+                  style={[
+                    styles.hdot,
+                    {
+                      backgroundColor:
+                        t.status === 'completed'
+                          ? colors.green
+                          : t.status === 'skipped'
+                            ? colors.red
+                            : 'transparent',
+                      borderColor:
+                        t.status === 'completed'
+                          ? colors.green
+                          : t.status === 'skipped'
+                            ? colors.red
+                            : colors.separator,
+                    },
+                  ]}
+                />
+              ))}
+            </View>
+          </>
+        )}
 
-            {/* Cost */}
-            <View
-              style={[
-                styles.section,
-                stepDrafts.length > 0 && editing && styles.sectionDimmed,
-              ]}
-              pointerEvents={stepDrafts.length > 0 && editing ? 'none' : 'auto'}
-            >
-              <Text style={[styles.label, { color: colors.gray }]}>コスト</Text>
-              {editing ? (
-                <View style={styles.row}>
-                  <PaperTextInput
-                    mode="outlined"
-                    label="avg (1h30m / 90m / 90)"
-                    value={avgMinutes}
-                    onChangeText={setAvgMinutes}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    outlineColor={colors.separator}
-                    activeOutlineColor={colors.brand}
-                    style={[styles.costInput, { flex: 1 }]}
-                    dense
-                  />
-                  <View style={[styles.costInput, { flex: 1 }]}>
+        {/* Steps (#1146): timeline (view) / full editor (edit) */}
+        {(editing || hasSteps) && (
+          <>
+            <View style={styles.slabel}>
+              <Text style={[styles.slabelText, { color: colors.gray }]}>
+                ステップ ({stepDrafts.length})
+              </Text>
+              {hasSteps && !editing && (
+                <View
+                  style={[
+                    styles.flagChip,
+                    {
+                      backgroundColor: colors.brandPressed,
+                      borderColor: colors.separator,
+                    },
+                  ]}
+                >
+                  <Text style={[styles.flagChipText, { color: colors.brand }]}>
+                    有効
+                  </Text>
+                </View>
+              )}
+            </View>
+            {!editing && stepRedundantEdges.length > 0 && (
+              <View style={{ marginHorizontal: 12, marginBottom: 4 }}>
+                <RedundantDepWarning
+                  edges={stepRedundantEdges}
+                  onResolve={resolveStepRedundantEdge}
+                  nodeLabel={(nid, ntitle) => {
+                    const idx = habit.steps.findIndex((s) => s.id === nid);
+                    return idx >= 0
+                      ? `${idx + 1}. ${habit.steps[idx]!.title || '(無題)'}`
+                      : ntitle;
+                  }}
+                />
+              </View>
+            )}
+            {editing ? (
+              <View style={{ marginHorizontal: 12 }}>
+                <HabitStepEditor
+                  drafts={stepDrafts}
+                  onChange={setStepDrafts}
+                  stepsActive={hasSteps}
+                />
+              </View>
+            ) : (
+              <View style={styles.stepsWrap}>
+                {stepDrafts.map((d, i) => {
+                  const depLabels = d.depends_on
+                    .map((t) => stepDrafts.find((x) => x.tempId === t))
+                    .filter(Boolean)
+                    .map(
+                      (x) =>
+                        `${stepDrafts.indexOf(x!) + 1}.${x!.title || '(無題)'}`,
+                    );
+                  const meta = `${d.start_time}-${d.end_time} · ${formatDuration(
+                    d.avg_minutes,
+                  )}${
+                    d.sigma_minutes > 0
+                      ? ` ±${formatDuration(d.sigma_minutes)}`
+                      : ''
+                  }${
+                    depLabels.length > 0
+                      ? ` · 依存: ${depLabels.join(', ')}`
+                      : ''
+                  }`;
+                  return (
+                    <View key={d.tempId} style={styles.step}>
+                      {i < stepDrafts.length - 1 && (
+                        <View
+                          style={[
+                            styles.stepLine,
+                            { backgroundColor: colors.separator },
+                          ]}
+                        />
+                      )}
+                      <View
+                        style={[
+                          styles.stepNum,
+                          { backgroundColor: colors.brandPressed },
+                        ]}
+                      >
+                        <Text
+                          style={[styles.stepNumText, { color: colors.brand }]}
+                        >
+                          {i + 1}
+                        </Text>
+                      </View>
+                      <View style={styles.stepBody}>
+                        <Text
+                          style={[styles.stepTitle, { color: colors.black }]}
+                        >
+                          {d.title || '(無題)'}
+                        </Text>
+                        <Text style={[styles.stepMeta, { color: colors.gray }]}>
+                          {meta}
+                        </Text>
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            )}
+          </>
+        )}
+
+        {/* Body settings (#1146): shown only when steps are NOT active
+            (the habit body's time/cost are ignored while steps exist) */}
+        {!hasSteps && (
+          <>
+            <View style={styles.slabel}>
+              <Text style={[styles.slabelText, { color: colors.gray }]}>
+                設定
+              </Text>
+            </View>
+            <View style={styles.statsRow}>
+              {/* Time window */}
+              <View
+                style={[
+                  styles.cell,
+                  {
+                    backgroundColor: colors.white,
+                    borderColor: colors.separator,
+                  },
+                ]}
+              >
+                <Text style={[styles.cellK, { color: colors.gray }]}>
+                  時間帯
+                </Text>
+                {editing ? (
+                  <View style={styles.costInputs}>
+                    <Pressable
+                      style={[
+                        styles.timeField,
+                        {
+                          borderColor: colors.separator,
+                          backgroundColor: colors.surface,
+                        },
+                      ]}
+                      onPress={() => {
+                        haptic.select();
+                        setPickerField('start');
+                      }}
+                    >
+                      <Text
+                        style={[styles.timeFieldLabel, { color: colors.gray }]}
+                      >
+                        開始
+                      </Text>
+                      <Text
+                        style={[styles.timeFieldValue, { color: colors.black }]}
+                      >
+                        {startTime}
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      style={[
+                        styles.timeField,
+                        {
+                          borderColor: colors.separator,
+                          backgroundColor: colors.surface,
+                        },
+                        windowMode === WINDOW_MODE_PERIOD && { opacity: 0.4 },
+                      ]}
+                      disabled={windowMode === WINDOW_MODE_PERIOD}
+                      onPress={() => {
+                        haptic.select();
+                        setPickerField('end');
+                      }}
+                    >
+                      <Text
+                        style={[styles.timeFieldLabel, { color: colors.gray }]}
+                      >
+                        終了
+                      </Text>
+                      <Text
+                        style={[styles.timeFieldValue, { color: colors.black }]}
+                      >
+                        {endTime}
+                      </Text>
+                    </Pressable>
+                  </View>
+                ) : (
+                  <Text style={[styles.cellV, { color: colors.black }]}>
+                    {habit.start_time}
+                    <Text style={[styles.cellVUnit, { color: colors.gray }]}>
+                      {' '}
+                      – {habit.end_time}
+                    </Text>
+                  </Text>
+                )}
+              </View>
+              {/* Cost */}
+              <View
+                style={[
+                  styles.cell,
+                  {
+                    backgroundColor: colors.white,
+                    borderColor: colors.separator,
+                  },
+                ]}
+              >
+                <Text style={[styles.cellK, { color: colors.gray }]}>
+                  コスト
+                </Text>
+                {editing ? (
+                  <View style={styles.costInputs}>
                     <PaperTextInput
                       mode="outlined"
-                      label="sigma (1h30m / 90m / 90)"
+                      label="avg"
+                      value={avgMinutes}
+                      onChangeText={setAvgMinutes}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      outlineColor={colors.separator}
+                      activeOutlineColor={colors.brand}
+                      style={{ flex: 1 }}
+                      dense
+                    />
+                    <PaperTextInput
+                      mode="outlined"
+                      label="sigma"
                       value={sigmaMinutes}
                       onChangeText={setSigmaMinutes}
                       autoCapitalize="none"
                       autoCorrect={false}
                       outlineColor={colors.separator}
                       activeOutlineColor={colors.brand}
+                      style={{ flex: 1 }}
                       dense
                     />
-                    {sigmaMinutes === '' && (
-                      <Text
-                        style={[styles.costHint, { color: colors.grayLight }]}
-                      >
-                        {formatDuration(habit.sigma_minutes)}
-                      </Text>
-                    )}
                   </View>
-                </View>
-              ) : (
-                <>
-                  <Text style={[styles.value, { color: colors.black }]}>
-                    avg: {formatDuration(habit.avg_minutes)}, sigma:{' '}
-                    {habit.sigma_minutes > 0 ? (
-                      formatDuration(habit.sigma_minutes)
-                    ) : (
-                      <Text style={{ color: colors.grayLight }}>
-                        {formatDuration(0)}
-                      </Text>
-                    )}
+                ) : (
+                  <Text style={[styles.cellV, { color: colors.black }]}>
+                    {formatDuration(habit.avg_minutes)}{' '}
+                    <Text style={[styles.cellVUnit, { color: colors.gray }]}>
+                      ±{formatDuration(habit.sigma_minutes)}
+                    </Text>
                   </Text>
-                  {!habit.fixed && (
-                    <Pressable
-                      style={[
-                        styles.estimateButton,
-                        { backgroundColor: colors.surfaceTint },
-                      ]}
-                      onPress={() => {
-                        haptic.light();
-                        setShowEstimateModal(true);
-                      }}
-                    >
-                      <Ionicons
-                        name="calculator-outline"
-                        size={16}
-                        color={colors.brand}
-                      />
-                      <Text
-                        style={[
-                          styles.estimateButtonText,
-                          { color: colors.brand },
-                        ]}
-                      >
-                        実績から見積もり
-                      </Text>
-                    </Pressable>
-                  )}
-                </>
-              )}
-            </View>
-
-            {/* Abandonability */}
-            <View
-              style={[
-                styles.section,
-                stepDrafts.length > 0 && editing && styles.sectionDimmed,
-              ]}
-              pointerEvents={stepDrafts.length > 0 && editing ? 'none' : 'auto'}
-            >
-              <Text style={[styles.label, { color: colors.gray }]}>
-                abandonability
-              </Text>
-              {editing ? (
-                <View style={styles.sliderContainer}>
-                  <Slider
-                    value={abandonability}
-                    onValueChange={setAbandonability}
-                    minimumValue={0}
-                    maximumValue={1}
-                    step={0.25}
-                    minimumTrackTintColor={colors.brand}
-                    style={styles.slider}
-                  />
-                  <Text style={[styles.sliderValue, { color: colors.brand }]}>
-                    {abandonability.toFixed(2)}
-                  </Text>
-                </View>
-              ) : (
-                <Text style={[styles.value, { color: colors.black }]}>
-                  {habit.abandonability.toFixed(2)}
-                </Text>
-              )}
-            </View>
-
-            {/* Parallel config */}
-            <View
-              style={[
-                styles.section,
-                stepDrafts.length > 0 && editing && styles.sectionDimmed,
-              ]}
-              pointerEvents={stepDrafts.length > 0 && editing ? 'none' : 'auto'}
-            >
-              <Text style={[styles.label, { color: colors.gray }]}>
-                並列設定
-              </Text>
-              {editing ? (
-                <View style={styles.toggleRow}>
+                )}
+                {!editing && !habit.fixed && (
                   <Pressable
-                    style={styles.toggleItem}
+                    onPress={() => {
+                      haptic.light();
+                      setShowEstimateModal(true);
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.linkBtnText,
+                        { color: colors.brand, marginTop: 4 },
+                      ]}
+                    >
+                      実績から見積もり
+                    </Text>
+                  </Pressable>
+                )}
+              </View>
+            </View>
+
+            {/* Flags / metadata (wide) */}
+            <View
+              style={[
+                styles.cellWide,
+                {
+                  backgroundColor: colors.white,
+                  borderColor: colors.separator,
+                },
+              ]}
+            >
+              <Text style={[styles.cellK, { color: colors.gray }]}>
+                フラグ・メタデータ
+              </Text>
+              {editing ? (
+                <View style={styles.flagEditor}>
+                  <Pressable
+                    style={styles.tog}
                     onPress={() => setParallelizable(!parallelizable)}
                   >
-                    <Text style={[styles.toggleLabel, { color: colors.black }]}>
-                      並列実行可能
-                    </Text>
                     <Checkbox
                       status={parallelizable ? 'checked' : 'unchecked'}
                       onPress={() => setParallelizable(!parallelizable)}
                       color={colors.brand}
                     />
+                    <Text style={[styles.togLabel, { color: colors.black }]}>
+                      並列実行可能
+                    </Text>
                   </Pressable>
                   <Pressable
-                    style={styles.toggleItem}
+                    style={styles.tog}
                     onPress={() => setAllowsParallel(!allowsParallel)}
                   >
-                    <Text style={[styles.toggleLabel, { color: colors.black }]}>
-                      並列受け入れ
-                    </Text>
                     <Checkbox
                       status={allowsParallel ? 'checked' : 'unchecked'}
                       onPress={() => setAllowsParallel(!allowsParallel)}
                       color={colors.brand}
                     />
-                  </Pressable>
-                </View>
-              ) : (
-                <View style={styles.toggleRow}>
-                  <View style={styles.toggleItem}>
-                    <Text style={[styles.toggleLabel, { color: colors.black }]}>
-                      並列実行可能
-                    </Text>
-                    <Checkbox
-                      status={habit.parallelizable ? 'checked' : 'unchecked'}
-                      disabled
-                      color={colors.brand}
-                    />
-                  </View>
-                  <View style={styles.toggleItem}>
-                    <Text style={[styles.toggleLabel, { color: colors.black }]}>
+                    <Text style={[styles.togLabel, { color: colors.black }]}>
                       並列受け入れ
                     </Text>
+                  </Pressable>
+                  <Pressable
+                    style={styles.tog}
+                    onPress={() => setFixed(!fixed)}
+                  >
                     <Checkbox
-                      status={habit.allows_parallel ? 'checked' : 'unchecked'}
-                      disabled
+                      status={fixed ? 'checked' : 'unchecked'}
+                      onPress={() => setFixed(!fixed)}
                       color={colors.brand}
                     />
+                    <Text style={[styles.togLabel, { color: colors.black }]}>
+                      時間固定
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    style={styles.tog}
+                    onPress={() => setActive(!active)}
+                  >
+                    <Checkbox
+                      status={active ? 'checked' : 'unchecked'}
+                      onPress={() => setActive(!active)}
+                      color={colors.brand}
+                    />
+                    <Text style={[styles.togLabel, { color: colors.black }]}>
+                      アクティブ
+                    </Text>
+                  </Pressable>
+                  <View style={styles.abandonEdit}>
+                    <Text style={[styles.abandonLabel, { color: colors.gray }]}>
+                      捨てづらさ
+                    </Text>
+                    <Slider
+                      value={abandonability}
+                      onValueChange={setAbandonability}
+                      minimumValue={0}
+                      maximumValue={1}
+                      step={0.25}
+                      minimumTrackTintColor={colors.brand}
+                      style={styles.abandonSlider}
+                    />
+                    <Text style={[styles.abandonVal, { color: colors.brand }]}>
+                      {abandonability.toFixed(2)}
+                    </Text>
+                  </View>
+                  <SegmentedButtons
+                    value={windowMode}
+                    onValueChange={(v) => setWindowMode(v as WindowMode)}
+                    buttons={[
+                      { value: WINDOW_MODE_DAY, label: '当日枠' },
+                      { value: WINDOW_MODE_PERIOD, label: '期間内どこでも' },
+                    ]}
+                    theme={{ colors: { primary: colors.brand } }}
+                  />
+                </View>
+              ) : (
+                <View style={styles.flagrow}>
+                  <View
+                    style={[
+                      styles.flagChip,
+                      {
+                        backgroundColor: colors.surfaceTint,
+                        borderColor: colors.separator,
+                      },
+                    ]}
+                  >
+                    <Text style={[styles.flagChipText, { color: colors.gray }]}>
+                      並列実行
+                    </Text>
+                    <Text
+                      style={[
+                        styles.flagChipText,
+                        {
+                          color: habit.parallelizable
+                            ? colors.brand
+                            : colors.red,
+                        },
+                      ]}
+                    >
+                      {habit.parallelizable ? '✓' : 'off'}
+                    </Text>
+                  </View>
+                  <View
+                    style={[
+                      styles.flagChip,
+                      {
+                        backgroundColor: colors.surfaceTint,
+                        borderColor: colors.separator,
+                      },
+                    ]}
+                  >
+                    <Text style={[styles.flagChipText, { color: colors.gray }]}>
+                      並列受入
+                    </Text>
+                    <Text
+                      style={[
+                        styles.flagChipText,
+                        {
+                          color: habit.allows_parallel
+                            ? colors.brand
+                            : colors.red,
+                        },
+                      ]}
+                    >
+                      {habit.allows_parallel ? '✓' : 'off'}
+                    </Text>
+                  </View>
+                  <View
+                    style={[
+                      styles.flagChip,
+                      {
+                        backgroundColor: colors.surfaceTint,
+                        borderColor: colors.separator,
+                      },
+                    ]}
+                  >
+                    <Text style={[styles.flagChipText, { color: colors.gray }]}>
+                      時間固定
+                    </Text>
+                    <Text
+                      style={[
+                        styles.flagChipText,
+                        { color: habit.fixed ? colors.brand : colors.red },
+                      ]}
+                    >
+                      {habit.fixed ? '✓' : 'off'}
+                    </Text>
+                  </View>
+                  <View
+                    style={[
+                      styles.flagChip,
+                      {
+                        backgroundColor: colors.surfaceTint,
+                        borderColor: colors.separator,
+                      },
+                    ]}
+                  >
+                    <Text style={[styles.flagChipText, { color: colors.gray }]}>
+                      スケジュール枠
+                    </Text>
+                    <Text
+                      style={[styles.flagChipText, { color: colors.black }]}
+                    >
+                      {habit.window_mode === WINDOW_MODE_PERIOD
+                        ? '期間内'
+                        : '当日'}
+                    </Text>
+                  </View>
+                  <View
+                    style={[
+                      styles.flagChip,
+                      {
+                        backgroundColor: colors.surfaceTint,
+                        borderColor: colors.separator,
+                      },
+                    ]}
+                  >
+                    <Text style={[styles.flagChipText, { color: colors.gray }]}>
+                      捨てづらさ
+                    </Text>
+                    <Text
+                      style={[styles.flagChipText, { color: colors.black }]}
+                    >
+                      {habit.abandonability.toFixed(2)}
+                    </Text>
+                    <View style={styles.pips}>
+                      {[0, 1, 2, 3, 4].map((i) => (
+                        <View
+                          key={i}
+                          style={[
+                            styles.pip,
+                            {
+                              backgroundColor:
+                                i < filledPips(habit.abandonability)
+                                  ? colors.brand
+                                  : colors.separator,
+                            },
+                          ]}
+                        />
+                      ))}
+                    </View>
                   </View>
                 </View>
-              )}
-            </View>
-
-            {/* Fixed */}
-            <View
-              style={[
-                styles.section,
-                stepDrafts.length > 0 && editing && styles.sectionDimmed,
-              ]}
-              pointerEvents={stepDrafts.length > 0 && editing ? 'none' : 'auto'}
-            >
-              <Text style={[styles.label, { color: colors.gray }]}>
-                時間固定
-              </Text>
-              {editing ? (
-                <>
-                  <Checkbox
-                    status={fixed ? 'checked' : 'unchecked'}
-                    onPress={() => setFixed(!fixed)}
-                    color={colors.brand}
-                  />
-                  <Text style={[styles.hint, { color: colors.grayLight }]}>
-                    開始時刻を固定し、スケジューラの移動を許可しない
-                  </Text>
-                </>
-              ) : (
-                <Checkbox
-                  status={habit.fixed ? 'checked' : 'unchecked'}
-                  disabled
-                  color={colors.brand}
-                />
               )}
             </View>
           </>
         )}
 
-        {/* Active */}
-        <View style={styles.section}>
-          <Text style={[styles.label, { color: colors.gray }]}>アクティブ</Text>
-          {editing ? (
-            <Checkbox
-              status={active ? 'checked' : 'unchecked'}
-              onPress={() => setActive(!active)}
-              color={colors.brand}
-            />
-          ) : (
-            <Checkbox
-              status={habit.active ? 'checked' : 'unchecked'}
-              disabled
-              color={colors.brand}
-            />
-          )}
-        </View>
-
-        {/* Steps (#95) */}
-        <View style={styles.section}>
-          <Text style={[styles.label, { color: colors.gray }]}>ステップ</Text>
-          {stepDrafts.length > 0 && editing && (
-            <Text style={[styles.hint, { color: colors.grayLight }]}>
-              ステップ設定が優先されます (habit 本体の時間帯・コストは無効)
-            </Text>
-          )}
-          {!editing && stepDrafts.length > 0 && (
-            <RedundantDepWarning
-              edges={stepRedundantEdges}
-              onResolve={resolveStepRedundantEdge}
-              nodeLabel={(nid, ntitle) => {
-                const idx = habit.steps.findIndex((s) => s.id === nid);
-                return idx >= 0
-                  ? `${idx + 1}. ${habit.steps[idx]!.title || '(無題)'}`
-                  : ntitle;
-              }}
-            />
-          )}
-          {editing ? (
-            <HabitStepEditor
-              drafts={stepDrafts}
-              onChange={setStepDrafts}
-              stepsActive={stepDrafts.length > 0}
-            />
-          ) : stepDrafts.length === 0 ? (
-            <Text style={[styles.value, { color: colors.black }]}>(なし)</Text>
-          ) : (
-            <View style={styles.stepList}>
-              {stepDrafts.map((d, i) => {
-                const depLabels = d.depends_on
-                  .map((t) => stepDrafts.find((x) => x.tempId === t))
-                  .filter(Boolean)
-                  .map(
-                    (x) =>
-                      `${stepDrafts.indexOf(x!) + 1}.${x!.title || '(無題)'}`,
-                  );
-                const meta = `${d.start_time}-${d.end_time} · ${formatDuration(
-                  d.avg_minutes,
-                )}${
-                  d.sigma_minutes > 0
-                    ? ` ±${formatDuration(d.sigma_minutes)}`
-                    : ''
-                }${
-                  depLabels.length > 0 ? ` · 依存: ${depLabels.join(', ')}` : ''
-                }`;
-                return (
-                  <View
-                    key={d.tempId}
-                    style={[
-                      styles.stepViewCard,
-                      { backgroundColor: colors.surface },
-                    ]}
-                  >
-                    <Text style={[styles.stepViewIdx, { color: colors.brand }]}>
-                      {i + 1}
-                    </Text>
-                    <View style={styles.stepViewBody}>
-                      <Text
-                        style={[styles.stepViewTitle, { color: colors.black }]}
-                      >
-                        {d.title || '(無題)'}
-                      </Text>
-                      <Text
-                        style={[styles.stepViewMeta, { color: colors.gray }]}
-                      >
-                        {meta}
-                      </Text>
-                    </View>
-                  </View>
-                );
-              })}
+        {/* Recent tasks (#1146): dense rows */}
+        {!editing && (
+          <>
+            <View style={styles.slabel}>
+              <Text style={[styles.slabelText, { color: colors.gray }]}>
+                直近のタスク
+              </Text>
             </View>
-          )}
-        </View>
-
-        {/* Recent generated tasks */}
-        <View style={styles.section}>
-          <Text style={[styles.label, { color: colors.gray }]}>
-            直近のタスク
-          </Text>
-          {tasks.length === 0 ? (
-            <Text style={[styles.value, { color: colors.black }]}>(なし)</Text>
-          ) : (
-            tasks.map((t) => (
-              <Pressable
-                key={t.id}
-                style={[styles.taskItem, { backgroundColor: colors.surface }]}
-                onPress={() => {
-                  haptic.light();
-                  router.push(`/task/${t.id}`);
-                }}
-              >
-                <Text style={[styles.taskItemTitle, { color: colors.black }]}>
-                  {t.title}
+            <View style={styles.rrows}>
+              {tasks.length === 0 ? (
+                <Text style={[styles.cellSub, { color: colors.gray }]}>
+                  (なし)
                 </Text>
-                <Text style={[styles.taskItemStatus, { color: colors.gray }]}>
-                  {t.status}
+              ) : (
+                tasks.map((t) => (
+                  <Pressable
+                    key={t.id}
+                    style={[
+                      styles.rrow,
+                      {
+                        backgroundColor: colors.white,
+                        borderColor: colors.separator,
+                      },
+                    ]}
+                    onPress={() => {
+                      haptic.light();
+                      router.push(`/task/${t.id}`);
+                    }}
+                  >
+                    <Text style={[styles.rrowDate, { color: colors.gray }]}>
+                      {t.start_at ? md(t.start_at) : ''}
+                    </Text>
+                    <View
+                      style={[
+                        styles.rdot,
+                        {
+                          backgroundColor:
+                            t.status === 'completed'
+                              ? colors.green
+                              : t.status === 'skipped'
+                                ? colors.red
+                                : t.status === 'in_progress'
+                                  ? colors.brand
+                                  : colors.grayLight,
+                        },
+                      ]}
+                    />
+                    <Text
+                      style={[styles.rtitle, { color: colors.black }]}
+                      numberOfLines={1}
+                    >
+                      {t.title}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.rst,
+                        {
+                          color:
+                            t.status === 'completed'
+                              ? colors.green
+                              : t.status === 'skipped'
+                                ? colors.red
+                                : t.status === 'in_progress'
+                                  ? colors.brand
+                                  : colors.gray,
+                        },
+                      ]}
+                    >
+                      {TASK_STATUS_LABELS[t.status] ?? t.status}
+                    </Text>
+                    <Ionicons
+                      name="chevron-forward"
+                      size={15}
+                      color={colors.grayLight}
+                    />
+                  </Pressable>
+                ))
+              )}
+            </View>
+          </>
+        )}
+
+        {/* (Cost moved into the settings grid above, #1146) */}
+
+        {/* (Abandonability moved into the settings grid above, #1146) */}
+
+        {/* (Parallel config moved into the settings grid above, #1146) */}
+
+        {/* (Fixed moved into the settings grid above, #1146) */}
+
+        {/* Scheduled spans (#303 / #503) */}
+        <View style={styles.slabel}>
+          <Text style={[styles.slabelText, { color: colors.gray }]}>
+            {spanLabel}
+          </Text>
+        </View>
+        {spans.map((p) => (
+          <View
+            key={p.id}
+            style={[
+              styles.spanRow,
+              {
+                backgroundColor: spanIsActive(p)
+                  ? colors.surfaceTint
+                  : colors.surface,
+                borderColor: spanIsActive(p)
+                  ? spanActiveColor
+                  : colors.separator,
+                marginHorizontal: 12,
+                marginBottom: 6,
+              },
+            ]}
+          >
+            <Ionicons
+              name={spanIcon}
+              size={18}
+              color={spanIsActive(p) ? spanActiveColor : colors.gray}
+            />
+            <Text style={[styles.spanText, { color: colors.black }]}>
+              {formatSpanDate(p.start_date)} 〜 {formatSpanDate(p.end_date)}
+              {p.reason ? `  ${p.reason}` : ''}
+            </Text>
+            <DeleteConfirmButton
+              onConfirm={() => deleteSpan(p.id)}
+              size={34}
+              iconSize={18}
+              hitSlop={8}
+            />
+          </View>
+        ))}
+        <Pressable
+          style={[styles.addSpanButton, { borderColor: colors.brand }]}
+          onPress={openSpanModal}
+        >
+          <Ionicons name="add" size={18} color={colors.brand} />
+          <Text style={styles.addSpanText}>{spanAddLabel}を追加</Text>
+        </Pressable>
+
+        {/* Description (#1146) */}
+        <View style={styles.slabel}>
+          <Text style={[styles.slabelText, { color: colors.gray }]}>説明</Text>
+        </View>
+        {editing ? (
+          <PaperTextInput
+            mode="outlined"
+            value={description}
+            onChangeText={setDescription}
+            multiline
+            numberOfLines={4}
+            outlineColor={colors.separator}
+            activeOutlineColor={colors.brand}
+            style={{ marginHorizontal: 12, minHeight: 84 }}
+          />
+        ) : (
+          <View style={styles.descBox}>
+            <Text
+              style={[styles.descText, { color: colors.gray }]}
+              numberOfLines={descExpanded ? undefined : 3}
+            >
+              {habit.description || '(なし)'}
+            </Text>
+            {(habit.description?.length ?? 0) > 60 && (
+              <Pressable onPress={() => setDescExpanded((v) => !v)}>
+                <Text
+                  style={[
+                    styles.linkBtnText,
+                    { color: colors.brand, marginTop: 4 },
+                  ]}
+                >
+                  {descExpanded ? '閉じる' : '続きを読む'}
                 </Text>
               </Pressable>
-            ))
-          )}
-        </View>
+            )}
+          </View>
+        )}
+
+        {/* (Recent tasks moved up next to the history strip, #1146) */}
       </ScrollView>
 
       {/* Big save button — visible only in edit mode */}

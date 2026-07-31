@@ -1,8 +1,10 @@
-// TaskDetailView — view and edit a single task
-// Elements from top to bottom:
-//   title, status, time -> time (if not pending), parallel task, cost (avg, sigma),
-//   abandonability (5-step slider), habit (if generated from habit),
-//   description, parallel config, deps graph (related only)
+// TaskDetailView — view and edit a single task (#1146 redesign).
+// Layout from top to bottom:
+//   header card (status + parallel-guest chips, title, schedule strip with a
+//   now marker and remaining/until chip), state-dependent actions (a single
+//   primary button), stats grid (cost / quantity + pace marker / flags &
+//   metadata incl. abandonability), deps chips + embedded dependency graph,
+//   habit link, collapsible description. Editing happens inline in place.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -32,7 +34,13 @@ import type {
   RedundantDependency,
   WorkSessionRow,
 } from '@/src/api/types';
-import { useColors, type ColorSet } from '@/src/theme';
+import {
+  useColors,
+  useTheme,
+  taskCardColor,
+  filledPips,
+  type ColorSet,
+} from '@/src/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DateTimePickerModal } from '@/src/components/DateTimePickerModal';
 import { haptic } from '@/src/components/haptics';
@@ -79,13 +87,29 @@ const STATUS_ICONS: Record<TaskStatus, keyof typeof Ionicons.glyphMap> = {
   skipped: 'play-skip-forward-outline',
 };
 
-function formatTime(iso?: string): string {
+const WEEKDAY_JA = ['日', '月', '火', '水', '木', '金', '土'];
+
+// "8/1 (金)" — compact date label for the schedule strip.
+function formatStripDate(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getMonth() + 1}/${d.getDate()} (${WEEKDAY_JA[d.getDay()]})`;
+}
+
+// "09:05" — HH:MM for the big time display.
+function hm(iso?: string | null): string {
   if (!iso) return '';
   const d = new Date(iso);
-  return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${d
-    .getHours()
+  return `${d.getHours().toString().padStart(2, '0')}:${d
+    .getMinutes()
     .toString()
-    .padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+    .padStart(2, '0')}`;
+}
+
+// Human-readable absolute minute span (e.g. 25 → "25分", 90 → "1h30m").
+function relMinutes(ms: number): string {
+  const mins = Math.max(0, Math.round(Math.abs(ms) / 60000));
+  if (mins < 60) return `${mins}分`;
+  return formatDuration(mins);
 }
 
 const makeStyles = (colors: ColorSet) =>
@@ -109,133 +133,6 @@ const makeStyles = (colors: ColorSet) =>
     loading: {
       textAlign: 'center',
       marginTop: 40,
-    },
-    title: {
-      fontSize: 24,
-      fontWeight: '600',
-    },
-    titleInput: {
-      fontSize: 20,
-    },
-    statusRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 8,
-      borderWidth: 1,
-      borderRadius: 8,
-      paddingHorizontal: 12,
-      paddingVertical: 10,
-    },
-    statusText: {
-      flex: 1,
-      fontSize: 15,
-      fontWeight: '500',
-    },
-    timeText: {
-      fontSize: 14,
-    },
-    section: {
-      gap: 4,
-    },
-    sectionLabel: {
-      fontSize: 13,
-      fontWeight: '500',
-    },
-    hint: {
-      fontSize: 11,
-      marginTop: 2,
-      flex: 1,
-    },
-    sectionValue: {
-      fontSize: 16,
-    },
-    sliderContainer: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 12,
-    },
-    slider: {
-      flex: 1,
-    },
-    sliderValue: {
-      fontSize: 14,
-      fontVariant: ['tabular-nums'],
-    },
-    habitLink: {
-      fontSize: 16,
-      color: colors.brand,
-    },
-    descriptionInput: {
-      minHeight: 80,
-    },
-    depLink: {
-      fontSize: 14,
-      color: colors.brand,
-      paddingVertical: 4,
-    },
-    depRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-    },
-    timeEditContainer: {
-      gap: 8,
-    },
-    dateField: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      borderWidth: 1,
-      borderRadius: 8,
-      paddingHorizontal: 12,
-      paddingVertical: 10,
-      gap: 8,
-    },
-    dateText: {
-      flex: 1,
-      fontSize: 15,
-    },
-    costEditContainer: {
-      flexDirection: 'row',
-      gap: 12,
-    },
-    avgInputContainer: {
-      flex: 1,
-      flexDirection: 'row',
-      alignItems: 'center',
-    },
-    costInput: {
-      flex: 1,
-    },
-    costHint: {
-      fontSize: 11,
-      marginTop: 2,
-      marginLeft: 4,
-    },
-    toggleRow: {
-      flexDirection: 'row',
-      gap: 24,
-    },
-    toggleItem: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 8,
-    },
-    toggleLabel: {
-      fontSize: 14,
-    },
-    miniGraph: {
-      marginTop: 12,
-      paddingTop: 12,
-      borderTopWidth: 1,
-      gap: 4,
-    },
-    miniGraphLabel: {
-      fontSize: 12,
-      marginBottom: 4,
-    },
-    depHeader: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
     },
     depModal: {
       margin: 24,
@@ -288,32 +185,408 @@ const makeStyles = (colors: ColorSet) =>
       fontSize: 18,
       fontWeight: '700',
     },
-    progressHeader: {
+    // ── redesign (#1146) ──
+    topBarId: {
+      fontSize: 12,
+      fontWeight: '700',
+      fontVariant: ['tabular-nums'],
+      marginLeft: 2,
+    },
+    headerCard: {
+      marginHorizontal: 12,
+      marginTop: 6,
+      borderRadius: 18,
+      paddingHorizontal: 16,
+      paddingTop: 14,
+      paddingBottom: 16,
+      overflow: 'hidden',
+    },
+    headerChips: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 6,
+      marginBottom: 10,
+    },
+    tintChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+      borderRadius: 999,
+    },
+    tintChipText: {
+      fontSize: 12,
+      fontWeight: '700',
+    },
+    headerTitle: {
+      fontSize: 22,
+      fontWeight: '800',
+      lineHeight: 28,
+    },
+    headerTitleInput: {
+      fontSize: 18,
+    },
+    stripDate: {
+      fontSize: 12,
+      fontWeight: '700',
+      marginBottom: 2,
+      fontVariant: ['tabular-nums'],
+    },
+    timesRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    tBig: {
+      fontSize: 27,
+      fontWeight: '800',
+      fontVariant: ['tabular-nums'],
+      letterSpacing: -0.5,
+    },
+    tArrow: {
+      fontSize: 15,
+    },
+    headChipRight: {
+      marginLeft: 'auto',
+    },
+    track: {
+      height: 6,
+      borderRadius: 3,
+      marginTop: 10,
+    },
+    fill: {
+      position: 'absolute',
+      left: 0,
+      top: 0,
+      bottom: 0,
+      borderRadius: 3,
+    },
+    nowdot: {
+      position: 'absolute',
+      top: -3.5,
+      width: 13,
+      height: 13,
+      borderRadius: 7,
+      borderWidth: 3,
+    },
+    pendingNote: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      marginTop: 12,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      borderRadius: 10,
+      borderWidth: 1.5,
+      borderStyle: 'dashed',
+    },
+    pendingNoteText: {
+      flex: 1,
+      fontSize: 13,
+      fontWeight: '600',
+    },
+    timeFields: {
+      flexDirection: 'row',
+      gap: 8,
+      marginTop: 12,
+    },
+    timeField: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      borderRadius: 10,
+      paddingHorizontal: 11,
+      paddingVertical: 8,
+      borderWidth: 1.5,
+    },
+    timeFieldLabels: {
+      gap: 1,
+    },
+    timeFieldLabel: {
+      fontSize: 9,
+      fontWeight: '800',
+      letterSpacing: 0.5,
+    },
+    timeFieldValue: {
+      fontSize: 13,
+      fontWeight: '800',
+      fontVariant: ['tabular-nums'],
+    },
+    slabel: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      marginTop: 18,
+      marginBottom: 7,
+      marginHorizontal: 12,
+    },
+    slabelText: {
+      flex: 1,
+      fontSize: 11,
+      fontWeight: '800',
+      letterSpacing: 1,
+    },
+    actions: {
+      marginHorizontal: 12,
+      gap: 8,
+    },
+    abtn: {
+      height: 52,
+      borderRadius: 14,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 9,
+    },
+    abtnText: {
+      fontSize: 17,
+      fontWeight: '800',
+    },
+    actRow: {
+      flexDirection: 'row',
+      gap: 8,
+    },
+    hbtn: {
+      flex: 1,
+      height: 46,
+      borderRadius: 12,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+      borderWidth: 1.5,
+    },
+    hbtnText: {
+      fontSize: 14,
+      fontWeight: '700',
+    },
+    hbtnSq: {
+      flex: 0,
+      width: 52,
+      height: 46,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderWidth: 1.5,
+    },
+    hbtnSqText: {
+      fontSize: 17,
+      fontWeight: '700',
+      fontVariant: ['tabular-nums'],
+    },
+    actMeta: {
       flexDirection: 'row',
       justifyContent: 'space-between',
       alignItems: 'center',
-      marginBottom: 8,
     },
-    progressActionsRow: {
+    linkBtnText: {
+      fontSize: 13,
+      fontWeight: '700',
+    },
+    doneBanner: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      borderRadius: 14,
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+      borderWidth: 1,
+    },
+    doneBannerTitle: {
+      fontSize: 14,
+      fontWeight: '700',
+    },
+    doneBannerSub: {
+      fontSize: 11,
+      fontWeight: '600',
+    },
+    statsRow: {
       flexDirection: 'row',
       gap: 8,
+      marginHorizontal: 12,
       marginBottom: 8,
     },
-    progressButton: {
+    cell: {
       flex: 1,
-      height: 48,
-      borderRadius: 10,
+      borderRadius: 13,
+      borderWidth: 1,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+    },
+    cellWide: {
+      marginHorizontal: 12,
+      marginBottom: 8,
+      borderRadius: 13,
+      borderWidth: 1,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+    },
+    cellK: {
+      fontSize: 10,
+      fontWeight: '800',
+      letterSpacing: 1,
+    },
+    cellV: {
+      fontSize: 16,
+      fontWeight: '800',
+      marginTop: 3,
+      fontVariant: ['tabular-nums'],
+    },
+    cellVUnit: {
+      fontSize: 11,
+      fontWeight: '600',
+    },
+    cellSub: {
+      fontSize: 11,
+      fontWeight: '600',
+      marginTop: 2,
+    },
+    minibar: {
+      height: 6,
+      borderRadius: 3,
+      marginTop: 8,
+    },
+    minibarFill: {
+      position: 'absolute',
+      left: 0,
+      top: 0,
+      bottom: 0,
+      borderRadius: 3,
+    },
+    paceMarker: {
+      position: 'absolute',
+      top: -4,
+      bottom: -4,
+      width: 2,
+      borderRadius: 1,
+    },
+    flagrow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 6,
+      marginTop: 5,
+    },
+    flagChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      paddingHorizontal: 9,
+      paddingVertical: 4,
+      borderRadius: 999,
+      borderWidth: 1,
+    },
+    flagChipText: {
+      fontSize: 11,
+      fontWeight: '700',
+    },
+    pips: {
+      flexDirection: 'row',
+      gap: 3,
+      marginLeft: 4,
+    },
+    pip: {
+      width: 9,
+      height: 9,
+      borderRadius: 3,
+    },
+    costInputs: {
+      flexDirection: 'row',
+      gap: 6,
+      marginTop: 7,
+    },
+    flagEditor: {
+      gap: 9,
+      marginTop: 8,
+    },
+    tog: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 9,
+    },
+    togLabel: {
+      fontSize: 13,
+      fontWeight: '600',
+    },
+    abandonEdit: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 9,
+    },
+    abandonLabel: {
+      fontSize: 12,
+      fontWeight: '600',
+    },
+    abandonSlider: {
+      flex: 1,
+    },
+    abandonVal: {
+      fontSize: 13,
+      fontWeight: '800',
+      fontVariant: ['tabular-nums'],
+    },
+    habitLinkRow: {
+      marginHorizontal: 12,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+    habitLinkText: {
+      flex: 1,
+      fontSize: 15,
+      fontWeight: '600',
+    },
+    depChips: {
+      marginHorizontal: 12,
+      gap: 6,
+    },
+    depChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 9,
+      borderRadius: 11,
+      borderWidth: 1,
+      paddingHorizontal: 12,
+      paddingVertical: 9,
+    },
+    depChipNo: {
+      fontSize: 12,
+      fontWeight: '700',
+      fontVariant: ['tabular-nums'],
+    },
+    depChipTitle: {
+      flex: 1,
+      fontSize: 13,
+      fontWeight: '600',
+    },
+    addDep: {
+      flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
-      flexDirection: 'row',
+      gap: 6,
+      borderRadius: 11,
+      borderWidth: 1.5,
+      borderStyle: 'dashed',
+      paddingVertical: 10,
+    },
+    addDepText: {
+      fontSize: 13,
+      fontWeight: '700',
+    },
+    graphBox: {
+      marginHorizontal: 12,
+      marginTop: 8,
+      borderRadius: 13,
       borderWidth: 1,
-      borderColor: 'transparent',
+      padding: 10,
     },
-    progressButtonFlex: {
-      flex: 1,
+    descBox: {
+      marginHorizontal: 12,
     },
-    progressButtonFull: {
-      marginBottom: 8,
+    descText: {
+      fontSize: 13,
+      lineHeight: 22,
     },
   });
 
@@ -321,9 +594,11 @@ export function TaskDetailView() {
   const { client, notifications } = useServer();
   const router = useRouter();
   const colors = useColors();
+  const { theme } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
+  const [descExpanded, setDescExpanded] = useState(false);
   const [task, setTask] = useState<TaskRow | null>(null);
   const [habit, setHabit] = useState<HabitDetail | null>(null);
   const [parallelTask, setParallelTask] = useState<TaskRow | null>(null);
@@ -1061,6 +1336,34 @@ export function TaskDetailView() {
     (t) => t.id !== task.id && !deps.includes(t.id),
   );
 
+  // ── redesign (#1146): derived display values ──
+  const headerBg = taskCardColor(
+    task.abandonability,
+    task.habit_id,
+    habit?.display_id,
+    theme,
+  );
+  const isLight = theme === 'light';
+  const headerText = colors.textOnCard;
+  const headerSub = colors.textOnCardSecondary;
+  const chipOnTintBg = isLight ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.28)';
+  const trackOnTint = isLight ? 'rgba(28,24,36,0.15)' : 'rgba(255,255,255,0.2)';
+  const nowMs = Date.now();
+  const startMs = task.start_at ? new Date(task.start_at).getTime() : null;
+  const endMs = new Date(task.end_at).getTime();
+  const qTotal = task.quantity_total ?? 0;
+  const qDone = task.quantity_done ?? 0;
+  const actualFrac = qTotal > 0 ? Math.min(1, qDone / qTotal) : 0;
+  const paceFrac =
+    qTotal > 0 &&
+    startMs != null &&
+    endMs > startMs &&
+    task.status === 'in_progress'
+      ? Math.max(0, Math.min(1, (nowMs - startMs) / (endMs - startMs)))
+      : null;
+  const shownAbandon = editing ? abandonability : task.abandonability;
+  const filledPipCount = filledPips(shownAbandon);
+
   // Double-tap (or single tap on a section) enters edit mode.
   function enterEdit() {
     if (!editing) {
@@ -1093,6 +1396,9 @@ export function TaskDetailView() {
             router.back();
           }}
         />
+        <Text style={[styles.topBarId, { color: colors.gray }]}>
+          #{task.display_id}
+        </Text>
         <View style={{ flex: 1 }} />
         {editing ? (
           <>
@@ -1156,188 +1462,106 @@ export function TaskDetailView() {
           { paddingBottom: 40 + insets.bottom },
         ]}
       >
-        {/* Title */}
-        {editing ? (
-          <PaperTextInput
-            mode="outlined"
-            value={title}
-            onChangeText={setTitle}
-            label="タイトル"
-            outlineColor={colors.separator}
-            activeOutlineColor={colors.brand}
-            style={styles.titleInput}
-            contentStyle={{ fontSize: 20, fontWeight: '600' }}
-          />
-        ) : (
-          <Pressable onPress={() => handleSectionTap('title')}>
-            <Text style={[styles.title, { color: colors.black }]}>
-              {task.title}
-            </Text>
-          </Pressable>
-        )}
-
-        {/* Status */}
-        <View style={styles.section}>
-          <Menu
-            visible={statusMenuVisible}
-            onDismiss={() => setStatusMenuVisible(false)}
-            anchor={
-              <PressableScale
-                style={[styles.statusRow, { borderColor: colors.separator }]}
+        {/* Header card (#1146): status + parallel guest + title + schedule strip */}
+        <View style={[styles.headerCard, { backgroundColor: headerBg }]}>
+          <View style={styles.headerChips}>
+            <Menu
+              visible={statusMenuVisible}
+              onDismiss={() => setStatusMenuVisible(false)}
+              anchor={
+                <Pressable
+                  style={[styles.tintChip, { backgroundColor: chipOnTintBg }]}
+                  onPress={() => {
+                    haptic.light();
+                    setStatusMenuVisible(true);
+                  }}
+                >
+                  <Ionicons
+                    name={STATUS_ICONS[editing ? status : task.status]}
+                    size={13}
+                    color={headerText}
+                  />
+                  <Text style={[styles.tintChipText, { color: headerText }]}>
+                    {STATUS_LABELS[editing ? status : task.status]}
+                  </Text>
+                  <Ionicons name="chevron-down" size={12} color={headerText} />
+                </Pressable>
+              }
+            >
+              {(Object.keys(STATUS_LABELS) as TaskStatus[])
+                .filter((s) => {
+                  // pending (未スケジュール) のタスクは done/skip のみ変更可能。
+                  // scheduled/in_progress への手動変更はスケジューラの役割。
+                  if (task.status === 'pending') {
+                    return s === 'completed' || s === 'skipped';
+                  }
+                  return true;
+                })
+                .map((s) => (
+                  <Menu.Item
+                    key={s}
+                    onPress={() => {
+                      haptic.medium();
+                      changeStatus(s);
+                    }}
+                    title={STATUS_LABELS[s]}
+                    leadingIcon={({ color, size }) => (
+                      <Ionicons
+                        name={STATUS_ICONS[s]}
+                        color={color}
+                        size={size}
+                      />
+                    )}
+                  />
+                ))}
+            </Menu>
+            {!editing && parallelTask && (
+              <Pressable
+                style={[styles.tintChip, { backgroundColor: chipOnTintBg }]}
                 onPress={() => {
                   haptic.light();
-                  setStatusMenuVisible(true);
+                  router.push(`/task/${parallelTask.id}`);
                 }}
               >
-                <Ionicons
-                  name={STATUS_ICONS[editing ? status : task.status]}
-                  size={20}
-                  color={colors.brand}
-                />
-                <Text style={[styles.statusText, { color: colors.black }]}>
-                  {STATUS_LABELS[editing ? status : task.status]}
+                <Ionicons name="swap-horizontal" size={13} color={headerText} />
+                <Text
+                  style={[styles.tintChipText, { color: headerText }]}
+                  numberOfLines={1}
+                >
+                  並列: {parallelTask.title}
                 </Text>
-                <Ionicons name="chevron-down" size={16} color={colors.gray} />
-              </PressableScale>
-            }
-          >
-            {(Object.keys(STATUS_LABELS) as TaskStatus[])
-              .filter((s) => {
-                // pending (未スケジュール) のタスクは done/skip のみ変更可能。
-                // scheduled/in_progress への手動変更はスケジューラの役割。
-                if (task.status === 'pending') {
-                  return s === 'completed' || s === 'skipped';
-                }
-                return true;
-              })
-              .map((s) => (
-                <Menu.Item
-                  key={s}
-                  onPress={() => {
-                    haptic.medium();
-                    changeStatus(s);
-                  }}
-                  title={STATUS_LABELS[s]}
-                  leadingIcon={({ color, size }) => (
-                    <Ionicons
-                      name={STATUS_ICONS[s]}
-                      color={color}
-                      size={size}
-                    />
-                  )}
-                />
-              ))}
-          </Menu>
-        </View>
+              </Pressable>
+            )}
+          </View>
 
-        {/* Progress */}
-        {!editing &&
-          task.status === 'in_progress' &&
-          task.quantity_total != null &&
-          task.quantity_total > 0 && (
-            <View style={styles.section}>
-              <View style={styles.progressHeader}>
-                <Text style={[styles.sectionLabel, { color: colors.gray }]}>
-                  進捗
-                </Text>
-                <Text style={{ color: colors.black, fontWeight: '600' }}>
-                  {task.quantity_done}/{task.quantity_total}
-                </Text>
-              </View>
-              <View style={styles.progressActionsRow}>
-                <PressableScale
-                  style={({ pressed }) => [
-                    styles.progressButton,
-                    { backgroundColor: colors.red, opacity: pressed ? 0.8 : 1 },
-                  ]}
-                  onPress={() => openProgressSheet('pause')}
-                >
-                  <Ionicons name="pause" size={20} color={colors.white} />
-                </PressableScale>
-                <PressableScale
-                  style={({ pressed }) => [
-                    styles.progressButton,
-                    {
-                      backgroundColor: colors.green,
-                      opacity: pressed ? 0.8 : 1,
-                    },
-                  ]}
-                  onPress={completeTask}
-                >
-                  <Ionicons name="checkmark" size={24} color={colors.white} />
-                </PressableScale>
-              </View>
-              <PressableScale
-                style={({ pressed }) => [
-                  styles.progressButton,
-                  styles.progressButtonFull,
-                  { borderColor: colors.separator, opacity: pressed ? 0.8 : 1 },
-                ]}
-                onPress={openSplitModal}
-              >
-                <Ionicons name="cut" size={20} color={colors.black} />
-                <Text style={{ color: colors.black, marginLeft: 6 }}>分割</Text>
-              </PressableScale>
-              <View style={styles.progressActionsRow}>
-                <PressableScale
-                  style={({ pressed }) => [
-                    styles.progressButton,
-                    styles.progressButtonFlex,
-                    {
-                      borderColor: colors.separator,
-                      opacity: pressed ? 0.8 : 1,
-                    },
-                  ]}
-                  onPress={() => adjustProgress(-1)}
-                >
-                  <Text style={{ color: colors.black, fontWeight: '600' }}>
-                    -1
-                  </Text>
-                </PressableScale>
-                <PressableScale
-                  style={({ pressed }) => [
-                    styles.progressButton,
-                    styles.progressButtonFlex,
-                    {
-                      backgroundColor: colors.brand,
-                      opacity: pressed ? 0.8 : 1,
-                    },
-                  ]}
-                  onPress={() => openProgressSheet('record')}
-                >
-                  <Text style={{ color: colors.white, fontWeight: '600' }}>
-                    記録
-                  </Text>
-                </PressableScale>
-                <PressableScale
-                  style={({ pressed }) => [
-                    styles.progressButton,
-                    styles.progressButtonFlex,
-                    {
-                      borderColor: colors.separator,
-                      opacity: pressed ? 0.8 : 1,
-                    },
-                  ]}
-                  onPress={() => adjustProgress(1)}
-                >
-                  <Text style={{ color: colors.black, fontWeight: '600' }}>
-                    +1
-                  </Text>
-                </PressableScale>
-              </View>
-            </View>
+          {editing ? (
+            <PaperTextInput
+              mode="outlined"
+              value={title}
+              onChangeText={setTitle}
+              label="タイトル"
+              outlineColor={headerSub}
+              activeOutlineColor={headerText}
+              textColor={headerText}
+              style={styles.headerTitleInput}
+              contentStyle={{ fontSize: 18, fontWeight: '700' }}
+            />
+          ) : (
+            <Pressable onPress={() => handleSectionTap('title')}>
+              <Text style={[styles.headerTitle, { color: headerText }]}>
+                {task.title}
+              </Text>
+            </Pressable>
           )}
 
-        {/* Time */}
-        {!isPending && (
-          <View style={styles.section}>
-            <Text style={[styles.sectionLabel, { color: colors.gray }]}>
-              時間
-            </Text>
-            {editing ? (
-              <View style={styles.timeEditContainer}>
+          {!isPending &&
+            (editing ? (
+              <View style={styles.timeFields}>
                 <Pressable
-                  style={[styles.dateField, { borderColor: colors.separator }]}
+                  style={[
+                    styles.timeField,
+                    { backgroundColor: chipOnTintBg, borderColor: headerSub },
+                  ]}
                   onPress={() => {
                     haptic.select();
                     setPickerField('start');
@@ -1346,174 +1570,505 @@ export function TaskDetailView() {
                   <Ionicons
                     name="calendar-outline"
                     size={18}
-                    color={colors.brand}
+                    color={headerText}
                   />
-                  <Text
-                    style={[
-                      styles.dateText,
-                      { color: startAt ? colors.black : colors.grayLight },
-                    ]}
-                  >
-                    {formatDate(startAt)}
-                  </Text>
-                  {startAt && (
-                    <PressableScale
-                      onPress={() => {
-                        haptic.light();
-                        setStartAt(null);
-                      }}
+                  <View style={styles.timeFieldLabels}>
+                    <Text style={[styles.timeFieldLabel, { color: headerSub }]}>
+                      開始
+                    </Text>
+                    <Text
+                      style={[styles.timeFieldValue, { color: headerText }]}
                     >
-                      <Ionicons
-                        name="close-circle"
-                        size={16}
-                        color={colors.grayLight}
-                      />
-                    </PressableScale>
-                  )}
+                      {formatDate(startAt)}
+                    </Text>
+                  </View>
                 </Pressable>
                 <Pressable
-                  style={[styles.dateField, { borderColor: colors.separator }]}
+                  style={[
+                    styles.timeField,
+                    { backgroundColor: chipOnTintBg, borderColor: headerSub },
+                  ]}
                   onPress={() => {
                     haptic.select();
                     setPickerField('end');
                   }}
                 >
-                  <Ionicons
-                    name="calendar-outline"
-                    size={18}
-                    color={colors.brand}
-                  />
-                  <Text
-                    style={[
-                      styles.dateText,
-                      { color: endAt ? colors.black : colors.grayLight },
-                    ]}
-                  >
-                    {formatDate(endAt)}
-                  </Text>
+                  <Ionicons name="flag-outline" size={18} color={headerText} />
+                  <View style={styles.timeFieldLabels}>
+                    <Text style={[styles.timeFieldLabel, { color: headerSub }]}>
+                      期限
+                    </Text>
+                    <Text
+                      style={[styles.timeFieldValue, { color: headerText }]}
+                    >
+                      {formatDate(endAt)}
+                    </Text>
+                  </View>
                 </Pressable>
               </View>
             ) : (
               <Pressable onPress={() => handleSectionTap('time')}>
-                <Text style={[styles.timeText, { color: colors.gray }]}>
-                  {formatTime(task.start_at ?? undefined)} →{' '}
-                  {formatTime(task.end_at)}
+                <Text style={[styles.stripDate, { color: headerSub }]}>
+                  {formatStripDate(task.start_at ?? task.end_at)}
                 </Text>
+                <View style={styles.timesRow}>
+                  <Text style={[styles.tBig, { color: headerText }]}>
+                    {hm(task.start_at)}
+                  </Text>
+                  <Text style={[styles.tArrow, { color: headerSub }]}>→</Text>
+                  <Text style={[styles.tBig, { color: headerText }]}>
+                    {hm(task.end_at)}
+                  </Text>
+                  {task.status === 'in_progress' && (
+                    <Text
+                      style={[
+                        styles.tintChipText,
+                        styles.headChipRight,
+                        { color: headerText },
+                      ]}
+                    >
+                      {endMs - nowMs > 0
+                        ? `残り ${relMinutes(endMs - nowMs)}`
+                        : `${relMinutes(nowMs - endMs)} 超過`}
+                    </Text>
+                  )}
+                  {task.status === 'scheduled' && startMs != null && (
+                    <Text
+                      style={[
+                        styles.tintChipText,
+                        styles.headChipRight,
+                        { color: headerSub },
+                      ]}
+                    >
+                      開始まで {relMinutes(startMs - nowMs)}
+                    </Text>
+                  )}
+                  {task.status === 'completed' && (
+                    <Text
+                      style={[
+                        styles.tintChipText,
+                        styles.headChipRight,
+                        { color: headerText },
+                      ]}
+                    >
+                      ✓ {hm(task.completed_at ?? undefined)}
+                    </Text>
+                  )}
+                </View>
+                <View style={[styles.track, { backgroundColor: trackOnTint }]}>
+                  <View
+                    style={[
+                      styles.fill,
+                      {
+                        backgroundColor:
+                          task.status === 'completed'
+                            ? colors.green
+                            : colors.brand,
+                        width: `${
+                          task.status === 'completed'
+                            ? 100
+                            : task.status === 'in_progress' &&
+                                startMs != null &&
+                                endMs > startMs
+                              ? Math.max(
+                                  0,
+                                  Math.min(
+                                    100,
+                                    ((nowMs - startMs) / (endMs - startMs)) *
+                                      100,
+                                  ),
+                                )
+                              : 0
+                        }%`,
+                      },
+                    ]}
+                  />
+                  {task.status === 'in_progress' &&
+                    startMs != null &&
+                    endMs > startMs && (
+                      <View
+                        style={[
+                          styles.nowdot,
+                          {
+                            borderColor: colors.brand,
+                            backgroundColor: headerBg,
+                            left: `${Math.max(
+                              0,
+                              Math.min(
+                                100,
+                                ((nowMs - startMs) / (endMs - startMs)) * 100,
+                              ),
+                            )}%`,
+                          },
+                        ]}
+                      />
+                    )}
+                </View>
               </Pressable>
-            )}
-          </View>
-        )}
+            ))}
 
-        {/* Parallel task */}
-        {(task.allows_parallel || task.parallelizable) && (
-          <View style={styles.section}>
-            <Text style={[styles.sectionLabel, { color: colors.gray }]}>
-              並列タスク
-            </Text>
-            {parallelTask ? (
+          {isPending && !editing && (
+            <View style={[styles.pendingNote, { borderColor: headerSub }]}>
+              <Ionicons name="help-buoy-outline" size={18} color={headerText} />
+              <Text style={[styles.pendingNoteText, { color: headerText }]}>
+                期限未設定 — 期限を決めるとスケジューラが自動配置します
+              </Text>
+            </View>
+          )}
+          {isPending && editing && (
+            <View style={styles.timeFields}>
               <Pressable
+                style={[
+                  styles.timeField,
+                  { backgroundColor: chipOnTintBg, borderColor: headerSub },
+                ]}
                 onPress={() => {
-                  haptic.light();
-                  router.push(`/task/${parallelTask.id}`);
+                  haptic.select();
+                  setPickerField('end');
                 }}
               >
-                <Text style={styles.habitLink}>{parallelTask.title} ›</Text>
+                <Ionicons name="flag-outline" size={18} color={headerText} />
+                <View style={styles.timeFieldLabels}>
+                  <Text style={[styles.timeFieldLabel, { color: headerSub }]}>
+                    期限
+                  </Text>
+                  <Text style={[styles.timeFieldValue, { color: headerText }]}>
+                    {formatDate(endAt)}
+                  </Text>
+                </View>
               </Pressable>
-            ) : (
-              <Text style={[styles.sectionValue, { color: colors.black }]}>
-                {task.allows_parallel
-                  ? '受け皿タスク (重なるタスクなし)'
-                  : 'なし'}
+            </View>
+          )}
+        </View>
+
+        {/* Actions (#1146): one primary action per state */}
+        {!editing && (
+          <>
+            <View style={styles.slabel}>
+              <Text style={[styles.slabelText, { color: colors.gray }]}>
+                アクション
               </Text>
-            )}
-          </View>
+            </View>
+            <View style={styles.actions}>
+              {task.status === 'in_progress' && (
+                <>
+                  <PressableScale
+                    style={({ pressed }) => [
+                      styles.abtn,
+                      {
+                        backgroundColor: colors.green,
+                        opacity: pressed ? 0.85 : 1,
+                      },
+                    ]}
+                    onPress={completeTask}
+                  >
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={22}
+                      color={colors.white}
+                    />
+                    <Text style={[styles.abtnText, { color: colors.white }]}>
+                      完了
+                    </Text>
+                  </PressableScale>
+                  <View style={styles.actRow}>
+                    <PressableScale
+                      style={({ pressed }) => [
+                        styles.hbtn,
+                        {
+                          borderColor: colors.separator,
+                          backgroundColor: colors.white,
+                          opacity: pressed ? 0.8 : 1,
+                        },
+                      ]}
+                      onPress={() => openProgressSheet('pause')}
+                    >
+                      <Ionicons name="pause" size={17} color={colors.black} />
+                      <Text style={[styles.hbtnText, { color: colors.black }]}>
+                        停止
+                      </Text>
+                    </PressableScale>
+                    <PressableScale
+                      style={({ pressed }) => [
+                        styles.hbtn,
+                        {
+                          borderColor: colors.brand,
+                          backgroundColor: colors.brand,
+                          opacity: pressed ? 0.85 : 1,
+                        },
+                      ]}
+                      onPress={() => openProgressSheet('record')}
+                    >
+                      <Ionicons name="add" size={17} color={colors.white} />
+                      <Text style={[styles.hbtnText, { color: colors.white }]}>
+                        記録
+                      </Text>
+                    </PressableScale>
+                    <PressableScale
+                      style={({ pressed }) => [
+                        styles.hbtnSq,
+                        {
+                          borderColor: colors.separator,
+                          backgroundColor: colors.white,
+                          opacity: pressed ? 0.8 : 1,
+                        },
+                      ]}
+                      onPress={() => adjustProgress(-1)}
+                    >
+                      <Text
+                        style={[styles.hbtnSqText, { color: colors.black }]}
+                      >
+                        −1
+                      </Text>
+                    </PressableScale>
+                    <PressableScale
+                      style={({ pressed }) => [
+                        styles.hbtnSq,
+                        {
+                          borderColor: colors.separator,
+                          backgroundColor: colors.white,
+                          opacity: pressed ? 0.8 : 1,
+                        },
+                      ]}
+                      onPress={() => adjustProgress(1)}
+                    >
+                      <Text
+                        style={[styles.hbtnSqText, { color: colors.black }]}
+                      >
+                        +1
+                      </Text>
+                    </PressableScale>
+                  </View>
+                  <PressableScale
+                    style={({ pressed }) => [
+                      styles.hbtn,
+                      {
+                        borderColor: colors.brand,
+                        borderStyle: 'dashed',
+                        backgroundColor: colors.white,
+                        opacity: pressed ? 0.8 : 1,
+                      },
+                    ]}
+                    onPress={openSplitModal}
+                  >
+                    <Ionicons name="cut" size={17} color={colors.brand} />
+                    <Text style={[styles.hbtnText, { color: colors.brand }]}>
+                      分割
+                    </Text>
+                  </PressableScale>
+                </>
+              )}
+
+              {task.status === 'scheduled' && (
+                <>
+                  <PressableScale
+                    style={({ pressed }) => [
+                      styles.abtn,
+                      {
+                        backgroundColor: colors.brand,
+                        opacity: pressed ? 0.85 : 1,
+                      },
+                    ]}
+                    onPress={startTask}
+                  >
+                    <Ionicons name="play" size={22} color={colors.white} />
+                    <Text style={[styles.abtnText, { color: colors.white }]}>
+                      開始
+                    </Text>
+                  </PressableScale>
+                  <View style={styles.actMeta}>
+                    <Pressable
+                      onPress={() => {
+                        haptic.light();
+                        setEditing(true);
+                        setPickerField('end');
+                      }}
+                    >
+                      <Text
+                        style={[styles.linkBtnText, { color: colors.brand }]}
+                      >
+                        時間を変更
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => {
+                        haptic.medium();
+                        changeStatus('skipped');
+                      }}
+                    >
+                      <Text
+                        style={[styles.linkBtnText, { color: colors.gray }]}
+                      >
+                        スキップ
+                      </Text>
+                    </Pressable>
+                  </View>
+                </>
+              )}
+
+              {task.status === 'pending' && (
+                <PressableScale
+                  style={({ pressed }) => [
+                    styles.abtn,
+                    {
+                      backgroundColor: colors.brand,
+                      opacity: pressed ? 0.85 : 1,
+                    },
+                  ]}
+                  onPress={() => {
+                    haptic.light();
+                    setEditing(true);
+                    setPickerField('end');
+                  }}
+                >
+                  <Ionicons
+                    name="calendar-outline"
+                    size={22}
+                    color={colors.white}
+                  />
+                  <Text style={[styles.abtnText, { color: colors.white }]}>
+                    期限を設定
+                  </Text>
+                </PressableScale>
+              )}
+
+              {(task.status === 'completed' || task.status === 'skipped') && (
+                <>
+                  <View
+                    style={[
+                      styles.doneBanner,
+                      {
+                        backgroundColor: colors.success + '22',
+                        borderColor: colors.success + '55',
+                      },
+                    ]}
+                  >
+                    <Ionicons
+                      name={
+                        task.status === 'completed'
+                          ? 'checkmark-done-circle'
+                          : 'play-skip-forward'
+                      }
+                      size={26}
+                      color={colors.success}
+                    />
+                    <View>
+                      <Text
+                        style={[
+                          styles.doneBannerTitle,
+                          { color: colors.success },
+                        ]}
+                      >
+                        {STATUS_LABELS[task.status]}
+                      </Text>
+                      {(task.completed_at ||
+                        (task.actual_minutes ?? 0) > 0) && (
+                        <Text
+                          style={[
+                            styles.doneBannerSub,
+                            { color: colors.success },
+                          ]}
+                        >
+                          {task.completed_at
+                            ? `${hm(task.completed_at)} · `
+                            : ''}
+                          {(task.actual_minutes ?? 0) > 0
+                            ? `実績 ${formatDuration(task.actual_minutes!)}`
+                            : ''}
+                        </Text>
+                      )}
+                    </View>
+                  </View>
+                  <View style={styles.actMeta}>
+                    <Pressable
+                      onPress={() => {
+                        haptic.medium();
+                        changeStatus('in_progress');
+                      }}
+                    >
+                      <Text
+                        style={[styles.linkBtnText, { color: colors.brand }]}
+                      >
+                        進行中に戻す
+                      </Text>
+                    </Pressable>
+                  </View>
+                </>
+              )}
+            </View>
+          </>
         )}
 
-        {/* Cost */}
-        <View style={styles.section}>
-          <Text style={[styles.sectionLabel, { color: colors.gray }]}>
-            コスト
-          </Text>
-          {editing ? (
-            <View style={styles.costEditContainer}>
-              <View style={styles.avgInputContainer}>
+        {/* (Time + parallel task moved into the header card, #1146) */}
+
+        {/* Stats grid (#1146) */}
+        <View style={styles.slabel}>
+          <Text style={[styles.slabelText, { color: colors.gray }]}>統計</Text>
+        </View>
+        <View style={styles.statsRow}>
+          {/* Cost */}
+          <View
+            style={[
+              styles.cell,
+              { backgroundColor: colors.white, borderColor: colors.separator },
+            ]}
+          >
+            <Text style={[styles.cellK, { color: colors.gray }]}>コスト</Text>
+            {editing ? (
+              <View style={styles.costInputs}>
                 <PaperTextInput
                   mode="outlined"
-                  label="avg (1h30m / 90m / 90)"
+                  label="avg"
                   value={avgMinutes}
                   onChangeText={setAvgMinutes}
                   autoCapitalize="none"
                   autoCorrect={false}
                   outlineColor={colors.separator}
                   activeOutlineColor={colors.brand}
-                  style={styles.costInput}
+                  style={{ flex: 1 }}
                   dense
                 />
-                <IconButton
-                  icon="arrow-expand"
-                  size={18}
-                  iconColor={colors.brand}
-                  disabled={!startAt || !endAt}
-                  onPress={() => {
-                    if (!startAt || !endAt) return;
-                    haptic.light();
-                    const diffMin = Math.max(
-                      1,
-                      Math.round((endAt.getTime() - startAt.getTime()) / 60000),
-                    );
-                    setAvgMinutes(String(diffMin));
-                  }}
-                />
-              </View>
-              <View style={styles.costInput}>
                 <PaperTextInput
                   mode="outlined"
-                  label="sigma (1h30m / 90m / 90)"
+                  label="sigma"
                   value={sigmaMinutes}
                   onChangeText={setSigmaMinutes}
                   autoCapitalize="none"
                   autoCorrect={false}
                   outlineColor={colors.separator}
                   activeOutlineColor={colors.brand}
+                  style={{ flex: 1 }}
                   dense
                 />
-                {sigmaMinutes === '' && (
-                  <Text style={[styles.costHint, { color: colors.grayLight }]}>
-                    {formatDuration(task.sigma_minutes)}
-                  </Text>
-                )}
               </View>
-            </View>
-          ) : (
-            <Pressable onPress={() => handleSectionTap('cost')}>
-              <Text style={[styles.sectionValue, { color: colors.black }]}>
-                avg: {formatDuration(task.avg_minutes)}, sigma:{' '}
-                {task.sigma_minutes > 0 ? (
-                  formatDuration(task.sigma_minutes)
-                ) : (
-                  <Text style={{ color: colors.grayLight }}>
-                    {formatDuration(0)}
+            ) : (
+              <Pressable onPress={() => handleSectionTap('cost')}>
+                <Text style={[styles.cellV, { color: colors.black }]}>
+                  {formatDuration(task.avg_minutes)}{' '}
+                  <Text style={[styles.cellVUnit, { color: colors.gray }]}>
+                    ±{formatDuration(task.sigma_minutes)}
+                  </Text>
+                </Text>
+                {task.actual_minutes != null && task.actual_minutes > 0 && (
+                  <Text style={[styles.cellSub, { color: colors.grayLight }]}>
+                    {task.status === 'completed' ? '実績' : '経過'}{' '}
+                    {formatDuration(task.actual_minutes)}
                   </Text>
                 )}
-                {task.actual_minutes != null && task.actual_minutes > 0 ? (
-                  <Text style={{ color: colors.gray }}>
-                    {' '}
-                    (実績: {formatDuration(task.actual_minutes)})
-                  </Text>
-                ) : null}
-              </Text>
-            </Pressable>
-          )}
-        </View>
+              </Pressable>
+            )}
+          </View>
 
-        {/* Quantity */}
-        <View style={styles.section}>
-          <Text style={[styles.sectionLabel, { color: colors.gray }]}>
-            数量
-          </Text>
-          {editing ? (
-            <View style={styles.costEditContainer}>
-              <View style={styles.costInput}>
+          {/* Quantity */}
+          <View
+            style={[
+              styles.cell,
+              { backgroundColor: colors.white, borderColor: colors.separator },
+            ]}
+          >
+            <Text style={[styles.cellK, { color: colors.gray }]}>数量</Text>
+            {editing ? (
+              <View style={styles.costInputs}>
                 <PaperTextInput
                   mode="outlined"
                   label="全体"
@@ -1524,10 +2079,9 @@ export function TaskDetailView() {
                   keyboardType="number-pad"
                   outlineColor={colors.separator}
                   activeOutlineColor={colors.brand}
+                  style={{ flex: 1 }}
                   dense
                 />
-              </View>
-              <View style={styles.costInput}>
                 <PaperTextInput
                   mode="outlined"
                   label="単位"
@@ -1535,119 +2089,88 @@ export function TaskDetailView() {
                   onChangeText={setQuantityUnit}
                   outlineColor={colors.separator}
                   activeOutlineColor={colors.brand}
+                  style={{ flex: 1 }}
                   dense
                 />
               </View>
-            </View>
-          ) : (
-            <Pressable onPress={() => handleSectionTap('quantity')}>
-              <Text style={[styles.sectionValue, { color: colors.black }]}>
-                {task.quantity_total !== undefined
-                  ? `${task.quantity_total} ${task.quantity_unit ?? ''}`
-                  : '未設定'}
-              </Text>
-            </Pressable>
-          )}
+            ) : (
+              <Pressable onPress={() => handleSectionTap('quantity')}>
+                {qTotal > 0 ? (
+                  <Text style={[styles.cellV, { color: colors.black }]}>
+                    {qDone}
+                    <Text style={[styles.cellVUnit, { color: colors.gray }]}>
+                      {' '}
+                      / {qTotal} {task.quantity_unit ?? ''}
+                    </Text>
+                  </Text>
+                ) : (
+                  <Text style={[styles.cellVUnit, { color: colors.gray }]}>
+                    未設定
+                  </Text>
+                )}
+                {qTotal > 0 && (
+                  <View
+                    style={[
+                      styles.minibar,
+                      { backgroundColor: colors.separator },
+                    ]}
+                  >
+                    <View
+                      style={[
+                        styles.minibarFill,
+                        {
+                          backgroundColor: colors.brand,
+                          width: `${actualFrac * 100}%`,
+                        },
+                      ]}
+                    />
+                    {paceFrac != null && (
+                      <View
+                        style={[
+                          styles.paceMarker,
+                          {
+                            backgroundColor: colors.warning,
+                            left: `${paceFrac * 100}%`,
+                          },
+                        ]}
+                      />
+                    )}
+                  </View>
+                )}
+                {paceFrac != null && (
+                  <Text style={[styles.cellSub, { color: colors.grayLight }]}>
+                    ▸ ペース {Math.round(paceFrac * 100)}%
+                    {actualFrac < paceFrac - 0.02
+                      ? ' · わずかに遅れ'
+                      : actualFrac > paceFrac + 0.02
+                        ? ' · 先行'
+                        : ''}
+                  </Text>
+                )}
+              </Pressable>
+            )}
+          </View>
         </View>
 
-        {/* Abandonability */}
-        <View style={styles.section}>
-          <Text style={[styles.sectionLabel, { color: colors.gray }]}>
-            abandonability
+        {/* Flags / metadata (wide) */}
+        <View
+          style={[
+            styles.cellWide,
+            { backgroundColor: colors.white, borderColor: colors.separator },
+          ]}
+        >
+          <Text style={[styles.cellK, { color: colors.gray }]}>
+            フラグ・メタデータ
           </Text>
           {editing ? (
-            <View style={styles.sliderContainer}>
-              <Slider
-                value={abandonability}
-                onValueChange={setAbandonability}
-                minimumValue={0}
-                maximumValue={1}
-                step={0.25}
-                minimumTrackTintColor={colors.brand}
-                style={styles.slider}
-              />
-              <Text style={[styles.sliderValue, { color: colors.brand }]}>
-                {abandonability.toFixed(2)}
-              </Text>
-            </View>
-          ) : (
-            <Pressable onPress={() => handleSectionTap('abandonability')}>
-              <Text style={[styles.sectionValue, { color: colors.black }]}>
-                {task.abandonability.toFixed(2)}
-              </Text>
-            </Pressable>
-          )}
-        </View>
-
-        {/* Habit */}
-        {habit && (
-          <Pressable
-            style={styles.section}
-            onPress={() => {
-              haptic.light();
-              router.push(`/habit/${habit.id}`);
-            }}
-          >
-            <Text style={[styles.sectionLabel, { color: colors.gray }]}>
-              Habit
-            </Text>
-            <Text style={styles.habitLink}>
-              {task.habit_step_id
-                ? (() => {
-                    const step = habit.steps.find(
-                      (s) => s.id === task.habit_step_id,
-                    );
-                    return step
-                      ? `${habit.title} › ${step.title}`
-                      : `${habit.title} ›`;
-                  })()
-                : `${habit.title} ›`}
-            </Text>
-          </Pressable>
-        )}
-
-        {/* Description */}
-        <View style={styles.section}>
-          <Text style={[styles.sectionLabel, { color: colors.gray }]}>
-            説明
-          </Text>
-          {editing ? (
-            <PaperTextInput
-              mode="outlined"
-              value={description}
-              onChangeText={setDescription}
-              multiline
-              numberOfLines={4}
-              outlineColor={colors.separator}
-              activeOutlineColor={colors.brand}
-              style={styles.descriptionInput}
-            />
-          ) : (
-            <Pressable onPress={() => handleSectionTap('description')}>
-              <Text style={[styles.sectionValue, { color: colors.black }]}>
-                {task.description || '(なし)'}
-              </Text>
-            </Pressable>
-          )}
-        </View>
-
-        {/* Parallel config */}
-        <View style={styles.section}>
-          <Text style={[styles.sectionLabel, { color: colors.gray }]}>
-            並列設定
-          </Text>
-          {editing ? (
-            <View style={styles.toggleRow}>
+            <View style={styles.flagEditor}>
               <Pressable
-                style={styles.toggleItem}
+                style={styles.tog}
                 onPress={() => {
                   haptic.select();
                   setParallelizable(!parallelizable);
                 }}
               >
-                <Text style={[styles.toggleLabel, { color: colors.black }]}>
-                  並列実行可能
-                </Text>
                 <Checkbox
                   status={parallelizable ? 'checked' : 'unchecked'}
                   onPress={() => {
@@ -1656,17 +2179,17 @@ export function TaskDetailView() {
                   }}
                   color={colors.brand}
                 />
+                <Text style={[styles.togLabel, { color: colors.black }]}>
+                  並列実行可能
+                </Text>
               </Pressable>
               <Pressable
-                style={styles.toggleItem}
+                style={styles.tog}
                 onPress={() => {
                   haptic.select();
                   setAllowsParallel(!allowsParallel);
                 }}
               >
-                <Text style={[styles.toggleLabel, { color: colors.black }]}>
-                  並列受け入れ
-                </Text>
                 <Checkbox
                   status={allowsParallel ? 'checked' : 'unchecked'}
                   onPress={() => {
@@ -1675,92 +2198,201 @@ export function TaskDetailView() {
                   }}
                   color={colors.brand}
                 />
-              </Pressable>
-            </View>
-          ) : (
-            <Pressable
-              style={styles.toggleRow}
-              onPress={() => handleSectionTap('parallel')}
-            >
-              <View style={styles.toggleItem}>
-                <Text style={[styles.toggleLabel, { color: colors.black }]}>
-                  並列実行可能
-                </Text>
-                <Checkbox
-                  status={task.parallelizable ? 'checked' : 'unchecked'}
-                  disabled
-                  color={colors.brand}
-                />
-              </View>
-              <View style={styles.toggleItem}>
-                <Text style={[styles.toggleLabel, { color: colors.black }]}>
+                <Text style={[styles.togLabel, { color: colors.black }]}>
                   並列受け入れ
                 </Text>
-                <Checkbox
-                  status={task.allows_parallel ? 'checked' : 'unchecked'}
-                  disabled
-                  color={colors.brand}
-                />
-              </View>
-            </Pressable>
-          )}
-        </View>
-
-        {/* Fixed */}
-        <View style={styles.section}>
-          <Text style={[styles.sectionLabel, { color: colors.gray }]}>
-            時間固定
-          </Text>
-          {editing ? (
-            <View style={styles.toggleItem}>
-              <Checkbox
-                status={fixed ? 'checked' : 'unchecked'}
+              </Pressable>
+              <Pressable
+                style={styles.tog}
                 onPress={() => {
                   haptic.select();
                   setFixed(!fixed);
                 }}
-                color={colors.brand}
-              />
-              <Text style={[styles.hint, { color: colors.grayLight }]}>
-                開始時刻を固定し、スケジューラの移動を許可しない
-              </Text>
+              >
+                <Checkbox
+                  status={fixed ? 'checked' : 'unchecked'}
+                  onPress={() => {
+                    haptic.select();
+                    setFixed(!fixed);
+                  }}
+                  color={colors.brand}
+                />
+                <Text style={[styles.togLabel, { color: colors.black }]}>
+                  時間固定
+                </Text>
+              </Pressable>
+              <View style={styles.abandonEdit}>
+                <Text style={[styles.abandonLabel, { color: colors.gray }]}>
+                  捨てづらさ
+                </Text>
+                <Slider
+                  value={abandonability}
+                  onValueChange={setAbandonability}
+                  minimumValue={0}
+                  maximumValue={1}
+                  step={0.25}
+                  minimumTrackTintColor={colors.brand}
+                  style={styles.abandonSlider}
+                />
+                <Text style={[styles.abandonVal, { color: colors.brand }]}>
+                  {abandonability.toFixed(2)}
+                </Text>
+              </View>
             </View>
           ) : (
             <Pressable
-              style={styles.toggleItem}
-              onPress={() => handleSectionTap('fixed')}
+              style={styles.flagrow}
+              onPress={() => handleSectionTap('flags')}
             >
-              <Checkbox
-                status={task.fixed ? 'checked' : 'unchecked'}
-                disabled
-                color={colors.brand}
-              />
+              <View
+                style={[
+                  styles.flagChip,
+                  {
+                    backgroundColor: colors.surfaceTint,
+                    borderColor: colors.separator,
+                  },
+                ]}
+              >
+                <Text style={[styles.flagChipText, { color: colors.gray }]}>
+                  並列実行
+                </Text>
+                <Text
+                  style={[
+                    styles.flagChipText,
+                    {
+                      color: task.parallelizable ? colors.brand : colors.red,
+                    },
+                  ]}
+                >
+                  {task.parallelizable ? '✓' : 'off'}
+                </Text>
+              </View>
+              <View
+                style={[
+                  styles.flagChip,
+                  {
+                    backgroundColor: colors.surfaceTint,
+                    borderColor: colors.separator,
+                  },
+                ]}
+              >
+                <Text style={[styles.flagChipText, { color: colors.gray }]}>
+                  並列受入
+                </Text>
+                <Text
+                  style={[
+                    styles.flagChipText,
+                    {
+                      color: task.allows_parallel ? colors.brand : colors.red,
+                    },
+                  ]}
+                >
+                  {task.allows_parallel ? '✓' : 'off'}
+                </Text>
+              </View>
+              <View
+                style={[
+                  styles.flagChip,
+                  {
+                    backgroundColor: colors.surfaceTint,
+                    borderColor: colors.separator,
+                  },
+                ]}
+              >
+                <Text style={[styles.flagChipText, { color: colors.gray }]}>
+                  時間固定
+                </Text>
+                <Text
+                  style={[
+                    styles.flagChipText,
+                    { color: task.fixed ? colors.brand : colors.red },
+                  ]}
+                >
+                  {task.fixed ? '✓' : 'off'}
+                </Text>
+              </View>
+              <View
+                style={[
+                  styles.flagChip,
+                  {
+                    backgroundColor: colors.surfaceTint,
+                    borderColor: colors.separator,
+                  },
+                ]}
+              >
+                <Text style={[styles.flagChipText, { color: colors.gray }]}>
+                  捨てづらさ
+                </Text>
+                <Text style={[styles.flagChipText, { color: colors.black }]}>
+                  {task.abandonability.toFixed(2)}
+                </Text>
+                <View style={styles.pips}>
+                  {[0, 1, 2, 3, 4].map((i) => (
+                    <View
+                      key={i}
+                      style={[
+                        styles.pip,
+                        {
+                          backgroundColor:
+                            i < filledPipCount
+                              ? colors.brand
+                              : colors.separator,
+                        },
+                      ]}
+                    />
+                  ))}
+                </View>
+              </View>
             </Pressable>
           )}
         </View>
 
-        {/* Deps — editable list + mini graph */}
-        <View style={styles.section}>
-          <View style={styles.depHeader}>
-            <Text style={[styles.sectionLabel, { color: colors.gray }]}>
-              依存 ({deps.length})
-            </Text>
-            {editing && (
-              <Button
-                mode="text"
-                compact
-                onPress={() => {
-                  haptic.light();
-                  setDepSearch('');
-                  setDepModalVisible(true);
-                }}
-                textColor={colors.brand}
+        {/* Habit link (#1146) */}
+        {habit && (
+          <>
+            <View style={styles.slabel}>
+              <Text style={[styles.slabelText, { color: colors.gray }]}>
+                HABIT
+              </Text>
+            </View>
+            <Pressable
+              style={styles.habitLinkRow}
+              onPress={() => {
+                haptic.light();
+                router.push(`/habit/${habit.id}`);
+              }}
+            >
+              <Ionicons name="repeat" size={16} color={colors.brand} />
+              <Text
+                style={[styles.habitLinkText, { color: colors.brand }]}
+                numberOfLines={1}
               >
-                + 追加
-              </Button>
-            )}
-          </View>
-          {!editing && (
+                {task.habit_step_id
+                  ? (() => {
+                      const step = habit.steps.find(
+                        (s) => s.id === task.habit_step_id,
+                      );
+                      return step
+                        ? `${habit.title} › ${step.title}`
+                        : habit.title;
+                    })()
+                  : habit.title}
+              </Text>
+              <Ionicons name="chevron-forward" size={16} color={colors.brand} />
+            </Pressable>
+          </>
+        )}
+
+        {/* (Parallel config + fixed moved into the stats grid, #1146) */}
+
+        {/* Deps (#1146): chips + always-embedded graph */}
+        <View style={styles.slabel}>
+          <Text style={[styles.slabelText, { color: colors.gray }]}>
+            依存 ({deps.length})
+          </Text>
+        </View>
+        {!editing && redundantEdges.length > 0 && (
+          <View style={{ marginHorizontal: 12, marginBottom: 4 }}>
             <RedundantDepWarning
               edges={redundantEdges}
               onResolve={resolveRedundantEdge}
@@ -1769,72 +2401,151 @@ export function TaskDetailView() {
                 return nt ? `#${nt.display_id} ${nt.title}` : ntitle;
               }}
             />
-          )}
-          {deps.length > 0 ? (
-            deps.map((depId) => {
-              const depTask = allTasks.find((t) => t.id === depId);
-              return (
-                <View key={depId} style={styles.depRow}>
+          </View>
+        )}
+        <View style={styles.depChips}>
+          {deps.map((depId) => {
+            const depTask = allTasks.find((t) => t.id === depId);
+            const depDone =
+              depTask?.status === 'completed' || depTask?.status === 'skipped';
+            return (
+              <View
+                key={depId}
+                style={[
+                  styles.depChip,
+                  {
+                    backgroundColor: colors.white,
+                    borderColor: colors.separator,
+                  },
+                ]}
+              >
+                <Ionicons
+                  name={depDone ? 'checkmark-circle' : 'ellipse-outline'}
+                  size={16}
+                  color={depDone ? colors.green : colors.brand}
+                />
+                <Text style={[styles.depChipNo, { color: colors.grayLight }]}>
+                  #{depTask?.display_id ?? depId.slice(0, 6)}
+                </Text>
+                <Pressable
+                  style={{ flex: 1 }}
+                  onPress={() => {
+                    if (!editing) {
+                      haptic.light();
+                      router.push(`/task/${depId}`);
+                    }
+                  }}
+                >
+                  <Text
+                    style={[styles.depChipTitle, { color: colors.black }]}
+                    numberOfLines={1}
+                  >
+                    {depTask?.title ?? depId.slice(0, 8) + '...'}
+                  </Text>
+                </Pressable>
+                {editing ? (
                   <Pressable
-                    style={{ flex: 1 }}
                     onPress={() => {
-                      if (!editing) {
-                        haptic.light();
-                        router.push(`/task/${depId}`);
-                      }
+                      haptic.light();
+                      setDeps(deps.filter((d) => d !== depId));
                     }}
                   >
-                    <Text style={styles.depLink}>
-                      •{' '}
-                      {depTask
-                        ? `#${depTask.display_id} ${depTask.title}`
-                        : depId.slice(0, 8) + '...'}{' '}
-                      ›
-                    </Text>
-                  </Pressable>
-                  {editing && (
-                    <IconButton
-                      icon="close"
+                    <Ionicons
+                      name="close-circle"
                       size={18}
-                      iconColor={colors.red}
-                      onPress={() => {
-                        haptic.light();
-                        setDeps(deps.filter((d) => d !== depId));
-                      }}
+                      color={colors.red}
                     />
-                  )}
-                </View>
-              );
-            })
-          ) : (
-            <Text style={[styles.sectionValue, { color: colors.black }]}>
-              (なし)
-            </Text>
+                  </Pressable>
+                ) : (
+                  <Ionicons
+                    name="chevron-forward"
+                    size={15}
+                    color={colors.grayLight}
+                  />
+                )}
+              </View>
+            );
+          })}
+          {deps.length === 0 && !editing && (
+            <Text style={[styles.cellSub, { color: colors.gray }]}>(なし)</Text>
           )}
-
-          {/* Dependency graph: connected component around this task */}
-          {detailGraphNodes.length > 1 && (
-            <View
-              style={[styles.miniGraph, { borderTopColor: colors.separator }]}
+          {editing && (
+            <Pressable
+              style={[styles.addDep, { borderColor: colors.brand }]}
+              onPress={() => {
+                haptic.light();
+                setDepSearch('');
+                setDepModalVisible(true);
+              }}
             >
-              <Text style={[styles.miniGraphLabel, { color: colors.gray }]}>
-                依存グラフ
+              <Ionicons name="add" size={18} color={colors.brand} />
+              <Text style={[styles.addDepText, { color: colors.brand }]}>
+                依存を追加
               </Text>
-              <DependencyGraph
-                nodes={detailGraphNodes}
-                edges={detailGraphEdges}
-                highlightTaskId={task.id}
-                height={240}
-                onTapNode={(tappedId) => {
-                  if (!editing) {
-                    haptic.light();
-                    router.push(`/task/${tappedId}`);
-                  }
-                }}
-              />
-            </View>
+            </Pressable>
           )}
         </View>
+
+        {/* Dependency graph: always embedded when connected (#1146) */}
+        {detailGraphNodes.length > 1 && (
+          <View
+            style={[
+              styles.graphBox,
+              { backgroundColor: colors.white, borderColor: colors.separator },
+            ]}
+          >
+            <DependencyGraph
+              nodes={detailGraphNodes}
+              edges={detailGraphEdges}
+              highlightTaskId={task.id}
+              height={240}
+              onTapNode={(tappedId) => {
+                if (!editing) {
+                  haptic.light();
+                  router.push(`/task/${tappedId}`);
+                }
+              }}
+            />
+          </View>
+        )}
+
+        {/* Description (#1146) */}
+        <View style={styles.slabel}>
+          <Text style={[styles.slabelText, { color: colors.gray }]}>説明</Text>
+        </View>
+        {editing ? (
+          <PaperTextInput
+            mode="outlined"
+            value={description}
+            onChangeText={setDescription}
+            multiline
+            numberOfLines={4}
+            outlineColor={colors.separator}
+            activeOutlineColor={colors.brand}
+            style={{ marginHorizontal: 12, minHeight: 84 }}
+          />
+        ) : (
+          <View style={styles.descBox}>
+            <Text
+              style={[styles.descText, { color: colors.gray }]}
+              numberOfLines={descExpanded ? undefined : 3}
+            >
+              {task.description || '(なし)'}
+            </Text>
+            {(task.description?.length ?? 0) > 60 && (
+              <Pressable onPress={() => setDescExpanded((v) => !v)}>
+                <Text
+                  style={[
+                    styles.linkBtnText,
+                    { color: colors.brand, marginTop: 4 },
+                  ]}
+                >
+                  {descExpanded ? '閉じる' : '続きを読む'}
+                </Text>
+              </Pressable>
+            )}
+          </View>
+        )}
       </ScrollView>
 
       {/* Big save button — visible only in edit mode */}

@@ -158,6 +158,13 @@ export function taskCardColor(
 
 export const ABANDON_STEPS = [0.0, 0.25, 0.5, 0.75, 1.0] as const;
 
+// Number of filled pips (0..4) for a 5-segment abandonability meter.
+// 0.0 → 0 filled, 0.25 → 1, 0.5 → 2, 0.75 → 3, 1.0 → 4.
+export function filledPips(abandonability: number): number {
+  return ABANDON_STEPS.slice(0, 4).filter((s) => s <= abandonability - 1e-9)
+    .length;
+}
+
 // Light theme colors (default, backward-compatible export)
 // Neutral scale is tinted slightly toward the brand purple to keep the
 // whole UI coherent while keeping white/black semantics intact.

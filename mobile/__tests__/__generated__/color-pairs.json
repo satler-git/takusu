@@ -1261,35 +1261,7 @@
       "source": "text"
     },
     {
-      "fg": "black",
-      "bg": "white",
-      "file": "views/HabitDetailView.tsx",
-      "kind": "parent-child",
-      "source": "text"
-    },
-    {
-      "fg": "black",
-      "bg": "surfaceTint",
-      "file": "views/HabitDetailView.tsx",
-      "kind": "parent-child",
-      "source": "text"
-    },
-    {
-      "fg": "black",
-      "bg": "surface",
-      "file": "views/HabitDetailView.tsx",
-      "kind": "parent-child",
-      "source": "text"
-    },
-    {
-      "fg": "brand",
-      "bg": "white",
-      "file": "views/HabitDetailView.tsx",
-      "kind": "parent-child",
-      "source": "text"
-    },
-    {
-      "fg": "grayLight",
+      "fg": "success",
       "bg": "white",
       "file": "views/HabitDetailView.tsx",
       "kind": "parent-child",
@@ -1297,14 +1269,7 @@
     },
     {
       "fg": "brand",
-      "bg": "surfaceTint",
-      "file": "views/HabitDetailView.tsx",
-      "kind": "parent-child",
-      "source": "text"
-    },
-    {
-      "fg": "brand",
-      "bg": "surface",
+      "bg": "brandPressed",
       "file": "views/HabitDetailView.tsx",
       "kind": "parent-child",
       "source": "text"
@@ -1312,6 +1277,69 @@
     {
       "fg": "gray",
       "bg": "surface",
+      "file": "views/HabitDetailView.tsx",
+      "kind": "parent-child",
+      "source": "text"
+    },
+    {
+      "fg": "black",
+      "bg": "surface",
+      "file": "views/HabitDetailView.tsx",
+      "kind": "parent-child",
+      "source": "text"
+    },
+    {
+      "fg": "black",
+      "bg": "white",
+      "file": "views/HabitDetailView.tsx",
+      "kind": "parent-child",
+      "source": "text"
+    },
+    {
+      "fg": "brand",
+      "bg": "white",
+      "file": "views/HabitDetailView.tsx",
+      "kind": "parent-child",
+      "source": "text"
+    },
+    {
+      "fg": "gray",
+      "bg": "surfaceTint",
+      "file": "views/HabitDetailView.tsx",
+      "kind": "parent-child",
+      "source": "text"
+    },
+    {
+      "fg": "brand",
+      "bg": "surfaceTint",
+      "file": "views/HabitDetailView.tsx",
+      "kind": "parent-child",
+      "source": "text"
+    },
+    {
+      "fg": "red",
+      "bg": "surfaceTint",
+      "file": "views/HabitDetailView.tsx",
+      "kind": "parent-child",
+      "source": "text"
+    },
+    {
+      "fg": "black",
+      "bg": "surfaceTint",
+      "file": "views/HabitDetailView.tsx",
+      "kind": "parent-child",
+      "source": "text"
+    },
+    {
+      "fg": "green",
+      "bg": "white",
+      "file": "views/HabitDetailView.tsx",
+      "kind": "parent-child",
+      "source": "text"
+    },
+    {
+      "fg": "red",
+      "bg": "white",
       "file": "views/HabitDetailView.tsx",
       "kind": "parent-child",
       "source": "text"
@@ -1340,13 +1368,6 @@
     {
       "fg": "grayLight",
       "bg": "white",
-      "file": "views/HabitDetailView.tsx",
-      "kind": "parent-child",
-      "source": "icon"
-    },
-    {
-      "fg": "brand",
-      "bg": "surfaceTint",
       "file": "views/HabitDetailView.tsx",
       "kind": "parent-child",
       "source": "icon"
@@ -1758,6 +1779,13 @@
       "source": "text"
     },
     {
+      "fg": "white",
+      "bg": "green",
+      "file": "views/TaskDetailView.tsx",
+      "kind": "parent-child",
+      "source": "text"
+    },
+    {
       "fg": "black",
       "bg": "white",
       "file": "views/TaskDetailView.tsx",
@@ -1772,6 +1800,20 @@
       "source": "text"
     },
     {
+      "fg": "brand",
+      "bg": "white",
+      "file": "views/TaskDetailView.tsx",
+      "kind": "parent-child",
+      "source": "text"
+    },
+    {
+      "fg": "success",
+      "bg": "white",
+      "file": "views/TaskDetailView.tsx",
+      "kind": "parent-child",
+      "source": "text"
+    },
+    {
       "fg": "grayLight",
       "bg": "white",
       "file": "views/TaskDetailView.tsx",
@@ -1779,32 +1821,32 @@
       "source": "text"
     },
     {
-      "fg": "brand",
-      "bg": "white",
+      "fg": "gray",
+      "bg": "surfaceTint",
       "file": "views/TaskDetailView.tsx",
       "kind": "parent-child",
       "source": "text"
     },
     {
       "fg": "brand",
-      "bg": "white",
+      "bg": "surfaceTint",
       "file": "views/TaskDetailView.tsx",
       "kind": "parent-child",
-      "source": "icon"
+      "source": "text"
     },
     {
-      "fg": "gray",
-      "bg": "white",
+      "fg": "red",
+      "bg": "surfaceTint",
       "file": "views/TaskDetailView.tsx",
       "kind": "parent-child",
-      "source": "icon"
+      "source": "text"
     },
     {
-      "fg": "white",
-      "bg": "red",
+      "fg": "black",
+      "bg": "surfaceTint",
       "file": "views/TaskDetailView.tsx",
       "kind": "parent-child",
-      "source": "icon"
+      "source": "text"
     },
     {
       "fg": "white",
@@ -1821,6 +1863,34 @@
       "source": "icon"
     },
     {
+      "fg": "white",
+      "bg": "brand",
+      "file": "views/TaskDetailView.tsx",
+      "kind": "parent-child",
+      "source": "icon"
+    },
+    {
+      "fg": "brand",
+      "bg": "white",
+      "file": "views/TaskDetailView.tsx",
+      "kind": "parent-child",
+      "source": "icon"
+    },
+    {
+      "fg": "success",
+      "bg": "white",
+      "file": "views/TaskDetailView.tsx",
+      "kind": "parent-child",
+      "source": "icon"
+    },
+    {
+      "fg": "red",
+      "bg": "white",
+      "file": "views/TaskDetailView.tsx",
+      "kind": "parent-child",
+      "source": "icon"
+    },
+    {
       "fg": "grayLight",
       "bg": "white",
       "file": "views/TaskDetailView.tsx",
@@ -1828,8 +1898,8 @@
       "source": "icon"
     },
     {
-      "fg": "white",
-      "bg": "brand",
+      "fg": "gray",
+      "bg": "white",
       "file": "views/TaskDetailView.tsx",
       "kind": "parent-child",
       "source": "icon"
@@ -1856,7 +1926,49 @@
       "file": "components/TaskCard.tsx",
       "kind": "parent-child",
       "source": "text"
+    },
+    {
+      "fg": "textOnCard",
+      "bg": "palette:habitColorFor",
+      "file": "views/HabitDetailView.tsx",
+      "kind": "parent-child",
+      "source": "text"
+    },
+    {
+      "fg": "textOnCard",
+      "bg": "palette:habitColorFor",
+      "file": "views/HabitDetailView.tsx",
+      "kind": "parent-child",
+      "source": "icon"
+    },
+    {
+      "fg": "textOnCardSecondary",
+      "bg": "palette:habitColorFor",
+      "file": "views/HabitDetailView.tsx",
+      "kind": "parent-child",
+      "source": "icon"
+    },
+    {
+      "fg": "textOnCard",
+      "bg": "palette:taskCardColor",
+      "file": "views/TaskDetailView.tsx",
+      "kind": "parent-child",
+      "source": "text"
+    },
+    {
+      "fg": "textOnCardSecondary",
+      "bg": "palette:taskCardColor",
+      "file": "views/TaskDetailView.tsx",
+      "kind": "parent-child",
+      "source": "text"
+    },
+    {
+      "fg": "textOnCard",
+      "bg": "palette:taskCardColor",
+      "file": "views/TaskDetailView.tsx",
+      "kind": "parent-child",
+      "source": "icon"
     }
   ],
-  "generatedAt": "2026-08-01T15:10:18.278Z"
+  "generatedAt": "2026-08-01T16:04:19.226Z"
 }
