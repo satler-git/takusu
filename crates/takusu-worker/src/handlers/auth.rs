@@ -2,6 +2,7 @@ use worker::{D1Database, Env, Request, Response};
 
 use crate::auth;
 use crate::error::WorkerError;
+use crate::storage_d1::D1PreparedStatementExt;
 
 pub async fn require_auth(req: &Request, env: &Env) -> Result<(), WorkerError> {
     let claims = auth::verify_token(req, env)?;
@@ -17,7 +18,7 @@ pub async fn require_auth(req: &Request, env: &Env) -> Result<(), WorkerError> {
         "SELECT COUNT(*) AS c FROM tokens WHERE jti = ?1 AND revoked_at IS NULL",
         claims.jti
     )?;
-    let row: Option<CountRow> = stmt.first(None).await.map_err(WorkerError::Worker)?;
+    let row: Option<CountRow> = stmt.first_t().await?;
     if row.map(|r| r.c > 0).unwrap_or(false) {
         Ok(())
     } else {

@@ -103,14 +103,97 @@ pub(super) struct NowRow {
 
 // ── D1Result helpers ────────────────────────────────────────────────────
 
+/// Field names that D1 returns as `0` / `1` (or `0.0` / `1.0`) instead of
+/// booleans. These are converted to `true` / `false` before deserializing into
+/// the model so that `#[serde(transparent)]` / plain `bool` fields keep working.
+const D1_BOOL_FIELDS: &[&str] = &[
+    "active",
+    "allows_parallel",
+    "built_in",
+    "enabled",
+    "fixed",
+    "parallelizable",
+    "user_edited",
+    "warm_start",
+];
+
+fn normalize_d1_bools(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Object(map) => {
+            for (key, v) in map.iter_mut() {
+                if D1_BOOL_FIELDS.contains(&key.as_str()) {
+                    if let Some(b) = number_as_bool(v) {
+                        *v = serde_json::Value::Bool(b);
+                    }
+                } else {
+                    normalize_d1_bools(v);
+                }
+            }
+        }
+        serde_json::Value::Array(arr) => {
+            for v in arr.iter_mut() {
+                normalize_d1_bools(v);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn number_as_bool(value: &serde_json::Value) -> Option<bool> {
+    let n = value.as_f64()?;
+    if n == 0.0 {
+        Some(false)
+    } else if n == 1.0 {
+        Some(true)
+    } else {
+        None
+    }
+}
+
 pub(super) async fn d1_all<T: serde::de::DeserializeOwned>(
     stmt: &worker::D1PreparedStatement,
 ) -> StorageResult<Vec<T>> {
-    stmt.all()
+    let raw: Vec<serde_json::Value> = stmt
+        .all()
         .await
         .map_err(d1_err)?
-        .results::<T>()
-        .map_err(d1_err)
+        .results::<serde_json::Value>()
+        .map_err(d1_err)?;
+    let mut out = Vec::with_capacity(raw.len());
+    for mut value in raw {
+        normalize_d1_bools(&mut value);
+        out.push(serde_json::from_value(value).map_err(|e| {
+            StorageError::Internal(format!("D1 row deserialization failed: {e}"))
+        })?);
+    }
+    Ok(out)
+}
+
+pub(super) async fn d1_first<T: serde::de::DeserializeOwned>(
+    stmt: &worker::D1PreparedStatement,
+) -> StorageResult<Option<T>> {
+    let value: Option<serde_json::Value> = stmt.first(None).await.map_err(d1_err)?;
+    match value {
+        Some(mut v) => {
+            normalize_d1_bools(&mut v);
+            serde_json::from_value(v)
+                .map_err(|e| StorageError::Internal(format!("D1 row deserialization failed: {e}")))
+                .map(Some)
+        }
+        None => Ok(None),
+    }
+}
+
+#[async_trait::async_trait(?Send)]
+pub(crate) trait D1PreparedStatementExt {
+    async fn first_t<T: serde::de::DeserializeOwned>(&self) -> StorageResult<Option<T>>;
+}
+
+#[async_trait::async_trait(?Send)]
+impl D1PreparedStatementExt for worker::D1PreparedStatement {
+    async fn first_t<T: serde::de::DeserializeOwned>(&self) -> StorageResult<Option<T>> {
+        d1_first::<T>(self).await
+    }
 }
 
 // ── ID resolution helpers ───────────────────────────────────────────────
@@ -238,16 +321,15 @@ pub(super) async fn allocate_display_id(
         let row: Option<DisplayIdRow> = seq_stmt
             .bind(&[JsValue::from_str(habit_id)])
             .map_err(d1_err)?
-            .first(None)
-            .await
-            .map_err(d1_err)?;
+            .first_t()
+            .await?;
         row.ok_or_else(|| StorageError::Internal("habit display_id sequence is empty".into()))
             .map(|r| r.display_id)
     } else {
         let seq_stmt = database.prepare(
             "UPDATE task_display_id_seq SET next_id = next_id + 1 RETURNING next_id - 1 AS display_id",
         );
-        let row: Option<DisplayIdRow> = seq_stmt.first(None).await.map_err(d1_err)?;
+        let row: Option<DisplayIdRow> = seq_stmt.first_t().await?;
         row.ok_or_else(|| StorageError::Internal("display_id sequence is empty".into()))
             .map(|r| r.display_id)
     }
@@ -258,9 +340,8 @@ pub(super) async fn select_one_task(database: &D1Database, id: &str) -> StorageR
     let row: Option<TaskRow> = stmt
         .bind(&[JsValue::from_str(id)])
         .map_err(d1_err)?
-        .first(None)
-        .await
-        .map_err(d1_err)?;
+        .first_t()
+        .await?;
     row.ok_or_else(|| not_found(format!("task {id} not found")))
 }
 
@@ -269,9 +350,8 @@ pub(super) async fn select_one_habit(database: &D1Database, id: &str) -> Storage
     let row: Option<HabitRow> = stmt
         .bind(&[JsValue::from_str(id)])
         .map_err(d1_err)?
-        .first(None)
-        .await
-        .map_err(d1_err)?;
+        .first_t()
+        .await?;
     row.ok_or_else(|| not_found(format!("habit {id} not found")))
 }
 
@@ -302,9 +382,8 @@ pub(super) async fn select_one_skill(database: &D1Database, slug: &str) -> Stora
     let row: Option<SkillRow> = stmt
         .bind(&[JsValue::from_str(slug)])
         .map_err(d1_err)?
-        .first(None)
-        .await
-        .map_err(d1_err)?;
+        .first_t()
+        .await?;
     row.ok_or_else(|| not_found(format!("skill {slug} not found")))
 }
 
@@ -472,9 +551,8 @@ pub(super) async fn check_progress_idempotency<T: serde::de::DeserializeOwned>(
     let row: Option<ProgressOpRow> = stmt
         .bind(&[JsValue::from_str(operation_id)])
         .map_err(d1_err)?
-        .first(None)
-        .await
-        .map_err(d1_err)?;
+        .first_t()
+        .await?;
     if let Some(row) = row {
         if row.request_hash != request_hash {
             return Err(StorageError::BadRequest(

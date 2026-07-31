@@ -78,6 +78,25 @@ impl FromStr for PermissionKey {
     }
 }
 
+impl Serialize for PermissionKey {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.collect_str(self)
+    }
+}
+
+impl<'de> Deserialize<'de> for PermissionKey {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Self::from_str(&s).map_err(de::Error::custom)
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum PermissionKeyParseError {
     #[error("permission key must be 'target:operation' (got '{0}')")]
@@ -94,7 +113,8 @@ pub enum PermissionKeyParseError {
 /// clients can send it directly without wrapping it in an `allow` field.
 /// Internally the keys are typed (`PermissionKey`) to prevent typos and avoid
 /// per-lookup string allocation.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct Permissions {
     pub allow: BTreeMap<PermissionKey, bool>,
 }
@@ -136,35 +156,6 @@ impl Permissions {
     ) {
         self.allow
             .insert(PermissionKey::new(target.into(), operation.into()), allowed);
-    }
-}
-
-impl Serialize for Permissions {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        use serde::ser::SerializeMap;
-        let mut map = serializer.serialize_map(Some(self.allow.len()))?;
-        for (key, &val) in &self.allow {
-            map.serialize_entry(&key.to_string(), &val)?;
-        }
-        map.end()
-    }
-}
-
-impl<'de> Deserialize<'de> for Permissions {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let flat: BTreeMap<String, bool> = BTreeMap::deserialize(deserializer)?;
-        let mut allow = BTreeMap::new();
-        for (k, v) in flat {
-            let key = PermissionKey::from_str(&k).map_err(de::Error::custom)?;
-            allow.insert(key, v);
-        }
-        Ok(Self { allow })
     }
 }
 

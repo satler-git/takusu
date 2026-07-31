@@ -21,11 +21,9 @@ pub struct TaskRow {
     pub sigma_minutes: i64,
     #[serde(default)]
     pub depends: DependencyList,
-    #[serde(with = "takusu_types::bool_compat", default)]
-    #[schemars(with = "bool")]
+    #[serde(default)]
     pub parallelizable: bool,
-    #[serde(with = "takusu_types::bool_compat", default)]
-    #[schemars(with = "bool")]
+    #[serde(default)]
     pub allows_parallel: bool,
     pub abandonability: Abandonability,
     #[serde(with = "takusu_types::enum_serde")]
@@ -34,11 +32,9 @@ pub struct TaskRow {
     pub status: takusu_types::TaskStatus,
     pub habit_id: Option<String>,
     pub ical_uid: Option<String>,
-    #[serde(with = "takusu_types::bool_compat", default)]
-    #[schemars(with = "bool")]
+    #[serde(default)]
     pub user_edited: bool,
-    #[serde(with = "takusu_types::bool_compat", default)]
-    #[schemars(with = "bool")]
+    #[serde(default)]
     pub fixed: bool,
     /// The habit step that generated this task, if any (#95). NULL for simple
     /// (step-less) habits and manually created tasks.
@@ -215,18 +211,14 @@ pub struct HabitRow {
     pub end_time: TimeOfDay,
     pub avg_minutes: i64,
     pub sigma_minutes: i64,
-    #[serde(with = "takusu_types::bool_compat", default)]
-    #[schemars(with = "bool")]
+    #[serde(default)]
     pub parallelizable: bool,
-    #[serde(with = "takusu_types::bool_compat", default)]
-    #[schemars(with = "bool")]
+    #[serde(default)]
     pub allows_parallel: bool,
     pub abandonability: Abandonability,
-    #[serde(with = "takusu_types::bool_compat", default)]
-    #[schemars(with = "bool")]
+    #[serde(default)]
     pub active: bool,
-    #[serde(with = "takusu_types::bool_compat", default)]
-    #[schemars(with = "bool")]
+    #[serde(default)]
     pub fixed: bool,
     /// Window mode for generated tasks (#window_mode).
     /// `'day'` (default) = occurrence day's start_time..end_time.
@@ -364,15 +356,12 @@ pub struct HabitStepRow {
     pub end_time: TimeOfDay,
     pub avg_minutes: i64,
     pub sigma_minutes: i64,
-    #[serde(with = "takusu_types::bool_compat", default)]
-    #[schemars(with = "bool")]
+    #[serde(default)]
     pub parallelizable: bool,
-    #[serde(with = "takusu_types::bool_compat", default)]
-    #[schemars(with = "bool")]
+    #[serde(default)]
     pub allows_parallel: bool,
     pub abandonability: Abandonability,
-    #[serde(with = "takusu_types::bool_compat", default)]
-    #[schemars(with = "bool")]
+    #[serde(default)]
     pub fixed: bool,
     /// JSON array of step ids this step depends on (within the same habit).
     #[serde(default)]
@@ -638,8 +627,7 @@ pub struct TokenCreateResponse {
 #[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
 pub struct GoogleCalSettingsRow {
     pub id: String,
-    #[serde(with = "takusu_types::bool_compat", default)]
-    #[schemars(with = "bool")]
+    #[serde(default)]
     pub enabled: bool,
     pub calendar_id: String,
     pub client_id: String,
@@ -694,8 +682,7 @@ pub struct SettingsRow {
     #[serde(default)]
     pub seed: Option<i64>,
     /// 前回スケジュールから priority/ALNS の初期解を warm start する。
-    #[serde(with = "takusu_types::bool_compat", default)]
-    #[schemars(with = "bool")]
+    #[serde(default)]
     pub warm_start: bool,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
@@ -708,8 +695,7 @@ pub struct SkillRow {
     pub name: String,
     pub description: String,
     pub body: String,
-    #[serde(with = "takusu_types::bool_compat", default)]
-    #[schemars(with = "bool")]
+    #[serde(default)]
     pub built_in: bool,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
@@ -874,12 +860,7 @@ pub struct UpdateSettings {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub seed: Option<i64>,
     /// 前回スケジュールから priority/ALNS の初期解を warm start する。
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "takusu_types::option_bool_compat"
-    )]
-    #[schemars(with = "Option<bool>")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub warm_start: Option<bool>,
 }
 
@@ -1015,64 +996,6 @@ pub struct HabitEstimateResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn bool_compat_deserializes_true_false() {
-        #[derive(serde::Deserialize)]
-        struct Wrap {
-            #[serde(with = "takusu_types::bool_compat", default)]
-            v: bool,
-        }
-        assert!(serde_json::from_str::<Wrap>(r#"{"v":true}"#).unwrap().v);
-        assert!(!serde_json::from_str::<Wrap>(r#"{"v":false}"#).unwrap().v);
-    }
-
-    #[test]
-    fn bool_compat_deserializes_numbers_as_bool() {
-        // Non-zero numbers → true, zero → false. This is the compat path for
-        // clients that send 0/1 instead of booleans (e.g. some CLI/worker paths).
-        #[derive(serde::Deserialize)]
-        struct Wrap {
-            #[serde(with = "takusu_types::bool_compat", default)]
-            v: bool,
-        }
-        assert!(serde_json::from_str::<Wrap>(r#"{"v":1}"#).unwrap().v);
-        assert!(!serde_json::from_str::<Wrap>(r#"{"v":0}"#).unwrap().v);
-        // Floats: 0.0 → false, anything else → true.
-        assert!(!serde_json::from_str::<Wrap>(r#"{"v":0.0}"#).unwrap().v);
-        assert!(serde_json::from_str::<Wrap>(r#"{"v":2.5}"#).unwrap().v);
-    }
-
-    #[test]
-    fn bool_compat_deserializes_null_as_false() {
-        #[derive(serde::Deserialize)]
-        struct Wrap {
-            #[serde(with = "takusu_types::bool_compat", default)]
-            v: bool,
-        }
-        assert!(!serde_json::from_str::<Wrap>(r#"{"v":null}"#).unwrap().v);
-    }
-
-    #[test]
-    fn bool_compat_rejects_strings() {
-        #[derive(serde::Deserialize)]
-        struct Wrap {
-            #[serde(with = "takusu_types::bool_compat")]
-            #[allow(dead_code)]
-            v: bool,
-        }
-        assert!(serde_json::from_str::<Wrap>(r#"{"v":"true"}"#).is_err());
-    }
-
-    #[test]
-    fn bool_compat_defaults_to_false_when_missing() {
-        #[derive(serde::Deserialize)]
-        struct Wrap {
-            #[serde(with = "takusu_types::bool_compat", default)]
-            v: bool,
-        }
-        assert!(!serde_json::from_str::<Wrap>(r#"{}"#).unwrap().v);
-    }
 
     #[test]
     fn task_row_defaults_optional_bools_when_missing() {

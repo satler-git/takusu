@@ -1,12 +1,10 @@
 pub mod abandonability;
-pub mod bool_compat;
 pub mod date;
 pub mod duration_seconds;
 pub mod enum_label;
 pub mod id_ref;
 pub mod json_string;
 pub mod jwt;
-pub mod option_bool_compat;
 pub mod planner;
 pub mod quantity;
 pub mod similarity;
