@@ -262,6 +262,111 @@ pub struct CreateSessionRequest {
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
+pub struct ResumeSessionRequest {
+    #[serde(default)]
+    pub session_id: Option<String>,
+    #[serde(default)]
+    pub permissions: Option<crate::Permissions>,
+    #[serde(default)]
+    pub history: Vec<HistoryMessage>,
+    #[serde(default)]
+    pub pending_approval: Option<crate::ApprovalRequest>,
+    #[serde(default)]
+    pub schedule_dirty: Option<bool>,
+    #[serde(default)]
+    pub compaction_summary: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ResumeSessionResponse {
+    pub session_id: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "role", rename_all = "snake_case")]
+pub enum HistoryMessage {
+    System { content: String },
+    User { content: String },
+    Assistant {
+        #[serde(default)]
+        content: Option<String>,
+        #[serde(default)]
+        tool_calls: Vec<HistoryToolCall>,
+    },
+    Tool {
+        tool_call_id: String,
+        content: String,
+        #[serde(default)]
+        is_error: bool,
+    },
+}
+
+fn empty_object() -> serde_json::Value {
+    serde_json::Value::Object(serde_json::Map::new())
+}
+
+fn deserialize_arguments<'de, D>(deserializer: D) -> Result<serde_json::Value, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    match value {
+        serde_json::Value::Object(_) => Ok(value),
+        _ => Err(serde::de::Error::custom(
+            "tool call arguments must be a JSON object",
+        )),
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct HistoryToolCall {
+    pub id: String,
+    pub name: String,
+    #[serde(default = "empty_object", deserialize_with = "deserialize_arguments")]
+    pub arguments: serde_json::Value,
+}
+
+impl From<HistoryMessage> for crate::llm::Message {
+    fn from(msg: HistoryMessage) -> Self {
+        match msg {
+            HistoryMessage::System { content } => Self::System(content),
+            HistoryMessage::User { content } => Self::User(content),
+            HistoryMessage::Assistant {
+                content,
+                tool_calls,
+            } => {
+                if tool_calls.is_empty() {
+                    Self::Assistant(crate::llm::AssistantContent::Text(
+                        content.unwrap_or_default(),
+                    ))
+                } else {
+                    Self::Assistant(crate::llm::AssistantContent::ToolCalls {
+                        text: content,
+                        calls: tool_calls
+                            .into_iter()
+                            .map(|tc| crate::llm::ToolCall {
+                                id: tc.id,
+                                name: tc.name,
+                                arguments: tc.arguments,
+                            })
+                            .collect(),
+                    })
+                }
+            }
+            HistoryMessage::Tool {
+                tool_call_id,
+                content,
+                is_error,
+            } => Self::ToolResult {
+                call_id: tool_call_id,
+                content,
+                is_error,
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct UpdateSessionSettings {
     #[serde(default)]
     pub permissions: Option<crate::Permissions>,
@@ -382,6 +487,7 @@ pub fn router(state: Arc<AgentApiState>) -> Router {
         .route("/capabilities", get(capabilities))
         .route("/settings", put(update_settings))
         .route("/sessions", post(create_session))
+        .route("/sessions/resume", post(resume_session))
         .route("/sessions/{id}/turns", post(run_turn))
         .route("/sessions/{id}/turns/stream", post(run_turn_stream))
         .route(
@@ -554,6 +660,84 @@ async fn create_session(
     Json(Versioned {
         version: API_VERSION,
         value: CreateSessionResponse { session_id: id },
+    })
+    .into_response()
+}
+
+async fn resume_session(
+    State(state): State<Arc<AgentApiState>>,
+    headers: HeaderMap,
+    Json(body): Json<Versioned<ResumeSessionRequest>>,
+) -> Response {
+    if let Err(status) = auth_token(&state, &headers).await {
+        return status.into_response();
+    }
+    if body.version != API_VERSION {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+
+    let config = state.config.read().await;
+    let mut session = match state.factory.create(&config, state.token.clone()) {
+        Ok(session) => session,
+        Err(error) => return agent_error(error),
+    };
+    drop(config);
+
+    if body.value.session_id.as_ref().is_some_and(|id| id.trim().is_empty()) {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    let requested_id = body.value.session_id;
+    if let Some(id) = &requested_id {
+        session.set_session_id(id.clone());
+    }
+
+    if let Some(permissions) = body.value.permissions
+        && let Err(e) = session.set_session_permissions(permissions)
+    {
+        return agent_error(e);
+    }
+
+    let history_len = body.value.history.len();
+    let messages: Vec<crate::llm::Message> =
+        body.value.history.into_iter().map(Into::into).collect();
+    if let Err(e) = session.set_history(messages) {
+        return agent_error(e);
+    }
+
+    if let Some(approval) = body.value.pending_approval
+        && let Err(e) = session.set_pending_approval(approval)
+    {
+        return agent_error(e);
+    }
+
+    if let Some(summary) = body.value.compaction_summary
+        && let Err(e) = session.set_compaction_summary(Some(summary))
+    {
+        return agent_error(e);
+    }
+
+    if let Some(dirty) = body.value.schedule_dirty
+        && let Err(e) = session.set_schedule_dirty(dirty)
+    {
+        return agent_error(e);
+    }
+
+    let session_id = session.session_id().to_string();
+    let session = Arc::new(session);
+    let mut sessions = match state.sessions.lock() {
+        Ok(guard) => guard,
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    };
+    if let Some(id) = &requested_id
+        && sessions.get(id).is_some()
+    {
+        return StatusCode::CONFLICT.into_response();
+    }
+    sessions.insert(session_id.clone(), session);
+    tracing::info!(session_id = %session_id, history_len, "agent session resumed");
+    Json(Versioned {
+        version: API_VERSION,
+        value: ResumeSessionResponse { session_id },
     })
     .into_response()
 }
@@ -1048,7 +1232,7 @@ fn agent_error(error: AgentError) -> Response {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
     use axum::Json;
@@ -1170,6 +1354,50 @@ mod tests {
                 finish_reason: Some(crate::llm::FinishReason::Stop),
             })
         }
+    }
+
+    type RecordedCall = (Vec<crate::llm::Message>, Vec<crate::OpenAITool>);
+
+    #[derive(Clone)]
+    struct RecordingLlm {
+        calls: Arc<Mutex<Vec<RecordedCall>>>,
+    }
+
+    impl RecordingLlm {
+        fn new() -> (Self, Arc<Mutex<Vec<RecordedCall>>>) {
+            let calls = Arc::new(Mutex::new(Vec::new()));
+            (Self { calls: calls.clone() }, calls)
+        }
+
+        fn with_calls(calls: Arc<Mutex<Vec<RecordedCall>>>) -> Self {
+            Self { calls }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl crate::llm::LlmClient for RecordingLlm {
+        async fn chat(
+            &self,
+            messages: &[crate::llm::Message],
+            tools: &[crate::OpenAITool],
+        ) -> Result<crate::llm::LlmResponse, crate::llm::LlmError> {
+            self.calls.lock().unwrap().push((messages.to_vec(), tools.to_vec()));
+            Ok(crate::llm::LlmResponse {
+                content: crate::llm::LlmResponseContent::Text("ok".into()),
+                prompt_tokens: None,
+                finish_reason: Some(crate::llm::FinishReason::Stop),
+            })
+        }
+    }
+
+    fn make_factory(calls: Arc<Mutex<Vec<RecordedCall>>>) -> Arc<dyn SessionFactory> {
+        Arc::new(move |config: &AgentConfig, _token: Arc<RwLock<Arc<str>>>| {
+            Ok(AgentSession::new(
+                config.clone(),
+                ToolRegistry::new(),
+                RecordingLlm::with_calls(calls.clone()),
+            ))
+        })
     }
 
     fn make_session_state(token: &str) -> (Arc<AgentApiState>, Arc<ApiUserInputProvider>, String) {
@@ -1407,5 +1635,155 @@ mod tests {
         };
         let res = update_settings(State(state), auth_headers("wrong"), Json(body)).await;
         assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn resume_session_restores_history_and_runs() {
+        let (_llm, calls) = RecordingLlm::new();
+        let state = Arc::new(AgentApiState::new(
+            "test-token",
+            make_factory(calls.clone()),
+            Arc::new(ApiUserInputProvider::new()),
+            AgentConfig::default(),
+        ));
+
+        let body = Versioned {
+            version: API_VERSION,
+            value: ResumeSessionRequest {
+                session_id: Some("session-resume-1".into()),
+                permissions: None,
+                history: vec![
+                    HistoryMessage::User { content: "hello".into() },
+                    HistoryMessage::Assistant {
+                        content: Some("hi".into()),
+                        tool_calls: vec![],
+                    },
+                ],
+                pending_approval: None,
+                schedule_dirty: None,
+                compaction_summary: None,
+            },
+        };
+        let res = resume_session(State(state.clone()), auth_headers("test-token"), Json(body)).await;
+        assert_eq!(res.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        let id = value["session_id"].as_str().unwrap();
+
+        let turn_body = Versioned {
+            version: API_VERSION,
+            value: TurnRequest {
+                text: "world".into(),
+                idempotency_key: None,
+            },
+        };
+        let res = run_turn(
+            State(state),
+            Path(id.to_string()),
+            auth_headers("test-token"),
+            Json(turn_body),
+        )
+        .await;
+        assert_eq!(res.status(), StatusCode::OK);
+
+        let recorded = calls.lock().unwrap();
+        assert_eq!(recorded.len(), 1);
+        let (messages, _tools) = &recorded[0];
+        assert!(messages.iter().any(|m| {
+            matches!(m, crate::llm::Message::User(t) if t == "hello")
+        }));
+        assert!(messages.iter().any(|m| {
+            matches!(
+                m,
+                crate::llm::Message::Assistant(crate::llm::AssistantContent::Text(t)) if t == "hi"
+            )
+        }));
+        assert!(messages.iter().any(|m| {
+            matches!(m, crate::llm::Message::User(t) if t == "world")
+        }));
+    }
+
+    #[tokio::test]
+    async fn resume_session_returns_conflict_for_existing_id() {
+        let (_llm, calls) = RecordingLlm::new();
+        let state = Arc::new(AgentApiState::new(
+            "test-token",
+            make_factory(calls),
+            Arc::new(ApiUserInputProvider::new()),
+            AgentConfig::default(),
+        ));
+
+        let body = Versioned {
+            version: API_VERSION,
+            value: ResumeSessionRequest::default(),
+        };
+        let res = resume_session(State(state.clone()), auth_headers("test-token"), Json(body)).await;
+        assert_eq!(res.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        let id = value["session_id"].as_str().unwrap().to_string();
+
+        let conflict_body = Versioned {
+            version: API_VERSION,
+            value: ResumeSessionRequest {
+                session_id: Some(id),
+                ..Default::default()
+            },
+        };
+        let res = resume_session(State(state), auth_headers("test-token"), Json(conflict_body)).await;
+        assert_eq!(res.status(), StatusCode::CONFLICT);
+    }
+
+    #[tokio::test]
+    async fn resume_session_restores_pending_approval_and_permissions() {
+        let (_llm, calls) = RecordingLlm::new();
+        let state = Arc::new(AgentApiState::new(
+            "test-token",
+            make_factory(calls),
+            Arc::new(ApiUserInputProvider::new()),
+            AgentConfig::default(),
+        ));
+
+        let mut permissions = crate::Permissions::default();
+        permissions.set(
+            Some(crate::TargetKind::Task),
+            Some(crate::ChangeOperation::Create),
+            true,
+        );
+        let approval = ApprovalRequest {
+            id: "session-pa-approval-1".into(),
+            why: "test".into(),
+            changes: vec![],
+            inferred_fields: vec![],
+            warnings: vec![],
+            expires_at: jiff::Timestamp::now()
+                .checked_add(jiff::Span::new().minutes(5))
+                .expect("valid expiry"),
+        };
+
+        let body = Versioned {
+            version: API_VERSION,
+            value: ResumeSessionRequest {
+                session_id: Some("session-pa".into()),
+                permissions: Some(permissions),
+                history: vec![],
+                pending_approval: Some(approval),
+                schedule_dirty: None,
+                compaction_summary: None,
+            },
+        };
+        let res = resume_session(State(state.clone()), auth_headers("test-token"), Json(body)).await;
+        assert_eq!(res.status(), StatusCode::OK);
+
+        let pending = get_approval(
+            State(state),
+            Path("session-pa".to_string()),
+            auth_headers("test-token"),
+        )
+        .await;
+        assert_eq!(pending.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(pending.into_body(), usize::MAX).await.unwrap();
+        let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(value["id"].as_str(), Some("session-pa-approval-1"));
     }
 }
