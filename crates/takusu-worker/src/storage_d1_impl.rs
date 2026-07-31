@@ -1465,19 +1465,6 @@ impl Storage for D1Storage {
             return Ok(stored);
         }
 
-        let open: Option<WorkSessionRow> = self
-            .db
-            .prepare(format!(
-                "SELECT {WORK_SESSION_COLS} FROM work_sessions WHERE ended_at IS NULL",
-            ))
-            .first_t()
-            .await?;
-        if open.is_some() {
-            return Err(StorageError::BadRequest(
-                "an open work session already exists".into(),
-            ));
-        }
-
         let mut linked_task: Option<TaskRow> = None;
         let mut task_id: Option<String> = None;
 
@@ -1488,6 +1475,22 @@ impl Storage for D1Storage {
                 return Err(StorageError::BadRequest(format!(
                     "cannot start work session for a {} task",
                     task.status
+                )));
+            }
+            // At most one open work session per task; concurrent sessions are
+            // only allowed across different tasks.
+            let existing: Option<WorkSessionRow> = self
+                .db
+                .prepare(format!(
+                    "SELECT {WORK_SESSION_COLS} FROM work_sessions WHERE task_id = ?1 AND ended_at IS NULL",
+                ))
+                .bind(&[JsValue::from_str(&full)])
+                .map_err(d1_err)?
+                .first_t()
+                .await?;
+            if existing.is_some() {
+                return Err(StorageError::BadRequest(format!(
+                    "task {id} already has an open work session"
                 )));
             }
             task_id = Some(full);
@@ -1537,7 +1540,17 @@ impl Storage for D1Storage {
             stmts.push(update.bind(&[JsValue::from_str(full)]).map_err(d1_err)?);
         }
 
-        self.db.batch(stmts).await.map_err(d1_err)?;
+        if let Err(e) = self.db.batch(stmts).await {
+            // A concurrent start for the same task can pass the SELECT check
+            // above yet lose the race on the per-task unique index; surface
+            // that as a BadRequest rather than an opaque Internal error (#1419).
+            if format!("{e:?}").contains("UNIQUE constraint failed") {
+                return Err(StorageError::BadRequest(
+                    "task already has an open work session".into(),
+                ));
+            }
+            return Err(d1_err(e));
+        }
 
         let session: WorkSessionRow = self
             .db

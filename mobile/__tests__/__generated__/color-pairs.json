@@ -849,6 +849,27 @@
     },
     {
       "fg": "onBrand",
+      "bg": "green",
+      "file": "components/TaskProgressSheet.tsx",
+      "kind": "parent-child",
+      "source": "text"
+    },
+    {
+      "fg": "onBrand",
+      "bg": "brand",
+      "file": "components/TaskProgressSheet.tsx",
+      "kind": "parent-child",
+      "source": "text"
+    },
+    {
+      "fg": "white",
+      "bg": "green",
+      "file": "components/TaskProgressSheet.tsx",
+      "kind": "parent-child",
+      "source": "text"
+    },
+    {
+      "fg": "white",
       "bg": "brand",
       "file": "components/TaskProgressSheet.tsx",
       "kind": "parent-child",
@@ -991,6 +1012,34 @@
       "fg": "black",
       "bg": "surfaceTint",
       "file": "components/TopToast.tsx",
+      "kind": "parent-child",
+      "source": "icon"
+    },
+    {
+      "fg": "textOnCardSecondary",
+      "bg": "surfaceTint",
+      "file": "components/WorkSessionCard.tsx",
+      "kind": "parent-child",
+      "source": "text"
+    },
+    {
+      "fg": "black",
+      "bg": "surfaceTint",
+      "file": "components/WorkSessionCard.tsx",
+      "kind": "parent-child",
+      "source": "text"
+    },
+    {
+      "fg": "white",
+      "bg": "green",
+      "file": "components/WorkSessionCard.tsx",
+      "kind": "parent-child",
+      "source": "icon"
+    },
+    {
+      "fg": "white",
+      "bg": "red",
+      "file": "components/WorkSessionCard.tsx",
       "kind": "parent-child",
       "source": "icon"
     },
@@ -1364,6 +1413,20 @@
       "file": "views/HabitView.tsx",
       "kind": "parent-child",
       "source": "icon"
+    },
+    {
+      "fg": "red",
+      "bg": "white",
+      "file": "views/HomeView.tsx",
+      "kind": "parent-child",
+      "source": "text"
+    },
+    {
+      "fg": "white",
+      "bg": "red",
+      "file": "views/HomeView.tsx",
+      "kind": "parent-child",
+      "source": "text"
     },
     {
       "fg": "brand",
@@ -1795,5 +1858,5 @@
       "source": "text"
     }
   ],
-  "generatedAt": "2026-07-31T11:09:39.628Z"
+  "generatedAt": "2026-08-01T15:10:18.278Z"
 }

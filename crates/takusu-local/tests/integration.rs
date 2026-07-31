@@ -4283,6 +4283,72 @@ async fn progress_lifecycle() {
 }
 
 #[tokio::test]
+async fn concurrent_work_sessions_across_tasks() {
+    let (state, _pool) = setup().await;
+    let app = build_router(state);
+
+    async fn create_task(app: &axum::Router, title: &str) -> String {
+        // #1419 is about parallel tasks: flag them as parallelizable so the
+        // regression coverage matches the reported scenario.
+        let req = auth_req_body(
+            Method::POST,
+            "/api/tasks",
+            json!({
+                "title": title,
+                "end_at": "2026-07-22T18:00:00+09:00",
+                "avg_minutes": 30,
+                "parallelizable": true,
+                "allows_parallel": true
+            }),
+        );
+        let res = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let body: serde_json::Value =
+            serde_json::from_str(&body_str(res.into_body()).await).unwrap();
+        body["id"].as_str().unwrap().to_owned()
+    }
+
+    let task_a = create_task(&app, "parallel a").await;
+    let task_b = create_task(&app, "parallel b").await;
+
+    // Start a session for task A.
+    let req = auth_req_body(
+        Method::POST,
+        "/api/work-sessions",
+        json!({"task_id": task_a}),
+    );
+    let res = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    // A second session for a different task is allowed concurrently.
+    let req = auth_req_body(
+        Method::POST,
+        "/api/work-sessions",
+        json!({"task_id": task_b}),
+    );
+    let res = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    // Both tasks are now in progress.
+    for id in [&task_a, &task_b] {
+        let req = auth_req(Method::GET, &format!("/api/tasks/{id}"));
+        let res = app.clone().oneshot(req).await.unwrap();
+        let body: serde_json::Value =
+            serde_json::from_str(&body_str(res.into_body()).await).unwrap();
+        assert_eq!(body["status"], "in_progress");
+    }
+
+    // A second open session for the same task is rejected.
+    let req = auth_req_body(
+        Method::POST,
+        "/api/work-sessions",
+        json!({"task_id": task_a}),
+    );
+    let res = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
 async fn progress_and_pause_cannot_share_operation_id() {
     let (state, _pool) = setup().await;
     let app = build_router(state);

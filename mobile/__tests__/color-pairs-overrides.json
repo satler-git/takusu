@@ -56,6 +56,11 @@
       "reason": "onBrand on brand is the intended pairing, but in catppuccin and aura-soft-dark the brand color is too close in luminance to onBrand. Follow-up: adjust brand or onBrand for these themes."
     },
     {
+      "fg": "onBrand",
+      "bg": "green",
+      "reason": "False positive from the TaskProgressSheet confirm button whose backgroundColor is `mode === 'complete' ? green : brand`. The green (complete) variant renders white text at runtime; onBrand is only paired with the brand background. AST extraction cannot correlate the conditional bg with the conditional text color."
+    },
+    {
       "fg": "black",
       "bg": "brand",
       "reason": "Text on brand-colored elements. In light/catppuccin/aura-soft-dark the brand purple is too light for black text. Follow-up: use onBrand instead of black for text on brand backgrounds."

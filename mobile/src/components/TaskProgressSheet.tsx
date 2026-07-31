@@ -23,11 +23,11 @@ export type TaskProgressSheetPayload = ProgressPayload;
 interface TaskProgressSheetProps {
   visible: boolean;
   session: WorkSessionRow;
-  mode: 'record' | 'pause';
+  mode: 'record' | 'pause' | 'complete';
   onConfirm: (payload: ProgressPayload) => void | Promise<void>;
   onCancel: () => void;
-  // Optional record-only action for pause mode so users can record progress
-  // without pausing the work session.
+  // Optional record-only action for pause/complete mode so users can record
+  // progress without pausing or completing the work session.
   onRecord?: (payload: ProgressPayload) => void | Promise<void>;
 }
 
@@ -208,7 +208,11 @@ export function TaskProgressSheet({
             {session.title || '作業'}
           </Text>
           <Text style={{ color: colors.gray, fontSize: 13, marginBottom: 8 }}>
-            {mode === 'pause' ? '進捗を記録して一時停止' : '進捗を記録'}
+            {mode === 'pause'
+              ? '進捗を記録して一時停止'
+              : mode === 'complete'
+                ? '進捗を記録して完了'
+                : '進捗を記録'}
           </Text>
 
           <View style={styles.row}>
@@ -294,7 +298,7 @@ export function TaskProgressSheet({
                 キャンセル
               </Text>
             </Pressable>
-            {mode === 'pause' && onRecord && (
+            {mode !== 'record' && onRecord && (
               <Pressable
                 style={[
                   styles.button,
@@ -316,7 +320,8 @@ export function TaskProgressSheet({
               style={[
                 styles.button,
                 {
-                  backgroundColor: colors.brand,
+                  backgroundColor:
+                    mode === 'complete' ? colors.green : colors.brand,
                   opacity: isSubmitting ? 0.6 : 1,
                 },
               ]}
@@ -324,12 +329,19 @@ export function TaskProgressSheet({
               disabled={isSubmitting}
             >
               <Text
-                style={styles.primaryText}
+                style={[
+                  styles.primaryText,
+                  mode === 'complete' && { color: colors.white },
+                ]}
                 numberOfLines={1}
                 adjustsFontSizeToFit
                 minimumFontScale={0.75}
               >
-                {mode === 'pause' ? '記録して一時停止' : '記録'}
+                {mode === 'pause'
+                  ? '記録して一時停止'
+                  : mode === 'complete'
+                    ? '記録して完了'
+                    : '記録'}
               </Text>
             </Pressable>
           </View>

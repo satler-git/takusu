@@ -16,6 +16,7 @@ use super::{SELECT_TASK_BY_ID, map_err, progress_request_hash, resolve_task_id};
 const SELECT_WORK_SESSION_BY_ID: &str = "SELECT id, task_id, title, note, quantity_total, quantity_done, quantity_unit, started_at, ended_at, created_at FROM work_sessions WHERE id = ?";
 const SELECT_WORK_SESSIONS_BY_TASK: &str = "SELECT id, task_id, title, note, quantity_total, quantity_done, quantity_unit, started_at, ended_at, created_at FROM work_sessions WHERE task_id = ? ORDER BY started_at ASC";
 const SELECT_ALL_WORK_SESSIONS: &str = "SELECT id, task_id, title, note, quantity_total, quantity_done, quantity_unit, started_at, ended_at, created_at FROM work_sessions ORDER BY started_at DESC";
+const SELECT_OPEN_WORK_SESSION_BY_TASK: &str = "SELECT id, task_id, title, note, quantity_total, quantity_done, quantity_unit, started_at, ended_at, created_at FROM work_sessions WHERE task_id = ? AND ended_at IS NULL";
 
 const SELECT_PROGRESS_EVENT_BY_ID: &str = "SELECT id, work_session_id, task_id, at, quantity_done, delta_quantity, active_minutes, note FROM progress_events WHERE id = ?";
 const SELECT_PROGRESS_EVENTS_BY_TASK: &str = "SELECT id, work_session_id, task_id, at, quantity_done, delta_quantity, active_minutes, note FROM progress_events WHERE task_id = ? ORDER BY at ASC, id ASC";
@@ -182,19 +183,6 @@ pub(crate) async fn start_work_session(
         return stored;
     }
 
-    // Only one open work session is allowed globally.
-    let open: Option<WorkSessionRow> = sqlx::query_as::<_, WorkSessionRow>(
-            "SELECT id, task_id, title, note, quantity_total, quantity_done, quantity_unit, started_at, ended_at, created_at FROM work_sessions WHERE ended_at IS NULL",
-        )
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(map_err)?;
-    if open.is_some() {
-        return Err(StorageError::BadRequest(
-            "an open work session already exists".into(),
-        ));
-    }
-
     let mut linked_task: Option<TaskRow> = None;
     let mut task_id: Option<String> = None;
 
@@ -212,6 +200,19 @@ pub(crate) async fn start_work_session(
             return Err(StorageError::BadRequest(format!(
                 "cannot start work session for a {} task",
                 task.status
+            )));
+        }
+        // At most one open work session per task; concurrent sessions are
+        // only allowed across different tasks.
+        let existing: Option<WorkSessionRow> =
+            sqlx::query_as::<_, WorkSessionRow>(SELECT_OPEN_WORK_SESSION_BY_TASK)
+                .bind(&full)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(map_err)?;
+        if existing.is_some() {
+            return Err(StorageError::BadRequest(format!(
+                "task {id} already has an open work session"
             )));
         }
         task_id = Some(full);

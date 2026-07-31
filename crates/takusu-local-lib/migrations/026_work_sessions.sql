@@ -22,9 +22,11 @@ CREATE TABLE work_sessions (
 
 CREATE INDEX IF NOT EXISTS idx_work_sessions_task ON work_sessions(task_id);
 
--- Only one open work session is allowed globally.
-CREATE UNIQUE INDEX IF NOT EXISTS idx_work_sessions_open
-    ON work_sessions ((0)) WHERE ended_at IS NULL;
+-- At most one open work session per task. Standalone sessions
+-- (task_id IS NULL) are excluded, so multiple concurrent sessions across
+-- different tasks are allowed.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_work_sessions_open_task
+    ON work_sessions (task_id) WHERE ended_at IS NULL AND task_id IS NOT NULL;
 
 INSERT INTO work_sessions (
     id, task_id, title, note, quantity_total, quantity_done, quantity_unit,
