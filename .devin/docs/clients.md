@@ -19,7 +19,11 @@ schedule operations are flat top-level verbs; lower-frequency domains are
 - **Task list filter**: `ls [query...] [--status <value>] [--all] [--no-overdue]
   [--habit-id <id>] [--ical-uid <uid>]` (default shows actionable tasks)
 - **Editor-based editing**: `edit <REF>` with no flags opens `$EDITOR`
-  (default `vi`) and sends PATCH; with flags it sends PATCH directly.
+  (default `vi`) with a temporary `.toml` file and sends PATCH; with flags it
+  sends PATCH directly. Values match CLI flags (`30m`, `1h30m`,
+  `2025-06-05 23:59`). Parse/validation errors are inserted as comments at the
+  top of the file and the editor reopens for correction. Habits and habit steps
+  use the same TOML format; `habit steps set` reads a TOML file.
 - **Subcommands**:
   - Task verbs: `add <title>`, `ls [query...]`, `show <ref>`, `start <ref>`,
     `pause <ref>`, `done <ref>`, `skip <ref>`, `edit <ref> [--flags]`,
