@@ -2022,19 +2022,26 @@ export function AgentView() {
 
     const processTtsQueue = async () => {
       TakusuAudioModule.clearTtsStop();
-      let nextFilePromise: Promise<string> | null = null;
+      const TTS_PREFETCH_COUNT = 3;
+      const pendingFilePromises: Promise<string>[] = [];
       let nextBlock: string | undefined = ttsQueueRef.current.shift();
       try {
-        while (nextBlock || nextFilePromise) {
-          if (!nextFilePromise && nextBlock) {
-            nextFilePromise = TakusuAudioModule.synthesizeToFile(nextBlock);
+        while (nextBlock || pendingFilePromises.length > 0) {
+          // Pre-fetch up to TTS_PREFETCH_COUNT audio files in parallel so
+          // playback does not have to wait for the next block to be
+          // synthesized.
+          while (pendingFilePromises.length < TTS_PREFETCH_COUNT && nextBlock) {
+            pendingFilePromises.push(
+              TakusuAudioModule.synthesizeToFile(nextBlock),
+            );
+            nextBlock = ttsQueueRef.current.shift();
           }
-          const currentFilePromise = nextFilePromise;
-          nextFilePromise = null;
-          nextBlock = ttsQueueRef.current.shift();
-          if (nextBlock) {
-            nextFilePromise = TakusuAudioModule.synthesizeToFile(nextBlock);
+
+          const currentFilePromise = pendingFilePromises.shift();
+          if (!currentFilePromise) {
+            continue;
           }
+
           try {
             const path = await currentFilePromise;
             if (path) {
@@ -2059,11 +2066,12 @@ export function AgentView() {
             void showError(ttsMessage, '音声読み上げに失敗');
             break;
           }
+
           // Re-check the queue after the await calls. Blocks that arrived
           // during synthesis/playback were pushed to ttsQueueRef but the
           // pre-await shift() already returned undefined, so without this
           // re-check the loop would exit and strand those blocks.
-          if (!nextBlock && !nextFilePromise) {
+          if (!nextBlock) {
             nextBlock = ttsQueueRef.current.shift();
           }
         }
@@ -2073,7 +2081,7 @@ export function AgentView() {
         TakusuAudioModule.clearTtsStop();
         ttsProcessingRef.current = false;
         setIsSpeaking(false);
-        if (nextFilePromise) {
+        for (const nextFilePromise of pendingFilePromises) {
           nextFilePromise
             .then((path) => {
               if (path) {
