@@ -11,7 +11,7 @@ use std::time::Duration;
 use takusu_audio::play::{PcmFormat, PlayError, StreamedAudioFormat, play_stream};
 use takusu_audio::{
     CartesiaSonic, CartesiaSonicConfig, RecordConfig, SpeechToText, TextToSpeech, TtsBackend,
-    TtsOptions, TtsRequest, normalize_for_tts, record,
+    TtsOptions, TtsRequest, TtsStream, normalize_for_tts, record,
 };
 use thiserror::Error;
 
@@ -107,33 +107,60 @@ impl AudioAdapter {
 
             eprintln!("> {text}");
 
-            let (tts_tx, mut tts_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+            let (tts_tx, tts_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+            let (audio_tx, mut audio_rx) = tokio::sync::mpsc::channel::<TtsStream>(3);
             let tts = Arc::clone(&self.tts);
-            let voice_id = self.tts_voice_id.clone();
-            let speed = self.tts_speed;
             let tts_format = self.tts_format;
-            let tts_language = self.last_audio.tts.language.clone();
+            let voice_id = Arc::new(self.tts_voice_id.clone());
+            let speed = self.tts_speed;
+            let tts_language = Arc::new(self.last_audio.tts.language.clone());
             let no_tts_this_turn = no_tts || self.last_audio.tts.mute;
-            let tts_player = tokio::spawn(async move {
+
+            let tts_synth = tokio::spawn(async move {
                 if no_tts_this_turn {
                     return Result::<(), AudioError>::Ok(());
                 }
-                while let Some(block) = tts_rx.recv().await {
-                    if block.trim().is_empty() {
-                        continue;
+
+                use futures_util::StreamExt;
+
+                let stream = futures_util::stream::unfold(tts_rx, |mut rx| async move {
+                    rx.recv().await.map(|block| (block, rx))
+                })
+                .filter(|block| std::future::ready(!block.trim().is_empty()))
+                .map(move |block| {
+                    let tts = Arc::clone(&tts);
+                    let voice_id = Arc::clone(&voice_id);
+                    let tts_language = Arc::clone(&tts_language);
+                    async move {
+                        synthesize_stream_with_timeout(
+                            tts.as_ref(),
+                            &block,
+                            voice_id.as_str(),
+                            tts_language.as_str(),
+                            speed,
+                            Duration::from_secs(120),
+                        )
+                        .await
                     }
-                    synthesize_and_play_with_timeout(
-                        tts.as_ref(),
-                        &block,
-                        &voice_id,
-                        &tts_language,
-                        speed,
-                        tts_format,
-                        Duration::from_secs(120),
-                    )
-                    .await?;
+                })
+                .buffered(3);
+
+                tokio::pin!(stream);
+
+                while let Some(stream) = stream.next().await {
+                    let stream = stream?;
+                    if audio_tx.send(stream).await.is_err() {
+                        break;
+                    }
                 }
                 Ok(())
+            });
+
+            let tts_play = tokio::spawn(async move {
+                while let Some(stream) = audio_rx.recv().await {
+                    play_stream_with_timeout(stream, tts_format, Duration::from_secs(120)).await?;
+                }
+                Ok::<(), AudioError>(())
             });
 
             let result = match self
@@ -152,15 +179,18 @@ impl AudioAdapter {
                 Ok(result) => result,
                 Err(e) => {
                     drop(tts_tx);
-                    tts_player.abort();
+                    tts_synth.abort();
+                    tts_play.abort();
                     return Err(e);
                 }
             };
 
-            // Drop the sender so the player task exits after processing all blocks.
+            // Drop the text sender so the synthesizer exits after the final block.
             drop(tts_tx);
-            tts_player
-                .await
+            let (synth_result, play_result) = tokio::join!(tts_synth, tts_play);
+            synth_result
+                .map_err(|e| AudioError::Play(format!("tts synthesizer task panicked: {e}")))??;
+            play_result
                 .map_err(|e| AudioError::Play(format!("tts player task panicked: {e}")))??;
 
             println!("{}", result.text);
@@ -315,15 +345,14 @@ async fn transcribe_with_timeout(
     .map_err(|e| AudioError::Transcribe(format!("transcribe task failed: {e}")))?
 }
 
-async fn synthesize_and_play_with_timeout(
+async fn synthesize_stream_with_timeout(
     tts: &dyn TextToSpeech,
     text: &str,
     voice_id: &str,
     language: &str,
     speed: Option<f32>,
-    format: StreamedAudioFormat,
     timeout: Duration,
-) -> Result<(), AudioError> {
+) -> Result<TtsStream, AudioError> {
     // Lindera dictionary initialization can block on first use, so run the
     // normalization off the async runtime worker threads.
     let text = text.to_string();
@@ -342,17 +371,21 @@ async fn synthesize_and_play_with_timeout(
         },
     };
 
-    let stream = tokio::time::timeout(timeout, tts.synthesize_stream(&request))
+    tokio::time::timeout(timeout, tts.synthesize_stream(&request))
         .await
         .map_err(|_| AudioError::Timeout)?
-        .map_err(|e| AudioError::Tts(e.to_string()))?;
+        .map_err(|e| AudioError::Tts(e.to_string()))
+}
 
+async fn play_stream_with_timeout(
+    stream: TtsStream,
+    format: StreamedAudioFormat,
+    timeout: Duration,
+) -> Result<(), AudioError> {
     tokio::time::timeout(timeout, play_stream(stream, format))
         .await
         .map_err(|_| AudioError::Timeout)?
-        .map_err(|e| AudioError::Play(e.to_string()))?;
-
-    Ok(())
+        .map_err(|e| AudioError::Play(e.to_string()))
 }
 
 #[cfg(test)]
