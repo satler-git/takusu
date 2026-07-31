@@ -9,6 +9,9 @@ interface components$1 {
          *     becomes `0.5`.
          */
         Abandonability: number;
+        AttachWorkSession: {
+            task_id: string;
+        };
         CompleteQuery: {
             /** Format: uint */
             limit?: number | null;
@@ -20,49 +23,54 @@ interface components$1 {
             /** @description Full query value after selecting this completion. */
             value: string;
         };
+        ConvertWorkSession: {
+            fixed?: boolean | null;
+            status?: components$1['schemas']['TaskStatus'] | null;
+            title?: string | null;
+        };
         CreateHabit: {
-            abandonability?: components$1["schemas"]["Abandonability"] | null;
+            abandonability?: components$1['schemas']['Abandonability'] | null;
             allows_parallel?: boolean | null;
             /** Format: int64 */
             avg_minutes: number;
             description?: string | null;
-            end_time: components$1["schemas"]["TimeOfDay"];
+            end_time: components$1['schemas']['TimeOfDay'];
             fixed?: boolean | null;
             parallelizable?: boolean | null;
             recurrence: string;
             /** Format: int64 */
             sigma_minutes?: number | null;
-            start_time: components$1["schemas"]["TimeOfDay"];
+            start_time: components$1['schemas']['TimeOfDay'];
             title: string;
             /** @description Window mode: `'day'` or `'period'` (#window_mode). */
-            window_mode?: components$1["schemas"]["WindowMode"] | null;
+            window_mode?: components$1['schemas']['WindowMode'] | null;
         };
         /** @description Request body for `POST /api/habits/batch` (#1083). */
         CreateHabitBatch: {
-            habits: components$1["schemas"]["CreateHabitBatchItem"][];
+            habits: components$1['schemas']['CreateHabitBatchItem'][];
         };
         /** @description A single habit inside a batch create request (#1083). */
         CreateHabitBatchItem: {
-            abandonability?: components$1["schemas"]["Abandonability"] | null;
+            abandonability?: components$1['schemas']['Abandonability'] | null;
             allows_parallel?: boolean | null;
             /** Format: int64 */
             avg_minutes: number;
             client_id?: string | null;
             description?: string | null;
-            end_time: components$1["schemas"]["TimeOfDay"];
+            end_time: components$1['schemas']['TimeOfDay'];
             fixed?: boolean | null;
             parallelizable?: boolean | null;
             recurrence: string;
             /** Format: int64 */
             sigma_minutes?: number | null;
-            start_time: components$1["schemas"]["TimeOfDay"];
+            start_time: components$1['schemas']['TimeOfDay'];
             title: string;
             /** @description Window mode: `'day'` or `'period'` (#window_mode). */
-            window_mode?: components$1["schemas"]["WindowMode"] | null;
+            window_mode?: components$1['schemas']['WindowMode'] | null;
         };
         /** @description A single result from a batch create request (#1083). */
         CreateHabitBatchResult: {
-            abandonability: components$1["schemas"]["Abandonability"];
+            abandonability: components$1['schemas']['Abandonability'];
             /** @default false */
             active: boolean;
             /** @default false */
@@ -70,14 +78,14 @@ interface components$1 {
             /** Format: int64 */
             avg_minutes: number;
             client_id?: string | null;
-            created_at: components$1["schemas"]["Timestamp"];
+            created_at: components$1['schemas']['Timestamp'];
             description?: string | null;
             /**
              * Format: int64
              * @default 0
              */
             display_id: number;
-            end_time: components$1["schemas"]["TimeOfDay"];
+            end_time: components$1['schemas']['TimeOfDay'];
             /** @default false */
             fixed: boolean;
             id: string;
@@ -86,28 +94,28 @@ interface components$1 {
             recurrence: string;
             /** Format: int64 */
             sigma_minutes: number;
-            start_time: components$1["schemas"]["TimeOfDay"];
+            start_time: components$1['schemas']['TimeOfDay'];
             title: string;
-            updated_at: components$1["schemas"]["Timestamp"];
+            updated_at: components$1['schemas']['Timestamp'];
             /**
              * @description Window mode for generated tasks (#window_mode).
              *     `'day'` (default) = occurrence day's start_time..end_time.
              *     `'period'` = occurrence start_time .. next occurrence's start_time.
              * @default day
              */
-            window_mode: components$1["schemas"]["WindowMode"];
+            window_mode: components$1['schemas']['WindowMode'];
         };
         CreateHabitScheduledSpan: {
-            end_date: components$1["schemas"]["Date"];
+            end_date: components$1['schemas']['Date'];
             reason?: string | null;
-            start_date: components$1["schemas"]["Date"];
+            start_date: components$1['schemas']['Date'];
         };
         CreateMemory: {
             content: string;
             key: string;
-            kind: components$1["schemas"]["MemoryKind"];
+            kind: components$1['schemas']['MemoryKind'];
             subject_id?: string | null;
-            subject_type?: components$1["schemas"]["SubjectType"] | null;
+            subject_type?: components$1['schemas']['SubjectType'] | null;
             /** @default false */
             upsert: boolean;
         };
@@ -119,35 +127,35 @@ interface components$1 {
             slug: string;
         };
         CreateTask: {
-            abandonability?: components$1["schemas"]["Abandonability"] | null;
+            abandonability?: components$1['schemas']['Abandonability'] | null;
             allows_parallel?: boolean | null;
             /** Format: int64 */
             avg_minutes: number;
             depends?: string[] | null;
             description?: string | null;
-            end_at: components$1["schemas"]["Timestamp"];
+            end_at: components$1['schemas']['Timestamp'];
             fixed?: boolean | null;
             habit_id?: string | null;
             /** @description habit step link (#95). Set by sync_habit_tasks for step-generated tasks. */
             habit_step_id?: string | null;
             ical_uid?: string | null;
             /** @description WI-9: pre-split total quantity, kept for lineage. */
-            original_quantity_total?: components$1["schemas"]["Quantity"] | null;
+            original_quantity_total?: components$1['schemas']['Quantity'] | null;
             parallelizable?: boolean | null;
             /** @description WI-9: initial quantity already done (defaults to 0). */
-            quantity_done?: components$1["schemas"]["Quantity"] | null;
+            quantity_done?: components$1['schemas']['Quantity'] | null;
             /** @description WI-9: total quantity for a quantitative task. */
-            quantity_total?: components$1["schemas"]["Quantity"] | null;
+            quantity_total?: components$1['schemas']['Quantity'] | null;
             /** @description WI-9: unit for the quantity. */
             quantity_unit?: string | null;
             /** Format: int64 */
             sigma_minutes?: number | null;
-            start_at?: components$1["schemas"]["Timestamp"] | null;
+            start_at?: components$1['schemas']['Timestamp'] | null;
             title: string;
         };
         /** @description Request body for `POST /api/tasks/batch` (#1083). */
         CreateTaskBatch: {
-            tasks: components$1["schemas"]["CreateTaskBatchItem"][];
+            tasks: components$1['schemas']['CreateTaskBatchItem'][];
         };
         /**
          * @description A single task inside a batch create request (#1083).
@@ -155,31 +163,31 @@ interface components$1 {
          *     `depends` of other items in the same batch.
          */
         CreateTaskBatchItem: {
-            abandonability?: components$1["schemas"]["Abandonability"] | null;
+            abandonability?: components$1['schemas']['Abandonability'] | null;
             allows_parallel?: boolean | null;
             /** Format: int64 */
             avg_minutes: number;
             client_id?: string | null;
             depends?: string[] | null;
             description?: string | null;
-            end_at: components$1["schemas"]["Timestamp"];
+            end_at: components$1['schemas']['Timestamp'];
             fixed?: boolean | null;
             habit_id?: string | null;
             /** @description habit step link (#95). Set by sync_habit_tasks for step-generated tasks. */
             habit_step_id?: string | null;
             ical_uid?: string | null;
             /** @description WI-9: pre-split total quantity, kept for lineage. */
-            original_quantity_total?: components$1["schemas"]["Quantity"] | null;
+            original_quantity_total?: components$1['schemas']['Quantity'] | null;
             parallelizable?: boolean | null;
             /** @description WI-9: initial quantity already done (defaults to 0). */
-            quantity_done?: components$1["schemas"]["Quantity"] | null;
+            quantity_done?: components$1['schemas']['Quantity'] | null;
             /** @description WI-9: total quantity for a quantitative task. */
-            quantity_total?: components$1["schemas"]["Quantity"] | null;
+            quantity_total?: components$1['schemas']['Quantity'] | null;
             /** @description WI-9: unit for the quantity. */
             quantity_unit?: string | null;
             /** Format: int64 */
             sigma_minutes?: number | null;
-            start_at?: components$1["schemas"]["Timestamp"] | null;
+            start_at?: components$1['schemas']['Timestamp'] | null;
             title: string;
         };
         /**
@@ -188,10 +196,10 @@ interface components$1 {
          *     position.
          */
         CreateTaskBatchResult: {
-            abandonability: components$1["schemas"]["Abandonability"];
+            abandonability: components$1['schemas']['Abandonability'];
             /**
              * Format: int64
-             * @description Total active work minutes from task_work_sessions (NULL when no work has been done).
+             * @description Total active work minutes from work_sessions (NULL when no work has been done).
              */
             actual_minutes?: number | null;
             /** @default false */
@@ -200,17 +208,17 @@ interface components$1 {
             avg_minutes: number;
             client_id?: string | null;
             /** @description WI-9: wall-clock completion time, set by `complete`. */
-            completed_at?: components$1["schemas"]["Timestamp"] | null;
-            created_at: components$1["schemas"]["Timestamp"];
+            completed_at?: components$1['schemas']['Timestamp'] | null;
+            created_at: components$1['schemas']['Timestamp'];
             /** @default [] */
-            depends: components$1["schemas"]["JsonString"];
+            depends: components$1['schemas']['JsonString'];
             description?: string | null;
             /**
              * Format: int64
              * @default 0
              */
             display_id: number;
-            end_at: components$1["schemas"]["Timestamp"];
+            end_at: components$1['schemas']['Timestamp'];
             /** @default false */
             fixed: boolean;
             habit_id?: string | null;
@@ -222,26 +230,26 @@ interface components$1 {
             ical_uid?: string | null;
             id: string;
             /** @description WI-9: pre-split total quantity, kept for lineage. */
-            original_quantity_total?: components$1["schemas"]["Quantity"] | null;
+            original_quantity_total?: components$1['schemas']['Quantity'] | null;
             /** @default false */
             parallelizable: boolean;
             /**
              * @description WI-9: quantity already done. Defaults to 0.
              * @default 0
              */
-            quantity_done: components$1["schemas"]["Quantity"];
+            quantity_done: components$1['schemas']['Quantity'];
             /** @description WI-9: total quantity for a quantitative task (e.g. 30 題). */
-            quantity_total?: components$1["schemas"]["Quantity"] | null;
+            quantity_total?: components$1['schemas']['Quantity'] | null;
             /** @description WI-9: unit for the quantity (e.g. "題"). */
             quantity_unit?: string | null;
             /** Format: int64 */
             sigma_minutes: number;
             /** @description WI-9: for a remainder task, the id of the task it was split from. */
             split_from_task_id?: string | null;
-            start_at?: components$1["schemas"]["Timestamp"] | null;
-            status: components$1["schemas"]["TaskStatus"];
+            start_at?: components$1['schemas']['Timestamp'] | null;
+            status: components$1['schemas']['TaskStatus'];
             title: string;
-            updated_at: components$1["schemas"]["Timestamp"];
+            updated_at: components$1['schemas']['Timestamp'];
             /** @default false */
             user_edited: boolean;
         };
@@ -263,7 +271,7 @@ interface components$1 {
         DeleteAllGcalResult: {
             /** Format: uint */
             deleted: number;
-            failed: components$1["schemas"]["DeleteAllGcalFailure"][];
+            failed: components$1['schemas']['DeleteAllGcalFailure'][];
         };
         DeleteMemoryParams: {
             /** Format: int64 */
@@ -274,7 +282,7 @@ interface components$1 {
          *     variant (#355).
          */
         DependencyAnalysisResponse: {
-            redundant: components$1["schemas"]["RedundantDependency"][];
+            redundant: components$1['schemas']['RedundantDependency'][];
         };
         /** @description A node on a dependency witness path (task or habit step) (#355). */
         DependencyNode: {
@@ -284,13 +292,13 @@ interface components$1 {
         /** @description Request body for `POST /api/schedule/generate`. */
         GenerateSchedule: {
             /** @default recommended */
-            sleep: components$1["schemas"]["SleepInput"];
+            sleep: components$1['schemas']['SleepInput'];
             task_ids?: string[] | null;
         };
         GoogleCalEventRow: {
             google_event_id: string;
             task_id: string;
-            updated_at: components$1["schemas"]["Timestamp"];
+            updated_at: components$1['schemas']['Timestamp'];
         };
         GoogleCalSettingsOutput: {
             calendar_id: string;
@@ -304,21 +312,21 @@ interface components$1 {
          *     `GET /api/habits/:id` so clients receive steps in one round-trip.
          */
         HabitDetail: {
-            abandonability: components$1["schemas"]["Abandonability"];
+            abandonability: components$1['schemas']['Abandonability'];
             /** @default false */
             active: boolean;
             /** @default false */
             allows_parallel: boolean;
             /** Format: int64 */
             avg_minutes: number;
-            created_at: components$1["schemas"]["Timestamp"];
+            created_at: components$1['schemas']['Timestamp'];
             description?: string | null;
             /**
              * Format: int64
              * @default 0
              */
             display_id: number;
-            end_time: components$1["schemas"]["TimeOfDay"];
+            end_time: components$1['schemas']['TimeOfDay'];
             /** @default false */
             fixed: boolean;
             id: string;
@@ -327,17 +335,17 @@ interface components$1 {
             recurrence: string;
             /** Format: int64 */
             sigma_minutes: number;
-            start_time: components$1["schemas"]["TimeOfDay"];
-            steps: components$1["schemas"]["HabitStepRow"][];
+            start_time: components$1['schemas']['TimeOfDay'];
+            steps: components$1['schemas']['HabitStepRow'][];
             title: string;
-            updated_at: components$1["schemas"]["Timestamp"];
+            updated_at: components$1['schemas']['Timestamp'];
             /**
              * @description Window mode for generated tasks (#window_mode).
              *     `'day'` (default) = occurrence day's start_time..end_time.
              *     `'period'` = occurrence start_time .. next occurrence's start_time.
              * @default day
              */
-            window_mode: components$1["schemas"]["WindowMode"];
+            window_mode: components$1['schemas']['WindowMode'];
         };
         /** @description Request body for `POST /api/habits/{id}/estimate`. */
         HabitEstimateRequest: {
@@ -363,15 +371,15 @@ interface components$1 {
             /** Format: uint */
             excluded_count: number;
             /** @description The updated habit row, present only when `apply` was true. */
-            habit?: components$1["schemas"]["HabitRow"] | null;
+            habit?: components$1['schemas']['HabitRow'] | null;
             /** Format: uint */
             sample_count: number;
             /** @description Task-level samples for non-step habits. Empty for step-based habits. */
-            samples: components$1["schemas"]["HabitEstimateSample"][];
+            samples: components$1['schemas']['HabitEstimateSample'][];
             /** Format: int64 */
             sigma_minutes: number;
             /** @description Per-step estimates for step-based habits. */
-            steps: components$1["schemas"]["HabitEstimateStep"][];
+            steps: components$1['schemas']['HabitEstimateStep'][];
         };
         /** @description One completed task observation included in a habit estimate. */
         HabitEstimateSample: {
@@ -400,12 +408,12 @@ interface components$1 {
          *     plus an optional step list and preview range.
          */
         HabitPreviewRequest: {
-            abandonability?: components$1["schemas"]["Abandonability"] | null;
+            abandonability?: components$1['schemas']['Abandonability'] | null;
             allows_parallel?: boolean | null;
             /** Format: int64 */
             avg_minutes: number;
             description?: string | null;
-            end_time: components$1["schemas"]["TimeOfDay"];
+            end_time: components$1['schemas']['TimeOfDay'];
             fixed?: boolean | null;
             from?: string | null;
             /** Format: int64 */
@@ -414,36 +422,36 @@ interface components$1 {
             recurrence: string;
             /** Format: int64 */
             sigma_minutes?: number | null;
-            start_time: components$1["schemas"]["TimeOfDay"];
+            start_time: components$1['schemas']['TimeOfDay'];
             /** @default [] */
-            steps: components$1["schemas"]["HabitStepInput"][];
+            steps: components$1['schemas']['HabitStepInput'][];
             title: string;
             until?: string | null;
             /** @description Window mode: `'day'` or `'period'` (#window_mode). */
-            window_mode?: components$1["schemas"]["WindowMode"] | null;
+            window_mode?: components$1['schemas']['WindowMode'] | null;
         };
         /** @description A single task occurrence produced by `HabitPreviewRequest`. */
         HabitPreviewTask: {
-            end_at: components$1["schemas"]["Timestamp"];
-            start_at: components$1["schemas"]["Timestamp"];
+            end_at: components$1['schemas']['Timestamp'];
+            start_at: components$1['schemas']['Timestamp'];
             title: string;
         };
         HabitRow: {
-            abandonability: components$1["schemas"]["Abandonability"];
+            abandonability: components$1['schemas']['Abandonability'];
             /** @default false */
             active: boolean;
             /** @default false */
             allows_parallel: boolean;
             /** Format: int64 */
             avg_minutes: number;
-            created_at: components$1["schemas"]["Timestamp"];
+            created_at: components$1['schemas']['Timestamp'];
             description?: string | null;
             /**
              * Format: int64
              * @default 0
              */
             display_id: number;
-            end_time: components$1["schemas"]["TimeOfDay"];
+            end_time: components$1['schemas']['TimeOfDay'];
             /** @default false */
             fixed: boolean;
             id: string;
@@ -452,16 +460,16 @@ interface components$1 {
             recurrence: string;
             /** Format: int64 */
             sigma_minutes: number;
-            start_time: components$1["schemas"]["TimeOfDay"];
+            start_time: components$1['schemas']['TimeOfDay'];
             title: string;
-            updated_at: components$1["schemas"]["Timestamp"];
+            updated_at: components$1['schemas']['Timestamp'];
             /**
              * @description Window mode for generated tasks (#window_mode).
              *     `'day'` (default) = occurrence day's start_time..end_time.
              *     `'period'` = occurrence start_time .. next occurrence's start_time.
              * @default day
              */
-            window_mode: components$1["schemas"]["WindowMode"];
+            window_mode: components$1['schemas']['WindowMode'];
         };
         /**
          * @description A scheduled span for a habit (#503).
@@ -474,12 +482,12 @@ interface components$1 {
          *     user's local timezone.
          */
         HabitScheduledSpanRow: {
-            created_at: components$1["schemas"]["Timestamp"];
-            end_date: components$1["schemas"]["Date"];
+            created_at: components$1['schemas']['Timestamp'];
+            end_date: components$1['schemas']['Date'];
             habit_id: string;
             id: string;
             reason?: string | null;
-            start_date: components$1["schemas"]["Date"];
+            start_date: components$1['schemas']['Date'];
         };
         /**
          * @description Input element for `PUT /api/habits/:id/steps` (bulk replace, #95).
@@ -489,14 +497,14 @@ interface components$1 {
          *     must exist in the resulting set.
          */
         HabitStepInput: {
-            abandonability?: components$1["schemas"]["Abandonability"] | null;
+            abandonability?: components$1['schemas']['Abandonability'] | null;
             allows_parallel?: boolean | null;
             /** Format: int64 */
             avg_minutes: number;
             /** @default [] */
             depends_on: string[];
             description?: string | null;
-            end_time: components$1["schemas"]["TimeOfDay"];
+            end_time: components$1['schemas']['TimeOfDay'];
             fixed?: boolean | null;
             id?: string | null;
             parallelizable?: boolean | null;
@@ -504,7 +512,7 @@ interface components$1 {
             position: number;
             /** Format: int64 */
             sigma_minutes?: number | null;
-            start_time: components$1["schemas"]["TimeOfDay"];
+            start_time: components$1['schemas']['TimeOfDay'];
             title: string;
         };
         /**
@@ -513,19 +521,19 @@ interface components$1 {
          *     `depends_on` (JSON array of step ids within the same habit).
          */
         HabitStepRow: {
-            abandonability: components$1["schemas"]["Abandonability"];
+            abandonability: components$1['schemas']['Abandonability'];
             /** @default false */
             allows_parallel: boolean;
             /** Format: int64 */
             avg_minutes: number;
-            created_at: components$1["schemas"]["Timestamp"];
+            created_at: components$1['schemas']['Timestamp'];
             /**
              * @description JSON array of step ids this step depends on (within the same habit).
              * @default []
              */
-            depends_on: components$1["schemas"]["JsonString"];
+            depends_on: components$1['schemas']['JsonString'];
             description?: string | null;
-            end_time: components$1["schemas"]["TimeOfDay"];
+            end_time: components$1['schemas']['TimeOfDay'];
             /** @default false */
             fixed: boolean;
             habit_id: string;
@@ -536,7 +544,7 @@ interface components$1 {
             position: number;
             /** Format: int64 */
             sigma_minutes: number;
-            start_time: components$1["schemas"]["TimeOfDay"];
+            start_time: components$1['schemas']['TimeOfDay'];
             title: string;
         };
         HealthCheckResponse: {
@@ -564,32 +572,32 @@ interface components$1 {
          */
         JsonString2: string;
         /** @enum {string} */
-        MemoryKind: "proper_noun" | "fact" | "task_note";
+        MemoryKind: 'proper_noun' | 'fact' | 'task_note';
         MemoryQuery: {
-            kind?: components$1["schemas"]["MemoryKind"] | null;
+            kind?: components$1['schemas']['MemoryKind'] | null;
             /** Format: int64 */
             limit?: number | null;
             q: string;
             subject_id?: string | null;
-            subject_type?: components$1["schemas"]["SubjectType"] | null;
+            subject_type?: components$1['schemas']['SubjectType'] | null;
         };
         MemoryRow: {
             content: string;
-            created_at: components$1["schemas"]["Timestamp"];
+            created_at: components$1['schemas']['Timestamp'];
             id: string;
             key: string;
-            kind: components$1["schemas"]["MemoryKind"];
-            last_used_at?: components$1["schemas"]["Timestamp"] | null;
+            kind: components$1['schemas']['MemoryKind'];
+            last_used_at?: components$1['schemas']['Timestamp'] | null;
             normalized_content?: string;
             normalized_key?: string;
             /** Format: int64 */
             revision: number;
             /** @default user_confirmed */
-            source: components$1["schemas"]["MemorySource"];
+            source: components$1['schemas']['MemorySource'];
             subject_id: string;
             /** @default  */
-            subject_type: components$1["schemas"]["SubjectType"];
-            updated_at: components$1["schemas"]["Timestamp"];
+            subject_type: components$1['schemas']['SubjectType'];
+            updated_at: components$1['schemas']['Timestamp'];
         };
         /**
          * @description Provenance of a memory row (see `doc/code-quality-issues.md` §34).
@@ -601,17 +609,17 @@ interface components$1 {
          *     variants to round-trip existing rows safely.
          * @enum {string}
          */
-        MemorySource: "user_confirmed" | "agent_inferred" | "imported";
+        MemorySource: 'user_confirmed' | 'agent_inferred' | 'imported';
         /** @description Request body for `PATCH /api/schedule/entries/:task_id`. */
         MoveEntry: {
             /** @default false */
             force: boolean;
-            start_at: components$1["schemas"]["Timestamp"];
+            start_at: components$1['schemas']['Timestamp'];
         };
         /** @description Response body for `PATCH /api/schedule/entries/:task_id`. */
         MoveEntryResponse: {
-            end_at: components$1["schemas"]["Timestamp"];
-            start_at: components$1["schemas"]["Timestamp"];
+            end_at: components$1['schemas']['Timestamp'];
+            start_at: components$1['schemas']['Timestamp'];
             task_id: string;
             /** @default [] */
             warnings: string[];
@@ -634,26 +642,14 @@ interface components$1 {
         ProgressEventRow: {
             /** Format: int64 */
             active_minutes: number;
-            at: components$1["schemas"]["Timestamp"];
+            at: components$1['schemas']['Timestamp'];
             /** Format: int64 */
             delta_quantity?: number | null;
             id: string;
             note?: string | null;
-            quantity_done?: components$1["schemas"]["Quantity"] | null;
-            task_id: string;
-        };
-        ProgressResult: {
-            /**
-             * @description The recorded event, or `None` when the reported quantity_done has not
-             *     changed (no-op).
-             */
-            event?: components$1["schemas"]["ProgressEventRow"] | null;
-            /**
-             * @description True when the reported quantity_done reaches or exceeds the task total.
-             * @default false
-             */
-            suggests_completion: boolean;
-            task: components$1["schemas"]["TaskRow"];
+            quantity_done?: components$1['schemas']['Quantity'] | null;
+            task_id?: string | null;
+            work_session_id: string;
         };
         /**
          * Format: int64
@@ -663,9 +659,10 @@ interface components$1 {
          *     retrieved via [`Quantity::get`].
          */
         Quantity: number;
-        RecordProgress: {
+        RecordWorkSessionProgress: {
             note?: string | null;
-            quantity_done: components$1["schemas"]["Quantity"];
+            quantity_done: components$1['schemas']['Quantity'];
+            quantity_total?: components$1['schemas']['Quantity'] | null;
         };
         /**
          * @description A redundant (composite / transitively implied) dependency edge with a
@@ -677,27 +674,27 @@ interface components$1 {
             to: string;
             to_title: string;
             /** @description Witness path `from → … → to` (endpoints included, length >= 3). */
-            via: components$1["schemas"]["DependencyNode"][];
+            via: components$1['schemas']['DependencyNode'][];
         };
         /** @description Request body for `POST /api/schedule/reschedule`. */
         Reschedule: {
             from?: string | null;
-            mode: components$1["schemas"]["ScheduleMode"];
+            mode: components$1['schemas']['ScheduleMode'];
             /** @default [] */
             pinned: string[];
             /** @default recommended */
-            sleep: components$1["schemas"]["SleepInput"];
+            sleep: components$1['schemas']['SleepInput'];
             task_ids?: string[] | null;
             until?: string | null;
         };
         SaveScheduleRequest: {
-            entries: components$1["schemas"]["ScheduleEntry"][];
+            entries: components$1['schemas']['ScheduleEntry'][];
             /** @default [] */
             mark_scheduled_task_ids: string[];
         };
         ScheduleEntry: {
-            end_at: components$1["schemas"]["Timestamp"];
-            start_at: components$1["schemas"]["Timestamp"];
+            end_at: components$1['schemas']['Timestamp'];
+            start_at: components$1['schemas']['Timestamp'];
             task_id: string;
         };
         /**
@@ -709,16 +706,16 @@ interface components$1 {
          *     `SchedulePreviewRequest`, and the CLI's `ScheduleCommands::Reschedule`.
          * @enum {string}
          */
-        ScheduleMode: "range" | "tasks" | "full";
+        ScheduleMode: 'range' | 'tasks' | 'full';
         /** @description Request body for `POST /api/schedule/preview`. */
         SchedulePreviewRequest: {
             from?: string | null;
             /** @default full */
-            mode: components$1["schemas"]["ScheduleMode"];
+            mode: components$1['schemas']['ScheduleMode'];
             /** @default [] */
             pinned: string[];
             /** @default recommended */
-            sleep: components$1["schemas"]["SleepInput"];
+            sleep: components$1['schemas']['SleepInput'];
             task_ids?: string[] | null;
             until?: string | null;
         };
@@ -726,7 +723,7 @@ interface components$1 {
         SchedulePreviewResponse: {
             /** @default [] */
             displaced_task_ids: string[];
-            entries: components$1["schemas"]["ScheduleEntry"][];
+            entries: components$1['schemas']['ScheduleEntry'][];
             /**
              * Format: int64
              * @default 0
@@ -743,11 +740,11 @@ interface components$1 {
             warnings: string[];
         };
         ScheduleRow: {
-            created_at: components$1["schemas"]["Timestamp"];
+            created_at: components$1['schemas']['Timestamp'];
             id: string;
             /** @default [] */
-            schedule: components$1["schemas"]["JsonString2"];
-            updated_at: components$1["schemas"]["Timestamp"];
+            schedule: components$1['schemas']['JsonString2'];
+            updated_at: components$1['schemas']['Timestamp'];
         };
         SettingsRow: {
             /**
@@ -755,7 +752,7 @@ interface components$1 {
              * Format: int64
              */
             comfortable_minutes?: number | null;
-            created_at: components$1["schemas"]["Timestamp"];
+            created_at: components$1['schemas']['Timestamp'];
             id: string;
             /**
              * 459: 1 日の最大作業時間（分）。`None` または `0` の場合はデフォルトを使う。
@@ -768,13 +765,13 @@ interface components$1 {
              * @default null
              */
             seed: number | null;
-            sleep_end: components$1["schemas"]["TimeOfDay"];
-            sleep_start: components$1["schemas"]["TimeOfDay"];
+            sleep_end: components$1['schemas']['TimeOfDay'];
+            sleep_start: components$1['schemas']['TimeOfDay'];
             /**
              * @description 使用する solver。`"sa"` / `"priority"` / `"auto"`。未設定の場合は `sa`。未知値はエラー。
              * @default sa
              */
-            solver: components$1["schemas"]["Solver"];
+            solver: components$1['schemas']['Solver'];
             /**
              * Format: int64
              * @description 求解時間の上限（ミリ秒）。`None` または `0` の場合は制限なし。
@@ -782,7 +779,7 @@ interface components$1 {
              */
             time_budget_ms: number | null;
             tz: string;
-            updated_at: components$1["schemas"]["Timestamp"];
+            updated_at: components$1['schemas']['Timestamp'];
             /**
              * @description 前回スケジュールから priority/ALNS の初期解を warm start する。
              * @default false
@@ -799,7 +796,7 @@ interface components$1 {
             actual_minutes?: number | null;
             /** Format: int64 */
             avg_minutes: number;
-            completed_at?: components$1["schemas"]["Timestamp"] | null;
+            completed_at?: components$1['schemas']['Timestamp'] | null;
             /** Format: int64 */
             display_id: number;
             /** Format: int64 */
@@ -810,10 +807,10 @@ interface components$1 {
              *       "score": 0
              *     }
              */
-            similarity: components$1["schemas"]["Similarity"];
+            similarity: components$1['schemas']['Similarity'];
             task_id: string;
             title: string;
-            updated_at?: components$1["schemas"]["Timestamp"];
+            updated_at?: components$1['schemas']['Timestamp'];
         };
         /**
          * @description A similarity score pairing a metric with a numeric value.
@@ -823,7 +820,7 @@ interface components$1 {
          *     on row structs where the SQL/JSON result does not include the field.
          */
         Similarity: {
-            metric: components$1["schemas"]["SimilarityMetric"];
+            metric: components$1['schemas']['SimilarityMetric'];
             /** Format: double */
             score: number;
         };
@@ -835,16 +832,16 @@ interface components$1 {
          *     graph.
          * @enum {string}
          */
-        SimilarityMetric: "dice";
+        SimilarityMetric: 'dice';
         SkillRow: {
             body: string;
             /** @default false */
             built_in: boolean;
-            created_at: components$1["schemas"]["Timestamp"];
+            created_at: components$1['schemas']['Timestamp'];
             description: string;
             name: string;
             slug: string;
-            updated_at: components$1["schemas"]["Timestamp"];
+            updated_at: components$1['schemas']['Timestamp'];
         };
         /**
          * @description Sleep configuration for schedule generation / reschedule / preview.
@@ -860,36 +857,35 @@ interface components$1 {
          *     and `takusu-contracts` / `takusu-client` / `takusu-worker` all depend on `takusu-types`.
          * @enum {string}
          */
-        Solver: "sa" | "priority" | "auto";
+        Solver: 'sa' | 'priority' | 'auto';
         SplitResult: {
-            original: components$1["schemas"]["TaskRow"];
-            remainder: components$1["schemas"]["TaskRow"];
+            original: components$1['schemas']['TaskRow'];
+            remainder: components$1['schemas']['TaskRow'];
         };
         SplitTask: {
             /** @description Optional description for the remainder. */
             description?: string | null;
             /** @description Optional deadline for the remainder (defaults to the original end_at). */
-            end_at?: components$1["schemas"]["Timestamp"] | null;
+            end_at?: components$1['schemas']['Timestamp'] | null;
             /** @description Quantity to keep on the original task. */
-            retained_quantity: components$1["schemas"]["Quantity"];
+            retained_quantity: components$1['schemas']['Quantity'];
             /** @description If true, make the remainder depend on the original task. */
             set_dependency?: boolean | null;
             /** @description Optional title for the remainder (defaults to the original title). */
             title?: string | null;
         };
+        StartWorkSession: {
+            note?: string | null;
+            quantity_total?: components$1['schemas']['Quantity'] | null;
+            quantity_unit?: string | null;
+            task_id?: string | null;
+            title?: string | null;
+        };
         /** @enum {string} */
-        SubjectType: "" | "task" | "habit" | "skill" | "schedule";
+        SubjectType: '' | 'task' | 'habit' | 'skill' | 'schedule';
         /** @description Response for `POST /api/sync/trigger`. */
         SyncTriggerResponse: {
             status: string;
-        };
-        TaskProgress: {
-            events: components$1["schemas"]["ProgressEventRow"][];
-            open_session?: components$1["schemas"]["TaskWorkSessionRow"] | null;
-            sessions: components$1["schemas"]["TaskWorkSessionRow"][];
-            task: components$1["schemas"]["TaskRow"];
-            /** Format: int64 */
-            total_active_minutes: number;
         };
         TaskQueryParams: {
             from?: string | null;
@@ -903,10 +899,10 @@ interface components$1 {
             until?: string | null;
         };
         TaskRow: {
-            abandonability: components$1["schemas"]["Abandonability"];
+            abandonability: components$1['schemas']['Abandonability'];
             /**
              * Format: int64
-             * @description Total active work minutes from task_work_sessions (NULL when no work has been done).
+             * @description Total active work minutes from work_sessions (NULL when no work has been done).
              */
             actual_minutes?: number | null;
             /** @default false */
@@ -914,17 +910,17 @@ interface components$1 {
             /** Format: int64 */
             avg_minutes: number;
             /** @description WI-9: wall-clock completion time, set by `complete`. */
-            completed_at?: components$1["schemas"]["Timestamp"] | null;
-            created_at: components$1["schemas"]["Timestamp"];
+            completed_at?: components$1['schemas']['Timestamp'] | null;
+            created_at: components$1['schemas']['Timestamp'];
             /** @default [] */
-            depends: components$1["schemas"]["JsonString"];
+            depends: components$1['schemas']['JsonString'];
             description?: string | null;
             /**
              * Format: int64
              * @default 0
              */
             display_id: number;
-            end_at: components$1["schemas"]["Timestamp"];
+            end_at: components$1['schemas']['Timestamp'];
             /** @default false */
             fixed: boolean;
             habit_id?: string | null;
@@ -936,26 +932,26 @@ interface components$1 {
             ical_uid?: string | null;
             id: string;
             /** @description WI-9: pre-split total quantity, kept for lineage. */
-            original_quantity_total?: components$1["schemas"]["Quantity"] | null;
+            original_quantity_total?: components$1['schemas']['Quantity'] | null;
             /** @default false */
             parallelizable: boolean;
             /**
              * @description WI-9: quantity already done. Defaults to 0.
              * @default 0
              */
-            quantity_done: components$1["schemas"]["Quantity"];
+            quantity_done: components$1['schemas']['Quantity'];
             /** @description WI-9: total quantity for a quantitative task (e.g. 30 題). */
-            quantity_total?: components$1["schemas"]["Quantity"] | null;
+            quantity_total?: components$1['schemas']['Quantity'] | null;
             /** @description WI-9: unit for the quantity (e.g. "題"). */
             quantity_unit?: string | null;
             /** Format: int64 */
             sigma_minutes: number;
             /** @description WI-9: for a remainder task, the id of the task it was split from. */
             split_from_task_id?: string | null;
-            start_at?: components$1["schemas"]["Timestamp"] | null;
-            status: components$1["schemas"]["TaskStatus"];
+            start_at?: components$1['schemas']['Timestamp'] | null;
+            status: components$1['schemas']['TaskStatus'];
             title: string;
-            updated_at: components$1["schemas"]["Timestamp"];
+            updated_at: components$1['schemas']['Timestamp'];
             /** @default false */
             user_edited: boolean;
         };
@@ -967,14 +963,7 @@ interface components$1 {
          *     crate dependency graph.
          * @enum {string}
          */
-        TaskStatus: "pending" | "scheduled" | "in_progress" | "completed" | "skipped";
-        TaskWorkSessionRow: {
-            created_at: components$1["schemas"]["Timestamp"];
-            ended_at?: components$1["schemas"]["Timestamp"] | null;
-            id: string;
-            started_at: components$1["schemas"]["Timestamp"];
-            task_id: string;
-        };
+        TaskStatus: 'pending' | 'scheduled' | 'in_progress' | 'completed' | 'skipped';
         /**
          * @description A time of day in `HH:MM` format with minutes snapped to 5-minute slots.
          *
@@ -992,27 +981,27 @@ interface components$1 {
          */
         Timestamp: string;
         TokenCreateResponse: {
-            created_at: components$1["schemas"]["Timestamp"];
-            expires_at?: components$1["schemas"]["Timestamp"] | null;
+            created_at: components$1['schemas']['Timestamp'];
+            expires_at?: components$1['schemas']['Timestamp'] | null;
             /** Format: int64 */
             id: number;
             label?: string | null;
-            scope: components$1["schemas"]["TokenScope"];
+            scope: components$1['schemas']['TokenScope'];
             token: string;
         };
         TokenRow: {
-            created_at: components$1["schemas"]["Timestamp"];
+            created_at: components$1['schemas']['Timestamp'];
             created_by: string;
-            expires_at?: components$1["schemas"]["Timestamp"] | null;
+            expires_at?: components$1['schemas']['Timestamp'] | null;
             /** Format: int64 */
             id: number;
             jti: string;
             label?: string | null;
-            revoked_at?: components$1["schemas"]["Timestamp"] | null;
-            scope: components$1["schemas"]["TokenScope"];
+            revoked_at?: components$1['schemas']['Timestamp'] | null;
+            scope: components$1['schemas']['TokenScope'];
         };
         /** @enum {string} */
-        TokenScope: "read-write" | "root";
+        TokenScope: 'read-write' | 'root';
         UpdateGoogleCalSettings: {
             calendar_id?: string | null;
             client_id?: string | null;
@@ -1021,22 +1010,22 @@ interface components$1 {
             refresh_token?: string | null;
         };
         UpdateHabit: {
-            abandonability?: components$1["schemas"]["Abandonability"] | null;
+            abandonability?: components$1['schemas']['Abandonability'] | null;
             active?: boolean | null;
             allows_parallel?: boolean | null;
             /** Format: int64 */
             avg_minutes?: number | null;
             description?: string | null;
-            end_time?: components$1["schemas"]["TimeOfDay"] | null;
+            end_time?: components$1['schemas']['TimeOfDay'] | null;
             fixed?: boolean | null;
             parallelizable?: boolean | null;
             recurrence?: string | null;
             /** Format: int64 */
             sigma_minutes?: number | null;
-            start_time?: components$1["schemas"]["TimeOfDay"] | null;
+            start_time?: components$1['schemas']['TimeOfDay'] | null;
             title?: string | null;
             /** @description Window mode: `'day'` or `'period'` (#window_mode). */
-            window_mode?: components$1["schemas"]["WindowMode"] | null;
+            window_mode?: components$1['schemas']['WindowMode'] | null;
         };
         UpdateMemory: {
             content?: string | null;
@@ -1059,10 +1048,10 @@ interface components$1 {
              * @description 乱数シード。`None` でデフォルト。
              */
             seed?: number | null;
-            sleep_end?: components$1["schemas"]["TimeOfDay"] | null;
-            sleep_start?: components$1["schemas"]["TimeOfDay"] | null;
+            sleep_end?: components$1['schemas']['TimeOfDay'] | null;
+            sleep_start?: components$1['schemas']['TimeOfDay'] | null;
             /** @description 使用する solver。`"sa"` / `"priority"` / `"auto"`。 */
-            solver?: components$1["schemas"]["Solver"] | null;
+            solver?: components$1['schemas']['Solver'] | null;
             /**
              * Format: int64
              * @description 求解時間の上限（ミリ秒）。`None` または `0` で制限なし。
@@ -1078,29 +1067,29 @@ interface components$1 {
             name?: string | null;
         };
         UpdateTask: {
-            abandonability?: components$1["schemas"]["Abandonability"] | null;
+            abandonability?: components$1['schemas']['Abandonability'] | null;
             allows_parallel?: boolean | null;
             /** Format: int64 */
             avg_minutes?: number | null;
             depends?: string[] | null;
             description?: string | null;
-            end_at?: components$1["schemas"]["Timestamp"] | null;
+            end_at?: components$1['schemas']['Timestamp'] | null;
             fixed?: boolean | null;
             habit_id?: string | null;
             habit_step_id?: string | null;
             /** @description WI-9: pre-split total quantity, kept for lineage. */
-            original_quantity_total?: components$1["schemas"]["Quantity"] | null;
+            original_quantity_total?: components$1['schemas']['Quantity'] | null;
             parallelizable?: boolean | null;
             /** @description WI-9: quantity already done. */
-            quantity_done?: components$1["schemas"]["Quantity"] | null;
+            quantity_done?: components$1['schemas']['Quantity'] | null;
             /** @description WI-9: total quantity for a quantitative task. */
-            quantity_total?: components$1["schemas"]["Quantity"] | null;
+            quantity_total?: components$1['schemas']['Quantity'] | null;
             /** @description WI-9: unit for the quantity. */
             quantity_unit?: string | null;
             /** Format: int64 */
             sigma_minutes?: number | null;
-            start_at?: components$1["schemas"]["Timestamp"] | null;
-            status?: components$1["schemas"]["TaskStatus"] | null;
+            start_at?: components$1['schemas']['Timestamp'] | null;
+            status?: components$1['schemas']['TaskStatus'] | null;
             title?: string | null;
             user_edited?: boolean | null;
         };
@@ -1109,7 +1098,40 @@ interface components$1 {
             url: string;
         };
         /** @enum {string} */
-        WindowMode: "day" | "period";
+        WindowMode: 'day' | 'period';
+        WorkSessionListQuery: {
+            task_id?: string | null;
+        };
+        WorkSessionProgressResult: {
+            /**
+             * @description The recorded event, or `None` when the reported quantity_done has not
+             *     changed (no-op).
+             */
+            event?: components$1['schemas']['ProgressEventRow'] | null;
+            /**
+             * @description True when the reported quantity_done reaches or exceeds the task total.
+             * @default false
+             */
+            suggests_completion: boolean;
+            task?: components$1['schemas']['TaskRow'] | null;
+            work_session: components$1['schemas']['WorkSessionRow'];
+        };
+        /**
+         * @description A top-level work session. It may be linked to a task, or it may be a
+         *     standalone session that is later converted into a task.
+         */
+        WorkSessionRow: {
+            created_at: components$1['schemas']['Timestamp'];
+            ended_at?: components$1['schemas']['Timestamp'] | null;
+            id: string;
+            note?: string | null;
+            quantity_done: components$1['schemas']['Quantity'];
+            quantity_total?: components$1['schemas']['Quantity'] | null;
+            quantity_unit?: string | null;
+            started_at: components$1['schemas']['Timestamp'];
+            task_id?: string | null;
+            title?: string | null;
+        };
         /** @description Response for `PUT /api/workers/config`. */
         WorkersConfigUpdateResponse: {
             ok: boolean;
@@ -1158,9 +1180,13 @@ type IcalImportResult = S['IcalImportResult'];
 type DependencyNode = S['DependencyNode'];
 type RedundantDependency = S['RedundantDependency'];
 type DependencyAnalysisResponse = S['DependencyAnalysisResponse'];
-type RecordProgress = S['RecordProgress'];
+type StartWorkSession = S['StartWorkSession'];
+type AttachWorkSession = S['AttachWorkSession'];
+type ConvertWorkSession = S['ConvertWorkSession'];
+type RecordWorkSessionProgress = S['RecordWorkSessionProgress'];
+type WorkSessionRow = S['WorkSessionRow'];
+type WorkSessionProgressResult = S['WorkSessionProgressResult'];
 type ProgressEventRow = S['ProgressEventRow'];
-type ProgressResult = S['ProgressResult'];
 type SplitTask = S['SplitTask'];
 type SplitResult = S['SplitResult'];
 type SyncTriggerResponse = S['SyncTriggerResponse'];
@@ -1198,10 +1224,14 @@ declare class TakusuClient {
     updateTask(id: string, body: UpdateTask): Promise<TaskRow>;
     replaceTask(id: string, body: CreateTask): Promise<TaskRow>;
     deleteTask(id: string): Promise<void>;
-    startTaskWork(id: string, operationId?: string): Promise<TaskRow>;
-    pauseTaskWork(id: string, operationId?: string): Promise<TaskRow>;
-    recordProgress(id: string, body: RecordProgress, operationId?: string): Promise<ProgressResult>;
-    completeTaskWork(id: string, operationId?: string): Promise<TaskRow>;
+    createWorkSession(body: StartWorkSession, operationId?: string): Promise<WorkSessionRow>;
+    listWorkSessions(taskId?: string): Promise<WorkSessionRow[]>;
+    getWorkSession(id: string): Promise<WorkSessionRow>;
+    pauseWorkSession(id: string, operationId?: string): Promise<WorkSessionRow>;
+    completeWorkSession(id: string, operationId?: string): Promise<WorkSessionRow>;
+    recordWorkSessionProgress(id: string, body: RecordWorkSessionProgress, operationId?: string): Promise<WorkSessionProgressResult>;
+    attachWorkSession(id: string, body: AttachWorkSession, operationId?: string): Promise<WorkSessionRow>;
+    convertWorkSession(id: string, body: ConvertWorkSession, operationId?: string): Promise<TaskRow>;
     splitTask(id: string, body: SplitTask, operationId?: string): Promise<SplitResult>;
     analyzeTaskDependencies(): Promise<DependencyAnalysisResponse>;
     importIcal(icalText: string): Promise<IcalImportResult>;
@@ -1253,4 +1283,4 @@ declare class TakusuClient {
     }>;
 }
 
-export { ApiError, type Completion, type CreateHabit, type CreateHabitScheduledSpan, type CreateSkill, type CreateTask, type DeleteAllGcalFailure, type DeleteAllGcalResponse, type DependencyAnalysisResponse, type DependencyNode, type GenerateSchedule, type GoogleCalEventMapping, type GoogleCalSettings, type HabitDetail, type HabitEstimateRequest, type HabitEstimateResult, type HabitEstimateSample, type HabitEstimateStep, type HabitPreviewRequest, type HabitPreviewTask, type HabitRow, type HabitScheduledSpanRow, type HabitStepInput, type HabitStepRow, type IcalImportResult, type MoveEntryRequest, type MoveEntryResponse, type OAuthCallbackResponse, type ProgressEventRow, type ProgressResult, type RecordProgress, type RedundantDependency, type RescheduleRequest, type ScheduleEntry, type ScheduleRow, type SettingsRow, type SkillRow, type SplitResult, type SplitTask, type SyncTriggerResponse, TakusuClient, type TaskQuery, type TaskRow, type TaskStatus, type TokenCreateResponse, type TokenRow, type UpdateGoogleCalSettings, type UpdateHabit, type UpdateSettings, type UpdateSkill, type UpdateTask, WINDOW_MODE_DAY, WINDOW_MODE_PERIOD, type WindowMode, type components, parseDepends, parseDependsOn, parseSchedule };
+export { ApiError, type AttachWorkSession, type Completion, type ConvertWorkSession, type CreateHabit, type CreateHabitScheduledSpan, type CreateSkill, type CreateTask, type DeleteAllGcalFailure, type DeleteAllGcalResponse, type DependencyAnalysisResponse, type DependencyNode, type GenerateSchedule, type GoogleCalEventMapping, type GoogleCalSettings, type HabitDetail, type HabitEstimateRequest, type HabitEstimateResult, type HabitEstimateSample, type HabitEstimateStep, type HabitPreviewRequest, type HabitPreviewTask, type HabitRow, type HabitScheduledSpanRow, type HabitStepInput, type HabitStepRow, type IcalImportResult, type MoveEntryRequest, type MoveEntryResponse, type OAuthCallbackResponse, type ProgressEventRow, type RecordWorkSessionProgress, type RedundantDependency, type RescheduleRequest, type ScheduleEntry, type ScheduleRow, type SettingsRow, type SkillRow, type SplitResult, type SplitTask, type StartWorkSession, type SyncTriggerResponse, TakusuClient, type TaskQuery, type TaskRow, type TaskStatus, type TokenCreateResponse, type TokenRow, type UpdateGoogleCalSettings, type UpdateHabit, type UpdateSettings, type UpdateSkill, type UpdateTask, WINDOW_MODE_DAY, WINDOW_MODE_PERIOD, type WindowMode, type WorkSessionProgressResult, type WorkSessionRow, type components, parseDepends, parseDependsOn, parseSchedule };

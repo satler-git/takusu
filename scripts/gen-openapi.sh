@@ -22,7 +22,7 @@ cargo run -p takusu-local --bin generate-openapi -- -o "$SPEC"
 
 echo "==> Generating TypeScript types ($TYPES)"
 cd ts/takusu-client
-npx openapi-typescript openapi/openapi.json -o src/types.gen.ts
+npm run gen:types
 cd ../..
 
 echo "==> Done"

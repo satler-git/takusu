@@ -4,13 +4,14 @@ use async_trait::async_trait;
 use takusu_contracts::storage::StorageResult;
 use takusu_contracts::validate::validate_task_datetimes;
 use takusu_contracts::{
-    CreateHabit, CreateHabitScheduledSpan, CreateMemory, CreateSkill, CreateTask,
-    GoogleCalEventRow, GoogleCalSettingsRow, HabitRow, HabitScheduledSpanRow,
-    HabitStepEstimateInput, HabitStepInput, HabitStepRow, MemoryQuery, MemoryRow, ProgressResult,
-    RecordProgress, SaveScheduleRequest, ScheduleRow, SettingsRow, SimilarTaskQuery,
-    SimilarTaskRow, SkillRow, SplitResult, SplitTask, Storage, StorageError, TaskProgress,
-    TaskQuery, TaskRow, TokenCreateResponse, TokenRow, UpdateGoogleCalSettings, UpdateHabit,
-    UpdateMemory, UpdateSettings, UpdateSkill, UpdateTask,
+    AttachWorkSession, ConvertWorkSession, CreateHabit, CreateHabitScheduledSpan, CreateMemory,
+    CreateSkill, CreateTask, GoogleCalEventRow, GoogleCalSettingsRow, HabitRow,
+    HabitScheduledSpanRow, HabitStepEstimateInput, HabitStepInput, HabitStepRow, MemoryQuery,
+    MemoryRow, ProgressEventRow, RecordWorkSessionProgress, SaveScheduleRequest, ScheduleRow,
+    SettingsRow, SimilarTaskQuery, SimilarTaskRow, SkillRow, SplitResult, SplitTask, StartWorkSession,
+    Storage, StorageError, TaskProgress, TaskQuery, TaskRow, TokenCreateResponse, TokenRow,
+    UpdateGoogleCalSettings, UpdateHabit, UpdateMemory, UpdateSettings, UpdateSkill, UpdateTask,
+    WorkSessionProgressResult, WorkSessionRow,
 };
 use takusu_types::jwt::{DEFAULT_TOKEN_TTL_SECONDS, generate_token_jwt};
 use takusu_types::{
@@ -332,7 +333,7 @@ impl Storage for D1Storage {
             if status == TaskStatus::Skipped || status == TaskStatus::Completed {
                 let now = takusu_types::now_rfc3339();
                 let session_stmt = self.db.prepare(
-                    "UPDATE task_work_sessions SET ended_at = ?1 WHERE task_id = ?2 AND ended_at IS NULL",
+                    "UPDATE work_sessions SET ended_at = ?1 WHERE task_id = ?2 AND ended_at IS NULL",
                 );
                 stmts.push(
                     session_stmt
@@ -439,11 +440,11 @@ impl Storage for D1Storage {
                 .bind(&[JsValue::from_str(&full)])
                 .map_err(d1_err)?,
             self.db
-                .prepare("DELETE FROM task_work_sessions WHERE task_id = ?1")
+                .prepare("UPDATE work_sessions SET task_id = NULL WHERE task_id = ?1")
                 .bind(&[JsValue::from_str(&full)])
                 .map_err(d1_err)?,
             self.db
-                .prepare("DELETE FROM progress_events WHERE task_id = ?1")
+                .prepare("UPDATE progress_events SET task_id = NULL WHERE task_id = ?1")
                 .bind(&[JsValue::from_str(&full)])
                 .map_err(d1_err)?,
             self.db
@@ -623,8 +624,8 @@ impl Storage for D1Storage {
         let stmts = vec![
             self.db.prepare("UPDATE tasks SET split_from_task_id = NULL WHERE split_from_task_id IN (SELECT id FROM tasks WHERE habit_id = ?1)").bind(&[JsValue::from_str(&full)]).map_err(d1_err)?,
             self.db.prepare("DELETE FROM google_cal_events WHERE task_id IN (SELECT id FROM tasks WHERE habit_id = ?1)").bind(&[JsValue::from_str(&full)]).map_err(d1_err)?,
-            self.db.prepare("DELETE FROM task_work_sessions WHERE task_id IN (SELECT id FROM tasks WHERE habit_id = ?1)").bind(&[JsValue::from_str(&full)]).map_err(d1_err)?,
-            self.db.prepare("DELETE FROM progress_events WHERE task_id IN (SELECT id FROM tasks WHERE habit_id = ?1)").bind(&[JsValue::from_str(&full)]).map_err(d1_err)?,
+            self.db.prepare("UPDATE work_sessions SET task_id = NULL WHERE task_id IN (SELECT id FROM tasks WHERE habit_id = ?1)").bind(&[JsValue::from_str(&full)]).map_err(d1_err)?,
+            self.db.prepare("UPDATE progress_events SET task_id = NULL WHERE task_id IN (SELECT id FROM tasks WHERE habit_id = ?1)").bind(&[JsValue::from_str(&full)]).map_err(d1_err)?,
             self.db.prepare("DELETE FROM tasks WHERE habit_id = ?1").bind(&[JsValue::from_str(&full)]).map_err(d1_err)?,
             self.db.prepare("DELETE FROM habit_scheduled_spans WHERE habit_id = ?1").bind(&[JsValue::from_str(&full)]).map_err(d1_err)?,
             self.db.prepare("DELETE FROM habit_steps WHERE habit_id = ?1").bind(&[JsValue::from_str(&full)]).map_err(d1_err)?,
@@ -1448,140 +1449,463 @@ impl Storage for D1Storage {
         Ok(out)
     }
 
-    // ── Progress / work sessions ────────────────────────────────────────
+    // ── Work sessions ───────────────────────────────────────────────────
 
-    async fn start_task_work(
+    async fn start_work_session(
         &self,
-        id: &str,
+        body: &StartWorkSession,
         operation_id: Option<&str>,
-    ) -> StorageResult<TaskRow> {
-        let payload = serde_json::json!({"op": "start", "id": id}).to_string();
+    ) -> StorageResult<WorkSessionRow> {
+        let payload = serde_json::json!({"op": "start_work_session", "body": body}).to_string();
         let request_hash = progress_request_hash(&payload, operation_id);
         if let Some(op_id) = operation_id
             && let Some(stored) =
-                check_progress_idempotency::<TaskRow>(&self.db, op_id, &request_hash).await?
+                check_progress_idempotency::<WorkSessionRow>(&self.db, op_id, &request_hash).await?
         {
             return Ok(stored);
         }
-        let full = resolve_task_id(&self.db, id).await?;
-        let status_stmt = self.db.prepare("SELECT status FROM tasks WHERE id = ?1");
-        let status: Option<StatusRow> = status_stmt
-            .bind(&[JsValue::from_str(&full)])
-            .map_err(d1_err)?
+
+        let open: Option<WorkSessionRow> = self
+            .db
+            .prepare(format!(
+                "SELECT {WORK_SESSION_COLS} FROM work_sessions WHERE ended_at IS NULL",
+            ))
             .first_t()
             .await?;
-        if status
-            .as_ref()
-            .is_some_and(|s| s.status == "completed" || s.status == "skipped")
-        {
-            return Err(StorageError::BadRequest(format!(
-                "cannot start work on a {} task",
-                status.map(|s| s.status).unwrap_or_default()
-            )));
+        if open.is_some() {
+            return Err(StorageError::BadRequest(
+                "an open work session already exists".into(),
+            ));
         }
-        let session_id = uuid::Uuid::now_v7().to_string();
+
+        let mut linked_task: Option<TaskRow> = None;
+        let mut task_id: Option<String> = None;
+
+        if let Some(ref id) = body.task_id {
+            let full = resolve_task_id(&self.db, id).await?;
+            let task = select_one_task(&self.db, &full).await?;
+            if task.status == TaskStatus::Completed || task.status == TaskStatus::Skipped {
+                return Err(StorageError::BadRequest(format!(
+                    "cannot start work session for a {} task",
+                    task.status
+                )));
+            }
+            task_id = Some(full);
+            linked_task = Some(task);
+        }
+
+        let now = takusu_types::now_rfc3339();
+        let id = uuid::Uuid::now_v7().to_string();
+        let title = body
+            .title
+            .clone()
+            .or_else(|| linked_task.as_ref().map(|t| t.title.clone()));
+        let note = body.note.clone();
+        let quantity_total = body
+            .quantity_total
+            .or(linked_task.as_ref().and_then(|t| t.quantity_total))
+            .filter(|q| *q != 0);
+        let quantity_unit = body
+            .quantity_unit
+            .clone()
+            .or_else(|| linked_task.as_ref().and_then(|t| t.quantity_unit.clone()));
+
+        let mut stmts: Vec<worker::D1PreparedStatement> = Vec::new();
         let insert = self.db.prepare(
-            "INSERT OR IGNORE INTO task_work_sessions (id, task_id, started_at, created_at) VALUES (?1, ?2, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))",
+            "INSERT INTO work_sessions (id, task_id, title, note, quantity_total, quantity_done, quantity_unit, started_at, ended_at, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, NULL, ?9)",
         );
-        insert
-            .bind(&[JsValue::from_str(&session_id), JsValue::from_str(&full)])
-            .map_err(d1_err)?
-            .run()
-            .await
-            .map_err(d1_err)?;
-        let update = self.db.prepare(
-            "UPDATE tasks SET status = 'in_progress', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?1",
+        stmts.push(
+            insert
+                .bind(&[
+                    JsValue::from_str(&id),
+                    task_id.as_deref().map(JsValue::from_str).unwrap_or(JsValue::NULL),
+                    title.as_deref().map(JsValue::from_str).unwrap_or(JsValue::NULL),
+                    note.as_deref().map(JsValue::from_str).unwrap_or(JsValue::NULL),
+                    quantity_total.map(|q| JsValue::from_f64(f64::from(q))).unwrap_or(JsValue::NULL),
+                    JsValue::from_f64(f64::from(Quantity::default())),
+                    quantity_unit.as_deref().map(JsValue::from_str).unwrap_or(JsValue::NULL),
+                    JsValue::from_str(&now),
+                    JsValue::from_str(&now),
+                ])
+                .map_err(d1_err)?,
         );
-        update
-            .bind(&[JsValue::from_str(&full)])
-            .map_err(d1_err)?
-            .run()
-            .await
-            .map_err(d1_err)?;
-        let task = select_one_task(&self.db, &full).await?;
-        if let Some(op_id) = operation_id {
-            record_progress_operation(&self.db, op_id, &request_hash, &task).await?;
-        }
-        Ok(task)
-    }
 
-    async fn pause_task_work(
-        &self,
-        id: &str,
-        operation_id: Option<&str>,
-    ) -> StorageResult<TaskRow> {
-        let payload = serde_json::json!({"op": "pause", "id": id}).to_string();
-        let request_hash = progress_request_hash(&payload, operation_id);
-        if let Some(op_id) = operation_id
-            && let Some(stored) =
-                check_progress_idempotency::<TaskRow>(&self.db, op_id, &request_hash).await?
-        {
-            return Ok(stored);
+        if let Some(ref full) = task_id {
+            let update = self.db.prepare(
+                "UPDATE tasks SET status = 'in_progress', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?1",
+            );
+            stmts.push(update.bind(&[JsValue::from_str(full)]).map_err(d1_err)?);
         }
-        let full = resolve_task_id(&self.db, id).await?;
-        let status_stmt = self.db.prepare("SELECT status FROM tasks WHERE id = ?1");
-        let status: Option<StatusRow> = status_stmt
-            .bind(&[JsValue::from_str(&full)])
+
+        self.db.batch(stmts).await.map_err(d1_err)?;
+
+        let session: WorkSessionRow = self
+            .db
+            .prepare(format!(
+                "SELECT {WORK_SESSION_COLS} FROM work_sessions WHERE id = ?1",
+            ))
+            .bind(&[JsValue::from_str(&id)])
             .map_err(d1_err)?
             .first_t()
-            .await?;
-        if status
-            .as_ref()
-            .is_some_and(|s| s.status == "completed" || s.status == "skipped")
-        {
-            return Err(StorageError::BadRequest(format!(
-                "cannot pause work on a {} task",
-                status.map(|s| s.status).unwrap_or_default()
-            )));
-        }
-        let close = self.db.prepare(
-            "UPDATE task_work_sessions SET ended_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE task_id = ?1 AND ended_at IS NULL",
-        );
-        close
-            .bind(&[JsValue::from_str(&full)])
-            .map_err(d1_err)?
-            .run()
-            .await
-            .map_err(d1_err)?;
-        let update = self.db.prepare(
-            "UPDATE tasks SET status = 'scheduled', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?1",
-        );
-        update
-            .bind(&[JsValue::from_str(&full)])
-            .map_err(d1_err)?
-            .run()
-            .await
-            .map_err(d1_err)?;
-        let task = select_one_task(&self.db, &full).await?;
+            .await?
+            .ok_or_else(|| StorageError::NotFound(format!("work session {id} not found")))?;
+
         if let Some(op_id) = operation_id {
-            record_progress_operation(&self.db, op_id, &request_hash, &task).await?;
+            record_progress_operation(&self.db, op_id, &request_hash, &session).await?;
         }
-        Ok(task)
+        Ok(session)
     }
 
-    async fn record_progress(
+    async fn pause_work_session(
         &self,
         id: &str,
-        body: &RecordProgress,
         operation_id: Option<&str>,
-    ) -> StorageResult<ProgressResult> {
-        let payload = serde_json::json!({"op": "progress", "id": id, "body": body}).to_string();
+    ) -> StorageResult<WorkSessionRow> {
+        let payload = serde_json::json!({"op": "pause_work_session", "id": id}).to_string();
         let request_hash = progress_request_hash(&payload, operation_id);
         if let Some(op_id) = operation_id
             && let Some(stored) =
-                check_progress_idempotency::<ProgressResult>(&self.db, op_id, &request_hash).await?
+                check_progress_idempotency::<WorkSessionRow>(&self.db, op_id, &request_hash).await?
         {
             return Ok(stored);
         }
-        let full = resolve_task_id(&self.db, id).await?;
-        let task = select_one_task(&self.db, &full).await?;
-        if task.status == TaskStatus::Completed || task.status == TaskStatus::Skipped {
-            return Err(StorageError::BadRequest(format!(
-                "cannot record progress on a {} task",
-                task.status
-            )));
+
+        let session: WorkSessionRow = self
+            .db
+            .prepare(format!(
+                "SELECT {WORK_SESSION_COLS} FROM work_sessions WHERE id = ?1",
+            ))
+            .bind(&[JsValue::from_str(id)])
+            .map_err(d1_err)?
+            .first_t()
+            .await?
+            .ok_or_else(|| StorageError::NotFound(format!("work session {id} not found")))?;
+
+        let now = takusu_types::now_rfc3339();
+        let was_open = session.ended_at.is_none();
+        let mut stmts: Vec<worker::D1PreparedStatement> = Vec::new();
+        let update = self.db.prepare(
+            "UPDATE work_sessions SET ended_at = COALESCE(ended_at, ?1) WHERE id = ?2",
+        );
+        stmts.push(
+            update
+                .bind(&[JsValue::from_str(&now), JsValue::from_str(id)])
+                .map_err(d1_err)?,
+        );
+
+        if let Some(ref task_id) = session.task_id && was_open {
+            let task = select_one_task(&self.db, task_id).await?;
+            if task.status != TaskStatus::Completed && task.status != TaskStatus::Skipped {
+                let task_update = self.db.prepare(
+                    "UPDATE tasks SET status = 'scheduled', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?1",
+                );
+                stmts.push(task_update.bind(&[JsValue::from_str(task_id)]).map_err(d1_err)?);
+            }
         }
-        if let Some(total) = task.quantity_total
+
+        self.db.batch(stmts).await.map_err(d1_err)?;
+
+        let session: WorkSessionRow = self
+            .db
+            .prepare(format!(
+                "SELECT {WORK_SESSION_COLS} FROM work_sessions WHERE id = ?1",
+            ))
+            .bind(&[JsValue::from_str(id)])
+            .map_err(d1_err)?
+            .first_t()
+            .await?
+            .ok_or_else(|| StorageError::NotFound(format!("work session {id} not found")))?;
+
+        if let Some(op_id) = operation_id {
+            record_progress_operation(&self.db, op_id, &request_hash, &session).await?;
+        }
+        Ok(session)
+    }
+
+    async fn complete_work_session(
+        &self,
+        id: &str,
+        operation_id: Option<&str>,
+    ) -> StorageResult<WorkSessionRow> {
+        let payload =
+            serde_json::json!({"op": "complete_work_session", "id": id}).to_string();
+        let request_hash = progress_request_hash(&payload, operation_id);
+        if let Some(op_id) = operation_id
+            && let Some(stored) =
+                check_progress_idempotency::<WorkSessionRow>(&self.db, op_id, &request_hash).await?
+        {
+            return Ok(stored);
+        }
+
+        let session: WorkSessionRow = self
+            .db
+            .prepare(format!(
+                "SELECT {WORK_SESSION_COLS} FROM work_sessions WHERE id = ?1",
+            ))
+            .bind(&[JsValue::from_str(id)])
+            .map_err(d1_err)?
+            .first_t()
+            .await?
+            .ok_or_else(|| StorageError::NotFound(format!("work session {id} not found")))?;
+
+        let now_rfc = takusu_types::now_rfc3339();
+        let now_ts = takusu_types::Timestamp::now();
+
+        let mut stmts: Vec<worker::D1PreparedStatement> = Vec::new();
+        let update = self.db.prepare(
+            "UPDATE work_sessions SET ended_at = COALESCE(ended_at, ?1) WHERE id = ?2",
+        );
+        stmts.push(
+            update
+                .bind(&[JsValue::from_str(&now_rfc), JsValue::from_str(id)])
+                .map_err(d1_err)?,
+        );
+
+        if let Some(task_id) = session.task_id.clone() {
+            let task_before = select_one_task(&self.db, &task_id).await?;
+
+            if task_before.status != TaskStatus::Completed
+                && task_before.status != TaskStatus::Skipped
+            {
+                let session_stmt = self.db.prepare(format!(
+                    "SELECT {WORK_SESSION_COLS} FROM work_sessions WHERE task_id = ?1 ORDER BY started_at ASC",
+                ));
+                let sessions: Vec<WorkSessionRow> = d1_all(
+                    &session_stmt
+                        .bind(&[JsValue::from_str(&task_id)])
+                        .map_err(d1_err)?,
+                )
+                .await?;
+                let current_minutes = if let Some(end) = session.ended_at {
+                    takusu_types::minutes_between_ts(session.started_at, end)
+                } else {
+                    takusu_types::minutes_between_ts(session.started_at, now_ts)
+                };
+                let total_active_minutes: i64 = sessions
+                    .iter()
+                    .map(|s| if s.id == id { current_minutes } else { session_minutes(s) })
+                    .sum();
+
+                // #1419 (P2): genuine partial progress (0 < done < total) splits
+                // the unfinished remainder into a new task instead of silently
+                // inflating quantity_done to the total. Zero progress keeps the
+                // previous "declared done" behaviour.
+                let mut effective_total = task_before.quantity_total;
+                if let Some(total) = task_before.quantity_total
+                    && task_before.quantity_done > 0
+                    && task_before.quantity_done < total
+                {
+                    let retained = task_before.quantity_done;
+                    let remainder_quantity = Quantity::new(total.get() - retained.get())
+                        .expect("partial completion guarantees quantity_done < quantity_total");
+                    let original_quantity_total = task_before
+                        .original_quantity_total
+                        .filter(|t| *t != 0)
+                        .unwrap_or(total);
+                    let display_id = allocate_display_id(&self.db, None).await?;
+                    let remainder_id = uuid::Uuid::now_v7().to_string();
+                    let normalized_title = takusu_search::memory::normalize_text(
+                        &task_before.title,
+                        Some(takusu_search::memory::MAX_CONTENT_SCALARS),
+                    )
+                    .ok();
+                    let depends_json =
+                        takusu_types::DependencyList::new(Vec::new()).to_json_string();
+
+                    let remainder_insert = self.db.prepare(
+                        "INSERT INTO tasks (id, display_id, title, normalized_title, description, start_at, end_at, avg_minutes, sigma_minutes, depends, parallelizable, allows_parallel, abandonability, status, ical_uid, habit_id, fixed, habit_step_id, quantity_total, quantity_done, quantity_unit, completed_at, split_from_task_id, original_quantity_total, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26)",
+                    );
+                    stmts.push(
+                        remainder_insert
+                            .bind(&[
+                                JsValue::from_str(&remainder_id),
+                                JsValue::from_f64(display_id as f64),
+                                JsValue::from_str(&task_before.title),
+                                normalized_title.as_deref().map(JsValue::from_str).unwrap_or(JsValue::NULL),
+                                task_before.description.as_deref().map(JsValue::from_str).unwrap_or(JsValue::NULL),
+                                task_before.start_at.map(|t| JsValue::from_str(&t.to_string())).unwrap_or(JsValue::NULL),
+                                JsValue::from_str(&task_before.end_at.to_string()),
+                                JsValue::from_f64(task_before.avg_minutes as f64),
+                                JsValue::from_f64(task_before.sigma_minutes as f64),
+                                JsValue::from_str(&depends_json),
+                                JsValue::from_bool(task_before.parallelizable),
+                                JsValue::from_bool(task_before.allows_parallel),
+                                JsValue::from_f64(task_before.abandonability.into()),
+                                JsValue::from_str("pending"),
+                                JsValue::NULL,
+                                JsValue::NULL,
+                                JsValue::from_bool(task_before.fixed),
+                                JsValue::NULL,
+                                JsValue::from_f64(f64::from(remainder_quantity)),
+                                JsValue::from_f64(0.0),
+                                task_before.quantity_unit.as_deref().map(JsValue::from_str).unwrap_or(JsValue::NULL),
+                                JsValue::NULL,
+                                JsValue::from_str(&task_id),
+                                JsValue::from_f64(f64::from(original_quantity_total)),
+                                JsValue::from_str(&now_rfc),
+                                JsValue::from_str(&now_rfc),
+                            ])
+                            .map_err(d1_err)?,
+                    );
+
+                    let original_update = self.db.prepare(
+                        "UPDATE tasks SET quantity_total = ?1, original_quantity_total = ?2, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?3",
+                    );
+                    stmts.push(
+                        original_update
+                            .bind(&[
+                                JsValue::from_f64(f64::from(retained)),
+                                JsValue::from_f64(f64::from(original_quantity_total)),
+                                JsValue::from_str(&task_id),
+                            ])
+                            .map_err(d1_err)?,
+                    );
+
+                    effective_total = Some(retained);
+                }
+
+                let quantity_done = effective_total.unwrap_or(task_before.quantity_done);
+                let delta_quantity = quantity_done.get() - task_before.quantity_done.get();
+
+                let (new_avg, new_sigma) = if delta_quantity > 0 && total_active_minutes > 0 {
+                    compute_updated_estimate(
+                        &self.db,
+                        &task_id,
+                        task_before.avg_minutes,
+                        task_before.sigma_minutes,
+                        effective_total.map(|q| q.get()),
+                        total_active_minutes,
+                        delta_quantity,
+                    )
+                    .await?
+                } else if effective_total.is_none() && total_active_minutes > 0 {
+                    (total_active_minutes, task_before.sigma_minutes)
+                } else {
+                    (task_before.avg_minutes, task_before.sigma_minutes)
+                };
+
+                let status = TaskStatus::Completed;
+                let completed_at = task_before.completed_at.or(Some(now_ts));
+
+                let task_update = self.db.prepare(
+                    "UPDATE tasks SET status = ?1, completed_at = ?2, quantity_done = ?3, avg_minutes = ?4, sigma_minutes = ?5, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?6",
+                );
+                stmts.push(
+                    task_update
+                        .bind(&[
+                            JsValue::from_str(&status.to_string()),
+                            completed_at.map(|t| JsValue::from_str(&t.to_string())).unwrap_or(JsValue::NULL),
+                            JsValue::from_f64(f64::from(quantity_done)),
+                            JsValue::from_f64(new_avg as f64),
+                            JsValue::from_f64(new_sigma as f64),
+                            JsValue::from_str(&task_id),
+                        ])
+                        .map_err(d1_err)?,
+                );
+
+                if total_active_minutes > 0 {
+                    let event_id = uuid::Uuid::now_v7().to_string();
+                    let insert = self.db.prepare(
+                        "INSERT INTO progress_events (id, work_session_id, task_id, at, quantity_done, delta_quantity, active_minutes, note) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                    );
+                    stmts.push(
+                        insert
+                            .bind(&[
+                                JsValue::from_str(&event_id),
+                                JsValue::from_str(id),
+                                JsValue::from_str(&task_id),
+                                JsValue::from_str(&now_rfc),
+                                JsValue::from_f64(f64::from(quantity_done)),
+                                JsValue::from_f64(delta_quantity as f64),
+                                JsValue::from_f64(total_active_minutes as f64),
+                                JsValue::from_str("completed"),
+                            ])
+                            .map_err(d1_err)?,
+                    );
+                }
+            }
+        }
+
+        self.db.batch(stmts).await.map_err(d1_err)?;
+
+        let session: WorkSessionRow = self
+            .db
+            .prepare(format!(
+                "SELECT {WORK_SESSION_COLS} FROM work_sessions WHERE id = ?1",
+            ))
+            .bind(&[JsValue::from_str(id)])
+            .map_err(d1_err)?
+            .first_t()
+            .await?
+            .ok_or_else(|| StorageError::NotFound(format!("work session {id} not found")))?;
+
+        if let Some(op_id) = operation_id {
+            record_progress_operation(&self.db, op_id, &request_hash, &session).await?;
+        }
+        Ok(session)
+    }
+
+    async fn record_work_session_progress(
+        &self,
+        id: &str,
+        body: &RecordWorkSessionProgress,
+        operation_id: Option<&str>,
+    ) -> StorageResult<WorkSessionProgressResult> {
+        let payload =
+            serde_json::json!({"op": "record_work_session_progress", "id": id, "body": body})
+                .to_string();
+        let request_hash = progress_request_hash(&payload, operation_id);
+        if let Some(op_id) = operation_id
+            && let Some(stored) =
+                check_progress_idempotency::<WorkSessionProgressResult>(&self.db, op_id, &request_hash).await?
+        {
+            return Ok(stored);
+        }
+
+        let mut session: WorkSessionRow = self
+            .db
+            .prepare(format!(
+                "SELECT {WORK_SESSION_COLS} FROM work_sessions WHERE id = ?1",
+            ))
+            .bind(&[JsValue::from_str(id)])
+            .map_err(d1_err)?
+            .first_t()
+            .await?
+            .ok_or_else(|| StorageError::NotFound(format!("work session {id} not found")))?;
+
+        // Update the session's total when the caller supplies a new one.
+        // A value of 0 is treated as "clear the total", matching create/update.
+        if let Some(raw_total) = body.quantity_total {
+            let desired = (raw_total != 0).then_some(raw_total);
+            if desired != session.quantity_total {
+                self.db
+                    .prepare("UPDATE work_sessions SET quantity_total = ?1 WHERE id = ?2")
+                    .bind(&[
+                        desired
+                            .map(|q| JsValue::from_f64(f64::from(q)))
+                            .unwrap_or(JsValue::NULL),
+                        JsValue::from_str(id),
+                    ])
+                    .map_err(d1_err)?
+                    .run()
+                    .await
+                    .map_err(d1_err)?;
+                session = self
+                    .db
+                    .prepare(format!(
+                        "SELECT {WORK_SESSION_COLS} FROM work_sessions WHERE id = ?1",
+                    ))
+                    .bind(&[JsValue::from_str(id)])
+                    .map_err(d1_err)?
+                    .first_t()
+                    .await?
+                    .ok_or_else(|| {
+                        StorageError::NotFound(format!("work session {id} not found"))
+                    })?;
+            }
+        }
+
+        if let Some(total) = session.quantity_total
             && body.quantity_done > total
         {
             return Err(StorageError::BadRequest(format!(
@@ -1589,128 +1913,223 @@ impl Storage for D1Storage {
                 body.quantity_done, total
             )));
         }
-        let open_stmt = self.db.prepare(
-            "SELECT id, task_id, started_at, ended_at, created_at FROM task_work_sessions WHERE task_id = ?1 AND ended_at IS NULL ORDER BY started_at ASC LIMIT 1",
-        );
-        let open: Option<takusu_contracts::TaskWorkSessionRow> = open_stmt
-            .bind(&[JsValue::from_str(&full)])
-            .map_err(d1_err)?
-            .first_t()
-            .await?;
-        if open.is_none() && body.quantity_done > task.quantity_done {
-            return Err(StorageError::BadRequest(
-                "no open work session; start work first".into(),
-            ));
+
+        let mut linked_task: Option<TaskRow> = None;
+        if let Some(ref task_id) = session.task_id {
+            let task = select_one_task(&self.db, task_id).await?;
+            if task.status == TaskStatus::Completed || task.status == TaskStatus::Skipped {
+                return Err(StorageError::BadRequest(format!(
+                    "cannot record progress on a {} task",
+                    task.status
+                )));
+            }
+
+            // Keep the linked task's total in sync with the session total.
+            if let Some(raw_total) = body.quantity_total {
+                let desired = (raw_total != 0).then_some(raw_total);
+                if desired != task.quantity_total {
+                    self.db
+                        .prepare("UPDATE tasks SET quantity_total = ?1 WHERE id = ?2")
+                        .bind(&[
+                            desired
+                                .map(|q| JsValue::from_f64(f64::from(q)))
+                                .unwrap_or(JsValue::NULL),
+                            JsValue::from_str(task_id),
+                        ])
+                        .map_err(d1_err)?
+                        .run()
+                        .await
+                        .map_err(d1_err)?;
+                }
+            }
+
+            // Re-fetch after any total update so validation uses the new total.
+            let task = select_one_task(&self.db, task_id).await?;
+            linked_task = Some(task);
         }
-        let delta_quantity = body.quantity_done.get() - task.quantity_done.get();
-        if delta_quantity == 0 {
-            let result = ProgressResult {
-                task: task.clone(),
+
+        let delta = body.quantity_done.get() - session.quantity_done.get();
+
+        if delta == 0 {
+            let suggests_completion = match &linked_task {
+                Some(task) => task
+                    .quantity_total
+                    .map(|total| task.quantity_done >= total)
+                    .unwrap_or(false),
+                None => session
+                    .quantity_total
+                    .map(|total| body.quantity_done >= total)
+                    .unwrap_or(false),
+            };
+            let result = WorkSessionProgressResult {
+                work_session: session,
+                task: linked_task,
                 event: None,
-                suggests_completion: false,
+                suggests_completion,
             };
             if let Some(op_id) = operation_id {
                 record_progress_operation(&self.db, op_id, &request_hash, &result).await?;
             }
             return Ok(result);
         }
-        let now_stmt = self
-            .db
-            .prepare("SELECT strftime('%Y-%m-%dT%H:%M:%SZ', 'now') AS now");
-        let now_row: Option<NowRow> = now_stmt.first_t().await?;
-        let now = now_row
-            .map(|r| r.now)
-            .ok_or_else(|| StorageError::Internal("failed to get current time".into()))?;
-        let last_event_stmt = self.db.prepare(
-            "SELECT id, task_id, at, quantity_done, delta_quantity, active_minutes, note FROM progress_events WHERE task_id = ?1 ORDER BY id DESC LIMIT 1",
-        );
-        let last_event: Option<takusu_contracts::ProgressEventRow> = last_event_stmt
-            .bind(&[JsValue::from_str(&full)])
-            .map_err(d1_err)?
-            .first_t()
-            .await?;
-        let active_minutes = if let Some(ref session) = open {
+
+        if session.ended_at.is_some() && body.quantity_done > session.quantity_done {
+            return Err(StorageError::BadRequest(
+                "cannot record progress on a closed work session".into(),
+            ));
+        }
+
+        let now_rfc = takusu_types::now_rfc3339();
+        let active_minutes = if session.ended_at.is_none() && delta > 0 {
+            let last_event: Option<ProgressEventRow> = self
+                .db
+                .prepare(format!(
+                    "SELECT {PROGRESS_EVENT_COLS} FROM progress_events WHERE work_session_id = ?1 ORDER BY at DESC, id DESC LIMIT 1",
+                ))
+                .bind(&[JsValue::from_str(id)])
+                .map_err(d1_err)?
+                .first_t()
+                .await?;
             let base = if let Some(ref ev) = last_event {
-                std::cmp::max(session.started_at, ev.at)
+                if ev.at >= session.started_at {
+                    ev.at
+                } else {
+                    session.started_at
+                }
             } else {
                 session.started_at
             };
-            takusu_types::minutes_between(&base.to_string(), &now)
+            takusu_types::minutes_between_ts(base, takusu_types::Timestamp::now())
         } else {
             0
         };
+
         let event_id = uuid::Uuid::now_v7().to_string();
+        let mut stmts: Vec<worker::D1PreparedStatement> = Vec::new();
         let insert = self.db.prepare(
-            "INSERT INTO progress_events (id, task_id, at, quantity_done, delta_quantity, active_minutes, note) VALUES (?1, ?2, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), ?3, ?4, ?5, ?6)",
+            "INSERT INTO progress_events (id, work_session_id, task_id, at, quantity_done, delta_quantity, active_minutes, note) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
         );
-        insert
-            .bind(&[
-                JsValue::from_str(&event_id),
-                JsValue::from_str(&full),
-                JsValue::from_f64(f64::from(body.quantity_done)),
-                JsValue::from_f64(delta_quantity as f64),
-                JsValue::from_f64(active_minutes as f64),
-                body.note
-                    .as_deref()
-                    .map(JsValue::from_str)
-                    .unwrap_or(JsValue::NULL),
-            ])
-            .map_err(d1_err)?
-            .run()
-            .await
-            .map_err(d1_err)?;
-        let mut new_avg = task.avg_minutes;
-        let mut new_sigma = task.sigma_minutes;
-        if delta_quantity > 0 && active_minutes > 0 {
-            let (avg, sigma) = compute_updated_estimate(
-                &self.db,
-                &full,
-                task.avg_minutes,
-                task.sigma_minutes,
-                task.quantity_total.map(|q| q.get()),
-                active_minutes,
-                delta_quantity,
-            )
-            .await?;
-            new_avg = avg;
-            new_sigma = sigma;
+        stmts.push(
+            insert
+                .bind(&[
+                    JsValue::from_str(&event_id),
+                    JsValue::from_str(id),
+                    session.task_id.as_deref().map(JsValue::from_str).unwrap_or(JsValue::NULL),
+                    JsValue::from_str(&now_rfc),
+                    JsValue::from_f64(f64::from(body.quantity_done)),
+                    JsValue::from_f64(delta as f64),
+                    JsValue::from_f64(active_minutes as f64),
+                    body.note.as_deref().map(JsValue::from_str).unwrap_or(JsValue::NULL),
+                ])
+                .map_err(d1_err)?,
+        );
+
+        let ws_update = self.db.prepare(
+            "UPDATE work_sessions SET quantity_done = ?1 WHERE id = ?2",
+        );
+        stmts.push(
+            ws_update
+                .bind(&[
+                    JsValue::from_f64(f64::from(body.quantity_done)),
+                    JsValue::from_str(id),
+                ])
+                .map_err(d1_err)?,
+        );
+
+        let mut result_task: Option<TaskRow> = None;
+        let mut suggests_completion = false;
+
+        if let Some(ref task) = linked_task {
+            let task_id = task.id.clone();
+            let task_delta = body.quantity_done.get() - session.quantity_done.get();
+            let new_done_i64 = task.quantity_done.get() + task_delta;
+            let new_done = Quantity::new(new_done_i64)
+                .map_err(|e| StorageError::BadRequest(format!("invalid task quantity: {e}")))?;
+
+            if let Some(total) = task.quantity_total {
+                if new_done > total {
+                    return Err(StorageError::BadRequest(format!(
+                        "quantity_done would exceed quantity_total ({} > {})",
+                        new_done, total
+                    )));
+                }
+                suggests_completion = new_done >= total;
+            }
+
+            let mut new_avg = task.avg_minutes;
+            let mut new_sigma = task.sigma_minutes;
+            if task_delta > 0 && active_minutes > 0 {
+                let (avg, sigma) = compute_updated_estimate(
+                    &self.db,
+                    &task_id,
+                    task.avg_minutes,
+                    task.sigma_minutes,
+                    task.quantity_total.map(|q| q.get()),
+                    active_minutes,
+                    task_delta,
+                )
+                .await?;
+                new_avg = avg;
+                new_sigma = sigma;
+            }
+
+            let new_status = if task.status == TaskStatus::Completed {
+                TaskStatus::Completed
+            } else if task_delta < 0 {
+                task.status
+            } else {
+                TaskStatus::InProgress
+            };
+
+            let task_update = self.db.prepare(
+                "UPDATE tasks SET quantity_done = ?1, avg_minutes = ?2, sigma_minutes = ?3, status = ?4, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?5",
+            );
+            stmts.push(
+                task_update
+                    .bind(&[
+                        JsValue::from_f64(f64::from(new_done)),
+                        JsValue::from_f64(new_avg as f64),
+                        JsValue::from_f64(new_sigma as f64),
+                        JsValue::from_str(&new_status.to_string()),
+                        JsValue::from_str(&task_id),
+                    ])
+                    .map_err(d1_err)?,
+            );
+        } else if let Some(total) = session.quantity_total {
+            suggests_completion = body.quantity_done >= total;
         }
-        let status = if task.status == TaskStatus::Completed {
-            TaskStatus::Completed
-        } else if delta_quantity < 0 {
-            task.status
-        } else {
-            TaskStatus::InProgress
-        };
-        let suggests_completion = task
-            .quantity_total
-            .map(|total| body.quantity_done >= total)
-            .unwrap_or(false);
-        let update = self.db.prepare(
-            "UPDATE tasks SET quantity_done = ?1, avg_minutes = ?2, sigma_minutes = ?3, status = ?4, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?5",
-        );
-        update
-            .bind(&[
-                JsValue::from_f64(f64::from(body.quantity_done)),
-                JsValue::from_f64(new_avg as f64),
-                JsValue::from_f64(new_sigma as f64),
-                JsValue::from_str(&status.to_string()),
-                JsValue::from_str(&full),
-            ])
-            .map_err(d1_err)?
-            .run()
-            .await
-            .map_err(d1_err)?;
-        let event_stmt = self.db.prepare("SELECT id, task_id, at, quantity_done, delta_quantity, active_minutes, note FROM progress_events WHERE id = ?1");
-        let event: takusu_contracts::ProgressEventRow = event_stmt
+
+        self.db.batch(stmts).await.map_err(d1_err)?;
+
+        if let Some(ref task) = linked_task {
+            result_task = Some(select_one_task(&self.db, &task.id).await?);
+        }
+
+        let event: ProgressEventRow = self
+            .db
+            .prepare(format!(
+                "SELECT {PROGRESS_EVENT_COLS} FROM progress_events WHERE id = ?1",
+            ))
             .bind(&[JsValue::from_str(&event_id)])
             .map_err(d1_err)?
             .first_t()
             .await?
             .ok_or_else(|| StorageError::Internal("inserted progress event not found".into()))?;
-        let task = select_one_task(&self.db, &full).await?;
-        let result = ProgressResult {
-            task,
+
+        let work_session: WorkSessionRow = self
+            .db
+            .prepare(format!(
+                "SELECT {WORK_SESSION_COLS} FROM work_sessions WHERE id = ?1",
+            ))
+            .bind(&[JsValue::from_str(id)])
+            .map_err(d1_err)?
+            .first_t()
+            .await?
+            .ok_or_else(|| StorageError::NotFound(format!("work session {id} not found")))?;
+
+        let result = WorkSessionProgressResult {
+            work_session,
+            task: result_task,
             event: Some(event),
             suggests_completion,
         };
@@ -1720,12 +2139,133 @@ impl Storage for D1Storage {
         Ok(result)
     }
 
-    async fn complete_task_work(
+    async fn get_work_session(&self, id: &str) -> StorageResult<WorkSessionRow> {
+        let session: WorkSessionRow = self
+            .db
+            .prepare(format!(
+                "SELECT {WORK_SESSION_COLS} FROM work_sessions WHERE id = ?1",
+            ))
+            .bind(&[JsValue::from_str(id)])
+            .map_err(d1_err)?
+            .first_t()
+            .await?
+            .ok_or_else(|| StorageError::NotFound(format!("work session {id} not found")))?;
+        Ok(session)
+    }
+
+    async fn list_work_sessions(
+        &self,
+        task_id: Option<&str>,
+    ) -> StorageResult<Vec<WorkSessionRow>> {
+        if let Some(id) = task_id {
+            let full = resolve_task_id(&self.db, id).await?;
+            let sessions: Vec<WorkSessionRow> = d1_all(
+                &self
+                    .db
+                    .prepare(format!(
+                        "SELECT {WORK_SESSION_COLS} FROM work_sessions WHERE task_id = ?1 ORDER BY started_at ASC",
+                    ))
+                    .bind(&[JsValue::from_str(&full)])
+                    .map_err(d1_err)?,
+            )
+            .await?;
+            Ok(sessions)
+        } else {
+            let sessions: Vec<WorkSessionRow> = d1_all(
+                &self.db.prepare(format!(
+                    "SELECT {WORK_SESSION_COLS} FROM work_sessions ORDER BY started_at DESC",
+                )),
+            )
+            .await?;
+            Ok(sessions)
+        }
+    }
+
+    async fn attach_work_session(
         &self,
         id: &str,
+        body: &AttachWorkSession,
+        operation_id: Option<&str>,
+    ) -> StorageResult<WorkSessionRow> {
+        let payload =
+            serde_json::json!({"op": "attach_work_session", "id": id, "body": body}).to_string();
+        let request_hash = progress_request_hash(&payload, operation_id);
+        if let Some(op_id) = operation_id
+            && let Some(stored) =
+                check_progress_idempotency::<WorkSessionRow>(&self.db, op_id, &request_hash).await?
+        {
+            return Ok(stored);
+        }
+
+        let session: WorkSessionRow = self
+            .db
+            .prepare(format!(
+                "SELECT {WORK_SESSION_COLS} FROM work_sessions WHERE id = ?1",
+            ))
+            .bind(&[JsValue::from_str(id)])
+            .map_err(d1_err)?
+            .first_t()
+            .await?
+            .ok_or_else(|| StorageError::NotFound(format!("work session {id} not found")))?;
+
+        let full = resolve_task_id(&self.db, &body.task_id).await?;
+        let task = select_one_task(&self.db, &full).await?;
+        if task.status == TaskStatus::Completed || task.status == TaskStatus::Skipped {
+            return Err(StorageError::BadRequest(format!(
+                "cannot attach a work session to a {} task",
+                task.status
+            )));
+        }
+
+        let mut stmts: Vec<worker::D1PreparedStatement> = Vec::new();
+        let update = self.db.prepare("UPDATE work_sessions SET task_id = ?1 WHERE id = ?2");
+        stmts.push(
+            update
+                .bind(&[JsValue::from_str(&full), JsValue::from_str(id)])
+                .map_err(d1_err)?,
+        );
+
+        let pe_update = self.db.prepare("UPDATE progress_events SET task_id = ?1 WHERE work_session_id = ?2");
+        stmts.push(
+            pe_update
+                .bind(&[JsValue::from_str(&full), JsValue::from_str(id)])
+                .map_err(d1_err)?,
+        );
+
+        if session.ended_at.is_none() {
+            let task_update = self.db.prepare(
+                "UPDATE tasks SET status = 'in_progress', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?1",
+            );
+            stmts.push(task_update.bind(&[JsValue::from_str(&full)]).map_err(d1_err)?);
+        }
+
+        self.db.batch(stmts).await.map_err(d1_err)?;
+
+        let session: WorkSessionRow = self
+            .db
+            .prepare(format!(
+                "SELECT {WORK_SESSION_COLS} FROM work_sessions WHERE id = ?1",
+            ))
+            .bind(&[JsValue::from_str(id)])
+            .map_err(d1_err)?
+            .first_t()
+            .await?
+            .ok_or_else(|| StorageError::NotFound(format!("work session {id} not found")))?;
+
+        if let Some(op_id) = operation_id {
+            record_progress_operation(&self.db, op_id, &request_hash, &session).await?;
+        }
+        Ok(session)
+    }
+
+    async fn convert_work_session(
+        &self,
+        id: &str,
+        body: &ConvertWorkSession,
         operation_id: Option<&str>,
     ) -> StorageResult<TaskRow> {
-        let payload = serde_json::json!({"op": "complete", "id": id}).to_string();
+        let payload =
+            serde_json::json!({"op": "convert_work_session", "id": id, "body": body}).to_string();
         let request_hash = progress_request_hash(&payload, operation_id);
         if let Some(op_id) = operation_id
             && let Some(stored) =
@@ -1733,86 +2273,132 @@ impl Storage for D1Storage {
         {
             return Ok(stored);
         }
-        let full = resolve_task_id(&self.db, id).await?;
-        let original = select_one_task(&self.db, &full).await?;
-        if original.status == TaskStatus::Completed || original.status == TaskStatus::Skipped {
-            return Err(StorageError::BadRequest(format!(
-                "cannot complete a {} task",
-                original.status
-            )));
-        }
-        let close = self.db.prepare(
-            "UPDATE task_work_sessions SET ended_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE task_id = ?1 AND ended_at IS NULL",
-        );
-        close
-            .bind(&[JsValue::from_str(&full)])
-            .map_err(d1_err)?
-            .run()
-            .await
-            .map_err(d1_err)?;
-        let original = select_one_task(&self.db, &full).await?;
-        let session_stmt = self.db.prepare(
-            "SELECT id, task_id, started_at, ended_at, created_at FROM task_work_sessions WHERE task_id = ?1 ORDER BY started_at ASC",
-        );
-        let sessions: Vec<takusu_contracts::TaskWorkSessionRow> = d1_all(
-            &session_stmt
-                .bind(&[JsValue::from_str(&full)])
-                .map_err(d1_err)?,
-        )
-        .await?;
-        let total_active_minutes: i64 = sessions.iter().map(session_minutes).sum();
-        let quantity_done = original.quantity_total.unwrap_or(original.quantity_done);
-        let delta_quantity = quantity_done.get() - original.quantity_done.get();
-        let (new_avg, new_sigma) = if delta_quantity > 0 && total_active_minutes > 0 {
-            compute_updated_estimate(
-                &self.db,
-                &full,
-                original.avg_minutes,
-                original.sigma_minutes,
-                original.quantity_total.map(|q| q.get()),
-                total_active_minutes,
-                delta_quantity,
-            )
-            .await?
-        } else if original.quantity_total.is_none() && total_active_minutes > 0 {
-            (total_active_minutes, original.sigma_minutes)
-        } else {
-            (original.avg_minutes, original.sigma_minutes)
-        };
+
+        let now_rfc = takusu_types::now_rfc3339();
+        let now_ts = takusu_types::Timestamp::now();
+
         let update = self.db.prepare(
-            "UPDATE tasks SET status = 'completed', completed_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), quantity_done = ?1, avg_minutes = ?2, sigma_minutes = ?3, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?4",
+            "UPDATE work_sessions SET ended_at = COALESCE(ended_at, ?1) WHERE id = ?2",
         );
         update
-            .bind(&[
-                JsValue::from_f64(f64::from(quantity_done)),
-                JsValue::from_f64(new_avg as f64),
-                JsValue::from_f64(new_sigma as f64),
-                JsValue::from_str(&full),
-            ])
+            .bind(&[JsValue::from_str(&now_rfc), JsValue::from_str(id)])
             .map_err(d1_err)?
             .run()
             .await
             .map_err(d1_err)?;
-        if total_active_minutes > 0 {
-            let event_id = uuid::Uuid::now_v7().to_string();
-            let insert = self.db.prepare(
-                "INSERT INTO progress_events (id, task_id, at, quantity_done, delta_quantity, active_minutes, note) VALUES (?1, ?2, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), ?3, ?4, ?5, ?6)",
-            );
+
+        let session: WorkSessionRow = self
+            .db
+            .prepare(format!(
+                "SELECT {WORK_SESSION_COLS} FROM work_sessions WHERE id = ?1",
+            ))
+            .bind(&[JsValue::from_str(id)])
+            .map_err(d1_err)?
+            .first_t()
+            .await?
+            .ok_or_else(|| StorageError::NotFound(format!("work session {id} not found")))?;
+
+        let active_minutes = session_minutes(&session);
+        let end_at = session.ended_at.unwrap_or(now_ts);
+        let status = body.status.unwrap_or(TaskStatus::Completed);
+
+        let display_id = allocate_display_id(&self.db, None).await?;
+        let task_id = uuid::Uuid::now_v7().to_string();
+        let title = body
+            .title
+            .clone()
+            .or(session.title.clone())
+            .unwrap_or_else(|| "converted session".into());
+        let normalized_title = takusu_search::memory::normalize_text(
+            &title,
+            Some(takusu_search::memory::MAX_CONTENT_SCALARS),
+        )
+        .ok();
+        let description = session.note.clone();
+        let quantity_total = session.quantity_total.filter(|q| *q != 0);
+        let quantity_unit = session.quantity_unit.as_deref();
+        let fixed = body.fixed.unwrap_or(true);
+        // Estimate from the session's progress observations, weighting each by
+        // the quantity it accomplished (#1419). Falls back to the raw session
+        // duration when there is no quantity total or no positive observation.
+        let event_stmt = self.db.prepare(
+            "SELECT id, work_session_id, task_id, at, quantity_done, delta_quantity, active_minutes, note FROM progress_events WHERE work_session_id = ?1 AND delta_quantity > 0 AND active_minutes > 0 ORDER BY id ASC",
+        );
+        let events: Vec<takusu_contracts::ProgressEventRow> =
+            d1_all(&event_stmt.bind(&[JsValue::from_str(id)]).map_err(d1_err)?).await?;
+        let observations: Vec<(i64, i64)> = events
+            .iter()
+            .map(|e| (e.active_minutes, e.delta_quantity.unwrap_or(1).max(1)))
+            .collect();
+        let (avg_minutes, sigma_minutes) =
+            takusu_types::weighted_estimate(&observations, quantity_total.map(|q| q.get()))
+                .unwrap_or((
+                    active_minutes,
+                    takusu_types::Minutes(active_minutes).to_slots().0.max(1),
+                ));
+        let completed_at = if status == TaskStatus::Completed {
+            Some(now_ts)
+        } else {
+            None
+        };
+        let depends = takusu_types::DependencyList::new(Vec::new());
+        let depends_json = depends.to_json_string();
+
+        let insert = self.db.prepare(
+            "INSERT INTO tasks (id, display_id, title, normalized_title, description, start_at, end_at, avg_minutes, sigma_minutes, depends, parallelizable, allows_parallel, abandonability, status, ical_uid, habit_id, fixed, habit_step_id, quantity_total, quantity_done, quantity_unit, completed_at, split_from_task_id, original_quantity_total, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26)",
+        );
+        let mut stmts: Vec<worker::D1PreparedStatement> = Vec::new();
+        stmts.push(
             insert
                 .bind(&[
-                    JsValue::from_str(&event_id),
-                    JsValue::from_str(&full),
-                    JsValue::from_f64(f64::from(quantity_done)),
-                    JsValue::from_f64(delta_quantity as f64),
-                    JsValue::from_f64(total_active_minutes as f64),
-                    JsValue::from_str("completed"),
+                    JsValue::from_str(&task_id),
+                    JsValue::from_f64(display_id as f64),
+                    JsValue::from_str(&title),
+                    normalized_title.as_deref().map(JsValue::from_str).unwrap_or(JsValue::NULL),
+                    description.as_deref().map(JsValue::from_str).unwrap_or(JsValue::NULL),
+                    JsValue::from_str(&session.started_at.to_string()),
+                    JsValue::from_str(&end_at.to_string()),
+                    JsValue::from_f64(avg_minutes as f64),
+                    JsValue::from_f64(sigma_minutes as f64),
+                    JsValue::from_str(&depends_json),
+                    JsValue::from_bool(false),
+                    JsValue::from_bool(false),
+                    JsValue::from_f64(takusu_types::Abandonability::default().into()),
+                    JsValue::from_str(&status.to_string()),
+                    JsValue::NULL,
+                    JsValue::NULL,
+                    JsValue::from_bool(fixed),
+                    JsValue::NULL,
+                    quantity_total.map(|q| JsValue::from_f64(f64::from(q))).unwrap_or(JsValue::NULL),
+                    JsValue::from_f64(f64::from(session.quantity_done)),
+                    quantity_unit.map(JsValue::from_str).unwrap_or(JsValue::NULL),
+                    completed_at.map(|t| JsValue::from_str(&t.to_string())).unwrap_or(JsValue::NULL),
+                    JsValue::NULL,
+                    JsValue::NULL,
+                    JsValue::from_str(&now_rfc),
+                    JsValue::from_str(&now_rfc),
                 ])
-                .map_err(d1_err)?
-                .run()
-                .await
-                .map_err(d1_err)?;
-        }
-        let task = select_one_task(&self.db, &full).await?;
+                .map_err(d1_err)?,
+        );
+
+        let ws_update = self.db.prepare("UPDATE work_sessions SET task_id = ?1 WHERE id = ?2");
+        stmts.push(
+            ws_update
+                .bind(&[JsValue::from_str(&task_id), JsValue::from_str(id)])
+                .map_err(d1_err)?,
+        );
+
+        let pe_update = self.db.prepare("UPDATE progress_events SET task_id = ?1 WHERE work_session_id = ?2");
+        stmts.push(
+            pe_update
+                .bind(&[JsValue::from_str(&task_id), JsValue::from_str(id)])
+                .map_err(d1_err)?,
+        );
+
+        self.db.batch(stmts).await.map_err(d1_err)?;
+
+        let task = select_one_task(&self.db, &task_id).await?;
+
         if let Some(op_id) = operation_id {
             record_progress_operation(&self.db, op_id, &request_hash, &task).await?;
         }
@@ -1822,26 +2408,30 @@ impl Storage for D1Storage {
     async fn get_task_progress(&self, id: &str) -> StorageResult<TaskProgress> {
         let full = resolve_task_id(&self.db, id).await?;
         let task = select_one_task(&self.db, &full).await?;
-        let session_stmt = self.db.prepare(
-            "SELECT id, task_id, started_at, ended_at, created_at FROM task_work_sessions WHERE task_id = ?1 ORDER BY started_at ASC",
-        );
-        let sessions: Vec<takusu_contracts::TaskWorkSessionRow> = d1_all(
+
+        let session_stmt = self.db.prepare(format!(
+            "SELECT {WORK_SESSION_COLS} FROM work_sessions WHERE task_id = ?1 ORDER BY started_at ASC",
+        ));
+        let sessions: Vec<WorkSessionRow> = d1_all(
             &session_stmt
                 .bind(&[JsValue::from_str(&full)])
                 .map_err(d1_err)?,
         )
         .await?;
-        let event_stmt = self.db.prepare(
-            "SELECT id, task_id, at, quantity_done, delta_quantity, active_minutes, note FROM progress_events WHERE task_id = ?1 ORDER BY id ASC",
-        );
-        let events: Vec<takusu_contracts::ProgressEventRow> = d1_all(
+
+        let event_stmt = self.db.prepare(format!(
+            "SELECT {PROGRESS_EVENT_COLS} FROM progress_events WHERE task_id = ?1 ORDER BY id ASC",
+        ));
+        let events: Vec<ProgressEventRow> = d1_all(
             &event_stmt
                 .bind(&[JsValue::from_str(&full)])
                 .map_err(d1_err)?,
         )
         .await?;
+
         let open_session = sessions.iter().find(|s| s.ended_at.is_none()).cloned();
         let total_active_minutes = sessions.iter().map(session_minutes).sum();
+
         Ok(TaskProgress {
             task,
             open_session,
@@ -1850,6 +2440,7 @@ impl Storage for D1Storage {
             total_active_minutes,
         })
     }
+
 
     async fn split_task(
         &self,
@@ -1927,66 +2518,66 @@ impl Storage for D1Storage {
         let insert = self.db.prepare(
             "INSERT INTO tasks (id, display_id, title, normalized_title, description, start_at, end_at, avg_minutes, sigma_minutes, depends, parallelizable, allows_parallel, abandonability, status, ical_uid, habit_id, fixed, habit_step_id, quantity_total, quantity_done, quantity_unit, completed_at, split_from_task_id, original_quantity_total, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, 'pending', ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))",
         );
-        insert
-            .bind(&[
-                JsValue::from_str(&remainder_id),
-                JsValue::from_f64(display_id as f64),
-                JsValue::from_str(remainder_title.as_str()),
-                normalized_title
-                    .as_deref()
-                    .map(JsValue::from_str)
-                    .unwrap_or(JsValue::NULL),
-                body.description
-                    .as_ref()
-                    .or(original.description.as_ref())
-                    .map(|s| JsValue::from_str(s.as_str()))
-                    .unwrap_or(JsValue::NULL),
-                original
-                    .start_at
-                    .as_ref()
-                    .map(|s| JsValue::from_str(&s.to_string()))
-                    .unwrap_or(JsValue::NULL),
-                JsValue::from_str(&body.end_at.unwrap_or(original.end_at).to_string()),
-                JsValue::from_f64(original.avg_minutes as f64),
-                JsValue::from_f64(original.sigma_minutes as f64),
-                JsValue::from_str(&depends_json),
-                JsValue::from_bool(original.parallelizable),
-                JsValue::from_bool(original.allows_parallel),
-                JsValue::from_f64(original.abandonability.into()),
-                JsValue::NULL,
-                JsValue::NULL,
-                JsValue::from_bool(original.fixed),
-                JsValue::NULL,
-                JsValue::from_f64(f64::from(remainder_quantity)),
-                JsValue::from_f64(0.0),
-                original
-                    .quantity_unit
-                    .as_deref()
-                    .map(JsValue::from_str)
-                    .unwrap_or(JsValue::NULL),
-                JsValue::NULL,
-                JsValue::from_str(&full),
-                JsValue::from_f64(f64::from(original_quantity_total)),
-            ])
-            .map_err(d1_err)?
-            .run()
-            .await
-            .map_err(d1_err)?;
         let new_done = original.quantity_done.min(body.retained_quantity);
+        let mut stmts: Vec<worker::D1PreparedStatement> = Vec::new();
+        stmts.push(
+            insert
+                .bind(&[
+                    JsValue::from_str(&remainder_id),
+                    JsValue::from_f64(display_id as f64),
+                    JsValue::from_str(remainder_title.as_str()),
+                    normalized_title
+                        .as_deref()
+                        .map(JsValue::from_str)
+                        .unwrap_or(JsValue::NULL),
+                    body.description
+                        .as_ref()
+                        .or(original.description.as_ref())
+                        .map(|s| JsValue::from_str(s.as_str()))
+                        .unwrap_or(JsValue::NULL),
+                    original
+                        .start_at
+                        .as_ref()
+                        .map(|s| JsValue::from_str(&s.to_string()))
+                        .unwrap_or(JsValue::NULL),
+                    JsValue::from_str(&body.end_at.unwrap_or(original.end_at).to_string()),
+                    JsValue::from_f64(original.avg_minutes as f64),
+                    JsValue::from_f64(original.sigma_minutes as f64),
+                    JsValue::from_str(&depends_json),
+                    JsValue::from_bool(original.parallelizable),
+                    JsValue::from_bool(original.allows_parallel),
+                    JsValue::from_f64(original.abandonability.into()),
+                    JsValue::NULL,
+                    JsValue::NULL,
+                    JsValue::from_bool(original.fixed),
+                    JsValue::NULL,
+                    JsValue::from_f64(f64::from(remainder_quantity)),
+                    JsValue::from_f64(0.0),
+                    original
+                        .quantity_unit
+                        .as_deref()
+                        .map(JsValue::from_str)
+                        .unwrap_or(JsValue::NULL),
+                    JsValue::NULL,
+                    JsValue::from_str(&full),
+                    JsValue::from_f64(f64::from(original_quantity_total)),
+                ])
+                .map_err(d1_err)?,
+        );
         let update = self.db.prepare(
             "UPDATE tasks SET quantity_total = ?1, quantity_done = ?2, original_quantity_total = ?3, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?4",
         );
-        update
-            .bind(&[
-                JsValue::from_f64(f64::from(body.retained_quantity)),
-                JsValue::from_f64(f64::from(new_done)),
-                JsValue::from_f64(f64::from(original_quantity_total)),
-                JsValue::from_str(&full),
-            ])
-            .map_err(d1_err)?
-            .run()
-            .await
-            .map_err(d1_err)?;
+        stmts.push(
+            update
+                .bind(&[
+                    JsValue::from_f64(f64::from(body.retained_quantity)),
+                    JsValue::from_f64(f64::from(new_done)),
+                    JsValue::from_f64(f64::from(original_quantity_total)),
+                    JsValue::from_str(&full),
+                ])
+                .map_err(d1_err)?,
+        );
+        self.db.batch(stmts).await.map_err(d1_err)?;
         let original = select_one_task(&self.db, &full).await?;
         let remainder = select_one_task(&self.db, &remainder_id).await?;
         let result = SplitResult {

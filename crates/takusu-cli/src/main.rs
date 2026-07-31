@@ -24,8 +24,8 @@ use axum::routing::get;
 
 use takusu_contracts::{
     CreateHabit, CreateHabitScheduledSpan, CreateMemory, CreateSkill, CreateTask, GenerateSchedule,
-    MemoryQuery, RecordProgress, Reschedule, ScheduleEntry, SimilarTaskQuery, SleepInput,
-    SplitTask, TaskQuery, UpdateHabit, UpdateMemory, UpdateSettings,
+    MemoryQuery, RecordWorkSessionProgress, Reschedule, ScheduleEntry, SimilarTaskQuery,
+    SleepInput, SplitTask, StartWorkSession, TaskQuery, UpdateHabit, UpdateMemory, UpdateSettings,
 };
 use takusu_local_lib::{
     app::TakusuApp,
@@ -91,6 +91,17 @@ fn parse_date(s: &str) -> Result<Date, AppError> {
     s.parse::<Date>().map_err(|e| {
         AppError::BadRequest(BadRequestKind::Other(format!("invalid date '{s}': {e}")))
     })
+}
+
+async fn find_open_session_id(app: &TakusuApp, task_id: &str) -> Result<String, AppError> {
+    app.open_work_session_for_task(task_id)
+        .await?
+        .map(|s| s.id)
+        .ok_or_else(|| {
+            AppError::BadRequest(BadRequestKind::Other(
+                "no open work session for task".into(),
+            ))
+        })
 }
 
 #[derive(Parser)]
@@ -1607,17 +1618,35 @@ async fn run_task_verbs(
         }
 
         TaskVerbs::Start(args) => {
-            let task = app.start_task_work(&args.id, None).await?;
+            let body = StartWorkSession {
+                task_id: Some(args.id.clone()),
+                title: None,
+                note: None,
+                quantity_total: None,
+                quantity_unit: None,
+            };
+            let session = app.start_work_session(&body, None).await?;
+            let task = if let Some(ref task_id) = session.task_id {
+                app.get_task(task_id).await?
+            } else {
+                return Err(AppError::BadRequest(BadRequestKind::Other(
+                    "work session was not linked to a task".into(),
+                )));
+            };
             mode.formatter().display_tasks(&[task], tz, &habit_map);
         }
 
         TaskVerbs::Pause(args) => {
-            let task = app.pause_task_work(&args.id, None).await?;
+            let session_id = find_open_session_id(app, &args.id).await?;
+            let _session = app.pause_work_session(&session_id, None).await?;
+            let task = app.get_task(&args.id).await?;
             mode.formatter().display_tasks(&[task], tz, &habit_map);
         }
 
         TaskVerbs::Done(args) => {
-            let task = app.complete_task_work(&args.id, None).await?;
+            let session_id = find_open_session_id(app, &args.id).await?;
+            let _session = app.complete_work_session(&session_id, None).await?;
+            let task = app.get_task(&args.id).await?;
             mode.formatter().display_tasks(&[task], tz, &habit_map);
         }
 
@@ -1633,13 +1662,18 @@ async fn run_task_verbs(
         TaskVerbs::Progress(args) => {
             let quantity_done = Quantity::new(args.quantity)
                 .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
-            let body = RecordProgress {
+            let session_id = find_open_session_id(app, &args.id).await?;
+            let body = RecordWorkSessionProgress {
                 quantity_done,
                 note: args.note,
+                quantity_total: None,
             };
-            let result = app.record_progress(&args.id, &body, None).await?;
-            mode.formatter()
-                .display_tasks(&[result.task], tz, &habit_map);
+            let result = app
+                .record_work_session_progress(&session_id, &body, None)
+                .await?;
+            if let Some(task) = result.task {
+                mode.formatter().display_tasks(&[task], tz, &habit_map);
+            }
             if let Some(event) = result.event {
                 println!(
                     "recorded: quantity {} (+{}), active {}min",

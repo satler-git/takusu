@@ -1,5 +1,8 @@
 import type { TakusuClient } from '@/src/api/client';
-import type { TaskRow } from '@/src/api/types';
+import type {
+  RecordWorkSessionProgress,
+  WorkSessionRow,
+} from '@/src/api/types';
 
 export interface ProgressPayload {
   quantityDone: number;
@@ -36,49 +39,48 @@ export function makeProgressOperationId(): string {
   return `${Date.now()}-${randomAlphanumeric(16)}`;
 }
 
-// Update quantity_total if it changed, then record progress.
-// Centralizes the quantity update + recordProgress flow used by HomeView and
-// TaskDetailView so the logic does not diverge between pause/record paths.
+// Find the open work session for a task. Throws if none exists or if more
+// than one open session is found, so callers surface a clear error instead of
+// silently failing or picking an arbitrary session.
+export async function findOpenWorkSessionForTask(
+  client: TakusuClient,
+  taskId: string,
+): Promise<WorkSessionRow> {
+  const sessions = await client.listWorkSessions(taskId);
+  const open = sessions.filter((s) => !s.ended_at);
+  if (open.length > 1) {
+    throw new Error(`multiple open work sessions for task ${taskId}`);
+  }
+  if (open.length === 0) {
+    throw new Error(`no open work session for task ${taskId}`);
+  }
+  return open[0]!;
+}
+
+// Record progress against a work session. The server updates both the session
+// and any linked task when quantity_total differs, so we can pass it directly
+// in the RecordWorkSessionProgress body.
 export async function recordProgressWithTotal(
   client: TakusuClient,
-  task: TaskRow,
+  session: WorkSessionRow,
   payload: ProgressPayload,
   options?: RecordProgressOptions,
 ): Promise<string> {
   const operationId = options?.operationId ?? makeProgressOperationId();
-  const originalTotal = task.quantity_total;
-  let totalUpdated = false;
+
+  const body: RecordWorkSessionProgress = {
+    quantity_done: payload.quantityDone,
+    note: payload.note,
+  };
+
   if (
     payload.quantityTotal !== undefined &&
-    payload.quantityTotal !== originalTotal
+    payload.quantityTotal !== session.quantity_total
   ) {
-    await client.updateTask(task.id, {
-      quantity_total: payload.quantityTotal,
-    });
-    totalUpdated = true;
+    body.quantity_total = payload.quantityTotal;
   }
-  try {
-    await client.recordProgress(
-      task.id,
-      {
-        quantity_done: payload.quantityDone,
-        note: payload.note,
-      },
-      operationId,
-    );
-  } catch (e) {
-    if (totalUpdated && originalTotal !== undefined) {
-      // Best-effort rollback so a failed progress event does not leave a
-      // partially updated quantity_total behind.
-      await client
-        .updateTask(task.id, {
-          quantity_total: originalTotal,
-        })
-        .catch(() => {
-          // Ignore rollback failure; the original error is what matters.
-        });
-    }
-    throw e;
-  }
+
+  await client.recordWorkSessionProgress(session.id, body, operationId);
+
   return operationId;
 }

@@ -356,31 +356,59 @@ mod tests {
         ) -> Result<Vec<takusu_contracts::SimilarTaskRow>, takusu_contracts::StorageError> {
             unimplemented()
         }
-        async fn start_task_work(
+        async fn start_work_session(
+            &self,
+            _: &takusu_contracts::StartWorkSession,
+            _: Option<&str>,
+        ) -> Result<takusu_contracts::WorkSessionRow, takusu_contracts::StorageError> {
+            unimplemented()
+        }
+        async fn pause_work_session(
             &self,
             _: &str,
             _: Option<&str>,
-        ) -> Result<takusu_contracts::TaskRow, takusu_contracts::StorageError> {
+        ) -> Result<takusu_contracts::WorkSessionRow, takusu_contracts::StorageError> {
             unimplemented()
         }
-        async fn pause_task_work(
+        async fn complete_work_session(
             &self,
             _: &str,
             _: Option<&str>,
-        ) -> Result<takusu_contracts::TaskRow, takusu_contracts::StorageError> {
+        ) -> Result<takusu_contracts::WorkSessionRow, takusu_contracts::StorageError> {
             unimplemented()
         }
-        async fn record_progress(
+        async fn record_work_session_progress(
             &self,
             _: &str,
-            _: &takusu_contracts::RecordProgress,
+            _: &takusu_contracts::RecordWorkSessionProgress,
             _: Option<&str>,
-        ) -> Result<takusu_contracts::ProgressResult, takusu_contracts::StorageError> {
+        ) -> Result<takusu_contracts::WorkSessionProgressResult, takusu_contracts::StorageError> {
             unimplemented()
         }
-        async fn complete_task_work(
+        async fn get_work_session(
             &self,
             _: &str,
+        ) -> Result<takusu_contracts::WorkSessionRow, takusu_contracts::StorageError> {
+            unimplemented()
+        }
+        async fn list_work_sessions(
+            &self,
+            _: Option<&str>,
+        ) -> Result<Vec<takusu_contracts::WorkSessionRow>, takusu_contracts::StorageError> {
+            unimplemented()
+        }
+        async fn attach_work_session(
+            &self,
+            _: &str,
+            _: &takusu_contracts::AttachWorkSession,
+            _: Option<&str>,
+        ) -> Result<takusu_contracts::WorkSessionRow, takusu_contracts::StorageError> {
+            unimplemented()
+        }
+        async fn convert_work_session(
+            &self,
+            _: &str,
+            _: &takusu_contracts::ConvertWorkSession,
             _: Option<&str>,
         ) -> Result<takusu_contracts::TaskRow, takusu_contracts::StorageError> {
             unimplemented()

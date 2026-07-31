@@ -35,8 +35,12 @@ import type {
   SkillRow,
   CreateSkill,
   UpdateSkill,
-  RecordProgress,
-  ProgressResult,
+  StartWorkSession,
+  AttachWorkSession,
+  ConvertWorkSession,
+  RecordWorkSessionProgress,
+  WorkSessionRow,
+  WorkSessionProgressResult,
   SplitTask,
   SplitResult,
   Completion,
@@ -155,43 +159,82 @@ export class TakusuClient {
     return this.request('DELETE', `/api/tasks/${encodeURIComponent(id)}`);
   }
 
-  // ── Task progress (#757) ──
-  async startTaskWork(id: string, operationId?: string): Promise<TaskRow> {
-    return this.request(
-      'POST',
-      `/api/tasks/${encodeURIComponent(id)}/work/start`,
-      undefined,
-      operationId,
-    );
-  }
-
-  async pauseTaskWork(id: string, operationId?: string): Promise<TaskRow> {
-    return this.request(
-      'POST',
-      `/api/tasks/${encodeURIComponent(id)}/work/pause`,
-      undefined,
-      operationId,
-    );
-  }
-
-  async recordProgress(
-    id: string,
-    body: RecordProgress,
+  // ── Work sessions (#1393) ──
+  async createWorkSession(
+    body: StartWorkSession,
     operationId?: string,
-  ): Promise<ProgressResult> {
+  ): Promise<WorkSessionRow> {
+    return this.request('POST', '/api/work-sessions', body, operationId);
+  }
+
+  async listWorkSessions(taskId?: string): Promise<WorkSessionRow[]> {
+    const qs = taskId ? `?task_id=${encodeURIComponent(taskId)}` : '';
+    return this.request('GET', `/api/work-sessions${qs}`);
+  }
+
+  async getWorkSession(id: string): Promise<WorkSessionRow> {
+    return this.request('GET', `/api/work-sessions/${encodeURIComponent(id)}`);
+  }
+
+  async pauseWorkSession(
+    id: string,
+    operationId?: string,
+  ): Promise<WorkSessionRow> {
     return this.request(
       'POST',
-      `/api/tasks/${encodeURIComponent(id)}/progress`,
+      `/api/work-sessions/${encodeURIComponent(id)}/pause`,
+      undefined,
+      operationId,
+    );
+  }
+
+  async completeWorkSession(
+    id: string,
+    operationId?: string,
+  ): Promise<WorkSessionRow> {
+    return this.request(
+      'POST',
+      `/api/work-sessions/${encodeURIComponent(id)}/complete`,
+      undefined,
+      operationId,
+    );
+  }
+
+  async recordWorkSessionProgress(
+    id: string,
+    body: RecordWorkSessionProgress,
+    operationId?: string,
+  ): Promise<WorkSessionProgressResult> {
+    return this.request(
+      'POST',
+      `/api/work-sessions/${encodeURIComponent(id)}/progress`,
       body,
       operationId,
     );
   }
 
-  async completeTaskWork(id: string, operationId?: string): Promise<TaskRow> {
+  async attachWorkSession(
+    id: string,
+    body: AttachWorkSession,
+    operationId?: string,
+  ): Promise<WorkSessionRow> {
     return this.request(
       'POST',
-      `/api/tasks/${encodeURIComponent(id)}/work/complete`,
-      undefined,
+      `/api/work-sessions/${encodeURIComponent(id)}/attach`,
+      body,
+      operationId,
+    );
+  }
+
+  async convertWorkSession(
+    id: string,
+    body: ConvertWorkSession,
+    operationId?: string,
+  ): Promise<TaskRow> {
+    return this.request(
+      'POST',
+      `/api/work-sessions/${encodeURIComponent(id)}/convert`,
+      body,
       operationId,
     );
   }

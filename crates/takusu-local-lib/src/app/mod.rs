@@ -18,6 +18,7 @@ mod habit;
 mod habit_sync;
 mod schedule;
 mod task;
+mod work_session;
 
 pub use dependency::{DependencyAnalysisResponse, DependencyNode, RedundantDependency};
 pub use gcal::{

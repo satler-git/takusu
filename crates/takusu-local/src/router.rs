@@ -58,27 +58,30 @@ fn build_api_router(open_api: &mut OpenApi) -> Router<AppState> {
         .api_route("/tasks/{id}", api::put(handlers::task::replace_task))
         .api_route("/tasks/{id}", api::patch(handlers::task::update_task))
         .api_route("/tasks/{id}", api::delete(handlers::task::delete_task))
-        .api_route(
-            "/tasks/{id}/work/start",
-            api::post(handlers::task::start_task_work),
-        )
-        .api_route(
-            "/tasks/{id}/work/pause",
-            api::post(handlers::task::pause_task_work),
-        )
-        .api_route(
-            "/tasks/{id}/progress",
-            api::post(handlers::task::record_progress),
-        )
-        .api_route(
-            "/tasks/{id}/progress",
-            api::get(handlers::task::get_task_progress),
-        )
-        .api_route(
-            "/tasks/{id}/work/complete",
-            api::post(handlers::task::complete_task_work),
-        )
         .api_route("/tasks/{id}/split", api::post(handlers::task::split_task))
+        .api_route("/work-sessions", api::post(handlers::work_session::create_work_session))
+        .api_route("/work-sessions", api::get(handlers::work_session::list_work_sessions))
+        .api_route("/work-sessions/{id}", api::get(handlers::work_session::get_work_session))
+        .api_route(
+            "/work-sessions/{id}/pause",
+            api::post(handlers::work_session::pause_work_session),
+        )
+        .api_route(
+            "/work-sessions/{id}/complete",
+            api::post(handlers::work_session::complete_work_session),
+        )
+        .api_route(
+            "/work-sessions/{id}/progress",
+            api::post(handlers::work_session::record_work_session_progress),
+        )
+        .api_route(
+            "/work-sessions/{id}/attach",
+            api::post(handlers::work_session::attach_work_session),
+        )
+        .api_route(
+            "/work-sessions/{id}/convert",
+            api::post(handlers::work_session::convert_work_session),
+        )
         .api_route("/habits", api::post(handlers::habit::create_habit))
         .api_route(
             "/habits/batch",

@@ -24,7 +24,7 @@
     "lint": "oxlint",
     "fmt": "oxfmt",
     "fmt:check": "oxfmt --check",
-    "gen:types": "openapi-typescript openapi/openapi.json -o src/types.gen.ts"
+    "gen:types": "openapi-typescript openapi/openapi.json -o src/types.gen.ts && npm run fmt"
   },
   "devDependencies": {
     "openapi-typescript": "^7.13.0",

@@ -29,9 +29,9 @@ use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 use takusu_client::{
-    CreateHabit, CreateHabitScheduledSpan, CreateMemory, CreateSkill, CreateTask, HabitDetail,
-    MoveEntry, RecordProgress, SaveScheduleRequest, ScheduleEntry, SplitTask, UpdateHabit,
-    UpdateMemory, UpdateSkill, UpdateTask,
+    Client, CreateHabit, CreateHabitScheduledSpan, CreateMemory, CreateSkill, CreateTask,
+    HabitDetail, MoveEntry, RecordWorkSessionProgress, SaveScheduleRequest, ScheduleEntry,
+    SplitTask, StartWorkSession, UpdateHabit, UpdateMemory, UpdateSkill, UpdateTask,
 };
 use takusu_types::Timestamp;
 
@@ -51,6 +51,20 @@ pub(crate) struct ExecutionOutcome {
     pub before: Option<Value>,
     pub after: Option<Value>,
     pub target_revision: Option<i64>,
+}
+
+async fn open_session_for_task(client: &Client, task_id: &str) -> Result<String, AgentError> {
+    client
+        .open_work_session_for_task(task_id)
+        .await
+        .map_err(|e| AgentError::Tool(takusu_client_error(e)))?
+        .map(|s| s.id)
+        .ok_or_else(|| {
+            AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
+                "task_ref",
+                "no open work session for task",
+            )))
+        })
 }
 
 /// Resolved target identity and freshness snapshot fetched before executing
@@ -487,9 +501,21 @@ impl ChangeHandler for TaskStart {
         _args: &'a Self::Args,
     ) -> impl Future<Output = Result<ExecutionOutcome, AgentError>> + Send {
         async move {
+            let body = StartWorkSession {
+                task_id: Some(ctx.target_id.clone()),
+                title: None,
+                note: None,
+                quantity_total: None,
+                quantity_unit: None,
+            };
+            let _session = ctx
+                .client()
+                .start_work_session(&body, ctx.operation_id)
+                .await
+                .map_err(|e| AgentError::Tool(takusu_client_error(e)))?;
             let task = ctx
                 .client()
-                .start_task_work(&ctx.target_id, ctx.operation_id)
+                .get_task(&ctx.target_id)
                 .await
                 .map_err(|e| AgentError::Tool(takusu_client_error(e)))?;
             Ok(ExecutionOutcome {
@@ -516,9 +542,15 @@ impl ChangeHandler for TaskPause {
         _args: &'a Self::Args,
     ) -> impl Future<Output = Result<ExecutionOutcome, AgentError>> + Send {
         async move {
+            let session_id = open_session_for_task(ctx.client(), &ctx.target_id).await?;
+            let _session = ctx
+                .client()
+                .pause_work_session(&session_id, ctx.operation_id)
+                .await
+                .map_err(|e| AgentError::Tool(takusu_client_error(e)))?;
             let task = ctx
                 .client()
-                .pause_task_work(&ctx.target_id, ctx.operation_id)
+                .get_task(&ctx.target_id)
                 .await
                 .map_err(|e| AgentError::Tool(takusu_client_error(e)))?;
             Ok(ExecutionOutcome {
@@ -533,7 +565,7 @@ impl ChangeHandler for TaskPause {
 
 struct TaskProgress;
 impl ChangeHandler for TaskProgress {
-    type Args = RecordProgress;
+    type Args = RecordWorkSessionProgress;
 
     fn deserialize_args(args: &Value) -> Result<Self::Args, AgentError> {
         from_args(args)
@@ -545,15 +577,21 @@ impl ChangeHandler for TaskProgress {
         args: &'a Self::Args,
     ) -> impl Future<Output = Result<ExecutionOutcome, AgentError>> + Send {
         async move {
+            let session_id = open_session_for_task(ctx.client(), &ctx.target_id).await?;
             let result = ctx
                 .client()
-                .record_progress(&ctx.target_id, args, ctx.operation_id)
+                .record_work_session_progress(&session_id, args, ctx.operation_id)
                 .await
                 .map_err(|e| AgentError::Tool(takusu_client_error(e)))?;
+            let task = result.task.as_ref().ok_or_else(|| {
+                AgentError::Tool(ToolError::Other(Box::new(std::io::Error::other(
+                    "record_work_session_progress did not return a task",
+                ))))
+            })?;
             Ok(ExecutionOutcome {
                 result_id: ctx.target_id.clone(),
                 before: ctx.change.before.clone(),
-                after: to_after(&result)?,
+                after: to_after(task)?,
                 target_revision: None,
             })
         }
@@ -574,9 +612,15 @@ impl ChangeHandler for TaskComplete {
         _args: &'a Self::Args,
     ) -> impl Future<Output = Result<ExecutionOutcome, AgentError>> + Send {
         async move {
+            let session_id = open_session_for_task(ctx.client(), &ctx.target_id).await?;
+            let _session = ctx
+                .client()
+                .complete_work_session(&session_id, ctx.operation_id)
+                .await
+                .map_err(|e| AgentError::Tool(takusu_client_error(e)))?;
             let task = ctx
                 .client()
-                .complete_task_work(&ctx.target_id, ctx.operation_id)
+                .get_task(&ctx.target_id)
                 .await
                 .map_err(|e| AgentError::Tool(takusu_client_error(e)))?;
             Ok(ExecutionOutcome {

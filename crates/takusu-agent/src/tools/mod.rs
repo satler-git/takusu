@@ -25,6 +25,12 @@ pub(crate) fn client_error(error: takusu_client::ClientError) -> ToolError {
         }
         takusu_client::ClientError::Api { status: 404, body } => ToolError::NotFound(body),
         takusu_client::ClientError::Api { status: 409, body } => ToolError::Conflict(body),
+        takusu_client::ClientError::MultipleOpenWorkSessions(task_id) => {
+            ToolError::InvalidArgs(InvalidArgsError::new(
+                "task_ref",
+                format!("multiple open work sessions for task {task_id}"),
+            ))
+        }
         error => ToolError::Other(Box::new(error)),
     }
 }

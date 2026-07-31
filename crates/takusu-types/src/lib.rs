@@ -131,15 +131,67 @@ pub fn parse_timezone(tz: &str) -> Result<jiff::tz::TimeZone, String> {
 
 pub const MIN_ESTIMATE_MINUTES: f64 = 5.0;
 pub const MAX_ESTIMATE_MINUTES: f64 = 24.0 * 60.0;
+/// Compute a delta-weighted `(avg_minutes, sigma_minutes)` estimate from a set
+/// of progress observations and a target quantity.
+///
+/// Each observation is an `(active_minutes, delta_quantity)` pair; pairs with
+/// non-positive values are ignored. An observation's projection to the full
+/// quantity is weighted by how much it accomplished (`delta_quantity`), so
+/// observations that did more work dominate the estimate (#1419). The weighted
+/// mean is equivalent to the aggregate pace (`sum(active) / sum(delta)`)
+/// projected to the full quantity before clamping.
+///
+/// Returns `None` when there is no usable `quantity_total` or no positive
+/// observation. With a single usable observation the sigma is `0`.
+pub fn weighted_estimate(
+    observations: &[(i64, i64)],
+    quantity_total: Option<i64>,
+) -> Option<(i64, i64)> {
+    let total = match quantity_total {
+        Some(t) if t > 0 => t as f64,
+        _ => return None,
+    };
+    let projections: Vec<(f64, f64)> = observations
+        .iter()
+        .filter(|(a, d)| *a > 0 && *d > 0)
+        .map(|(a, d)| {
+            let projection = ((*a as f64 / *d as f64) * total)
+                .clamp(MIN_ESTIMATE_MINUTES, MAX_ESTIMATE_MINUTES);
+            (projection, *d as f64)
+        })
+        .collect();
+    if projections.is_empty() {
+        return None;
+    }
+
+    let weight_sum: f64 = projections.iter().map(|(_, w)| w).sum();
+    let mean = projections.iter().map(|(x, w)| x * w).sum::<f64>() / weight_sum;
+    let avg = mean.clamp(MIN_ESTIMATE_MINUTES, MAX_ESTIMATE_MINUTES).round() as i64;
+
+    if projections.len() < 2 {
+        return Some((avg, 0));
+    }
+
+    let weighted_variance =
+        projections.iter().map(|(x, w)| w * (x - mean).powi(2)).sum::<f64>() / weight_sum;
+    let sigma = weighted_variance
+        .sqrt()
+        .clamp(MIN_ESTIMATE_MINUTES, MAX_ESTIMATE_MINUTES)
+        .round() as i64;
+    Some((avg, sigma.max(1)))
+}
+
 /// Compute an updated `(avg_minutes, sigma_minutes)` estimate from a new
 /// progress observation and a history of prior observations.
 ///
 /// `events` is a slice of `(active_minutes, delta_quantity)` pairs. Pairs
-/// with non-positive values are ignored.
+/// with non-positive values are ignored. The estimate is the delta-weighted
+/// aggregate of every observation (history plus the new one); see
+/// [`weighted_estimate`]. The supplied `avg_minutes` / `sigma_minutes` are used
+/// only as a fallback when no usable observation exists.
 ///
-/// Returns the original estimate when there is no usable `quantity_total`,
-/// no positive progress in this observation, or fewer than 2 prior events
-/// (sigma is left unchanged in that case).
+/// Returns the original estimate when there is no usable `quantity_total` or
+/// no positive progress in this observation.
 pub fn estimate_progress(
     avg_minutes: i64,
     sigma_minutes: i64,
@@ -148,40 +200,12 @@ pub fn estimate_progress(
     delta_quantity: i64,
     events: &[(i64, i64)],
 ) -> (i64, i64) {
-    let total = match quantity_total {
-        Some(t) if t > 0 => t as f64,
-        _ => return (avg_minutes, sigma_minutes),
-    };
-
     if delta_quantity <= 0 || active_minutes <= 0 {
         return (avg_minutes, sigma_minutes);
     }
-
-    let minutes_per_unit = active_minutes as f64 / delta_quantity as f64;
-    let projected = (minutes_per_unit * total).clamp(MIN_ESTIMATE_MINUTES, MAX_ESTIMATE_MINUTES);
-    let new_avg_f = 0.5 * avg_minutes as f64 + 0.5 * projected;
-    let new_avg = new_avg_f.round() as i64;
-
-    let projections: Vec<f64> = events
-        .iter()
-        .filter(|(a, d)| *a > 0 && *d > 0)
-        .map(|(a, d)| {
-            ((*a as f64 / *d as f64) * total).clamp(MIN_ESTIMATE_MINUTES, MAX_ESTIMATE_MINUTES)
-        })
-        .collect();
-
-    if projections.len() < 2 {
-        return (new_avg, sigma_minutes);
-    }
-
-    let mean = projections.iter().sum::<f64>() / projections.len() as f64;
-    let variance = projections.iter().map(|x| (x - mean).powi(2)).sum::<f64>()
-        / (projections.len() - 1) as f64;
-    let stddev = variance
-        .sqrt()
-        .clamp(MIN_ESTIMATE_MINUTES, MAX_ESTIMATE_MINUTES);
-    let new_sigma = stddev.round() as i64;
-    (new_avg, new_sigma.max(1))
+    let mut observations: Vec<(i64, i64)> = events.to_vec();
+    observations.push((active_minutes, delta_quantity));
+    weighted_estimate(&observations, quantity_total).unwrap_or((avg_minutes, sigma_minutes))
 }
 
 /// Median of a sorted slice of `f64` values.
@@ -440,7 +464,9 @@ mod tests {
 
     #[test]
     fn test_parse_datetime_day_only() {
-        let now = jiff::Zoned::now();
+        // parse_datetime resolves relative dates in UTC, so the expected
+        // year/month must come from UTC "now", not local time (#1419).
+        let now = jiff::Timestamp::now().to_zoned(jiff::tz::TimeZone::UTC);
         let result = parse_datetime("-06").unwrap();
         let ts = jiff::Timestamp::from_str(&result).unwrap();
         let expected = jiff::civil::Date::new(now.year(), now.month(), 6)
@@ -456,7 +482,10 @@ mod tests {
     fn test_parse_datetime_month_day() {
         let result = parse_datetime("06-15").unwrap();
         let ts = jiff::Timestamp::from_str(&result).unwrap();
-        let expected = jiff::civil::Date::new(jiff::Zoned::now().year(), 6, 15)
+        let year = jiff::Timestamp::now()
+            .to_zoned(jiff::tz::TimeZone::UTC)
+            .year();
+        let expected = jiff::civil::Date::new(year, 6, 15)
             .unwrap()
             .at(23, 59, 59, 0)
             .to_zoned(jiff::tz::TimeZone::UTC)
@@ -763,6 +792,60 @@ mod tests {
         // With outlier included, avg and sigma are much larger.
         assert!(avg2 > avg);
         assert!(sigma2 > sigma);
+    }
+
+    // ── weighted_estimate / estimate_progress (#1419) ───────────────────
+
+    #[test]
+    fn weighted_estimate_none_without_total_or_observations() {
+        assert_eq!(weighted_estimate(&[(10, 1)], None), None);
+        assert_eq!(weighted_estimate(&[(10, 1)], Some(0)), None);
+        assert_eq!(weighted_estimate(&[], Some(10)), None);
+        // Non-positive observations are filtered out.
+        assert_eq!(weighted_estimate(&[(0, 5), (10, 0), (-3, 2)], Some(10)), None);
+    }
+
+    #[test]
+    fn weighted_estimate_single_observation_has_zero_sigma() {
+        // projection = (30 / 5) * 10 = 60
+        assert_eq!(weighted_estimate(&[(30, 5)], Some(10)), Some((60, 0)));
+    }
+
+    #[test]
+    fn weighted_estimate_weights_by_quantity_done() {
+        // obs A: rate 10/unit -> projection 100, weight 1
+        // obs B: rate 3.33/unit -> projection 33.33, weight 9
+        // weighted mean = 10 * (10 + 30) / (1 + 9) = 40 (unweighted would be ~67)
+        // weighted sigma = sqrt((1*(100-40)^2 + 9*(33.33-40)^2) / 10) = 20
+        let (avg, sigma) = weighted_estimate(&[(10, 1), (30, 9)], Some(10)).unwrap();
+        assert_eq!(avg, 40);
+        assert_eq!(sigma, 20);
+        // The did-more observation (B) dominates: weighted avg is far closer to
+        // B's projection (33) than to A's (100).
+        assert!(avg < 50);
+    }
+
+    #[test]
+    fn weighted_estimate_clamps_projection() {
+        // projection = (1 / 1) * 10000 clamps to MAX_ESTIMATE_MINUTES (1440)
+        assert_eq!(weighted_estimate(&[(1, 1)], Some(10000)), Some((24 * 60, 0)));
+    }
+
+    #[test]
+    fn estimate_progress_uses_weighted_aggregate() {
+        // history [(10,1)] + new (30,9) == weighted_estimate test above -> (40, 20).
+        // The supplied prior estimate (999, 999) is ignored once observations exist.
+        let (avg, sigma) = estimate_progress(999, 999, Some(10), 30, 9, &[(10, 1)]);
+        assert_eq!(avg, 40);
+        assert_eq!(sigma, 20);
+    }
+
+    #[test]
+    fn estimate_progress_falls_back_without_progress_or_total() {
+        // Zero delta is a no-op.
+        assert_eq!(estimate_progress(50, 10, Some(10), 0, 0, &[(10, 1)]), (50, 10));
+        // No usable total -> fallback to the prior estimate.
+        assert_eq!(estimate_progress(50, 10, None, 30, 5, &[]), (50, 10));
     }
 
     #[test]

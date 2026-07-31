@@ -10,8 +10,8 @@ use std::collections::HashMap;
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use takusu_contracts::{
-    CreateTask, CreateTaskBatch, CreateTaskBatchItem, CreateTaskBatchResult, ProgressResult,
-    RecordProgress, SplitResult, SplitTask, TaskProgress, TaskQuery, TaskRow, UpdateTask,
+    CreateTask, CreateTaskBatch, CreateTaskBatchItem, CreateTaskBatchResult, SplitResult,
+    SplitTask, TaskProgress, TaskQuery, TaskRow, UpdateTask,
 };
 use takusu_search::search::{Completion, complete};
 
@@ -365,51 +365,6 @@ impl super::TakusuApp {
 
     pub async fn delete_task(&self, id: &str) -> Result<(), AppError> {
         self.storage.delete_task(id).await.map_err(storage_to_app)
-    }
-
-    pub async fn start_task_work(
-        &self,
-        id: &str,
-        operation_id: Option<&str>,
-    ) -> Result<TaskRow, AppError> {
-        self.storage
-            .start_task_work(id, operation_id)
-            .await
-            .map_err(storage_to_app)
-    }
-
-    pub async fn pause_task_work(
-        &self,
-        id: &str,
-        operation_id: Option<&str>,
-    ) -> Result<TaskRow, AppError> {
-        self.storage
-            .pause_task_work(id, operation_id)
-            .await
-            .map_err(storage_to_app)
-    }
-
-    pub async fn record_progress(
-        &self,
-        id: &str,
-        body: &RecordProgress,
-        operation_id: Option<&str>,
-    ) -> Result<ProgressResult, AppError> {
-        self.storage
-            .record_progress(id, body, operation_id)
-            .await
-            .map_err(storage_to_app)
-    }
-
-    pub async fn complete_task_work(
-        &self,
-        id: &str,
-        operation_id: Option<&str>,
-    ) -> Result<TaskRow, AppError> {
-        self.storage
-            .complete_task_work(id, operation_id)
-            .await
-            .map_err(storage_to_app)
     }
 
     pub async fn get_task_progress(&self, id: &str) -> Result<TaskProgress, AppError> {

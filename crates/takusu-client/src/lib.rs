@@ -15,6 +15,8 @@ pub enum ClientError {
     Http(#[from] reqwest::Error),
     #[error("API error {status}: {body}")]
     Api { status: u16, body: String },
+    #[error("multiple open work sessions for task {0}")]
+    MultipleOpenWorkSessions(String),
 }
 
 #[derive(Clone)]
@@ -205,16 +207,73 @@ impl Client {
         Ok(())
     }
 
-    pub async fn start_task_work(
+    pub async fn start_work_session(
+        &self,
+        body: &StartWorkSession,
+        operation_id: Option<&str>,
+    ) -> Result<WorkSessionRow, ClientError> {
+        let mut req = self
+            .request(reqwest::Method::POST, "/api/work-sessions")
+            .await
+            .json(body);
+        if let Some(op_id) = operation_id {
+            req = req.header("Idempotency-Key", op_id);
+        }
+        let resp = req.send().await?;
+        let resp = Self::handle_response(resp).await?;
+        Ok(resp.json().await?)
+    }
+
+    pub async fn list_work_sessions(
+        &self,
+        task_id: Option<&str>,
+    ) -> Result<Vec<WorkSessionRow>, ClientError> {
+        let path = if let Some(id) = task_id {
+            format!("/api/work-sessions?task_id={}", url_encode(id))
+        } else {
+            "/api/work-sessions".into()
+        };
+        let resp = self.request(reqwest::Method::GET, &path).await.send().await?;
+        let resp = Self::handle_response(resp).await?;
+        Ok(resp.json().await?)
+    }
+
+    /// Return the single open work session for a task, or `None` if there is
+    /// none. Returns an error if more than one open session is found, which
+    /// indicates a data-integrity violation.
+    pub async fn open_work_session_for_task(
+        &self,
+        task_id: &str,
+    ) -> Result<Option<WorkSessionRow>, ClientError> {
+        let sessions = self.list_work_sessions(Some(task_id)).await?;
+        let open: Vec<_> = sessions.into_iter().filter(|s| s.ended_at.is_none()).collect();
+        if open.len() > 1 {
+            return Err(ClientError::MultipleOpenWorkSessions(task_id.into()));
+        }
+        Ok(open.into_iter().next())
+    }
+
+    pub async fn get_work_session(&self, id: &str) -> Result<WorkSessionRow, ClientError> {
+        let encoded_id = url_encode(id);
+        let resp = self
+            .request(reqwest::Method::GET, &format!("/api/work-sessions/{encoded_id}"))
+            .await
+            .send()
+            .await?;
+        let resp = Self::handle_response(resp).await?;
+        Ok(resp.json().await?)
+    }
+
+    pub async fn pause_work_session(
         &self,
         id: &str,
         operation_id: Option<&str>,
-    ) -> Result<TaskRow, ClientError> {
+    ) -> Result<WorkSessionRow, ClientError> {
         let encoded_id = url_encode(id);
         let mut req = self
             .request(
                 reqwest::Method::POST,
-                &format!("/api/tasks/{encoded_id}/work/start"),
+                &format!("/api/work-sessions/{encoded_id}/pause"),
             )
             .await
             .json(&serde_json::json!({}));
@@ -226,16 +285,16 @@ impl Client {
         Ok(resp.json().await?)
     }
 
-    pub async fn pause_task_work(
+    pub async fn complete_work_session(
         &self,
         id: &str,
         operation_id: Option<&str>,
-    ) -> Result<TaskRow, ClientError> {
+    ) -> Result<WorkSessionRow, ClientError> {
         let encoded_id = url_encode(id);
         let mut req = self
             .request(
                 reqwest::Method::POST,
-                &format!("/api/tasks/{encoded_id}/work/pause"),
+                &format!("/api/work-sessions/{encoded_id}/complete"),
             )
             .await
             .json(&serde_json::json!({}));
@@ -247,17 +306,17 @@ impl Client {
         Ok(resp.json().await?)
     }
 
-    pub async fn record_progress(
+    pub async fn record_work_session_progress(
         &self,
         id: &str,
-        body: &RecordProgress,
+        body: &RecordWorkSessionProgress,
         operation_id: Option<&str>,
-    ) -> Result<ProgressResult, ClientError> {
+    ) -> Result<WorkSessionProgressResult, ClientError> {
         let encoded_id = url_encode(id);
         let mut req = self
             .request(
                 reqwest::Method::POST,
-                &format!("/api/tasks/{encoded_id}/progress"),
+                &format!("/api/work-sessions/{encoded_id}/progress"),
             )
             .await
             .json(body);
@@ -269,19 +328,20 @@ impl Client {
         Ok(resp.json().await?)
     }
 
-    pub async fn complete_task_work(
+    pub async fn attach_work_session(
         &self,
         id: &str,
+        body: &AttachWorkSession,
         operation_id: Option<&str>,
-    ) -> Result<TaskRow, ClientError> {
+    ) -> Result<WorkSessionRow, ClientError> {
         let encoded_id = url_encode(id);
         let mut req = self
             .request(
                 reqwest::Method::POST,
-                &format!("/api/tasks/{encoded_id}/work/complete"),
+                &format!("/api/work-sessions/{encoded_id}/attach"),
             )
             .await
-            .json(&serde_json::json!({}));
+            .json(body);
         if let Some(op_id) = operation_id {
             req = req.header("Idempotency-Key", op_id);
         }
@@ -290,16 +350,24 @@ impl Client {
         Ok(resp.json().await?)
     }
 
-    pub async fn get_task_progress(&self, id: &str) -> Result<TaskProgress, ClientError> {
+    pub async fn convert_work_session(
+        &self,
+        id: &str,
+        body: &ConvertWorkSession,
+        operation_id: Option<&str>,
+    ) -> Result<TaskRow, ClientError> {
         let encoded_id = url_encode(id);
-        let resp = self
+        let mut req = self
             .request(
-                reqwest::Method::GET,
-                &format!("/api/tasks/{encoded_id}/progress"),
+                reqwest::Method::POST,
+                &format!("/api/work-sessions/{encoded_id}/convert"),
             )
             .await
-            .send()
-            .await?;
+            .json(body);
+        if let Some(op_id) = operation_id {
+            req = req.header("Idempotency-Key", op_id);
+        }
+        let resp = req.send().await?;
         let resp = Self::handle_response(resp).await?;
         Ok(resp.json().await?)
     }

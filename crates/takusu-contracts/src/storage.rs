@@ -128,20 +128,43 @@ pub trait Storage: Send + Sync + 'static {
         query: &SimilarTaskQuery,
     ) -> StorageResult<Vec<SimilarTaskRow>>;
 
-    // ── Active-session progress management (#WI-9) ────────
-    async fn start_task_work(&self, id: &str, operation_id: Option<&str>)
-    -> StorageResult<TaskRow>;
-    async fn pause_task_work(&self, id: &str, operation_id: Option<&str>)
-    -> StorageResult<TaskRow>;
-    async fn record_progress(
+    // ── Work sessions (#WI-9 / #1393) ─────────────────────
+    async fn start_work_session(
         &self,
-        id: &str,
-        body: &RecordProgress,
+        body: &StartWorkSession,
         operation_id: Option<&str>,
-    ) -> StorageResult<ProgressResult>;
-    async fn complete_task_work(
+    ) -> StorageResult<WorkSessionRow>;
+    async fn pause_work_session(
         &self,
         id: &str,
+        operation_id: Option<&str>,
+    ) -> StorageResult<WorkSessionRow>;
+    async fn complete_work_session(
+        &self,
+        id: &str,
+        operation_id: Option<&str>,
+    ) -> StorageResult<WorkSessionRow>;
+    async fn record_work_session_progress(
+        &self,
+        id: &str,
+        body: &RecordWorkSessionProgress,
+        operation_id: Option<&str>,
+    ) -> StorageResult<WorkSessionProgressResult>;
+    async fn get_work_session(&self, id: &str) -> StorageResult<WorkSessionRow>;
+    async fn list_work_sessions(
+        &self,
+        task_id: Option<&str>,
+    ) -> StorageResult<Vec<WorkSessionRow>>;
+    async fn attach_work_session(
+        &self,
+        id: &str,
+        body: &AttachWorkSession,
+        operation_id: Option<&str>,
+    ) -> StorageResult<WorkSessionRow>;
+    async fn convert_work_session(
+        &self,
+        id: &str,
+        body: &ConvertWorkSession,
         operation_id: Option<&str>,
     ) -> StorageResult<TaskRow>;
     async fn get_task_progress(&self, id: &str) -> StorageResult<TaskProgress>;
