@@ -17,6 +17,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useColors } from '@/src/theme';
 import { haptic } from '@/src/components/haptics';
+import { PressableScale } from '@/src/components/PressableScale';
 
 type LicenseEntry = {
   id: string;
@@ -96,7 +97,7 @@ export function LicensesView() {
           { borderBottomColor: colors.separator, paddingTop: 8 + insets.top },
         ]}
       >
-        <Pressable
+        <PressableScale
           style={styles.backButton}
           onPress={() => {
             haptic.light();
@@ -106,7 +107,7 @@ export function LicensesView() {
           <Text style={[styles.backButtonText, { color: colors.brand }]}>
             ‹
           </Text>
-        </Pressable>
+        </PressableScale>
         <Text style={[styles.title, { color: colors.black }]}>ライセンス</Text>
       </View>
 

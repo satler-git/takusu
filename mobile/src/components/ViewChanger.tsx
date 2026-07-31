@@ -2,11 +2,12 @@ import { useMemo } from 'react';
 // ViewChanger — left side bottom, vertical buttons to switch between views
 // habit / task / graph
 
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors, type ColorSet } from '@/src/theme';
 import { haptic } from '@/src/components/haptics';
+import { PressableScale } from '@/src/components/PressableScale';
 
 export type ViewType = 'task' | 'graph' | 'habit';
 
@@ -58,7 +59,7 @@ export function ViewChanger({ current, onChange }: ViewChangerProps) {
   return (
     <View style={[styles.container, { bottom: 80 + insets.bottom }]}>
       {views.map((v) => (
-        <Pressable
+        <PressableScale
           key={v}
           style={({ pressed }) => [
             styles.button,
@@ -76,7 +77,7 @@ export function ViewChanger({ current, onChange }: ViewChangerProps) {
             size={18}
             color={current === v ? colors.white : colors.brand}
           />
-        </Pressable>
+        </PressableScale>
       ))}
     </View>
   );

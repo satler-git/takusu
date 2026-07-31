@@ -45,6 +45,8 @@ import { haptic } from '@/src/components/haptics';
 import { useTopToast } from '@/src/components/TopToast';
 import { useUndoableToast } from '@/src/hooks/useUndoableToast';
 import { TaskProgressSheet } from '@/src/components/TaskProgressSheet';
+import { PressableScale } from '@/src/components/PressableScale';
+import { CrossFadeIcon } from '@/src/components/CrossFadeIcon';
 import { dateKey, todayDateKey } from '@/src/utils/dateKey';
 import TakusuWidgetModule from '../../modules/takusu-widget/src/TakusuWidgetModule';
 import { useScheduleOperation } from '@/src/hooks/useScheduleOperation';
@@ -1791,14 +1793,14 @@ export function HomeView() {
   const listHeader = useMemo(
     () =>
       !searching && hasPast ? (
-        <Pressable style={styles.pastToggle} onPress={togglePast}>
+        <PressableScale style={styles.pastToggle} onPress={togglePast}>
           <Reanimated.View style={chevronStyle}>
             <Ionicons name="chevron-down" size={16} color={colors.brand} />
           </Reanimated.View>
           <Text style={styles.pastToggleText}>
             {showPast ? '過去を隠す' : '過去を表示'}
           </Text>
-        </Pressable>
+        </PressableScale>
       ) : null,
     [hasPast, showPast, chevronStyle, togglePast, searching, styles, colors],
   );
@@ -1904,7 +1906,7 @@ export function HomeView() {
           onChangeText={setSearchQuery}
           client={client}
         />
-        <Pressable
+        <PressableScale
           style={({ pressed }) => [
             styles.topButton,
             pressed && styles.topButtonPressed,
@@ -1918,7 +1920,7 @@ export function HomeView() {
           }}
         >
           <Ionicons name="refresh" size={22} color={colors.brand} />
-        </Pressable>
+        </PressableScale>
       </View>
 
       {/* Task list */}
@@ -1971,7 +1973,7 @@ export function HomeView() {
               inProgressTask ? '上にスライドしてタスクを完了' : undefined
             }
           >
-            <Ionicons
+            <CrossFadeIcon
               name={inProgressTask ? 'pause' : 'play'}
               size={24}
               color={colors.white}

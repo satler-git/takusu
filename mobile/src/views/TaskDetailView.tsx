@@ -35,6 +35,7 @@ import { useColors, type ColorSet } from '@/src/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DateTimePickerModal } from '@/src/components/DateTimePickerModal';
 import { haptic } from '@/src/components/haptics';
+import { PressableScale } from '@/src/components/PressableScale';
 import { TaskProgressSheet } from '@/src/components/TaskProgressSheet';
 import { SplitTaskModal } from '@/src/components/SplitTaskModal';
 import { CancelConfirmButton } from '@/src/components/CancelConfirmButton';
@@ -1140,7 +1141,7 @@ export function TaskDetailView() {
             visible={statusMenuVisible}
             onDismiss={() => setStatusMenuVisible(false)}
             anchor={
-              <Pressable
+              <PressableScale
                 style={[styles.statusRow, { borderColor: colors.separator }]}
                 onPress={() => {
                   haptic.light();
@@ -1156,7 +1157,7 @@ export function TaskDetailView() {
                   {STATUS_LABELS[editing ? status : task.status]}
                 </Text>
                 <Ionicons name="chevron-down" size={16} color={colors.gray} />
-              </Pressable>
+              </PressableScale>
             }
           >
             {(Object.keys(STATUS_LABELS) as TaskStatus[])
@@ -1203,7 +1204,7 @@ export function TaskDetailView() {
                 </Text>
               </View>
               <View style={styles.progressActionsRow}>
-                <Pressable
+                <PressableScale
                   style={({ pressed }) => [
                     styles.progressButton,
                     { backgroundColor: colors.red, opacity: pressed ? 0.8 : 1 },
@@ -1211,8 +1212,8 @@ export function TaskDetailView() {
                   onPress={() => openProgressSheet('pause')}
                 >
                   <Ionicons name="pause" size={20} color={colors.white} />
-                </Pressable>
-                <Pressable
+                </PressableScale>
+                <PressableScale
                   style={({ pressed }) => [
                     styles.progressButton,
                     {
@@ -1223,9 +1224,9 @@ export function TaskDetailView() {
                   onPress={completeTask}
                 >
                   <Ionicons name="checkmark" size={24} color={colors.white} />
-                </Pressable>
+                </PressableScale>
               </View>
-              <Pressable
+              <PressableScale
                 style={({ pressed }) => [
                   styles.progressButton,
                   styles.progressButtonFull,
@@ -1235,9 +1236,9 @@ export function TaskDetailView() {
               >
                 <Ionicons name="cut" size={20} color={colors.black} />
                 <Text style={{ color: colors.black, marginLeft: 6 }}>分割</Text>
-              </Pressable>
+              </PressableScale>
               <View style={styles.progressActionsRow}>
-                <Pressable
+                <PressableScale
                   style={({ pressed }) => [
                     styles.progressButton,
                     styles.progressButtonFlex,
@@ -1251,8 +1252,8 @@ export function TaskDetailView() {
                   <Text style={{ color: colors.black, fontWeight: '600' }}>
                     -1
                   </Text>
-                </Pressable>
-                <Pressable
+                </PressableScale>
+                <PressableScale
                   style={({ pressed }) => [
                     styles.progressButton,
                     styles.progressButtonFlex,
@@ -1266,8 +1267,8 @@ export function TaskDetailView() {
                   <Text style={{ color: colors.white, fontWeight: '600' }}>
                     記録
                   </Text>
-                </Pressable>
-                <Pressable
+                </PressableScale>
+                <PressableScale
                   style={({ pressed }) => [
                     styles.progressButton,
                     styles.progressButtonFlex,
@@ -1281,7 +1282,7 @@ export function TaskDetailView() {
                   <Text style={{ color: colors.black, fontWeight: '600' }}>
                     +1
                   </Text>
-                </Pressable>
+                </PressableScale>
               </View>
             </View>
           )}
@@ -1315,7 +1316,7 @@ export function TaskDetailView() {
                     {formatDate(startAt)}
                   </Text>
                   {startAt && (
-                    <Pressable
+                    <PressableScale
                       onPress={() => {
                         haptic.light();
                         setStartAt(null);
@@ -1326,7 +1327,7 @@ export function TaskDetailView() {
                         size={16}
                         color={colors.grayLight}
                       />
-                    </Pressable>
+                    </PressableScale>
                   )}
                 </Pressable>
                 <Pressable
@@ -1807,7 +1808,7 @@ export function TaskDetailView() {
             },
           ]}
         >
-          <Pressable
+          <PressableScale
             style={[styles.saveBarButton, { backgroundColor: colors.brand }]}
             onPress={() => {
               haptic.medium();
@@ -1818,7 +1819,7 @@ export function TaskDetailView() {
             <Text style={[styles.saveBarText, { color: colors.white }]}>
               保存
             </Text>
-          </Pressable>
+          </PressableScale>
         </View>
       )}
 
@@ -1946,7 +1947,7 @@ export function TaskDetailView() {
               autoFocus
             />
             {depSearch.length > 0 && (
-              <Pressable
+              <PressableScale
                 onPress={() => {
                   haptic.light();
                   setDepSearch('');
@@ -1957,7 +1958,7 @@ export function TaskDetailView() {
                   size={18}
                   color={colors.grayLight}
                 />
-              </Pressable>
+              </PressableScale>
             )}
           </View>
           <ScrollView style={styles.depModalList}>

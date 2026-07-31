@@ -23,6 +23,7 @@ import { RruleBuilderModal } from '@/src/components/RruleBuilderModal';
 import { DateTimePickerModal } from '@/src/components/DateTimePickerModal';
 import { HabitStepEditor } from '@/src/components/HabitStepEditor';
 import { haptic } from '@/src/components/haptics';
+import { PressableScale } from '@/src/components/PressableScale';
 import { parseDuration } from '@/src/utils/duration';
 import { type StepDraft, saveHabitSteps } from '@/src/utils/habitSteps';
 import {
@@ -251,7 +252,7 @@ export function HabitAddView() {
   return (
     <View style={[styles.container, { backgroundColor: colors.white }]}>
       <View style={[styles.topBar, { paddingTop: 8 + insets.top }]}>
-        <Pressable
+        <PressableScale
           style={styles.backButton}
           onPress={() => {
             haptic.light();
@@ -259,10 +260,10 @@ export function HabitAddView() {
           }}
         >
           <Ionicons name="chevron-back" size={28} color={colors.brand} />
-        </Pressable>
+        </PressableScale>
         <Text style={[styles.title, { color: colors.black }]}>New Habit</Text>
         <View style={{ flex: 1 }} />
-        <Pressable
+        <PressableScale
           style={[
             styles.saveButton,
             (!title || saving) && { backgroundColor: colors.grayDark },
@@ -273,7 +274,7 @@ export function HabitAddView() {
           <Text style={[styles.saveButtonText, { color: colors.white }]}>
             {saving ? '保存中…' : '追加'}
           </Text>
-        </Pressable>
+        </PressableScale>
       </View>
 
       <ScrollView
@@ -301,7 +302,7 @@ export function HabitAddView() {
             <Text style={[styles.label, { color: colors.gray }]}>
               周期 (RRULE)
             </Text>
-            <Pressable
+            <PressableScale
               style={styles.helpButton}
               onPress={() => {
                 haptic.light();
@@ -314,7 +315,7 @@ export function HabitAddView() {
                 size={18}
                 color={colors.brand}
               />
-            </Pressable>
+            </PressableScale>
           </View>
           <Pressable
             style={[
@@ -427,7 +428,7 @@ export function HabitAddView() {
                 autoCapitalize="none"
                 autoCorrect={false}
               />
-              <Pressable
+              <PressableScale
                 style={[styles.maximizeButton, { borderColor: colors.brand }]}
                 onPress={() => {
                   const [sh, sm] = startTime
@@ -444,7 +445,7 @@ export function HabitAddView() {
                 }}
               >
                 <Ionicons name="expand" size={16} color={colors.brand} />
-              </Pressable>
+              </PressableScale>
             </View>
             {(() => {
               const [sh, sm] = startTime
