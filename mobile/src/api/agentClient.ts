@@ -1,4 +1,5 @@
 import type {
+  AgentHistoryMessage,
   AgentStreamEvent,
   AgentTurnResult,
   ApprovalRequest,
@@ -114,6 +115,30 @@ export class AgentClient {
       'POST',
       '/api/agent/v1/sessions',
       { version: 1, permissions },
+    );
+    return response.session_id;
+  }
+
+  async resumeSession(options: {
+    sessionId?: string;
+    permissions?: PermissionsMap;
+    history?: AgentHistoryMessage[];
+    pendingApproval?: ApprovalRequest;
+    scheduleDirty?: boolean;
+    compactionSummary?: string;
+  }): Promise<string> {
+    const response = await this.request<{ session_id: string }>(
+      'POST',
+      '/api/agent/v1/sessions/resume',
+      {
+        version: 1,
+        session_id: options.sessionId,
+        permissions: options.permissions,
+        history: options.history,
+        pending_approval: options.pendingApproval,
+        schedule_dirty: options.scheduleDirty,
+        compaction_summary: options.compactionSummary,
+      },
     );
     return response.session_id;
   }

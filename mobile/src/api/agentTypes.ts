@@ -73,4 +73,21 @@ export type TurnEvent =
 
 export type TtsBlockEvent = { type: 'TtsBlock'; data: string };
 
+export interface AgentHistoryToolCall {
+  id: string;
+  name: string;
+  arguments?: unknown;
+}
+
+export type AgentHistoryMessage =
+  | { role: 'system'; content: string }
+  | { role: 'user'; content: string }
+  | { role: 'assistant'; content?: string; tool_calls?: AgentHistoryToolCall[] }
+  | {
+      role: 'tool';
+      tool_call_id: string;
+      content: string;
+      is_error?: boolean;
+    };
+
 export type AgentStreamEvent = TurnEvent | TtsBlockEvent;
