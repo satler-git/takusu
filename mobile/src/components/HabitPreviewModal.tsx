@@ -11,7 +11,6 @@ import { formatDuration } from '@/src/utils/duration';
 import {
   ActivityIndicator,
   Modal,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -21,6 +20,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors, type ColorSet } from '@/src/theme';
 import { haptic } from '@/src/components/haptics';
+import { PressableScale } from '@/src/components/PressableScale';
 import { AgentClient } from '@/src/api/agentClient';
 import { showError } from '@/src/api/errors';
 import type {
@@ -140,7 +140,7 @@ export function HabitPreviewModal({
             <Text style={[styles.headerTitle, { color: colors.black }]}>
               タスク生成プレビュー
             </Text>
-            <Pressable
+            <PressableScale
               onPress={() => {
                 haptic.light();
                 onClose();
@@ -149,7 +149,7 @@ export function HabitPreviewModal({
               style={styles.closeButton}
             >
               <Ionicons name="close" size={24} color={colors.gray} />
-            </Pressable>
+            </PressableScale>
           </View>
 
           <ScrollView contentContainerStyle={styles.list}>

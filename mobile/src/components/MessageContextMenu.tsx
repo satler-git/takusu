@@ -16,6 +16,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useColors, type ColorSet } from '@/src/theme';
 import { haptic } from '@/src/components/haptics';
+import { PressableScale } from '@/src/components/PressableScale';
 
 type MenuPosition = { x: number; y: number };
 
@@ -140,7 +141,7 @@ export function MessageContextMenu({
           onStartShouldSetResponder={() => true}
         >
           {items.map((item) => (
-            <Pressable
+            <PressableScale
               key={item.label}
               style={({ pressed }) => [
                 styles.menuItem,
@@ -167,7 +168,7 @@ export function MessageContextMenu({
               >
                 {item.label}
               </Text>
-            </Pressable>
+            </PressableScale>
           ))}
         </View>
       </Pressable>

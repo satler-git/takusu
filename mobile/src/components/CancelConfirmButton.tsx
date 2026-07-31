@@ -3,8 +3,9 @@
 // Auto-disarms after 3s.
 
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { StyleSheet } from 'react-native';
+import { PressableScale } from '@/src/components/PressableScale';
+import { CrossFadeIcon } from '@/src/components/CrossFadeIcon';
 import { useColors } from '@/src/theme';
 import { haptic } from '@/src/components/haptics';
 
@@ -20,7 +21,7 @@ export function CancelConfirmButton({ onConfirm }: { onConfirm: () => void }) {
   }, []);
 
   return (
-    <Pressable
+    <PressableScale
       style={[styles.button, armed && { backgroundColor: colors.red }]}
       onPress={() => {
         if (armed) {
@@ -34,12 +35,12 @@ export function CancelConfirmButton({ onConfirm }: { onConfirm: () => void }) {
         }
       }}
     >
-      <Ionicons
+      <CrossFadeIcon
         name={armed ? 'trash' : 'close'}
         size={22}
         color={armed ? colors.white : colors.red}
       />
-    </Pressable>
+    </PressableScale>
   );
 }
 

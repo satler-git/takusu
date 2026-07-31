@@ -23,6 +23,7 @@ import { useColors, type ColorSet } from '@/src/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DateTimePickerModal } from '@/src/components/DateTimePickerModal';
 import { haptic } from '@/src/components/haptics';
+import { PressableScale } from '@/src/components/PressableScale';
 import { useTopToast } from '@/src/components/TopToast';
 import { formatDate } from '@/src/formatDate';
 import { parseDuration } from '@/src/utils/duration';
@@ -386,7 +387,7 @@ export function TaskAddView({
       <View
         style={[styles.topBar, { paddingTop: 8 + (embedded ? 0 : insets.top) }]}
       >
-        <Pressable
+        <PressableScale
           style={styles.backButton}
           onPress={() => {
             haptic.light();
@@ -394,10 +395,10 @@ export function TaskAddView({
           }}
         >
           <Ionicons name="chevron-back" size={28} color={colors.brand} />
-        </Pressable>
+        </PressableScale>
         <Text style={[styles.title, { color: colors.black }]}>新規タスク</Text>
         <View style={{ flex: 1 }} />
-        <Pressable
+        <PressableScale
           style={[
             styles.saveButton,
             (!title || !endAt || saving) && {
@@ -410,7 +411,7 @@ export function TaskAddView({
           <Text style={[styles.saveButtonText, { color: colors.white }]}>
             {saving ? '保存中…' : '追加'}
           </Text>
-        </Pressable>
+        </PressableScale>
       </View>
 
       <ScrollView
@@ -457,7 +458,7 @@ export function TaskAddView({
               {formatDate(startAt)}
             </Text>
             {startAt && (
-              <Pressable
+              <PressableScale
                 style={styles.clearIcon}
                 onPress={() => {
                   haptic.light();
@@ -469,7 +470,7 @@ export function TaskAddView({
                   size={18}
                   color={colors.grayLight}
                 />
-              </Pressable>
+              </PressableScale>
             )}
           </Pressable>
         </View>
@@ -517,7 +518,7 @@ export function TaskAddView({
                 autoCapitalize="none"
                 autoCorrect={false}
               />
-              <Pressable
+              <PressableScale
                 style={[
                   styles.maximizeButton,
                   { borderColor: colors.brand },
@@ -535,7 +536,7 @@ export function TaskAddView({
                 }}
               >
                 <Ionicons name="expand" size={16} color={colors.brand} />
-              </Pressable>
+              </PressableScale>
             </View>
             {startAt &&
               endAt &&
@@ -723,7 +724,7 @@ export function TaskAddView({
                 autoCapitalize="none"
                 autoCorrect={false}
               />
-              <Pressable
+              <PressableScale
                 style={[
                   styles.icalImportButton,
                   (!icalText.trim() || importing) && {
@@ -736,7 +737,7 @@ export function TaskAddView({
                 <Text style={[styles.saveButtonText, { color: colors.white }]}>
                   {importing ? 'インポート中…' : 'iCalをインポート'}
                 </Text>
-              </Pressable>
+              </PressableScale>
             </>
           )}
         </View>
@@ -747,7 +748,7 @@ export function TaskAddView({
             <Text style={[styles.label, { color: colors.gray }]}>
               依存先タスク ({selectedDeps.length})
             </Text>
-            <Pressable
+            <PressableScale
               style={styles.addDepButton}
               onPress={() => {
                 haptic.light();
@@ -760,7 +761,7 @@ export function TaskAddView({
               <Text style={[styles.addDepButtonText, { color: colors.white }]}>
                 追加
               </Text>
-            </Pressable>
+            </PressableScale>
           </View>
           {selectedDeps.map((depId) => {
             const depTask = allTasks.find((t) => t.id === depId);
@@ -777,14 +778,14 @@ export function TaskAddView({
                     ? `#${depTask.display_id} ${depTask.title}`
                     : depId.slice(0, 8)}
                 </Text>
-                <Pressable
+                <PressableScale
                   onPress={() => {
                     haptic.light();
                     setSelectedDeps(selectedDeps.filter((d) => d !== depId));
                   }}
                 >
                   <Ionicons name="close" size={18} color={colors.red} />
-                </Pressable>
+                </PressableScale>
               </View>
             );
           })}
@@ -806,14 +807,14 @@ export function TaskAddView({
             <Text style={[styles.depPickerTitle, { color: colors.black }]}>
               依存先を選択
             </Text>
-            <Pressable
+            <PressableScale
               onPress={() => {
                 haptic.light();
                 setShowDepPicker(false);
               }}
             >
               <Text style={styles.depPickerClose}>閉じる</Text>
-            </Pressable>
+            </PressableScale>
           </View>
           <View
             style={[
@@ -831,7 +832,7 @@ export function TaskAddView({
               autoFocus
             />
             {depSearch.length > 0 && (
-              <Pressable
+              <PressableScale
                 onPress={() => {
                   haptic.light();
                   setDepSearch('');
@@ -842,7 +843,7 @@ export function TaskAddView({
                   size={18}
                   color={colors.grayLight}
                 />
-              </Pressable>
+              </PressableScale>
             )}
           </View>
           <ScrollView style={styles.depPickerList}>

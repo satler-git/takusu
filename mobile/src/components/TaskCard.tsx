@@ -22,6 +22,8 @@ import Reanimated, {
   withSpring,
 } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
+import { PressableScale } from '@/src/components/PressableScale';
+import { CrossFadeIcon } from '@/src/components/CrossFadeIcon';
 import type { TaskRow } from '@/src/api/types';
 import { parseDepends } from '@/src/api/types';
 import { taskCardColor, useTheme, type ColorSet, useColors } from '@/src/theme';
@@ -402,7 +404,7 @@ function TaskCardImpl({
         style={[styles.doneBg, { backgroundColor: doneColor }, doneBgStyle]}
         pointerEvents="none"
       >
-        <Ionicons name={doneIcon} size={28} color={colors.white} />
+        <CrossFadeIcon name={doneIcon} size={28} color={colors.white} />
       </Reanimated.View>
       {/* #1044: revealed skip/delete action panel */}
       {ACTION_PANEL_WIDTH > 0 && (
@@ -411,7 +413,7 @@ function TaskCardImpl({
           pointerEvents={actionsRevealed ? 'auto' : 'none'}
         >
           {skipVisible && (
-            <Pressable
+            <PressableScale
               style={[
                 styles.actionButton,
                 leftActionStyle,
@@ -430,10 +432,10 @@ function TaskCardImpl({
                 size={24}
                 color={colors.white}
               />
-            </Pressable>
+            </PressableScale>
           )}
           {onDelete && (
-            <Pressable
+            <PressableScale
               style={[
                 styles.actionButton,
                 skipVisible ? rightActionStyle : leftActionStyle,
@@ -448,7 +450,7 @@ function TaskCardImpl({
               }}
             >
               <Ionicons name="trash" size={24} color={colors.white} />
-            </Pressable>
+            </PressableScale>
           )}
         </View>
       )}

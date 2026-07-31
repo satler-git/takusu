@@ -12,6 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useColors } from '@/src/theme';
 import { type ColorSet } from '@/src/theme';
 import { haptic } from '@/src/components/haptics';
+import { PressableScale } from '@/src/components/PressableScale';
 
 interface NavigationButtonsProps {
   onScrollUpByDay?: () => void;
@@ -136,7 +137,7 @@ export function NavigationButtons({
     bgColor: string;
   }) {
     return (
-      <Pressable
+      <PressableScale
         style={({ pressed }) => [
           styles.navButton,
           { backgroundColor: bgColor },
@@ -150,7 +151,7 @@ export function NavigationButtons({
         }}
       >
         <Ionicons name={icon} size={20} color={color} />
-      </Pressable>
+      </PressableScale>
     );
   }
 
@@ -259,14 +260,14 @@ export function NavigationButtons({
             onPress={() => {}}
           >
             <View style={styles.calHeader}>
-              <Pressable
+              <PressableScale
                 onPress={prevMonth}
                 style={styles.calNavButton}
                 hitSlop={8}
               >
                 <Text style={[styles.calNav, { color: colors.brand }]}>‹</Text>
-              </Pressable>
-              <Pressable
+              </PressableScale>
+              <PressableScale
                 onPress={jumpToCurrentMonth}
                 style={styles.calMonthLabelPressable}
                 hitSlop={8}
@@ -274,14 +275,14 @@ export function NavigationButtons({
                 <Text style={[styles.calMonthLabel, { color: colors.black }]}>
                   {monthLabel}
                 </Text>
-              </Pressable>
-              <Pressable
+              </PressableScale>
+              <PressableScale
                 onPress={nextMonth}
                 style={styles.calNavButton}
                 hitSlop={8}
               >
                 <Text style={[styles.calNav, { color: colors.brand }]}>›</Text>
-              </Pressable>
+              </PressableScale>
             </View>
             <View style={styles.calGrid}>
               {['日', '月', '火', '水', '木', '金', '土'].map((d) => (

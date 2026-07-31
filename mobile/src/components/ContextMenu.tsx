@@ -11,6 +11,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useColors, type ColorSet } from '@/src/theme';
 import { undoRedo } from '@/src/api/undoRedo';
 import { haptic } from '@/src/components/haptics';
+import { PressableScale } from '@/src/components/PressableScale';
 import type { TaskStatus } from '@/src/api/types';
 
 interface ContextMenuProps {
@@ -211,7 +212,7 @@ export function ContextMenu({
 
   function renderItem(item: MenuItem) {
     return (
-      <Pressable
+      <PressableScale
         key={item.label}
         style={({ pressed }) => [
           styles.menuItem,
@@ -246,7 +247,7 @@ export function ContextMenu({
         >
           {item.label}
         </Text>
-      </Pressable>
+      </PressableScale>
     );
   }
 
@@ -260,7 +261,7 @@ export function ContextMenu({
 
   return (
     <>
-      <Pressable
+      <PressableScale
         style={({ pressed }) => [
           styles.button,
           pressed && styles.buttonPressed,
@@ -271,7 +272,7 @@ export function ContextMenu({
         }}
       >
         <Ionicons name="menu" size={24} color={colors.brand} />
-      </Pressable>
+      </PressableScale>
 
       <Modal
         visible={open}
@@ -311,7 +312,7 @@ export function ContextMenu({
               ステータスを選択
             </Text>
             {statusItems.map((item) => (
-              <Pressable
+              <PressableScale
                 key={item.status}
                 style={({ pressed }) => [
                   styles.menuItem,
@@ -331,7 +332,7 @@ export function ContextMenu({
                 <Text style={[styles.menuItemText, { color: colors.black }]}>
                   {item.label}
                 </Text>
-              </Pressable>
+              </PressableScale>
             ))}
           </View>
         </Pressable>

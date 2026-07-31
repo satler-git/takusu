@@ -13,7 +13,6 @@ import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Pressable,
   ScrollView,
   StyleSheet,
   Switch,
@@ -53,6 +52,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DateTimePickerModal } from '@/src/components/DateTimePickerModal';
 import { haptic } from '@/src/components/haptics';
+import { PressableScale } from '@/src/components/PressableScale';
 import { useTopToast } from '@/src/components/TopToast';
 import { showError } from '@/src/api/errors';
 import TakusuServerModule from '../../modules/takusu-server/src/TakusuServerModule';
@@ -308,7 +308,7 @@ export function SettingsCategoryView() {
           { borderBottomColor: colors.separator, paddingTop: 8 + insets.top },
         ]}
       >
-        <Pressable
+        <PressableScale
           style={styles.backButton}
           onPress={() => {
             haptic.light();
@@ -318,7 +318,7 @@ export function SettingsCategoryView() {
           <Text style={[styles.backButtonText, { color: colors.brand }]}>
             ‹
           </Text>
-        </Pressable>
+        </PressableScale>
         <Text style={[styles.title, { color: colors.black }]}>設定</Text>
       </View>
 
@@ -334,7 +334,7 @@ export function SettingsCategoryView() {
               {group.label}
             </Text>
             {group.categories.map((key) => (
-              <Pressable
+              <PressableScale
                 key={key}
                 style={[
                   styles.categoryRow,
@@ -353,14 +353,14 @@ export function SettingsCategoryView() {
                   size={20}
                   color={colors.gray}
                 />
-              </Pressable>
+              </PressableScale>
             ))}
           </View>
         ))}
 
         <View style={styles.field}>
           <Text style={[styles.label, { color: colors.gray }]}>サーバー</Text>
-          <Pressable
+          <PressableScale
             style={[styles.actionButton, { backgroundColor: colors.brand }]}
             onPress={() => {
               haptic.medium();
@@ -373,7 +373,7 @@ export function SettingsCategoryView() {
             ) : (
               <Text style={styles.actionButtonText}>サーバーを再起動</Text>
             )}
-          </Pressable>
+          </PressableScale>
           {restartError && (
             <Text style={[styles.warning, { color: colors.red }]}>
               {restartError}
@@ -1016,7 +1016,7 @@ export function SettingsDetailView({
           { borderBottomColor: colors.separator, paddingTop: 8 + insets.top },
         ]}
       >
-        <Pressable
+        <PressableScale
           style={styles.backButton}
           onPress={() => {
             haptic.light();
@@ -1026,7 +1026,7 @@ export function SettingsDetailView({
           <Text style={[styles.backButtonText, { color: colors.brand }]}>
             ‹
           </Text>
-        </Pressable>
+        </PressableScale>
         <Text style={[styles.title, { color: colors.black }]}>
           {CATEGORY_LABELS[category]}
         </Text>
@@ -1051,7 +1051,7 @@ export function SettingsDetailView({
                   visible={themeMenuVisible}
                   onDismiss={() => setThemeMenuVisible(false)}
                   anchor={
-                    <Pressable
+                    <PressableScale
                       onPress={() => setThemeMenuVisible(true)}
                       style={[
                         styles.themeDropdown,
@@ -1074,7 +1074,7 @@ export function SettingsDetailView({
                         size={16}
                         color={colors.black}
                       />
-                    </Pressable>
+                    </PressableScale>
                   }
                 >
                   {APP_THEMES.map((t) => (
@@ -1131,7 +1131,7 @@ export function SettingsDetailView({
                       autoCapitalize="none"
                       autoCorrect={false}
                     />
-                    <Pressable
+                    <PressableScale
                       style={[
                         styles.actionButton,
                         { backgroundColor: colors.surfaceTint },
@@ -1156,10 +1156,10 @@ export function SettingsDetailView({
                       >
                         デバイスのタイムゾーンを使用
                       </Text>
-                    </Pressable>
+                    </PressableScale>
                   </View>
 
-                  <Pressable
+                  <PressableScale
                     style={[
                       styles.actionButton,
                       { backgroundColor: colors.brand },
@@ -1175,7 +1175,7 @@ export function SettingsDetailView({
                     ) : (
                       <Text style={styles.actionButtonText}>設定を保存</Text>
                     )}
-                  </Pressable>
+                  </PressableScale>
                 </>
               )}
             </>
@@ -1191,7 +1191,7 @@ export function SettingsDetailView({
                     <Text style={[styles.label, { color: colors.gray }]}>
                       就寝時刻
                     </Text>
-                    <Pressable
+                    <PressableScale
                       style={[
                         styles.timeField,
                         { borderColor: colors.separator },
@@ -1204,14 +1204,14 @@ export function SettingsDetailView({
                       <Text style={[styles.timeText, { color: colors.black }]}>
                         {sleepStart}
                       </Text>
-                    </Pressable>
+                    </PressableScale>
                   </View>
 
                   <View style={styles.notifGroup}>
                     <Text style={[styles.label, { color: colors.gray }]}>
                       起床時刻
                     </Text>
-                    <Pressable
+                    <PressableScale
                       style={[
                         styles.timeField,
                         { borderColor: colors.separator },
@@ -1224,10 +1224,10 @@ export function SettingsDetailView({
                       <Text style={[styles.timeText, { color: colors.black }]}>
                         {sleepEnd}
                       </Text>
-                    </Pressable>
+                    </PressableScale>
                   </View>
 
-                  <Pressable
+                  <PressableScale
                     style={[
                       styles.actionButton,
                       { backgroundColor: colors.brand },
@@ -1243,7 +1243,7 @@ export function SettingsDetailView({
                     ) : (
                       <Text style={styles.actionButtonText}>設定を保存</Text>
                     )}
-                  </Pressable>
+                  </PressableScale>
                 </>
               )}
             </>
@@ -1289,7 +1289,7 @@ export function SettingsDetailView({
                     />
                   </View>
 
-                  <Pressable
+                  <PressableScale
                     style={[
                       styles.actionButton,
                       { backgroundColor: colors.brand },
@@ -1305,7 +1305,7 @@ export function SettingsDetailView({
                     ) : (
                       <Text style={styles.actionButtonText}>設定を保存</Text>
                     )}
-                  </Pressable>
+                  </PressableScale>
                 </>
               )}
             </>
@@ -1327,7 +1327,7 @@ export function SettingsDetailView({
                       visible={solverMenuVisible}
                       onDismiss={() => setSolverMenuVisible(false)}
                       anchor={
-                        <Pressable
+                        <PressableScale
                           onPress={() => setSolverMenuVisible(true)}
                           style={[
                             styles.themeDropdown,
@@ -1350,7 +1350,7 @@ export function SettingsDetailView({
                             size={16}
                             color={colors.black}
                           />
-                        </Pressable>
+                        </PressableScale>
                       }
                     >
                       {SOLVER_OPTIONS.map((s) => (
@@ -1418,7 +1418,7 @@ export function SettingsDetailView({
                     />
                   </View>
 
-                  <Pressable
+                  <PressableScale
                     style={[
                       styles.actionButton,
                       { backgroundColor: colors.brand },
@@ -1434,7 +1434,7 @@ export function SettingsDetailView({
                     ) : (
                       <Text style={styles.actionButtonText}>設定を保存</Text>
                     )}
-                  </Pressable>
+                  </PressableScale>
                 </>
               )}
             </>
@@ -1480,7 +1480,7 @@ export function SettingsDetailView({
                       />
                     </View>
                     {notifications.morningBriefing && (
-                      <Pressable
+                      <PressableScale
                         style={[
                           styles.timeField,
                           { borderColor: colors.separator },
@@ -1495,7 +1495,7 @@ export function SettingsDetailView({
                         >
                           {formatTime(notifications.morningBriefingTime)}
                         </Text>
-                      </Pressable>
+                      </PressableScale>
                     )}
                   </View>
 
@@ -1694,7 +1694,7 @@ export function SettingsDetailView({
                 </Text>
               )}
 
-              <Pressable
+              <PressableScale
                 style={[styles.actionButton, { backgroundColor: colors.brand }]}
                 onPress={() => {
                   haptic.medium();
@@ -1703,7 +1703,7 @@ export function SettingsDetailView({
                 disabled={!workerDirty}
               >
                 <Text style={styles.actionButtonText}>保存</Text>
-              </Pressable>
+              </PressableScale>
 
               {/* Health checks */}
               <View style={styles.field}>
@@ -1712,7 +1712,7 @@ export function SettingsDetailView({
                 </Text>
               </View>
 
-              <Pressable
+              <PressableScale
                 style={[styles.actionButton, { backgroundColor: colors.brand }]}
                 onPress={() => {
                   haptic.light();
@@ -1725,7 +1725,7 @@ export function SettingsDetailView({
                 ) : (
                   <Text style={styles.actionButtonText}>ローカルサーバー</Text>
                 )}
-              </Pressable>
+              </PressableScale>
               {localHealthResult && (
                 <View style={styles.healthResultRow}>
                   <Ionicons
@@ -1746,7 +1746,7 @@ export function SettingsDetailView({
                 </View>
               )}
 
-              <Pressable
+              <PressableScale
                 style={[styles.actionButton, { backgroundColor: colors.brand }]}
                 onPress={() => {
                   haptic.light();
@@ -1759,7 +1759,7 @@ export function SettingsDetailView({
                 ) : (
                   <Text style={styles.actionButtonText}>Worker</Text>
                 )}
-              </Pressable>
+              </PressableScale>
               {workerHealthResult && (
                 <View style={styles.healthResultRow}>
                   <Ionicons
@@ -1863,7 +1863,7 @@ export function SettingsDetailView({
                 />
               </View>
 
-              <Pressable
+              <PressableScale
                 style={[styles.actionButton, { backgroundColor: colors.brand }]}
                 onPress={() => {
                   haptic.medium();
@@ -1871,9 +1871,9 @@ export function SettingsDetailView({
                 }}
               >
                 <Text style={styles.actionButtonText}>設定を保存</Text>
-              </Pressable>
+              </PressableScale>
 
-              <Pressable
+              <PressableScale
                 style={[styles.actionButton, { backgroundColor: colors.brand }]}
                 onPress={() => {
                   haptic.medium();
@@ -1890,7 +1890,7 @@ export function SettingsDetailView({
                 ) : (
                   <Text style={styles.actionButtonText}>Googleでログイン</Text>
                 )}
-              </Pressable>
+              </PressableScale>
 
               <View style={styles.field}>
                 <Text style={[styles.label, { color: colors.gray }]}>
@@ -1920,7 +1920,7 @@ export function SettingsDetailView({
                 </Text>
               </View>
 
-              <Pressable
+              <PressableScale
                 style={[styles.actionButton, { backgroundColor: colors.brand }]}
                 onPress={() => {
                   haptic.medium();
@@ -1929,9 +1929,9 @@ export function SettingsDetailView({
                 disabled={!gcalRefreshToken.trim()}
               >
                 <Text style={styles.actionButtonText}>Refresh Tokenを保存</Text>
-              </Pressable>
+              </PressableScale>
 
-              <Pressable
+              <PressableScale
                 style={[styles.actionButton, { backgroundColor: colors.brand }]}
                 onPress={() => {
                   haptic.medium();
@@ -1944,9 +1944,9 @@ export function SettingsDetailView({
                 ) : (
                   <Text style={styles.actionButtonText}>手動同期</Text>
                 )}
-              </Pressable>
+              </PressableScale>
 
-              <Pressable
+              <PressableScale
                 style={[
                   styles.actionButton,
                   { backgroundColor: colors.destructive },
@@ -1968,7 +1968,7 @@ export function SettingsDetailView({
                     Google Calendarイベントを全削除
                   </Text>
                 )}
-              </Pressable>
+              </PressableScale>
             </>
           )}
 
@@ -1992,7 +1992,7 @@ export function SettingsDetailView({
                 <Text style={[styles.label, { color: colors.gray }]}>
                   ライセンス
                 </Text>
-                <Pressable
+                <PressableScale
                   style={[
                     styles.categoryRow,
                     { borderBottomColor: colors.separator },
@@ -2010,7 +2010,7 @@ export function SettingsDetailView({
                     size={20}
                     color={colors.gray}
                   />
-                </Pressable>
+                </PressableScale>
               </View>
 
               {/* Log export */}
@@ -2018,7 +2018,7 @@ export function SettingsDetailView({
                 <Text style={[styles.label, { color: colors.gray }]}>ログ</Text>
               </View>
 
-              <Pressable
+              <PressableScale
                 style={[styles.actionButton, { backgroundColor: colors.brand }]}
                 onPress={() => {
                   haptic.light();
@@ -2033,9 +2033,9 @@ export function SettingsDetailView({
                     ログをエクスポート
                   </Text>
                 )}
-              </Pressable>
+              </PressableScale>
 
-              <Pressable
+              <PressableScale
                 style={[styles.actionButton, { backgroundColor: colors.brand }]}
                 onPress={() => {
                   haptic.light();
@@ -2048,9 +2048,9 @@ export function SettingsDetailView({
                 ) : (
                   <Text style={styles.actionButtonText}>ログをコピー</Text>
                 )}
-              </Pressable>
+              </PressableScale>
 
-              <Pressable
+              <PressableScale
                 style={[
                   styles.actionButton,
                   { backgroundColor: colors.destructive },
@@ -2061,7 +2061,7 @@ export function SettingsDetailView({
                 }}
               >
                 <Text style={styles.actionButtonText}>ログを消去</Text>
-              </Pressable>
+              </PressableScale>
             </>
           )}
         </ScrollView>

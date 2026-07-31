@@ -95,6 +95,7 @@ import { MessageContextMenu } from '@/src/components/MessageContextMenu';
 import { SessionPermissionsModal } from '@/src/components/SessionPermissionsModal';
 import { ToolCallDetailModal } from '@/src/components/ToolCallDetailModal';
 import { haptic } from '@/src/components/haptics';
+import { PressableScale } from '@/src/components/PressableScale';
 import { useColors, type ColorSet } from '@/src/theme';
 import type { PermissionsMap } from '@/src/api/settingsStore';
 
@@ -306,7 +307,7 @@ function ToolNameChip({ call, colors, onPress }: ToolNameChipProps) {
     return <View style={chipStyle}>{children}</View>;
   }
   return (
-    <Pressable
+    <PressableScale
       style={chipStyle}
       accessibilityRole="button"
       accessibilityLabel={call.name}
@@ -317,7 +318,7 @@ function ToolNameChip({ call, colors, onPress }: ToolNameChipProps) {
       }}
     >
       {children}
-    </Pressable>
+    </PressableScale>
   );
 }
 
@@ -384,7 +385,7 @@ function ToolCallCard({
     >
       <View style={styles.toolCallHeader}>
         {onToolPress ? (
-          <Pressable
+          <PressableScale
             style={[styles.toolCallHeaderLeft, { flex: 1 }]}
             onPress={handleToolPress}
             accessibilityRole="button"
@@ -392,13 +393,13 @@ function ToolCallCard({
             accessibilityHint="ツールの詳細を開く"
           >
             {headerLeft}
-          </Pressable>
+          </PressableScale>
         ) : (
           <View style={[styles.toolCallHeaderLeft, { flex: 1 }]}>
             {headerLeft}
           </View>
         )}
-        <Pressable
+        <PressableScale
           onPress={toggleExpanded}
           accessibilityRole="button"
           accessibilityState={{ expanded }}
@@ -412,7 +413,7 @@ function ToolCallCard({
             size={14}
             color={colors.gray}
           />
-        </Pressable>
+        </PressableScale>
       </View>
       {expanded && (
         <>
@@ -2736,11 +2737,11 @@ export function AgentView() {
             },
           ]}
         >
-          <Pressable onPress={() => router.back()} style={styles.back}>
+          <PressableScale onPress={() => router.back()} style={styles.back}>
             <Text style={[styles.backText, { color: colors.brand }]}>‹</Text>
-          </Pressable>
+          </PressableScale>
           <Text style={[styles.title, { color: colors.black }]}>Agent</Text>
-          <Pressable
+          <PressableScale
             disabled={busy || isSwitching || !historyReady}
             onPress={toggleMuted}
             style={styles.muteButton}
@@ -2756,8 +2757,8 @@ export function AgentView() {
                     : colors.brand
               }
             />
-          </Pressable>
-          <Pressable
+          </PressableScale>
+          <PressableScale
             disabled={busy || isSwitching || !historyReady}
             onPress={() => setPermissionsModal(true)}
             style={styles.permissionsButton}
@@ -2777,7 +2778,7 @@ export function AgentView() {
                     : colors.gray
               }
             />
-          </Pressable>
+          </PressableScale>
           <View style={styles.deleteSession}>
             <DeleteConfirmButton
               onConfirm={deleteCurrentSession}
@@ -2786,7 +2787,7 @@ export function AgentView() {
               }
             />
           </View>
-          <Pressable
+          <PressableScale
             disabled={busy || isSwitching || !historyReady}
             onPress={startNewSession}
             style={styles.newSession}
@@ -2800,7 +2801,7 @@ export function AgentView() {
                   : colors.brand
               }
             />
-          </Pressable>
+          </PressableScale>
         </View>
         <FlatList
           ref={flatListRef}
@@ -2907,7 +2908,7 @@ export function AgentView() {
               ))}
             </ScrollView>
             <View style={styles.userInputActions}>
-              <Pressable
+              <PressableScale
                 disabled={isSwitching}
                 onPress={() =>
                   submitUserInput(
@@ -2919,8 +2920,8 @@ export function AgentView() {
                 <Text style={styles.userInputSecondaryText}>
                   そのまま続ける
                 </Text>
-              </Pressable>
-              <Pressable
+              </PressableScale>
+              <PressableScale
                 disabled={isSwitching}
                 onPress={() =>
                   submitUserInput(
@@ -2934,14 +2935,14 @@ export function AgentView() {
                 >
                   確定
                 </Text>
-              </Pressable>
+              </PressableScale>
             </View>
           </View>
         )}
         {error && (
-          <Pressable onPress={() => void showError(error, 'Agentエラー')}>
+          <PressableScale onPress={() => void showError(error, 'Agentエラー')}>
             <Text style={styles.error}>{error}</Text>
-          </Pressable>
+          </PressableScale>
         )}
         {sessionIds.length > 1 && (
           <GestureDetector gesture={switcherGesture}>
@@ -2954,7 +2955,7 @@ export function AgentView() {
                 },
               ]}
             >
-              <Pressable
+              <PressableScale
                 disabled={activeIndex === 0 || isSwitching || busy}
                 onPress={() => switchSession(-1)}
                 style={styles.switcherButton}
@@ -2968,7 +2969,7 @@ export function AgentView() {
                       : colors.gray
                   }
                 />
-              </Pressable>
+              </PressableScale>
               <View style={styles.dots}>
                 {sessionIds.map((id, i) => (
                   <View
@@ -2983,7 +2984,7 @@ export function AgentView() {
                   />
                 ))}
               </View>
-              <Pressable
+              <PressableScale
                 disabled={
                   activeIndex >= sessionIds.length - 1 || isSwitching || busy
                 }
@@ -2999,7 +3000,7 @@ export function AgentView() {
                       : colors.gray
                   }
                 />
-              </Pressable>
+              </PressableScale>
             </View>
           </GestureDetector>
         )}
@@ -3039,7 +3040,7 @@ export function AgentView() {
             busy={busy || isSwitching}
             onAppend={appendText}
           />
-          <Pressable
+          <PressableScale
             disabled={busy || isSwitching || !historyReady || !text.trim()}
             onPress={send}
             style={styles.send}
@@ -3051,7 +3052,7 @@ export function AgentView() {
                 送信
               </Text>
             )}
-          </Pressable>
+          </PressableScale>
         </View>
 
         <MessageContextMenu

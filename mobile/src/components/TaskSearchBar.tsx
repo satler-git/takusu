@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useColors } from '@/src/theme';
 import type { Completion } from '@/src/api/types';
 import { TakusuClient } from '@/src/api/client';
+import { PressableScale } from '@/src/components/PressableScale';
 
 interface Token {
   raw: string;
@@ -282,9 +283,9 @@ export function TaskSearchBar({
           autoCorrect={false}
         />
         {value.length > 0 && (
-          <Pressable onPress={handleClear} style={styles.clear}>
+          <PressableScale onPress={handleClear} style={styles.clear}>
             <Ionicons name="close-circle" size={18} color={colors.grayLight} />
-          </Pressable>
+          </PressableScale>
         )}
       </View>
       {chips.length > 0 && (
@@ -329,14 +330,14 @@ export function TaskSearchBar({
             keyboardShouldPersistTaps="handled"
             keyExtractor={(item, index) => `${item.value}-${index}`}
             renderItem={({ item }) => (
-              <Pressable
+              <PressableScale
                 onPress={() => handleSelect(item)}
                 style={styles.completionItem}
               >
                 <Text style={[styles.completionText, { color: colors.black }]}>
                   {item.label}
                 </Text>
-              </Pressable>
+              </PressableScale>
             )}
             ItemSeparatorComponent={() => (
               <View

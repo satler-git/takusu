@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { useColors, type ColorSet } from '@/src/theme';
 import { haptic } from '@/src/components/haptics';
+import { PressableScale } from '@/src/components/PressableScale';
 
 interface EditMessageModalProps {
   visible: boolean;
@@ -137,7 +138,7 @@ export function EditMessageModal({
               />
             </View>
             <View style={styles.actions}>
-              <Pressable
+              <PressableScale
                 style={styles.secondaryButton}
                 onPress={() => {
                   haptic.light();
@@ -147,8 +148,8 @@ export function EditMessageModal({
                 <Text style={{ color: colors.gray, fontWeight: '700' }}>
                   キャンセル
                 </Text>
-              </Pressable>
-              <Pressable
+              </PressableScale>
+              <PressableScale
                 style={[
                   styles.primaryButton,
                   { backgroundColor: canSave ? colors.brand : colors.grayDark },
@@ -162,7 +163,7 @@ export function EditMessageModal({
                 <Text style={{ color: colors.white, fontWeight: '700' }}>
                   保存
                 </Text>
-              </Pressable>
+              </PressableScale>
             </View>
           </View>
         </Pressable>

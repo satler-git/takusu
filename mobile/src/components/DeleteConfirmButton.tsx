@@ -3,8 +3,9 @@
 // Auto-disarms after 3s.
 
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { StyleSheet } from 'react-native';
+import { PressableScale } from '@/src/components/PressableScale';
+import { CrossFadeIcon } from '@/src/components/CrossFadeIcon';
 import { useColors } from '@/src/theme';
 import { haptic } from '@/src/components/haptics';
 
@@ -53,7 +54,7 @@ export function DeleteConfirmButton({
       : undefined;
 
   return (
-    <Pressable
+    <PressableScale
       style={[
         styles.button,
         {
@@ -77,8 +78,8 @@ export function DeleteConfirmButton({
         }
       }}
     >
-      <Ionicons name={iconName} size={iconSize} color={iconColor} />
-    </Pressable>
+      <CrossFadeIcon name={iconName} size={iconSize} color={iconColor} />
+    </PressableScale>
   );
 }
 

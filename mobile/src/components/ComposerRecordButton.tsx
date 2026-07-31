@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useMemo } from 'react';
 import { StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { CrossFadeIcon } from '@/src/components/CrossFadeIcon';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Reanimated, {
   useAnimatedStyle,
@@ -341,7 +342,7 @@ export function ComposerRecordButton({
         style={[styles.button, animatedStyle]}
         pointerEvents="auto"
       >
-        <Ionicons
+        <CrossFadeIcon
           name={isRecording ? 'close' : 'mic'}
           size={24}
           color={isRecording ? white : brand}
