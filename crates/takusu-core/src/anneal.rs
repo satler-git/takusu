@@ -56,8 +56,6 @@ use crate::placement::{
     get_time_window, try_place,
 };
 use evaluate::EvaluationContext;
-#[cfg(test)]
-use evaluate::evaluate;
 use takusu_types::{ParallelMode, Slots};
 
 /// タブーリストのキー。`(task_id, start, duration)` の各要素を型付きで保持し、
@@ -288,74 +286,6 @@ fn build_initial(planner: &Planner) -> Plan {
     }
 
     Plan { schedules }
-}
-
-#[cfg(test)]
-pub(crate) fn priority_order_search(planner: &Planner, rng: &mut impl Rng) -> Plan {
-    let mut priority: Vec<_> = planner.tasks.iter().map(|task| task.id).collect();
-    priority.sort_by(|a, b| planner.freeness(*a).total_cmp(&planner.freeness(*b)));
-
-    let mut ctx = EvaluationContext::new(planner.tasks.len());
-    let mut current = decode(
-        planner,
-        DecodeInput {
-            priority: &priority,
-            duration_choices: &[],
-            pinned: &[],
-            repair_mode: RepairMode::Earliest,
-        },
-    )
-    .plan;
-    let mut current_score = ctx.evaluate(planner, &current.schedules, 0.0, 1.0);
-    let mut best = current.clone();
-    let mut best_score = current_score;
-    let movable: Vec<_> = priority
-        .iter()
-        .enumerate()
-        .filter(|(_, id)| !planner.tasks[**id].fixed)
-        .map(|(position, _)| position)
-        .collect();
-    if movable.len() < 2 {
-        return best;
-    }
-
-    let iterations = planner.tasks.len().max(1) * 100;
-    let initial_temperature = planner.tasks.len().max(1) as f64;
-    for iteration in 0..iterations {
-        let a_index = rng.random_range(0..movable.len());
-        let mut b_index = rng.random_range(0..movable.len());
-        if a_index == b_index {
-            b_index = (b_index + 1) % movable.len();
-        }
-        let a = movable[a_index];
-        let b = movable[b_index];
-        priority.swap(a, b);
-        let candidate = decode(
-            planner,
-            DecodeInput {
-                priority: &priority,
-                duration_choices: &[],
-                pinned: &[],
-                repair_mode: RepairMode::Earliest,
-            },
-        )
-        .plan;
-        let candidate_score = ctx.evaluate(planner, &candidate.schedules, 0.0, 1.0);
-        let temperature = initial_temperature * (1.0 - iteration as f64 / iterations as f64);
-        let delta = candidate_score - current_score;
-        if delta > 0.0 || rng.random::<f64>() < (delta / temperature.max(0.01)).exp() {
-            current = candidate;
-            current_score = candidate_score;
-            if current_score > best_score {
-                best = current.clone();
-                best_score = current_score;
-            }
-        } else {
-            priority.swap(a, b);
-        }
-    }
-
-    best
 }
 
 // ── ALNS (Adaptive Large Neighborhood Search) for priority decoder ─────────
@@ -2575,6 +2505,7 @@ fn place_one(planner: &Planner, scheds: &mut Vec<TaskPlacement>, task_id: usize)
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::evaluate::evaluate;
     use rand::rng;
     use takusu_types::NormalDist;
 
@@ -2602,6 +2533,73 @@ mod tests {
             fixed,
             habit_group: None,
         }
+    }
+
+    fn priority_order_search(planner: &Planner, rng: &mut impl Rng) -> Plan {
+        let mut priority: Vec<_> = planner.tasks.iter().map(|task| task.id).collect();
+        priority.sort_by(|a, b| planner.freeness(*a).total_cmp(&planner.freeness(*b)));
+
+        let mut ctx = EvaluationContext::new(planner.tasks.len());
+        let mut current = decode(
+            planner,
+            DecodeInput {
+                priority: &priority,
+                duration_choices: &[],
+                pinned: &[],
+                repair_mode: RepairMode::Earliest,
+            },
+        )
+        .plan;
+        let mut current_score = ctx.evaluate(planner, &current.schedules, 0.0, 1.0);
+        let mut best = current.clone();
+        let mut best_score = current_score;
+        let movable: Vec<_> = priority
+            .iter()
+            .enumerate()
+            .filter(|(_, id)| !planner.tasks[**id].fixed)
+            .map(|(position, _)| position)
+            .collect();
+        if movable.len() < 2 {
+            return best;
+        }
+
+        let iterations = planner.tasks.len().max(1) * 100;
+        let initial_temperature = planner.tasks.len().max(1) as f64;
+        for iteration in 0..iterations {
+            let a_index = rng.random_range(0..movable.len());
+            let mut b_index = rng.random_range(0..movable.len());
+            if a_index == b_index {
+                b_index = (b_index + 1) % movable.len();
+            }
+            let a = movable[a_index];
+            let b = movable[b_index];
+            priority.swap(a, b);
+            let candidate = decode(
+                planner,
+                DecodeInput {
+                    priority: &priority,
+                    duration_choices: &[],
+                    pinned: &[],
+                    repair_mode: RepairMode::Earliest,
+                },
+            )
+            .plan;
+            let candidate_score = ctx.evaluate(planner, &candidate.schedules, 0.0, 1.0);
+            let temperature = initial_temperature * (1.0 - iteration as f64 / iterations as f64);
+            let delta = candidate_score - current_score;
+            if delta > 0.0 || rng.random::<f64>() < (delta / temperature.max(0.01)).exp() {
+                current = candidate;
+                current_score = candidate_score;
+                if current_score > best_score {
+                    best = current.clone();
+                    best_score = current_score;
+                }
+            } else {
+                priority.swap(a, b);
+            }
+        }
+
+        best
     }
 
     #[test]
