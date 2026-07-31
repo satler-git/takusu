@@ -763,10 +763,10 @@ enum HabitStepsCommands {
     /// List steps for a habit, or all habits if no id is given.
     Ls(HabitStepsLsArgs),
 
-    /// Edit steps for a habit in $EDITOR (JSON array).
+    /// Edit steps for a habit in $EDITOR (TOML array-of-tables).
     Edit(RefArgs),
 
-    /// Replace steps from a JSON file or stdin ("-"; // comments ignored).
+    /// Replace steps from a TOML file or stdin ("-"; # comments are ignored).
     Set(HabitStepsSetArgs),
 
     /// Detect and offer to remove redundant step dependency edges.
@@ -784,7 +784,7 @@ struct HabitStepsSetArgs {
     #[arg(value_name = "REF")]
     id: String,
 
-    #[arg(help = "JSON file path or '-' for stdin (// comments are ignored)")]
+    #[arg(help = "TOML file path or '-' for stdin (# comments are ignored)")]
     file: String,
 }
 
@@ -1532,10 +1532,7 @@ async fn run_task_verbs(
             let task = app.get_task(&args.id).await?;
             if !args.has_patch_flag() {
                 let all_tasks = app.list_tasks(&Default::default()).await?;
-                let original = editor::format_task_for_editing(&task, &all_tasks, &habit_map, tz);
-                let edited = editor::open_editor(&original, &task.id)
-                    .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
-                let update = editor::parse_edited_task(&edited, tz)
+                let update = editor::edit_task(&task, &all_tasks, &habit_map, tz)
                     .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
                 let updated = app.update_task(&args.id, &update).await?;
                 mode.formatter().display_tasks(&[updated], tz, &habit_map);
@@ -1960,10 +1957,7 @@ async fn run_habit(mode: DisplayMode, app: &TakusuApp, cmd: HabitCommands) -> Re
             let habit = &detail.habit;
 
             if !args.has_patch_flag() {
-                let original = editor::format_habit_for_editing(habit);
-                let edited = editor::open_editor(&original, &habit.id)
-                    .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
-                let update = editor::parse_edited_habit(&edited)
+                let update = editor::edit_habit(habit)
                     .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
                 let updated = app.update_habit(&args.id, &update).await?;
                 mode.formatter().display_habit_detail(&updated);
@@ -2085,12 +2079,7 @@ async fn run_habit_steps(
         }
         HabitStepsCommands::Edit(args) => {
             let steps = app.list_habit_steps(&args.id).await?;
-            let original = editor::format_steps_for_editing(&steps)
-                .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
-            let suffix = format!("{}", uuid::Uuid::now_v7());
-            let edited = editor::open_editor(&original, &suffix)
-                .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
-            let inputs = editor::parse_edited_steps(&edited)
+            let inputs = editor::edit_steps(&args.id, &steps)
                 .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
             let replaced = app.replace_habit_steps(&args.id, &inputs).await?;
             mode.formatter().display_habit_steps(&replaced);
@@ -2167,7 +2156,7 @@ async fn run_skill(mode: DisplayMode, app: &TakusuApp, cmd: SkillCommands) -> Re
                     "# Edit skill body. Lines starting with '#' are comments.\n{}",
                     skill.body
                 );
-                let edited = editor::open_editor(&original, &args.slug)
+                let edited = editor::open_editor(&original, &args.slug, "txt")
                     .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))?;
                 let body = edited
                     .lines()
