@@ -329,6 +329,11 @@ struct SkillsProposeAddArgs {
     warnings: Vec<String>,
     #[serde(default)]
     inferred_fields: Vec<InferredField>,
+    /// Optional proposal id. Set the same value across multiple related tool calls to group them into a single proposal for review.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<String>")]
+    proposal_id: Option<String>,
 }
 
 #[async_trait]
@@ -391,7 +396,10 @@ impl TypedTool for SkillsProposeAdd {
             "description": args.description,
             "body": args.body,
         });
-        let arguments = serde_json::to_value(&args).unwrap_or_default();
+        let mut arguments = serde_json::to_value(&args).unwrap_or_default();
+        if let Value::Object(ref mut map) = arguments {
+            map.remove("proposal_id");
+        }
         let proposal = ProposedChange {
             operation: ChangeOperation::Create,
             target: Target::new(TargetKind::Skill, &args.slug),
@@ -400,6 +408,7 @@ impl TypedTool for SkillsProposeAdd {
             after: Some(after),
             arguments: Some(arguments),
             observed_updated_at: None,
+            proposal_id: args.proposal_id,
         };
 
         Ok(ToolOutput {
@@ -441,6 +450,11 @@ struct SkillsProposeEditArgs {
     warnings: Vec<String>,
     #[serde(default)]
     inferred_fields: Vec<InferredField>,
+    /// Optional proposal id. Set the same value across multiple related tool calls to group them into a single proposal for review.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<String>")]
+    proposal_id: Option<String>,
 }
 
 #[async_trait]
@@ -521,7 +535,10 @@ impl TypedTool for SkillsProposeEdit {
             }
         }
 
-        let arguments = serde_json::to_value(&args).unwrap_or_default();
+        let mut arguments = serde_json::to_value(&args).unwrap_or_default();
+        if let Value::Object(ref mut map) = arguments {
+            map.remove("proposal_id");
+        }
         let proposal = ProposedChange {
             operation: ChangeOperation::Update,
             target: Target::new(TargetKind::Skill, &args.slug),
@@ -530,6 +547,7 @@ impl TypedTool for SkillsProposeEdit {
             after: Some(after),
             arguments: Some(arguments),
             observed_updated_at: Some(existing.updated_at.to_string()),
+            proposal_id: args.proposal_id,
         };
 
         Ok(ToolOutput {

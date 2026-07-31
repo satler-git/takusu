@@ -4,6 +4,7 @@ import type {
   AgentTurnResult,
   ApprovalRequest,
   ApprovalResult,
+  ProposalDecision,
   TurnEvent,
   UserInputAnswer,
 } from './agentTypes';
@@ -370,11 +371,20 @@ export class AgentClient {
     approvalId: string,
     approve: boolean,
     idempotencyKey: string,
+    proposals?: ProposalDecision[],
   ): Promise<ApprovalResult> {
+    const body: Record<string, unknown> = {
+      version: 1,
+      approve,
+      idempotency_key: idempotencyKey,
+    };
+    if (proposals !== undefined) {
+      body.proposals = proposals;
+    }
     return this.request<ApprovalResult>(
       'POST',
       `/api/agent/v1/sessions/${encodeURIComponent(sessionId)}/approvals/${encodeURIComponent(approvalId)}`,
-      { version: 1, approve, idempotency_key: idempotencyKey },
+      body,
     );
   }
 

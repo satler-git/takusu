@@ -193,6 +193,7 @@ fn progress_output(
     content_extra: serde_json::Map<String, Value>,
     observed_updated_at: Option<String>,
     schedule_dirty: bool,
+    proposal_id: Option<String>,
 ) -> ToolOutput {
     let content = ProgressContent {
         approval_required: true,
@@ -211,6 +212,7 @@ fn progress_output(
             after: Some(after),
             arguments: Some(execution_args),
             observed_updated_at,
+            proposal_id,
         }],
         inferred_fields: Vec::new(),
         changes: Vec::new(),
@@ -233,6 +235,11 @@ struct TaskStartArgs {
     #[serde(default, deserialize_with = "deserialize_trimmed_optional")]
     #[schemars(with = "Option<String>")]
     task_ref: Option<String>,
+    /// Optional proposal id. Set the same value across multiple related tool calls to group them into a single proposal for review.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<String>")]
+    proposal_id: Option<String>,
 }
 
 #[async_trait]
@@ -307,6 +314,7 @@ impl TypedTool for TaskStart {
             serde_json::Map::new(),
             observed,
             true,
+            args.proposal_id,
         ))
     }
 }
@@ -324,6 +332,11 @@ struct TaskPauseArgs {
     #[serde(default, deserialize_with = "deserialize_trimmed_optional")]
     #[schemars(with = "Option<String>")]
     task_ref: Option<String>,
+    /// Optional proposal id. Set the same value across multiple related tool calls to group them into a single proposal for review.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<String>")]
+    proposal_id: Option<String>,
 }
 
 #[async_trait]
@@ -393,6 +406,7 @@ impl TypedTool for TaskPause {
             serde_json::Map::new(),
             observed,
             true,
+            args.proposal_id,
         ))
     }
 }
@@ -416,6 +430,11 @@ struct TaskProgressArgs {
     #[serde(default, deserialize_with = "deserialize_trimmed_optional")]
     #[schemars(with = "Option<String>")]
     note: Option<String>,
+    /// Optional proposal id. Set the same value across multiple related tool calls to group them into a single proposal for review.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<String>")]
+    proposal_id: Option<String>,
 }
 
 #[async_trait]
@@ -593,6 +612,7 @@ impl TypedTool for TaskProgress {
             content_extra,
             Some(task.updated_at.to_string()),
             false,
+            args.proposal_id,
         ))
     }
 }
@@ -610,6 +630,11 @@ struct TaskCompleteArgs {
     #[serde(default, deserialize_with = "deserialize_trimmed_optional")]
     #[schemars(with = "Option<String>")]
     task_ref: Option<String>,
+    /// Optional proposal id. Set the same value across multiple related tool calls to group them into a single proposal for review.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<String>")]
+    proposal_id: Option<String>,
 }
 
 #[async_trait]
@@ -722,6 +747,7 @@ impl TypedTool for TaskComplete {
             content_extra,
             Some(task.updated_at.to_string()),
             true,
+            args.proposal_id,
         ))
     }
 }
@@ -756,6 +782,11 @@ struct TaskSplitArgs {
     #[serde(default, deserialize_with = "deserialize_trimmed_optional")]
     #[schemars(with = "Option<String>")]
     end_at: Option<String>,
+    /// Optional proposal id. Set the same value across multiple related tool calls to group them into a single proposal for review.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<String>")]
+    proposal_id: Option<String>,
 }
 
 #[async_trait]
@@ -932,6 +963,7 @@ impl TypedTool for TaskSplit {
             content_extra,
             Some(task.updated_at.to_string()),
             true,
+            args.proposal_id,
         ))
     }
 }

@@ -613,6 +613,11 @@ pub(super) struct HabitScheduledSpansArgs {
     /// List of fields that were inferred from ambiguous user input and should be highlighted. Do not include obvious conversions (e.g. '1 hour' -> 60 minutes) or values filled from the current date/time.
     #[serde(default)]
     inferred_fields: Vec<InferredField>,
+    /// Optional proposal id. Set the same value across multiple related tool calls to group them into a single proposal for review.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<String>")]
+    proposal_id: Option<String>,
 }
 
 #[async_trait]
@@ -810,6 +815,7 @@ impl HabitScheduledSpans {
         if !args.inferred_fields.is_empty() {
             execution_args.insert("inferred_fields".into(), json!(args.inferred_fields));
         }
+        execution_args.remove("proposal_id");
 
         let mut display_args = execution_args.clone();
         let tz = server_timezone(&self.tz_cache).await;
@@ -823,6 +829,7 @@ impl HabitScheduledSpans {
             after: Some(Value::Object(display_args)),
             arguments: Some(Value::Object(execution_args)),
             observed_updated_at: None,
+            proposal_id: args.proposal_id.clone(),
         };
 
         Ok(ToolOutput {

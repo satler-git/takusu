@@ -1,4 +1,5 @@
 export interface ProposedChange {
+  proposal_id: string;
   operation: string;
   target_label: string;
   description: string;
@@ -10,6 +11,11 @@ export interface InferredField {
   field: string;
   value: unknown;
   reason: string;
+}
+
+export interface ProposalDecision {
+  proposal_id: string;
+  approve: boolean;
 }
 
 export interface ApprovalRequest {

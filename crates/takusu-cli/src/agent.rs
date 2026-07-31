@@ -4,6 +4,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use takusu_agent::tool::{ProposalDecision, ProposedChange};
 use takusu_agent::{
     AgentConfig, AgentError, AgentSession, ApprovalRequest, Permissions, ToolError,
     UserInputAnswer, UserInputProvider, UserInputQuestion,
@@ -79,14 +80,13 @@ async fn run_text(session: &AgentSession, text: &str, yes: bool) -> Result<(), A
     println!("{}", result.text);
 
     let schedule_dirty = if let Some(approval) = result.approval_request.as_ref() {
-        display_approval(approval);
-        let approve = if yes {
-            true
+        let (approve, proposals) = if yes {
+            (true, None)
         } else {
-            ask_approve("Approve? (y/N): ")?
+            ask_approval_proposals(approval)?
         };
         let res = session
-            .resolve_approval(&approval.id, approve)
+            .resolve_approval(&approval.id, approve, proposals)
             .await
             .map_err(agent_err)?;
         if res.approved {
@@ -121,30 +121,84 @@ async fn run_text(session: &AgentSession, text: &str, yes: bool) -> Result<(), A
     Ok(())
 }
 
-fn display_approval(req: &ApprovalRequest) {
-    if !req.why.is_empty() {
-        println!("Why: {}", req.why);
+fn ask_approval_proposals(
+    approval: &ApprovalRequest,
+) -> Result<(bool, Option<Vec<ProposalDecision>>), AppError> {
+    if !approval.why.is_empty() {
+        println!("Why: {}", approval.why);
     }
-    if !req.inferred_fields.is_empty() {
+    if !approval.inferred_fields.is_empty() {
         println!("Inferred:");
-        for field in &req.inferred_fields {
+        for field in &approval.inferred_fields {
             println!("  {} = {} ({})", field.field, field.value, field.reason);
         }
     }
-    if !req.warnings.is_empty() {
+    if !approval.warnings.is_empty() {
         println!("Warnings:");
-        for warning in &req.warnings {
+        for warning in &approval.warnings {
             println!("  - {warning}");
         }
     }
-    println!("Changes:");
-    for change in &req.changes {
+
+    let groups = group_proposals(&approval.changes);
+    let total = groups.len();
+    let mut decisions = Vec::with_capacity(total);
+    for (i, (proposal_id, changes)) in groups.iter().enumerate() {
+        let display_id = proposal_id.as_deref().unwrap_or("(no id)");
+        display_proposal_group(display_id, i + 1, total, changes);
+        let approve = ask_approve("Approve this proposal? (y/N): ")?;
+        let decision_id = proposal_id
+            .clone()
+            .unwrap_or_else(|| format!("<missing-{}>", i));
+        decisions.push(ProposalDecision {
+            proposal_id: decision_id,
+            approve,
+        });
+    }
+    let approve = decisions.iter().any(|d| d.approve);
+    Ok((approve, Some(decisions)))
+}
+
+fn group_proposals(changes: &[ProposedChange]) -> Vec<(Option<String>, Vec<&ProposedChange>)> {
+    let mut groups: Vec<(Option<String>, Vec<&ProposedChange>)> = Vec::new();
+    let mut index: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+    for change in changes {
+        match &change.proposal_id {
+            Some(id) => {
+                if let Some(i) = index.get(id) {
+                    groups[*i].1.push(change);
+                } else {
+                    index.insert(id.clone(), groups.len());
+                    groups.push((Some(id.clone()), vec![change]));
+                }
+            }
+            None => {
+                groups.push((None, vec![change]));
+            }
+        }
+    }
+    groups
+}
+
+fn display_proposal_group(
+    proposal_id: &str,
+    current: usize,
+    total: usize,
+    changes: &[&ProposedChange],
+) {
+    println!("\n提案 {}/{} (id: {}):", current, total, proposal_id);
+    for change in changes {
         println!(
             "  {} {}: {}",
             change.operation, change.target, change.description
         );
+        if let Some(before) = &change.before {
+            println!("    before: {}", before);
+        }
+        if let Some(after) = &change.after {
+            println!("    after:  {}", after);
+        }
     }
-    println!("expires at: {}", req.expires_at);
 }
 
 fn ask_approve(label: &str) -> Result<bool, AppError> {

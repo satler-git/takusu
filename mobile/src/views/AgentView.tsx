@@ -70,6 +70,7 @@ import {
 import type {
   AgentStreamEvent,
   ApprovalRequest,
+  ProposalDecision,
   UserInputQuestion,
   UserInputAnswer,
 } from '@/src/api/agentTypes';
@@ -2380,7 +2381,7 @@ export function AgentView() {
   );
 
   async function resolve(
-    approve: boolean,
+    decisions: ProposalDecision[],
     grantedPermissions?: PermissionsMap,
     persistToProvider?: boolean,
   ) {
@@ -2388,6 +2389,7 @@ export function AgentView() {
       return;
     setBusy(true);
     setError(null);
+    const approve = decisions.some((d) => d.approve);
     const positiveGranted: PermissionsMap = {};
     if (approve && grantedPermissions) {
       for (const [key, value] of Object.entries(grantedPermissions)) {
@@ -2407,6 +2409,7 @@ export function AgentView() {
         approval.id,
         approve,
         newId('approval'),
+        decisions,
       );
       setApproval(null);
       if (result.approved) {
@@ -2816,8 +2819,9 @@ export function AgentView() {
             busy={busy || isSwitching}
             client={client}
             colors={colors}
-            onApprove={(granted, persist) => resolve(true, granted, persist)}
-            onDeny={() => resolve(false)}
+            onResolve={(decisions, granted, persist) =>
+              resolve(decisions, granted, persist)
+            }
             permissions={sessionPermissions}
           />
         )}

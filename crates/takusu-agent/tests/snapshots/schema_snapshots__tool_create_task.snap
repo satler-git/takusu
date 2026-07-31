@@ -65,6 +65,10 @@ expression: def
         "parallelizable": {
           "type": "boolean"
         },
+        "proposal_id": {
+          "description": "Optional proposal id. Set the same value across multiple related tool calls to group them into a single proposal for review.",
+          "type": "string"
+        },
         "quantity_done": {
           "description": "Quantity already completed; defaults to 0.",
           "type": "integer"

@@ -70,6 +70,7 @@ fn make_proposal(
     inferred_fields: Vec<crate::InferredField>,
     why: Option<String>,
     warnings: Vec<String>,
+    proposal_id: Option<String>,
 ) -> ToolOutput {
     let proposal = ProposedChange {
         operation,
@@ -79,6 +80,7 @@ fn make_proposal(
         after,
         arguments: Some(execution_args),
         observed_updated_at,
+        proposal_id,
     };
     ToolOutput {
         content: ProposalContent::new(&proposal.target).to_json_string(),
@@ -264,6 +266,11 @@ struct MemorySaveArgs {
     warnings: Vec<String>,
     #[serde(default)]
     inferred_fields: Vec<InferredField>,
+    /// Optional proposal id. Set the same value across multiple related tool calls to group them into a single proposal for review.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<String>")]
+    proposal_id: Option<String>,
 }
 
 #[async_trait]
@@ -341,6 +348,7 @@ impl TypedTool for MemorySave {
             map.remove("why");
             map.remove("warnings");
             map.remove("inferred_fields");
+            map.remove("proposal_id");
         }
 
         let description = format!("save {kind} memory \"{}\"", args.key);
@@ -369,6 +377,7 @@ impl TypedTool for MemorySave {
             args.inferred_fields,
             args.why,
             args.warnings,
+            args.proposal_id,
         ))
     }
 }
@@ -397,6 +406,11 @@ struct MemoryUpdateArgs {
     warnings: Vec<String>,
     #[serde(default)]
     inferred_fields: Vec<InferredField>,
+    /// Optional proposal id. Set the same value across multiple related tool calls to group them into a single proposal for review.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<String>")]
+    proposal_id: Option<String>,
 }
 
 #[async_trait]
@@ -466,6 +480,7 @@ impl TypedTool for MemoryUpdate {
             args.inferred_fields,
             args.why,
             args.warnings,
+            args.proposal_id,
         ))
     }
 }
@@ -491,6 +506,11 @@ struct MemoryDeleteArgs {
     warnings: Vec<String>,
     #[serde(default)]
     inferred_fields: Vec<InferredField>,
+    /// Optional proposal id. Set the same value across multiple related tool calls to group them into a single proposal for review.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<String>")]
+    proposal_id: Option<String>,
 }
 
 #[async_trait]
@@ -545,6 +565,7 @@ impl TypedTool for MemoryDelete {
             args.inferred_fields,
             args.why,
             args.warnings,
+            args.proposal_id,
         ))
     }
 }

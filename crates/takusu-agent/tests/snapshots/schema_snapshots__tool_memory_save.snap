@@ -47,6 +47,10 @@ expression: def
           "description": "proper_noun, fact, or task_note.",
           "type": "string"
         },
+        "proposal_id": {
+          "description": "Optional proposal id. Set the same value across multiple related tool calls to group them into a single proposal for review.",
+          "type": "string"
+        },
         "subject_id": {
           "description": "Optional task ID when subject_type is 'task'.",
           "type": "string"

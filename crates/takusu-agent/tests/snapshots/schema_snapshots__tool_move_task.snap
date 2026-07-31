@@ -43,6 +43,10 @@ expression: def
           },
           "type": "array"
         },
+        "proposal_id": {
+          "description": "Optional proposal id. Set the same value across multiple related tool calls to group them into a single proposal for review.",
+          "type": "string"
+        },
         "start_at": {
           "description": "New start time; interpreted in server timezone if no offset is given.",
           "type": "string"

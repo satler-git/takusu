@@ -9,6 +9,10 @@ expression: def
     "parameters": {
       "additionalProperties": false,
       "properties": {
+        "proposal_id": {
+          "description": "Optional proposal id. Set the same value across multiple related tool calls to group them into a single proposal for review.",
+          "type": "string"
+        },
         "task_ref": {
           "type": "string"
         },

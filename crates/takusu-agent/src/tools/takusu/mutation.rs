@@ -107,12 +107,13 @@ enum WindowModeSchema {
 }
 
 /// Proposal metadata shared by every mutation args struct. `why`, `warnings`,
-/// and `inferred_fields` are stripped from backend execution args and surfaced
-/// on the [`ToolOutput`] instead.
+/// `inferred_fields`, and `proposal_id` are stripped from backend execution args
+/// and surfaced on the [`ToolOutput`] instead.
 pub(super) trait MutationMeta {
     fn why(&self) -> Option<String>;
     fn warnings(&self) -> Vec<String>;
     fn inferred_fields(&self) -> Vec<InferredField>;
+    fn proposal_id(&self) -> Option<String>;
 }
 
 /// Whether a mutation runs a schedule preview, and how the preview `mode` is
@@ -228,14 +229,19 @@ impl<S: MutationSpec> TypedTool for MutationTool<S> {
         let value = serde_json::to_value(&args).map_err(|e| ToolError::Other(Box::new(e)))?;
         let mut display_args = value.as_object().cloned().unwrap_or_default();
         let mut execution_args = display_args.clone();
-        // `why`, `warnings`, and `inferred_fields` are proposal metadata, not
-        // backend arguments (matching MoveTaskTool behavior).
+        // `why`, `warnings`, `inferred_fields`, and `proposal_id` are proposal
+        // metadata, not backend arguments (matching MoveTaskTool behavior).
         execution_args.remove("why");
         execution_args.remove("warnings");
         execution_args.remove("inferred_fields");
+        execution_args.remove("proposal_id");
 
         // Strip leading `#` from reference fields in execution_args only.
         S::normalize_refs(&mut execution_args)?;
+
+        // `proposal_id` is internal grouping metadata and should not appear in
+        // the diff UI.
+        display_args.remove("proposal_id");
 
         // Convert absolute datetimes back to the configured timezone for the
         // approval UI; execution_args retains the canonical UTC values.
@@ -293,6 +299,7 @@ impl<S: MutationSpec> TypedTool for MutationTool<S> {
             after: Some(Value::Object(display_args)),
             arguments: Some(Value::Object(execution_args)),
             observed_updated_at,
+            proposal_id: args.proposal_id(),
         };
         Ok(ToolOutput {
             content: ProposalContent::new(&proposal.target).to_json_string(),
@@ -438,6 +445,11 @@ pub(super) struct CreateTaskArgs {
     #[serde(default)]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     warnings: Vec<String>,
+    /// Optional proposal id. Set the same value across multiple related tool calls to group them into a single proposal for review.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<String>")]
+    proposal_id: Option<String>,
 }
 
 impl MutationMeta for CreateTaskArgs {
@@ -449,6 +461,9 @@ impl MutationMeta for CreateTaskArgs {
     }
     fn inferred_fields(&self) -> Vec<InferredField> {
         self.inferred_fields.clone()
+    }
+    fn proposal_id(&self) -> Option<String> {
+        self.proposal_id.clone()
     }
 }
 
@@ -561,6 +576,11 @@ pub(super) struct UpdateTaskArgs {
     #[serde(default)]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     warnings: Vec<String>,
+    /// Optional proposal id. Set the same value across multiple related tool calls to group them into a single proposal for review.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<String>")]
+    proposal_id: Option<String>,
 }
 
 impl MutationMeta for UpdateTaskArgs {
@@ -572,6 +592,9 @@ impl MutationMeta for UpdateTaskArgs {
     }
     fn inferred_fields(&self) -> Vec<InferredField> {
         self.inferred_fields.clone()
+    }
+    fn proposal_id(&self) -> Option<String> {
+        self.proposal_id.clone()
     }
 }
 
@@ -646,6 +669,11 @@ pub(super) struct DeleteTaskArgs {
     #[serde(default)]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     warnings: Vec<String>,
+    /// Optional proposal id. Set the same value across multiple related tool calls to group them into a single proposal for review.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<String>")]
+    proposal_id: Option<String>,
 }
 
 impl MutationMeta for DeleteTaskArgs {
@@ -657,6 +685,9 @@ impl MutationMeta for DeleteTaskArgs {
     }
     fn inferred_fields(&self) -> Vec<InferredField> {
         Vec::new()
+    }
+    fn proposal_id(&self) -> Option<String> {
+        self.proposal_id.clone()
     }
 }
 
@@ -759,6 +790,11 @@ pub(super) struct CreateHabitArgs {
     #[serde(default)]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     warnings: Vec<String>,
+    /// Optional proposal id. Set the same value across multiple related tool calls to group them into a single proposal for review.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<String>")]
+    proposal_id: Option<String>,
 }
 
 impl MutationMeta for CreateHabitArgs {
@@ -770,6 +806,9 @@ impl MutationMeta for CreateHabitArgs {
     }
     fn inferred_fields(&self) -> Vec<InferredField> {
         self.inferred_fields.clone()
+    }
+    fn proposal_id(&self) -> Option<String> {
+        self.proposal_id.clone()
     }
 }
 
@@ -870,6 +909,11 @@ pub(super) struct UpdateHabitArgs {
     #[serde(default)]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     warnings: Vec<String>,
+    /// Optional proposal id. Set the same value across multiple related tool calls to group them into a single proposal for review.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<String>")]
+    proposal_id: Option<String>,
 }
 
 impl MutationMeta for UpdateHabitArgs {
@@ -881,6 +925,9 @@ impl MutationMeta for UpdateHabitArgs {
     }
     fn inferred_fields(&self) -> Vec<InferredField> {
         self.inferred_fields.clone()
+    }
+    fn proposal_id(&self) -> Option<String> {
+        self.proposal_id.clone()
     }
 }
 
@@ -934,6 +981,11 @@ pub(super) struct DeleteHabitArgs {
     #[serde(default)]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     warnings: Vec<String>,
+    /// Optional proposal id. Set the same value across multiple related tool calls to group them into a single proposal for review.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<String>")]
+    proposal_id: Option<String>,
 }
 
 impl MutationMeta for DeleteHabitArgs {
@@ -945,6 +997,9 @@ impl MutationMeta for DeleteHabitArgs {
     }
     fn inferred_fields(&self) -> Vec<InferredField> {
         Vec::new()
+    }
+    fn proposal_id(&self) -> Option<String> {
+        self.proposal_id.clone()
     }
 }
 
@@ -998,6 +1053,11 @@ pub(super) struct GenerateScheduleArgs {
     #[serde(default)]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     warnings: Vec<String>,
+    /// Optional proposal id. Set the same value across multiple related tool calls to group them into a single proposal for review.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<String>")]
+    proposal_id: Option<String>,
 }
 
 impl MutationMeta for GenerateScheduleArgs {
@@ -1009,6 +1069,9 @@ impl MutationMeta for GenerateScheduleArgs {
     }
     fn inferred_fields(&self) -> Vec<InferredField> {
         Vec::new()
+    }
+    fn proposal_id(&self) -> Option<String> {
+        self.proposal_id.clone()
     }
 }
 
@@ -1083,6 +1146,11 @@ pub(super) struct RescheduleArgs {
     #[serde(default)]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     warnings: Vec<String>,
+    /// Optional proposal id. Set the same value across multiple related tool calls to group them into a single proposal for review.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<String>")]
+    proposal_id: Option<String>,
 }
 
 impl MutationMeta for RescheduleArgs {
@@ -1094,6 +1162,9 @@ impl MutationMeta for RescheduleArgs {
     }
     fn inferred_fields(&self) -> Vec<InferredField> {
         Vec::new()
+    }
+    fn proposal_id(&self) -> Option<String> {
+        self.proposal_id.clone()
     }
 }
 
@@ -1168,6 +1239,11 @@ pub(super) struct MoveTaskArgs {
     #[serde(default)]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     inferred_fields: Vec<InferredField>,
+    /// Optional proposal id. Set the same value across multiple related tool calls to group them into a single proposal for review.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<String>")]
+    proposal_id: Option<String>,
 }
 
 pub(super) struct MoveTaskTool {
@@ -1302,12 +1378,14 @@ impl TypedTool for MoveTaskTool {
         let mut display_args = base.clone();
         display_args.insert("task_ref".to_string(), Value::String(display_ref.clone()));
         display_args.insert("end_at".to_string(), Value::String(end_at));
+        display_args.remove("proposal_id");
         format_display_datetime_args(&mut display_args, &tz);
 
         let mut execution_args = base;
         execution_args.remove("why");
         execution_args.remove("warnings");
         execution_args.remove("inferred_fields");
+        execution_args.remove("proposal_id");
 
         let display_start = display_args
             .get("start_at")
@@ -1323,6 +1401,7 @@ impl TypedTool for MoveTaskTool {
             after: Some(Value::Object(display_args)),
             arguments: Some(Value::Object(execution_args)),
             observed_updated_at: Some(task.updated_at.to_string()),
+            proposal_id: args.proposal_id,
         };
         Ok(ToolOutput {
             content: ProposalContent::new(&proposal.target).to_json_string(),

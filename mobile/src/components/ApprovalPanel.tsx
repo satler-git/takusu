@@ -10,7 +10,11 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import type { ApprovalRequest, ProposedChange } from '@/src/api/agentTypes';
+import type {
+  ApprovalRequest,
+  ProposedChange,
+  ProposalDecision,
+} from '@/src/api/agentTypes';
 import { AgentClient } from '@/src/api/agentClient';
 import type { PermissionsMap } from '@/src/api/settingsStore';
 import type { TaskStatus, WindowMode } from '@/src/api/types';
@@ -34,7 +38,13 @@ const makeStyles = (colors: ColorSet) =>
       padding: 12,
       gap: 12,
     },
-    panelHeader: { gap: 12 },
+    panelHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'flex-start',
+      gap: 12,
+    },
+    panelHeaderText: { flex: 1 },
     panelBodyContent: {
       flexGrow: 1,
     },
@@ -161,6 +171,22 @@ const makeStyles = (colors: ColorSet) =>
       gap: 4,
     },
     actions: { flexDirection: 'row', gap: 8 },
+    pager: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 12,
+    },
+    pagerButton: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      borderWidth: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    pagerDots: { flexDirection: 'row', gap: 6 },
+    dot: { width: 8, height: 8, borderRadius: 4 },
     deny: {
       flex: 1,
       padding: 12,
@@ -1788,12 +1814,17 @@ interface ApprovalPanelProps {
   busy: boolean;
   client?: AgentClient;
   colors: ColorSet;
-  onApprove: (
+  onResolve: (
+    decisions: ProposalDecision[],
     grantedPermissions: PermissionsMap,
     persistToProvider: boolean,
   ) => void;
-  onDeny: () => void;
   permissions?: PermissionsMap;
+}
+
+interface ProposalGroup {
+  proposal_id: string;
+  changes: ProposedChange[];
 }
 
 export function ApprovalPanel({
@@ -1801,8 +1832,7 @@ export function ApprovalPanel({
   busy,
   client,
   colors,
-  onApprove,
-  onDeny,
+  onResolve,
   permissions,
 }: ApprovalPanelProps) {
   const styles = useMemo(() => makeStyles(colors), [colors]);
@@ -1812,13 +1842,76 @@ export function ApprovalPanel({
       granted: {},
       persist: false,
     });
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [decisions, setDecisions] = useState<Record<string, boolean>>({});
+
+  const groups: ProposalGroup[] = useMemo(() => {
+    const map = new Map<string, ProposedChange[]>();
+    for (const change of approval.changes) {
+      const id = change.proposal_id;
+      if (!map.has(id)) map.set(id, []);
+      map.get(id)!.push(change);
+    }
+    return Array.from(map.entries()).map(([proposal_id, changes]) => ({
+      proposal_id,
+      changes,
+    }));
+  }, [approval]);
+
+  const total = groups.length;
+  const currentGroup = groups[currentIndex];
 
   useEffect(() => {
     setPermissionValue({ granted: {}, persist: false });
+    setCurrentIndex(0);
+    setDecisions({});
   }, [approval.id]);
 
-  function handleApprove() {
-    onApprove(permissionValue.granted, permissionValue.persist);
+  function allDecided(finalDecisions: Record<string, boolean>) {
+    return groups.every((group) => group.proposal_id in finalDecisions);
+  }
+
+  function firstUndecidedIndex(finalDecisions: Record<string, boolean>) {
+    return groups.findIndex((group) => !(group.proposal_id in finalDecisions));
+  }
+
+  function submit(finalDecisions: Record<string, boolean>) {
+    if (!allDecided(finalDecisions)) {
+      const next = firstUndecidedIndex(finalDecisions);
+      if (next >= 0) setCurrentIndex(next);
+      return;
+    }
+    const proposalDecisions: ProposalDecision[] = groups.map((group) => ({
+      proposal_id: group.proposal_id,
+      approve: finalDecisions[group.proposal_id],
+    }));
+    onResolve(
+      proposalDecisions,
+      permissionValue.granted,
+      permissionValue.persist,
+    );
+  }
+
+  function handleDecision(approve: boolean) {
+    if (busy || !currentGroup) return;
+    haptic.light();
+    const nextDecisions = {
+      ...decisions,
+      [currentGroup.proposal_id]: approve,
+    };
+    setDecisions(nextDecisions);
+    if (allDecided(nextDecisions)) {
+      submit(nextDecisions);
+    } else {
+      const next = firstUndecidedIndex(nextDecisions);
+      if (next >= 0) setCurrentIndex(next);
+    }
+  }
+
+  function goTo(index: number) {
+    if (index >= 0 && index < total) {
+      setCurrentIndex(index);
+    }
   }
 
   return (
@@ -1829,7 +1922,7 @@ export function ApprovalPanel({
       ]}
     >
       <View style={styles.panelHeader}>
-        <View>
+        <View style={styles.panelHeaderText}>
           <Text style={[styles.title, { color: colors.black }]}>
             以下の変更を承認しますか？
           </Text>
@@ -1846,7 +1939,7 @@ export function ApprovalPanel({
             { color: colors.gray, backgroundColor: colors.surfaceTint },
           ]}
         >
-          {approval.changes.length} 件の変更
+          {currentIndex + 1} / {total}
         </Text>
       </View>
 
@@ -1857,9 +1950,9 @@ export function ApprovalPanel({
       >
         <View style={styles.panelBodyInner}>
           <View style={styles.changeList}>
-            {approval.changes.map((change, index) => (
+            {currentGroup?.changes.map((change, i) => (
               <ChangeCard
-                key={`${change.operation}-${index}`}
+                key={`${change.proposal_id}-${i}`}
                 change={change}
                 client={client}
                 colors={colors}
@@ -1891,14 +1984,14 @@ export function ApprovalPanel({
       <View style={styles.actions}>
         <Pressable
           disabled={busy}
-          onPress={onDeny}
+          onPress={() => handleDecision(false)}
           style={[styles.deny, { borderColor: colors.red }]}
         >
           <Text style={[styles.denyText, { color: colors.red }]}>拒否</Text>
         </Pressable>
         <Pressable
           disabled={busy}
-          onPress={handleApprove}
+          onPress={() => handleDecision(true)}
           style={[styles.approve, { backgroundColor: colors.brand }]}
         >
           {busy ? (
@@ -1908,6 +2001,51 @@ export function ApprovalPanel({
               承認
             </Text>
           )}
+        </Pressable>
+      </View>
+
+      <View style={styles.pager}>
+        <Pressable
+          onPress={() => goTo(currentIndex - 1)}
+          disabled={currentIndex === 0 || busy}
+          style={[
+            styles.pagerButton,
+            {
+              borderColor: colors.separator,
+              backgroundColor: colors.surfaceTint,
+            },
+          ]}
+        >
+          <Text style={{ color: colors.black, fontSize: 18 }}>&#8249;</Text>
+        </Pressable>
+        <View style={styles.pagerDots}>
+          {groups.map((group, i) => {
+            const decided = decisions[group.proposal_id];
+            let dotColor = colors.separator;
+            if (i === currentIndex) dotColor = colors.brand;
+            else if (decided === true) dotColor = colors.green;
+            else if (decided === false) dotColor = colors.red;
+            return (
+              <Pressable
+                key={group.proposal_id}
+                onPress={() => goTo(i)}
+                style={[styles.dot, { backgroundColor: dotColor }]}
+              />
+            );
+          })}
+        </View>
+        <Pressable
+          onPress={() => goTo(currentIndex + 1)}
+          disabled={currentIndex === total - 1 || busy}
+          style={[
+            styles.pagerButton,
+            {
+              borderColor: colors.separator,
+              backgroundColor: colors.surfaceTint,
+            },
+          ]}
+        >
+          <Text style={{ color: colors.black, fontSize: 18 }}>&#8250;</Text>
         </Pressable>
       </View>
     </View>

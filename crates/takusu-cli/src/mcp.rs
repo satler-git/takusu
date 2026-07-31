@@ -259,7 +259,7 @@ impl ServerHandler for McpServer {
                     .get_session(&session_id)
                     .await
                     .map_err(map_agent_error)?;
-                match session.resolve_approval(&approval_id, approve).await {
+                match session.resolve_approval(&approval_id, approve, None).await {
                     Ok(result) => Ok(json_result(json!({
                         "approved": result.approved,
                         "changes": result.changes,
