@@ -3,96 +3,138 @@ import {
   makeProgressOperationId,
 } from '@/src/utils/progress';
 import type { TakusuClient } from '@/src/api/client';
-import type { TaskRow } from '@/src/api/types';
+import type { WorkSessionRow } from '@/src/api/types';
+
+function makeSession(overrides?: Partial<WorkSessionRow>): WorkSessionRow {
+  return {
+    id: 'session-1',
+    task_id: 'task-1',
+    title: '作業',
+    quantity_done: 0,
+    quantity_total: 10,
+    quantity_unit: '個',
+    started_at: '2026-06-01T10:00:00Z',
+    created_at: '2026-06-01T10:00:00Z',
+    ...overrides,
+  };
+}
+
+function makeClient(
+  overrides?: Partial<Record<keyof TakusuClient, unknown>>,
+): TakusuClient {
+  return {
+    recordWorkSessionProgress: jest.fn().mockResolvedValue({} as never),
+    ...overrides,
+  } as unknown as TakusuClient;
+}
 
 describe('recordProgressWithTotal', () => {
-  const task: TaskRow = {
-    id: 'task-1',
-    display_id: 1,
-    title: 'Task',
-    end_at: '2026-06-05T18:00:00+09:00',
-    avg_minutes: 30,
-    sigma_minutes: 0,
-    depends: '[]',
-    parallelizable: false,
-    allows_parallel: false,
-    abandonability: 0.5,
-    status: 'in_progress',
-    user_edited: false,
-    fixed: false,
-    quantity_total: 10,
-    quantity_done: 0,
-    created_at: '2026-06-01T00:00:00Z',
-    updated_at: '2026-06-01T00:00:00Z',
-  };
-
-  function makeClient(
-    overrides?: Partial<Record<keyof TakusuClient, unknown>>,
-  ): TakusuClient {
-    return {
-      updateTask: jest.fn().mockResolvedValue(undefined),
-      recordProgress: jest.fn().mockResolvedValue({} as never),
-      ...overrides,
-    } as unknown as TakusuClient;
-  }
-
-  it('generates and passes an operationId to recordProgress', async () => {
+  it('generates and passes an operationId to recordWorkSessionProgress', async () => {
     const client = makeClient();
-    const returned = await recordProgressWithTotal(client, task, {
+    const session = makeSession();
+    const returned = await recordProgressWithTotal(client, session, {
       quantityDone: 5,
       note: 'done',
     });
-    expect(client.updateTask).not.toHaveBeenCalled();
-    expect(client.recordProgress).toHaveBeenCalledWith(
-      'task-1',
+    expect(client.recordWorkSessionProgress).toHaveBeenCalledWith(
+      'session-1',
       { quantity_done: 5, note: 'done' },
       expect.stringMatching(/./),
     );
     expect(returned).toBe(
-      (client.recordProgress as jest.Mock).mock.calls[0][2],
+      (client.recordWorkSessionProgress as jest.Mock).mock.calls[0][2],
     );
   });
 
   it('uses the provided operationId when given', async () => {
     const client = makeClient();
+    const session = makeSession();
     const operationId = 'op-123';
     const returned = await recordProgressWithTotal(
       client,
-      task,
+      session,
       { quantityDone: 3 },
       { operationId },
     );
-    expect(client.recordProgress).toHaveBeenCalledWith(
-      'task-1',
+    expect(client.recordWorkSessionProgress).toHaveBeenCalledWith(
+      'session-1',
       { quantity_done: 3, note: undefined },
       operationId,
     );
     expect(returned).toBe(operationId);
   });
 
-  it('skips quantity_total update when it matches the current total', async () => {
+  it('skips quantity_total when it matches the current total', async () => {
     const client = makeClient();
-    await recordProgressWithTotal(client, task, {
+    const session = makeSession({ quantity_total: 10 });
+    await recordProgressWithTotal(client, session, {
       quantityDone: 5,
       quantityTotal: 10,
     });
-    expect(client.updateTask).not.toHaveBeenCalled();
+    expect(client.recordWorkSessionProgress).toHaveBeenCalledWith(
+      'session-1',
+      { quantity_done: 5, note: undefined },
+      expect.any(String),
+    );
   });
 
-  it('reverts quantity_total when recordProgress fails', async () => {
-    const client = makeClient({
-      recordProgress: jest.fn().mockRejectedValue(new Error('network')),
+  it('passes quantity_total in the progress body when it changed', async () => {
+    const client = makeClient();
+    const session = makeSession({ quantity_total: 10 });
+    await recordProgressWithTotal(client, session, {
+      quantityDone: 5,
+      quantityTotal: 20,
     });
+    expect(client.recordWorkSessionProgress).toHaveBeenCalledWith(
+      'session-1',
+      { quantity_done: 5, note: undefined, quantity_total: 20 },
+      expect.any(String),
+    );
+  });
+
+  it('passes quantity_total for a standalone session when it changed', async () => {
+    const client = makeClient();
+    const session = makeSession({
+      task_id: undefined,
+      quantity_total: undefined,
+    });
+    await recordProgressWithTotal(client, session, {
+      quantityDone: 5,
+      quantityTotal: 20,
+    });
+    expect(client.recordWorkSessionProgress).toHaveBeenCalledWith(
+      'session-1',
+      { quantity_done: 5, note: undefined, quantity_total: 20 },
+      expect.any(String),
+    );
+  });
+
+  it('does not update the task directly', async () => {
+    const client = makeClient();
+    const session = makeSession({ quantity_total: 10 });
+    await recordProgressWithTotal(client, session, {
+      quantityDone: 5,
+      quantityTotal: 20,
+    });
+    expect(
+      (client as unknown as { updateTask?: jest.Mock }).updateTask,
+    ).toBeUndefined();
+  });
+
+  it('propagates recordWorkSessionProgress errors without rollback', async () => {
+    const client = makeClient({
+      recordWorkSessionProgress: jest
+        .fn()
+        .mockRejectedValue(new Error('network')),
+    });
+    const session = makeSession({ quantity_total: 10 });
     await expect(
-      recordProgressWithTotal(client, task, {
+      recordProgressWithTotal(client, session, {
         quantityDone: 5,
         quantityTotal: 20,
       }),
     ).rejects.toThrow('network');
-    expect(client.updateTask).toHaveBeenCalledTimes(2);
-    expect(client.updateTask).toHaveBeenLastCalledWith('task-1', {
-      quantity_total: 10,
-    });
+    expect(client.recordWorkSessionProgress).toHaveBeenCalledTimes(1);
   });
 });
 

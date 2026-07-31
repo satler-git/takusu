@@ -977,14 +977,18 @@ async fn update_task_to_terminal_status_closes_open_work_session() {
     }
 
     async fn start_work(app: &axum::Router, id: &str) {
-        let req = auth_req(Method::POST, &format!("/api/tasks/{id}/work/start"));
+        let req = auth_req_body(
+            Method::POST,
+            "/api/work-sessions",
+            json!({"task_id": id}),
+        );
         let res = app.clone().oneshot(req).await.unwrap();
         assert_eq!(res.status(), StatusCode::OK);
     }
 
     async fn open_session_count(pool: &SqlitePool, id: &str) -> i64 {
         sqlx::query_scalar(
-            "SELECT COUNT(*) FROM task_work_sessions WHERE task_id = ? AND ended_at IS NULL",
+            "SELECT COUNT(*) FROM work_sessions WHERE task_id = ? AND ended_at IS NULL",
         )
         .bind(id)
         .fetch_one(pool)
@@ -4192,24 +4196,31 @@ async fn progress_lifecycle() {
     let task: serde_json::Value = serde_json::from_str(&body_str(res.into_body()).await).unwrap();
     let id = task["id"].as_str().unwrap();
 
-    // Start work.
-    let req = auth_req(Method::POST, &format!("/api/tasks/{id}/work/start"));
+    // Start work on the task.
+    let req = auth_req_body(
+        Method::POST,
+        "/api/work-sessions",
+        json!({"task_id": id}),
+    );
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let started: serde_json::Value =
+    let session: serde_json::Value =
         serde_json::from_str(&body_str(res.into_body()).await).unwrap();
-    assert_eq!(started["status"], "in_progress");
+    let session_id = session["id"].as_str().unwrap();
+    assert_eq!(session["task_id"], id);
+    assert!(session["ended_at"].is_null());
 
     // Record progress.
     let req = auth_req_body(
         Method::POST,
-        &format!("/api/tasks/{id}/progress"),
+        &format!("/api/work-sessions/{session_id}/progress"),
         json!({"quantity_done": 4}),
     );
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
     let progress: serde_json::Value =
         serde_json::from_str(&body_str(res.into_body()).await).unwrap();
+    assert_eq!(progress["work_session"]["quantity_done"], 4);
     assert_eq!(progress["task"]["quantity_done"], 4);
     assert_eq!(progress["event"]["delta_quantity"], 4);
     assert!(!progress["event"]["id"].as_str().unwrap().is_empty());
@@ -4217,30 +4228,58 @@ async fn progress_lifecycle() {
     // Idempotent progress call with the same value returns a null event.
     let req = auth_req_body(
         Method::POST,
-        &format!("/api/tasks/{id}/progress"),
+        &format!("/api/work-sessions/{session_id}/progress"),
         json!({"quantity_done": 4}),
     );
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
     let no_op: serde_json::Value = serde_json::from_str(&body_str(res.into_body()).await).unwrap();
     assert!(no_op["event"].is_null());
+    assert_eq!(no_op["work_session"]["quantity_done"], 4);
 
-    // Get progress.
-    let req = auth_req(Method::GET, &format!("/api/tasks/{id}/progress"));
+    // List work sessions for the task; the open session is still present.
+    let req = auth_req(Method::GET, &format!("/api/work-sessions?task_id={id}"));
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
     let detail: serde_json::Value = serde_json::from_str(&body_str(res.into_body()).await).unwrap();
-    assert_eq!(detail["events"].as_array().unwrap().len(), 1);
-    assert!(detail["open_session"].is_object());
+    let sessions = detail.as_array().unwrap();
+    assert_eq!(sessions.len(), 1);
+    assert!(sessions[0]["ended_at"].is_null());
 
-    // Complete the task.
-    let req = auth_req(Method::POST, &format!("/api/tasks/{id}/work/complete"));
+    // Complete the work session. The task only reached 4/10, so completing it
+    // splits the unfinished remainder into a new task (#1419) instead of
+    // inflating quantity_done to the total.
+    let req = auth_req(Method::POST, &format!("/api/work-sessions/{session_id}/complete"));
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
     let completed: serde_json::Value =
         serde_json::from_str(&body_str(res.into_body()).await).unwrap();
-    assert_eq!(completed["status"], "completed");
-    assert_eq!(completed["quantity_done"], 10);
+    assert!(!completed["ended_at"].is_null());
+
+    // The original task completes at the actual progress (4/4).
+    let req = auth_req(Method::GET, &format!("/api/tasks/{id}"));
+    let res = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let task: serde_json::Value = serde_json::from_str(&body_str(res.into_body()).await).unwrap();
+    assert_eq!(task["status"], "completed");
+    assert_eq!(task["quantity_done"], 4);
+    assert_eq!(task["quantity_total"], 4);
+
+    // A remainder task carries the unfinished 6 units, pending.
+    let req = auth_req(Method::GET, "/api/tasks");
+    let res = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let list: serde_json::Value = serde_json::from_str(&body_str(res.into_body()).await).unwrap();
+    let remainder = list
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["split_from_task_id"] == id)
+        .expect("completing a partial session splits off a remainder task")
+        .clone();
+    assert_eq!(remainder["status"], "pending");
+    assert_eq!(remainder["quantity_total"], 6);
+    assert_eq!(remainder["quantity_done"], 0);
 }
 
 #[tokio::test]
@@ -4264,16 +4303,22 @@ async fn progress_and_pause_cannot_share_operation_id() {
     let task: serde_json::Value = serde_json::from_str(&body_str(res.into_body()).await).unwrap();
     let id = task["id"].as_str().unwrap();
 
-    let req = auth_req(Method::POST, &format!("/api/tasks/{id}/work/start"));
+    let req = auth_req_body(
+        Method::POST,
+        "/api/work-sessions",
+        json!({"task_id": id}),
+    );
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
+    let session: serde_json::Value = serde_json::from_str(&body_str(res.into_body()).await).unwrap();
+    let session_id = session["id"].as_str().unwrap();
 
     // Reusing the same operationId for a different progress endpoint must fail
     // with CONFLICT, because the idempotency key is bound to the request hash.
     let operation_id = "shared-op-1";
     let req = auth_req_body_idempotency(
         Method::POST,
-        &format!("/api/tasks/{id}/progress"),
+        &format!("/api/work-sessions/{session_id}/progress"),
         json!({"quantity_done": 4}),
         operation_id,
     );
@@ -4282,7 +4327,7 @@ async fn progress_and_pause_cannot_share_operation_id() {
 
     let req = auth_req_body_idempotency(
         Method::POST,
-        &format!("/api/tasks/{id}/work/pause"),
+        &format!("/api/work-sessions/{session_id}/pause"),
         json!({}),
         operation_id,
     );
@@ -4292,7 +4337,7 @@ async fn progress_and_pause_cannot_share_operation_id() {
     // Using a fresh operationId for pause succeeds.
     let req = auth_req_body_idempotency(
         Method::POST,
-        &format!("/api/tasks/{id}/work/pause"),
+        &format!("/api/work-sessions/{session_id}/pause"),
         json!({}),
         "pause-op-1",
     );
@@ -4320,28 +4365,40 @@ async fn progress_status_validation() {
     let task: serde_json::Value = serde_json::from_str(&body_str(res.into_body()).await).unwrap();
     let id = task["id"].as_str().unwrap();
 
-    // Complete it first.
-    let req = auth_req(Method::POST, &format!("/api/tasks/{id}/work/complete"));
+    // Start and complete the work session, which also completes the task.
+    let req = auth_req_body(
+        Method::POST,
+        "/api/work-sessions",
+        json!({"task_id": id}),
+    );
+    let res = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let session: serde_json::Value = serde_json::from_str(&body_str(res.into_body()).await).unwrap();
+    let session_id = session["id"].as_str().unwrap();
+
+    let req = auth_req(Method::POST, &format!("/api/work-sessions/{session_id}/complete"));
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
 
-    // Attempting to start/record/complete/split a completed task fails.
-    for uri in [
-        format!("/api/tasks/{id}/work/start"),
-        format!("/api/tasks/{id}/work/pause"),
-        format!("/api/tasks/{id}/work/complete"),
-    ] {
-        let req = auth_req(Method::POST, &uri);
-        let res = app.clone().oneshot(req).await.unwrap();
-        assert_eq!(res.status(), StatusCode::BAD_REQUEST, "{uri} should fail");
-    }
+    // Starting a new session for a completed task fails.
     let req = auth_req_body(
         Method::POST,
-        &format!("/api/tasks/{id}/progress"),
-        json!({"quantity_done": 1}),
+        "/api/work-sessions",
+        json!({"task_id": id}),
     );
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+
+    // Recording additional progress on a closed session fails.
+    let req = auth_req_body(
+        Method::POST,
+        &format!("/api/work-sessions/{session_id}/progress"),
+        json!({"quantity_done": 6}),
+    );
+    let res = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+
+    // Splitting a completed task fails.
     let req = auth_req_body(
         Method::POST,
         &format!("/api/tasks/{id}/split"),
@@ -4560,18 +4617,23 @@ async fn progress_active_minutes_are_incremental() {
         .unwrap()
         .to_string();
 
-    sqlx::query("INSERT INTO task_work_sessions (id, task_id, started_at) VALUES (?, ?, ?)")
-        .bind(uuid::Uuid::now_v7().to_string())
-        .bind(id)
-        .bind(hour_ago)
-        .execute(&pool)
-        .await
-        .unwrap();
+    let session_id = uuid::Uuid::now_v7().to_string();
+    sqlx::query(
+        "INSERT INTO work_sessions (id, task_id, started_at, quantity_done) VALUES (?, ?, ?, ?)",
+    )
+    .bind(&session_id)
+    .bind(id)
+    .bind(hour_ago)
+    .bind(3i64)
+    .execute(&pool)
+    .await
+    .unwrap();
 
     sqlx::query(
-        "INSERT INTO progress_events (id, task_id, at, quantity_done, delta_quantity, active_minutes, note) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO progress_events (id, work_session_id, task_id, at, quantity_done, delta_quantity, active_minutes, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(uuid::Uuid::now_v7().to_string())
+    .bind(&session_id)
     .bind(id)
     .bind(seconds_ago)
     .bind(3i64)
@@ -4591,13 +4653,15 @@ async fn progress_active_minutes_are_incremental() {
 
     let req = auth_req_body(
         Method::POST,
-        &format!("/api/tasks/{id}/progress"),
+        &format!("/api/work-sessions/{session_id}/progress"),
         json!({"quantity_done": 5}),
     );
     let res = app.oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
     let result: serde_json::Value = serde_json::from_str(&body_str(res.into_body()).await).unwrap();
     assert_eq!(result["event"]["delta_quantity"], 2);
+    assert_eq!(result["work_session"]["quantity_done"], 5);
+    assert_eq!(result["task"]["quantity_done"], 5);
     let active_minutes = result["event"]["active_minutes"].as_i64().unwrap();
     assert!(
         active_minutes < 60,
@@ -4696,7 +4760,7 @@ async fn estimate_habit_from_completed_task_actuals() {
     .unwrap();
 
     sqlx::query(
-        "INSERT INTO task_work_sessions (id, task_id, started_at, ended_at) VALUES (?, ?, ?, ?)",
+        "INSERT INTO work_sessions (id, task_id, started_at, ended_at) VALUES (?, ?, ?, ?)",
     )
     .bind("ws-1")
     .bind("task-1")
@@ -4764,7 +4828,7 @@ async fn estimate_habit_detects_outliers_when_enabled() {
         .unwrap();
 
         sqlx::query(
-            "INSERT INTO task_work_sessions (id, task_id, started_at, ended_at) VALUES (?, ?, ?, ?)",
+            "INSERT INTO work_sessions (id, task_id, started_at, ended_at) VALUES (?, ?, ?, ?)",
         )
         .bind(format!("ws-{}", task))
         .bind(task)
@@ -4843,7 +4907,7 @@ async fn estimate_habit_updates_per_step_estimates() {
     .unwrap();
 
     sqlx::query(
-        "INSERT INTO task_work_sessions (id, task_id, started_at, ended_at) VALUES (?, ?, ?, ?)",
+        "INSERT INTO work_sessions (id, task_id, started_at, ended_at) VALUES (?, ?, ?, ?)",
     )
     .bind("ws-step-1")
     .bind("task-step-1")
@@ -4936,7 +5000,7 @@ async fn estimate_habit_preserves_fixed_step() {
     .unwrap();
 
     sqlx::query(
-        "INSERT INTO task_work_sessions (id, task_id, started_at, ended_at) VALUES (?, ?, ?, ?)",
+        "INSERT INTO work_sessions (id, task_id, started_at, ended_at) VALUES (?, ?, ?, ?)",
     )
     .bind("ws-step-a")
     .bind("task-step-a")
@@ -5046,7 +5110,7 @@ async fn delete_task_nullifies_split_from_task_id() {
 }
 
 #[tokio::test]
-async fn delete_task_removes_progress_and_work_session_rows() {
+async fn delete_task_nullifies_work_session_and_event_task_id() {
     let (state, pool) = setup().await;
     let app = build_router(state);
 
@@ -5068,10 +5132,11 @@ async fn delete_task_removes_progress_and_work_session_rows() {
     let now = jiff::Timestamp::now()
         .strftime("%Y-%m-%dT%H:%M:%SZ")
         .to_string();
+    let session_id = uuid::Uuid::now_v7().to_string();
     sqlx::query(
-        "INSERT INTO task_work_sessions (id, task_id, started_at, created_at) VALUES (?, ?, ?, ?)",
+        "INSERT INTO work_sessions (id, task_id, started_at, created_at) VALUES (?, ?, ?, ?)",
     )
-    .bind(uuid::Uuid::now_v7().to_string())
+    .bind(&session_id)
     .bind(&id)
     .bind(&now)
     .bind(&now)
@@ -5079,9 +5144,10 @@ async fn delete_task_removes_progress_and_work_session_rows() {
     .await
     .unwrap();
     sqlx::query(
-        "INSERT INTO progress_events (id, task_id, at, active_minutes) VALUES (?, ?, ?, ?)",
+        "INSERT INTO progress_events (id, work_session_id, task_id, at, active_minutes) VALUES (?, ?, ?, ?, ?)",
     )
     .bind(uuid::Uuid::now_v7().to_string())
+    .bind(&session_id)
     .bind(&id)
     .bind(&now)
     .bind(0i64)
@@ -5094,7 +5160,7 @@ async fn delete_task_removes_progress_and_work_session_rows() {
     assert_eq!(res.status(), StatusCode::NO_CONTENT);
 
     let count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM task_work_sessions WHERE task_id = ?")
+        sqlx::query_scalar("SELECT COUNT(*) FROM work_sessions WHERE task_id = ?")
             .bind(&id)
             .fetch_one(&pool)
             .await
@@ -5106,6 +5172,17 @@ async fn delete_task_removes_progress_and_work_session_rows() {
         .await
         .unwrap();
     assert_eq!(count, 0);
+
+    // Work sessions and their events are intentionally detached rather than
+    // deleted when a task is removed (#1393).
+    let session: Option<(String,)> = sqlx::query_as(
+        "SELECT id FROM work_sessions WHERE id = ? AND task_id IS NULL",
+    )
+    .bind(&session_id)
+    .fetch_optional(&pool)
+    .await
+    .unwrap();
+    assert!(session.is_some());
 }
 
 #[tokio::test]

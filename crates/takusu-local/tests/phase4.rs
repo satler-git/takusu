@@ -296,31 +296,56 @@ impl Storage for CountingStorage {
     ) -> StorageResult<Vec<takusu_contracts::SimilarTaskRow>> {
         Ok(vec![])
     }
-    async fn start_task_work(
+    async fn start_work_session(
+        &self,
+        _body: &takusu_contracts::StartWorkSession,
+        _operation_id: Option<&str>,
+    ) -> StorageResult<takusu_contracts::WorkSessionRow> {
+        Err(StorageError::Internal("n/a".into()))
+    }
+    async fn pause_work_session(
         &self,
         _id: &str,
         _operation_id: Option<&str>,
-    ) -> StorageResult<TaskRow> {
+    ) -> StorageResult<takusu_contracts::WorkSessionRow> {
         Err(StorageError::Internal("n/a".into()))
     }
-    async fn pause_task_work(
+    async fn complete_work_session(
         &self,
         _id: &str,
         _operation_id: Option<&str>,
-    ) -> StorageResult<TaskRow> {
+    ) -> StorageResult<takusu_contracts::WorkSessionRow> {
         Err(StorageError::Internal("n/a".into()))
     }
-    async fn record_progress(
+    async fn record_work_session_progress(
         &self,
         _id: &str,
-        _body: &takusu_contracts::RecordProgress,
+        _body: &takusu_contracts::RecordWorkSessionProgress,
         _operation_id: Option<&str>,
-    ) -> StorageResult<takusu_contracts::ProgressResult> {
+    ) -> StorageResult<takusu_contracts::WorkSessionProgressResult> {
         Err(StorageError::Internal("n/a".into()))
     }
-    async fn complete_task_work(
+    async fn get_work_session(&self, _id: &str) -> StorageResult<takusu_contracts::WorkSessionRow> {
+        Err(StorageError::Internal("n/a".into()))
+    }
+    async fn list_work_sessions(
+        &self,
+        _task_id: Option<&str>,
+    ) -> StorageResult<Vec<takusu_contracts::WorkSessionRow>> {
+        Err(StorageError::Internal("n/a".into()))
+    }
+    async fn attach_work_session(
         &self,
         _id: &str,
+        _body: &takusu_contracts::AttachWorkSession,
+        _operation_id: Option<&str>,
+    ) -> StorageResult<takusu_contracts::WorkSessionRow> {
+        Err(StorageError::Internal("n/a".into()))
+    }
+    async fn convert_work_session(
+        &self,
+        _id: &str,
+        _body: &takusu_contracts::ConvertWorkSession,
         _operation_id: Option<&str>,
     ) -> StorageResult<TaskRow> {
         Err(StorageError::Internal("n/a".into()))

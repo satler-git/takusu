@@ -121,6 +121,12 @@ fn focused_clarification(
     clarification_output(&message)
 }
 
+/// Preview an updated estimate from a single new observation.
+///
+/// `events` provides the historical observations used to update
+/// `sigma_minutes`. When an empty slice is passed (e.g. for a client-side
+/// preview that does not fetch history), the returned `sigma_minutes` equals
+/// the input value.
 fn estimate_preview(
     avg_minutes: i64,
     sigma_minutes: i64,
@@ -532,27 +538,21 @@ impl TypedTool for TaskProgress {
 
         let delta_quantity = quantity_done.get() - task.quantity_done.get();
         if delta_quantity > 0 {
-            match self.client.get_task_progress(&task.id).await {
-                Ok(progress) => {
-                    let active_minutes = if let Some(ref session) = progress.open_session {
-                        let started_at = session.started_at.to_string();
-                        let base: String = if let Some(last) = progress.events.last() {
-                            takusu_types::later_timestamp(&started_at, &last.at.to_string())
-                                .to_string()
-                        } else {
-                            started_at
-                        };
-                        takusu_types::minutes_between(&base, &takusu_types::now_rfc3339())
-                    } else {
-                        0
-                    };
+            match self.client.open_work_session_for_task(&task.id).await {
+                Ok(Some(session)) => {
+                    let active_minutes = takusu_types::minutes_between(
+                        &session.started_at.to_string(),
+                        &takusu_types::now_rfc3339(),
+                    );
+                    // Preview uses an empty event list, so sigma_minutes is
+                    // not updated from historical observations.
                     let (new_avg, new_sigma) = estimate_preview(
                         task.avg_minutes,
                         task.sigma_minutes,
                         task.quantity_total.map(|q| q.get()),
                         active_minutes,
                         delta_quantity,
-                        &progress.events,
+                        &[],
                     );
                     apply_estimate_preview(
                         &mut after,
@@ -560,6 +560,11 @@ impl TypedTool for TaskProgress {
                         new_avg,
                         new_sigma,
                         &task,
+                    );
+                }
+                Ok(None) => {
+                    warnings.push(
+                        "作業セッションが開いていないため推定値のプレビューは更新されません".to_string(),
                     );
                 }
                 Err(e) => {
@@ -570,16 +575,10 @@ impl TypedTool for TaskProgress {
             }
         }
 
-        let mut execution_args = serde_json::Map::from_iter([
-            (
-                "task_ref".to_string(),
-                Value::String(display_ref.trim_start_matches('#').to_string()),
-            ),
-            (
-                "quantity_done".to_string(),
-                Value::Number(quantity_done.get().into()),
-            ),
-        ]);
+        let mut execution_args = serde_json::Map::from_iter([(
+            "quantity_done".to_string(),
+            Value::Number(quantity_done.get().into()),
+        )]);
         if let Some(note) = &note {
             execution_args.insert("note".to_string(), Value::String(note.clone()));
         }
@@ -690,18 +689,29 @@ impl TypedTool for TaskComplete {
 
         let mut content_extra = serde_json::Map::new();
         let mut warnings = Vec::new();
-        match self.client.get_task_progress(&task.id).await {
-            Ok(progress) => {
-                let total_active = progress.total_active_minutes;
+        match self.client.list_work_sessions(Some(&task.id)).await {
+            Ok(sessions) => {
+                let total_active: i64 = sessions
+                    .iter()
+                    .map(|s| {
+                        let end = s
+                            .ended_at
+                            .map(|e| e.to_string())
+                            .unwrap_or_else(takusu_types::now_rfc3339);
+                        takusu_types::minutes_between(&s.started_at.to_string(), &end)
+                    })
+                    .sum();
                 if let Some(total) = task.quantity_total {
                     let delta_quantity = total.get() - task.quantity_done.get();
+                    // Preview uses an empty event list, so sigma_minutes is
+                    // not updated from historical observations.
                     let (new_avg, new_sigma) = estimate_preview(
                         task.avg_minutes,
                         task.sigma_minutes,
                         Some(total.get()),
                         total_active,
                         delta_quantity,
-                        &progress.events,
+                        &[],
                     );
                     apply_estimate_preview(
                         &mut after,
@@ -1017,17 +1027,21 @@ mod tests {
 
     #[test]
     fn estimate_preview_computes_new_avg_and_sigma() {
-        // 10 units done in 60 minutes => 6 min/unit, total 20 => projected 120.
-        // new_avg = 0.5*60 + 0.5*120 = 90. One prior event with same projection.
+        // Observations (prior event + new): both 60 min for 10 units =>
+        // 6 min/unit, total 20 => projection 120. Delta-weighted mean of two
+        // identical projections is 120; zero spread clamps sigma to the 5-min
+        // minimum (#1419 weighted estimate).
         let events = vec![progress_event(10, 60)];
-        assert_eq!(estimate_preview(60, 5, Some(20), 60, 10, &events), (90, 5));
+        assert_eq!(estimate_preview(60, 5, Some(20), 60, 10, &events), (120, 5));
     }
 
     #[test]
     fn estimate_preview_clamps_minutes() {
-        // 1000 units done in 1 minute => 0.001 min/unit, total 1 => projected clamped to 5.
+        // 1000 units done in 1 minute => 0.001 min/unit, total 1 => projected
+        // clamped to the 5-min minimum. A single observation has no spread, so
+        // sigma is 0 (#1419 weighted estimate).
         let events = vec![];
-        assert_eq!(estimate_preview(60, 5, Some(1), 1, 1000, &events), (33, 5));
+        assert_eq!(estimate_preview(60, 5, Some(1), 1, 1000, &events), (5, 0));
     }
 
     #[test]
@@ -1047,7 +1061,8 @@ mod tests {
     fn progress_event(delta: i64, active: i64) -> ProgressEventRow {
         ProgressEventRow {
             id: "e1".to_string(),
-            task_id: "t1".to_string(),
+            work_session_id: "ws1".to_string(),
+            task_id: Some("t1".to_string()),
             at: "2025-01-01T00:00:00Z".parse().unwrap(),
             quantity_done: Some(Quantity::new(delta).unwrap()),
             delta_quantity: Some(delta),

@@ -119,36 +119,54 @@ var TakusuClient = class {
   async deleteTask(id) {
     return this.request("DELETE", `/api/tasks/${encodeURIComponent(id)}`);
   }
-  // ── Task progress (#757) ──
-  async startTaskWork(id, operationId) {
+  // ── Work sessions (#1393) ──
+  async createWorkSession(body, operationId) {
+    return this.request("POST", "/api/work-sessions", body, operationId);
+  }
+  async listWorkSessions(taskId) {
+    const qs = taskId ? `?task_id=${encodeURIComponent(taskId)}` : "";
+    return this.request("GET", `/api/work-sessions${qs}`);
+  }
+  async getWorkSession(id) {
+    return this.request("GET", `/api/work-sessions/${encodeURIComponent(id)}`);
+  }
+  async pauseWorkSession(id, operationId) {
     return this.request(
       "POST",
-      `/api/tasks/${encodeURIComponent(id)}/work/start`,
+      `/api/work-sessions/${encodeURIComponent(id)}/pause`,
       void 0,
       operationId
     );
   }
-  async pauseTaskWork(id, operationId) {
+  async completeWorkSession(id, operationId) {
     return this.request(
       "POST",
-      `/api/tasks/${encodeURIComponent(id)}/work/pause`,
+      `/api/work-sessions/${encodeURIComponent(id)}/complete`,
       void 0,
       operationId
     );
   }
-  async recordProgress(id, body, operationId) {
+  async recordWorkSessionProgress(id, body, operationId) {
     return this.request(
       "POST",
-      `/api/tasks/${encodeURIComponent(id)}/progress`,
+      `/api/work-sessions/${encodeURIComponent(id)}/progress`,
       body,
       operationId
     );
   }
-  async completeTaskWork(id, operationId) {
+  async attachWorkSession(id, body, operationId) {
     return this.request(
       "POST",
-      `/api/tasks/${encodeURIComponent(id)}/work/complete`,
-      void 0,
+      `/api/work-sessions/${encodeURIComponent(id)}/attach`,
+      body,
+      operationId
+    );
+  }
+  async convertWorkSession(id, body, operationId) {
+    return this.request(
+      "POST",
+      `/api/work-sessions/${encodeURIComponent(id)}/convert`,
+      body,
       operationId
     );
   }

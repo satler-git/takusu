@@ -7,3 +7,4 @@ pub mod skills;
 pub mod sync;
 pub mod task;
 pub mod token;
+pub mod work_session;

@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use takusu_types::{
     Abandonability, Date, DependencyList, JsonString, Quantity, ScheduleMode, Similarity,
-    TaskStatusFilter, TimeOfDay, Timestamp,
+    TaskStatus, TaskStatusFilter, TimeOfDay, Timestamp,
 };
 
 pub use crate::sleep::{SleepConfig, SleepInput, SleepInputError};
@@ -58,7 +58,7 @@ pub struct TaskRow {
     /// WI-9: pre-split total quantity, kept for lineage.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub original_quantity_total: Option<Quantity>,
-    /// Total active work minutes from task_work_sessions (NULL when no work has been done).
+    /// Total active work minutes from work_sessions (NULL when no work has been done).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "sqlx", sqlx(default))]
     pub actual_minutes: Option<i64>,
@@ -866,11 +866,18 @@ pub struct UpdateSettings {
 
 // ── WI-9 active-session progress management ─────────────────────────────────
 
+/// A top-level work session. It may be linked to a task, or it may be a
+/// standalone session that is later converted into a task.
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
-pub struct TaskWorkSessionRow {
+pub struct WorkSessionRow {
     pub id: String,
-    pub task_id: String,
+    pub task_id: Option<String>,
+    pub title: Option<String>,
+    pub note: Option<String>,
+    pub quantity_total: Option<Quantity>,
+    pub quantity_done: Quantity,
+    pub quantity_unit: Option<String>,
     pub started_at: Timestamp,
     pub ended_at: Option<Timestamp>,
     pub created_at: Timestamp,
@@ -880,7 +887,8 @@ pub struct TaskWorkSessionRow {
 #[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
 pub struct ProgressEventRow {
     pub id: String,
-    pub task_id: String,
+    pub work_session_id: String,
+    pub task_id: Option<String>,
     pub at: Timestamp,
     pub quantity_done: Option<Quantity>,
     pub delta_quantity: Option<i64>,
@@ -889,15 +897,47 @@ pub struct ProgressEventRow {
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, schemars::JsonSchema)]
-pub struct RecordProgress {
-    pub quantity_done: Quantity,
-    #[serde(skip_serializing_if = "Option::is_none")]
+pub struct StartWorkSession {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quantity_total: Option<Quantity>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quantity_unit: Option<String>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct RecordWorkSessionProgress {
+    pub quantity_done: Quantity,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quantity_total: Option<Quantity>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ConvertWorkSession {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fixed: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<TaskStatus>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct AttachWorkSession {
+    pub task_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
-pub struct ProgressResult {
-    pub task: TaskRow,
+pub struct WorkSessionProgressResult {
+    pub work_session: WorkSessionRow,
+    pub task: Option<TaskRow>,
     /// The recorded event, or `None` when the reported quantity_done has not
     /// changed (no-op).
     pub event: Option<ProgressEventRow>,
@@ -909,8 +949,8 @@ pub struct ProgressResult {
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct TaskProgress {
     pub task: TaskRow,
-    pub open_session: Option<TaskWorkSessionRow>,
-    pub sessions: Vec<TaskWorkSessionRow>,
+    pub open_session: Option<WorkSessionRow>,
+    pub sessions: Vec<WorkSessionRow>,
     pub events: Vec<ProgressEventRow>,
     pub total_active_minutes: i64,
 }

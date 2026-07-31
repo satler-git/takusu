@@ -33,6 +33,9 @@ pub(super) const SKILL_COLS: &str =
     "slug, name, description, body, built_in, created_at, updated_at";
 pub(super) const MEMORY_COLS: &str = "id, kind, key, normalized_key, content, normalized_content, subject_type, subject_id, source, revision, created_at, updated_at, last_used_at";
 
+pub(super) const WORK_SESSION_COLS: &str = "id, task_id, title, note, quantity_total, quantity_done, quantity_unit, started_at, ended_at, created_at";
+pub(super) const PROGRESS_EVENT_COLS: &str = "id, work_session_id, task_id, at, quantity_done, delta_quantity, active_minutes, note";
+
 pub(super) fn select_tasks() -> String {
     format!("SELECT {TASK_COLS} FROM {TASK_FROM}")
 }
@@ -90,16 +93,6 @@ pub(super) struct DisplayIdRow {
 pub(super) struct CountRow {
     #[serde(rename = "c")]
     pub(super) c: i64,
-}
-
-#[derive(serde::Deserialize)]
-pub(super) struct StatusRow {
-    pub(super) status: String,
-}
-
-#[derive(serde::Deserialize)]
-pub(super) struct NowRow {
-    pub(super) now: String,
 }
 
 // ── D1Result helpers ────────────────────────────────────────────────────
@@ -488,7 +481,7 @@ pub(super) fn parse_timestamp(s: &str) -> StorageResult<i64> {
     Ok(zdt.timestamp().as_second())
 }
 
-pub(super) fn session_minutes(session: &takusu_contracts::TaskWorkSessionRow) -> i64 {
+pub(super) fn session_minutes(session: &takusu_contracts::WorkSessionRow) -> i64 {
     match session.ended_at {
         Some(end) => {
             takusu_types::minutes_between(&session.started_at.to_string(), &end.to_string())
@@ -511,7 +504,7 @@ pub(super) async fn compute_updated_estimate(
     delta_quantity: i64,
 ) -> StorageResult<(i64, i64)> {
     let stmt = database.prepare(
-        "SELECT id, task_id, at, quantity_done, delta_quantity, active_minutes, note FROM progress_events WHERE task_id = ?1 AND delta_quantity > 0 AND active_minutes > 0 ORDER BY id ASC",
+        "SELECT id, work_session_id, task_id, at, quantity_done, delta_quantity, active_minutes, note FROM progress_events WHERE task_id = ?1 AND delta_quantity > 0 AND active_minutes > 0 ORDER BY id ASC",
     );
     let events: Vec<takusu_contracts::ProgressEventRow> =
         d1_all(&stmt.bind(&[JsValue::from_str(task_id)]).map_err(d1_err)?).await?;

@@ -3,14 +3,14 @@ use jiff::tz::TimeZone;
 use sqlx::SqlitePool;
 use sqlx::sqlite::SqlitePoolOptions;
 use takusu_contracts::{
-    CreateHabit, CreateHabitScheduledSpan, CreateMemory, CreateSkill, CreateTask,
-    GoogleCalEventRow, GoogleCalSettingsRow, HabitRow, HabitScheduledSpanRow,
-    HabitStepEstimateInput, HabitStepInput, HabitStepRow, MemoryQuery, MemoryRow, ProgressEventRow,
-    ProgressResult, RecordProgress, SaveScheduleRequest, ScheduleEntry, ScheduleRow, SettingsRow,
-    SimilarTaskQuery, SimilarTaskRow, SkillRow, SplitResult, SplitTask, Storage, StorageError,
-    TaskProgress, TaskQuery, TaskRow, TaskWorkSessionRow, TokenCreateResponse, TokenRow,
+    AttachWorkSession, ConvertWorkSession, CreateHabit, CreateHabitScheduledSpan, CreateMemory,
+    CreateSkill, CreateTask, GoogleCalEventRow, GoogleCalSettingsRow, HabitRow,
+    HabitScheduledSpanRow, HabitStepEstimateInput, HabitStepInput, HabitStepRow, MemoryQuery,
+    MemoryRow, RecordWorkSessionProgress, SaveScheduleRequest, ScheduleEntry, ScheduleRow,
+    SettingsRow, SimilarTaskQuery, SimilarTaskRow, SkillRow, SplitResult, SplitTask, StartWorkSession,
+    Storage, StorageError, TaskProgress, TaskQuery, TaskRow, TokenCreateResponse, TokenRow,
     UpdateGoogleCalSettings, UpdateHabit, UpdateMemory, UpdateSettings, UpdateSkill, UpdateTask,
-    storage::StorageResult,
+    WorkSessionProgressResult, WorkSessionRow, storage::StorageResult,
 };
 use takusu_search::search::{EvalContext, filter_tasks};
 use takusu_types::Minutes;
@@ -31,7 +31,7 @@ const ACTIONABLE_SQL: &str = "status IN ('pending', 'scheduled', 'in_progress')"
 /// Static `SELECT ... FROM tasks` fragments for queries that require an
 /// audited `&'static str` (`SqlSafeStr`) and avoid `SELECT *` brittleness.
 const SELECT_TASKS: &str = "SELECT id, display_id, title, description, start_at, end_at, avg_minutes, sigma_minutes, depends, parallelizable, allows_parallel, abandonability, status, habit_id, ical_uid, user_edited, fixed, habit_step_id, quantity_total, quantity_done, quantity_unit, completed_at, split_from_task_id, original_quantity_total, created_at, updated_at, tam.actual_minutes FROM tasks LEFT JOIN task_actual_minutes tam ON tam.task_id = tasks.id";
-const SELECT_TASK_BY_ID: &str = "SELECT id, display_id, title, description, start_at, end_at, avg_minutes, sigma_minutes, depends, parallelizable, allows_parallel, abandonability, status, habit_id, ical_uid, user_edited, fixed, habit_step_id, quantity_total, quantity_done, quantity_unit, completed_at, split_from_task_id, original_quantity_total, created_at, updated_at, tam.actual_minutes FROM tasks LEFT JOIN task_actual_minutes tam ON tam.task_id = tasks.id WHERE tasks.id = ?";
+pub(crate) const SELECT_TASK_BY_ID: &str = "SELECT id, display_id, title, description, start_at, end_at, avg_minutes, sigma_minutes, depends, parallelizable, allows_parallel, abandonability, status, habit_id, ical_uid, user_edited, fixed, habit_step_id, quantity_total, quantity_done, quantity_unit, completed_at, split_from_task_id, original_quantity_total, created_at, updated_at, tam.actual_minutes FROM tasks LEFT JOIN task_actual_minutes tam ON tam.task_id = tasks.id WHERE tasks.id = ?";
 
 const MIGRATION_001: &str = include_str!("../migrations/001_init.sql");
 const MIGRATION_002: &str = include_str!("../migrations/002_google_cal.sql");
@@ -55,6 +55,10 @@ const MIGRATION_022: &str = include_str!("../migrations/022_split_from_task_inde
 const MIGRATION_023: &str = include_str!("../migrations/023_timestamp_format.sql");
 const MIGRATION_024: &str = include_str!("../migrations/024_zero_quantity_to_null.sql");
 const MIGRATION_025: &str = include_str!("../migrations/025_task_normalized_title.sql");
+const MIGRATION_026: &str = include_str!("../migrations/026_work_sessions.sql");
+
+mod work_session;
+
 // Migration 013 one-time backfill: drops the old global unique index, renumbers
 // existing habit tasks to start from 1 per habit, and seeds the per-habit
 // sequences. Non-idempotent (DROP + UPDATE renumber) — guarded by a check
@@ -365,7 +369,7 @@ impl SqliteStorage {
         }
 
         // Migration 020 creates a view that pre-computes per-task active work
-        // minutes from task_work_sessions (idempotent).
+        // minutes from work_sessions (idempotent).
         sqlx::raw_sql(MIGRATION_020).execute(&pool).await?;
 
         // Migration 021 changes the default solver from 'auto' to 'sa' for
@@ -422,6 +426,17 @@ impl SqliteStorage {
             }
         }
 
+        // Migration 026: work sessions become top-level entities with optional
+        // task attachments. Guarded by the presence of the new work_sessions table.
+        let has_work_sessions: bool = sqlx::query_scalar(
+            "SELECT COUNT(*) > 0 FROM sqlite_master WHERE type='table' AND name='work_sessions'",
+        )
+        .fetch_one(&pool)
+        .await?;
+        if !has_work_sessions {
+            sqlx::raw_sql(MIGRATION_026).execute(&pool).await?;
+        }
+
         Ok(Self { pool, jwt_secret })
     }
 
@@ -448,7 +463,7 @@ fn extract_db_path(db_url: &str) -> Option<String> {
     Some(path.to_string())
 }
 
-fn map_err(e: sqlx::Error) -> StorageError {
+pub(crate) fn map_err(e: sqlx::Error) -> StorageError {
     StorageError::Internal(e.to_string())
 }
 
@@ -685,7 +700,7 @@ impl Storage for SqliteStorage {
             // #1044: moving to a terminal status should close any open work
             // session so active time is not left dangling.
             if plan.status == TaskStatus::Skipped || plan.status == TaskStatus::Completed {
-                cleanup_work_sessions(&mut *tx, &full).await?;
+                work_session::cleanup_work_sessions(&mut *tx, &full).await?;
             }
         }
 
@@ -776,12 +791,12 @@ impl Storage for SqliteStorage {
             .execute(&mut *tx)
             .await
             .map_err(map_err)?;
-        sqlx::query("DELETE FROM task_work_sessions WHERE task_id = ?")
+        sqlx::query("UPDATE work_sessions SET task_id = NULL WHERE task_id = ?")
             .bind(&full)
             .execute(&mut *tx)
             .await
             .map_err(map_err)?;
-        sqlx::query("DELETE FROM progress_events WHERE task_id = ?")
+        sqlx::query("UPDATE progress_events SET task_id = NULL WHERE task_id = ?")
             .bind(&full)
             .execute(&mut *tx)
             .await
@@ -953,12 +968,12 @@ impl Storage for SqliteStorage {
             .execute(&mut *tx)
             .await
             .map_err(map_err)?;
-        sqlx::query("DELETE FROM task_work_sessions WHERE task_id IN (SELECT id FROM tasks WHERE habit_id = ?)")
+        sqlx::query("UPDATE work_sessions SET task_id = NULL WHERE task_id IN (SELECT id FROM tasks WHERE habit_id = ?)")
             .bind(&full)
             .execute(&mut *tx)
             .await
             .map_err(map_err)?;
-        sqlx::query("DELETE FROM progress_events WHERE task_id IN (SELECT id FROM tasks WHERE habit_id = ?)")
+        sqlx::query("UPDATE progress_events SET task_id = NULL WHERE task_id IN (SELECT id FROM tasks WHERE habit_id = ?)")
             .bind(&full)
             .execute(&mut *tx)
             .await
@@ -1899,472 +1914,70 @@ impl Storage for SqliteStorage {
         Ok(out)
     }
 
-    async fn start_task_work(
+    async fn start_work_session(
         &self,
-        id: &str,
+        body: &StartWorkSession,
         operation_id: Option<&str>,
-    ) -> StorageResult<TaskRow> {
-        let payload = serde_json::json!({"op": "start", "id": id}).to_string();
-        let request_hash = progress_request_hash(&payload, operation_id);
-
-        let mut tx = self.pool.begin().await.map_err(map_err)?;
-        if let Some(op_id) = operation_id
-            && let Some(stored) =
-                Self::check_progress_idempotency(&mut *tx, op_id, &request_hash).await?
-        {
-            return stored;
-        }
-
-        let full = resolve_task_id(&mut *tx, id).await?;
-
-        let status: String = sqlx::query_scalar("SELECT status FROM tasks WHERE id = ?")
-            .bind(&full)
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(map_err)?;
-        if status == "completed" || status == "skipped" {
-            return Err(StorageError::BadRequest(format!(
-                "cannot start work on a {status} task"
-            )));
-        }
-
-        let session_id = uuid::Uuid::now_v7().to_string();
-        let now = takusu_types::now_rfc3339();
-        sqlx::query(
-            "INSERT OR IGNORE INTO task_work_sessions (id, task_id, started_at, created_at) VALUES (?, ?, ?, ?)",
-        )
-        .bind(&session_id)
-        .bind(&full)
-        .bind(&now)
-        .bind(&now)
-        .execute(&mut *tx)
-        .await
-        .map_err(map_err)?;
-
-        sqlx::query(
-            "UPDATE tasks SET status = 'in_progress', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?",
-        )
-        .bind(&full)
-        .execute(&mut *tx)
-        .await
-        .map_err(map_err)?;
-
-        let task: TaskRow = sqlx::query_as(SELECT_TASK_BY_ID)
-            .bind(&full)
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(map_err)?;
-
-        if let Some(op_id) = operation_id {
-            Self::record_progress_operation(&mut *tx, op_id, &request_hash, &task).await?;
-        }
-        tx.commit().await.map_err(map_err)?;
-        Ok(task)
+    ) -> StorageResult<WorkSessionRow> {
+        work_session::start_work_session(self, body, operation_id).await
     }
 
-    async fn pause_task_work(
+    async fn pause_work_session(
         &self,
         id: &str,
         operation_id: Option<&str>,
-    ) -> StorageResult<TaskRow> {
-        let payload = serde_json::json!({"op": "pause", "id": id}).to_string();
-        let request_hash = progress_request_hash(&payload, operation_id);
-
-        let mut tx = self.pool.begin().await.map_err(map_err)?;
-        if let Some(op_id) = operation_id
-            && let Some(stored) =
-                Self::check_progress_idempotency(&mut *tx, op_id, &request_hash).await?
-        {
-            return stored;
-        }
-
-        let full = resolve_task_id(&mut *tx, id).await?;
-
-        let status: String = sqlx::query_scalar("SELECT status FROM tasks WHERE id = ?")
-            .bind(&full)
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(map_err)?;
-        if status == "completed" || status == "skipped" {
-            return Err(StorageError::BadRequest(format!(
-                "cannot pause work on a {status} task"
-            )));
-        }
-
-        let now = takusu_types::now_rfc3339();
-        sqlx::query(
-            "UPDATE task_work_sessions SET ended_at = ? WHERE task_id = ? AND ended_at IS NULL",
-        )
-        .bind(&now)
-        .bind(&full)
-        .execute(&mut *tx)
-        .await
-        .map_err(map_err)?;
-
-        sqlx::query(
-            "UPDATE tasks SET status = 'scheduled', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?",
-        )
-        .bind(&full)
-        .execute(&mut *tx)
-        .await
-        .map_err(map_err)?;
-
-        let task: TaskRow = sqlx::query_as(SELECT_TASK_BY_ID)
-            .bind(&full)
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(map_err)?;
-
-        if let Some(op_id) = operation_id {
-            Self::record_progress_operation(&mut *tx, op_id, &request_hash, &task).await?;
-        }
-        tx.commit().await.map_err(map_err)?;
-        Ok(task)
+    ) -> StorageResult<WorkSessionRow> {
+        work_session::pause_work_session(self, id, operation_id).await
     }
 
-    async fn record_progress(
+    async fn complete_work_session(
         &self,
         id: &str,
-        body: &RecordProgress,
         operation_id: Option<&str>,
-    ) -> StorageResult<ProgressResult> {
-        if body.quantity_done < 0 {
-            return Err(StorageError::BadRequest(
-                "quantity_done cannot be negative".into(),
-            ));
-        }
-        let payload = serde_json::json!({"op": "progress", "id": id, "body": body}).to_string();
-        let request_hash = progress_request_hash(&payload, operation_id);
-
-        let mut tx = self.pool.begin().await.map_err(map_err)?;
-        if let Some(op_id) = operation_id
-            && let Some(stored) =
-                Self::check_progress_idempotency(&mut *tx, op_id, &request_hash).await?
-        {
-            return stored;
-        }
-
-        let full = resolve_task_id(&mut *tx, id).await?;
-
-        let task: TaskRow = sqlx::query_as(SELECT_TASK_BY_ID)
-            .bind(&full)
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(|e| match e {
-                sqlx::Error::RowNotFound => StorageError::NotFound(format!("task {id} not found")),
-                other => StorageError::Internal(other.to_string()),
-            })?;
-
-        if task.status == TaskStatus::Completed || task.status == TaskStatus::Skipped {
-            return Err(StorageError::BadRequest(format!(
-                "cannot record progress on a {} task",
-                task.status
-            )));
-        }
-        if let Some(total) = task.quantity_total
-            && body.quantity_done > total
-        {
-            return Err(StorageError::BadRequest(format!(
-                "quantity_done cannot exceed quantity_total ({} > {})",
-                body.quantity_done, total
-            )));
-        }
-
-        let open: Option<TaskWorkSessionRow> = sqlx::query_as(
-            "SELECT id, task_id, started_at, ended_at, created_at FROM task_work_sessions WHERE task_id = ? AND ended_at IS NULL",
-        )
-        .bind(&full)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(map_err)?;
-
-        // Increasing progress requires an open session to measure active time.
-        // Corrections (decreasing or keeping quantity_done) are allowed without one.
-        if open.is_none() && body.quantity_done > task.quantity_done {
-            return Err(StorageError::BadRequest(
-                "no open work session; start work first".into(),
-            ));
-        }
-
-        let delta_quantity = body.quantity_done.get() - task.quantity_done.get();
-
-        if delta_quantity == 0 {
-            let result = ProgressResult {
-                task: task.clone(),
-                event: None,
-                suggests_completion: false,
-            };
-            if let Some(op_id) = operation_id {
-                Self::record_progress_operation(&mut *tx, op_id, &request_hash, &result).await?;
-            }
-            tx.commit().await.map_err(map_err)?;
-            return Ok(result);
-        }
-
-        let now = takusu_types::now_rfc3339();
-
-        // Active minutes are measured from the later of the open session start
-        // and the most recent progress event, so repeated progress updates in
-        // the same session do not accumulate the same time.
-        let last_event: Option<ProgressEventRow> = sqlx::query_as(
-            "SELECT id, task_id, at, quantity_done, delta_quantity, active_minutes, note FROM progress_events WHERE task_id = ? ORDER BY id DESC LIMIT 1",
-        )
-        .bind(&full)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(map_err)?;
-
-        let active_minutes = if let Some(ref session) = open {
-            // Active minutes are measured from the later of the open session start
-            // and the most recent progress event.
-            let base = if let Some(ref ev) = last_event {
-                if session.started_at >= ev.at {
-                    session.started_at
-                } else {
-                    ev.at
-                }
-            } else {
-                session.started_at
-            };
-            takusu_types::minutes_between(&base.to_string(), &now)
-        } else {
-            0
-        };
-
-        let event_id = uuid::Uuid::now_v7().to_string();
-        sqlx::query(
-            "INSERT INTO progress_events (id, task_id, at, quantity_done, delta_quantity, active_minutes, note) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        )
-        .bind(&event_id)
-        .bind(&full)
-        .bind(&now)
-        .bind(body.quantity_done)
-        .bind(delta_quantity)
-        .bind(active_minutes)
-        .bind(body.note.as_ref())
-        .execute(&mut *tx)
-        .await
-        .map_err(map_err)?;
-
-        let mut new_avg = task.avg_minutes;
-        let mut new_sigma = task.sigma_minutes;
-        if delta_quantity > 0 && active_minutes > 0 {
-            let (avg, sigma) = compute_updated_estimate(
-                &mut *tx,
-                &full,
-                task.avg_minutes,
-                task.sigma_minutes,
-                task.quantity_total.map(|q| q.get()),
-                active_minutes,
-                delta_quantity,
-            )
-            .await?;
-            new_avg = avg;
-            new_sigma = sigma;
-        }
-
-        let status = if task.status == TaskStatus::Completed {
-            TaskStatus::Completed
-        } else if delta_quantity < 0 {
-            task.status
-        } else {
-            TaskStatus::InProgress
-        };
-
-        let suggests_completion = task
-            .quantity_total
-            .map(|total| body.quantity_done >= total)
-            .unwrap_or(false);
-
-        sqlx::query(
-            "UPDATE tasks SET quantity_done = ?, avg_minutes = ?, sigma_minutes = ?, status = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?",
-        )
-        .bind(body.quantity_done)
-        .bind(new_avg)
-        .bind(new_sigma)
-        .bind(status.to_string())
-        .bind(&full)
-        .execute(&mut *tx)
-        .await
-        .map_err(map_err)?;
-
-        let event: ProgressEventRow = sqlx::query_as("SELECT id, task_id, at, quantity_done, delta_quantity, active_minutes, note FROM progress_events WHERE id = ?")
-            .bind(&event_id)
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(map_err)?;
-        let task: TaskRow = sqlx::query_as(SELECT_TASK_BY_ID)
-            .bind(&full)
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(map_err)?;
-
-        let result = ProgressResult {
-            task,
-            event: Some(event),
-            suggests_completion,
-        };
-        if let Some(op_id) = operation_id {
-            Self::record_progress_operation(&mut *tx, op_id, &request_hash, &result).await?;
-        }
-        tx.commit().await.map_err(map_err)?;
-        Ok(result)
+    ) -> StorageResult<WorkSessionRow> {
+        work_session::complete_work_session(self, id, operation_id).await
     }
 
-    async fn complete_task_work(
+    async fn record_work_session_progress(
         &self,
         id: &str,
+        body: &RecordWorkSessionProgress,
+        operation_id: Option<&str>,
+    ) -> StorageResult<WorkSessionProgressResult> {
+        work_session::record_work_session_progress(self, id, body, operation_id).await
+    }
+
+    async fn get_work_session(&self, id: &str) -> StorageResult<WorkSessionRow> {
+        work_session::get_work_session(self, id).await
+    }
+
+    async fn list_work_sessions(
+        &self,
+        task_id: Option<&str>,
+    ) -> StorageResult<Vec<WorkSessionRow>> {
+        work_session::list_work_sessions(self, task_id).await
+    }
+
+    async fn attach_work_session(
+        &self,
+        id: &str,
+        body: &AttachWorkSession,
+        operation_id: Option<&str>,
+    ) -> StorageResult<WorkSessionRow> {
+        work_session::attach_work_session(self, id, body, operation_id).await
+    }
+
+    async fn convert_work_session(
+        &self,
+        id: &str,
+        body: &ConvertWorkSession,
         operation_id: Option<&str>,
     ) -> StorageResult<TaskRow> {
-        let payload = serde_json::json!({"op": "complete", "id": id}).to_string();
-        let request_hash = progress_request_hash(&payload, operation_id);
-
-        let mut tx = self.pool.begin().await.map_err(map_err)?;
-        if let Some(op_id) = operation_id
-            && let Some(stored) =
-                Self::check_progress_idempotency(&mut *tx, op_id, &request_hash).await?
-        {
-            return stored;
-        }
-
-        let full = resolve_task_id(&mut *tx, id).await?;
-
-        let status: String = sqlx::query_scalar("SELECT status FROM tasks WHERE id = ?")
-            .bind(&full)
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(map_err)?;
-        if status == "completed" || status == "skipped" {
-            return Err(StorageError::BadRequest(format!(
-                "cannot complete a {status} task"
-            )));
-        }
-
-        let now = takusu_types::now_rfc3339();
-        sqlx::query(
-            "UPDATE task_work_sessions SET ended_at = ? WHERE task_id = ? AND ended_at IS NULL",
-        )
-        .bind(&now)
-        .bind(&full)
-        .execute(&mut *tx)
-        .await
-        .map_err(map_err)?;
-
-        let task_before: TaskRow = sqlx::query_as(SELECT_TASK_BY_ID)
-            .bind(&full)
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(map_err)?;
-
-        let sessions: Vec<TaskWorkSessionRow> = sqlx::query_as(
-            "SELECT id, task_id, started_at, ended_at, created_at FROM task_work_sessions WHERE task_id = ? ORDER BY started_at ASC",
-        )
-        .bind(&full)
-        .fetch_all(&mut *tx)
-        .await
-        .map_err(map_err)?;
-        let total_active_minutes: i64 = sessions.iter().map(session_minutes).sum();
-
-        let quantity_done = task_before
-            .quantity_total
-            .unwrap_or(task_before.quantity_done);
-        let delta_quantity = quantity_done.get() - task_before.quantity_done.get();
-
-        let (new_avg, new_sigma) = if delta_quantity > 0 && total_active_minutes > 0 {
-            compute_updated_estimate(
-                &mut *tx,
-                &full,
-                task_before.avg_minutes,
-                task_before.sigma_minutes,
-                task_before.quantity_total.map(|q| q.get()),
-                total_active_minutes,
-                delta_quantity,
-            )
-            .await?
-        } else if task_before.quantity_total.is_none() && total_active_minutes > 0 {
-            (total_active_minutes, task_before.sigma_minutes)
-        } else {
-            (task_before.avg_minutes, task_before.sigma_minutes)
-        };
-
-        sqlx::query(
-            "UPDATE tasks SET status = 'completed', completed_at = ?, quantity_done = ?, avg_minutes = ?, sigma_minutes = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?",
-        )
-        .bind(&now)
-        .bind(quantity_done)
-        .bind(new_avg)
-        .bind(new_sigma)
-        .bind(&full)
-        .execute(&mut *tx)
-        .await
-        .map_err(map_err)?;
-
-        if total_active_minutes > 0 {
-            let event_id = uuid::Uuid::now_v7().to_string();
-            sqlx::query(
-                "INSERT INTO progress_events (id, task_id, at, quantity_done, delta_quantity, active_minutes, note) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            )
-            .bind(&event_id)
-            .bind(&full)
-            .bind(&now)
-            .bind(quantity_done)
-            .bind(delta_quantity)
-            .bind(total_active_minutes)
-            .bind("completed")
-            .execute(&mut *tx)
-            .await
-            .map_err(map_err)?;
-        }
-
-        let task: TaskRow = sqlx::query_as(SELECT_TASK_BY_ID)
-            .bind(&full)
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(map_err)?;
-
-        if let Some(op_id) = operation_id {
-            Self::record_progress_operation(&mut *tx, op_id, &request_hash, &task).await?;
-        }
-        tx.commit().await.map_err(map_err)?;
-        Ok(task)
+        work_session::convert_work_session(self, id, body, operation_id).await
     }
 
     async fn get_task_progress(&self, id: &str) -> StorageResult<TaskProgress> {
-        let full = resolve_task_id(&self.pool, id).await?;
-        let task: TaskRow = sqlx::query_as(SELECT_TASK_BY_ID)
-            .bind(&full)
-            .fetch_one(&self.pool)
-            .await
-            .map_err(|e| match e {
-                sqlx::Error::RowNotFound => StorageError::NotFound(format!("task {id} not found")),
-                other => StorageError::Internal(other.to_string()),
-            })?;
-
-        let sessions: Vec<TaskWorkSessionRow> = sqlx::query_as(
-            "SELECT id, task_id, started_at, ended_at, created_at FROM task_work_sessions WHERE task_id = ? ORDER BY started_at ASC",
-        )
-        .bind(&full)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(map_err)?;
-
-        let events: Vec<ProgressEventRow> =
-            sqlx::query_as("SELECT id, task_id, at, quantity_done, delta_quantity, active_minutes, note FROM progress_events WHERE task_id = ? ORDER BY id ASC")
-                .bind(&full)
-                .fetch_all(&self.pool)
-                .await
-                .map_err(map_err)?;
-
-        let open_session = sessions.iter().find(|s| s.ended_at.is_none()).cloned();
-        let total_active_minutes = sessions.iter().map(session_minutes).sum();
-
-        Ok(TaskProgress {
-            task,
-            open_session,
-            sessions,
-            events,
-            total_active_minutes,
-        })
+        work_session::get_task_progress(self, id).await
     }
 
     async fn split_task(
@@ -2637,7 +2250,7 @@ impl SqliteStorage {
         Ok(())
     }
 
-    async fn check_progress_idempotency<'c, E, T: serde::de::DeserializeOwned>(
+    pub(crate) async fn check_progress_idempotency<'c, E, T: serde::de::DeserializeOwned>(
         executor: E,
         operation_id: &str,
         request_hash: &str,
@@ -2672,7 +2285,7 @@ impl SqliteStorage {
         Ok(None)
     }
 
-    async fn record_progress_operation<'c, E, T: serde::Serialize>(
+    pub(crate) async fn record_progress_operation<'c, E, T: serde::Serialize>(
         executor: E,
         operation_id: &str,
         request_hash: &str,
@@ -2700,7 +2313,7 @@ fn memory_request_hash(payload: &str, operation_id: Option<&str>) -> String {
     crate::auth::hash_token(&format!("{}:{}", payload, operation_id.unwrap_or("")))
 }
 
-fn progress_request_hash(payload: &str, operation_id: Option<&str>) -> String {
+pub(crate) fn progress_request_hash(payload: &str, operation_id: Option<&str>) -> String {
     crate::auth::hash_token(&format!("{}:{}", payload, operation_id.unwrap_or("")))
 }
 
@@ -2869,76 +2482,7 @@ where
     Ok(())
 }
 
-/// Close any open work session for `task_id` so active time is not left
-/// dangling when a task reaches a terminal status (#1044).
-async fn cleanup_work_sessions<'c, E>(executor: E, full: &str) -> StorageResult<()>
-where
-    E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
-{
-    let now = takusu_types::now_rfc3339();
-    sqlx::query(
-        "UPDATE task_work_sessions SET ended_at = ? WHERE task_id = ? AND ended_at IS NULL",
-    )
-    .bind(&now)
-    .bind(full)
-    .execute(executor)
-    .await
-    .map_err(map_err)?;
-    Ok(())
-}
-
-/// Active minutes for a work session (closed or open).
-fn session_minutes(session: &TaskWorkSessionRow) -> i64 {
-    match &session.ended_at {
-        Some(end) => {
-            takusu_types::minutes_between(&session.started_at.to_string(), &end.to_string())
-        }
-        None => takusu_types::minutes_between(
-            &session.started_at.to_string(),
-            &takusu_types::now_rfc3339(),
-        ),
-    }
-}
-
-/// Compute updated avg_minutes / sigma_minutes from a new positive progress
-/// observation. See doc/proposal.typ WI-9 for the estimate-update formula.
-async fn compute_updated_estimate<'c, E>(
-    executor: E,
-    task_id: &str,
-    avg_minutes: i64,
-    sigma_minutes: i64,
-    quantity_total: Option<i64>,
-    active_minutes: i64,
-    delta_quantity: i64,
-) -> StorageResult<(i64, i64)>
-where
-    E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
-{
-    // Collect all positive progress observations for this task.
-    let events: Vec<ProgressEventRow> = sqlx::query_as(
-        "SELECT id, task_id, at, quantity_done, delta_quantity, active_minutes, note FROM progress_events WHERE task_id = ? AND delta_quantity > 0 AND active_minutes > 0 ORDER BY id ASC",
-    )
-    .bind(task_id)
-    .fetch_all(executor)
-    .await
-    .map_err(map_err)?;
-
-    let observations: Vec<(i64, i64)> = events
-        .iter()
-        .map(|e| (e.active_minutes, e.delta_quantity.unwrap_or(1).max(1)))
-        .collect();
-
-    Ok(takusu_types::estimate_progress(
-        avg_minutes,
-        sigma_minutes,
-        quantity_total,
-        active_minutes,
-        delta_quantity,
-        &observations,
-    ))
-}
-
-async fn resolve_task_id<'c, E>(executor: E, id: &str) -> StorageResult<String>
+pub(crate) async fn resolve_task_id<'c, E>(executor: E, id: &str) -> StorageResult<String>
 where
     E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
 {
@@ -3059,7 +2603,8 @@ mod tests {
         sqlx::query(
             "CREATE TABLE progress_events (
                 id TEXT PRIMARY KEY,
-                task_id TEXT NOT NULL,
+                work_session_id TEXT NOT NULL,
+                task_id TEXT,
                 at TEXT NOT NULL,
                 quantity_done INTEGER,
                 delta_quantity INTEGER,
@@ -3072,10 +2617,10 @@ mod tests {
         .unwrap();
 
         // Non-positive delta must not panic; return the original estimate unchanged.
-        let result = compute_updated_estimate(&pool, "task-1", 60, 10, Some(10), 30, 0).await;
+        let result = work_session::compute_updated_estimate(&pool, "task-1", 60, 10, Some(10), 30, 0).await;
         assert_eq!(result.unwrap(), (60, 10));
 
-        let result = compute_updated_estimate(&pool, "task-1", 60, 10, Some(10), 30, -5).await;
+        let result = work_session::compute_updated_estimate(&pool, "task-1", 60, 10, Some(10), 30, -5).await;
         assert_eq!(result.unwrap(), (60, 10));
     }
 

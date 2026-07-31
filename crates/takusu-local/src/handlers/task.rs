@@ -4,8 +4,8 @@ use axum::http::{HeaderMap, StatusCode};
 use serde::Deserialize;
 use std::str::FromStr;
 use takusu_contracts::{
-    CreateTask, CreateTaskBatch, CreateTaskBatchResult, ProgressResult, RecordProgress,
-    SplitResult, SplitTask, TaskProgress, TaskQuery, TaskRow, UpdateTask,
+    CreateTask, CreateTaskBatch, CreateTaskBatchResult, SplitResult, SplitTask, TaskQuery,
+    TaskRow, UpdateTask,
 };
 use takusu_local_lib::app::{DependencyAnalysisResponse, IcalImportResult};
 use takusu_search::search::Completion;
@@ -147,63 +147,6 @@ pub async fn dependency_analysis(
 ) -> Result<Json<DependencyAnalysisResponse>, HttpError> {
     let redundant = state.app.analyze_task_dependencies().await?;
     Ok(Json(DependencyAnalysisResponse { redundant }))
-}
-
-pub async fn start_task_work(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-    headers: HeaderMap,
-) -> Result<Json<TaskRow>, HttpError> {
-    let task = state
-        .app
-        .start_task_work(&id, operation_id(&headers))
-        .await?;
-    Ok(Json(task))
-}
-
-pub async fn pause_task_work(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-    headers: HeaderMap,
-) -> Result<Json<TaskRow>, HttpError> {
-    let task = state
-        .app
-        .pause_task_work(&id, operation_id(&headers))
-        .await?;
-    Ok(Json(task))
-}
-
-pub async fn record_progress(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-    headers: HeaderMap,
-    Json(body): Json<RecordProgress>,
-) -> Result<Json<ProgressResult>, HttpError> {
-    let result = state
-        .app
-        .record_progress(&id, &body, operation_id(&headers))
-        .await?;
-    Ok(Json(result))
-}
-
-pub async fn complete_task_work(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-    headers: HeaderMap,
-) -> Result<Json<TaskRow>, HttpError> {
-    let task = state
-        .app
-        .complete_task_work(&id, operation_id(&headers))
-        .await?;
-    Ok(Json(task))
-}
-
-pub async fn get_task_progress(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> Result<Json<TaskProgress>, HttpError> {
-    let progress = state.app.get_task_progress(&id).await?;
-    Ok(Json(progress))
 }
 
 pub async fn split_task(

@@ -77,12 +77,40 @@ async fn work_session(app: &mut App) {
         None => return,
     };
     let result = match task.status {
-        TaskStatus::InProgress => app.app.pause_task_work(&task.id, None).await,
-        _ => app.app.start_task_work(&task.id, None).await,
+        TaskStatus::InProgress => {
+            // Find the open work session for this task and pause it.
+            match app.app.open_work_session_for_task(&task.id).await {
+                Ok(Some(session)) => app.app.pause_work_session(&session.id, None).await,
+                Ok(None) => {
+                    app.status_msg = Some("no open work session found".into());
+                    return;
+                }
+                Err(e) => {
+                    app.status_msg = Some(format!("Error: {e}"));
+                    return;
+                }
+            }
+        }
+        _ => {
+            let body = takusu_contracts::StartWorkSession {
+                task_id: Some(task.id.clone()),
+                title: None,
+                note: None,
+                quantity_total: None,
+                quantity_unit: None,
+            };
+            app.app.start_work_session(&body, None).await
+        }
     };
     match result {
-        Ok(t) => {
-            app.status_msg = Some(format!("#{} → {}", t.display_id, t.status));
+        Ok(session) => {
+            let label = session
+                .task_id
+                .as_ref()
+                .and_then(|_| app.all_tasks.iter().find(|t| t.id == task.id))
+                .map(|t| format!("#{} → {}", t.display_id, t.status))
+                .unwrap_or_else(|| "work session".into());
+            app.status_msg = Some(label);
             app.reload_tasks().await;
         }
         Err(e) => app.status_msg = Some(format!("Error: {e}")),

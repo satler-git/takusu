@@ -8,13 +8,15 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::json;
 use takusu_contracts::{
-    ApplyHabitEstimateRequest, CreateHabit, CreateHabitScheduledSpan, CreateMemory, CreateSkill,
-    CreateTask, GoogleCalEventRow, GoogleCalSettingsRow, HabitRow, HabitScheduledSpanRow,
-    HabitStepEstimateInput, HabitStepInput, HabitStepRow, MemoryQuery, MemoryRow, ProgressResult,
-    RecordProgress, SaveScheduleRequest, ScheduleRow, SettingsRow, SimilarTaskQuery,
-    SimilarTaskRow, SkillRow, SplitResult, SplitTask, Storage, StorageError, TaskProgress,
-    TaskQuery, TaskRow, TokenCreateResponse, TokenRow, UpdateGoogleCalSettings, UpdateHabit,
-    UpdateMemory, UpdateSettings, UpdateSkill, UpdateTask, storage::StorageResult,
+    ApplyHabitEstimateRequest, AttachWorkSession, ConvertWorkSession, CreateHabit,
+    CreateHabitScheduledSpan, CreateMemory, CreateSkill, CreateTask, GoogleCalEventRow,
+    GoogleCalSettingsRow, HabitRow, HabitScheduledSpanRow, HabitStepEstimateInput,
+    HabitStepInput, HabitStepRow, MemoryQuery, MemoryRow, RecordWorkSessionProgress,
+    SaveScheduleRequest, ScheduleRow, SettingsRow, SimilarTaskQuery, SimilarTaskRow, SkillRow,
+    SplitResult, SplitTask, StartWorkSession, Storage, StorageError, TaskProgress, TaskQuery,
+    TaskRow, TokenCreateResponse, TokenRow, UpdateGoogleCalSettings, UpdateHabit, UpdateMemory,
+    UpdateSettings, UpdateSkill, UpdateTask, WorkSessionProgressResult, WorkSessionRow,
+    storage::StorageResult,
 };
 use takusu_types::EnumLabel;
 use takusu_types::{TokenClaims, url_encode};
@@ -57,17 +59,29 @@ mod paths {
     pub fn task_path(id: &str) -> String {
         format!("/api/tasks/{}", url_encode(id))
     }
-    pub fn task_work_start_path(id: &str) -> String {
-        format!("/api/tasks/{}/work/start", url_encode(id))
-    }
-    pub fn task_work_pause_path(id: &str) -> String {
-        format!("/api/tasks/{}/work/pause", url_encode(id))
-    }
-    pub fn task_work_complete_path(id: &str) -> String {
-        format!("/api/tasks/{}/work/complete", url_encode(id))
-    }
     pub fn task_progress_path(id: &str) -> String {
         format!("/api/tasks/{}/progress", url_encode(id))
+    }
+    pub fn work_sessions_path() -> String {
+        "/api/work-sessions".into()
+    }
+    pub fn work_session_path(id: &str) -> String {
+        format!("/api/work-sessions/{}", url_encode(id))
+    }
+    pub fn work_session_pause_path(id: &str) -> String {
+        format!("/api/work-sessions/{}/pause", url_encode(id))
+    }
+    pub fn work_session_complete_path(id: &str) -> String {
+        format!("/api/work-sessions/{}/complete", url_encode(id))
+    }
+    pub fn work_session_progress_path(id: &str) -> String {
+        format!("/api/work-sessions/{}/progress", url_encode(id))
+    }
+    pub fn work_session_attach_path(id: &str) -> String {
+        format!("/api/work-sessions/{}/attach", url_encode(id))
+    }
+    pub fn work_session_convert_path(id: &str) -> String {
+        format!("/api/work-sessions/{}/convert", url_encode(id))
     }
     pub fn task_split_path(id: &str) -> String {
         format!("/api/tasks/{}/split", url_encode(id))
@@ -916,75 +930,122 @@ impl Storage for WorkersStorage {
             .await
     }
 
-    async fn start_task_work(
+    async fn start_work_session(
         &self,
-        id: &str,
+        body: &StartWorkSession,
         operation_id: Option<&str>,
-    ) -> StorageResult<TaskRow> {
-        let full = self.resolve_task_id(id).await?;
-        let body = json!({});
+    ) -> StorageResult<WorkSessionRow> {
         self.send_json(
             reqwest::Method::POST,
-            &paths::task_work_start_path(&full),
-            RequestBody::json(&body)?,
-            operation_id,
-        )
-        .await
-    }
-
-    async fn pause_task_work(
-        &self,
-        id: &str,
-        operation_id: Option<&str>,
-    ) -> StorageResult<TaskRow> {
-        let full = self.resolve_task_id(id).await?;
-        let body = json!({});
-        self.send_json(
-            reqwest::Method::POST,
-            &paths::task_work_pause_path(&full),
-            RequestBody::json(&body)?,
-            operation_id,
-        )
-        .await
-    }
-
-    async fn record_progress(
-        &self,
-        id: &str,
-        body: &RecordProgress,
-        operation_id: Option<&str>,
-    ) -> StorageResult<ProgressResult> {
-        let full = self.resolve_task_id(id).await?;
-        self.send_json(
-            reqwest::Method::POST,
-            &paths::task_progress_path(&full),
+            &paths::work_sessions_path(),
             RequestBody::json(body)?,
             operation_id,
         )
         .await
     }
 
-    async fn complete_task_work(
+    async fn pause_work_session(
         &self,
         id: &str,
         operation_id: Option<&str>,
-    ) -> StorageResult<TaskRow> {
-        let full = self.resolve_task_id(id).await?;
+    ) -> StorageResult<WorkSessionRow> {
         let body = json!({});
         self.send_json(
             reqwest::Method::POST,
-            &paths::task_work_complete_path(&full),
+            &paths::work_session_pause_path(id),
             RequestBody::json(&body)?,
             operation_id,
         )
         .await
     }
 
-    async fn get_task_progress(&self, id: &str) -> StorageResult<TaskProgress> {
-        let full = self.resolve_task_id(id).await?;
+    async fn complete_work_session(
+        &self,
+        id: &str,
+        operation_id: Option<&str>,
+    ) -> StorageResult<WorkSessionRow> {
+        let body = json!({});
+        self.send_json(
+            reqwest::Method::POST,
+            &paths::work_session_complete_path(id),
+            RequestBody::json(&body)?,
+            operation_id,
+        )
+        .await
+    }
+
+    async fn record_work_session_progress(
+        &self,
+        id: &str,
+        body: &RecordWorkSessionProgress,
+        operation_id: Option<&str>,
+    ) -> StorageResult<WorkSessionProgressResult> {
+        self.send_json(
+            reqwest::Method::POST,
+            &paths::work_session_progress_path(id),
+            RequestBody::json(body)?,
+            operation_id,
+        )
+        .await
+    }
+
+    async fn get_work_session(&self, id: &str) -> StorageResult<WorkSessionRow> {
         self.send_json(
             reqwest::Method::GET,
-            &paths::task_progress_path(&full),
+            &paths::work_session_path(id),
+            RequestBody::None,
+            None,
+        )
+        .await
+    }
+
+    async fn list_work_sessions(
+        &self,
+        task_id: Option<&str>,
+    ) -> StorageResult<Vec<WorkSessionRow>> {
+        let path = if let Some(id) = task_id {
+            format!("{}?task_id={}", paths::work_sessions_path(), url_encode(id))
+        } else {
+            paths::work_sessions_path()
+        };
+        self.send_json(reqwest::Method::GET, &path, RequestBody::None, None)
+            .await
+    }
+
+    async fn attach_work_session(
+        &self,
+        id: &str,
+        body: &AttachWorkSession,
+        operation_id: Option<&str>,
+    ) -> StorageResult<WorkSessionRow> {
+        self.send_json(
+            reqwest::Method::POST,
+            &paths::work_session_attach_path(id),
+            RequestBody::json(body)?,
+            operation_id,
+        )
+        .await
+    }
+
+    async fn convert_work_session(
+        &self,
+        id: &str,
+        body: &ConvertWorkSession,
+        operation_id: Option<&str>,
+    ) -> StorageResult<TaskRow> {
+        self.send_json(
+            reqwest::Method::POST,
+            &paths::work_session_convert_path(id),
+            RequestBody::json(body)?,
+            operation_id,
+        )
+        .await
+    }
+
+    async fn get_task_progress(&self, id: &str) -> StorageResult<TaskProgress> {
+        self.send_json(
+            reqwest::Method::GET,
+            &paths::task_progress_path(id),
             RequestBody::None,
             None,
         )
@@ -1131,16 +1192,17 @@ mod tests {
     }
 
     #[test]
-    fn task_work_paths_encode_id() {
+    fn work_session_paths_encode_id() {
+        assert_eq!(paths::work_sessions_path(), "/api/work-sessions");
+        assert_eq!(paths::work_session_path("abc"), "/api/work-sessions/abc");
         assert_eq!(
-            paths::task_work_start_path("abc"),
-            "/api/tasks/abc/work/start"
+            paths::work_session_pause_path("a/b"),
+            "/api/work-sessions/a%2Fb/pause"
         );
         assert_eq!(
-            paths::task_work_complete_path("abc"),
-            "/api/tasks/abc/work/complete"
+            paths::work_session_complete_path("a b"),
+            "/api/work-sessions/a%20b/complete"
         );
-        assert_eq!(paths::task_progress_path("abc"), "/api/tasks/abc/progress");
         assert_eq!(paths::task_split_path("abc"), "/api/tasks/abc/split");
     }
 

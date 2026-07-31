@@ -30,6 +30,7 @@ import type {
   ScheduleEntry,
   TaskStatus,
   RedundantDependency,
+  WorkSessionRow,
 } from '@/src/api/types';
 import { useColors, type ColorSet } from '@/src/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -46,6 +47,7 @@ import { parseDuration, formatDuration } from '@/src/utils/duration';
 import {
   makeProgressOperationId,
   recordProgressWithTotal,
+  findOpenWorkSessionForTask,
   type ProgressPayload,
 } from '@/src/utils/progress';
 import {
@@ -357,6 +359,7 @@ export function TaskDetailView() {
   const [progressSheetMode, setProgressSheetMode] = useState<
     'record' | 'pause'
   >('record');
+  const [workSession, setWorkSession] = useState<WorkSessionRow | null>(null);
   const [splitModalVisible, setSplitModalVisible] = useState(false);
   // Double-tap detection ref — must be before the early return to satisfy
   // React's Rules of Hooks (hooks must be called unconditionally).
@@ -394,6 +397,15 @@ export function TaskDetailView() {
       setDeps(parseDepends(t.depends));
       setStatus(t.status);
     }
+    // Load the open work session for this task, if any.
+    try {
+      const sessions = await client.listWorkSessions(t.id);
+      setWorkSession(sessions.find((s) => !s.ended_at) ?? null);
+    } catch (e) {
+      logError('作業セッション取得', e);
+      setWorkSession(null);
+    }
+
     if (t.habit_id) {
       try {
         setHabit(await client.getHabit(t.habit_id));
@@ -723,8 +735,12 @@ export function TaskDetailView() {
     if (!client || !task) return;
     const prevStatus = task.status;
     const operationId = makeProgressOperationId();
+    let startedSession: WorkSessionRow | null = null;
     try {
-      await client.startTaskWork(task.id, operationId);
+      startedSession = await client.createWorkSession(
+        { task_id: task.id },
+        operationId,
+      );
     } catch (e) {
       showError(e, 'タスクの開始に失敗');
       return;
@@ -744,7 +760,12 @@ export function TaskDetailView() {
       description: `start: ${task.title}`,
       undo: async () => {
         try {
-          await client.pauseTaskWork(task.id, makeProgressOperationId());
+          if (startedSession) {
+            await client.pauseWorkSession(
+              startedSession.id,
+              makeProgressOperationId(),
+            );
+          }
         } catch (e) {
           showError(e, 'タスクの巻き戻しに失敗');
           return;
@@ -760,7 +781,10 @@ export function TaskDetailView() {
       },
       redo: async () => {
         try {
-          await client.startTaskWork(task.id, makeProgressOperationId());
+          await client.createWorkSession(
+            { task_id: task.id },
+            makeProgressOperationId(),
+          );
         } catch (e) {
           showError(e, 'タスクの再開に失敗');
           return;
@@ -772,13 +796,17 @@ export function TaskDetailView() {
 
   async function pauseTask(payload?: ProgressPayload) {
     if (!client || !task) return;
+    const session = await findOpenWorkSessionForTask(client, task.id);
     const prevQuantityDone = task.quantity_done;
     const prevQuantityTotal = task.quantity_total;
     const recordOperationId = payload ? makeProgressOperationId() : undefined;
     const pauseOperationId = makeProgressOperationId();
     if (payload && recordOperationId) {
       try {
-        await recordProgressWithTotal(client, task, payload, {
+        // Record progress first, then pause. If pause fails after a
+        // successful record, the progress is retained and the session remains
+        // open; the user is shown the error and can retry pausing.
+        await recordProgressWithTotal(client, session, payload, {
           operationId: recordOperationId,
         });
       } catch (e) {
@@ -787,7 +815,7 @@ export function TaskDetailView() {
       }
     }
     try {
-      await client.pauseTaskWork(task.id, pauseOperationId);
+      await client.pauseWorkSession(session.id, pauseOperationId);
     } catch (e) {
       showError(e, 'タスクの一時停止に失敗');
       return;
@@ -801,7 +829,10 @@ export function TaskDetailView() {
       description: `pause: ${task.title}`,
       undo: async () => {
         try {
-          await client.startTaskWork(task.id, makeProgressOperationId());
+          await client.createWorkSession(
+            { task_id: task.id },
+            makeProgressOperationId(),
+          );
         } catch (e) {
           showError(e, 'タスクの巻き戻しに失敗');
           return;
@@ -819,8 +850,12 @@ export function TaskDetailView() {
         await refresh();
       },
       redo: async () => {
+        const redoSession = await findOpenWorkSessionForTask(client, task.id);
         try {
-          await client.pauseTaskWork(task.id, makeProgressOperationId());
+          await client.pauseWorkSession(
+            redoSession.id,
+            makeProgressOperationId(),
+          );
         } catch (e) {
           showError(e, 'タスクの再停止に失敗');
           return;
@@ -832,11 +867,12 @@ export function TaskDetailView() {
 
   async function completeTask() {
     if (!client || !task) return;
+    const session = await findOpenWorkSessionForTask(client, task.id);
     const prevQuantityDone = task.quantity_done;
     const total = task.quantity_total;
     const operationId = makeProgressOperationId();
     try {
-      await client.completeTaskWork(task.id, operationId);
+      await client.completeWorkSession(session.id, operationId);
     } catch (e) {
       showError(e, 'タスクの完了に失敗');
       return;
@@ -855,6 +891,10 @@ export function TaskDetailView() {
             status: 'in_progress',
             quantity_done: prevQuantityDone,
           });
+          await client.createWorkSession(
+            { task_id: task.id },
+            makeProgressOperationId(),
+          );
         } catch (e) {
           showError(e, 'タスクの巻き戻しに失敗');
           return;
@@ -878,8 +918,9 @@ export function TaskDetailView() {
 
   async function recordProgress(payload: ProgressPayload) {
     if (!client || !task) return;
+    const session = await findOpenWorkSessionForTask(client, task.id);
     try {
-      await recordProgressWithTotal(client, task, payload);
+      await recordProgressWithTotal(client, session, payload);
     } catch (e) {
       showError(e, '進捗の記録に失敗');
       return;
@@ -1891,10 +1932,10 @@ export function TaskDetailView() {
       />
 
       {/* Progress sheet */}
-      {task && (
+      {workSession && (
         <TaskProgressSheet
           visible={progressSheetVisible}
-          task={task}
+          session={workSession}
           mode={progressSheetMode}
           onConfirm={handleProgressConfirm}
           onRecord={

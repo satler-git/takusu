@@ -49,31 +49,53 @@ describe('TakusuClient', () => {
     expect(url).toBe('http://localhost/api/tasks/foo%23bar');
   });
 
-  it('sends Idempotency-Key header for progress operations when operationId is provided', async () => {
+  it('sends Idempotency-Key and Content-Type headers for createWorkSession when operationId is provided', async () => {
     const client = new TakusuClient('http://localhost', 'token');
     fetchMock.mockResolvedValueOnce({
       status: 200,
       text: jest.fn().mockResolvedValue('{}'),
     });
-    await client.startTaskWork('task-1', 'op-1');
+    await client.createWorkSession({ task_id: 'task-1' }, 'op-1');
     const init = fetchMock.mock.calls[0][1] as RequestInit | undefined;
     expect(init?.headers).toMatchObject({
       Authorization: 'Bearer token',
+      'Content-Type': 'application/json',
       'Idempotency-Key': 'op-1',
     });
   });
 
-  it('omits Idempotency-Key header for progress operations when operationId is not provided', async () => {
+  it('sends Idempotency-Key and Content-Type headers for recordWorkSessionProgress when operationId is provided', async () => {
     const client = new TakusuClient('http://localhost', 'token');
     fetchMock.mockResolvedValueOnce({
       status: 200,
       text: jest.fn().mockResolvedValue('{}'),
     });
-    await client.startTaskWork('task-1');
+    await client.recordWorkSessionProgress(
+      'session-1',
+      { quantity_done: 5, note: 'done' },
+      'op-2',
+    );
     const init = fetchMock.mock.calls[0][1] as RequestInit | undefined;
-    expect(init?.headers).toEqual({
+    expect(init?.headers).toMatchObject({
       Authorization: 'Bearer token',
+      'Content-Type': 'application/json',
+      'Idempotency-Key': 'op-2',
     });
+  });
+
+  it('omits Idempotency-Key header for createWorkSession when operationId is not provided', async () => {
+    const client = new TakusuClient('http://localhost', 'token');
+    fetchMock.mockResolvedValueOnce({
+      status: 200,
+      text: jest.fn().mockResolvedValue('{}'),
+    });
+    await client.createWorkSession({ title: '作業' });
+    const init = fetchMock.mock.calls[0][1] as RequestInit | undefined;
+    expect(init?.headers).toMatchObject({
+      Authorization: 'Bearer token',
+      'Content-Type': 'application/json',
+    });
+    expect(init?.headers).not.toHaveProperty('Idempotency-Key');
   });
 
   it('returns a MoveEntryResponse from moveEntry with warnings defaulting to []', async () => {

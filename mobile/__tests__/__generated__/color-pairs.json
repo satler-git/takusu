@@ -841,6 +841,13 @@
       "source": "text"
     },
     {
+      "fg": "gray",
+      "bg": "surface",
+      "file": "components/TaskProgressSheet.tsx",
+      "kind": "parent-child",
+      "source": "text"
+    },
+    {
       "fg": "onBrand",
       "bg": "brand",
       "file": "components/TaskProgressSheet.tsx",
@@ -1788,5 +1795,5 @@
       "source": "text"
     }
   ],
-  "generatedAt": "2026-07-31T05:17:14.517Z"
+  "generatedAt": "2026-07-31T11:09:39.628Z"
 }

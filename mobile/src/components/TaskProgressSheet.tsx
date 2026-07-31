@@ -1,4 +1,4 @@
-// TaskProgressSheet — bottom sheet for recording task progress
+// TaskProgressSheet — bottom sheet for recording work session progress
 // Supports entering either delta (this-time) or cumulative quantity, and
 // allows editing the total. Used from HomeView and TaskDetailView.
 
@@ -12,7 +12,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import type { TaskRow } from '@/src/api/types';
+import type { WorkSessionRow } from '@/src/api/types';
 import { useTheme, type ColorSet } from '@/src/theme';
 import { haptic } from '@/src/components/haptics';
 import { type ProgressPayload } from '@/src/utils/progress';
@@ -22,7 +22,7 @@ export type TaskProgressSheetPayload = ProgressPayload;
 
 interface TaskProgressSheetProps {
   visible: boolean;
-  task: TaskRow;
+  session: WorkSessionRow;
   mode: 'record' | 'pause';
   onConfirm: (payload: ProgressPayload) => void | Promise<void>;
   onCancel: () => void;
@@ -89,7 +89,7 @@ const makeStyles = (colors: ColorSet) =>
 
 export function TaskProgressSheet({
   visible,
-  task,
+  session,
   mode,
   onConfirm,
   onCancel,
@@ -98,8 +98,8 @@ export function TaskProgressSheet({
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const insets = useSafeAreaInsets();
-  const currentDone = useMemo(() => task.quantity_done ?? 0, [task]);
-  const currentTotal = useMemo(() => task.quantity_total, [task]);
+  const currentDone = useMemo(() => session.quantity_done ?? 0, [session]);
+  const currentTotal = useMemo(() => session.quantity_total, [session]);
 
   const [delta, setDelta] = useState('');
   const [cumulative, setCumulative] = useState(String(currentDone));
@@ -124,7 +124,7 @@ export function TaskProgressSheet({
       setTotal(currentTotal !== undefined ? String(currentTotal) : '');
       setNote('');
     }
-  }, [visible, currentDone, currentTotal]);
+  }, [visible, currentDone, currentTotal, session]);
 
   function digitsOnly(text: string) {
     return text.replace(/[^0-9]/g, '');
@@ -205,6 +205,9 @@ export function TaskProgressSheet({
           ]}
         >
           <Text style={[styles.title, { color: colors.black }]}>
+            {session.title || '作業'}
+          </Text>
+          <Text style={{ color: colors.gray, fontSize: 13, marginBottom: 8 }}>
             {mode === 'pause' ? '進捗を記録して一時停止' : '進捗を記録'}
           </Text>
 

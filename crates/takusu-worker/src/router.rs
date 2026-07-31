@@ -98,32 +98,22 @@ async fn dispatch(req: Request, env: Env) -> Result<Response, crate::error::Work
         (Method::Get, ["tasks"]) => handlers::tasks::list(req, env).await,
         (Method::Post, ["tasks"]) => handlers::tasks::create(req, env).await,
         (Method::Get, ["tasks", "similar"]) => handlers::memory::similar_tasks(req, env).await,
-        (Method::Post, ["tasks", id, "work", "start"]) => {
-            handlers::progress::start_task_work(req, env, id).await
-        }
-        (Method::Post, ["tasks", id, "work", "pause"]) => {
-            handlers::progress::pause_task_work(req, env, id).await
-        }
-        (Method::Post, ["tasks", id, "progress"]) => {
-            handlers::progress::record_progress(req, env, id).await
-        }
-        (Method::Get, ["tasks", id, "progress"]) => {
-            handlers::progress::get_task_progress(req, env, id).await
-        }
-        (Method::Post, ["tasks", id, "work", "complete"]) => {
-            handlers::progress::complete_task_work(req, env, id).await
-        }
-        (Method::Post, ["tasks", id, "split"]) => {
-            handlers::progress::split_task(req, env, id).await
-        }
         (Method::Get, ["tasks", id]) => handlers::tasks::get(req, env, id).await,
         (Method::Patch, ["tasks", id]) => handlers::tasks::update(req, env, id).await,
         (Method::Put, ["tasks", id]) => handlers::tasks::replace(req, env, id).await,
         (Method::Delete, ["tasks", id]) => handlers::tasks::delete(req, env, id).await,
+        (Method::Get, ["tasks", id, "progress"]) => handlers::progress::get_task_progress(req, env, id).await,
+        (Method::Post, ["tasks", id, "split"]) => handlers::progress::split_task(req, env, id).await,
+        (Method::Post, ["work-sessions"]) => handlers::progress::create_work_session(req, env).await,
+        (Method::Get, ["work-sessions"]) => handlers::progress::list_work_sessions(req, env).await,
+        (Method::Get, ["work-sessions", id]) => handlers::progress::get_work_session(req, env, id).await,
+        (Method::Post, ["work-sessions", id, "pause"]) => handlers::progress::pause_work_session(req, env, id).await,
+        (Method::Post, ["work-sessions", id, "complete"]) => handlers::progress::complete_work_session(req, env, id).await,
+        (Method::Post, ["work-sessions", id, "progress"]) => handlers::progress::record_work_session_progress(req, env, id).await,
+        (Method::Post, ["work-sessions", id, "attach"]) => handlers::progress::attach_work_session(req, env, id).await,
+        (Method::Post, ["work-sessions", id, "convert"]) => handlers::progress::convert_work_session(req, env, id).await,
         (Method::Get, ["habits"]) => handlers::habits::list(req, env).await,
         (Method::Post, ["habits"]) => handlers::habits::create(req, env).await,
-        // Literal "scheduled-spans" / "steps" segments must precede the `["habits", id]`
-        // arms so they are not treated as a habit id (#303 / #95).
         (Method::Get, ["habits", "scheduled-spans"]) => {
             handlers::habits::list_all_scheduled_spans(req, env).await
         }

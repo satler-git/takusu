@@ -107,9 +107,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -128,9 +126,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -149,9 +145,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -170,9 +164,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -191,9 +183,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -236,9 +226,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -257,9 +245,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -278,9 +264,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -299,9 +283,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -320,9 +302,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -391,9 +371,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -412,9 +390,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -433,9 +409,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -454,9 +428,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -475,9 +447,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -556,9 +526,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -577,9 +545,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -598,9 +564,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -619,9 +583,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -640,9 +602,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -683,9 +643,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -704,9 +662,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -725,9 +681,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -746,9 +700,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -767,9 +719,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -804,9 +754,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -825,9 +773,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -846,9 +792,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -867,9 +811,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -888,9 +830,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -948,9 +888,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -969,9 +907,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -990,9 +926,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -1011,9 +945,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -1032,9 +964,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -1069,9 +999,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -1090,9 +1018,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -1111,9 +1037,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -1132,9 +1056,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -1153,9 +1075,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -1198,9 +1118,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -1219,9 +1137,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -1240,9 +1156,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -1261,9 +1175,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -1282,9 +1194,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -1330,9 +1240,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -1351,9 +1259,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -1372,9 +1278,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -1393,9 +1297,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -1414,9 +1316,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -1459,9 +1359,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -1480,9 +1378,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -1501,9 +1397,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -1522,9 +1416,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -1543,9 +1435,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -1566,639 +1456,6 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/tasks/{id}/work/start": {
-      "post": {
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TaskRow"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "message"
-                  ]
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "message"
-                  ]
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "message"
-                  ]
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "message"
-                  ]
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "message"
-                  ]
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/tasks/{id}/work/pause": {
-      "post": {
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TaskRow"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "message"
-                  ]
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "message"
-                  ]
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "message"
-                  ]
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "message"
-                  ]
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "message"
-                  ]
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/tasks/{id}/progress": {
-      "get": {
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TaskProgress"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "message"
-                  ]
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "message"
-                  ]
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "message"
-                  ]
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "message"
-                  ]
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "message"
-                  ]
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RecordProgress"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProgressResult"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "message"
-                  ]
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "message"
-                  ]
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "message"
-                  ]
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "message"
-                  ]
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "message"
-                  ]
-                }
-              }
-            }
-          },
-          "415": {
-            "description": "Expected request with `Content-Type: application/json`",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Failed to deserialize the JSON body into the target type",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/tasks/{id}/work/complete": {
-      "post": {
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TaskRow"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "message"
-                  ]
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "message"
-                  ]
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "message"
-                  ]
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "message"
-                  ]
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "message"
-                  ]
                 }
               }
             }
@@ -2243,9 +1500,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -2264,9 +1519,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -2285,9 +1538,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -2306,9 +1557,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -2327,9 +1576,1026 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Expected request with `Content-Type: application/json`",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Failed to deserialize the JSON body into the target type",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/work-sessions": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "task_id",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WorkSessionRow"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartWorkSession"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "A top-level work session. It may be linked to a task, or it may be a\nstandalone session that is later converted into a task.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkSessionRow"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Expected request with `Content-Type: application/json`",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Failed to deserialize the JSON body into the target type",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/work-sessions/{id}": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "A top-level work session. It may be linked to a task, or it may be a\nstandalone session that is later converted into a task.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkSessionRow"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/work-sessions/{id}/pause": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "A top-level work session. It may be linked to a task, or it may be a\nstandalone session that is later converted into a task.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkSessionRow"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/work-sessions/{id}/complete": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "A top-level work session. It may be linked to a task, or it may be a\nstandalone session that is later converted into a task.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkSessionRow"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/work-sessions/{id}/progress": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecordWorkSessionProgress"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkSessionProgressResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Expected request with `Content-Type: application/json`",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Failed to deserialize the JSON body into the target type",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/work-sessions/{id}/attach": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AttachWorkSession"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "A top-level work session. It may be linked to a task, or it may be a\nstandalone session that is later converted into a task.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkSessionRow"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Expected request with `Content-Type: application/json`",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Failed to deserialize the JSON body into the target type",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/work-sessions/{id}/convert": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConvertWorkSession"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskRow"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
                 }
               }
             }
@@ -2387,9 +2653,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -2408,9 +2672,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -2429,9 +2691,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -2450,9 +2710,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -2471,9 +2729,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -2516,9 +2772,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -2537,9 +2791,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -2558,9 +2810,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -2579,9 +2829,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -2600,9 +2848,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -2671,9 +2917,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -2692,9 +2936,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -2713,9 +2955,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -2734,9 +2974,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -2755,9 +2993,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -2826,9 +3062,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -2847,9 +3081,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -2868,9 +3100,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -2889,9 +3119,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -2910,9 +3138,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -2970,9 +3196,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -2991,9 +3215,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -3012,9 +3234,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -3033,9 +3253,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -3054,9 +3272,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -3094,9 +3310,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -3115,9 +3329,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -3136,9 +3348,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -3157,9 +3367,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -3178,9 +3386,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -3215,9 +3421,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -3236,9 +3440,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -3257,9 +3459,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -3278,9 +3478,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -3299,9 +3497,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -3344,9 +3540,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -3365,9 +3559,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -3386,9 +3578,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -3407,9 +3597,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -3428,9 +3616,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -3476,9 +3662,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -3497,9 +3681,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -3518,9 +3700,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -3539,9 +3719,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -3560,9 +3738,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -3605,9 +3781,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -3626,9 +3800,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -3647,9 +3819,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -3668,9 +3838,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -3689,9 +3857,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -3757,9 +3923,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -3778,9 +3942,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -3799,9 +3961,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -3820,9 +3980,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -3841,9 +3999,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -3901,9 +4057,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -3922,9 +4076,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -3943,9 +4095,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -3964,9 +4114,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -3985,9 +4133,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -4030,9 +4176,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -4051,9 +4195,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -4072,9 +4214,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -4093,9 +4233,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -4114,9 +4252,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -4164,9 +4300,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -4185,9 +4319,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -4206,9 +4338,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -4227,9 +4357,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -4248,9 +4376,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -4288,9 +4414,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -4309,9 +4433,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -4330,9 +4452,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -4351,9 +4471,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -4372,9 +4490,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -4423,9 +4539,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -4444,9 +4558,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -4465,9 +4577,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -4486,9 +4596,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -4507,9 +4615,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -4564,9 +4670,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -4585,9 +4689,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -4606,9 +4708,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -4627,9 +4727,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -4648,9 +4746,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -4685,9 +4781,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -4706,9 +4800,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -4727,9 +4819,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -4748,9 +4838,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -4769,9 +4857,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -4797,9 +4883,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -4818,9 +4902,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -4839,9 +4921,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -4860,9 +4940,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -4881,9 +4959,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -4929,9 +5005,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -4950,9 +5024,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -4971,9 +5043,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -4992,9 +5062,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -5013,9 +5081,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -5081,9 +5147,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -5102,9 +5166,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -5123,9 +5185,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -5144,9 +5204,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -5165,9 +5223,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -5232,9 +5288,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -5253,9 +5307,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -5274,9 +5326,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -5295,9 +5345,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -5316,9 +5364,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -5384,9 +5430,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -5405,9 +5449,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -5426,9 +5468,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -5447,9 +5487,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -5468,9 +5506,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -5536,9 +5572,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -5557,9 +5591,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -5578,9 +5610,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -5599,9 +5629,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -5620,9 +5648,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -5680,9 +5706,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -5701,9 +5725,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -5722,9 +5744,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -5743,9 +5763,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -5764,9 +5782,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -5809,9 +5825,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -5830,9 +5844,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -5851,9 +5863,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -5872,9 +5882,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -5893,9 +5901,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -5943,9 +5949,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -5964,9 +5968,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -5985,9 +5987,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -6006,9 +6006,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -6027,9 +6025,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -6064,9 +6060,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -6085,9 +6079,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -6106,9 +6098,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -6127,9 +6117,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -6148,9 +6136,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -6193,9 +6179,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -6214,9 +6198,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -6235,9 +6217,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -6256,9 +6236,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -6277,9 +6255,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -6344,9 +6320,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -6365,9 +6339,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -6386,9 +6358,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -6407,9 +6377,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -6428,9 +6396,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -6495,9 +6461,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -6516,9 +6480,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -6537,9 +6499,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -6558,9 +6518,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -6579,9 +6537,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -6636,9 +6592,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -6657,9 +6611,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -6678,9 +6630,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -6699,9 +6649,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -6720,9 +6668,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -6757,9 +6703,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -6778,9 +6722,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -6799,9 +6741,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -6820,9 +6760,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -6841,9 +6779,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -6881,9 +6817,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -6902,9 +6836,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -6923,9 +6855,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -6944,9 +6874,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -6965,9 +6893,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -7002,9 +6928,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -7023,9 +6947,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -7044,9 +6966,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -7065,9 +6985,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -7086,9 +7004,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -7131,9 +7047,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -7152,9 +7066,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -7173,9 +7085,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -7194,9 +7104,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -7215,9 +7123,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -7282,9 +7188,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -7303,9 +7207,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -7324,9 +7226,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -7345,9 +7245,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -7366,9 +7264,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -7426,9 +7322,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -7447,9 +7341,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -7468,9 +7360,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -7489,9 +7379,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -7510,9 +7398,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -7555,9 +7441,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -7576,9 +7460,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -7597,9 +7479,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -7618,9 +7498,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -7639,9 +7517,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -7696,9 +7572,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -7717,9 +7591,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -7738,9 +7610,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -7759,9 +7629,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -7780,9 +7648,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -7808,9 +7674,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -7829,9 +7693,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -7850,9 +7712,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -7871,9 +7731,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -7892,9 +7750,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -7937,9 +7793,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -7958,9 +7812,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -7979,9 +7831,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -8000,9 +7850,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -8021,9 +7869,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -8088,9 +7934,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -8109,9 +7953,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -8130,9 +7972,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -8151,9 +7991,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -8172,9 +8010,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -8276,9 +8112,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -8297,9 +8131,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -8318,9 +8150,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -8339,9 +8169,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -8360,9 +8188,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -8397,9 +8223,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -8418,9 +8242,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -8439,9 +8261,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -8460,9 +8280,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -8481,9 +8299,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -8521,9 +8337,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -8542,9 +8356,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -8563,9 +8375,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -8584,9 +8394,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -8605,9 +8413,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -8650,9 +8456,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -8671,9 +8475,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -8692,9 +8494,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -8713,9 +8513,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -8734,9 +8532,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -8791,9 +8587,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -8812,9 +8606,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -8833,9 +8625,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -8854,9 +8644,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -8875,9 +8663,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ]
+                  "required": ["message"]
                 }
               }
             }
@@ -8893,14 +8679,20 @@
         "type": "number",
         "format": "double"
       },
+      "AttachWorkSession": {
+        "type": "object",
+        "properties": {
+          "task_id": {
+            "type": "string"
+          }
+        },
+        "required": ["task_id"]
+      },
       "CompleteQuery": {
         "type": "object",
         "properties": {
           "limit": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "uint",
             "minimum": 0
           },
@@ -8908,9 +8700,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "q"
-        ]
+        "required": ["q"]
       },
       "Completion": {
         "type": "object",
@@ -8924,10 +8714,28 @@
             "type": "string"
           }
         },
-        "required": [
-          "value",
-          "label"
-        ]
+        "required": ["value", "label"]
+      },
+      "ConvertWorkSession": {
+        "type": "object",
+        "properties": {
+          "fixed": {
+            "type": ["boolean", "null"]
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TaskStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "type": ["string", "null"]
+          }
+        }
       },
       "CreateHabit": {
         "type": "object",
@@ -8943,44 +8751,29 @@
             ]
           },
           "allows_parallel": {
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "type": ["boolean", "null"]
           },
           "avg_minutes": {
             "type": "integer",
             "format": "int64"
           },
           "description": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "end_time": {
             "$ref": "#/components/schemas/TimeOfDay"
           },
           "fixed": {
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "type": ["boolean", "null"]
           },
           "parallelizable": {
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "type": ["boolean", "null"]
           },
           "recurrence": {
             "type": "string"
           },
           "sigma_minutes": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int64"
           },
           "start_time": {
@@ -9020,9 +8813,7 @@
             }
           }
         },
-        "required": [
-          "habits"
-        ]
+        "required": ["habits"]
       },
       "CreateHabitBatchItem": {
         "description": "A single habit inside a batch create request (#1083).",
@@ -9039,50 +8830,32 @@
             ]
           },
           "allows_parallel": {
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "type": ["boolean", "null"]
           },
           "avg_minutes": {
             "type": "integer",
             "format": "int64"
           },
           "client_id": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "description": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "end_time": {
             "$ref": "#/components/schemas/TimeOfDay"
           },
           "fixed": {
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "type": ["boolean", "null"]
           },
           "parallelizable": {
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "type": ["boolean", "null"]
           },
           "recurrence": {
             "type": "string"
           },
           "sigma_minutes": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int64"
           },
           "start_time": {
@@ -9131,19 +8904,13 @@
             "format": "int64"
           },
           "client_id": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "created_at": {
             "$ref": "#/components/schemas/Timestamp"
           },
           "description": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "display_id": {
             "type": "integer",
@@ -9210,19 +8977,13 @@
             "$ref": "#/components/schemas/Date"
           },
           "reason": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "start_date": {
             "$ref": "#/components/schemas/Date"
           }
         },
-        "required": [
-          "start_date",
-          "end_date"
-        ]
+        "required": ["start_date", "end_date"]
       },
       "CreateMemory": {
         "type": "object",
@@ -9237,10 +8998,7 @@
             "$ref": "#/components/schemas/MemoryKind"
           },
           "subject_id": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "subject_type": {
             "anyOf": [
@@ -9257,11 +9015,7 @@
             "default": false
           }
         },
-        "required": [
-          "kind",
-          "key",
-          "content"
-        ]
+        "required": ["kind", "key", "content"]
       },
       "CreateSkill": {
         "type": "object",
@@ -9270,10 +9024,7 @@
             "type": "string"
           },
           "built_in": {
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "type": ["boolean", "null"]
           },
           "description": {
             "type": "string"
@@ -9285,12 +9036,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "slug",
-          "name",
-          "description",
-          "body"
-        ]
+        "required": ["slug", "name", "description", "body"]
       },
       "CreateTask": {
         "type": "object",
@@ -9306,57 +9052,36 @@
             ]
           },
           "allows_parallel": {
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "type": ["boolean", "null"]
           },
           "avg_minutes": {
             "type": "integer",
             "format": "int64"
           },
           "depends": {
-            "type": [
-              "array",
-              "null"
-            ],
+            "type": ["array", "null"],
             "items": {
               "type": "string"
             }
           },
           "description": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "end_at": {
             "$ref": "#/components/schemas/Timestamp"
           },
           "fixed": {
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "type": ["boolean", "null"]
           },
           "habit_id": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "habit_step_id": {
             "description": "habit step link (#95). Set by sync_habit_tasks for step-generated tasks.",
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "ical_uid": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "original_quantity_total": {
             "description": "WI-9: pre-split total quantity, kept for lineage.",
@@ -9370,10 +9095,7 @@
             ]
           },
           "parallelizable": {
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "type": ["boolean", "null"]
           },
           "quantity_done": {
             "description": "WI-9: initial quantity already done (defaults to 0).",
@@ -9399,16 +9121,10 @@
           },
           "quantity_unit": {
             "description": "WI-9: unit for the quantity.",
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "sigma_minutes": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int64"
           },
           "start_at": {
@@ -9425,11 +9141,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "title",
-          "end_at",
-          "avg_minutes"
-        ]
+        "required": ["title", "end_at", "avg_minutes"]
       },
       "CreateTaskBatch": {
         "description": "Request body for `POST /api/tasks/batch` (#1083).",
@@ -9442,9 +9154,7 @@
             }
           }
         },
-        "required": [
-          "tasks"
-        ]
+        "required": ["tasks"]
       },
       "CreateTaskBatchItem": {
         "description": "A single task inside a batch create request (#1083).\n`client_id` is a caller-supplied temporary id that can be referenced by\n`depends` of other items in the same batch.",
@@ -9461,63 +9171,39 @@
             ]
           },
           "allows_parallel": {
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "type": ["boolean", "null"]
           },
           "avg_minutes": {
             "type": "integer",
             "format": "int64"
           },
           "client_id": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "depends": {
-            "type": [
-              "array",
-              "null"
-            ],
+            "type": ["array", "null"],
             "items": {
               "type": "string"
             }
           },
           "description": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "end_at": {
             "$ref": "#/components/schemas/Timestamp"
           },
           "fixed": {
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "type": ["boolean", "null"]
           },
           "habit_id": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "habit_step_id": {
             "description": "habit step link (#95). Set by sync_habit_tasks for step-generated tasks.",
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "ical_uid": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "original_quantity_total": {
             "description": "WI-9: pre-split total quantity, kept for lineage.",
@@ -9531,10 +9217,7 @@
             ]
           },
           "parallelizable": {
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "type": ["boolean", "null"]
           },
           "quantity_done": {
             "description": "WI-9: initial quantity already done (defaults to 0).",
@@ -9560,16 +9243,10 @@
           },
           "quantity_unit": {
             "description": "WI-9: unit for the quantity.",
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "sigma_minutes": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int64"
           },
           "start_at": {
@@ -9586,11 +9263,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "title",
-          "end_at",
-          "avg_minutes"
-        ]
+        "required": ["title", "end_at", "avg_minutes"]
       },
       "CreateTaskBatchResult": {
         "description": "A single result from a batch create request (#1083).\nThe caller can correlate results with input items by `client_id` and by\nposition.",
@@ -9600,11 +9273,8 @@
             "$ref": "#/components/schemas/Abandonability"
           },
           "actual_minutes": {
-            "description": "Total active work minutes from task_work_sessions (NULL when no work has been done).",
-            "type": [
-              "integer",
-              "null"
-            ],
+            "description": "Total active work minutes from work_sessions (NULL when no work has been done).",
+            "type": ["integer", "null"],
             "format": "int64"
           },
           "allows_parallel": {
@@ -9616,10 +9286,7 @@
             "format": "int64"
           },
           "client_id": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "completed_at": {
             "description": "WI-9: wall-clock completion time, set by `complete`.",
@@ -9644,10 +9311,7 @@
             "default": "[]"
           },
           "description": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "display_id": {
             "type": "integer",
@@ -9662,23 +9326,14 @@
             "default": false
           },
           "habit_id": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "habit_step_id": {
             "description": "The habit step that generated this task, if any (#95). NULL for simple\n(step-less) habits and manually created tasks.",
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "ical_uid": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "id": {
             "type": "string"
@@ -9720,10 +9375,7 @@
           },
           "quantity_unit": {
             "description": "WI-9: unit for the quantity (e.g. \"題\").",
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "sigma_minutes": {
             "type": "integer",
@@ -9731,10 +9383,7 @@
           },
           "split_from_task_id": {
             "description": "WI-9: for a remainder task, the id of the task it was split from.",
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "start_at": {
             "anyOf": [
@@ -9776,10 +9425,7 @@
         "type": "object",
         "properties": {
           "label": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           }
         }
       },
@@ -9797,10 +9443,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "task_id",
-          "error"
-        ]
+        "required": ["task_id", "error"]
       },
       "DeleteAllGcalResult": {
         "description": "Result of explicitly deleting every mapped Google Calendar event.",
@@ -9818,10 +9461,7 @@
             }
           }
         },
-        "required": [
-          "deleted",
-          "failed"
-        ]
+        "required": ["deleted", "failed"]
       },
       "DeleteMemoryParams": {
         "type": "object",
@@ -9831,9 +9471,7 @@
             "format": "int64"
           }
         },
-        "required": [
-          "observed_revision"
-        ]
+        "required": ["observed_revision"]
       },
       "DependencyAnalysisResponse": {
         "description": "Response for `GET /api/tasks/dependency-analysis` and the habit step\nvariant (#355).",
@@ -9846,9 +9484,7 @@
             }
           }
         },
-        "required": [
-          "redundant"
-        ]
+        "required": ["redundant"]
       },
       "DependencyNode": {
         "description": "A node on a dependency witness path (task or habit step) (#355).",
@@ -9861,10 +9497,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "id",
-          "title"
-        ]
+        "required": ["id", "title"]
       },
       "GenerateSchedule": {
         "description": "Request body for `POST /api/schedule/generate`.",
@@ -9879,10 +9512,7 @@
             "default": "recommended"
           },
           "task_ids": {
-            "type": [
-              "array",
-              "null"
-            ],
+            "type": ["array", "null"],
             "items": {
               "type": "string"
             }
@@ -9902,11 +9532,7 @@
             "$ref": "#/components/schemas/Timestamp"
           }
         },
-        "required": [
-          "task_id",
-          "google_event_id",
-          "updated_at"
-        ]
+        "required": ["task_id", "google_event_id", "updated_at"]
       },
       "GoogleCalSettingsOutput": {
         "type": "object",
@@ -9958,10 +9584,7 @@
             "$ref": "#/components/schemas/Timestamp"
           },
           "description": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "display_id": {
             "type": "integer",
@@ -10124,12 +9747,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "task_id",
-          "title",
-          "actual_minutes",
-          "excluded"
-        ]
+        "required": ["task_id", "title", "actual_minutes", "excluded"]
       },
       "HabitEstimateStep": {
         "description": "Estimate result for a single habit step.",
@@ -10188,57 +9806,36 @@
             ]
           },
           "allows_parallel": {
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "type": ["boolean", "null"]
           },
           "avg_minutes": {
             "type": "integer",
             "format": "int64"
           },
           "description": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "end_time": {
             "$ref": "#/components/schemas/TimeOfDay"
           },
           "fixed": {
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "type": ["boolean", "null"]
           },
           "from": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "max_occurrences": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int64"
           },
           "parallelizable": {
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "type": ["boolean", "null"]
           },
           "recurrence": {
             "type": "string"
           },
           "sigma_minutes": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int64"
           },
           "start_time": {
@@ -10255,10 +9852,7 @@
             "type": "string"
           },
           "until": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "window_mode": {
             "description": "Window mode: `'day'` or `'period'` (#window_mode).",
@@ -10294,11 +9888,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "title",
-          "start_at",
-          "end_at"
-        ]
+        "required": ["title", "start_at", "end_at"]
       },
       "HabitRow": {
         "type": "object",
@@ -10322,10 +9912,7 @@
             "$ref": "#/components/schemas/Timestamp"
           },
           "description": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "display_id": {
             "type": "integer",
@@ -10402,22 +9989,13 @@
             "type": "string"
           },
           "reason": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "start_date": {
             "$ref": "#/components/schemas/Date"
           }
         },
-        "required": [
-          "id",
-          "habit_id",
-          "start_date",
-          "end_date",
-          "created_at"
-        ]
+        "required": ["id", "habit_id", "start_date", "end_date", "created_at"]
       },
       "HabitStepInput": {
         "description": "Input element for `PUT /api/habits/:id/steps` (bulk replace, #95).\nAn `id` present in the DB keeps the existing step (preserving its link to\ngenerated tasks); an `id` absent or unknown creates a new step. Existing\nsteps not in the array are deleted. `depends_on` references step ids that\nmust exist in the resulting set.",
@@ -10434,10 +10012,7 @@
             ]
           },
           "allows_parallel": {
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "type": ["boolean", "null"]
           },
           "avg_minutes": {
             "type": "integer",
@@ -10451,41 +10026,26 @@
             }
           },
           "description": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "end_time": {
             "$ref": "#/components/schemas/TimeOfDay"
           },
           "fixed": {
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "type": ["boolean", "null"]
           },
           "id": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "parallelizable": {
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "type": ["boolean", "null"]
           },
           "position": {
             "type": "integer",
             "format": "int64"
           },
           "sigma_minutes": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int64"
           },
           "start_time": {
@@ -10531,10 +10091,7 @@
             "default": "[]"
           },
           "description": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "end_time": {
             "$ref": "#/components/schemas/TimeOfDay"
@@ -10588,9 +10145,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "status"
-        ]
+        "required": ["status"]
       },
       "IcalImportResult": {
         "type": "object",
@@ -10607,10 +10162,7 @@
             }
           }
         },
-        "required": [
-          "imported",
-          "task_ids"
-        ]
+        "required": ["imported", "task_ids"]
       },
       "JsonString": {
         "description": "A wrapper that serializes `T` as a JSON string on the wire and in the DB.\n\nCommon instantiations:\n- `JsonString<Vec<String>>` — task / step dependency lists\n- `JsonString<Vec<ScheduleEntry>>` — schedule entry arrays",
@@ -10622,11 +10174,7 @@
       },
       "MemoryKind": {
         "type": "string",
-        "enum": [
-          "proper_noun",
-          "fact",
-          "task_note"
-        ]
+        "enum": ["proper_noun", "fact", "task_note"]
       },
       "MemoryQuery": {
         "type": "object",
@@ -10642,20 +10190,14 @@
             ]
           },
           "limit": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int64"
           },
           "q": {
             "type": "string"
           },
           "subject_id": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "subject_type": {
             "anyOf": [
@@ -10668,9 +10210,7 @@
             ]
           }
         },
-        "required": [
-          "q"
-        ]
+        "required": ["q"]
       },
       "MemoryRow": {
         "type": "object",
@@ -10749,11 +10289,7 @@
       "MemorySource": {
         "description": "Provenance of a memory row (see `doc/code-quality-issues.md` §34).\n\nMatches the `memories.source` CHECK constraint in\n`migrations/016_memory.sql`: `user_confirmed`, `agent_inferred`,\n`imported`. Currently only `UserConfirmed` is written by the storage\nlayer, but the schema accepts all three so the enum keeps them as\nvariants to round-trip existing rows safely.",
         "type": "string",
-        "enum": [
-          "user_confirmed",
-          "agent_inferred",
-          "imported"
-        ]
+        "enum": ["user_confirmed", "agent_inferred", "imported"]
       },
       "MoveEntry": {
         "description": "Request body for `PATCH /api/schedule/entries/:task_id`.",
@@ -10767,9 +10303,7 @@
             "$ref": "#/components/schemas/Timestamp"
           }
         },
-        "required": [
-          "start_at"
-        ]
+        "required": ["start_at"]
       },
       "MoveEntryResponse": {
         "description": "Response body for `PATCH /api/schedule/entries/:task_id`.",
@@ -10792,11 +10326,7 @@
             }
           }
         },
-        "required": [
-          "task_id",
-          "start_at",
-          "end_at"
-        ]
+        "required": ["task_id", "start_at", "end_at"]
       },
       "OAuthCallbackRequest": {
         "type": "object",
@@ -10805,15 +10335,10 @@
             "type": "string"
           },
           "redirect_uri": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           }
         },
-        "required": [
-          "code"
-        ]
+        "required": ["code"]
       },
       "OAuthCallbackResponse": {
         "description": "Response for `POST /api/sync/oauth/callback`.",
@@ -10823,9 +10348,7 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "refresh_token_set"
-        ]
+        "required": ["refresh_token_set"]
       },
       "OAuthUrlRequest": {
         "type": "object",
@@ -10834,9 +10357,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "redirect_uri"
-        ]
+        "required": ["redirect_uri"]
       },
       "OAuthUrlResponse": {
         "description": "Response for `POST /api/sync/oauth/url`.",
@@ -10846,9 +10367,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "url"
-        ]
+        "required": ["url"]
       },
       "ProgressEventRow": {
         "type": "object",
@@ -10861,20 +10380,14 @@
             "$ref": "#/components/schemas/Timestamp"
           },
           "delta_quantity": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int64"
           },
           "id": {
             "type": "string"
           },
           "note": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "quantity_done": {
             "anyOf": [
@@ -10887,64 +10400,40 @@
             ]
           },
           "task_id": {
+            "type": ["string", "null"]
+          },
+          "work_session_id": {
             "type": "string"
           }
         },
-        "required": [
-          "id",
-          "task_id",
-          "at",
-          "active_minutes"
-        ]
-      },
-      "ProgressResult": {
-        "type": "object",
-        "properties": {
-          "event": {
-            "description": "The recorded event, or `None` when the reported quantity_done has not\nchanged (no-op).",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ProgressEventRow"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "suggests_completion": {
-            "description": "True when the reported quantity_done reaches or exceeds the task total.",
-            "type": "boolean",
-            "default": false
-          },
-          "task": {
-            "$ref": "#/components/schemas/TaskRow"
-          }
-        },
-        "required": [
-          "task"
-        ]
+        "required": ["id", "work_session_id", "at", "active_minutes"]
       },
       "Quantity": {
         "description": "A non-negative integer quantity.\n\nNegative values are rejected at construction time. The inner `i64` can be\nretrieved via [`Quantity::get`].",
         "type": "integer",
         "format": "int64"
       },
-      "RecordProgress": {
+      "RecordWorkSessionProgress": {
         "type": "object",
         "properties": {
           "note": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "quantity_done": {
             "$ref": "#/components/schemas/Quantity"
+          },
+          "quantity_total": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Quantity"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
-        "required": [
-          "quantity_done"
-        ]
+        "required": ["quantity_done"]
       },
       "RedundantDependency": {
         "description": "A redundant (composite / transitively implied) dependency edge with a\nwitness path proving the direct edge is unnecessary (#355).",
@@ -10970,23 +10459,14 @@
             }
           }
         },
-        "required": [
-          "from",
-          "from_title",
-          "to",
-          "to_title",
-          "via"
-        ]
+        "required": ["from", "from_title", "to", "to_title", "via"]
       },
       "Reschedule": {
         "description": "Request body for `POST /api/schedule/reschedule`.",
         "type": "object",
         "properties": {
           "from": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "mode": {
             "$ref": "#/components/schemas/ScheduleMode"
@@ -11007,24 +10487,16 @@
             "default": "recommended"
           },
           "task_ids": {
-            "type": [
-              "array",
-              "null"
-            ],
+            "type": ["array", "null"],
             "items": {
               "type": "string"
             }
           },
           "until": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           }
         },
-        "required": [
-          "mode"
-        ]
+        "required": ["mode"]
       },
       "SaveScheduleRequest": {
         "type": "object",
@@ -11043,9 +10515,7 @@
             }
           }
         },
-        "required": [
-          "entries"
-        ]
+        "required": ["entries"]
       },
       "ScheduleEntry": {
         "type": "object",
@@ -11060,30 +10530,19 @@
             "type": "string"
           }
         },
-        "required": [
-          "task_id",
-          "start_at",
-          "end_at"
-        ]
+        "required": ["task_id", "start_at", "end_at"]
       },
       "ScheduleMode": {
         "description": "Reschedule / preview mode for schedule operations.\n\n`Range` replans tasks within a time window; `Tasks` replans a specific\nset of task IDs; `Full` regenerates the entire schedule (only valid for\npreview — `reschedule` rejects it). Used by `Reschedule`,\n`SchedulePreviewRequest`, and the CLI's `ScheduleCommands::Reschedule`.",
         "type": "string",
-        "enum": [
-          "range",
-          "tasks",
-          "full"
-        ]
+        "enum": ["range", "tasks", "full"]
       },
       "SchedulePreviewRequest": {
         "description": "Request body for `POST /api/schedule/preview`.",
         "type": "object",
         "properties": {
           "from": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "mode": {
             "allOf": [
@@ -11109,19 +10568,13 @@
             "default": "recommended"
           },
           "task_ids": {
-            "type": [
-              "array",
-              "null"
-            ],
+            "type": ["array", "null"],
             "items": {
               "type": "string"
             }
           },
           "until": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           }
         }
       },
@@ -11167,9 +10620,7 @@
             }
           }
         },
-        "required": [
-          "entries"
-        ]
+        "required": ["entries"]
       },
       "ScheduleRow": {
         "type": "object",
@@ -11192,21 +10643,14 @@
             "$ref": "#/components/schemas/Timestamp"
           }
         },
-        "required": [
-          "id",
-          "created_at",
-          "updated_at"
-        ]
+        "required": ["id", "created_at", "updated_at"]
       },
       "SettingsRow": {
         "type": "object",
         "properties": {
           "comfortable_minutes": {
             "title": "459: 1 日の快適な作業時間（分）。`None` または `0` の場合はデフォルトを使う。",
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int64"
           },
           "created_at": {
@@ -11217,18 +10661,12 @@
           },
           "maximum_minutes": {
             "title": "459: 1 日の最大作業時間（分）。`None` または `0` の場合はデフォルトを使う。",
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int64"
           },
           "seed": {
             "description": "乱数シード。`None` の場合は決定的なデフォルト。",
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int64",
             "default": null
           },
@@ -11249,10 +10687,7 @@
           },
           "time_budget_ms": {
             "description": "求解時間の上限（ミリ秒）。`None` または `0` の場合は制限なし。",
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int64",
             "default": null
           },
@@ -11281,28 +10716,20 @@
         "type": "object",
         "properties": {
           "limit": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int64"
           },
           "q": {
             "type": "string"
           }
         },
-        "required": [
-          "q"
-        ]
+        "required": ["q"]
       },
       "SimilarTaskRow": {
         "type": "object",
         "properties": {
           "actual_minutes": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int64"
           },
           "avg_minutes": {
@@ -11373,17 +10800,12 @@
             "format": "double"
           }
         },
-        "required": [
-          "metric",
-          "score"
-        ]
+        "required": ["metric", "score"]
       },
       "SimilarityMetric": {
         "description": "Similarity metric used by `Similarity` (see `doc/code-quality-issues.md` #33).\n\nKept in `takusu-types` so `takusu-contracts`, `takusu-client`, and\n`takusu-worker` can all use it without changing the crate dependency\ngraph.",
         "type": "string",
-        "enum": [
-          "dice"
-        ]
+        "enum": ["dice"]
       },
       "SkillRow": {
         "type": "object",
@@ -11427,11 +10849,7 @@
       "Solver": {
         "description": "Phase 5 solver label (see `doc/type-safety-issues.md` §3.3).\n\nKept in `takusu-types` because `takusu-core` does not depend on `serde`,\nand `takusu-contracts` / `takusu-client` / `takusu-worker` all depend on `takusu-types`.",
         "type": "string",
-        "enum": [
-          "sa",
-          "priority",
-          "auto"
-        ]
+        "enum": ["sa", "priority", "auto"]
       },
       "SplitResult": {
         "type": "object",
@@ -11443,20 +10861,14 @@
             "$ref": "#/components/schemas/TaskRow"
           }
         },
-        "required": [
-          "original",
-          "remainder"
-        ]
+        "required": ["original", "remainder"]
       },
       "SplitTask": {
         "type": "object",
         "properties": {
           "description": {
             "description": "Optional description for the remainder.",
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "end_at": {
             "description": "Optional deadline for the remainder (defaults to the original end_at).",
@@ -11479,32 +10891,45 @@
           },
           "set_dependency": {
             "description": "If true, make the remainder depend on the original task.",
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "type": ["boolean", "null"]
           },
           "title": {
             "description": "Optional title for the remainder (defaults to the original title).",
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           }
         },
-        "required": [
-          "retained_quantity"
-        ]
+        "required": ["retained_quantity"]
+      },
+      "StartWorkSession": {
+        "type": "object",
+        "properties": {
+          "note": {
+            "type": ["string", "null"]
+          },
+          "quantity_total": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Quantity"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "quantity_unit": {
+            "type": ["string", "null"]
+          },
+          "task_id": {
+            "type": ["string", "null"]
+          },
+          "title": {
+            "type": ["string", "null"]
+          }
+        }
       },
       "SubjectType": {
         "type": "string",
-        "enum": [
-          "",
-          "task",
-          "habit",
-          "skill",
-          "schedule"
-        ]
+        "enum": ["", "task", "habit", "skill", "schedule"]
       },
       "SyncTriggerResponse": {
         "description": "Response for `POST /api/sync/trigger`.",
@@ -11514,101 +10939,35 @@
             "type": "string"
           }
         },
-        "required": [
-          "status"
-        ]
-      },
-      "TaskProgress": {
-        "type": "object",
-        "properties": {
-          "events": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ProgressEventRow"
-            }
-          },
-          "open_session": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/TaskWorkSessionRow"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "sessions": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/TaskWorkSessionRow"
-            }
-          },
-          "task": {
-            "$ref": "#/components/schemas/TaskRow"
-          },
-          "total_active_minutes": {
-            "type": "integer",
-            "format": "int64"
-          }
-        },
-        "required": [
-          "task",
-          "sessions",
-          "events",
-          "total_active_minutes"
-        ]
+        "required": ["status"]
       },
       "TaskQueryParams": {
         "type": "object",
         "properties": {
           "from": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "habit_id": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "ical_uid": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "limit": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int64"
           },
           "no_overdue": {
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "type": ["boolean", "null"]
           },
           "q": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "status": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "until": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           }
         }
       },
@@ -11619,11 +10978,8 @@
             "$ref": "#/components/schemas/Abandonability"
           },
           "actual_minutes": {
-            "description": "Total active work minutes from task_work_sessions (NULL when no work has been done).",
-            "type": [
-              "integer",
-              "null"
-            ],
+            "description": "Total active work minutes from work_sessions (NULL when no work has been done).",
+            "type": ["integer", "null"],
             "format": "int64"
           },
           "allows_parallel": {
@@ -11657,10 +11013,7 @@
             "default": "[]"
           },
           "description": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "display_id": {
             "type": "integer",
@@ -11675,23 +11028,14 @@
             "default": false
           },
           "habit_id": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "habit_step_id": {
             "description": "The habit step that generated this task, if any (#95). NULL for simple\n(step-less) habits and manually created tasks.",
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "ical_uid": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "id": {
             "type": "string"
@@ -11733,10 +11077,7 @@
           },
           "quantity_unit": {
             "description": "WI-9: unit for the quantity (e.g. \"題\").",
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "sigma_minutes": {
             "type": "integer",
@@ -11744,10 +11085,7 @@
           },
           "split_from_task_id": {
             "description": "WI-9: for a remainder task, the id of the task it was split from.",
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "start_at": {
             "anyOf": [
@@ -11788,46 +11126,7 @@
       "TaskStatus": {
         "description": "Phase 1 type-safe labels (see `doc/type-safety-issues.md` §3.1 / 3.2 / 3.5 / 3.6).\n\nThese are intentionally kept in `takusu-types` so that `takusu-contracts`,\n`takusu-client`, and `takusu-worker` can all use them without changing the\ncrate dependency graph.",
         "type": "string",
-        "enum": [
-          "pending",
-          "scheduled",
-          "in_progress",
-          "completed",
-          "skipped"
-        ]
-      },
-      "TaskWorkSessionRow": {
-        "type": "object",
-        "properties": {
-          "created_at": {
-            "$ref": "#/components/schemas/Timestamp"
-          },
-          "ended_at": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Timestamp"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "id": {
-            "type": "string"
-          },
-          "started_at": {
-            "$ref": "#/components/schemas/Timestamp"
-          },
-          "task_id": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "task_id",
-          "started_at",
-          "created_at"
-        ]
+        "enum": ["pending", "scheduled", "in_progress", "completed", "skipped"]
       },
       "TimeOfDay": {
         "description": "A time of day in `HH:MM` format with minutes snapped to 5-minute slots.\n\nSerialized as a `\"HH:MM\"` string for JSON and stored as `TEXT` in SQLite.\nThis type was originally defined in `takusu-habit` and has been moved here\nso that `takusu-contracts` / `takusu-client` / `takusu-worker` can use it\nwithout depending on `takusu-habit`.",
@@ -11858,10 +11157,7 @@
             "format": "int64"
           },
           "label": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "scope": {
             "$ref": "#/components/schemas/TokenScope"
@@ -11870,12 +11166,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "id",
-          "token",
-          "scope",
-          "created_at"
-        ]
+        "required": ["id", "token", "scope", "created_at"]
       },
       "TokenRow": {
         "type": "object",
@@ -11904,10 +11195,7 @@
             "type": "string"
           },
           "label": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "revoked_at": {
             "anyOf": [
@@ -11923,53 +11211,29 @@
             "$ref": "#/components/schemas/TokenScope"
           }
         },
-        "required": [
-          "id",
-          "jti",
-          "scope",
-          "created_by",
-          "created_at"
-        ]
+        "required": ["id", "jti", "scope", "created_by", "created_at"]
       },
       "TokenScope": {
         "type": "string",
-        "enum": [
-          "read-write",
-          "root"
-        ]
+        "enum": ["read-write", "root"]
       },
       "UpdateGoogleCalSettings": {
         "type": "object",
         "properties": {
           "calendar_id": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "client_id": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "client_secret": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "enabled": {
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "type": ["boolean", "null"]
           },
           "refresh_token": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           }
         }
       },
@@ -11987,29 +11251,17 @@
             ]
           },
           "active": {
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "type": ["boolean", "null"]
           },
           "allows_parallel": {
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "type": ["boolean", "null"]
           },
           "avg_minutes": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int64"
           },
           "description": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "end_time": {
             "anyOf": [
@@ -12022,28 +11274,16 @@
             ]
           },
           "fixed": {
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "type": ["boolean", "null"]
           },
           "parallelizable": {
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "type": ["boolean", "null"]
           },
           "recurrence": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "sigma_minutes": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int64"
           },
           "start_time": {
@@ -12057,10 +11297,7 @@
             ]
           },
           "title": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "window_mode": {
             "description": "Window mode: `'day'` or `'period'` (#window_mode).",
@@ -12079,45 +11316,31 @@
         "type": "object",
         "properties": {
           "content": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "observed_revision": {
             "type": "integer",
             "format": "int64"
           }
         },
-        "required": [
-          "observed_revision"
-        ]
+        "required": ["observed_revision"]
       },
       "UpdateSettings": {
         "type": "object",
         "properties": {
           "comfortable_minutes": {
             "title": "459: 1 日の快適な作業時間（分）。`None` または `0` の場合はデフォルトを使う。",
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int64"
           },
           "maximum_minutes": {
             "title": "459: 1 日の最大作業時間（分）。`None` または `0` の場合はデフォルトを使う。",
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int64"
           },
           "seed": {
             "description": "乱数シード。`None` でデフォルト。",
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int64"
           },
           "sleep_end": {
@@ -12153,24 +11376,15 @@
           },
           "time_budget_ms": {
             "description": "求解時間の上限（ミリ秒）。`None` または `0` で制限なし。",
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int64"
           },
           "tz": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "warm_start": {
             "description": "前回スケジュールから priority/ALNS の初期解を warm start する。",
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "type": ["boolean", "null"]
           }
         }
       },
@@ -12178,22 +11392,13 @@
         "type": "object",
         "properties": {
           "body": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "description": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "name": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           }
         }
       },
@@ -12211,32 +11416,20 @@
             ]
           },
           "allows_parallel": {
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "type": ["boolean", "null"]
           },
           "avg_minutes": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int64"
           },
           "depends": {
-            "type": [
-              "array",
-              "null"
-            ],
+            "type": ["array", "null"],
             "items": {
               "type": "string"
             }
           },
           "description": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "end_at": {
             "anyOf": [
@@ -12249,22 +11442,13 @@
             ]
           },
           "fixed": {
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "type": ["boolean", "null"]
           },
           "habit_id": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "habit_step_id": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "original_quantity_total": {
             "description": "WI-9: pre-split total quantity, kept for lineage.",
@@ -12278,10 +11462,7 @@
             ]
           },
           "parallelizable": {
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "type": ["boolean", "null"]
           },
           "quantity_done": {
             "description": "WI-9: quantity already done.",
@@ -12307,16 +11488,10 @@
           },
           "quantity_unit": {
             "description": "WI-9: unit for the quantity.",
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "sigma_minutes": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int64"
           },
           "start_at": {
@@ -12340,16 +11515,10 @@
             ]
           },
           "title": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "user_edited": {
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "type": ["boolean", "null"]
           }
         }
       },
@@ -12363,17 +11532,105 @@
             "type": "string"
           }
         },
-        "required": [
-          "url",
-          "token"
-        ]
+        "required": ["url", "token"]
       },
       "WindowMode": {
         "type": "string",
-        "enum": [
-          "day",
-          "period"
-        ]
+        "enum": ["day", "period"]
+      },
+      "WorkSessionListQuery": {
+        "type": "object",
+        "properties": {
+          "task_id": {
+            "type": ["string", "null"]
+          }
+        }
+      },
+      "WorkSessionProgressResult": {
+        "type": "object",
+        "properties": {
+          "event": {
+            "description": "The recorded event, or `None` when the reported quantity_done has not\nchanged (no-op).",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProgressEventRow"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "suggests_completion": {
+            "description": "True when the reported quantity_done reaches or exceeds the task total.",
+            "type": "boolean",
+            "default": false
+          },
+          "task": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TaskRow"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "work_session": {
+            "$ref": "#/components/schemas/WorkSessionRow"
+          }
+        },
+        "required": ["work_session"]
+      },
+      "WorkSessionRow": {
+        "description": "A top-level work session. It may be linked to a task, or it may be a\nstandalone session that is later converted into a task.",
+        "type": "object",
+        "properties": {
+          "created_at": {
+            "$ref": "#/components/schemas/Timestamp"
+          },
+          "ended_at": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Timestamp"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "note": {
+            "type": ["string", "null"]
+          },
+          "quantity_done": {
+            "$ref": "#/components/schemas/Quantity"
+          },
+          "quantity_total": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Quantity"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "quantity_unit": {
+            "type": ["string", "null"]
+          },
+          "started_at": {
+            "$ref": "#/components/schemas/Timestamp"
+          },
+          "task_id": {
+            "type": ["string", "null"]
+          },
+          "title": {
+            "type": ["string", "null"]
+          }
+        },
+        "required": ["id", "quantity_done", "started_at", "created_at"]
       },
       "WorkersConfigUpdateResponse": {
         "description": "Response for `PUT /api/workers/config`.",
@@ -12383,9 +11640,7 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "ok"
-        ]
+        "required": ["ok"]
       }
     }
   }
