@@ -22,7 +22,8 @@ use thiserror::Error;
 /// `Display` exposes the underlying value so the key can still be used to
 /// build authorization headers. Use `as_str()` for the raw value and
 /// `is_empty()` to check for the empty (unset) state.
-#[derive(Clone, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct ApiKey(String);
 
 impl ApiKey {
@@ -82,25 +83,6 @@ impl FromStr for ApiKey {
     type Err = std::convert::Infallible;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(Self(s.to_string()))
-    }
-}
-
-impl Serialize for ApiKey {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_str(&self.0)
-    }
-}
-
-impl<'de> Deserialize<'de> for ApiKey {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let s = String::deserialize(deserializer)?;
-        Ok(Self(s))
     }
 }
 

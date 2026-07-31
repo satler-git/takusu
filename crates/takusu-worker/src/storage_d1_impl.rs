@@ -39,9 +39,8 @@ impl Storage for D1Storage {
         let row: Option<CountRow> = stmt
             .bind(&[JsValue::from_str(&claims.jti)])
             .map_err(d1_err)?
-            .first(None)
-            .await
-            .map_err(d1_err)?;
+            .first_t()
+            .await?;
         Ok(if row.map(|r| r.c > 0).unwrap_or(false) {
             Some(claims)
         } else {
@@ -490,7 +489,7 @@ impl Storage for D1Storage {
         let seq_stmt = self.db.prepare(
             "UPDATE habit_display_id_seq SET next_id = next_id + 1 RETURNING next_id - 1 AS display_id",
         );
-        let seq_row: Option<DisplayIdRow> = seq_stmt.first(None).await.map_err(d1_err)?;
+        let seq_row: Option<DisplayIdRow> = seq_stmt.first_t().await?;
         let display_id = seq_row
             .ok_or_else(|| StorageError::Internal("habit display_id sequence is empty".into()))?
             .display_id;
@@ -683,9 +682,8 @@ impl Storage for D1Storage {
         let row: Option<HabitScheduledSpanRow> = sel_stmt
             .bind(&[JsValue::from_str(&span_id)])
             .map_err(d1_err)?
-            .first(None)
-            .await
-            .map_err(d1_err)?;
+            .first_t()
+            .await?;
         row.ok_or_else(|| StorageError::Internal("inserted scheduled span not found".into()))
     }
 
@@ -959,9 +957,8 @@ impl Storage for D1Storage {
         let row: Option<TokenRow> = lookup
             .bind(&[JsValue::from_str(&jti)])
             .map_err(d1_err)?
-            .first(None)
-            .await
-            .map_err(d1_err)?;
+            .first_t()
+            .await?;
         let row = row.ok_or_else(|| StorageError::Internal("inserted token not found".into()))?;
         Ok(TokenCreateResponse {
             id: row.id,
@@ -1468,9 +1465,8 @@ impl Storage for D1Storage {
         let status: Option<StatusRow> = status_stmt
             .bind(&[JsValue::from_str(&full)])
             .map_err(d1_err)?
-            .first(None)
-            .await
-            .map_err(d1_err)?;
+            .first_t()
+            .await?;
         if status
             .as_ref()
             .is_some_and(|s| s.status == "completed" || s.status == "skipped")
@@ -1524,9 +1520,8 @@ impl Storage for D1Storage {
         let status: Option<StatusRow> = status_stmt
             .bind(&[JsValue::from_str(&full)])
             .map_err(d1_err)?
-            .first(None)
-            .await
-            .map_err(d1_err)?;
+            .first_t()
+            .await?;
         if status
             .as_ref()
             .is_some_and(|s| s.status == "completed" || s.status == "skipped")
@@ -1597,9 +1592,8 @@ impl Storage for D1Storage {
         let open: Option<takusu_contracts::TaskWorkSessionRow> = open_stmt
             .bind(&[JsValue::from_str(&full)])
             .map_err(d1_err)?
-            .first(None)
-            .await
-            .map_err(d1_err)?;
+            .first_t()
+            .await?;
         if open.is_none() && body.quantity_done > task.quantity_done {
             return Err(StorageError::BadRequest(
                 "no open work session; start work first".into(),
@@ -1620,7 +1614,7 @@ impl Storage for D1Storage {
         let now_stmt = self
             .db
             .prepare("SELECT strftime('%Y-%m-%dT%H:%M:%SZ', 'now') AS now");
-        let now_row: Option<NowRow> = now_stmt.first(None).await.map_err(d1_err)?;
+        let now_row: Option<NowRow> = now_stmt.first_t().await?;
         let now = now_row
             .map(|r| r.now)
             .ok_or_else(|| StorageError::Internal("failed to get current time".into()))?;
@@ -1630,9 +1624,8 @@ impl Storage for D1Storage {
         let last_event: Option<takusu_contracts::ProgressEventRow> = last_event_stmt
             .bind(&[JsValue::from_str(&full)])
             .map_err(d1_err)?
-            .first(None)
-            .await
-            .map_err(d1_err)?;
+            .first_t()
+            .await?;
         let active_minutes = if let Some(ref session) = open {
             let base = if let Some(ref ev) = last_event {
                 std::cmp::max(session.started_at, ev.at)
@@ -1709,9 +1702,8 @@ impl Storage for D1Storage {
         let event: takusu_contracts::ProgressEventRow = event_stmt
             .bind(&[JsValue::from_str(&event_id)])
             .map_err(d1_err)?
-            .first(None)
-            .await
-            .map_err(d1_err)?
+            .first_t()
+            .await?
             .ok_or_else(|| StorageError::Internal("inserted progress event not found".into()))?;
         let task = select_one_task(&self.db, &full).await?;
         let result = ProgressResult {
@@ -2114,7 +2106,7 @@ impl Storage for D1Storage {
 
     async fn health_check(&self) -> StorageResult<String> {
         let stmt = self.db.prepare("SELECT COUNT(*) AS c FROM tasks");
-        let row: Option<CountRow> = stmt.first(None).await.map_err(d1_err)?;
+        let row: Option<CountRow> = stmt.first_t().await?;
         let count = row.map(|r| r.c).unwrap_or(0);
         Ok(format!("d1 ok ({count} tasks)"))
     }

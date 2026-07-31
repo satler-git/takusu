@@ -1029,13 +1029,13 @@ pub struct DependencyAnalysisResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncSettingsResponse {
-    #[serde(with = "takusu_types::bool_compat", default)]
+    #[serde(default)]
     pub enabled: bool,
     pub calendar_id: String,
     pub client_id: String,
-    #[serde(with = "takusu_types::bool_compat", default)]
+    #[serde(default)]
     pub has_client_secret: bool,
-    #[serde(with = "takusu_types::bool_compat", default)]
+    #[serde(default)]
     pub has_refresh_token: bool,
 }
 
@@ -1058,7 +1058,7 @@ pub struct OAuthUrlResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OAuthCallbackResponse {
-    #[serde(with = "takusu_types::bool_compat", default)]
+    #[serde(default)]
     pub refresh_token_set: bool,
 }
 
@@ -1102,6 +1102,6 @@ pub struct SettingsResponse {
     #[serde(default)]
     pub seed: Option<i64>,
     /// 前回スケジュールから priority/ALNS の初期解を warm start する。
-    #[serde(with = "takusu_types::bool_compat", default)]
+    #[serde(default)]
     pub warm_start: bool,
 }
