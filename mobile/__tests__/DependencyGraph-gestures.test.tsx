@@ -290,6 +290,15 @@ describe('DependencyGraph gestures', () => {
     const panGesture = getByGestureTestId('graph-pan') as any;
 
     await act(() => {
+      // Simulate the BEGAN state: record the node under the initial touch.
+      panGesture.handlers.onBegin({
+        x: startX,
+        y: startY,
+        numberOfPointers: 1,
+      });
+    });
+
+    await act(() => {
       panGesture.handlers.onStart({
         x: startX,
         y: startY,
@@ -402,5 +411,142 @@ describe('DependencyGraph gestures', () => {
     });
 
     expect(onAddEdge).not.toHaveBeenCalled();
+  });
+
+  it('pan and tap use the same tap/pan threshold', async () => {
+    const node = {
+      id: 'n1',
+      label: 'task',
+      color: '#ff0000',
+      x: 100,
+      y: 100,
+      vx: 0,
+      vy: 0,
+    };
+    const { container, root } = await render(
+      <DependencyGraph nodes={[node]} edges={[]} />,
+    );
+
+    await act(async () => {
+      await fireEvent(root!, 'layout', {
+        nativeEvent: { layout: { width: 400, height: 400 } },
+      });
+    });
+    await waitFor(() => expect(getCircles(container).length).toBe(1));
+
+    const panGesture = getByGestureTestId('graph-pan') as any;
+    const tapGesture = getByGestureTestId('graph-tap') as any;
+    expect(panGesture.config.minDist).toBe(10);
+    expect(tapGesture.config.maxDist).toBe(10);
+    expect(panGesture.config.maxPointers).toBe(1);
+    expect(tapGesture.config.minPointers).toBe(1);
+    // The two gestures are exclusive: tap waits for pan to fail before it can fire.
+    const panTag = panGesture.handlerTag;
+    expect(tapGesture.config.requireToFail).toContain(panTag);
+  });
+
+  it('tapping a node calls onTapNode', async () => {
+    const node = {
+      id: 'n1',
+      label: 'task',
+      color: '#ff0000',
+      x: 100,
+      y: 100,
+      vx: 0,
+      vy: 0,
+    };
+    const onTapNode = jest.fn();
+    const { container, root } = await render(
+      <DependencyGraph nodes={[node]} edges={[]} onTapNode={onTapNode} />,
+    );
+
+    await act(async () => {
+      await fireEvent(root!, 'layout', {
+        nativeEvent: { layout: { width: 400, height: 400 } },
+      });
+    });
+    await waitFor(() => expect(getCircles(container).length).toBe(1));
+
+    const circle = getCircles(container)[0];
+    const startX = circle.props.cx as number;
+    const startY = circle.props.cy as number;
+
+    const tapGesture = getByGestureTestId('graph-tap') as any;
+    await act(async () => {
+      fireGestureHandler(tapGesture, [
+        { x: startX, y: startY, numberOfPointers: 1 },
+      ]);
+    });
+
+    expect(onTapNode).toHaveBeenCalledWith('n1');
+  });
+
+  it('panning a node does not call onTapNode', async () => {
+    const node = {
+      id: 'n1',
+      label: 'task',
+      color: '#ff0000',
+      x: 100,
+      y: 100,
+      vx: 0,
+      vy: 0,
+    };
+    const onTapNode = jest.fn();
+    const { container, root } = await render(
+      <DependencyGraph nodes={[node]} edges={[]} onTapNode={onTapNode} />,
+    );
+
+    await act(async () => {
+      await fireEvent(root!, 'layout', {
+        nativeEvent: { layout: { width: 400, height: 400 } },
+      });
+    });
+    await waitFor(() => expect(getCircles(container).length).toBe(1));
+
+    const circle = getCircles(container)[0];
+    const startX = circle.props.cx as number;
+    const startY = circle.props.cy as number;
+
+    const panGesture = getByGestureTestId('graph-pan') as any;
+    await act(async () => {
+      fireGestureHandler(panGesture, [
+        { x: startX, y: startY, numberOfPointers: 1 },
+        { x: startX, y: startY, numberOfPointers: 1 },
+        {
+          x: startX + 50,
+          y: startY + 50,
+          numberOfPointers: 1,
+          translationX: 50,
+          translationY: 50,
+        },
+      ]);
+    });
+
+    expect(onTapNode).not.toHaveBeenCalled();
+  });
+
+  it('long-press drag is disabled in non-edit mode', async () => {
+    const node = {
+      id: 'n1',
+      label: 'task',
+      color: '#ff0000',
+      x: 100,
+      y: 100,
+      vx: 0,
+      vy: 0,
+    };
+    const { container, root } = await render(
+      <DependencyGraph nodes={[node]} edges={[]} />,
+    );
+
+    await act(async () => {
+      await fireEvent(root!, 'layout', {
+        nativeEvent: { layout: { width: 400, height: 400 } },
+      });
+    });
+    await waitFor(() => expect(getCircles(container).length).toBe(1));
+
+    const longPressGesture = getByGestureTestId('graph-long-press-drag') as any;
+    expect(longPressGesture.config.enabled).toBe(false);
   });
 });

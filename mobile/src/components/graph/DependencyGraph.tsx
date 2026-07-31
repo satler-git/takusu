@@ -83,6 +83,9 @@ const MAX_LABEL_CHARS = 40;
 const LABEL_WIDTH = 140;
 const LABEL_PAD_X = 6;
 const LABEL_PAD_Y = 3;
+// Tap vs. pan threshold (#1407): movement under this distance is a tap,
+// movement over it is a node/canvas pan. Matches the platform touch slop.
+const TAP_PAN_DISTANCE = 10;
 // ── Helpers ──
 
 /** Check if two line segments intersect (#382: cut line vs edges) */
@@ -209,6 +212,10 @@ export function DependencyGraph({
 
   // Node drag state (#383): pan on node → drag node
   const draggingNodeId = useSharedValue<string | null>(null);
+  // Node hit on the initial touch, before the pan reaches its minDistance.
+  // #1407: onStart is called at activation (after the finger has moved),
+  // so the initial position is the only reliable one for deciding what to drag.
+  const panStartNodeId = useSharedValue<string | null>(null);
 
   // Crossing edges during cut line drag — React state for rendering
   const [crossingEdges, setCrossingEdges] = useState<Set<string>>(new Set());
@@ -423,18 +430,18 @@ export function DependencyGraph({
   const panGesture = Gesture.Pan()
     .enabled(!height)
     .maxPointers(1)
+    .minDistance(TAP_PAN_DISTANCE)
     // testID allows the gesture to be retrieved in unit tests.
     .withTestId('graph-pan')
-    .onStart((e) => {
-      // maxPointers(1) is the primary safeguard, but we also ignore multi-pointer
-      // updates defensively: some platforms may deliver one more update before the
-      // gesture is cancelled when a second finger lands.
+    .onBegin((e) => {
+      // Store the node under the initial touch. onStart is called at
+      // activation, after the finger has moved, so it cannot reliably
+      // re-hit-test a node near its edge (#1407).
       if (e.numberOfPointers > 1) {
-        draggingNodeId.value = null;
+        panStartNodeId.value = null;
         return;
       }
       const world = toWorld(e.x, e.y);
-      // Check if touching a node (or its label) → start node drag (#383, #422)
       for (const node of simNodes) {
         if (
           hitTestNode(
@@ -447,11 +454,22 @@ export function DependencyGraph({
             labelOffset,
           )
         ) {
-          draggingNodeId.value = node.id;
+          panStartNodeId.value = node.id;
           return;
         }
       }
-      draggingNodeId.value = null;
+      panStartNodeId.value = null;
+    })
+    .onStart((e) => {
+      // maxPointers(1) is the primary safeguard, but we also ignore multi-pointer
+      // updates defensively: some platforms may deliver one more update before the
+      // gesture is cancelled when a second finger lands.
+      if (e.numberOfPointers > 1) {
+        draggingNodeId.value = null;
+        panStartNodeId.value = null;
+        return;
+      }
+      draggingNodeId.value = panStartNodeId.value;
     })
     .onChange((e) => {
       // Defensive: ignore updates with more than one pointer so pinch/zoom never
@@ -470,15 +488,17 @@ export function DependencyGraph({
       }
     })
     .onEnd((_e, success) => {
-      if (success && draggingNodeId.value) {
+      if (success) {
         draggingNodeId.value = null;
       }
+      panStartNodeId.value = null;
     })
     .onFinalize((_e, success) => {
       // Reset drag state when the gesture fails or is cancelled (e.g. second finger lands).
-      if (!success && draggingNodeId.value) {
+      if (!success) {
         draggingNodeId.value = null;
       }
+      panStartNodeId.value = null;
     });
 
   // ── Gesture: Pinch ──
@@ -506,33 +526,41 @@ export function DependencyGraph({
 
   // ── Gesture: Tap (node tap only — edge cutting moved to line-cut #382) ──
 
-  const tapGesture = Gesture.Tap().onEnd((e) => {
-    const world = toWorld(e.x, e.y);
+  const tapGesture = Gesture.Tap()
+    .maxDistance(TAP_PAN_DISTANCE)
+    .minPointers(1)
+    // testID allows the gesture to be retrieved in unit tests.
+    .withTestId('graph-tap')
+    .onEnd((e) => {
+      // Tap has no maxPointers config; ignore multi-finger ends defensively.
+      if (e.numberOfPointers > 1) return;
+      const world = toWorld(e.x, e.y);
 
-    // Check node hits (including the label area) (#422)
-    for (const node of simNodes) {
-      if (
-        hitTestNode(
-          node,
-          world.x,
-          world.y,
-          fontSize,
-          labelHeights,
-          hitRadius,
-          labelOffset,
-        )
-      ) {
-        if (onTapNode) runOnJS(onTapNode)(node.id);
-        return;
+      // Check node hits (including the label area) (#422)
+      for (const node of simNodes) {
+        if (
+          hitTestNode(
+            node,
+            world.x,
+            world.y,
+            fontSize,
+            labelHeights,
+            hitRadius,
+            labelOffset,
+          )
+        ) {
+          if (onTapNode) runOnJS(onTapNode)(node.id);
+          return;
+        }
       }
-    }
-  });
+    });
 
   // ── Gesture: Long-press → edge drag or cut line (edit mode) ──
   // Long-press on a node → drag to another node → add edge (existing)
   // Long-press on empty space → drag → draw cut line → cut crossing edges (#382)
 
   const longPressDrag = Gesture.Pan()
+    .enabled(editMode && !height)
     .activateAfterLongPress(150)
     .maxPointers(1)
     // testID allows the gesture to be retrieved in unit tests.
@@ -643,12 +671,11 @@ export function DependencyGraph({
       runOnJS(clearCrossingEdges)();
     });
 
+  // Pan and tap are exclusive: a small, quick release on a node is a tap
+  // (opens TaskDetail), a larger movement is a node/canvas pan (#1407).
   const composed = Gesture.Simultaneous(
     pinchGesture,
-    Gesture.Exclusive(
-      longPressDrag,
-      Gesture.Simultaneous(panGesture, tapGesture),
-    ),
+    Gesture.Exclusive(longPressDrag, Gesture.Exclusive(panGesture, tapGesture)),
   );
 
   // Animated style for the outer View is no longer needed for pan/zoom —
