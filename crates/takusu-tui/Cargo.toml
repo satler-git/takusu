@@ -6,8 +6,8 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-crossterm = "0.29"
-ratatui = "0.30"
+crossterm = { workspace = true }
+ratatui = { workspace = true }
 tokio = { workspace = true }
 jiff = { workspace = true }
 takusu-local-lib = { workspace = true, features = ["sqlite"] }

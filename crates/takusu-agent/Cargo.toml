@@ -43,7 +43,7 @@ takusu-audio = { path = "../takusu-audio", default-features = false }
 takusu-client = { workspace = true }
 takusu-habit = { workspace = true }
 takusu-types = { workspace = true }
-pulldown-cmark = "0.13.4"
+pulldown-cmark = { workspace = true }
 
 [dev-dependencies]
 axum = "0.8"

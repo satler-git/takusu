@@ -11,6 +11,7 @@ pub mod tool;
 pub mod tool_stats;
 pub mod tools;
 pub mod transport;
+pub use transport::ResumeSessionRequest as SessionSnapshot;
 pub mod tts_queue;
 pub mod user_input;
 
@@ -45,7 +46,7 @@ use uuid::Uuid;
 
 use jiff::Unit;
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct AgentConfig {
     pub llm: llm::LlmConfig,
@@ -80,7 +81,7 @@ impl AgentConfig {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct ServerConfig {
     #[serde(default = "default_server_url")]
@@ -269,6 +270,10 @@ impl AgentSession {
         Ok(())
     }
 
+    pub fn session_permissions(&self) -> Result<Permissions, AgentError> {
+        Ok(self.session_permissions.lock()?.clone())
+    }
+
     pub fn set_session_permissions(&self, permissions: Permissions) -> Result<(), AgentError> {
         *self.session_permissions.lock()? = permissions;
         Ok(())
@@ -335,6 +340,47 @@ impl AgentSession {
     /// Returns the session identifier used for routing and approval ids.
     pub fn session_id(&self) -> &str {
         &self.session_id
+    }
+
+    /// Capture the current session state so it can be saved and resumed later.
+    pub fn snapshot(&self) -> Result<crate::transport::ResumeSessionRequest, AgentError> {
+        let history: Vec<crate::llm::Message> = self.history.lock()?.clone();
+        Ok(crate::transport::ResumeSessionRequest {
+            session_id: Some(self.session_id.clone()),
+            permissions: Some(self.session_permissions.lock()?.clone()),
+            history: history.into_iter().map(Into::into).collect(),
+            pending_approval: self.pending_approval.lock()?.clone(),
+            schedule_dirty: Some(*self.schedule_dirty.lock()?),
+            compaction_summary: self.compaction_summary.lock()?.clone(),
+        })
+    }
+
+    /// Restore a session from a previously captured snapshot.
+    pub fn restore_from_snapshot(
+        &mut self,
+        snapshot: &crate::transport::ResumeSessionRequest,
+    ) -> Result<(), AgentError> {
+        if let Some(id) = snapshot.session_id.as_ref() {
+            self.set_session_id(id.clone());
+        }
+        if let Some(permissions) = snapshot.permissions.as_ref() {
+            self.set_session_permissions(permissions.clone())?;
+        }
+        if !snapshot.history.is_empty() {
+            let messages: Vec<crate::llm::Message> =
+                snapshot.history.iter().cloned().map(Into::into).collect();
+            self.set_history(messages)?;
+        }
+        if let Some(summary) = snapshot.compaction_summary.as_ref() {
+            self.set_compaction_summary(Some(summary.clone()))?;
+        }
+        if let Some(dirty) = snapshot.schedule_dirty {
+            self.set_schedule_dirty(dirty)?;
+        }
+        if let Some(approval) = snapshot.pending_approval.as_ref() {
+            self.set_pending_approval(approval.clone())?;
+        }
+        Ok(())
     }
 
     pub(crate) async fn apply_config(
@@ -593,6 +639,7 @@ impl AgentSession {
         let mut schedule_dirty = *self.schedule_dirty.lock()?;
         let mut tool_call_count = 0;
         let mut tts_queue = TtsQueue::new();
+        let mut full_text = String::new();
 
         loop {
             if tool_call_count >= self.config.read()?.llm.max_tool_calls {
@@ -659,12 +706,19 @@ impl AgentSession {
 
                         let final_text = text;
 
+                        if !final_text.is_empty() {
+                            if !full_text.is_empty() {
+                                full_text.push('\n');
+                            }
+                            full_text.push_str(&final_text);
+                        }
+
                         if current_calls.is_empty() {
                             if let Some(block) = tts_queue.flush() {
                                 tts_emit(block);
                             }
                             local.push(llm::Message::Assistant(llm::AssistantContent::Text(
-                                final_text.clone(),
+                                final_text,
                             )));
                             self.replace_history(local, prompt_tokens, system_estimate)?;
                             let all_allowed = !proposed_changes.is_empty()
@@ -683,7 +737,7 @@ impl AgentSession {
                                 let mut final_changes = changes;
                                 final_changes.extend(result.changes);
                                 return Ok(TurnResult {
-                                    text: final_text,
+                                    text: full_text,
                                     changes: final_changes,
                                     schedule_dirty: result.schedule_dirty,
                                     approval_request: None,
@@ -691,7 +745,7 @@ impl AgentSession {
                             }
                             *self.schedule_dirty.lock()? = schedule_dirty;
                             return Ok(TurnResult {
-                                text: final_text,
+                                text: full_text,
                                 changes,
                                 schedule_dirty,
                                 approval_request,
@@ -709,7 +763,7 @@ impl AgentSession {
                         // assistant messages causes some providers to drop the
                         // text-only one, so the model loses sight of prior
                         // tool calls and re-issues them.
-                        let text = (!final_text.is_empty()).then(|| final_text.clone());
+                        let text = (!final_text.is_empty()).then_some(final_text);
                         local.push(llm::Message::Assistant(llm::AssistantContent::ToolCalls {
                             text,
                             calls: current_calls.clone(),
@@ -1366,7 +1420,7 @@ mod tests {
             .run_turn_stream("call echo", |_| {}, |_| {})
             .await
             .unwrap();
-        assert_eq!(result.text, "done");
+        assert_eq!(result.text, "calling echo\ndone");
 
         let history = agent.history.lock().unwrap();
         // Find the assistant message that carries the tool call.
@@ -2705,7 +2759,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(result.text, "done");
+        assert_eq!(result.text, "say \ndone");
         // The "say" text should be emitted before the tool call, and the
         // final "done" should be a separate block.
         assert_eq!(tts_blocks, vec!["say".to_string(), "done".to_string()]);

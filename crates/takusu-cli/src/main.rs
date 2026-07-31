@@ -1091,6 +1091,14 @@ struct AgentArgs {
     #[arg(long, value_name = "PERM")]
     deny: Vec<String>,
 
+    /// Resume the previous agent session if one exists.
+    #[arg(long, conflicts_with = "new_session")]
+    continue_session: bool,
+
+    /// Start a new agent session and do not resume the previous one.
+    #[arg(long = "new", conflicts_with = "continue_session")]
+    new_session: bool,
+
     #[command(subcommand)]
     command: Option<AgentSubCommands>,
 }
@@ -1331,7 +1339,7 @@ fn main() {
             process::exit(1);
         });
 
-        if let Err(e) = run(mode, Arc::clone(&app), tz, cmd, &cfg).await {
+        if let Err(e) = run(mode, Arc::clone(&app), tz, cmd, &cfg, cli.plain).await {
             eprintln!("Error: {e}");
             process::exit(1);
         }
@@ -1344,6 +1352,7 @@ async fn run(
     tz: jiff::tz::TimeZone,
     cmd: Commands,
     cfg: &CliConfig,
+    plain: bool,
 ) -> Result<(), AppError> {
     match cmd {
         Commands::Task(verbs) => run_task_verbs(mode, app.as_ref(), &tz, verbs).await?,
@@ -1355,7 +1364,7 @@ async fn run(
         Commands::Sync { command } => run_sync(app.as_ref(), command).await?,
         Commands::Config { command } => run_config(command, app.as_ref(), cfg).await?,
         Commands::System { command } => run_system(app.as_ref(), command).await?,
-        Commands::Agent(args) => run_agent(app, args).await?,
+        Commands::Agent(args) => run_agent(app, args, plain).await?,
         #[cfg(feature = "mcp")]
         Commands::Mcp => mcp::run(app).await?,
         Commands::Tui => {
@@ -2782,10 +2791,8 @@ async fn run_system(app: &TakusuApp, cmd: SystemCommands) -> Result<(), AppError
     Ok(())
 }
 
-async fn run_agent(app: Arc<TakusuApp>, args: AgentArgs) -> Result<(), AppError> {
-    if let Some(text) = args.text {
-        agent::run(app, Some(text), args.yes, args.allow, args.deny).await?;
-    } else if let Some(command) = args.command {
+async fn run_agent(app: Arc<TakusuApp>, args: AgentArgs, plain: bool) -> Result<(), AppError> {
+    if let Some(command) = args.command {
         match command {
             AgentSubCommands::Config(cmd) => match cmd {
                 AgentConfigCommands::Show => agent::config_show()?,
@@ -2796,7 +2803,17 @@ async fn run_agent(app: Arc<TakusuApp>, args: AgentArgs) -> Result<(), AppError>
             AgentSubCommands::Stats(args) => agent::stats(args.clear)?,
         }
     } else {
-        agent::run(app, None, args.yes, args.allow, args.deny).await?;
+        agent::run(agent::AgentRunArgs {
+            app,
+            text: args.text,
+            yes: args.yes,
+            allow: args.allow,
+            deny: args.deny,
+            plain,
+            continue_session: args.continue_session,
+            new_session: args.new_session,
+        })
+        .await?;
     }
     Ok(())
 }
