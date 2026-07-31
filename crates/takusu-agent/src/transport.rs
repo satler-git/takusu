@@ -285,8 +285,12 @@ pub struct ResumeSessionResponse {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "role", rename_all = "snake_case")]
 pub enum HistoryMessage {
-    System { content: String },
-    User { content: String },
+    System {
+        content: String,
+    },
+    User {
+        content: String,
+    },
     Assistant {
         #[serde(default)]
         content: Option<String>,
@@ -442,6 +446,7 @@ impl From<TurnResult> for TurnResultDto {
 pub struct ApprovalDecisionRequest {
     pub approve: bool,
     pub idempotency_key: Option<String>,
+    pub proposals: Option<Vec<crate::tool::ProposalDecision>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -683,7 +688,12 @@ async fn resume_session(
     };
     drop(config);
 
-    if body.value.session_id.as_ref().is_some_and(|id| id.trim().is_empty()) {
+    if body
+        .value
+        .session_id
+        .as_ref()
+        .is_some_and(|id| id.trim().is_empty())
+    {
         return StatusCode::BAD_REQUEST.into_response();
     }
     let requested_id = body.value.session_id;
@@ -1090,7 +1100,7 @@ async fn resolve_approval(
         return StatusCode::NOT_FOUND.into_response();
     };
     let result = match session
-        .resolve_approval(&approval_id, body.value.approve)
+        .resolve_approval(&approval_id, body.value.approve, body.value.proposals)
         .await
     {
         Ok(result) => {
@@ -1170,10 +1180,7 @@ async fn delete_session(
     }
 }
 
-async fn get_tool_stats(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-) -> Response {
+async fn get_tool_stats(State(state): State<Arc<AgentApiState>>, headers: HeaderMap) -> Response {
     if let Err(status) = auth_token(&state, &headers).await {
         return status.into_response();
     }
@@ -1185,10 +1192,7 @@ async fn get_tool_stats(
     .into_response()
 }
 
-async fn clear_tool_stats(
-    State(state): State<Arc<AgentApiState>>,
-    headers: HeaderMap,
-) -> Response {
+async fn clear_tool_stats(State(state): State<Arc<AgentApiState>>, headers: HeaderMap) -> Response {
     if let Err(status) = auth_token(&state, &headers).await {
         return status.into_response();
     }
@@ -1366,7 +1370,12 @@ mod tests {
     impl RecordingLlm {
         fn new() -> (Self, Arc<Mutex<Vec<RecordedCall>>>) {
             let calls = Arc::new(Mutex::new(Vec::new()));
-            (Self { calls: calls.clone() }, calls)
+            (
+                Self {
+                    calls: calls.clone(),
+                },
+                calls,
+            )
         }
 
         fn with_calls(calls: Arc<Mutex<Vec<RecordedCall>>>) -> Self {
@@ -1381,7 +1390,10 @@ mod tests {
             messages: &[crate::llm::Message],
             tools: &[crate::OpenAITool],
         ) -> Result<crate::llm::LlmResponse, crate::llm::LlmError> {
-            self.calls.lock().unwrap().push((messages.to_vec(), tools.to_vec()));
+            self.calls
+                .lock()
+                .unwrap()
+                .push((messages.to_vec(), tools.to_vec()));
             Ok(crate::llm::LlmResponse {
                 content: crate::llm::LlmResponseContent::Text("ok".into()),
                 prompt_tokens: None,
@@ -1653,7 +1665,9 @@ mod tests {
                 session_id: Some("session-resume-1".into()),
                 permissions: None,
                 history: vec![
-                    HistoryMessage::User { content: "hello".into() },
+                    HistoryMessage::User {
+                        content: "hello".into(),
+                    },
                     HistoryMessage::Assistant {
                         content: Some("hi".into()),
                         tool_calls: vec![],
@@ -1664,9 +1678,12 @@ mod tests {
                 compaction_summary: None,
             },
         };
-        let res = resume_session(State(state.clone()), auth_headers("test-token"), Json(body)).await;
+        let res =
+            resume_session(State(state.clone()), auth_headers("test-token"), Json(body)).await;
         assert_eq!(res.status(), StatusCode::OK);
-        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         let id = value["session_id"].as_str().unwrap();
 
@@ -1689,18 +1706,22 @@ mod tests {
         let recorded = calls.lock().unwrap();
         assert_eq!(recorded.len(), 1);
         let (messages, _tools) = &recorded[0];
-        assert!(messages.iter().any(|m| {
-            matches!(m, crate::llm::Message::User(t) if t == "hello")
-        }));
+        assert!(
+            messages
+                .iter()
+                .any(|m| { matches!(m, crate::llm::Message::User(t) if t == "hello") })
+        );
         assert!(messages.iter().any(|m| {
             matches!(
                 m,
                 crate::llm::Message::Assistant(crate::llm::AssistantContent::Text(t)) if t == "hi"
             )
         }));
-        assert!(messages.iter().any(|m| {
-            matches!(m, crate::llm::Message::User(t) if t == "world")
-        }));
+        assert!(
+            messages
+                .iter()
+                .any(|m| { matches!(m, crate::llm::Message::User(t) if t == "world") })
+        );
     }
 
     #[tokio::test]
@@ -1717,9 +1738,12 @@ mod tests {
             version: API_VERSION,
             value: ResumeSessionRequest::default(),
         };
-        let res = resume_session(State(state.clone()), auth_headers("test-token"), Json(body)).await;
+        let res =
+            resume_session(State(state.clone()), auth_headers("test-token"), Json(body)).await;
         assert_eq!(res.status(), StatusCode::OK);
-        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         let id = value["session_id"].as_str().unwrap().to_string();
 
@@ -1730,7 +1754,12 @@ mod tests {
                 ..Default::default()
             },
         };
-        let res = resume_session(State(state), auth_headers("test-token"), Json(conflict_body)).await;
+        let res = resume_session(
+            State(state),
+            auth_headers("test-token"),
+            Json(conflict_body),
+        )
+        .await;
         assert_eq!(res.status(), StatusCode::CONFLICT);
     }
 
@@ -1772,7 +1801,8 @@ mod tests {
                 compaction_summary: None,
             },
         };
-        let res = resume_session(State(state.clone()), auth_headers("test-token"), Json(body)).await;
+        let res =
+            resume_session(State(state.clone()), auth_headers("test-token"), Json(body)).await;
         assert_eq!(res.status(), StatusCode::OK);
 
         let pending = get_approval(
@@ -1782,7 +1812,9 @@ mod tests {
         )
         .await;
         assert_eq!(pending.status(), StatusCode::OK);
-        let bytes = axum::body::to_bytes(pending.into_body(), usize::MAX).await.unwrap();
+        let bytes = axum::body::to_bytes(pending.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(value["id"].as_str(), Some("session-pa-approval-1"));
     }

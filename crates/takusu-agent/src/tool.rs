@@ -273,7 +273,7 @@ enum_label! {
 }
 
 /// A typed target identifier, preserving the JSON representation `"task #42"`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Target {
     pub kind: TargetKind,
     pub display_id: String,
@@ -359,7 +359,7 @@ impl ToolError {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ProposedChange {
     #[serde(with = "takusu_types::enum_serde")]
     pub operation: ChangeOperation,
@@ -374,6 +374,14 @@ pub struct ProposedChange {
     pub arguments: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub observed_updated_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proposal_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProposalDecision {
+    pub proposal_id: String,
+    pub approve: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
@@ -1328,6 +1336,7 @@ mod tests {
             after: Some(json!({"title": "new title"})),
             arguments: Some(json!({"task_ref": "42"})),
             observed_updated_at: Some("2025-01-01T00:00:00Z".to_string()),
+            ..Default::default()
         };
         let expected = r#"{"operation":"update","target_label":"task #42","description":"update task","after":{"title":"new title"},"arguments":{"task_ref":"42"},"observed_updated_at":"2025-01-01T00:00:00Z"}"#;
         assert_eq!(serde_json::to_string(&change).unwrap(), expected);
@@ -1344,6 +1353,7 @@ mod tests {
             after: None,
             arguments: None,
             observed_updated_at: None,
+            ..Default::default()
         };
         assert_eq!(
             serde_json::to_string(&schedule).unwrap(),

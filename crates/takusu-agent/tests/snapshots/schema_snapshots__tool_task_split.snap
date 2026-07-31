@@ -17,6 +17,10 @@ expression: def
           "description": "Optional deadline for the remainder task; interpreted in server timezone.",
           "type": "string"
         },
+        "proposal_id": {
+          "description": "Optional proposal id. Set the same value across multiple related tool calls to group them into a single proposal for review.",
+          "type": "string"
+        },
         "retained_quantity": {
           "description": "Quantity to keep on the original task.",
           "type": "integer"

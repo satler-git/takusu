@@ -44,6 +44,10 @@ expression: def
         "name": {
           "type": "string"
         },
+        "proposal_id": {
+          "description": "Optional proposal id. Set the same value across multiple related tool calls to group them into a single proposal for review.",
+          "type": "string"
+        },
         "slug": {
           "type": "string"
         },
