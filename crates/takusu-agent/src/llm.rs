@@ -41,7 +41,7 @@ pub enum LlmProviderKind {
     OpenAICompatible,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct LlmConfig {
     #[serde(default = "default_llm_base_url")]

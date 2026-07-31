@@ -4,10 +4,13 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use tokio::sync::mpsc;
+
+pub(crate) mod repl;
 use takusu_agent::tool::{ProposalDecision, ProposedChange};
 use takusu_agent::{
-    AgentConfig, AgentError, AgentSession, ApprovalRequest, Permissions, ToolError,
-    UserInputAnswer, UserInputProvider, UserInputQuestion,
+    AgentConfig, AgentError, AgentSession, ApprovalRequest, Permissions, SessionSnapshot, ToolError,
+    TurnEvent, UserInputAnswer, UserInputProvider, UserInputQuestion,
 };
 use takusu_client::Client;
 use takusu_local_lib::app::TakusuApp;
@@ -15,39 +18,167 @@ use takusu_local_lib::error::{AppError, BadRequestKind};
 
 use crate::server::start_in_process;
 
-pub async fn run(
-    app: Arc<TakusuApp>,
-    text: Option<String>,
-    yes: bool,
-    allow: Vec<String>,
-    deny: Vec<String>,
-) -> Result<(), AppError> {
-    let session_permissions = parse_session_permissions(&allow, &deny)?;
-    let local_server = start_in_process(app).await?;
+pub struct AgentRunArgs {
+    pub app: Arc<TakusuApp>,
+    pub text: Option<String>,
+    pub yes: bool,
+    pub allow: Vec<String>,
+    pub deny: Vec<String>,
+    pub plain: bool,
+    pub continue_session: bool,
+    pub new_session: bool,
+}
+
+pub async fn run(args: AgentRunArgs) -> Result<(), AppError> {
+    let session_permissions = parse_session_permissions(&args.allow, &args.deny)?;
+    let local_server = start_in_process(args.app).await?;
     let mut config = AgentConfig::load()
         .map_err(|e| AppError::Internal(format!("failed to load agent config: {e}")))?;
     config.server.url = local_server.url;
     config.server.token = local_server.token;
 
     let client = Client::new(&config.server.url, &config.server.token);
-    let session = takusu_agent::runner::build_session_with_provider(
+    let plain = args.plain || !atty::is(atty::Stream::Stdout);
+
+    if let Some(text) = args.text {
+        let mut session = takusu_agent::runner::build_session_with_provider(
+            &config,
+            client,
+            Arc::new(ConsoleUserInputProvider),
+        )
+        .map_err(|e| AppError::Internal(format!("failed to build agent session: {e}")))?;
+        apply_permissions_and_resume(
+            &mut session,
+            &session_permissions,
+            args.new_session || !args.continue_session,
+        )?;
+        let result = run_text(&session, &text, args.yes, args.plain).await;
+        save_session_snapshot(&session)?;
+        return result;
+    }
+
+    if plain {
+        let mut session = takusu_agent::runner::build_session_with_provider(
+            &config,
+            client,
+            Arc::new(ConsoleUserInputProvider),
+        )
+        .map_err(|e| AppError::Internal(format!("failed to build agent session: {e}")))?;
+        apply_permissions_and_resume(&mut session, &session_permissions, args.new_session)?;
+        let result = run_repl(&session, args.yes, true).await;
+        save_session_snapshot(&session)?;
+        return result;
+    }
+
+    let (question_tx, question_rx) = mpsc::unbounded_channel();
+    let mut session = takusu_agent::runner::build_session_with_provider(
         &config,
         client,
-        Arc::new(ConsoleUserInputProvider),
+        Arc::new(repl::ReplUserInputProvider::new(question_tx)),
     )
     .map_err(|e| AppError::Internal(format!("failed to build agent session: {e}")))?;
+    apply_permissions_and_resume(&mut session, &session_permissions, args.new_session)?;
+    let session = Arc::new(tokio::sync::Mutex::new(session));
+    let result = repl::run(Arc::clone(&session), question_rx, args.yes).await;
+    let guard = session.lock().await;
+    save_session_snapshot(&guard)?;
+    result
+}
 
+pub(crate) fn agent_state_dir() -> PathBuf {
+    std::env::var_os("XDG_STATE_HOME")
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("HOME").map(|h| {
+                let mut p = PathBuf::from(h);
+                p.push(".local");
+                p.push("state");
+                p
+            })
+        })
+        .unwrap_or_else(|| {
+            std::env::temp_dir()
+        })
+}
+
+pub(crate) fn agent_session_path() -> PathBuf {
+    let mut path = agent_state_dir();
+    path.push("takusu");
+    path.push("agent-session.json");
+    path
+}
+
+pub(crate) fn load_session_snapshot() -> Result<Option<SessionSnapshot>, AppError> {
+    let path = agent_session_path();
+    if !path.exists() {
+        return Ok(None);
+    }
+    let content = std::fs::read_to_string(&path)
+        .map_err(|e| AppError::Internal(format!("failed to read session snapshot: {e}")))?;
+    if content.trim().is_empty() {
+        return Ok(None);
+    }
+    let snapshot: SessionSnapshot = serde_json::from_str(&content)
+        .map_err(|e| AppError::Internal(format!("invalid session snapshot: {e}")))?;
+    Ok(Some(snapshot))
+}
+
+pub(crate) fn save_session_snapshot(session: &AgentSession) -> Result<(), AppError> {
+    let path = agent_session_path();
+    let snapshot = session
+        .snapshot()
+        .map_err(|e| AppError::Internal(format!("failed to snapshot agent session: {e}")))?;
+    let content = serde_json::to_string_pretty(&snapshot)
+        .map_err(|e| AppError::Internal(format!("failed to serialize session snapshot: {e}")))?;
+    write_private_file(&path, &content)
+        .map_err(|e| AppError::Internal(format!("failed to write session snapshot: {e}")))?;
+    Ok(())
+}
+
+pub(crate) fn write_private_file(path: &std::path::Path, content: &str) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    #[cfg(unix)]
+    {
+        use std::fs::OpenOptions;
+        use std::os::unix::fs::OpenOptionsExt;
+        let mut file = OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .mode(0o600)
+            .open(path)?;
+        std::io::Write::write_all(&mut file, content.as_bytes())?;
+    }
+    #[cfg(not(unix))]
+    {
+        std::fs::write(path, content)?;
+    }
+    Ok(())
+}
+
+fn apply_permissions_and_resume(
+    session: &mut AgentSession,
+    session_permissions: &Permissions,
+    skip_resume: bool,
+) -> Result<(), AppError> {
     if !session_permissions.allow.is_empty() {
         session
-            .set_session_permissions(session_permissions)
+            .set_session_permissions(session_permissions.clone())
             .map_err(|e| AppError::Internal(format!("failed to set session permissions: {e}")))?;
     }
-
-    if let Some(text) = text {
-        run_text(&session, &text, yes).await
-    } else {
-        run_repl(&session, yes).await
+    if !skip_resume && let Some(snapshot) = load_session_snapshot()? {
+        session
+            .restore_from_snapshot(&snapshot)
+            .map_err(|e| AppError::Internal(format!("failed to restore agent session: {e}")))?;
+        if !session_permissions.allow.is_empty() {
+            session
+                .set_session_permissions(session_permissions.clone())
+                .map_err(|e| AppError::Internal(format!("failed to set session permissions: {e}")))?;
+        }
     }
+    Ok(())
 }
 
 fn parse_session_permissions(allow: &[String], deny: &[String]) -> Result<Permissions, AppError> {
@@ -75,18 +206,39 @@ fn validate_permission_key(key: &str) -> Result<(), AppError> {
         .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))
 }
 
-async fn run_text(session: &AgentSession, text: &str, yes: bool) -> Result<(), AppError> {
-    let result = session.run_turn(text).await.map_err(agent_err)?;
-    println!("{}", result.text);
+async fn run_text(session: &AgentSession, text: &str, yes: bool, plain: bool) -> Result<(), AppError> {
+    let tty = atty::is(atty::Stream::Stdout);
+    let stream = !plain && tty;
+
+    let mut output = String::new();
+    let result = session
+        .run_turn_stream(text, |event| emit_stream_event(event, stream, &mut output), |_block| {})
+        .await
+        .map_err(agent_err)?;
+    if stream && !output.is_empty() && !output.ends_with('\n') {
+        println!();
+    } else if !stream && !result.text.is_empty() {
+        println!("{}", result.text);
+    }
 
     let schedule_dirty = if let Some(approval) = result.approval_request.as_ref() {
-        let (approve, proposals) = if yes {
-            (true, None)
+        let decision = if yes {
+            AskApprovalResult {
+                approve: true,
+                proposals: None,
+                always_ids: Vec::new(),
+            }
         } else {
-            ask_approval_proposals(approval)?
+            ask_approval_proposals(approval, stream)?
         };
+        if !decision.always_ids.is_empty() {
+            let perms = permissions_for_approval(approval, Some(&decision.always_ids));
+            if let Err(e) = session.set_session_permissions(perms) {
+                eprintln!("failed to set session permissions: {e}");
+            }
+        }
         let res = session
-            .resolve_approval(&approval.id, approve, proposals)
+            .resolve_approval(&approval.id, decision.approve, decision.proposals)
             .await
             .map_err(agent_err)?;
         if res.approved {
@@ -121,9 +273,70 @@ async fn run_text(session: &AgentSession, text: &str, yes: bool) -> Result<(), A
     Ok(())
 }
 
+fn emit_stream_event(event: TurnEvent, stream: bool, output: &mut String) {
+    if !stream {
+        return;
+    }
+    match event {
+        TurnEvent::Text(delta) => {
+            output.push_str(&delta);
+            print!("{delta}");
+            let _ = io::stdout().flush();
+        }
+        TurnEvent::ToolCall { name, .. } => {
+            if !output.is_empty() && !output.ends_with('\n') {
+                println!();
+                output.push('\n');
+            }
+            println!("  [tool call] {name}");
+            output.push_str("  [tool call] ");
+            output.push_str(&name);
+            output.push('\n');
+        }
+        TurnEvent::ToolResult {
+            name, is_error, ..
+        } => {
+            let status = if is_error { "error" } else { "ok" };
+            println!("  [tool result] {name}: {status}");
+            output.push_str("  [tool result] ");
+            output.push_str(&name);
+            output.push_str(": ");
+            output.push_str(status);
+            output.push('\n');
+        }
+        _ => {}
+    }
+}
+
+fn permissions_for_approval(approval: &ApprovalRequest, approved_ids: Option<&[String]>) -> Permissions {
+    let mut permissions = Permissions::default();
+    for change in &approval.changes {
+        if let Some(ids) = approved_ids {
+            let Some(id) = &change.proposal_id else { continue; };
+            if !ids.contains(id) {
+                continue;
+            }
+        }
+        if let Ok(key) = takusu_agent::PermissionKey::from_str(&format!(
+            "{}:{}",
+            change.target.kind, change.operation
+        )) {
+            permissions.set(key.target, key.operation, true);
+        }
+    }
+    permissions
+}
+
+struct AskApprovalResult {
+    pub approve: bool,
+    pub proposals: Option<Vec<ProposalDecision>>,
+    pub always_ids: Vec<String>,
+}
+
 fn ask_approval_proposals(
     approval: &ApprovalRequest,
-) -> Result<(bool, Option<Vec<ProposalDecision>>), AppError> {
+    _stream: bool,
+) -> Result<AskApprovalResult, AppError> {
     if !approval.why.is_empty() {
         println!("Why: {}", approval.why);
     }
@@ -143,20 +356,40 @@ fn ask_approval_proposals(
     let groups = group_proposals(&approval.changes);
     let total = groups.len();
     let mut decisions = Vec::with_capacity(total);
+    let mut always_ids = Vec::new();
     for (i, (proposal_id, changes)) in groups.iter().enumerate() {
         let display_id = proposal_id.as_deref().unwrap_or("(no id)");
         display_proposal_group(display_id, i + 1, total, changes);
-        let approve = ask_approve("Approve this proposal? (y/N): ")?;
+        let answer = ask_approve_choice("Approve this proposal? (y/n/a/N): ")?;
         let decision_id = proposal_id
             .clone()
             .unwrap_or_else(|| format!("<missing-{}>", i));
+        let (approve, set_always) = match answer {
+            ApprovalChoice::Yes => (true, false),
+            ApprovalChoice::Always => (true, true),
+            ApprovalChoice::No => (false, false),
+        };
+        if set_always {
+            always_ids.push(decision_id.clone());
+        }
         decisions.push(ProposalDecision {
             proposal_id: decision_id,
             approve,
         });
     }
     let approve = decisions.iter().any(|d| d.approve);
-    Ok((approve, Some(decisions)))
+    Ok(AskApprovalResult {
+        approve,
+        proposals: Some(decisions),
+        always_ids,
+    })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ApprovalChoice {
+    Yes,
+    No,
+    Always,
 }
 
 fn group_proposals(changes: &[ProposedChange]) -> Vec<(Option<String>, Vec<&ProposedChange>)> {
@@ -201,7 +434,7 @@ fn display_proposal_group(
     }
 }
 
-fn ask_approve(label: &str) -> Result<bool, AppError> {
+fn ask_approve_choice(label: &str) -> Result<ApprovalChoice, AppError> {
     print!("{label}");
     io::stdout()
         .flush()
@@ -214,14 +447,15 @@ fn ask_approve(label: &str) -> Result<bool, AppError> {
         .transpose()
         .map_err(|e| AppError::Internal(e.to_string()))?;
     Ok(line
-        .map(|l| {
-            let l = l.trim().to_lowercase();
-            l == "y" || l == "yes"
+        .map(|l| match l.trim().to_lowercase().as_str() {
+            "y" | "yes" => ApprovalChoice::Yes,
+            "a" | "always" => ApprovalChoice::Always,
+            _ => ApprovalChoice::No,
         })
-        .unwrap_or(false))
+        .unwrap_or(ApprovalChoice::No))
 }
 
-async fn run_repl(session: &AgentSession, yes: bool) -> Result<(), AppError> {
+async fn run_repl(session: &AgentSession, yes: bool, plain: bool) -> Result<(), AppError> {
     loop {
         print!("> ");
         io::stdout()
@@ -241,7 +475,7 @@ async fn run_repl(session: &AgentSession, yes: bool) -> Result<(), AppError> {
         if line == "exit" || line == "quit" {
             break;
         }
-        run_text(session, line, yes).await?;
+        run_text(session, line, yes, plain).await?;
     }
     Ok(())
 }
@@ -259,9 +493,13 @@ impl UserInputProvider for ConsoleUserInputProvider {
         tokio::task::spawn_blocking(move || {
             let mut answers = Vec::with_capacity(questions.len());
             for q in questions {
-                eprintln!("ASR correction: original = \"{}\"", q.text);
-                eprintln!("  purpose: {}", q.purpose);
-                eprint!("  corrected text (empty to keep original): ");
+                if q.text.is_empty() {
+                    println!("Question: {}", q.purpose);
+                } else {
+                    println!("{}", q.purpose);
+                    println!("  context: {}", q.text);
+                }
+                eprint!("  answer (empty to keep context): ");
                 io::stdout()
                     .flush()
                     .map_err(|e| ToolError::Other(Box::new(e)))?;
@@ -289,7 +527,7 @@ impl UserInputProvider for ConsoleUserInputProvider {
     }
 }
 
-fn agent_err(e: AgentError) -> AppError {
+pub(crate) fn agent_err(e: AgentError) -> AppError {
     AppError::Internal(e.to_string())
 }
 
@@ -327,18 +565,25 @@ fn agent_config_path() -> PathBuf {
 }
 
 pub fn config_show() -> Result<(), AppError> {
-    let path = agent_config_path();
-    if path.exists() {
-        let content = std::fs::read_to_string(&path)
-            .map_err(|e| AppError::Internal(format!("failed to read agent config: {e}")))?;
-        println!("{}\n{}", path.display(), content);
-    } else {
-        println!(
-            "No agent config file at {}; defaults will be used.",
-            path.display()
-        );
-    }
+    let mut cfg = AgentConfig::load()
+        .map_err(|e| AppError::Internal(format!("failed to load agent config: {e}")))?;
+    mask_secrets(&mut cfg);
+    let rendered = toml::to_string_pretty(&cfg)
+        .map_err(|e| AppError::Internal(format!("failed to serialize agent config: {e}")))?;
+    println!("# Effective agent configuration (defaults included)\n{rendered}");
     Ok(())
+}
+
+fn mask_secrets(cfg: &mut AgentConfig) {
+    if !cfg.llm.api_key.is_empty() {
+        cfg.llm.api_key = "<set>".into();
+    }
+    if !cfg.server.token.is_empty() {
+        cfg.server.token = "<set>".into();
+    }
+    if !cfg.audio.tts.api_key.is_empty() {
+        cfg.audio.tts.api_key = "<set>".into();
+    }
 }
 
 pub fn config_set(key: &str, value: &str) -> Result<(), AppError> {

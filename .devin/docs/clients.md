@@ -40,7 +40,24 @@ schedule operations are flat top-level verbs; lower-frequency domains are
     `token {add, ls, rm}`, `sync {status, setup, login, run, mappings, purge}`,
     `config {show, init, set <key> <value>, workers {set <url> <token>,
     health}}`, `system {health, gen-root-token, license, completion <shell>}`
+  - Agent: `agent ["text"] [--yes] [--allow <perm>]... [--deny <perm>]...
+    [--continue] [--new]`, `agent config {show, set <key> <value>}`,
+    `agent allow <key>`, `agent deny <key>`, `agent stats [--clear]`
   - Top level: `tui`, `web [--bind addr]`, `mcp`
+
+### Agent
+
+- `takusu agent` starts an interactive REPL; streaming and session persistence
+  are planned to be reworked on top of `ratatui` inline viewport.
+- `takusu agent "text"` runs a single turn with `run_turn_stream` and prints
+  the response. TTY output streams tokens; non-TTY and `--plain` collect and
+  print at the end.
+- Approval prompts support `y` (approve), `n` (deny), and `a` (approve and
+  promote the needed permission to the session allow-list).
+- `takusu agent config show` displays the effective configuration, including
+  defaults, and masks `api_key` / `token` values as `<set>`.
+- `--continue` resumes the previous CLI session from
+  `$XDG_STATE_HOME/takusu/agent-session.json`; `--new` starts fresh.
 
 ## takusu-client
 

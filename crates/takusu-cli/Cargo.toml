@@ -22,6 +22,10 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 jiff = { workspace = true }
+crossterm = { workspace = true }
+ratatui = { workspace = true }
+ratatui-textarea = { workspace = true }
+pulldown-cmark = { workspace = true }
 takusu-local-lib = { workspace = true, features = ["sqlite"] }
 takusu-local = { workspace = true }
 takusu-agent = { workspace = true }

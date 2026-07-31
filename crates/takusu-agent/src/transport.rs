@@ -261,7 +261,7 @@ pub struct CreateSessionRequest {
     pub permissions: Option<crate::Permissions>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ResumeSessionRequest {
     #[serde(default)]
     pub session_id: Option<String>,
@@ -282,7 +282,7 @@ pub struct ResumeSessionResponse {
     pub session_id: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "role", rename_all = "snake_case")]
 pub enum HistoryMessage {
     System {
@@ -322,7 +322,7 @@ where
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HistoryToolCall {
     pub id: String,
     pub name: String,
@@ -366,6 +366,47 @@ impl From<HistoryMessage> for crate::llm::Message {
                 content,
                 is_error,
             },
+        }
+    }
+}
+
+impl From<crate::llm::Message> for HistoryMessage {
+    fn from(msg: crate::llm::Message) -> Self {
+        match msg {
+            crate::llm::Message::System(content) => Self::System { content },
+            crate::llm::Message::User(content) => Self::User { content },
+            crate::llm::Message::Assistant(crate::llm::AssistantContent::Text(content)) => {
+                Self::Assistant {
+                    content: Some(content),
+                    tool_calls: vec![],
+                }
+            }
+            crate::llm::Message::Assistant(crate::llm::AssistantContent::ToolCalls {
+                text,
+                calls,
+            }) => Self::Assistant {
+                content: text,
+                tool_calls: calls.into_iter().map(Into::into).collect(),
+            },
+            crate::llm::Message::ToolResult {
+                call_id,
+                content,
+                is_error,
+            } => Self::Tool {
+                tool_call_id: call_id,
+                content,
+                is_error,
+            },
+        }
+    }
+}
+
+impl From<crate::llm::ToolCall> for HistoryToolCall {
+    fn from(call: crate::llm::ToolCall) -> Self {
+        Self {
+            id: call.id,
+            name: call.name,
+            arguments: call.arguments,
         }
     }
 }

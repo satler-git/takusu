@@ -1,16 +1,16 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use takusu_audio::{
     ExecutionProvider, SHERPA_SAMPLE_RATE, SherpaOnnxModel, SttBackend, TtsBackend,
 };
 
-#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct AudioConfig {
     pub stt: SttConfig,
     pub tts: TtsConfig,
 }
 
-#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct SttConfig {
     #[serde(default = "default_stt_backend")]
@@ -68,7 +68,7 @@ fn default_stt_sample_rate() -> i32 {
     SHERPA_SAMPLE_RATE as i32
 }
 
-#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct TtsConfig {
     #[serde(default = "default_tts_backend")]

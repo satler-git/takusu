@@ -113,7 +113,7 @@ pub enum PermissionKeyParseError {
 /// clients can send it directly without wrapping it in an `allow` field.
 /// Internally the keys are typed (`PermissionKey`) to prevent typos and avoid
 /// per-lookup string allocation.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(transparent)]
 pub struct Permissions {
     pub allow: BTreeMap<PermissionKey, bool>,

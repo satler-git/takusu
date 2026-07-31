@@ -6,7 +6,7 @@
 //! kept intact so the model still sees the current conversation.
 
 use crate::llm::{AssistantContent, LlmClient, LlmError, LlmResponseContent, Message};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 const TOOL_RESULT_MAX_CHARS: usize = 2000;
@@ -57,7 +57,7 @@ const UPDATE_SUMMARIZATION_PROMPT: &str = r#"上記は、以前の要約に追�
 
 上記のフォーマットに従って、更新された要約全体を出力してください。"#;
 
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct CompactionSettings {
     /// Whether automatic context compaction is enabled.
