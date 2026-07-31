@@ -9,6 +9,14 @@ concurrency:
   group: staging-release-${{ github.ref_name }}
   cancel-in-progress: true
 
+# Required secrets:
+#   TAKUSU_RELEASE_TOKEN - PAT (or GitHub App installation token) used to push
+#                          the release tag in the merge-and-tag job. It must not
+#                          be the default GITHUB_TOKEN: events created by
+#                          GITHUB_TOKEN do not trigger workflows, so the tag
+#                          push would not start release.yaml. A PAT acts as a
+#                          real user and triggers the Release workflow.
+
 jobs:
   validate:
     runs-on: ubuntu-latest
@@ -121,6 +129,12 @@ jobs:
         with:
           ref: main
           fetch-depth: 1
+          # Push the tag with a PAT instead of the default GITHUB_TOKEN.
+          # Events created by GITHUB_TOKEN never start a new workflow run, so a
+          # tag pushed with it would not trigger release.yaml's
+          # `on: push: tags: v*`. A PAT acts as a real user, so the tag push
+          # below kicks off the Release workflow.
+          token: ${{ secrets.TAKUSU_RELEASE_TOKEN }}
 
       - name: Configure Git
         run: |
