@@ -31,9 +31,7 @@ impl ToolStats {
     /// The process-wide shared instance, loaded from disk on first access.
     /// All agent sessions and the transport stats endpoints use this.
     pub fn shared() -> Arc<ToolStats> {
-        SHARED
-            .get_or_init(|| Arc::new(ToolStats::load()))
-            .clone()
+        SHARED.get_or_init(|| Arc::new(ToolStats::load())).clone()
     }
 
     /// Load a fresh snapshot from disk. Used by the CLI to display or clear
@@ -57,14 +55,6 @@ impl ToolStats {
         }
     }
 
-    #[cfg(test)]
-    pub fn in_memory() -> Self {
-        Self {
-            path: None,
-            inner: Mutex::new(ToolStatsSnapshot::default()),
-        }
-    }
-
     pub fn record(&self, tool_name: &str, is_error: bool) {
         let mut guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         let entry = guard.tools.entry(tool_name.to_string()).or_default();
@@ -76,10 +66,7 @@ impl ToolStats {
     }
 
     pub fn snapshot(&self) -> ToolStatsSnapshot {
-        self.inner
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .clone()
+        self.inner.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     pub fn clear(&self) {
@@ -126,7 +113,10 @@ mod tests {
 
     #[test]
     fn record_increments_counts() {
-        let stats = ToolStats::in_memory();
+        let stats = ToolStats {
+            path: None,
+            inner: Mutex::new(ToolStatsSnapshot::default()),
+        };
         stats.record("get_task", false);
         stats.record("get_task", true);
         stats.record("list_tasks", false);
@@ -144,7 +134,10 @@ mod tests {
 
     #[test]
     fn clear_removes_all() {
-        let stats = ToolStats::in_memory();
+        let stats = ToolStats {
+            path: None,
+            inner: Mutex::new(ToolStatsSnapshot::default()),
+        };
         stats.record("get_task", false);
         stats.clear();
         assert!(stats.snapshot().tools.is_empty());
@@ -152,7 +145,10 @@ mod tests {
 
     #[test]
     fn snapshot_round_trips_json() {
-        let stats = ToolStats::in_memory();
+        let stats = ToolStats {
+            path: None,
+            inner: Mutex::new(ToolStatsSnapshot::default()),
+        };
         stats.record("create_task", false);
         let snap = stats.snapshot();
         let json = serde_json::to_string(&snap).unwrap();

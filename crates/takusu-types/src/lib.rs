@@ -29,8 +29,6 @@ pub use quantity::{Quantity, QuantityError};
 pub use similarity::Similarity;
 pub use time_types::{Date, TimeOfDay, TimeParseError, Timestamp, minutes_between_ts};
 
-use uuid::Uuid;
-
 /// 1 スロットあたりの分数。
 pub const SLOT_MINUTES: i64 = 5;
 
@@ -65,13 +63,6 @@ impl Slots {
 pub use jwt::{
     Claims as TokenClaims, DEFAULT_AUD, DEFAULT_ISS, JwtError, SCOPE_READ_WRITE, SCOPE_ROOT,
 };
-
-/// Generate a legacy-style random token string (`tsk_<UUID>`).
-///
-/// Prefer `jwt::generate_root_jwt` / `jwt::generate_token_jwt` for auth tokens.
-pub fn generate_root_token() -> String {
-    format!("tsk_{}", Uuid::now_v7())
-}
 
 /// Parse a fixed-offset timezone string such as `+09:00`, `+0900`, `+09`,
 /// or `-05:30:15`. Returns `None` for invalid formats or offsets outside
@@ -585,14 +576,6 @@ mod tests {
     fn parse_datetime_garbage_errors() {
         assert!(parse_datetime("hello world").is_err());
         assert!(parse_datetime("2025-13-45").is_err());
-    }
-
-    #[test]
-    fn generate_root_token_format() {
-        let t = generate_root_token();
-        assert!(t.starts_with("tsk_"), "token must start with tsk_: {t}");
-        // UUID v7 is 36 chars including dashes; prefix is 4 chars.
-        assert_eq!(t.len(), 4 + 36);
     }
 
     // ── parse_date_expression ───────────────────────────────────────────

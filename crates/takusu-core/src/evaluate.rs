@@ -410,13 +410,6 @@ fn build_index_into(
     }
 }
 
-#[cfg(test)]
-fn build_index(planner: &Planner, schedules: &[TaskPlacement]) -> Vec<Option<TimeWindow>> {
-    let mut index = Vec::with_capacity(planner.tasks.len());
-    build_index_into(planner, schedules, &mut index);
-    index
-}
-
 fn task_and_depend_scores(
     planner: &Planner,
     index: &[Option<TimeWindow>],
@@ -664,29 +657,6 @@ fn daily_load_score(
     score
 }
 
-/// 区間列の union の長さを返す。区間は `(start, end)` で `start < end` 前提。
-#[cfg(test)]
-fn union_length(intervals: &mut [TimeWindow]) -> i64 {
-    if intervals.is_empty() {
-        return 0;
-    }
-    intervals.sort_unstable_by_key(|tw| tw.start);
-    let mut total = 0i64;
-    let mut cur_start = intervals[0].start;
-    let mut cur_end = intervals[0].end;
-    for tw in intervals.iter().skip(1) {
-        if tw.start.0 > cur_end.0 {
-            total += (cur_end - cur_start).0;
-            cur_start = tw.start;
-            cur_end = tw.end;
-        } else if tw.end.0 > cur_end.0 {
-            cur_end = tw.end;
-        }
-    }
-    total += (cur_end - cur_start).0;
-    total
-}
-
 fn parallel_violation_score(planner: &Planner, sorted: &[TaskPlacement]) -> f64 {
     let mut penalty_slots = 0i64;
     let n = sorted.len();
@@ -856,6 +826,34 @@ mod tests {
 
     fn plan_with(schedules: Vec<TaskPlacement>) -> Plan {
         Plan { schedules }
+    }
+
+    fn build_index(planner: &Planner, schedules: &[TaskPlacement]) -> Vec<Option<TimeWindow>> {
+        let mut index = Vec::with_capacity(planner.tasks.len());
+        build_index_into(planner, schedules, &mut index);
+        index
+    }
+
+    /// 区間列の union の長さを返す。区間は `(start, end)` で `start < end` 前提。
+    fn union_length(intervals: &mut [TimeWindow]) -> i64 {
+        if intervals.is_empty() {
+            return 0;
+        }
+        intervals.sort_unstable_by_key(|tw| tw.start);
+        let mut total = 0i64;
+        let mut cur_start = intervals[0].start;
+        let mut cur_end = intervals[0].end;
+        for tw in intervals.iter().skip(1) {
+            if tw.start.0 > cur_end.0 {
+                total += (cur_end - cur_start).0;
+                cur_start = tw.start;
+                cur_end = tw.end;
+            } else if tw.end.0 > cur_end.0 {
+                cur_end = tw.end;
+            }
+        }
+        total += (cur_end - cur_start).0;
+        total
     }
 
     #[test]

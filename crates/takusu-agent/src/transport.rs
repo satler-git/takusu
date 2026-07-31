@@ -1404,8 +1404,9 @@ mod tests {
 
     fn make_factory(calls: Arc<Mutex<Vec<RecordedCall>>>) -> Arc<dyn SessionFactory> {
         Arc::new(move |config: &AgentConfig, _token: Arc<RwLock<Arc<str>>>| {
-            Ok(AgentSession::new(
+            Ok(crate::test_helpers::make_agent_with_client(
                 config.clone(),
+                takusu_client::Client::new(&config.server.url, &config.server.token),
                 ToolRegistry::new(),
                 RecordingLlm::with_calls(calls.clone()),
             ))
@@ -1413,7 +1414,8 @@ mod tests {
     }
 
     fn make_session_state(token: &str) -> (Arc<AgentApiState>, Arc<ApiUserInputProvider>, String) {
-        let session = AgentSession::new(AgentConfig::default(), ToolRegistry::new(), NullLlm);
+        let session =
+            crate::test_helpers::make_agent(AgentConfig::default(), ToolRegistry::new(), NullLlm);
         let id = session.session_id().to_string();
         let provider = Arc::new(ApiUserInputProvider::new());
         let state_provider: Arc<dyn UserInputProvider> =

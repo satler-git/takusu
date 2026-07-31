@@ -156,27 +156,6 @@ impl Client {
         })
     }
 
-    #[cfg(test)]
-    fn with_urls(
-        http: reqwest::Client,
-        client_id: String,
-        client_secret: String,
-        refresh_token: String,
-        calendar_id: String,
-        token_url: String,
-        batch_url: String,
-    ) -> Result<Self> {
-        Ok(Self {
-            http,
-            client_id,
-            client_secret,
-            refresh_token,
-            calendar_id,
-            token_url,
-            batch_url,
-        })
-    }
-
     async fn refresh_access_token(&self) -> Result<String> {
         let resp = self
             .http
@@ -748,16 +727,15 @@ mod tests {
     #[tokio::test]
     async fn delete_all_returns_deleted_task_ids() {
         let base_url = start_mock_google_server(vec![204, 204]).await;
-        let client = Client::with_urls(
-            reqwest::Client::new(),
-            "client".to_string(),
-            "secret".to_string(),
-            "refresh".to_string(),
-            "primary".to_string(),
-            format!("{base_url}/token"),
-            format!("{base_url}/batch"),
-        )
-        .unwrap();
+        let client = Client {
+            http: reqwest::Client::new(),
+            client_id: "client".to_string(),
+            client_secret: "secret".to_string(),
+            refresh_token: "refresh".to_string(),
+            calendar_id: "primary".to_string(),
+            token_url: format!("{base_url}/token"),
+            batch_url: format!("{base_url}/batch"),
+        };
 
         let result = client
             .delete_all(&[
@@ -774,16 +752,15 @@ mod tests {
     #[tokio::test]
     async fn delete_all_reports_partial_failures() {
         let base_url = start_mock_google_server(vec![204, 403]).await;
-        let client = Client::with_urls(
-            reqwest::Client::new(),
-            "client".to_string(),
-            "secret".to_string(),
-            "refresh".to_string(),
-            "primary".to_string(),
-            format!("{base_url}/token"),
-            format!("{base_url}/batch"),
-        )
-        .unwrap();
+        let client = Client {
+            http: reqwest::Client::new(),
+            client_id: "client".to_string(),
+            client_secret: "secret".to_string(),
+            refresh_token: "refresh".to_string(),
+            calendar_id: "primary".to_string(),
+            token_url: format!("{base_url}/token"),
+            batch_url: format!("{base_url}/batch"),
+        };
 
         let result = client
             .delete_all(&[
@@ -801,16 +778,15 @@ mod tests {
     #[tokio::test]
     async fn delete_all_treats_410_as_deleted() {
         let base_url = start_mock_google_server(vec![410]).await;
-        let client = Client::with_urls(
-            reqwest::Client::new(),
-            "client".to_string(),
-            "secret".to_string(),
-            "refresh".to_string(),
-            "primary".to_string(),
-            format!("{base_url}/token"),
-            format!("{base_url}/batch"),
-        )
-        .unwrap();
+        let client = Client {
+            http: reqwest::Client::new(),
+            client_id: "client".to_string(),
+            client_secret: "secret".to_string(),
+            refresh_token: "refresh".to_string(),
+            calendar_id: "primary".to_string(),
+            token_url: format!("{base_url}/token"),
+            batch_url: format!("{base_url}/batch"),
+        };
 
         let result = client
             .delete_all(&[("t1".to_string(), "e1".to_string())])

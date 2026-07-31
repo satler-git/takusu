@@ -228,32 +228,6 @@ pub struct AgentSession {
 }
 
 impl AgentSession {
-    /// Test-only constructor that creates its own `Client` and
-    /// `TimeZoneCache`. Production code should use
-    /// [`Self::new_with_client_and_cache`].
-    #[cfg(test)]
-    pub fn new(
-        config: AgentConfig,
-        registry: ToolRegistry,
-        llm: impl llm::LlmClient + 'static,
-    ) -> Self {
-        let client = takusu_client::Client::new(&config.server.url, &config.server.token);
-        Self::new_with_client(config, client, registry, llm)
-    }
-
-    /// Test-only constructor. Production code should use
-    /// [`Self::new_with_client_and_cache`].
-    #[cfg(test)]
-    pub fn new_with_client(
-        config: AgentConfig,
-        client: takusu_client::Client,
-        registry: ToolRegistry,
-        llm: impl llm::LlmClient + 'static,
-    ) -> Self {
-        let tz_cache = crate::tools::takusu::TimeZoneCache::new(client.clone());
-        Self::new_with_client_and_cache(config, client, tz_cache, Arc::new(registry), llm)
-    }
-
     /// Recommended constructor for production code. The supplied
     /// `TimeZoneCache` is shared with the tool registry so that
     /// `get_settings()` is called at most once per `AgentSession`.
@@ -1047,8 +1021,12 @@ impl AgentSession {
 }
 
 #[cfg(test)]
+pub(crate) mod test_helpers;
+
+#[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_helpers::make_agent;
     use crate::tool::ProposalDecision;
     use serde_json::{Value, json};
     use std::pin::Pin;
@@ -1279,7 +1257,7 @@ mod tests {
             ]]),
         };
 
-        let agent = AgentSession::new(AgentConfig::default(), registry, mock);
+        let agent = make_agent(AgentConfig::default(), registry, mock);
         let mut emitted = Vec::new();
         let result = agent
             .run_turn_stream("schedule today", |event| emitted.push(event), |_block| {})
@@ -1323,7 +1301,7 @@ mod tests {
             ]),
         };
 
-        let agent = AgentSession::new(AgentConfig::default(), registry, mock);
+        let agent = make_agent(AgentConfig::default(), registry, mock);
         let mut emitted = Vec::new();
         let result = agent
             .run_turn_stream("call echo", |event| emitted.push(event), |_block| {})
@@ -1383,7 +1361,7 @@ mod tests {
             ]),
         };
 
-        let agent = AgentSession::new(AgentConfig::default(), registry, mock);
+        let agent = make_agent(AgentConfig::default(), registry, mock);
         let result = agent
             .run_turn_stream("call echo", |_| {}, |_| {})
             .await
@@ -1463,7 +1441,7 @@ mod tests {
             ]),
         };
 
-        let agent = AgentSession::new(cfg, registry, mock);
+        let agent = make_agent(cfg, registry, mock);
         let result = agent
             .run_turn_stream("call echo twice", |_| {}, |_| {})
             .await;
@@ -1493,7 +1471,7 @@ mod tests {
             ]),
         };
 
-        let agent = AgentSession::new(AgentConfig::default(), registry, mock);
+        let agent = make_agent(AgentConfig::default(), registry, mock);
         let first = agent
             .run_turn_stream("hello", |_| {}, |_| {})
             .await
@@ -1525,7 +1503,7 @@ mod tests {
             }]]),
         };
 
-        let agent = AgentSession::new(AgentConfig::default(), registry, mock);
+        let agent = make_agent(AgentConfig::default(), registry, mock);
         let result = agent.edit_turn_stream(0, "x", |_| {}, |_| {}).await;
         assert!(matches!(
             result,
@@ -1556,7 +1534,7 @@ mod tests {
             ]),
         };
 
-        let agent = AgentSession::new(AgentConfig::default(), registry, mock);
+        let agent = make_agent(AgentConfig::default(), registry, mock);
         agent
             .run_turn_stream("hello", |_| {}, |_| {})
             .await
@@ -1590,7 +1568,7 @@ mod tests {
             ]]),
         };
 
-        let agent = AgentSession::new(AgentConfig::default(), registry, mock);
+        let agent = make_agent(AgentConfig::default(), registry, mock);
         agent
             .run_turn_stream("hello", |_| {}, |_| {})
             .await
@@ -1611,7 +1589,7 @@ mod tests {
             events: Mutex::new(vec![]),
         };
 
-        let agent = AgentSession::new(AgentConfig::default(), registry, mock);
+        let agent = make_agent(AgentConfig::default(), registry, mock);
         let result = agent.truncate_history(0, true).await;
         assert!(matches!(
             result,
@@ -1654,7 +1632,7 @@ mod tests {
             ]),
         };
 
-        let agent = AgentSession::new(AgentConfig::default(), registry, mock);
+        let agent = make_agent(AgentConfig::default(), registry, mock);
         let result = agent.run_turn("call echo").await.unwrap();
 
         assert_eq!(result.text, "スケジュールを確認します\ndone");
@@ -1705,7 +1683,7 @@ mod tests {
             ]),
         };
 
-        let agent = AgentSession::new(AgentConfig::default(), registry, mock);
+        let agent = make_agent(AgentConfig::default(), registry, mock);
         let result = agent.run_turn("call echo").await.unwrap();
 
         assert_eq!(result.text, "done");
@@ -1741,7 +1719,7 @@ mod tests {
             ]),
         };
 
-        let agent = AgentSession::new(AgentConfig::default(), registry, mock);
+        let agent = make_agent(AgentConfig::default(), registry, mock);
         let result = agent.run_turn("fail").await.unwrap();
         assert_eq!(result.text, "noted");
 
@@ -1769,7 +1747,7 @@ mod tests {
         };
         let mut cfg = AgentConfig::default();
         cfg.llm.max_context_tokens = 1300;
-        let agent = AgentSession::new(cfg, registry, mock);
+        let agent = make_agent(cfg, registry, mock);
         for i in 0..100 {
             let _ = agent.run_turn(&format!("turn {i}")).await.unwrap();
         }
@@ -1792,7 +1770,7 @@ mod tests {
         registry_with_tools.register(Box::new(EchoTool {
             calls: std::sync::Arc::new(Mutex::new(0)),
         }));
-        let agent_with_tools = AgentSession::new(
+        let agent_with_tools = make_agent(
             cfg.clone(),
             registry_with_tools,
             MockLlm {
@@ -1802,7 +1780,7 @@ mod tests {
         );
 
         let registry_empty = ToolRegistry::new();
-        let agent_empty = AgentSession::new(
+        let agent_empty = make_agent(
             cfg,
             registry_empty,
             MockLlm {
@@ -1862,7 +1840,7 @@ mod tests {
         };
         let mut cfg = AgentConfig::default();
         cfg.llm.max_context_tokens = 1300;
-        let agent = AgentSession::new(cfg, registry, mock);
+        let agent = make_agent(cfg, registry, mock);
 
         for i in 0..5 {
             let _ = agent.run_turn(&format!("turn {i}")).await.unwrap();
@@ -1914,7 +1892,7 @@ mod tests {
         };
         let mut cfg = AgentConfig::default();
         cfg.llm.max_tool_calls = 2;
-        let agent = AgentSession::new(cfg, registry, mock);
+        let agent = make_agent(cfg, registry, mock);
         let result = agent.run_turn("call echo").await;
         assert!(matches!(result, Err(AgentError::TooManyToolCalls)));
     }
@@ -1941,7 +1919,7 @@ mod tests {
     #[test]
     fn run_turn_future_is_send() {
         fn assert_send<T: Send>(_: T) {}
-        let session = AgentSession::new(
+        let session = make_agent(
             AgentConfig::default(),
             ToolRegistry::new(),
             MockLlm {
@@ -1964,7 +1942,7 @@ mod tests {
             }]),
         };
 
-        let agent = AgentSession::new(AgentConfig::default(), registry, mock);
+        let agent = make_agent(AgentConfig::default(), registry, mock);
         let result = agent.run_turn("今日の予定は？").await.unwrap();
 
         assert_eq!(result.text, "今日は会議が2つあります");
@@ -2000,7 +1978,7 @@ mod tests {
             ]),
         };
 
-        let agent = AgentSession::new(AgentConfig::default(), registry, mock);
+        let agent = make_agent(AgentConfig::default(), registry, mock);
         let result = agent.run_turn("add task").await.unwrap();
         let approval = result.approval_request.expect("approval required");
 
@@ -2070,7 +2048,7 @@ mod tests {
 
         let mut cfg = AgentConfig::default();
         cfg.server.url = format!("http://{addr}");
-        let agent = AgentSession::new(cfg, registry, mock);
+        let agent = make_agent(cfg, registry, mock);
         let result = agent.run_turn("スケジュールを作成して").await.unwrap();
         let approval = result.approval_request.expect("approval required");
 
@@ -2127,7 +2105,7 @@ mod tests {
 
         let mut cfg = AgentConfig::default();
         cfg.server.url = format!("http://{addr}");
-        let agent = AgentSession::new(
+        let agent = make_agent(
             cfg,
             ToolRegistry::new(),
             MockLlm {
@@ -2201,7 +2179,7 @@ mod tests {
 
     #[tokio::test]
     async fn resolve_all_denied_via_proposals_records_denial() {
-        let agent = AgentSession::new(
+        let agent = make_agent(
             AgentConfig::default(),
             ToolRegistry::new(),
             MockLlm {
@@ -2278,7 +2256,7 @@ mod tests {
 
         let mut cfg = AgentConfig::default();
         cfg.server.url = format!("http://{addr}");
-        let agent = AgentSession::new(
+        let agent = make_agent(
             cfg,
             ToolRegistry::new(),
             MockLlm {
@@ -2338,7 +2316,7 @@ mod tests {
 
     #[tokio::test]
     async fn resolve_proposals_rejects_missing_decisions() {
-        let agent = AgentSession::new(
+        let agent = make_agent(
             AgentConfig::default(),
             ToolRegistry::new(),
             MockLlm {
@@ -2371,7 +2349,7 @@ mod tests {
 
     #[tokio::test]
     async fn resolve_proposals_rejects_unknown_and_duplicate_ids() {
-        let agent = AgentSession::new(
+        let agent = make_agent(
             AgentConfig::default(),
             ToolRegistry::new(),
             MockLlm {
@@ -2417,7 +2395,7 @@ mod tests {
 
     #[tokio::test]
     async fn set_pending_approval_backfills_missing_proposal_ids() {
-        let agent = AgentSession::new(
+        let agent = make_agent(
             AgentConfig::default(),
             ToolRegistry::new(),
             MockLlm {
@@ -2514,7 +2492,7 @@ mod tests {
         cfg.llm
             .permissions
             .set(TargetKind::Schedule, ChangeOperation::Generate, true);
-        let agent = AgentSession::new(cfg, registry, mock);
+        let agent = make_agent(cfg, registry, mock);
         let result = agent.run_turn("スケジュールを作成して").await.unwrap();
 
         assert!(
@@ -2587,7 +2565,7 @@ mod tests {
         cfg.llm
             .permissions
             .set(TargetKind::Schedule, ChangeOperation::Generate, false);
-        let agent = AgentSession::new(cfg, registry, mock);
+        let agent = make_agent(cfg, registry, mock);
 
         // Session override allows it.
         let mut session_permissions = Permissions::default();
@@ -2637,7 +2615,7 @@ mod tests {
             ]),
         };
 
-        let agent = AgentSession::new(cfg, ToolRegistry::new(), mock);
+        let agent = make_agent(cfg, ToolRegistry::new(), mock);
         *agent.history.lock().unwrap() = history;
         *agent.last_system_estimate.lock().unwrap() = Some(500);
 
@@ -2676,7 +2654,7 @@ mod tests {
             ]]),
         };
 
-        let agent = AgentSession::new(AgentConfig::default(), registry, mock);
+        let agent = make_agent(AgentConfig::default(), registry, mock);
         let mut tts_blocks = Vec::new();
         let result = agent
             .run_turn_stream("greet", |_event| {}, |block| tts_blocks.push(block))
@@ -2720,7 +2698,7 @@ mod tests {
             ]),
         };
 
-        let agent = AgentSession::new(AgentConfig::default(), registry, mock);
+        let agent = make_agent(AgentConfig::default(), registry, mock);
         let mut tts_blocks = Vec::new();
         let result = agent
             .run_turn_stream("call echo", |_event| {}, |block| tts_blocks.push(block))
@@ -2800,7 +2778,7 @@ mod tests {
             calls: Mutex::new(Vec::new()),
             responses: Mutex::new(Vec::new()),
         };
-        let session = AgentSession::new(cfg, registry, mock);
+        let session = make_agent(cfg, registry, mock);
 
         let create_change = ProposedChange {
             operation: ChangeOperation::CreateScheduledSpan,
