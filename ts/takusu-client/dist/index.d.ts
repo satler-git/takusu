@@ -690,6 +690,8 @@ interface components$1 {
         SaveScheduleRequest: {
             entries: components$1['schemas']['ScheduleEntry'][];
             /** @default [] */
+            horizon_task_ids: string[];
+            /** @default [] */
             mark_scheduled_task_ids: string[];
         };
         ScheduleEntry: {
@@ -741,6 +743,8 @@ interface components$1 {
         };
         ScheduleRow: {
             created_at: components$1['schemas']['Timestamp'];
+            /** @default [] */
+            horizon_task_ids: components$1['schemas']['JsonString'];
             id: string;
             /** @default [] */
             schedule: components$1['schemas']['JsonString2'];
@@ -759,6 +763,12 @@ interface components$1 {
              * Format: int64
              */
             maximum_minutes?: number | null;
+            /**
+             * Format: int64
+             * @description スケジュール計画の期間（日数）。horizon 計算に使う。デフォルト 14。
+             * @default 14
+             */
+            plan_length_days: number;
             /**
              * Format: int64
              * @description 乱数シード。`None` の場合は決定的なデフォルト。
@@ -1043,6 +1053,11 @@ interface components$1 {
              * Format: int64
              */
             maximum_minutes?: number | null;
+            /**
+             * Format: int64
+             * @description スケジュール計画の期間（日数）。
+             */
+            plan_length_days?: number | null;
             /**
              * Format: int64
              * @description 乱数シード。`None` でデフォルト。
@@ -1490,6 +1505,7 @@ declare function parseDependsOn(dependsOn: string): string[];
 declare const WINDOW_MODE_DAY: "day";
 declare const WINDOW_MODE_PERIOD: "period";
 declare function parseSchedule(schedule: string): ScheduleEntry[];
+declare function parseHorizonTaskIds(raw: string | undefined | null): Set<string>;
 
 declare class ApiError extends Error {
     status: number;
@@ -1568,4 +1584,4 @@ declare class TakusuClient {
     }>;
 }
 
-export { type AgentTurnResult, ApiError, type ApprovalResult, type AttachWorkSession, type ChangeOperation, type Completion, type ConvertWorkSession, type CreateHabit, type CreateHabitScheduledSpan, type CreateSkill, type CreateTask, type DeleteAllGcalFailure, type DeleteAllGcalResponse, type DependencyAnalysisResponse, type DependencyNode, type GenerateSchedule, type GoogleCalEventMapping, type GoogleCalSettings, type HabitDetail, type HabitEstimateRequest, type HabitEstimateResult, type HabitEstimateSample, type HabitEstimateStep, type HabitPreviewRequest, type HabitPreviewTask, type HabitRow, type HabitScheduledSpanRow, type HabitStepInput, type HabitStepRow, type IcalImportResult, type MoveEntryRequest, type MoveEntryResponse, type OAuthCallbackResponse, type ProgressEventRow, type RecordWorkSessionProgress, type RedundantDependency, type RescheduleRequest, type ScheduleEntry, type ScheduleRow, type SettingsRow, type SkillRow, type SplitResult, type SplitTask, type StartWorkSession, type SyncTriggerResponse, TakusuClient, type TargetKind, type TaskQuery, type TaskRow, type TaskStatus, type TokenCreateResponse, type TokenRow, type UpdateGoogleCalSettings, type UpdateHabit, type UpdateSettings, type UpdateSkill, type UpdateTask, WINDOW_MODE_DAY, WINDOW_MODE_PERIOD, type WindowMode, type WorkSessionProgressResult, type WorkSessionRow, type components, parseDepends, parseDependsOn, parseSchedule };
+export { type AgentTurnResult, ApiError, type ApprovalResult, type AttachWorkSession, type ChangeOperation, type Completion, type ConvertWorkSession, type CreateHabit, type CreateHabitScheduledSpan, type CreateSkill, type CreateTask, type DeleteAllGcalFailure, type DeleteAllGcalResponse, type DependencyAnalysisResponse, type DependencyNode, type GenerateSchedule, type GoogleCalEventMapping, type GoogleCalSettings, type HabitDetail, type HabitEstimateRequest, type HabitEstimateResult, type HabitEstimateSample, type HabitEstimateStep, type HabitPreviewRequest, type HabitPreviewTask, type HabitRow, type HabitScheduledSpanRow, type HabitStepInput, type HabitStepRow, type IcalImportResult, type MoveEntryRequest, type MoveEntryResponse, type OAuthCallbackResponse, type ProgressEventRow, type RecordWorkSessionProgress, type RedundantDependency, type RescheduleRequest, type ScheduleEntry, type ScheduleRow, type SettingsRow, type SkillRow, type SplitResult, type SplitTask, type StartWorkSession, type SyncTriggerResponse, TakusuClient, type TargetKind, type TaskQuery, type TaskRow, type TaskStatus, type TokenCreateResponse, type TokenRow, type UpdateGoogleCalSettings, type UpdateHabit, type UpdateSettings, type UpdateSkill, type UpdateTask, WINDOW_MODE_DAY, WINDOW_MODE_PERIOD, type WindowMode, type WorkSessionProgressResult, type WorkSessionRow, type components, parseDepends, parseDependsOn, parseHorizonTaskIds, parseSchedule };

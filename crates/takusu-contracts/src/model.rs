@@ -480,6 +480,8 @@ pub struct ScheduleRow {
     pub updated_at: Timestamp,
     #[serde(default)]
     pub schedule: ScheduleData,
+    #[serde(default)]
+    pub horizon_task_ids: JsonString<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
@@ -498,6 +500,8 @@ pub struct SaveScheduleRequest {
     pub entries: Vec<ScheduleEntry>,
     #[serde(default)]
     pub mark_scheduled_task_ids: Vec<String>,
+    #[serde(default)]
+    pub horizon_task_ids: Vec<String>,
 }
 
 // ── Schedule request/response types (#1324) ──────────────────────────────
@@ -684,8 +688,15 @@ pub struct SettingsRow {
     /// 前回スケジュールから priority/ALNS の初期解を warm start する。
     #[serde(default)]
     pub warm_start: bool,
+    /// スケジュール計画の期間（日数）。horizon 計算に使う。デフォルト 14。
+    #[serde(default = "default_plan_length_days")]
+    pub plan_length_days: i64,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
+}
+
+fn default_plan_length_days() -> i64 {
+    14
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
@@ -862,6 +873,9 @@ pub struct UpdateSettings {
     /// 前回スケジュールから priority/ALNS の初期解を warm start する。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub warm_start: Option<bool>,
+    /// スケジュール計画の期間（日数）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plan_length_days: Option<i64>,
 }
 
 // ── WI-9 active-session progress management ─────────────────────────────────

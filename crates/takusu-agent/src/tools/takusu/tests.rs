@@ -881,6 +881,7 @@ async fn move_task_tool_proposes_move_with_existing_entry() {
         created_at: "2025-06-01T00:00:00Z".parse().unwrap(),
         updated_at: "2025-06-01T00:00:00Z".parse().unwrap(),
         schedule,
+        horizon_task_ids: Vec::new().into(),
     };
 
     let app = Router::new()

@@ -101,3 +101,15 @@ export function parseSchedule(schedule: string): ScheduleEntry[] {
     return [];
   }
 }
+
+export function parseHorizonTaskIds(
+  raw: string | undefined | null,
+): Set<string> {
+  if (!raw) return new Set();
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? new Set(parsed) : new Set();
+  } catch {
+    return new Set();
+  }
+}

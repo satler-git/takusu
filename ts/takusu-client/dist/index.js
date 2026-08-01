@@ -25,6 +25,15 @@ function parseSchedule(schedule) {
     return [];
   }
 }
+function parseHorizonTaskIds(raw) {
+  if (!raw) return /* @__PURE__ */ new Set();
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? new Set(parsed) : /* @__PURE__ */ new Set();
+  } catch {
+    return /* @__PURE__ */ new Set();
+  }
+}
 
 // src/client.ts
 var ApiError = class extends Error {
@@ -380,6 +389,7 @@ export {
   WINDOW_MODE_PERIOD,
   parseDepends,
   parseDependsOn,
+  parseHorizonTaskIds,
   parseSchedule
 };
 //# sourceMappingURL=index.js.map

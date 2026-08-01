@@ -8243,6 +8243,8 @@ export interface components {
     SaveScheduleRequest: {
       entries: components['schemas']['ScheduleEntry'][];
       /** @default [] */
+      horizon_task_ids: string[];
+      /** @default [] */
       mark_scheduled_task_ids: string[];
     };
     ScheduleEntry: {
@@ -8294,6 +8296,8 @@ export interface components {
     };
     ScheduleRow: {
       created_at: components['schemas']['Timestamp'];
+      /** @default [] */
+      horizon_task_ids: components['schemas']['JsonString'];
       id: string;
       /** @default [] */
       schedule: components['schemas']['JsonString2'];
@@ -8312,6 +8316,12 @@ export interface components {
        * Format: int64
        */
       maximum_minutes?: number | null;
+      /**
+       * Format: int64
+       * @description スケジュール計画の期間（日数）。horizon 計算に使う。デフォルト 14。
+       * @default 14
+       */
+      plan_length_days: number;
       /**
        * Format: int64
        * @description 乱数シード。`None` の場合は決定的なデフォルト。
@@ -8601,6 +8611,11 @@ export interface components {
        * Format: int64
        */
       maximum_minutes?: number | null;
+      /**
+       * Format: int64
+       * @description スケジュール計画の期間（日数）。
+       */
+      plan_length_days?: number | null;
       /**
        * Format: int64
        * @description 乱数シード。`None` でデフォルト。

@@ -7,6 +7,7 @@
 //! planner-construction helpers.
 
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::str::FromStr;
 use std::time::Duration;
 
@@ -98,6 +99,88 @@ fn planner_config(start: Point, sleep: SleepConfig, settings: &SettingsRow) -> P
     }
 }
 
+const SLOTS_PER_DAY: i64 = 24 * 12;
+/// horizon の base は plan_length の 2 倍。次の plan 周期で対象になるタスクを
+/// 余裕をもって含め、周期の境界でタスクが急に出現するのを防ぐバッファ。
+const HORIZON_MULTIPLIER: i64 = 2;
+/// plan_length_days の上限。これを超えると slot 計算が i64 をオーバーフローしうる。
+const MAX_PLAN_LENGTH_DAYS: i64 = 365;
+
+fn compute_horizon(
+    now: Point,
+    plan_length_days: i64,
+    task_rows: &[TaskRow],
+    tz: &jiff::tz::TimeZone,
+) -> Point {
+    let plan_length = plan_length_days.clamp(1, MAX_PLAN_LENGTH_DAYS) * SLOTS_PER_DAY;
+    let base = Point(now.0 + plan_length * HORIZON_MULTIPLIER);
+
+    let mut horizon = base;
+
+    if let Some(next_start) = task_rows
+        .iter()
+        .filter_map(|r| r.start_at.as_ref())
+        .filter_map(|s| iso_to_point(&s.to_string(), tz).ok())
+        .filter(|p| p.0 > now.0)
+        .min_by_key(|p| p.0)
+    {
+        let candidate = Point(next_start.0 + plan_length);
+        if candidate.0 > horizon.0 {
+            horizon = candidate;
+        }
+    }
+
+    let id_to_idx: HashMap<&str, usize> = task_rows
+        .iter()
+        .enumerate()
+        .map(|(i, r)| (r.id.as_str(), i))
+        .collect();
+
+    let deadlines: Vec<Point> = task_rows
+        .iter()
+        .map(|r| iso_to_point(&r.end_at.to_string(), tz).unwrap_or(base))
+        .collect();
+
+    let depends: Vec<Vec<usize>> = task_rows
+        .iter()
+        .map(|r| {
+            r.depends
+                .iter()
+                .filter_map(|dep| id_to_idx.get(dep.as_str()).copied())
+                .collect()
+        })
+        .collect();
+
+    let mut in_horizon: HashSet<usize> = HashSet::new();
+    for (i, d) in deadlines.iter().enumerate() {
+        if d.0 <= horizon.0 {
+            in_horizon.insert(i);
+        }
+    }
+
+    let mut changed = true;
+    while changed {
+        changed = false;
+        let mut to_add = Vec::new();
+        for &i in &in_horizon {
+            for &dep in &depends[i] {
+                if !in_horizon.contains(&dep) {
+                    to_add.push(dep);
+                }
+            }
+        }
+        for dep in to_add {
+            in_horizon.insert(dep);
+            if deadlines[dep].0 > horizon.0 {
+                horizon = deadlines[dep];
+            }
+            changed = true;
+        }
+    }
+
+    horizon
+}
+
 impl super::TakusuApp {
     pub async fn get_schedule(&self) -> Result<ScheduleRow, AppError> {
         let row = self
@@ -123,8 +206,20 @@ impl super::TakusuApp {
         // (stale habit tasks) are not carried into the planner (#582).
         let task_rows = self.load_task_rows(input.task_ids.as_ref()).await?;
         let all_rows = Self::merge_active_tasks(habit_rows, task_rows);
+
+        let horizon = compute_horizon(from_point, settings.plan_length_days, &all_rows, &tz);
+        let (in_horizon, out_horizon): (Vec<_>, Vec<_>) = all_rows
+            .iter()
+            .cloned()
+            .partition(|row| {
+                iso_to_point(&row.end_at.to_string(), &tz)
+                    .map(|p| p.0 <= horizon.0)
+                    .unwrap_or(true)
+            });
+        let horizon_task_ids: Vec<String> = out_horizon.iter().map(|t| t.id.clone()).collect();
+
         let (mut planner, id_map, id_to_idx) = self
-            .build_planner(from_point, sleep, &settings, &all_rows, &tz)
+            .build_planner(from_point, sleep, &settings, &in_horizon, &tz)
             .await?;
 
         // #211: 前回スケジュールを参照として渡し、直近タスクの移動に
@@ -162,13 +257,14 @@ impl super::TakusuApp {
         entries = self
             .preserve_active_entries(entries, &existing_entries, &[TaskStatus::InProgress])
             .await?;
-        let mark_ids: Vec<String> = all_rows.iter().map(|t| t.id.clone()).collect();
+        let mark_ids: Vec<String> = in_horizon.iter().map(|t| t.id.clone()).collect();
 
         let result = self
             .storage
             .save_schedule(&SaveScheduleRequest {
                 entries,
                 mark_scheduled_task_ids: mark_ids,
+                horizon_task_ids,
             })
             .await
             .map_err(storage_to_app)?;
@@ -398,6 +494,7 @@ impl super::TakusuApp {
             .save_schedule(&SaveScheduleRequest {
                 entries: final_entries,
                 mark_scheduled_task_ids: vec![],
+                horizon_task_ids: vec![],
             })
             .await
             .map_err(storage_to_app)?;
@@ -470,6 +567,7 @@ impl super::TakusuApp {
             .save_schedule(&SaveScheduleRequest {
                 entries,
                 mark_scheduled_task_ids: vec![],
+                horizon_task_ids: vec![],
             })
             .await
             .map_err(storage_to_app)?;
@@ -783,5 +881,93 @@ mod tests {
         let tz = jiff::tz::TimeZone::UTC;
         assert!(point_to_local_date(i64::MAX, &tz).is_err());
         assert!(point_to_local_date(i64::MIN, &tz).is_err());
+    }
+
+    // ── compute_horizon ─────────────────────────────────────────────────
+
+    fn make_task_row(id: &str, end_at: &str, depends: &[&str]) -> TaskRow {
+        TaskRow {
+            id: id.to_string(),
+            display_id: 0,
+            title: id.to_string(),
+            description: None,
+            start_at: None,
+            end_at: end_at.parse().unwrap(),
+            avg_minutes: 30,
+            sigma_minutes: 0,
+            depends: depends
+                .iter()
+                .map(|s| s.to_string())
+                .collect::<Vec<_>>()
+                .into(),
+            parallelizable: false,
+            allows_parallel: false,
+            abandonability: 0.5.into(),
+            status: takusu_types::TaskStatus::Pending,
+            habit_id: None,
+            ical_uid: None,
+            user_edited: false,
+            fixed: false,
+            habit_step_id: None,
+            quantity_total: None,
+            quantity_done: Default::default(),
+            quantity_unit: None,
+            completed_at: None,
+            split_from_task_id: None,
+            original_quantity_total: None,
+            actual_minutes: None,
+            created_at: "2026-01-01T00:00:00Z".parse().unwrap(),
+            updated_at: "2026-01-01T00:00:00Z".parse().unwrap(),
+        }
+    }
+
+    #[test]
+    fn horizon_base_is_plan_length_times_two() {
+        let tz = jiff::tz::TimeZone::UTC;
+        let now = Point(0);
+        let rows = vec![make_task_row("a", "2026-01-10T00:00:00Z", &[])];
+        let h = compute_horizon(now, 14, &rows, &tz);
+        assert_eq!(h.0, 14 * SLOTS_PER_DAY * HORIZON_MULTIPLIER);
+    }
+
+    #[test]
+    fn horizon_plan_length_clamped_to_one() {
+        let tz = jiff::tz::TimeZone::UTC;
+        let now = Point(0);
+        let rows = vec![];
+        let h = compute_horizon(now, 0, &rows, &tz);
+        assert_eq!(h.0, SLOTS_PER_DAY * HORIZON_MULTIPLIER);
+    }
+
+    #[test]
+    fn horizon_extends_for_dependency_beyond_base() {
+        let tz = jiff::tz::TimeZone::UTC;
+        let now = iso_to_point("2026-01-01T00:00:00Z", &tz).unwrap();
+        // base = now + 1 day * 2 = 2026-01-03.
+        // "a" deadline 2026-01-02 is within base, depends on "b" (2026-03-01).
+        let far_deadline = "2026-03-01T00:00:00Z";
+        let far_point = iso_to_point(far_deadline, &tz).unwrap();
+        let rows = vec![
+            make_task_row("a", "2026-01-02T00:00:00Z", &["b"]),
+            make_task_row("b", far_deadline, &[]),
+        ];
+        let h = compute_horizon(now, 1, &rows, &tz);
+        assert_eq!(h.0, far_point.0);
+    }
+
+    #[test]
+    fn horizon_extends_for_next_start() {
+        let tz = jiff::tz::TimeZone::UTC;
+        let now = Point(0);
+        // next_start = 10 days from now (in slots), plan_length = 1 day.
+        // candidate = next_start + plan_length = 10d + 1d = 11d.
+        // base = 1d * 2 = 2d. So horizon should be 11 days.
+        let start_at: takusu_types::Timestamp = "2026-01-11T00:00:00Z".parse().unwrap();
+        let mut row = make_task_row("a", "2026-02-01T00:00:00Z", &[]);
+        row.start_at = Some(start_at);
+        let rows = vec![row];
+        let h = compute_horizon(now, 1, &rows, &tz);
+        let expected_start = iso_to_point("2026-01-11T00:00:00Z", &tz).unwrap();
+        assert_eq!(h.0, expected_start.0 + SLOTS_PER_DAY);
     }
 }

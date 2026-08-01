@@ -430,7 +430,8 @@ fn task_and_depend_scores(
         // deadline_score
         let slack = Point::delta(task.end, sched_end);
         if slack.0 >= 0 {
-            score += (slack.0 as f64 * w.w_early).min(50.0);
+            let atten = (1.0 - planner.freeness(task.id)).clamp(0.0, 1.0).sqrt();
+            score += (slack.0 as f64 * w.w_early * atten).min(50.0);
         } else {
             let weight = 1.0 - task.abandonability.get();
             score += slack.0 as f64 * w.w_late * weight;
@@ -986,14 +987,19 @@ mod tests {
         let score_valid = evaluate(&p, &valid, 0.0, 1.0);
         let score_invalid = evaluate(&p, &invalid, 0.0, 1.0);
 
-        // Both plans have the same duration and capped early-bonus terms, and
-        // the invalid schedule has no parallel overlap, so the score difference
-        // should be exactly the dependency violation penalty: 1 slot * w_depend_base.
-        let expected_penalty = 1.0 * EvaluationWeights::default().w_depend_base;
+        // The invalid schedule has a 1-slot dependency violation (capped at
+        // sched_end). The gap is the dependency penalty plus the early-bonus
+        // difference from the attenuation factor:
+        //   A: atten = sqrt(1 - 0.9) = sqrt(0.1); slack diff = 90 - 88 = 2
+        //   B: atten = sqrt(1 - 0.99) = 0.1; slack diff = 89 - 99 = -10
+        //   early_diff = 2*sqrt(0.1) + (-10)*0.1 = 2*sqrt(0.1) - 1
+        let w = EvaluationWeights::default();
+        let early_diff = 2.0 * 0.1f64.sqrt() - 1.0;
+        let expected_gap = 1.0 * w.w_depend_base + early_diff;
         let actual_gap = score_valid - score_invalid;
         assert!(
-            (actual_gap - expected_penalty).abs() < 1e-6,
-            "expected gap {expected_penalty}, got {actual_gap} (dependency penalty overcounts when dep end > sched end)"
+            (actual_gap - expected_gap).abs() < 1e-6,
+            "expected gap {expected_gap}, got {actual_gap}"
         );
     }
 
@@ -1240,9 +1246,13 @@ mod tests {
 
         let score_overlap = evaluate(&p, &overlapping, 0.0, 1.0);
         let score_no = evaluate(&p, &no_overlap, 0.0, 1.0);
+        // Both tasks: freeness = 1 - 3/100 = 0.97, atten = sqrt(0.03).
+        // Overlap: guest slack = 100-3 = 97. No-overlap: guest slack = 100-6 = 94.
+        // Early bonus diff = (97-94)*sqrt(0.03) = 3*sqrt(0.03).
+        let expected_diff = 3.0 * 0.03f64.sqrt();
         assert!(
-            (score_overlap - score_no).abs() < 1e-6,
-            "parallel tasks should have no violation penalty. overlap={score_overlap} no={score_no}"
+            (score_overlap - score_no - expected_diff).abs() < 1e-6,
+            "parallel tasks should have no violation penalty, only early-bonus diff. overlap={score_overlap} no={score_no} expected_diff={expected_diff}"
         );
     }
 
@@ -1538,12 +1548,14 @@ mod tests {
 
         let score_exact = evaluate(&p, &exact, 0.0, 1.0);
         let score_over = evaluate(&p, &over, 0.0, 1.0);
-        // over by 2 slots: penalty = -2 * 0.5 = -1.0 (plus deadline slack change).
-        // exact: slack = 100-3 = 97 → capped at 50. over: slack = 100-5 = 95 → capped 50.
-        // So deadline term equal; only duration differs by 1.0.
+        // over by 2 slots: duration penalty = -2 * w_over(0.5) = -1.0.
+        // Early bonus diff: freeness = 1 - 3/100 = 0.97, atten = sqrt(0.03).
+        //   exact slack = 97, over slack = 95 → diff = 2*sqrt(0.03).
+        let expected_gap = 1.0 + 2.0 * 0.03f64.sqrt();
+        let gap = score_exact - score_over;
         assert!(
-            (score_exact - score_over - 1.0).abs() < 1e-9,
-            "over-assignment penalty should be -1.0: exact={score_exact} over={score_over}"
+            (gap - expected_gap).abs() < 1e-9,
+            "over-assignment gap should be {expected_gap}: exact={score_exact} over={score_over} gap={gap}"
         );
     }
 

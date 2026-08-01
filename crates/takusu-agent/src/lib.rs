@@ -2070,6 +2070,7 @@ mod tests {
                     created_at: "2026-07-18T00:00:00Z".parse().unwrap(),
                     updated_at: "2026-07-18T00:00:00Z".parse().unwrap(),
                     schedule: Vec::new().into(),
+                    horizon_task_ids: Vec::new().into(),
                 })
             }),
         );
@@ -2153,6 +2154,7 @@ mod tests {
                     created_at: "2026-07-18T00:00:00Z".parse().unwrap(),
                     updated_at: "2026-07-18T00:00:00Z".parse().unwrap(),
                     schedule: Vec::new().into(),
+                    horizon_task_ids: Vec::new().into(),
                 })
             }),
         );
@@ -2304,6 +2306,7 @@ mod tests {
                     created_at: "2026-07-18T00:00:00Z".parse().unwrap(),
                     updated_at: "2026-07-18T00:00:00Z".parse().unwrap(),
                     schedule: Vec::new().into(),
+                    horizon_task_ids: Vec::new().into(),
                 })
             }),
         );
@@ -2511,6 +2514,7 @@ mod tests {
                     created_at: "2026-07-18T00:00:00Z".parse().unwrap(),
                     updated_at: "2026-07-18T00:00:00Z".parse().unwrap(),
                     schedule: Vec::new().into(),
+                    horizon_task_ids: Vec::new().into(),
                 })
             }),
         );
@@ -2583,6 +2587,7 @@ mod tests {
                     created_at: "2026-07-18T00:00:00Z".parse().unwrap(),
                     updated_at: "2026-07-18T00:00:00Z".parse().unwrap(),
                     schedule: Vec::new().into(),
+                    horizon_task_ids: Vec::new().into(),
                 })
             }),
         );

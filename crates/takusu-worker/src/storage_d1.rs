@@ -443,7 +443,7 @@ pub(super) async fn filter_rows_with_query(
 
     let schedule_entries: Vec<takusu_contracts::ScheduleEntry> = {
         let stmt = database.prepare(
-            "SELECT id, created_at, updated_at, schedule FROM schedules WHERE id = 'active'",
+            "SELECT id, created_at, updated_at, schedule, horizon_task_ids FROM schedules WHERE id = 'active'",
         );
         let rows = d1_all::<ScheduleRow>(&stmt).await?;
         rows.into_iter()

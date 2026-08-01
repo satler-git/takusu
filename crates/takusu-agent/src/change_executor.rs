@@ -1013,6 +1013,7 @@ impl ChangeHandler for ScheduleGenerate {
                             .collect()
                     })
                     .unwrap_or_default(),
+                horizon_task_ids: vec![],
             };
             let id = ctx
                 .client()

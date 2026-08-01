@@ -3629,13 +3629,13 @@ async fn generate_schedule_allows_task_depending_on_done_task() {
     let app = build_router(state);
 
     sqlx::query(
-        "INSERT INTO tasks (id, title, end_at, avg_minutes, sigma_minutes, depends, parallelizable, allows_parallel, abandonability, status) VALUES ('done', 'done-task', '2030-01-01T18:00:00Z', 30, 0, '[]', 0, 0, 0.5, 'completed')",
+        "INSERT INTO tasks (id, title, end_at, avg_minutes, sigma_minutes, depends, parallelizable, allows_parallel, abandonability, status) VALUES ('done', 'done-task', '2026-06-05T18:00:00Z', 30, 0, '[]', 0, 0, 0.5, 'completed')",
     )
     .execute(&pool)
     .await
     .unwrap();
     sqlx::query(
-        "INSERT INTO tasks (id, title, end_at, avg_minutes, sigma_minutes, depends, parallelizable, allows_parallel, abandonability, status) VALUES ('pending', 'pending-task', '2030-01-01T18:00:00Z', 30, 0, '[\"done\"]', 0, 0, 0.5, 'pending')",
+        "INSERT INTO tasks (id, title, end_at, avg_minutes, sigma_minutes, depends, parallelizable, allows_parallel, abandonability, status) VALUES ('pending', 'pending-task', '2026-06-05T18:00:00Z', 30, 0, '[\"done\"]', 0, 0, 0.5, 'pending')",
     )
     .execute(&pool)
     .await

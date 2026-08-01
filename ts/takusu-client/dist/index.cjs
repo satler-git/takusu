@@ -26,6 +26,7 @@ __export(index_exports, {
   WINDOW_MODE_PERIOD: () => WINDOW_MODE_PERIOD,
   parseDepends: () => parseDepends,
   parseDependsOn: () => parseDependsOn,
+  parseHorizonTaskIds: () => parseHorizonTaskIds,
   parseSchedule: () => parseSchedule
 });
 module.exports = __toCommonJS(index_exports);
@@ -55,6 +56,15 @@ function parseSchedule(schedule) {
     return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
+  }
+}
+function parseHorizonTaskIds(raw) {
+  if (!raw) return /* @__PURE__ */ new Set();
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? new Set(parsed) : /* @__PURE__ */ new Set();
+  } catch {
+    return /* @__PURE__ */ new Set();
   }
 }
 
@@ -413,6 +423,7 @@ var TakusuClient = class {
   WINDOW_MODE_PERIOD,
   parseDepends,
   parseDependsOn,
+  parseHorizonTaskIds,
   parseSchedule
 });
 //# sourceMappingURL=index.cjs.map
