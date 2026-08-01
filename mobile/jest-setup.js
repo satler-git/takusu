@@ -32,6 +32,8 @@ global.__reanimatedModuleProxy = new Proxy(
 global.RN$registerCallableModule = jest.fn();
 global.RN$Bridgeless = true;
 
+global.IS_REACT_ACT_ENVIRONMENT = true;
+
 jest.mock('expo-haptics', () => ({
   impactAsync: jest.fn(() => Promise.resolve()),
   selectionAsync: jest.fn(() => Promise.resolve()),
