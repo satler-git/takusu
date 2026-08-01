@@ -30,6 +30,7 @@ import { logError, showError } from '@/src/api/errors';
 import { parseSchedule } from '@/src/api/types';
 import type { HabitRow, ScheduleEntry, TaskRow } from '@/src/api/types';
 import { formatDuration } from '@/src/utils/duration';
+import { taskDateKey } from '@/src/utils/stats';
 import { useTheme, habitColorFor, type ColorSet } from '@/src/theme';
 import { haptic } from '@/src/components/haptics';
 import { useTopToast } from '@/src/components/TopToast';
@@ -84,16 +85,6 @@ function generateDateKeys(
     cur.setUTCDate(cur.getUTCDate() + 1);
   }
   return keys;
-}
-
-function taskDateKey(
-  task: TaskRow,
-  scheduleMap: Map<string, ScheduleEntry>,
-  tz?: string,
-): string | null {
-  const endAt = scheduleMap.get(task.id)?.end_at ?? task.end_at;
-  if (!endAt) return null;
-  return dateKey(endAt, tz);
 }
 
 function weekdayIndex(key: string): number {
