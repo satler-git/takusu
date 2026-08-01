@@ -5245,11 +5245,13 @@ checksum = "7b2093cf4c8eb1e67749a6762251bc9cd836b6fc171623bd0a9d324d37af2417"
 name = "takusu-agent"
 version = "0.20260801.1"
 dependencies = [
+ "aide",
  "async-trait",
  "axum",
  "clap",
  "config",
  "futures-util",
+ "indexmap",
  "insta",
  "inventory",
  "jiff",

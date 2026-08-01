@@ -113,7 +113,7 @@ pub enum PermissionKeyParseError {
 /// clients can send it directly without wrapping it in an `allow` field.
 /// Internally the keys are typed (`PermissionKey`) to prevent typos and avoid
 /// per-lookup string allocation.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
 #[serde(transparent)]
 pub struct Permissions {
     pub allow: BTreeMap<PermissionKey, bool>,
@@ -156,6 +156,22 @@ impl Permissions {
     ) {
         self.allow
             .insert(PermissionKey::new(target.into(), operation.into()), allowed);
+    }
+}
+
+impl schemars::JsonSchema for PermissionKey {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "PermissionKey".into()
+    }
+
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        concat!(module_path!(), "::PermissionKey").into()
+    }
+
+    fn json_schema(
+        generator: &mut schemars::SchemaGenerator,
+    ) -> schemars::Schema {
+        String::json_schema(generator)
     }
 }
 

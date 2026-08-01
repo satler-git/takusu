@@ -10,15 +10,23 @@ name = "takusu-agent"
 path = "src/bin/agent.rs"
 required-features = ["audio-device"]
 
+[[bin]]
+name = "generate-openapi"
+path = "src/bin/generate-openapi.rs"
+required-features = ["openapi"]
+
 [features]
 default = ["audio-device"]
 audio-device = ["takusu-audio/sherpa", "takusu-audio/record"]
+openapi = ["dep:aide", "dep:indexmap"]
 
 [lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("clap"))'] }
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("clap", "openapi"))'] }
 
 [dependencies]
+aide = { workspace = true, optional = true }
 async-trait = { workspace = true }
+indexmap = { version = "2", optional = true }
 axum = "0.8"
 clap = { version = "4", features = ["derive"] }
 config = "0.15"
