@@ -56,6 +56,7 @@ const MIGRATION_023: &str = include_str!("../migrations/023_timestamp_format.sql
 const MIGRATION_024: &str = include_str!("../migrations/024_zero_quantity_to_null.sql");
 const MIGRATION_025: &str = include_str!("../migrations/025_task_normalized_title.sql");
 const MIGRATION_026: &str = include_str!("../migrations/026_work_sessions.sql");
+const MIGRATION_027: &str = include_str!("../migrations/027_horizon.sql");
 
 mod work_session;
 
@@ -435,6 +436,17 @@ impl SqliteStorage {
         .await?;
         if !has_work_sessions {
             sqlx::raw_sql(MIGRATION_026).execute(&pool).await?;
+        }
+
+        // Migration 027: horizon support — plan_length_days setting and
+        // horizon_task_ids column on schedules.
+        let has_plan_length: bool = sqlx::query_scalar(
+            "SELECT COUNT(*) > 0 FROM pragma_table_info('settings') WHERE name='plan_length_days'",
+        )
+        .fetch_one(&pool)
+        .await?;
+        if !has_plan_length {
+            sqlx::raw_sql(MIGRATION_027).execute(&pool).await?;
         }
 
         Ok(Self { pool, jwt_secret })
@@ -1269,17 +1281,20 @@ impl Storage for SqliteStorage {
 
     async fn save_schedule(&self, req: &SaveScheduleRequest) -> StorageResult<ScheduleRow> {
         let schedule = takusu_contracts::ScheduleData::new(req.entries.clone());
+        let horizon_ids =
+            takusu_types::JsonString::new(req.horizon_task_ids.clone());
         let now = takusu_types::now_rfc3339();
         // Wrap the schedule upsert and the task status updates in a single
         // transaction so a failure mid-way cannot leave the schedule saved
         // but some tasks still marked pending (#289).
         let mut tx = self.pool.begin().await.map_err(map_err)?;
         sqlx::query(
-            "INSERT INTO schedules (id, created_at, updated_at, schedule) VALUES ('active', ?, ?, ?) ON CONFLICT(id) DO UPDATE SET schedule=excluded.schedule, updated_at=excluded.updated_at"
+            "INSERT INTO schedules (id, created_at, updated_at, schedule, horizon_task_ids) VALUES ('active', ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET schedule=excluded.schedule, horizon_task_ids=excluded.horizon_task_ids, updated_at=excluded.updated_at"
         )
         .bind(&now)
         .bind(&now)
         .bind(&schedule)
+        .bind(&horizon_ids)
         .execute(&mut *tx)
         .await
         .map_err(map_err)?;
@@ -1386,8 +1401,9 @@ impl Storage for SqliteStorage {
         let time_budget_ms = body.time_budget_ms.or(existing.time_budget_ms);
         let seed = body.seed.or(existing.seed);
         let warm_start = body.warm_start.unwrap_or(existing.warm_start);
+        let plan_length_days = body.plan_length_days.unwrap_or(existing.plan_length_days);
         sqlx::query(
-            "UPDATE settings SET tz = ?, sleep_start = ?, sleep_end = ?, comfortable_minutes = ?, maximum_minutes = ?, solver = ?, time_budget_ms = ?, seed = ?, warm_start = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = 'active'",
+            "UPDATE settings SET tz = ?, sleep_start = ?, sleep_end = ?, comfortable_minutes = ?, maximum_minutes = ?, solver = ?, time_budget_ms = ?, seed = ?, warm_start = ?, plan_length_days = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = 'active'",
         )
         .bind(&tz)
         .bind(sleep_start)
@@ -1398,6 +1414,7 @@ impl Storage for SqliteStorage {
         .bind(time_budget_ms)
         .bind(seed)
         .bind(warm_start)
+        .bind(plan_length_days)
         .execute(&self.pool)
         .await
         .map_err(map_err)?;

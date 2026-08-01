@@ -887,7 +887,7 @@ impl Storage for D1Storage {
 
     async fn get_schedule(&self) -> StorageResult<Option<ScheduleRow>> {
         let stmt = self.db.prepare(
-            "SELECT id, created_at, updated_at, schedule FROM schedules WHERE id = 'active'",
+            "SELECT id, created_at, updated_at, schedule, horizon_task_ids FROM schedules WHERE id = 'active'",
         );
         let rows: Vec<ScheduleRow> = d1_all(&stmt).await?;
         Ok(rows.into_iter().next())
@@ -896,12 +896,14 @@ impl Storage for D1Storage {
     async fn save_schedule(&self, req: &SaveScheduleRequest) -> StorageResult<ScheduleRow> {
         let schedule_json =
             takusu_contracts::ScheduleData::new(req.entries.clone()).to_json_string();
+        let horizon_json =
+            takusu_types::JsonString::new(req.horizon_task_ids.clone()).to_json_string();
         let mut stmts: Vec<worker::D1PreparedStatement> =
             Vec::with_capacity(1 + req.mark_scheduled_task_ids.len());
         let upsert = self.db.prepare(
-            "INSERT INTO schedules (id, created_at, updated_at, schedule) VALUES ('active', strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), ?1) ON CONFLICT(id) DO UPDATE SET schedule=excluded.schedule, updated_at=excluded.updated_at",
+            "INSERT INTO schedules (id, created_at, updated_at, schedule, horizon_task_ids) VALUES ('active', strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), ?1, ?2) ON CONFLICT(id) DO UPDATE SET schedule=excluded.schedule, horizon_task_ids=excluded.horizon_task_ids, updated_at=excluded.updated_at",
         )
-        .bind(&[JsValue::from_str(&schedule_json)])
+        .bind(&[JsValue::from_str(&schedule_json), JsValue::from_str(&horizon_json)])
         .map_err(d1_err)?;
         stmts.push(upsert);
         for id in &req.mark_scheduled_task_ids {
@@ -912,7 +914,7 @@ impl Storage for D1Storage {
         }
         self.db.batch(stmts).await.map_err(d1_err)?;
         let stmt = self.db.prepare(
-            "SELECT id, created_at, updated_at, schedule FROM schedules WHERE id = 'active'",
+            "SELECT id, created_at, updated_at, schedule, horizon_task_ids FROM schedules WHERE id = 'active'",
         );
         let rows: Vec<ScheduleRow> = d1_all(&stmt).await?;
         rows.into_iter()

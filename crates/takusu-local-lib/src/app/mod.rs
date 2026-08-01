@@ -39,6 +39,7 @@ fn default_settings_row() -> SettingsRow {
         time_budget_ms: None,
         seed: None,
         warm_start: false,
+        plan_length_days: 14,
         created_at: takusu_types::Timestamp::default(),
         updated_at: takusu_types::Timestamp::default(),
     }

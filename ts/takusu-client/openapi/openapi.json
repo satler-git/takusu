@@ -11643,6 +11643,13 @@
               "$ref": "#/components/schemas/ScheduleEntry"
             }
           },
+          "horizon_task_ids": {
+            "type": "array",
+            "default": [],
+            "items": {
+              "type": "string"
+            }
+          },
           "mark_scheduled_task_ids": {
             "type": "array",
             "default": [],
@@ -11764,6 +11771,14 @@
           "created_at": {
             "$ref": "#/components/schemas/Timestamp"
           },
+          "horizon_task_ids": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/JsonString"
+              }
+            ],
+            "default": "[]"
+          },
           "id": {
             "type": "string"
           },
@@ -11799,6 +11814,12 @@
             "title": "459: 1 日の最大作業時間（分）。`None` または `0` の場合はデフォルトを使う。",
             "type": ["integer", "null"],
             "format": "int64"
+          },
+          "plan_length_days": {
+            "description": "スケジュール計画の期間（日数）。horizon 計算に使う。デフォルト 14。",
+            "type": "integer",
+            "format": "int64",
+            "default": 14
           },
           "seed": {
             "description": "乱数シード。`None` の場合は決定的なデフォルト。",
@@ -12471,6 +12492,11 @@
           },
           "maximum_minutes": {
             "title": "459: 1 日の最大作業時間（分）。`None` または `0` の場合はデフォルトを使う。",
+            "type": ["integer", "null"],
+            "format": "int64"
+          },
+          "plan_length_days": {
+            "description": "スケジュール計画の期間（日数）。",
             "type": ["integer", "null"],
             "format": "int64"
           },

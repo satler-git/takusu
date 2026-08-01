@@ -1,0 +1,2 @@
+ALTER TABLE settings ADD COLUMN plan_length_days INTEGER NOT NULL DEFAULT 14;
+ALTER TABLE schedules ADD COLUMN horizon_task_ids TEXT NOT NULL DEFAULT '[]';

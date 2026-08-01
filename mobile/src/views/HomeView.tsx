@@ -30,7 +30,11 @@ import type {
   ScheduleEntry,
   WorkSessionRow,
 } from '@/src/api/types';
-import { parseDepends, parseSchedule } from '@/src/api/types';
+import {
+  parseDepends,
+  parseSchedule,
+  parseHorizonTaskIds,
+} from '@/src/api/types';
 import { TaskCard, ParallelGroupCard } from '@/src/components/TaskCard';
 import { WorkSessionCard } from '@/src/components/WorkSessionCard';
 import { NavigationButtons } from '@/src/components/NavigationButtons';
@@ -144,6 +148,7 @@ function futureTaskDateLabel(taskKey: string, todayKey: string): string {
 function isDaySeparator(item: DateSeparator): boolean {
   return (
     item.label !== 'pending' &&
+    item.label !== 'horizon' &&
     item.label !== '過去' &&
     !item.label.startsWith('過去をさらに読み込む')
   );
@@ -346,6 +351,8 @@ export function HomeView() {
   const searchQueryRef = useRef(searchQuery);
   searchQueryRef.current = searchQuery;
   const [showPast, setShowPast] = useState(false);
+  const [showHorizon, setShowHorizon] = useState(false);
+  const [horizonTaskIds, setHorizonTaskIds] = useState<Set<string>>(new Set());
   // #206: past tasks load 1 week at a time
   const [pastWeeks, setPastWeeks] = useState(1);
   // All currently open work sessions, newest first. Multiple sessions can be
@@ -490,6 +497,7 @@ export function HomeView() {
           .sort((a, b) => b.started_at.localeCompare(a.started_at)),
       );
       setSchedule(sched ? parseSchedule(sched.schedule) : []);
+      setHorizonTaskIds(parseHorizonTaskIds(sched?.horizon_task_ids));
       setHabits(habitList);
       setServerTz(settings?.tz);
       // Push a fresh snapshot to the home screen widget so it shows
@@ -775,14 +783,33 @@ export function HomeView() {
     }
 
     if (pending.length > 0) {
-      result.push({ type: 'separator', label: 'pending' });
-      for (const t of pending) {
-        result.push({
-          type: 'task',
-          task: t,
-          isDone: t.status === 'completed' || t.status === 'skipped',
-          dateKey: 'pending',
-        });
+      const horizonPending = pending.filter((t) => horizonTaskIds.has(t.id));
+      const unscheduledPending = pending.filter(
+        (t) => !horizonTaskIds.has(t.id),
+      );
+      if (unscheduledPending.length > 0) {
+        result.push({ type: 'separator', label: 'pending' });
+        for (const t of unscheduledPending) {
+          result.push({
+            type: 'task',
+            task: t,
+            isDone: false,
+            dateKey: 'pending',
+          });
+        }
+      }
+      if (horizonPending.length > 0) {
+        result.push({ type: 'separator', label: 'horizon' });
+        if (showHorizon) {
+          for (const t of horizonPending) {
+            result.push({
+              type: 'task',
+              task: t,
+              isDone: false,
+              dateKey: 'horizon',
+            });
+          }
+        }
       }
     }
 
@@ -841,6 +868,8 @@ export function HomeView() {
     showPast,
     pastWeeks,
     serverTz,
+    horizonTaskIds,
+    showHorizon,
   ]);
 
   // Whether there are any past tasks to show the toggle (#920)
@@ -1955,6 +1984,38 @@ export function HomeView() {
             </Pressable>
           );
         }
+        if (item.label === 'horizon') {
+          return (
+            <Pressable
+              style={styles.separator}
+              onPress={() => {
+                haptic.light();
+                setShowHorizon((v) => !v);
+              }}
+            >
+              <View
+                style={[
+                  styles.separatorBar,
+                  { backgroundColor: colors.separator },
+                ]}
+              />
+              <Ionicons
+                name={showHorizon ? 'chevron-down' : 'chevron-forward'}
+                size={12}
+                color={colors.gray}
+              />
+              <Text style={[styles.separatorText, { color: colors.gray }]}>
+                計画対象外
+              </Text>
+              <View
+                style={[
+                  styles.separatorBar,
+                  { backgroundColor: colors.separator },
+                ]}
+              />
+            </Pressable>
+          );
+        }
         return (
           <View style={styles.separator}>
             <View
@@ -2030,6 +2091,7 @@ export function HomeView() {
       markDone,
       markSkipped,
       deleteTask,
+      showHorizon,
       colors,
       styles,
     ],

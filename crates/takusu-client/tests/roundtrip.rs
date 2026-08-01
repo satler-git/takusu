@@ -227,6 +227,7 @@ fn update_settings_new_fields_serialization() {
         time_budget_ms: Some(1500),
         seed: Some(42),
         warm_start: Some(true),
+        plan_length_days: None,
     };
 
     let json = serde_json::to_value(&us).unwrap();
