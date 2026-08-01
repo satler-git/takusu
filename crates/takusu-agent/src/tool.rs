@@ -324,9 +324,10 @@ impl<'de> Deserialize<'de> for Target {
 }
 
 /// Flattened target fields inside `ChangeReceipt`.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ReceiptTarget {
     #[serde(with = "takusu_types::enum_serde")]
+    #[schemars(with = "TargetKind")]
     pub target_type: TargetKind,
     pub target_id: String,
 }
@@ -359,11 +360,13 @@ impl ToolError {
     }
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ProposedChange {
     #[serde(with = "takusu_types::enum_serde")]
+    #[schemars(with = "ChangeOperation")]
     pub operation: ChangeOperation,
     #[serde(rename = "target_label")]
+    #[schemars(with = "String")]
     pub target: Target,
     pub description: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -378,7 +381,7 @@ pub struct ProposedChange {
     pub proposal_id: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ProposalDecision {
     pub proposal_id: String,
     pub approve: bool,
@@ -416,9 +419,10 @@ pub fn inferred_fields_schema(description: &str) -> Value {
     })
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ChangeReceipt {
     #[serde(with = "takusu_types::enum_serde")]
+    #[schemars(with = "ChangeOperation")]
     pub operation: ChangeOperation,
     #[serde(flatten)]
     pub target: ReceiptTarget,

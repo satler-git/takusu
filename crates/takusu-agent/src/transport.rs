@@ -250,18 +250,54 @@ pub struct Versioned<T> {
     pub value: T,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+impl<T: schemars::JsonSchema> schemars::JsonSchema for Versioned<T> {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "Versioned".into()
+    }
+
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        format!("{}::Versioned<{}>", module_path!(), T::schema_id()).into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        let value_schema = generator.subschema_for::<T>();
+        let schema = serde_json::json!({
+            "allOf": [
+                {
+                    "type": "object",
+                    "properties": {
+                        "version": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 255
+                        }
+                    },
+                    "required": ["version"]
+                },
+                value_schema.as_value()
+            ]
+        });
+        schemars::Schema::try_from(schema)
+            .expect("Versioned<T> schema is a valid JSON Schema object")
+    }
+
+    fn inline_schema() -> bool {
+        true
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CreateSessionResponse {
     pub session_id: String,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, schemars::JsonSchema)]
 pub struct CreateSessionRequest {
     #[serde(default)]
     pub permissions: Option<crate::Permissions>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ResumeSessionRequest {
     #[serde(default)]
     pub session_id: Option<String>,
@@ -277,12 +313,12 @@ pub struct ResumeSessionRequest {
     pub compaction_summary: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
 pub struct ResumeSessionResponse {
     pub session_id: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(tag = "role", rename_all = "snake_case")]
 pub enum HistoryMessage {
     System {
@@ -322,7 +358,7 @@ where
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct HistoryToolCall {
     pub id: String,
     pub name: String,
@@ -411,30 +447,30 @@ impl From<crate::llm::ToolCall> for HistoryToolCall {
     }
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, schemars::JsonSchema)]
 pub struct UpdateSessionSettings {
     #[serde(default)]
     pub permissions: Option<crate::Permissions>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct TurnRequest {
     pub text: String,
     pub idempotency_key: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct EditTurnRequest {
     pub text: String,
     pub idempotency_key: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct RevertRequest {
     pub after_user: bool,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, schemars::JsonSchema)]
 pub struct UpdateAgentLlmSettings {
     pub base_url: Option<String>,
     pub model: Option<String>,
@@ -443,7 +479,7 @@ pub struct UpdateAgentLlmSettings {
     pub permissions: Option<crate::Permissions>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, schemars::JsonSchema)]
 pub struct UpdateAgentTtsSettings {
     pub backend: Option<takusu_audio::TtsBackend>,
     pub api_key: Option<String>,
@@ -454,18 +490,18 @@ pub struct UpdateAgentTtsSettings {
     pub speed: Option<f32>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, schemars::JsonSchema)]
 pub struct UpdateAgentAudioSettings {
     pub tts: Option<UpdateAgentTtsSettings>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, schemars::JsonSchema)]
 pub struct UpdateAgentSettings {
     pub llm: Option<UpdateAgentLlmSettings>,
     pub audio: Option<UpdateAgentAudioSettings>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
 pub struct TurnResultDto {
     pub text: String,
     pub changes: Vec<crate::ChangeReceipt>,
@@ -484,19 +520,19 @@ impl From<TurnResult> for TurnResultDto {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ApprovalDecisionRequest {
     pub approve: bool,
     pub idempotency_key: Option<String>,
     pub proposals: Option<Vec<crate::tool::ProposalDecision>>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct UserInputResolutionRequest {
     pub answers: Vec<UserInputAnswer>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ApprovalResultDto {
     pub id: String,
     pub approved: bool,
@@ -515,7 +551,7 @@ impl From<ApprovalResult> for ApprovalResultDto {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
 pub struct CapabilitiesResponse {
     pub audio_input: bool,
     pub tts: bool,
@@ -523,7 +559,7 @@ pub struct CapabilitiesResponse {
     pub user_input: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
 pub struct HealthResponse {
     pub ok: bool,
 }
@@ -844,6 +880,22 @@ async fn run_turn(
         value: result,
     })
     .into_response()
+}
+
+/// A TTS block event emitted by the agent turn streams.
+#[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
+pub struct TtsBlockEvent {
+    #[serde(rename = "type")]
+    pub r#type: String,
+    pub data: String,
+}
+
+/// A server-sent event payload emitted by the agent turn streams.
+#[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
+#[serde(untagged)]
+pub enum SseEvent {
+    Turn(crate::TurnEvent),
+    TtsBlock(TtsBlockEvent),
 }
 
 /// A server-sent event exchanged with streaming clients.

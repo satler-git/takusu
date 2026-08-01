@@ -29,7 +29,7 @@ pub use crate::compact::CompactionSettings;
 /// existing `agent.toml` files and persisted mobile settings keep working.
 /// They all map to `OpenAICompatible`. Serialization always emits
 /// `openai_compatible`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, schemars::JsonSchema)]
 pub enum LlmProviderKind {
     #[serde(
         rename = "openai_compatible",

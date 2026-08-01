@@ -62,6 +62,12 @@ export type GoogleCalEventMapping = S['GoogleCalEventRow'];
 // Re-export UpdateGoogleCalSettings (same name).
 export type UpdateGoogleCalSettings = S['UpdateGoogleCalSettings'];
 
+// Agent API types.
+export type AgentTurnResult = S['TurnResultDto'];
+export type ApprovalResult = S['ApprovalResultDto'];
+export type ChangeOperation = S['ChangeOperation'];
+export type TargetKind = S['TargetKind'];
+
 // Helper: parse depends JSON string
 export function parseDepends(depends: string): string[] {
   try {

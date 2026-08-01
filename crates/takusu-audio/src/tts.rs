@@ -15,7 +15,7 @@ use thiserror::Error;
 use crate::secrets::{ApiKey, EndpointUrl};
 
 /// TTS backend identifier.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum TtsBackend {
     Cartesia,

@@ -1136,6 +1136,287 @@ interface components$1 {
         WorkersConfigUpdateResponse: {
             ok: boolean;
         };
+        ApprovalDecisionRequest: {
+            approve: boolean;
+            idempotency_key?: string | null;
+            proposals?: components$1['schemas']['ProposalDecision'][] | null;
+        };
+        ApprovalRequest: {
+            changes: components$1['schemas']['ProposedChange'][];
+            expires_at: string;
+            id: string;
+            inferred_fields: components$1['schemas']['InferredField'][];
+            warnings: string[];
+            why: string;
+        };
+        ApprovalResultDto: {
+            approved: boolean;
+            changes: components$1['schemas']['ChangeReceipt'][];
+            id: string;
+            schedule_dirty: boolean;
+        };
+        CapabilitiesResponse: {
+            approvals: boolean;
+            audio_input: boolean;
+            tts: boolean;
+            user_input: boolean;
+        };
+        /**
+         * @description Operation kind for a proposed or applied change.
+         * @enum {string}
+         */
+        ChangeOperation: 'create' | 'update' | 'delete' | 'generate' | 'reschedule' | 'move' | 'start' | 'pause' | 'progress' | 'complete' | 'split' | 'create_scheduled_span' | 'delete_scheduled_span';
+        /** @description Flattened target fields inside `ChangeReceipt`. */
+        ChangeReceipt: {
+            after?: unknown;
+            before?: unknown;
+            inferred_fields?: unknown;
+            operation: components$1['schemas']['ChangeOperation'];
+            target_id: string;
+            /** Format: int64 */
+            target_revision?: number | null;
+            target_type: components$1['schemas']['TargetKind'];
+        };
+        CreateSessionRequest: {
+            /** @default null */
+            permissions: components$1['schemas']['Permissions'] | null;
+        };
+        CreateSessionResponse: {
+            session_id: string;
+        };
+        EditTurnRequest: {
+            idempotency_key?: string | null;
+            text: string;
+        };
+        /** @description Default error body returned by agent endpoints. */
+        ErrorResponse: {
+            error: string;
+            /** Format: uint8 */
+            version: number;
+        };
+        HealthResponse: {
+            ok: boolean;
+        };
+        HistoryMessage: {
+            content: string;
+            /** @constant */
+            role: 'system';
+        } | {
+            content: string;
+            /** @constant */
+            role: 'user';
+        } | {
+            /** @default null */
+            content: string | null;
+            /** @constant */
+            role: 'assistant';
+            /** @default [] */
+            tool_calls: components$1['schemas']['HistoryToolCall'][];
+        } | {
+            content: string;
+            /** @default false */
+            is_error: boolean;
+            /** @constant */
+            role: 'tool';
+            tool_call_id: string;
+        };
+        HistoryToolCall: {
+            /** @default {} */
+            arguments: unknown;
+            id: string;
+            name: string;
+        };
+        InferredField: {
+            /** @description Name of the inferred field. */
+            field: string;
+            /** @description Reason the field was inferred. */
+            reason: string;
+            /** @description Inferred value for the field. */
+            value: unknown;
+        };
+        /**
+         * @description Identifies which LLM backend implementation to build.
+         *
+         *     Currently only `OpenAICompatible` exists — OpenAI, OpenRouter, and custom
+         *     OpenAI-compatible endpoints are all served by [`OpenAIClient`]. The enum
+         *     is kept as a single variant so that future non-OpenAI-compatible providers
+         *     (e.g. Anthropic native, Gemini) can be added without touching the dispatch
+         *     sites that call [`build_llm_client`].
+         *
+         *     The legacy `openai`, `openrouter`, and `custom` values (from the previous
+         *     three-variant enum) are accepted as aliases during deserialization so that
+         *     existing `agent.toml` files and persisted mobile settings keep working.
+         *     They all map to `OpenAICompatible`. Serialization always emits
+         *     `openai_compatible`.
+         * @enum {string}
+         */
+        LlmProviderKind: 'openai_compatible';
+        /** @description Generic `{ "ok": true }` body used by several agent endpoints. */
+        OkResponse: {
+            ok: boolean;
+        };
+        /**
+         * @description Permission map for auto-approving proposed changes.
+         *
+         *     Serialized as a flat map of `"target:operation"` -> bool so that mobile
+         *     clients can send it directly without wrapping it in an `allow` field.
+         *     Internally the keys are typed (`PermissionKey`) to prevent typos and avoid
+         *     per-lookup string allocation.
+         */
+        Permissions: {
+            [key: string]: boolean;
+        };
+        ProposalDecision: {
+            approve: boolean;
+            proposal_id: string;
+        };
+        ProposedChange: {
+            after?: unknown;
+            arguments?: unknown;
+            before?: unknown;
+            description: string;
+            observed_updated_at?: string | null;
+            operation: components$1['schemas']['ChangeOperation'];
+            proposal_id?: string | null;
+            target_label: string;
+        };
+        ResumeSessionRequest: {
+            /** @default null */
+            compaction_summary: string | null;
+            /** @default [] */
+            history: components$1['schemas']['HistoryMessage'][];
+            /** @default null */
+            pending_approval: components$1['schemas']['ApprovalRequest'] | null;
+            /** @default null */
+            permissions: components$1['schemas']['Permissions'] | null;
+            /** @default null */
+            schedule_dirty: boolean | null;
+            /** @default null */
+            session_id: string | null;
+        };
+        ResumeSessionResponse: {
+            session_id: string;
+        };
+        RevertRequest: {
+            after_user: boolean;
+        };
+        /** @description A server-sent event payload emitted by the agent turn streams. */
+        SseEvent: components$1['schemas']['TurnEvent'] | components$1['schemas']['TtsBlockEvent'];
+        /**
+         * @description Target kind for a proposed or applied change.
+         * @enum {string}
+         */
+        TargetKind: 'task' | 'habit' | 'skill' | 'memory' | 'schedule';
+        ToolStat: {
+            /** Format: uint64 */
+            count: number;
+            /** Format: uint64 */
+            error_count: number;
+            last_used?: string | null;
+        };
+        ToolStatsSnapshot: {
+            tools: {
+                [key: string]: components$1['schemas']['ToolStat'];
+            };
+        };
+        /**
+         * @description TTS backend identifier.
+         * @enum {string}
+         */
+        TtsBackend: 'cartesia' | 'android' | 'fish';
+        /** @description A TTS block event emitted by the agent turn streams. */
+        TtsBlockEvent: {
+            data: string;
+            type: string;
+        };
+        /** @description Events emitted while a streaming turn is in progress. */
+        TurnEvent: {
+            data: string;
+            /** @constant */
+            type: 'Thinking';
+        } | {
+            data: string;
+            /** @constant */
+            type: 'Text';
+        } | {
+            data: {
+                arguments: unknown;
+                call_id: string;
+                name: string;
+            };
+            /** @constant */
+            type: 'ToolCall';
+        } | {
+            data: {
+                call_id: string;
+                content: string;
+                is_error: boolean;
+                name: string;
+            };
+            /** @constant */
+            type: 'ToolResult';
+        } | {
+            data: string;
+            /** @constant */
+            type: 'Error';
+        } | {
+            data: components$1['schemas']['TurnResult'];
+            /** @constant */
+            type: 'Done';
+        };
+        TurnRequest: {
+            idempotency_key?: string | null;
+            text: string;
+        };
+        TurnResult: {
+            approval_request?: components$1['schemas']['ApprovalRequest'] | null;
+            changes: components$1['schemas']['ChangeReceipt'][];
+            schedule_dirty: boolean;
+            text: string;
+        };
+        TurnResultDto: {
+            approval_request?: components$1['schemas']['ApprovalRequest'] | null;
+            changes: components$1['schemas']['ChangeReceipt'][];
+            schedule_dirty: boolean;
+            text: string;
+        };
+        UpdateAgentAudioSettings: {
+            tts?: components$1['schemas']['UpdateAgentTtsSettings'] | null;
+        };
+        UpdateAgentLlmSettings: {
+            api_key?: string | null;
+            base_url?: string | null;
+            model?: string | null;
+            permissions?: components$1['schemas']['Permissions'] | null;
+            provider?: components$1['schemas']['LlmProviderKind'] | null;
+        };
+        UpdateAgentSettings: {
+            audio?: components$1['schemas']['UpdateAgentAudioSettings'] | null;
+            llm?: components$1['schemas']['UpdateAgentLlmSettings'] | null;
+        };
+        UpdateAgentTtsSettings: {
+            api_key?: string | null;
+            backend?: components$1['schemas']['TtsBackend'] | null;
+            language?: string | null;
+            model?: string | null;
+            /** Format: uint32 */
+            sample_rate?: number | null;
+            /** Format: float */
+            speed?: number | null;
+            voice_id?: string | null;
+        };
+        UpdateSessionSettings: {
+            /** @default null */
+            permissions: components$1['schemas']['Permissions'] | null;
+        };
+        /** @description A user-supplied correction for one `UserInputQuestion`. */
+        UserInputAnswer: {
+            /** @description The corrected text. */
+            text: string;
+        };
+        UserInputResolutionRequest: {
+            answers: components$1['schemas']['UserInputAnswer'][];
+        };
     };
     responses: never;
     parameters: never;
@@ -1200,6 +1481,10 @@ type GoogleCalSettings = S['GoogleCalSettingsOutput'];
 type DeleteAllGcalResponse = S['DeleteAllGcalResult'];
 type GoogleCalEventMapping = S['GoogleCalEventRow'];
 type UpdateGoogleCalSettings = S['UpdateGoogleCalSettings'];
+type AgentTurnResult = S['TurnResultDto'];
+type ApprovalResult = S['ApprovalResultDto'];
+type ChangeOperation = S['ChangeOperation'];
+type TargetKind = S['TargetKind'];
 declare function parseDepends(depends: string): string[];
 declare function parseDependsOn(dependsOn: string): string[];
 declare const WINDOW_MODE_DAY: "day";
@@ -1283,4 +1568,4 @@ declare class TakusuClient {
     }>;
 }
 
-export { ApiError, type AttachWorkSession, type Completion, type ConvertWorkSession, type CreateHabit, type CreateHabitScheduledSpan, type CreateSkill, type CreateTask, type DeleteAllGcalFailure, type DeleteAllGcalResponse, type DependencyAnalysisResponse, type DependencyNode, type GenerateSchedule, type GoogleCalEventMapping, type GoogleCalSettings, type HabitDetail, type HabitEstimateRequest, type HabitEstimateResult, type HabitEstimateSample, type HabitEstimateStep, type HabitPreviewRequest, type HabitPreviewTask, type HabitRow, type HabitScheduledSpanRow, type HabitStepInput, type HabitStepRow, type IcalImportResult, type MoveEntryRequest, type MoveEntryResponse, type OAuthCallbackResponse, type ProgressEventRow, type RecordWorkSessionProgress, type RedundantDependency, type RescheduleRequest, type ScheduleEntry, type ScheduleRow, type SettingsRow, type SkillRow, type SplitResult, type SplitTask, type StartWorkSession, type SyncTriggerResponse, TakusuClient, type TaskQuery, type TaskRow, type TaskStatus, type TokenCreateResponse, type TokenRow, type UpdateGoogleCalSettings, type UpdateHabit, type UpdateSettings, type UpdateSkill, type UpdateTask, WINDOW_MODE_DAY, WINDOW_MODE_PERIOD, type WindowMode, type WorkSessionProgressResult, type WorkSessionRow, type components, parseDepends, parseDependsOn, parseSchedule };
+export { type AgentTurnResult, ApiError, type ApprovalResult, type AttachWorkSession, type ChangeOperation, type Completion, type ConvertWorkSession, type CreateHabit, type CreateHabitScheduledSpan, type CreateSkill, type CreateTask, type DeleteAllGcalFailure, type DeleteAllGcalResponse, type DependencyAnalysisResponse, type DependencyNode, type GenerateSchedule, type GoogleCalEventMapping, type GoogleCalSettings, type HabitDetail, type HabitEstimateRequest, type HabitEstimateResult, type HabitEstimateSample, type HabitEstimateStep, type HabitPreviewRequest, type HabitPreviewTask, type HabitRow, type HabitScheduledSpanRow, type HabitStepInput, type HabitStepRow, type IcalImportResult, type MoveEntryRequest, type MoveEntryResponse, type OAuthCallbackResponse, type ProgressEventRow, type RecordWorkSessionProgress, type RedundantDependency, type RescheduleRequest, type ScheduleEntry, type ScheduleRow, type SettingsRow, type SkillRow, type SplitResult, type SplitTask, type StartWorkSession, type SyncTriggerResponse, TakusuClient, type TargetKind, type TaskQuery, type TaskRow, type TaskStatus, type TokenCreateResponse, type TokenRow, type UpdateGoogleCalSettings, type UpdateHabit, type UpdateSettings, type UpdateSkill, type UpdateTask, WINDOW_MODE_DAY, WINDOW_MODE_PERIOD, type WindowMode, type WorkSessionProgressResult, type WorkSessionRow, type components, parseDepends, parseDependsOn, parseSchedule };

@@ -5,6 +5,8 @@ pub mod bundled_skills;
 pub(crate) mod change_executor;
 pub(crate) mod compact;
 pub mod llm;
+#[cfg(feature = "openapi")]
+pub mod openapi;
 pub mod permissions;
 pub mod runner;
 pub mod tool;
@@ -144,17 +146,18 @@ impl<G> From<std::sync::PoisonError<G>> for AgentError {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ApprovalRequest {
     pub id: String,
     pub why: String,
     pub changes: Vec<ProposedChange>,
     pub inferred_fields: Vec<InferredField>,
     pub warnings: Vec<String>,
+    #[schemars(with = "String")]
     pub expires_at: jiff::Timestamp,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
 pub struct ApprovalResult {
     pub id: String,
     pub approved: bool,
@@ -162,7 +165,7 @@ pub struct ApprovalResult {
     pub schedule_dirty: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
 pub struct TurnResult {
     pub text: String,
     pub changes: Vec<ChangeReceipt>,
@@ -175,7 +178,7 @@ fn new_session_id() -> String {
 }
 
 /// Events emitted while a streaming turn is in progress.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
 #[serde(tag = "type", content = "data")]
 pub enum TurnEvent {
     Thinking(String),

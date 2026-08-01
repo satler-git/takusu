@@ -6523,6 +6523,1032 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/agent/v1/health': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              version: number;
+            } & components['schemas']['HealthResponse'];
+          };
+        };
+        /** @description Default error body returned by agent endpoints. */
+        default: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['ErrorResponse'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/agent/v1/capabilities': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              version: number;
+            } & components['schemas']['CapabilitiesResponse'];
+          };
+        };
+        /** @description Default error body returned by agent endpoints. */
+        default: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['ErrorResponse'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/agent/v1/settings': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          'application/json': {
+            version: number;
+          } & components['schemas']['UpdateAgentSettings'];
+        };
+      };
+      responses: {
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              version: number;
+            } & components['schemas']['OkResponse'];
+          };
+        };
+        /** @description Failed to parse the request body as JSON */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Expected request with `Content-Type: application/json` */
+        415: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Failed to deserialize the JSON body into the target type */
+        422: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Default error body returned by agent endpoints. */
+        default: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['ErrorResponse'];
+          };
+        };
+      };
+    };
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/agent/v1/sessions': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: {
+        content: {
+          'application/json': {
+            version: number;
+          } & components['schemas']['CreateSessionRequest'];
+        };
+      };
+      responses: {
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              version: number;
+            } & components['schemas']['CreateSessionResponse'];
+          };
+        };
+        /** @description Failed to parse the request body as JSON */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Expected request with `Content-Type: application/json` */
+        415: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Failed to deserialize the JSON body into the target type */
+        422: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Default error body returned by agent endpoints. */
+        default: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['ErrorResponse'];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/agent/v1/sessions/resume': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          'application/json': {
+            version: number;
+          } & components['schemas']['ResumeSessionRequest'];
+        };
+      };
+      responses: {
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              version: number;
+            } & components['schemas']['ResumeSessionResponse'];
+          };
+        };
+        /** @description Failed to parse the request body as JSON */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Expected request with `Content-Type: application/json` */
+        415: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Failed to deserialize the JSON body into the target type */
+        422: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Default error body returned by agent endpoints. */
+        default: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['ErrorResponse'];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/agent/v1/sessions/{id}/turns': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          'application/json': {
+            version: number;
+          } & components['schemas']['TurnRequest'];
+        };
+      };
+      responses: {
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              version: number;
+            } & components['schemas']['TurnResultDto'];
+          };
+        };
+        /** @description Failed to parse the request body as JSON */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Expected request with `Content-Type: application/json` */
+        415: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Failed to deserialize the JSON body into the target type */
+        422: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Default error body returned by agent endpoints. */
+        default: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['ErrorResponse'];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/agent/v1/sessions/{id}/turns/stream': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          'application/json': {
+            version: number;
+          } & components['schemas']['TurnRequest'];
+        };
+      };
+      responses: {
+        /** @description A server-sent event payload emitted by the agent turn streams. */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/event-stream': components['schemas']['SseEvent'];
+          };
+        };
+        /** @description Failed to parse the request body as JSON */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Expected request with `Content-Type: application/json` */
+        415: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Failed to deserialize the JSON body into the target type */
+        422: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Default error body returned by agent endpoints. */
+        default: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['ErrorResponse'];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/agent/v1/sessions/{id}/turns/{turn_index}/edit/stream': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          'application/json': {
+            version: number;
+          } & components['schemas']['EditTurnRequest'];
+        };
+      };
+      responses: {
+        /** @description A server-sent event payload emitted by the agent turn streams. */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/event-stream': components['schemas']['SseEvent'];
+          };
+        };
+        /** @description Failed to parse the request body as JSON */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Expected request with `Content-Type: application/json` */
+        415: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Failed to deserialize the JSON body into the target type */
+        422: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Default error body returned by agent endpoints. */
+        default: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['ErrorResponse'];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/agent/v1/sessions/{id}/turns/{turn_index}/revert': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          'application/json': {
+            version: number;
+          } & components['schemas']['RevertRequest'];
+        };
+      };
+      responses: {
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              version: number;
+            } & components['schemas']['OkResponse'];
+          };
+        };
+        /** @description Failed to parse the request body as JSON */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Expected request with `Content-Type: application/json` */
+        415: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Failed to deserialize the JSON body into the target type */
+        422: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Default error body returned by agent endpoints. */
+        default: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['ErrorResponse'];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/agent/v1/sessions/{id}/settings': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          'application/json': {
+            version: number;
+          } & components['schemas']['UpdateSessionSettings'];
+        };
+      };
+      responses: {
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              version: number;
+            } & components['schemas']['OkResponse'];
+          };
+        };
+        /** @description Failed to parse the request body as JSON */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Expected request with `Content-Type: application/json` */
+        415: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Failed to deserialize the JSON body into the target type */
+        422: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Default error body returned by agent endpoints. */
+        default: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['ErrorResponse'];
+          };
+        };
+      };
+    };
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/agent/v1/sessions/{id}/approval': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              version: number;
+            } & (components['schemas']['ApprovalRequest'] | null);
+          };
+        };
+        /** @description Default error body returned by agent endpoints. */
+        default: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['ErrorResponse'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/agent/v1/sessions/{id}/approvals/{approval_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          'application/json': {
+            version: number;
+          } & components['schemas']['ApprovalDecisionRequest'];
+        };
+      };
+      responses: {
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              version: number;
+            } & components['schemas']['ApprovalResultDto'];
+          };
+        };
+        /** @description Failed to parse the request body as JSON */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Expected request with `Content-Type: application/json` */
+        415: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Failed to deserialize the JSON body into the target type */
+        422: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Default error body returned by agent endpoints. */
+        default: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['ErrorResponse'];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/agent/v1/sessions/{id}/tool-calls/{call_id}/user-input': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          'application/json': {
+            version: number;
+          } & components['schemas']['UserInputResolutionRequest'];
+        };
+      };
+      responses: {
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              version: number;
+            } & components['schemas']['OkResponse'];
+          };
+        };
+        /** @description Failed to parse the request body as JSON */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Expected request with `Content-Type: application/json` */
+        415: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Failed to deserialize the JSON body into the target type */
+        422: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Default error body returned by agent endpoints. */
+        default: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['ErrorResponse'];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/agent/v1/sessions/{id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description no content */
+        204: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content?: never;
+        };
+        /** @description Default error body returned by agent endpoints. */
+        default: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['ErrorResponse'];
+          };
+        };
+      };
+    };
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/agent/v1/stats/tools': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              version: number;
+            } & components['schemas']['ToolStatsSnapshot'];
+          };
+        };
+        /** @description Default error body returned by agent endpoints. */
+        default: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['ErrorResponse'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description no content */
+        204: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content?: never;
+        };
+        /** @description Default error body returned by agent endpoints. */
+        default: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['ErrorResponse'];
+          };
+        };
+      };
+    };
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -7667,6 +8693,312 @@ export interface components {
     /** @description Response for `PUT /api/workers/config`. */
     WorkersConfigUpdateResponse: {
       ok: boolean;
+    };
+    ApprovalDecisionRequest: {
+      approve: boolean;
+      idempotency_key?: string | null;
+      proposals?: components['schemas']['ProposalDecision'][] | null;
+    };
+    ApprovalRequest: {
+      changes: components['schemas']['ProposedChange'][];
+      expires_at: string;
+      id: string;
+      inferred_fields: components['schemas']['InferredField'][];
+      warnings: string[];
+      why: string;
+    };
+    ApprovalResultDto: {
+      approved: boolean;
+      changes: components['schemas']['ChangeReceipt'][];
+      id: string;
+      schedule_dirty: boolean;
+    };
+    CapabilitiesResponse: {
+      approvals: boolean;
+      audio_input: boolean;
+      tts: boolean;
+      user_input: boolean;
+    };
+    /**
+     * @description Operation kind for a proposed or applied change.
+     * @enum {string}
+     */
+    ChangeOperation:
+      | 'create'
+      | 'update'
+      | 'delete'
+      | 'generate'
+      | 'reschedule'
+      | 'move'
+      | 'start'
+      | 'pause'
+      | 'progress'
+      | 'complete'
+      | 'split'
+      | 'create_scheduled_span'
+      | 'delete_scheduled_span';
+    /** @description Flattened target fields inside `ChangeReceipt`. */
+    ChangeReceipt: {
+      after?: unknown;
+      before?: unknown;
+      inferred_fields?: unknown;
+      operation: components['schemas']['ChangeOperation'];
+      target_id: string;
+      /** Format: int64 */
+      target_revision?: number | null;
+      target_type: components['schemas']['TargetKind'];
+    };
+    CreateSessionRequest: {
+      /** @default null */
+      permissions: components['schemas']['Permissions'] | null;
+    };
+    CreateSessionResponse: {
+      session_id: string;
+    };
+    EditTurnRequest: {
+      idempotency_key?: string | null;
+      text: string;
+    };
+    /** @description Default error body returned by agent endpoints. */
+    ErrorResponse: {
+      error: string;
+      /** Format: uint8 */
+      version: number;
+    };
+    HealthResponse: {
+      ok: boolean;
+    };
+    HistoryMessage:
+      | {
+          content: string;
+          /** @constant */
+          role: 'system';
+        }
+      | {
+          content: string;
+          /** @constant */
+          role: 'user';
+        }
+      | {
+          /** @default null */
+          content: string | null;
+          /** @constant */
+          role: 'assistant';
+          /** @default [] */
+          tool_calls: components['schemas']['HistoryToolCall'][];
+        }
+      | {
+          content: string;
+          /** @default false */
+          is_error: boolean;
+          /** @constant */
+          role: 'tool';
+          tool_call_id: string;
+        };
+    HistoryToolCall: {
+      /** @default {} */
+      arguments: unknown;
+      id: string;
+      name: string;
+    };
+    InferredField: {
+      /** @description Name of the inferred field. */
+      field: string;
+      /** @description Reason the field was inferred. */
+      reason: string;
+      /** @description Inferred value for the field. */
+      value: unknown;
+    };
+    /**
+     * @description Identifies which LLM backend implementation to build.
+     *
+     *     Currently only `OpenAICompatible` exists — OpenAI, OpenRouter, and custom
+     *     OpenAI-compatible endpoints are all served by [`OpenAIClient`]. The enum
+     *     is kept as a single variant so that future non-OpenAI-compatible providers
+     *     (e.g. Anthropic native, Gemini) can be added without touching the dispatch
+     *     sites that call [`build_llm_client`].
+     *
+     *     The legacy `openai`, `openrouter`, and `custom` values (from the previous
+     *     three-variant enum) are accepted as aliases during deserialization so that
+     *     existing `agent.toml` files and persisted mobile settings keep working.
+     *     They all map to `OpenAICompatible`. Serialization always emits
+     *     `openai_compatible`.
+     * @enum {string}
+     */
+    LlmProviderKind: 'openai_compatible';
+    /** @description Generic `{ "ok": true }` body used by several agent endpoints. */
+    OkResponse: {
+      ok: boolean;
+    };
+    /**
+     * @description Permission map for auto-approving proposed changes.
+     *
+     *     Serialized as a flat map of `"target:operation"` -> bool so that mobile
+     *     clients can send it directly without wrapping it in an `allow` field.
+     *     Internally the keys are typed (`PermissionKey`) to prevent typos and avoid
+     *     per-lookup string allocation.
+     */
+    Permissions: {
+      [key: string]: boolean;
+    };
+    ProposalDecision: {
+      approve: boolean;
+      proposal_id: string;
+    };
+    ProposedChange: {
+      after?: unknown;
+      arguments?: unknown;
+      before?: unknown;
+      description: string;
+      observed_updated_at?: string | null;
+      operation: components['schemas']['ChangeOperation'];
+      proposal_id?: string | null;
+      target_label: string;
+    };
+    ResumeSessionRequest: {
+      /** @default null */
+      compaction_summary: string | null;
+      /** @default [] */
+      history: components['schemas']['HistoryMessage'][];
+      /** @default null */
+      pending_approval: components['schemas']['ApprovalRequest'] | null;
+      /** @default null */
+      permissions: components['schemas']['Permissions'] | null;
+      /** @default null */
+      schedule_dirty: boolean | null;
+      /** @default null */
+      session_id: string | null;
+    };
+    ResumeSessionResponse: {
+      session_id: string;
+    };
+    RevertRequest: {
+      after_user: boolean;
+    };
+    /** @description A server-sent event payload emitted by the agent turn streams. */
+    SseEvent:
+      | components['schemas']['TurnEvent']
+      | components['schemas']['TtsBlockEvent'];
+    /**
+     * @description Target kind for a proposed or applied change.
+     * @enum {string}
+     */
+    TargetKind: 'task' | 'habit' | 'skill' | 'memory' | 'schedule';
+    ToolStat: {
+      /** Format: uint64 */
+      count: number;
+      /** Format: uint64 */
+      error_count: number;
+      last_used?: string | null;
+    };
+    ToolStatsSnapshot: {
+      tools: {
+        [key: string]: components['schemas']['ToolStat'];
+      };
+    };
+    /**
+     * @description TTS backend identifier.
+     * @enum {string}
+     */
+    TtsBackend: 'cartesia' | 'android' | 'fish';
+    /** @description A TTS block event emitted by the agent turn streams. */
+    TtsBlockEvent: {
+      data: string;
+      type: string;
+    };
+    /** @description Events emitted while a streaming turn is in progress. */
+    TurnEvent:
+      | {
+          data: string;
+          /** @constant */
+          type: 'Thinking';
+        }
+      | {
+          data: string;
+          /** @constant */
+          type: 'Text';
+        }
+      | {
+          data: {
+            arguments: unknown;
+            call_id: string;
+            name: string;
+          };
+          /** @constant */
+          type: 'ToolCall';
+        }
+      | {
+          data: {
+            call_id: string;
+            content: string;
+            is_error: boolean;
+            name: string;
+          };
+          /** @constant */
+          type: 'ToolResult';
+        }
+      | {
+          data: string;
+          /** @constant */
+          type: 'Error';
+        }
+      | {
+          data: components['schemas']['TurnResult'];
+          /** @constant */
+          type: 'Done';
+        };
+    TurnRequest: {
+      idempotency_key?: string | null;
+      text: string;
+    };
+    TurnResult: {
+      approval_request?: components['schemas']['ApprovalRequest'] | null;
+      changes: components['schemas']['ChangeReceipt'][];
+      schedule_dirty: boolean;
+      text: string;
+    };
+    TurnResultDto: {
+      approval_request?: components['schemas']['ApprovalRequest'] | null;
+      changes: components['schemas']['ChangeReceipt'][];
+      schedule_dirty: boolean;
+      text: string;
+    };
+    UpdateAgentAudioSettings: {
+      tts?: components['schemas']['UpdateAgentTtsSettings'] | null;
+    };
+    UpdateAgentLlmSettings: {
+      api_key?: string | null;
+      base_url?: string | null;
+      model?: string | null;
+      permissions?: components['schemas']['Permissions'] | null;
+      provider?: components['schemas']['LlmProviderKind'] | null;
+    };
+    UpdateAgentSettings: {
+      audio?: components['schemas']['UpdateAgentAudioSettings'] | null;
+      llm?: components['schemas']['UpdateAgentLlmSettings'] | null;
+    };
+    UpdateAgentTtsSettings: {
+      api_key?: string | null;
+      backend?: components['schemas']['TtsBackend'] | null;
+      language?: string | null;
+      model?: string | null;
+      /** Format: uint32 */
+      sample_rate?: number | null;
+      /** Format: float */
+      speed?: number | null;
+      voice_id?: string | null;
+    };
+    UpdateSessionSettings: {
+      /** @default null */
+      permissions: components['schemas']['Permissions'] | null;
+    };
+    /** @description A user-supplied correction for one `UserInputQuestion`. */
+    UserInputAnswer: {
+      /** @description The corrected text. */
+      text: string;
+    };
+    UserInputResolutionRequest: {
+      answers: components['schemas']['UserInputAnswer'][];
     };
   };
   responses: never;
