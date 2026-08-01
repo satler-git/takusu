@@ -20,6 +20,7 @@ use crate::secrets::{ApiKey, EndpointUrl};
 pub enum TtsBackend {
     Cartesia,
     Android,
+    Fish,
 }
 
 impl std::fmt::Display for TtsBackend {
@@ -27,6 +28,7 @@ impl std::fmt::Display for TtsBackend {
         match self {
             TtsBackend::Cartesia => write!(f, "cartesia"),
             TtsBackend::Android => write!(f, "android"),
+            TtsBackend::Fish => write!(f, "fish"),
         }
     }
 }
@@ -37,6 +39,7 @@ impl std::str::FromStr for TtsBackend {
         match s.to_lowercase().as_str() {
             "cartesia" => Ok(TtsBackend::Cartesia),
             "android" => Ok(TtsBackend::Android),
+            "fish" => Ok(TtsBackend::Fish),
             _ => Err(format!("unsupported TTS backend: {s}")),
         }
     }

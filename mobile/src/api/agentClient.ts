@@ -50,6 +50,7 @@ export interface AgentTtsSettings {
   voice_id: string;
   language: string;
   sample_rate: number;
+  model?: string;
   speed?: number;
 }
 

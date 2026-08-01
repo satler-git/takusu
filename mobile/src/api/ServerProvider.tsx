@@ -119,6 +119,7 @@ async function buildAgentUpdateSettings(): Promise<AgentUpdateSettings> {
         voice_id: activeTts.voiceId,
         language: activeTts.language,
         sample_rate: activeTts.sampleRate,
+        model: activeTts.model,
         speed: activeTts.speed,
       },
     };

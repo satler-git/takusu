@@ -83,6 +83,8 @@ pub struct TtsConfig {
     pub language: String,
     #[serde(default = "default_tts_sample_rate")]
     pub sample_rate: u32,
+    #[serde(default)]
+    pub model: String,
     pub speed: Option<f32>,
     #[serde(default)]
     pub mute: bool,
@@ -97,6 +99,7 @@ impl Default for TtsConfig {
             voice_id: default_tts_voice_id(),
             language: default_tts_language(),
             sample_rate: default_tts_sample_rate(),
+            model: String::new(),
             speed: None,
             mute: false,
         }

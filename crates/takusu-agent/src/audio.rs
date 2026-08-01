@@ -10,8 +10,8 @@ use std::time::Duration;
 
 use takusu_audio::play::{PcmFormat, PlayError, StreamedAudioFormat, play_stream};
 use takusu_audio::{
-    CartesiaSonic, CartesiaSonicConfig, RecordConfig, SpeechToText, TextToSpeech, TtsBackend,
-    TtsOptions, TtsRequest, TtsStream, normalize_for_tts, record,
+    CartesiaSonic, CartesiaSonicConfig, FishAudio, FishAudioConfig, RecordConfig, SpeechToText,
+    TextToSpeech, TtsBackend, TtsOptions, TtsRequest, TtsStream, normalize_for_tts, record,
 };
 use thiserror::Error;
 
@@ -244,16 +244,16 @@ impl AudioAdapter {
             .await
             .map_err(|e| AudioError::Play(format!("output config task failed: {e}")))??;
         let output_rate = supported.sample_rate();
-        // The Cartesia /tts/bytes endpoint returns mono PCM when no channel
-        // count is requested, so the stream format is always 1 channel.
+        // The TTS backend may clamp or override the requested sample rate, so
+        // build_tts returns the rate that will actually be produced.
         let tts_api_sample_rate = if audio.tts.sample_rate == 0 {
             output_rate
         } else {
             audio.tts.sample_rate
         };
-        let (tts, voice_id, speed) = build_tts(&audio.tts, tts_api_sample_rate)?;
+        let (tts, voice_id, speed, tts_sample_rate) = build_tts(&audio.tts, tts_api_sample_rate)?;
         let tts_format = StreamedAudioFormat {
-            sample_rate: tts_api_sample_rate,
+            sample_rate: tts_sample_rate,
             channels: 1,
             pcm_format: PcmFormat::I16,
         };
@@ -281,7 +281,7 @@ fn build_stt(config: &SttConfig) -> Result<Arc<dyn SpeechToText>, AudioError> {
         .map_err(|e| AudioError::Transcribe(e.to_string()))
 }
 
-type TtsBuildResult = Result<(Arc<dyn TextToSpeech>, String, Option<f32>), AudioError>;
+type TtsBuildResult = Result<(Arc<dyn TextToSpeech>, String, Option<f32>, u32), AudioError>;
 
 fn build_tts(config: &TtsConfig, api_sample_rate: u32) -> TtsBuildResult {
     match config.backend {
@@ -296,12 +296,40 @@ fn build_tts(config: &TtsConfig, api_sample_rate: u32) -> TtsBuildResult {
             }
             let mut tts_config = CartesiaSonicConfig::new(api_key);
             tts_config.voice_id = config.voice_id.clone();
+            if !config.model.is_empty() {
+                tts_config.model_id = config.model.clone();
+            }
             tts_config.language = Some(config.language.clone());
             tts_config.output_format.sample_rate = api_sample_rate;
             tts_config.mute = config.mute;
             let voice_id = config.voice_id.clone();
             let speed = config.speed;
-            Ok((Arc::new(CartesiaSonic::new(tts_config)), voice_id, speed))
+            Ok((
+                Arc::new(CartesiaSonic::new(tts_config)),
+                voice_id,
+                speed,
+                api_sample_rate,
+            ))
+        }
+        TtsBackend::Fish => {
+            let api_key = if config.api_key.is_empty() {
+                std::env::var(&config.api_key_env).unwrap_or_default()
+            } else {
+                config.api_key.clone()
+            };
+            if api_key.is_empty() && !config.mute {
+                return Err(AudioError::Tts("missing Fish Audio API key".to_string()));
+            }
+            let mut tts_config = FishAudioConfig::new(api_key);
+            tts_config.voice_id = config.voice_id.clone();
+            if !config.model.is_empty() {
+                tts_config.model = config.model.clone();
+            }
+            tts_config.sample_rate = api_sample_rate;
+            tts_config.mute = config.mute;
+            let voice_id = config.voice_id.clone();
+            let speed = config.speed;
+            Ok((Arc::new(FishAudio::new(tts_config)), voice_id, speed, api_sample_rate))
         }
         // Android TTS is handled by the native mobile module, not by the
         // generic tokio-based AudioAdapter used on desktop.
@@ -363,7 +391,11 @@ async fn synthesize_stream_with_timeout(
             .map_err(|e| AudioError::Play(format!("tts normalization panicked: {e}")))?;
     let request = TtsRequest {
         text,
-        voice: Some(voice_id.to_string()),
+        voice: if voice_id.is_empty() {
+            None
+        } else {
+            Some(voice_id.to_string())
+        },
         reference_audio_path: None,
         options: TtsOptions {
             response_format: Some("pcm_s16le".to_string()),

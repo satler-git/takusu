@@ -50,11 +50,12 @@ async function doConfigure(): Promise<void> {
   ]);
   // Use a hash of the API key so key-only changes trigger reconfiguration
   // without keeping the raw key in the cache key.
-  const configKey = `${provider.id}:${provider.provider}:${provider.voiceId}:${provider.language}:${provider.sampleRate}:${provider.speed}:${hashString(apiKey)}:${muted ? '1' : '0'}`;
+  const configKey = `${provider.id}:${provider.provider}:${provider.model ?? ''}:${provider.voiceId}:${provider.language}:${provider.sampleRate}:${provider.speed}:${hashString(apiKey)}:${muted ? '1' : '0'}`;
   if (configKey === lastConfigKey) return;
   await TakusuAudioModule.configure({
     provider: provider.provider,
     modelDir: '',
+    model: provider.model ?? '',
     apiKey,
     voiceId: provider.voiceId,
     language: provider.language,

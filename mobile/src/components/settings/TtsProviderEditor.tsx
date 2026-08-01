@@ -19,7 +19,7 @@ import TakusuAudioModule, {
   type TtsVoiceInfo,
 } from '@/modules/takusu-server/src/TakusuAudioModule';
 
-const TTS_PROVIDER_TYPES: TtsProvider[] = ['cartesia', 'android'];
+const TTS_PROVIDER_TYPES: TtsProvider[] = ['cartesia', 'fish', 'android'];
 
 interface Props {
   provider: TtsProviderSettings;
@@ -121,6 +121,7 @@ export function TtsProviderEditor({
   const [speed, setSpeed] = useState(
     provider.speed !== undefined ? String(provider.speed) : '',
   );
+  const [model, setModel] = useState(provider.model ?? '');
   const [voices, setVoices] = useState<TtsVoiceInfo[]>([]);
   const [voicesLoading, setVoicesLoading] = useState(false);
   const [voicesExpanded, setVoicesExpanded] = useState(false);
@@ -169,14 +170,25 @@ export function TtsProviderEditor({
     }
   }
 
+  function updateModel(text: string) {
+    setModel(text);
+    onChangeProvider({
+      ...provider,
+      model: text.trim() === '' ? undefined : text.trim(),
+    });
+  }
+
   function selectProvider(type: TtsProvider) {
     setIsExpanded(false);
     onChangeApiKey('');
+    const nextModel = type === 'fish' ? 's2.1-pro-free' : '';
+    setModel(nextModel);
     onChangeProvider({
       ...provider,
       provider: type,
       name: TTS_PROVIDER_LABELS[type],
       voiceId: '',
+      model: nextModel || undefined,
     });
   }
 
@@ -186,8 +198,12 @@ export function TtsProviderEditor({
   }
 
   function handleSave() {
-    if (!isAndroid && !provider.voiceId.trim()) {
+    if (provider.provider === 'cartesia' && !provider.voiceId.trim()) {
       void showError('Voice IDを入力してください', '入力不足');
+      return;
+    }
+    if (provider.provider === 'fish' && !model.trim()) {
+      void showError('Modelを入力してください', '入力不足');
       return;
     }
 
@@ -219,6 +235,11 @@ export function TtsProviderEditor({
     } else {
       nextProvider = { ...nextProvider, speed: undefined };
     }
+
+    nextProvider = {
+      ...nextProvider,
+      model: model.trim() === '' ? undefined : model.trim(),
+    };
 
     onSave(nextProvider);
   }
@@ -388,22 +409,42 @@ export function TtsProviderEditor({
           value={provider.voiceId}
           onChangeText={(voiceId) => onChangeProvider({ ...provider, voiceId })}
           autoCapitalize="none"
-          placeholder="Voice ID"
+          placeholder={
+            provider.provider === 'fish'
+              ? 'Voice / Reference ID (optional)'
+              : 'Voice ID'
+          }
         />
       )}
 
       {!isAndroid && (
-        <TextInput
-          style={[
-            styles.input,
-            { color: colors.black, borderColor: colors.separator },
-          ]}
-          value={apiKey}
-          onChangeText={onChangeApiKey}
-          autoCapitalize="none"
-          secureTextEntry
-          placeholder="Cartesia API key"
-        />
+        <>
+          <TextInput
+            style={[
+              styles.input,
+              { color: colors.black, borderColor: colors.separator },
+            ]}
+            value={apiKey}
+            onChangeText={onChangeApiKey}
+            autoCapitalize="none"
+            secureTextEntry
+            placeholder="API key"
+          />
+          <TextInput
+            style={[
+              styles.input,
+              { color: colors.black, borderColor: colors.separator },
+            ]}
+            value={model}
+            onChangeText={updateModel}
+            autoCapitalize="none"
+            placeholder={
+              provider.provider === 'fish'
+                ? 'Fish model (s2.1-pro-free)'
+                : 'Model (optional)'
+            }
+          />
+        </>
       )}
 
       <View style={styles.row}>
