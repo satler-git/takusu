@@ -1,0 +1,912 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RecordPanel redesign mock (#1427)</title>
+  <style>
+    /* ── theme tokens (mirror mobile/src/theme.tsx) ── */
+    :root {
+      --page: #f3f0f8;
+      --bg: #fbfafd;
+      --text: #1c1824;
+      --muted: #6c6578;
+      --muted2: #9b95aa;
+      --sep: #e5ddee;
+      --brand: #7261a3;
+      --brandLight: #9b8bc4;
+      --brandDark: #5a4a85;
+      --card: #f3eef7;
+      --card2: #ffffff;
+      --red: #a04848;
+      --green: #3d6e51;
+      --amber: #a65b00;
+      --tint-must: #f2c8c8;
+      --tint-habit: #e6d6f2;
+      --on-tint: #1c1824;
+      --chip-on-tint: rgba(255,255,255,0.55);
+      --track: rgba(28,24,36,0.12);
+      --shadow: rgba(90,74,133,0.28);
+      --grid-dot: rgba(28,24,36,0.07);
+      --surface: #fbfafd;
+      --surfaceTint: #f3eef7;
+      --onBrand: #fbfafd;
+      --overlay: rgba(0,0,0,0.4);
+    }
+    [data-theme="dark"] {
+      --page: #0f0d15;
+      --bg: #15131c;
+      --text: #f0ecf5;
+      --muted: #b5b0c0;
+      --muted2: #9b95aa;
+      --sep: #363049;
+      --card: #272236;
+      --card2: #1e1b27;
+      --red: #d67a7a;
+      --green: #6aa67e;
+      --tint-must: #4a2e2e;
+      --tint-habit: #3a2e46;
+      --on-tint: #f0ecf5;
+      --chip-on-tint: rgba(0,0,0,0.28);
+      --track: rgba(240,236,245,0.16);
+      --shadow: rgba(0,0,0,0.55);
+      --grid-dot: rgba(240,236,245,0.05);
+      --surface: #1e1b27;
+      --surfaceTint: #272236;
+      --onBrand: #f0ecf5;
+      --overlay: rgba(0,0,0,0.5);
+    }
+    [data-theme="catppuccin"] {
+      --page: #1e2030;
+      --bg: #24273a;
+      --text: #cad3f5;
+      --muted: #a5acc8;
+      --muted2: #8087a2;
+      --sep: #494d64;
+      --card: #494d64;
+      --card2: #363a4f;
+      --red: #ed8796;
+      --green: #a6da95;
+      --tint-must: #6a495a;
+      --tint-habit: #5d517c;
+      --on-tint: #dde5f5;
+      --chip-on-tint: rgba(0,0,0,0.25);
+      --track: rgba(202,211,245,0.16);
+      --shadow: rgba(0,0,0,0.5);
+      --grid-dot: rgba(202,211,245,0.05);
+      --surface: #363a4f;
+      --surfaceTint: #494d64;
+      --onBrand: #cad3f5;
+      --overlay: rgba(24,25,38,0.5);
+    }
+    [data-theme="aura-soft-dark"] {
+      --page: #0e0e11;
+      --bg: #141414;
+      --text: #bdbdbd;
+      --muted: #b4b4b4;
+      --muted2: #8f8f9a;
+      --sep: #2e2b38;
+      --brand: #8464c6;
+      --brandLight: #a48bd6;
+      --brandDark: #6a509f;
+      --card: #3d375e;
+      --card2: #21202e;
+      --red: #d96868;
+      --green: #5fd5aa;
+      --tint-must: #462e2e;
+      --tint-habit: #3d375e;
+      --on-tint: #bdbdbd;
+      --chip-on-tint: rgba(0,0,0,0.3);
+      --track: rgba(189,189,189,0.16);
+      --shadow: rgba(0,0,0,0.6);
+      --grid-dot: rgba(189,189,189,0.05);
+      --surface: #21202e;
+      --surfaceTint: #3d375e;
+      --onBrand: #bdbdbd;
+      --overlay: rgba(20,20,30,0.5);
+    }
+
+    :root { --mono: "SF Mono", "Cascadia Code", "JetBrains Mono", Consolas, "Roboto Mono", monospace; }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans",
+        "Hiragino Kaku Gothic ProN", "Noto Sans JP", Roboto, sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(1100px 560px at 88% -8%, rgba(114,97,163,0.12), transparent 60%),
+        radial-gradient(900px 520px at -12% 34%, rgba(114,97,163,0.08), transparent 55%),
+        var(--page);
+      transition: background 0.25s, color 0.25s;
+    }
+    body::before {
+      content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+      background-image: radial-gradient(var(--grid-dot) 1px, transparent 1px);
+      background-size: 22px 22px;
+    }
+    .page { position: relative; z-index: 1; max-width: 1240px; margin: 0 auto; padding: 44px 28px 80px; }
+
+    /* ── header ── */
+    .kicker {
+      display: inline-flex; align-items: center; gap: 8px;
+      font-family: var(--mono); font-size: 11px; font-weight: 700; letter-spacing: 0.18em;
+      color: var(--brand);
+      border: 1px solid color-mix(in srgb, var(--brand) 40%, transparent);
+      background: color-mix(in srgb, var(--brand) 10%, transparent);
+      padding: 5px 12px; border-radius: 999px;
+    }
+    h1 { margin: 16px 0 8px; font-size: clamp(28px, 3.6vw, 42px); font-weight: 800; letter-spacing: -0.02em; line-height: 1.12; }
+    h1 .thin { font-weight: 400; color: var(--muted); }
+
+    .intro { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 40px; align-items: start; }
+    .problem { margin: 0; max-width: 640px; font-size: 14px; line-height: 1.75; color: var(--muted); }
+    .problem b { color: var(--text); }
+
+    .principles { display: flex; gap: 10px; flex-wrap: wrap; margin: 20px 0 0; max-width: 640px; }
+    .pr {
+      display: flex; align-items: center; gap: 10px;
+      background: var(--card2); border: 1px solid var(--sep); border-radius: 12px;
+      padding: 9px 14px 9px 10px; font-size: 12.5px; font-weight: 700;
+      transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
+    }
+    .pr:hover { transform: translateY(-2px); border-color: var(--brand); box-shadow: 0 8px 20px color-mix(in srgb, var(--shadow) 40%, transparent); }
+    .pr .n {
+      font-family: var(--mono); font-weight: 800; font-size: 12px; color: var(--brand);
+      background: color-mix(in srgb, var(--brand) 14%, transparent);
+      min-width: 24px; height: 24px; border-radius: 7px; display: grid; place-items: center; flex-shrink: 0; padding: 0 5px;
+    }
+
+    .controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 34px 0 0; }
+    .controls .lbl { font-family: var(--mono); font-size: 11px; font-weight: 700; letter-spacing: 0.12em; color: var(--muted); margin-right: 2px; }
+    .theme-btn, .scenario-btn {
+      font: inherit; cursor: pointer;
+      border: 1px solid var(--sep); border-radius: 9px;
+      background: var(--card2); color: var(--text);
+      padding: 7px 14px; font-size: 13px; font-weight: 600;
+      transition: transform 0.12s, border-color 0.12s, background 0.12s;
+    }
+    .theme-btn:hover, .scenario-btn:hover { transform: translateY(-1px); border-color: var(--brand); }
+    .theme-btn:active, .scenario-btn:active { transform: scale(0.97); }
+    .theme-btn.active, .scenario-btn.active { outline: 2px solid var(--brand); outline-offset: 2px; }
+
+    /* ── section ── */
+    .sec-head { display: flex; align-items: baseline; gap: 14px; margin: 56px 0 4px; }
+    .sec-head .idx { font-family: var(--mono); font-size: 13px; font-weight: 800; color: var(--brand); letter-spacing: 0.1em; }
+    .sec-head h2 { margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -0.01em; }
+    .sec-sub { margin: 0 0 22px; font-size: 13px; color: var(--muted); }
+
+    .redesign { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: start; }
+    @media (max-width: 900px) {
+      .redesign { grid-template-columns: 1fr; }
+      .intro { grid-template-columns: 1fr; }
+    }
+
+    .phone-wrap { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+    .cap { font-family: var(--mono); font-size: 11px; font-weight: 700; letter-spacing: 0.1em; }
+    .cap.before { color: var(--red); }
+    .cap.after { color: var(--green); }
+
+    /* design notes */
+    .notes { margin-top: 48px; }
+    .notes .nhead {
+      font-family: var(--mono); font-size: 11px; font-weight: 800; letter-spacing: 0.14em;
+      color: var(--muted); margin: 0 0 10px;
+    }
+    .note-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+    .note-item {
+      background: var(--card2); border: 1px solid var(--sep); border-radius: 14px;
+      padding: 14px 16px; transition: transform 0.12s, border-color 0.12s;
+    }
+    .note-item:hover { transform: translateY(-1px); border-color: color-mix(in srgb, var(--brand) 55%, var(--sep)); }
+    .note-item h4 { margin: 0 0 6px; font-size: 13.5px; font-weight: 800; letter-spacing: -0.01em; }
+    .note-item p { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.65; }
+    .note-item p b { color: var(--text); }
+
+    .rejected { margin-top: 28px; }
+    .rejected .nhead { color: var(--muted2); }
+    .note-item.rej h4 { color: var(--muted); }
+
+    .foot { margin-top: 48px; font-size: 12px; color: var(--muted2); }
+    .foot code { font-family: var(--mono); background: var(--card); border: 1px solid var(--sep); border-radius: 5px; padding: 1px 6px; font-size: 11px; }
+
+    /* ── phone ── */
+    .phone {
+      width: 360px; height: 720px; flex-shrink: 0;
+      border: 12px solid #0e0c14; border-radius: 44px; overflow: hidden;
+      background: var(--bg);
+      box-shadow: 0 26px 64px var(--shadow);
+      display: flex; flex-direction: column;
+      transition: background 0.25s;
+    }
+    .phone-inner { position: relative; height: 100%; display: flex; flex-direction: column; }
+    .screen { height: 100%; display: flex; flex-direction: column; min-height: 0; }
+
+    .statusbar {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 10px 20px 2px; font-size: 12px; font-weight: 700;
+      font-variant-numeric: tabular-nums; color: var(--text);
+    }
+    .statusbar .sig { font-family: var(--mono); font-size: 10px; color: var(--muted); }
+
+    .topbar { display: flex; align-items: center; gap: 2px; padding: 4px 8px; }
+    .topbar .spacer { flex: 1; }
+    .topbar .tid { font-family: var(--mono); font-size: 12px; font-weight: 700; color: var(--muted); }
+    .ibtn {
+      width: 38px; height: 38px; border: none; background: transparent;
+      border-radius: 50%; display: grid; place-items: center;
+      font-size: 17px; color: var(--brand); padding: 0;
+      transition: background 0.12s, transform 0.12s;
+    }
+    .ibtn:hover { background: color-mix(in srgb, var(--brand) 12%, transparent); transform: none; }
+    .ibtn:active { transform: scale(0.96); }
+
+    .scroll { flex: 1; overflow-y: auto; min-height: 0; padding: 0 0 22px; }
+    .scroll::-webkit-scrollbar { width: 4px; }
+    .scroll::-webkit-scrollbar-thumb { background: var(--sep); border-radius: 2px; }
+
+    /* app background shown under the sheet */
+    .app-bg { padding: 6px 12px 0; }
+    .taskhead {
+      padding: 14px 16px 16px; border-radius: 18px; position: relative; overflow: hidden;
+      color: var(--on-tint); background: var(--tint-must);
+    }
+    .taskhead::before {
+      content: ""; position: absolute; inset: 0; pointer-events: none;
+      background:
+        radial-gradient(220px 140px at 92% -20%, rgba(255,255,255,0.35), transparent 70%),
+        radial-gradient(260px 180px at -10% 120%, rgba(255,255,255,0.18), transparent 70%);
+    }
+    [data-theme="dark"] .taskhead::before,
+    [data-theme="catppuccin"] .taskhead::before,
+    [data-theme="aura-soft-dark"] .taskhead::before {
+      background:
+        radial-gradient(220px 140px at 92% -20%, rgba(255,255,255,0.08), transparent 70%),
+        radial-gradient(260px 180px at -10% 120%, rgba(0,0,0,0.2), transparent 70%);
+    }
+    .taskhead > * { position: relative; }
+    .head-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+    .chip {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 4px 11px; border-radius: 999px;
+      font-size: 12px; font-weight: 700;
+      background: var(--chip-on-tint); color: var(--on-tint);
+      transition: transform 0.12s;
+    }
+    .chip:active { transform: scale(0.95); }
+    .chip .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+    .chip .dot.pulse { animation: blink 1.6s ease-in-out infinite; }
+    @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+    .chip.plain { background: var(--card); color: var(--muted); border: 1px solid var(--sep); }
+    .chip.on { background: color-mix(in srgb, var(--brand) 16%, transparent); color: var(--brand); border-color: transparent; }
+    .chip.good { background: color-mix(in srgb, var(--green) 16%, transparent); color: var(--green); border-color: transparent; }
+    .task-title { font-size: 22px; font-weight: 800; letter-spacing: -0.01em; line-height: 1.25; }
+    .times { display: flex; align-items: baseline; gap: 8px; margin-top: 8px; font-variant-numeric: tabular-nums; }
+    .t-big { font-size: 27px; font-weight: 800; letter-spacing: -0.02em; }
+    .t-arrow { font-size: 15px; opacity: 0.6; }
+
+    .slabel {
+      display: flex; align-items: center; gap: 8px;
+      margin: 18px 0 7px;
+      font-size: 11px; font-weight: 800; letter-spacing: 0.1em; color: var(--muted);
+    }
+    .cell {
+      background: var(--card2); border: 1px solid var(--sep);
+      border-radius: 13px; padding: 10px 12px;
+    }
+    .cell .k { font-size: 10px; font-weight: 800; letter-spacing: 0.1em; color: var(--muted); }
+    .cell .v { font-size: 16px; font-weight: 800; margin-top: 3px; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+    .cell .v small { font-size: 11px; font-weight: 600; color: var(--muted); }
+    .minibar { height: 6px; border-radius: 3px; background: var(--track); margin-top: 8px; position: relative; }
+    .minibar i { display: block; height: 100%; background: var(--brand); border-radius: 3px; transition: width 0.3s ease; }
+
+    /* ── sheet ── */
+    .modal-overlay {
+      position: absolute; inset: 0; z-index: 10;
+      background: var(--overlay);
+      display: flex; align-items: flex-end; justify-content: center;
+      padding: 0;
+    }
+    .sheet {
+      width: 100%;
+      background: var(--surface);
+      border-top-left-radius: 20px;
+      border-top-right-radius: 20px;
+      padding: 10px 16px 20px;
+      box-shadow: 0 -8px 32px color-mix(in srgb, var(--shadow) 24%, transparent);
+    }
+    .sheet.compact {
+      max-height: none;
+      overflow-y: visible;
+    }
+    .sheet-handle {
+      width: 36px; height: 4px; border-radius: 2px; background: var(--sep); margin: 0 auto 14px;
+    }
+
+    /* legacy (before) */
+    .legacy-sheet .l-title { font-size: 18px; font-weight: 700; color: var(--text); }
+    .legacy-sheet .l-sub { font-size: 13px; color: var(--muted); margin: 2px 0 16px; }
+    .legacy-row { display: flex; gap: 8px; margin-bottom: 8px; }
+    .legacy-input {
+      flex: 1; height: 44px; border: 1px solid var(--sep); border-radius: 10px;
+      background: var(--card2); color: var(--text); font-size: 15px; padding: 0 12px;
+      outline: none;
+    }
+    .legacy-input::placeholder { color: var(--muted2); }
+    .legacy-input.full { width: 100%; }
+    .legacy-note { margin-top: 4px; }
+    .legacy-actions { display: flex; gap: 8px; margin-top: 16px; }
+    .legacy-btn {
+      flex: 1; height: 46px; border-radius: 10px; border: none;
+      font-size: 14px; font-weight: 600; display: flex; align-items: center; justify-content: center;
+      padding: 0 4px;
+    }
+    .legacy-btn.primary { background: var(--brand); color: var(--onBrand); }
+    .legacy-btn.secondary { background: var(--card2); color: var(--text); border: 1px solid var(--sep); }
+
+    /* redesigned (after) */
+    .sheet-header { margin-bottom: 6px; }
+    .sheet-title-row { display: flex; gap: 6px; margin-bottom: 4px; }
+    .sheet-title { margin: 0; font-size: 20px; font-weight: 800; letter-spacing: -0.02em; color: var(--text); }
+    .sheet-subtitle { margin: 2px 0 0; font-size: 13px; color: var(--muted); }
+
+    .input-toggle {
+      display: flex; gap: 4px;
+      background: var(--card); border: 1px solid var(--sep); padding: 4px; border-radius: 12px;
+      margin: 8px 0 8px;
+    }
+    .input-toggle button {
+      flex: 1; border: none; border-radius: 8px; padding: 7px 10px;
+      background: transparent; color: var(--muted); font-size: 13px; font-weight: 700;
+      cursor: pointer; transition: background 0.12s, color 0.12s, transform 0.12s;
+    }
+    .input-toggle button:hover { transform: translateY(-1px); }
+    .input-toggle button:active { transform: scale(0.97); }
+    .input-toggle button.active { background: var(--brand); color: #fff; }
+
+    .current-hint {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 12px; font-weight: 700; color: var(--muted); margin: -4px 0 4px;
+    }
+    .current-hint .num { font-variant-numeric: tabular-nums; }
+    .current-hint .track { flex: 1; max-width: 80px; height: 4px; margin: 0; }
+    .current-hint .track .fill { background: var(--muted2); }
+
+    .field-label { display: block; font-size: 11px; font-weight: 800; letter-spacing: 0.08em; color: var(--muted); margin: 0 0 4px; }
+
+    .qty-field {
+      display: flex; align-items: center; gap: 10px;
+      background: var(--card2); border: 1px solid var(--sep); border-radius: 16px; padding: 8px 12px;
+    }
+    .qty-step {
+      width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--sep);
+      background: var(--card); color: var(--brand); font-size: 18px; font-weight: 700;
+      display: grid; place-items: center; padding: 0;
+      cursor: pointer; transition: transform 0.12s, background 0.12s, border-color 0.12s;
+      flex-shrink: 0;
+    }
+    .qty-step:hover { border-color: var(--brand); }
+    .qty-step:active { transform: scale(0.96); }
+    .qty-input {
+      flex: 1; min-width: 0; border: none; background: transparent;
+      font-size: 24px; font-weight: 800; text-align: right; color: var(--text);
+      font-variant-numeric: tabular-nums; letter-spacing: -0.02em; outline: none;
+    }
+    .qty-unit { font-size: 14px; font-weight: 600; color: var(--muted); margin-right: 4px; flex-shrink: 0; }
+
+    .total-field {
+      display: flex; align-items: center; gap: 8px;
+      background: var(--card2); border: 1px solid var(--sep); border-radius: 12px; padding: 6px 12px;
+      margin-top: 8px;
+    }
+    .total-input {
+      flex: 1; min-width: 0; border: none; background: transparent;
+      font-size: 18px; font-weight: 700; text-align: right; color: var(--text);
+      font-variant-numeric: tabular-nums; outline: none;
+    }
+    .total-unit { font-size: 13px; font-weight: 600; color: var(--muted); flex-shrink: 0; }
+
+    .quick-chips { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+    .quick-chips .chip {
+      padding: 8px 14px; font-size: 13px; cursor: pointer;
+      background: var(--card2); border: 1px solid var(--sep); color: var(--text);
+      transition: transform 0.12s, border-color 0.12s, background 0.12s;
+    }
+    .quick-chips .chip:hover { border-color: var(--brand); }
+    .quick-chips .chip:active { transform: scale(0.95); }
+
+    .preview {
+      display: flex; flex-direction: column; align-items: center; gap: 6px;
+      margin: 8px 0; padding: 8px 10px; border-radius: 12px;
+      background: color-mix(in srgb, var(--brand) 9%, var(--card));
+      text-align: center;
+    }
+    .preview .preview-value { font-size: 15px; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--text); white-space: nowrap; }
+    .preview .preview-value .num { letter-spacing: -0.02em; }
+    .preview .preview-value .sep { margin: 0 3px; opacity: 0.5; }
+    .preview .preview-value .unit { font-size: 12px; font-weight: 600; color: var(--muted); margin-left: 2px; }
+    .preview .preview-value .arrow { margin: 0 6px; opacity: 0.5; }
+    .preview-track { width: 100%; max-width: 120px; height: 6px; margin: 0; }
+    .preview-track .fill { background: var(--brand); transition: width 0.3s ease; }
+
+    .note-field { margin-top: 6px; }
+    .note-input {
+      width: 100%; min-height: 38px; border: 1px solid var(--sep); border-radius: 12px;
+      background: var(--card2); color: var(--text); font: inherit; font-size: 15px; line-height: 1.5;
+      padding: 6px 12px; resize: vertical; outline: none;
+      transition: border-color 0.12s;
+    }
+    .note-input::placeholder { color: var(--muted2); }
+    .note-input:focus { border-color: var(--brand); }
+
+    .actions { display: flex; gap: 10px; margin-top: 8px; }
+    .action-hint { text-align: center; font-size: 11px; font-weight: 700; color: var(--muted); margin: 4px 0 0; }
+    .cancel-btn {
+      flex: 1; height: 52px; border-radius: 14px; border: 1px solid var(--sep);
+      background: var(--card2); color: var(--text); font-size: 16px; font-weight: 700;
+      cursor: pointer; transition: transform 0.12s, background 0.12s;
+    }
+    .cancel-btn:active { transform: scale(0.96); }
+    .primary-btn {
+      position: relative; overflow: hidden;
+      flex: 2; height: 52px; border-radius: 14px; border: none;
+      background: var(--brand); color: var(--onBrand); font-size: 16px; font-weight: 800;
+      cursor: pointer; box-shadow: 0 8px 20px color-mix(in srgb, var(--shadow) 30%, transparent);
+      transition: transform 0.12s, background 0.12s;
+      white-space: nowrap;
+    }
+    .primary-btn:active { transform: scale(0.96); }
+    .primary-btn.complete { background: var(--green); }
+    .press-fill {
+      position: absolute; left: 0; bottom: 0; height: 4px;
+      background: color-mix(in srgb, var(--onBrand) 50%, transparent);
+      width: 0%; pointer-events: none;
+      transition: width 0.05s linear;
+    }
+
+    .toast {
+      position: absolute; left: 50%; bottom: 26px;
+      transform: translate(-50%, 80px);
+      background: var(--text); color: var(--bg);
+      font-size: 13px; font-weight: 700;
+      padding: 10px 18px; border-radius: 999px;
+      opacity: 0; transition: transform 0.35s cubic-bezier(0.22,1,0.36,1), opacity 0.35s;
+      pointer-events: none; white-space: nowrap; z-index: 20;
+    }
+    .toast.show { transform: translate(-50%, 0); opacity: 1; }
+
+    @media (prefers-reduced-motion: reduce) {
+      * { animation: none !important; transition-duration: 0.01ms !important; }
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <span class="kicker">ISSUE #1427 · REDESIGN SPEC</span>
+  <h1>RecordPanel <span class="thin">リデザイン案</span></h1>
+
+  <div class="intro">
+    <div>
+      <p class="problem">
+        課題: <b>TaskProgressSheet が大きすぎて情報が多すぎる</b>。
+        パネルなのに画面を覆い、"差分 / 累積 / 全体" の 3 入力が同時にあって
+        どれを入れるか迷う。
+      </p>
+      <div class="principles">
+        <div class="pr"><span class="n">A</span>パネルは情報に応じた高さ</div>
+        <div class="pr"><span class="n">B</span>「差分 / 累積」はトグルで一方だけ</div>
+        <div class="pr"><span class="n">C</span>目標数量も編集できる</div>
+        <div class="pr"><span class="n">D</span>± ボタンで微調整</div>
+        <div class="pr"><span class="n">E</span>アクションは短いラベル + 長押し切り替え</div>
+      </div>
+      <div class="controls">
+        <span class="lbl">THEME</span>
+        <button class="theme-btn active" data-t="light">light</button>
+        <button class="theme-btn" data-t="dark">dark</button>
+        <button class="theme-btn" data-t="catppuccin">catppuccin</button>
+        <button class="theme-btn" data-t="aura-soft-dark">aura-soft-dark</button>
+      </div>
+      <div class="controls" style="margin-top:12px">
+        <span class="lbl">SCENARIO</span>
+        <button class="scenario-btn active" data-mode="record">記録</button>
+        <button class="scenario-btn" data-mode="pause">一時停止</button>
+        <button class="scenario-btn" data-mode="complete">完了</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════ BEFORE / AFTER ══════════ -->
+  <div class="sec-head"><span class="idx">01</span><h2>Before / After</h2></div>
+  <p class="sec-sub">
+    左が現行の <code>TaskProgressSheet</code> 、右がさらにコンパクトにしたリデザイン案。
+    右は「差分 / 累積」トグル、プライマリボタンの長押し切り替え、シナリオ切り替えに動作します。
+  </p>
+
+  <div class="redesign">
+    <div class="phone-wrap">
+      <span class="cap before">▲ BEFORE</span>
+      <div class="phone" id="beforePhone"><div class="phone-inner"><div class="screen">
+        <div class="statusbar"><span>9:26</span><span class="sig">▲▲▲ 87%</span></div>
+        <div class="topbar"><button class="ibtn">‹</button><span class="tid">#142</span><div class="spacer"></div><button class="ibtn">⋮</button></div>
+        <div class="scroll">
+          <div class="app-bg">
+            <div class="taskhead">
+              <div class="head-chips">
+                <span class="chip on"><span class="dot pulse"></span>進行中</span>
+                <span class="chip plain">#142</span>
+              </div>
+              <div class="task-title">論文レビュー</div>
+              <div class="times"><span class="t-big">09:00</span><span class="t-arrow">→</span><span class="t-big">10:30</span></div>
+            </div>
+            <div class="slabel"><span class="txt">進捗</span></div>
+            <div class="cell">
+              <div class="k">数量</div>
+              <div class="v">12<small> / 20 ページ</small></div>
+              <div class="minibar"><i style="width:60%"></i></div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-overlay">
+          <div class="sheet legacy-sheet">
+            <div class="sheet-handle"></div>
+            <div class="l-title">論文レビュー</div>
+            <div class="l-sub">進捗を記録して一時停止</div>
+            <div class="legacy-row">
+              <input class="legacy-input" placeholder="差分" value="3">
+              <input class="legacy-input" placeholder="累積" value="15">
+            </div>
+            <input class="legacy-input full legacy-note" placeholder="全体" value="20">
+            <input class="legacy-input full legacy-note" placeholder="メモ（任意）">
+            <div class="legacy-actions">
+              <button class="legacy-btn secondary">キャンセル</button>
+              <button class="legacy-btn secondary">記録</button>
+              <button class="legacy-btn primary">記録して一時停止</button>
+            </div>
+          </div>
+        </div>
+      </div></div></div>
+    </div>
+
+    <div class="phone-wrap">
+      <span class="cap after">▼ AFTER</span>
+      <div class="phone" id="afterPhone" data-mode="record"><div class="phone-inner"><div class="screen">
+        <div class="statusbar"><span>9:26</span><span class="sig">▲▲▲ 87%</span></div>
+        <div class="topbar"><button class="ibtn">‹</button><span class="tid">#142</span><div class="spacer"></div><button class="ibtn">⋮</button></div>
+        <div class="scroll">
+          <div class="app-bg">
+            <div class="taskhead">
+              <div class="head-chips">
+                <span class="chip on"><span class="dot pulse"></span>進行中</span>
+                <span class="chip plain">#142</span>
+              </div>
+              <div class="task-title">論文レビュー</div>
+              <div class="times"><span class="t-big">09:00</span><span class="t-arrow">→</span><span class="t-big">10:30</span></div>
+            </div>
+            <div class="slabel"><span class="txt">進捗</span></div>
+            <div class="cell">
+              <div class="k">数量</div>
+              <div class="v"><span id="bgDone">12</span><small> / <span id="bgTotal">20</span> ページ</small></div>
+              <div class="minibar"><i id="bgBar" style="width:60%"></i></div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-overlay" id="afterOverlay">
+          <div class="sheet compact" id="afterSheet">
+            <div class="sheet-handle"></div>
+            <div class="sheet-header">
+              <div class="sheet-title-row">
+                <span class="chip on" id="afterModeChip">記録</span>
+                <span class="chip plain">#142</span>
+              </div>
+              <h2 class="sheet-title">論文レビュー</h2>
+            </div>
+
+            <div class="note-field">
+              <input class="note-input" id="afterNote" type="text" placeholder="メモ（任意）" aria-label="メモ（任意）">
+            </div>
+
+            <div class="preview" id="afterPreview">
+              <div class="preview-value" id="previewValue">
+                <span class="num" id="fromDone">12</span><span class="sep">/</span><span class="num" id="fromTotal">20</span><span class="arrow">→</span><span class="num" id="previewDone">15</span><span class="sep">/</span><span class="num" id="previewTotal">20</span><span class="unit" id="previewUnit">ページ</span>
+              </div>
+              <div class="track preview-track"><div class="fill" id="previewBar" style="width:75%"></div></div>
+            </div>
+
+            <div class="total-field">
+              <input class="total-input" id="afterTotal" type="text" inputmode="numeric" pattern="[0-9]*" value="20" aria-label="目標数量" placeholder="目標">
+              <span class="total-unit" id="totalUnit">ページ</span>
+            </div>
+
+            <div class="qty-field">
+              <button class="qty-step" data-d="-1" aria-label="1 減らす" type="button">−</button>
+              <input class="qty-input" id="afterQty" type="text" inputmode="numeric" pattern="[0-9]*" value="3" aria-describedby="afterPreview">
+              <span class="qty-unit" id="qtyUnit">ページ</span>
+              <button class="qty-step" data-d="1" aria-label="1 増やす" type="button">＋</button>
+            </div>
+
+            <div class="input-toggle" id="inputToggle" role="tablist" aria-label="入力モード">
+              <button class="active" data-input="delta" role="tab" aria-selected="true" type="button">差分</button>
+              <button data-input="cumulative" role="tab" aria-selected="false" type="button">累積</button>
+            </div>
+
+            <div class="actions">
+              <button class="cancel-btn" id="afterCancel" type="button">キャンセル</button>
+              <button class="primary-btn" id="afterPrimary" type="button">
+                記録
+                <span class="press-fill" id="pressFill"></span>
+              </button>
+            </div>
+            <p class="action-hint" id="afterActionHint">長押し: 停止</p>
+
+            <div class="toast" id="afterToast"></div>
+          </div>
+        </div>
+      </div></div></div>
+    </div>
+  </div>
+
+  <!-- ══════════ DESIGN NOTES ══════════ -->
+  <div class="notes">
+    <p class="nhead">DESIGN NOTES</p>
+    <div class="note-list">
+      <div class="note-item"><h4>情報に応じた高さ</h4><p>メモ、プレビュー、目標、進捗、トグル、アクションと必要な要素を縦に積む。背景のタスク詳細が残る高さに抑える。</p></div>
+      <div class="note-item"><h4>メモを最上部に</h4><p>作業内容を先に書く動線に合わせ、メモをタイトルの直下に配置。結果のプレビューはその下。</p></div>
+      <div class="note-item"><h4>対称なプレビュー</h4><p>常に <b>12 / 20 → 15 / 20 ページ</b> のように、before / after を同じ形式で表示。差分・累積どちらでも一貫して読める。</p></div>
+      <div class="note-item"><h4>目標数量も編集可能</h4><p>「全体」の input を小さめに置き、必要なら目標数量も変更できる。</p></div>
+      <div class="note-item"><h4>進捗入力は ± ボタン付き</h4><p>数値は直接入力しつつ、隣の ± で 1 ずつ微調整。+1 / +5 等のクイックチップは置かない。</p></div>
+      <div class="note-item"><h4>「差分 / 累積」の明確な選択</h4><p>2 つの入力欄を同時に出さず、セグメントトグルで 1 つに絞る。</p></div>
+      <div class="note-item"><h4>短いアクション + 長押し切り替え</h4><p>プライマリは「記録」「停止」「完了」など短いラベル。記録 / 停止は<b>長押しで切り替え</b>、ボタン下のフィルでどこまで長押しすれば切り替わるか視覚化。</p></div>
+      <div class="note-item"><h4>既存トークンのみ使用</h4><p>色・角丸・影は <code>mobile/src/theme.tsx</code> の値をそのまま使用。4 テーマすべてで確認済み。</p></div>
+    </div>
+
+    <div class="rejected">
+      <p class="nhead">CONSIDERED BUT REJECTED</p>
+      <div class="note-list">
+        <div class="note-item rej"><h4>フルスクリーンのボトムシート</h4><p>パネルと呼ぶ以上、情報量に応じた高さが適切。フルスクリーンでは背景を隠しすぎる。</p></div>
+        <div class="note-item rej"><h4>差分・累積を同時に表示</h4><p>2 つの入力は常に連動するが、どちらを編集すればいいか分かりにくい。トグルで 1 つに絞る。</p></div>
+        <div class="note-item rej"><h4>多数のクイックチップ</h4><p>+1 / +5 / +10 / 全て / 半分 等は画面を圧迫する。ステッパー 1 段で十分。</p></div>
+      </div>
+    </div>
+  </div>
+
+  <p class="foot">
+    対象: <code>mobile/src/components/TaskProgressSheet.tsx</code> ·
+    トークン: <code>mobile/src/theme.tsx</code> ·
+    ファイル: <code>doc/mock/record-panel-redesign-mock.html</code>
+  </p>
+</div>
+
+<script>
+  // theme switch
+  document.querySelectorAll('.theme-btn').forEach((b) => {
+    b.addEventListener('click', () => {
+      document.querySelectorAll('.theme-btn').forEach((x) => x.classList.remove('active'));
+      b.classList.add('active');
+      if (b.dataset.t === 'light') document.documentElement.removeAttribute('data-theme');
+      else document.documentElement.setAttribute('data-theme', b.dataset.t);
+    });
+  });
+
+  // ── after phone interactions ──
+  const afterPhone = document.getElementById('afterPhone');
+  const afterSheet = document.getElementById('afterSheet');
+  const qtyInput = document.getElementById('afterQty');
+  const afterTotal = document.getElementById('afterTotal');
+  const afterPrimary = document.getElementById('afterPrimary');
+  const pressFill = document.getElementById('pressFill');
+  const afterCancel = document.getElementById('afterCancel');
+  const afterToast = document.getElementById('afterToast');
+  const afterActionHint = document.getElementById('afterActionHint');
+
+  const state = {
+    current: 12,
+    total: 20,
+    unit: 'ページ',
+    inputMode: 'delta',
+  };
+
+  const modeConfig = {
+    record: { chip: '記録', primary: '記録' },
+    pause: { chip: '停止', primary: '停止' },
+    complete: { chip: '完了', primary: '完了' },
+  };
+
+  let actionMode = 'record';
+  let longPressTimer = null;
+  let pressInterval = null;
+  let pressStart = 0;
+  let longPressFired = false;
+  const LONG_PRESS_MS = 600;
+
+  function digitsOnly(text) {
+    return text.replace(/[^0-9]/g, '');
+  }
+
+  function parseQty(text) {
+    const n = parseInt(digitsOnly(text), 10);
+    return Number.isNaN(n) ? 0 : n;
+  }
+
+  function setMode(mode) {
+    afterPhone.dataset.mode = mode;
+    const cfg = modeConfig[mode];
+    const chip = document.getElementById('afterModeChip');
+    chip.textContent = cfg.chip;
+    chip.className = mode === 'complete' ? 'chip good' : 'chip on';
+    if (mode === 'record') actionMode = 'record';
+    else if (mode === 'pause') actionMode = 'pause';
+    else actionMode = 'complete';
+    updatePrimary();
+    document.querySelectorAll('.scenario-btn').forEach((b) => {
+      b.classList.toggle('active', b.dataset.mode === mode);
+    });
+  }
+
+  function updatePrimary() {
+    const mode = afterPhone.dataset.mode;
+    if (mode === 'complete') {
+      afterPrimary.textContent = modeConfig.complete.primary;
+      afterPrimary.classList.add('complete');
+      afterPrimary.classList.remove('record', 'pause');
+      afterActionHint.style.display = 'none';
+      return;
+    }
+    afterPrimary.classList.remove('complete');
+    const isRecord = actionMode === 'record';
+    afterPrimary.textContent = isRecord ? modeConfig.record.primary : modeConfig.pause.primary;
+    afterPrimary.classList.toggle('record', isRecord);
+    afterPrimary.classList.toggle('pause', !isRecord);
+    afterActionHint.textContent = isRecord ? '長押し: 停止' : '長押し: 記録';
+    afterActionHint.style.display = 'block';
+  }
+
+  function toggleAction() {
+    const mode = afterPhone.dataset.mode;
+    if (mode === 'complete') return;
+    actionMode = actionMode === 'record' ? 'pause' : 'record';
+    updatePrimary();
+  }
+
+  function setInputMode(mode) {
+    state.inputMode = mode;
+    document.querySelectorAll('#inputToggle button').forEach((b) => {
+      const active = b.dataset.input === mode;
+      b.classList.toggle('active', active);
+      b.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+    if (mode === 'delta') {
+      qtyInput.value = '3';
+    } else {
+      qtyInput.value = String(state.current);
+    }
+    updatePreview();
+  }
+
+  function updatePreview() {
+    const input = parseQty(qtyInput.value);
+    let after = state.inputMode === 'delta' ? state.current + input : input;
+    after = Math.max(0, after);
+
+    document.getElementById('bgDone').textContent = state.current;
+    document.getElementById('bgTotal').textContent = state.total;
+    document.getElementById('fromDone').textContent = state.current;
+    document.getElementById('fromTotal').textContent = state.total;
+    document.getElementById('previewDone').textContent = after;
+    document.getElementById('previewTotal').textContent = state.total;
+
+    const currentPct = state.total > 0 ? Math.min(100, Math.max(0, (state.current / state.total) * 100)) : 0;
+    const previewPct = state.total > 0 ? Math.min(100, Math.max(0, (after / state.total) * 100)) : 0;
+    document.getElementById('previewBar').style.width = previewPct + '%';
+    document.getElementById('bgBar').style.width = currentPct + '%';
+
+    document.getElementById('qtyUnit').textContent = state.unit;
+    document.getElementById('totalUnit').textContent = state.unit;
+    document.getElementById('previewUnit').textContent = state.unit;
+  }
+
+  function showToast(msg) {
+    afterToast.textContent = msg;
+    afterToast.classList.add('show');
+    clearTimeout(afterToast._t);
+    afterToast._t = setTimeout(() => afterToast.classList.remove('show'), 1600);
+  }
+
+  // inputs
+  qtyInput.addEventListener('input', () => {
+    qtyInput.value = digitsOnly(qtyInput.value);
+    updatePreview();
+  });
+
+  afterTotal.addEventListener('input', () => {
+    afterTotal.value = digitsOnly(afterTotal.value);
+    state.total = parseQty(afterTotal.value);
+    updatePreview();
+  });
+
+  // step buttons
+  document.querySelectorAll('.qty-step').forEach((b) => {
+    b.addEventListener('click', () => {
+      const d = parseInt(b.dataset.d, 10);
+      let current = parseQty(qtyInput.value);
+      current = Math.max(0, current + d);
+      qtyInput.value = String(current);
+      updatePreview();
+    });
+  });
+
+  // mode tabs
+  document.querySelectorAll('#inputToggle button').forEach((b) => {
+    b.addEventListener('click', () => setInputMode(b.dataset.input));
+  });
+
+  // primary long-press toggle
+  function startLongPress(e) {
+    if (afterPhone.dataset.mode === 'complete') return;
+    longPressFired = false;
+    pressStart = Date.now();
+    pressFill.style.width = '0%';
+    pressInterval = setInterval(() => {
+      const pct = Math.min(100, ((Date.now() - pressStart) / LONG_PRESS_MS) * 100);
+      pressFill.style.width = pct + '%';
+    }, 30);
+    longPressTimer = setTimeout(() => {
+      longPressFired = true;
+      clearInterval(pressInterval);
+      pressInterval = null;
+      longPressTimer = null;
+      toggleAction();
+      showToast(actionMode === 'pause' ? '記録して停止' : '記録のみ');
+    }, LONG_PRESS_MS);
+  }
+
+  function endLongPress(e) {
+    if (longPressTimer) {
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+    }
+    if (pressInterval) {
+      clearInterval(pressInterval);
+      pressInterval = null;
+    }
+    if (!longPressFired) {
+      pressFill.style.width = '0%';
+    }
+  }
+
+  afterPrimary.addEventListener('mousedown', startLongPress);
+  afterPrimary.addEventListener('touchstart', startLongPress);
+  afterPrimary.addEventListener('mouseup', endLongPress);
+  afterPrimary.addEventListener('mouseleave', endLongPress);
+  afterPrimary.addEventListener('touchend', endLongPress);
+
+  afterPrimary.addEventListener('click', () => {
+    pressFill.style.width = '0%';
+    if (longPressFired) {
+      longPressFired = false;
+      return;
+    }
+    const mode = afterPhone.dataset.mode;
+    if (mode === 'complete') showToast('完了しました ✓');
+    else if (actionMode === 'pause') showToast('一時停止しました');
+    else showToast('進捗を記録しました');
+  });
+
+  afterCancel.addEventListener('click', () => showToast('キャンセルしました'));
+
+  // scenario buttons
+  document.querySelectorAll('.scenario-btn').forEach((b) => {
+    b.addEventListener('click', () => setMode(b.dataset.mode));
+  });
+
+  // prevent sheet clicks from closing overlay
+  afterSheet.addEventListener('click', (e) => e.stopPropagation());
+
+  // initialize
+  setMode('record');
+  setInputMode('delta');
+</script>
+</body>
+</html>

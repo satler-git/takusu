@@ -841,6 +841,76 @@
       "source": "text"
     },
     {
+      "fg": "black",
+      "bg": "surfaceTint",
+      "file": "components/TaskProgressSheet.tsx",
+      "kind": "parent-child",
+      "source": "text"
+    },
+    {
+      "fg": "gray",
+      "bg": "surfaceTint",
+      "file": "components/TaskProgressSheet.tsx",
+      "kind": "parent-child",
+      "source": "text"
+    },
+    {
+      "fg": "brand",
+      "bg": "surfaceTint",
+      "file": "components/TaskProgressSheet.tsx",
+      "kind": "parent-child",
+      "source": "text"
+    },
+    {
+      "fg": "gray",
+      "bg": "white",
+      "file": "components/TaskProgressSheet.tsx",
+      "kind": "parent-child",
+      "source": "text"
+    },
+    {
+      "fg": "onBrand",
+      "bg": "brand",
+      "file": "components/TaskProgressSheet.tsx",
+      "kind": "parent-child",
+      "source": "text"
+    },
+    {
+      "fg": "black",
+      "bg": "brand",
+      "file": "components/TaskProgressSheet.tsx",
+      "kind": "parent-child",
+      "source": "text"
+    },
+    {
+      "fg": "black",
+      "bg": "white",
+      "file": "components/TaskProgressSheet.tsx",
+      "kind": "parent-child",
+      "source": "text"
+    },
+    {
+      "fg": "white",
+      "bg": "green",
+      "file": "components/TaskProgressSheet.tsx",
+      "kind": "parent-child",
+      "source": "text"
+    },
+    {
+      "fg": "white",
+      "bg": "brand",
+      "file": "components/TaskProgressSheet.tsx",
+      "kind": "parent-child",
+      "source": "text"
+    },
+    {
+      "fg": "onBrand",
+      "bg": "green",
+      "file": "components/TaskProgressSheet.tsx",
+      "kind": "parent-child",
+      "source": "text"
+    },
+    {
       "fg": "gray",
       "bg": "surface",
       "file": "components/TaskProgressSheet.tsx",
@@ -848,32 +918,18 @@
       "source": "text"
     },
     {
-      "fg": "onBrand",
-      "bg": "green",
+      "fg": "gray",
+      "bg": "surfaceTint",
       "file": "components/TaskProgressSheet.tsx",
       "kind": "parent-child",
-      "source": "text"
+      "source": "icon"
     },
     {
-      "fg": "onBrand",
-      "bg": "brand",
+      "fg": "brand",
+      "bg": "surface",
       "file": "components/TaskProgressSheet.tsx",
       "kind": "parent-child",
-      "source": "text"
-    },
-    {
-      "fg": "white",
-      "bg": "green",
-      "file": "components/TaskProgressSheet.tsx",
-      "kind": "parent-child",
-      "source": "text"
-    },
-    {
-      "fg": "white",
-      "bg": "brand",
-      "file": "components/TaskProgressSheet.tsx",
-      "kind": "parent-child",
-      "source": "text"
+      "source": "icon"
     },
     {
       "fg": "black",
@@ -1970,5 +2026,5 @@
       "source": "icon"
     }
   ],
-  "generatedAt": "2026-08-01T16:04:19.226Z"
+  "generatedAt": "2026-08-02T02:54:59.219Z"
 }

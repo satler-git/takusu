@@ -58,7 +58,7 @@
     {
       "fg": "onBrand",
       "bg": "green",
-      "reason": "False positive from the TaskProgressSheet confirm button whose backgroundColor is `mode === 'complete' ? green : brand`. The green (complete) variant renders white text at runtime; onBrand is only paired with the brand background. AST extraction cannot correlate the conditional bg with the conditional text color."
+      "reason": "TaskProgressSheet primary button uses `colors.onBrand` on `colors.brand` and `colors.white` on `colors.green`. The conditional style object extracts all four combinations, so `onBrand` on `green` is a false positive; the actual complete variant renders `colors.white` text."
     },
     {
       "fg": "black",
