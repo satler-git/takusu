@@ -28,6 +28,8 @@ class AudioOptions : Record {
 
     @Field val modelDir: String = ""
 
+    @Field val model: String = ""
+
     @Field val apiKey: String = ""
 
     @Field val voiceId: String = ""
@@ -158,7 +160,14 @@ class TakusuAudioModule : Module() {
                         audio = newAudio
                     }
 
-                    "cartesia" -> {
+                    "cartesia", "fish" -> {
+                        if (options.apiKey.isBlank()) {
+                            throw CodedException(
+                                "ERR_AUDIO_CONFIG",
+                                "${options.provider} requires an API key",
+                                null,
+                            )
+                        }
                         audio = createMobileAudio(context, options, apiKey = options.apiKey)
                     }
 
@@ -573,7 +582,9 @@ class TakusuAudioModule : Module() {
         return try {
             MobileAudio(
                 modelDir,
+                options.provider,
                 apiKey,
+                options.model,
                 options.voiceId,
                 options.language,
                 options.sampleRate.toUInt(),

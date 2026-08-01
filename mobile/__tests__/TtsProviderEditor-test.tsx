@@ -166,6 +166,35 @@ describe('TtsProviderEditor', () => {
       provider: 'cartesia',
     });
     expect(getByPlaceholderText('Voice ID')).toBeTruthy();
+    expect(getByPlaceholderText('Model (optional)')).toBeTruthy();
     expect(queryByText('自動（最初の声）')).toBeNull();
+  });
+
+  it('shows model and optional voice fields for the fish provider', async () => {
+    const { getByPlaceholderText, queryByText } = await setup({
+      provider: 'fish',
+    });
+    expect(
+      getByPlaceholderText('Voice / Reference ID (optional)'),
+    ).toBeTruthy();
+    expect(getByPlaceholderText('Fish model (s2.1-pro-free)')).toBeTruthy();
+    expect(queryByText('自動（最初の声）')).toBeNull();
+  });
+
+  it('sets the default fish model when the provider is switched to fish', async () => {
+    const { getByText, onChangeProvider } = await setup({
+      provider: 'cartesia',
+    });
+    fireEvent.press(getByText('Cartesia'));
+    await waitFor(() => expect(getByText('Fish Audio')).toBeTruthy());
+    fireEvent.press(getByText('Fish Audio'));
+    await waitFor(() =>
+      expect(onChangeProvider).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          provider: 'fish',
+          model: 's2.1-pro-free',
+        }),
+      ),
+    );
   });
 });

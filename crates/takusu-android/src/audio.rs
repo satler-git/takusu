@@ -5,9 +5,9 @@ use std::sync::{
 };
 
 use takusu_audio::{
-    CartesiaOutputFormat, CartesiaSonic, CartesiaSonicConfig, Hush, SherpaOnnxAsr,
-    SherpaOnnxAsrConfig, SherpaOnnxModel, SpeechToText, SttError, TextToSpeech, TtsOptions,
-    TtsRequest, normalize_for_tts,
+    CartesiaOutputFormat, CartesiaSonic, CartesiaSonicConfig, FishAudio, FishAudioConfig, Hush,
+    SherpaOnnxAsr, SherpaOnnxAsrConfig, SherpaOnnxModel, SpeechToText, SttError, TextToSpeech,
+    TtsOptions, TtsRequest, normalize_for_tts,
 };
 use tokio::runtime::{Builder, Runtime};
 
@@ -31,7 +31,7 @@ use crate::TakusuError;
 pub struct MobileAudio {
     hush: Mutex<Option<Hush>>,
     stt: Mutex<Option<Arc<SherpaOnnxAsr>>>,
-    tts: Option<CartesiaSonic>,
+    tts: Option<Arc<dyn TextToSpeech>>,
     runtime: Mutex<Option<Arc<Runtime>>>,
     runtime_shutdown: AtomicBool,
     model_dir: PathBuf,
@@ -110,9 +110,12 @@ impl MobileAudio {
 #[uniffi::export]
 impl MobileAudio {
     #[uniffi::constructor]
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         model_dir: String,
+        provider: String,
         api_key: String,
+        model: String,
         voice_id: String,
         language: String,
         sample_rate: u32,
@@ -120,15 +123,33 @@ impl MobileAudio {
         mute: bool,
     ) -> Result<Self, TakusuError> {
         let root = Path::new(&model_dir).to_path_buf();
-        let tts = if api_key.trim().is_empty() {
-            None
-        } else {
-            let mut tts_config = CartesiaSonicConfig::new(api_key);
-            tts_config.voice_id = voice_id.clone();
-            tts_config.language = Some(language.clone());
-            tts_config.output_format = CartesiaOutputFormat::mp3(sample_rate, 128_000);
-            tts_config.mute = mute;
-            Some(CartesiaSonic::new(tts_config))
+        let tts: Option<Arc<dyn TextToSpeech>> = match provider.as_str() {
+            "cartesia" if !api_key.trim().is_empty() => {
+                let mut tts_config = CartesiaSonicConfig::new(api_key);
+                if !voice_id.trim().is_empty() {
+                    tts_config.voice_id = voice_id.clone();
+                }
+                if !model.trim().is_empty() {
+                    tts_config.model_id = model;
+                }
+                tts_config.language = Some(language.clone());
+                tts_config.output_format = CartesiaOutputFormat::mp3(sample_rate, 128_000);
+                tts_config.mute = mute;
+                Some(Arc::new(CartesiaSonic::new(tts_config)))
+            }
+            "fish" if !api_key.trim().is_empty() => {
+                let mut tts_config = FishAudioConfig::new(api_key);
+                if !voice_id.trim().is_empty() {
+                    tts_config.voice_id = voice_id.clone();
+                }
+                if !model.trim().is_empty() {
+                    tts_config.model = model;
+                }
+                tts_config.sample_rate = sample_rate;
+                tts_config.mute = mute;
+                Some(Arc::new(FishAudio::new(tts_config)))
+            }
+            _ => None,
         };
         Ok(Self {
             hush: Mutex::new(None),
@@ -253,7 +274,11 @@ impl MobileAudio {
         let text = self.normalize_text(runtime.clone(), text, &language)?;
         let request = TtsRequest {
             text,
-            voice: Some(self.voice_id.clone()),
+            voice: if self.voice_id.trim().is_empty() {
+                None
+            } else {
+                Some(self.voice_id.clone())
+            },
             reference_audio_path: None,
             options: TtsOptions {
                 response_format: Some("mp3".to_string()),
@@ -290,6 +315,8 @@ mod tests {
             model_dir,
             String::new(),
             String::new(),
+            String::new(),
+            String::new(),
             "ja".to_string(),
             44100,
             Some(1.0),
@@ -318,6 +345,8 @@ mod tests {
             model_dir,
             String::new(),
             String::new(),
+            String::new(),
+            String::new(),
             "ja".to_string(),
             44100,
             Some(1.0),
@@ -342,6 +371,8 @@ mod tests {
             .to_string();
         let audio = MobileAudio::new(
             model_dir,
+            String::new(),
+            String::new(),
             String::new(),
             String::new(),
             "ja".to_string(),
@@ -378,6 +409,8 @@ mod tests {
             .to_string();
         let audio = MobileAudio::new(
             model_dir,
+            String::new(),
+            String::new(),
             String::new(),
             String::new(),
             "ja".to_string(),
@@ -422,6 +455,8 @@ mod tests {
             .to_string();
         let audio = MobileAudio::new(
             model_dir,
+            String::new(),
+            String::new(),
             String::new(),
             String::new(),
             "ja".to_string(),

@@ -1,4 +1,6 @@
 pub mod cartesia;
+pub mod fish;
+mod http;
 pub mod models;
 #[cfg(feature = "record")]
 pub mod play;
@@ -25,6 +27,7 @@ pub use cartesia::{
     CartesiaContainer, CartesiaEmotion, CartesiaEncoding, CartesiaGenerationConfig,
     CartesiaOutputFormat, CartesiaSonic, CartesiaSonicConfig,
 };
+pub use fish::{FishAudio, FishAudioConfig};
 pub use models::{
     DownloadProgress, DownloadStage, ModelCache, ModelError, ModelRegistry, ModelSpec,
     ProgressCallback,

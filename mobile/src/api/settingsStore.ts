@@ -63,13 +63,14 @@ interface LegacyLlmProviderSettings {
   permissions?: PermissionsMap;
 }
 
-export type TtsProvider = 'cartesia' | 'android';
+export type TtsProvider = 'cartesia' | 'android' | 'fish';
 
-const VALID_TTS_PROVIDERS: TtsProvider[] = ['cartesia', 'android'];
+const VALID_TTS_PROVIDERS: TtsProvider[] = ['cartesia', 'android', 'fish'];
 
 export const TTS_PROVIDER_LABELS: Record<TtsProvider, string> = {
   cartesia: 'Cartesia',
   android: 'Android 標準 TTS',
+  fish: 'Fish Audio',
 };
 
 export interface TtsProviderSettings {

@@ -450,6 +450,7 @@ pub struct UpdateAgentTtsSettings {
     pub voice_id: Option<String>,
     pub language: Option<String>,
     pub sample_rate: Option<u32>,
+    pub model: Option<String>,
     pub speed: Option<f32>,
 }
 
@@ -637,6 +638,9 @@ async fn update_settings(
         }
         if let Some(sample_rate) = tts.sample_rate {
             new_config.audio.tts.sample_rate = sample_rate;
+        }
+        if let Some(model) = tts.model {
+            new_config.audio.tts.model = model;
         }
         if let Some(speed) = tts.speed {
             new_config.audio.tts.speed = Some(speed);

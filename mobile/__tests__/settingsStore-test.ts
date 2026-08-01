@@ -187,6 +187,7 @@ describe('parseTtsProviders', () => {
         name: 'Cartesia',
         provider: 'cartesia',
         voiceId: 'voice-1',
+        model: 'sonic-3.5',
         language: 'ja',
         sampleRate: 44100,
         speed: 1.2,
@@ -198,11 +199,37 @@ describe('parseTtsProviders', () => {
         name: 'Cartesia',
         provider: 'cartesia',
         voiceId: 'voice-1',
+        model: 'sonic-3.5',
         language: 'ja',
         sampleRate: 44100,
         speed: 1.2,
       },
     ]);
+  });
+
+  it('keeps valid fish providers', () => {
+    const input = JSON.stringify([
+      {
+        id: 'p-fish',
+        name: 'Fish',
+        provider: 'fish',
+        voiceId: '',
+        model: 's2.1-pro-free',
+        language: 'ja',
+        sampleRate: 44100,
+      },
+    ]);
+    const result = parseTtsProviders(input);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual({
+      id: 'p-fish',
+      name: 'Fish',
+      provider: 'fish',
+      voiceId: '',
+      model: 's2.1-pro-free',
+      language: 'ja',
+      sampleRate: 44100,
+    });
   });
 
   it('keeps valid android providers', () => {
