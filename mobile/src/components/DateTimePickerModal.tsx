@@ -66,7 +66,7 @@ const makeStyles = (colors: ColorSet) =>
     },
     shortcutsContent: {
       gap: 8,
-      paddingRight: 4,
+      paddingEnd: 20,
     },
     shortcutChip: {
       paddingHorizontal: 12,

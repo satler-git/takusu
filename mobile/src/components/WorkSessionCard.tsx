@@ -1,10 +1,10 @@
 // WorkSessionCard — displays an open work session above the task list.
-// Tap opens the progress sheet for this session; slide right completes it;
-// slide left reveals a pause button. Multiple sessions can be open at once
+// Tap opens the progress sheet for this session; swipe toward start completes it;
+// swipe toward end reveals a pause button. Multiple sessions can be open at once
 // (#1419), so each card independently targets its own session.
 
 import { memo, useEffect, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { I18nManager, Pressable, StyleSheet, Text, View } from 'react-native';
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import Reanimated, {
   useSharedValue,
@@ -47,8 +47,8 @@ const makeStyles = (colors: ColorSet) =>
     },
     card: {
       borderRadius: 12,
-      borderLeftWidth: 4,
-      borderLeftColor: colors.brand,
+      borderStartWidth: 4,
+      borderStartColor: colors.brand,
     },
     cardInner: {
       padding: 12,
@@ -102,7 +102,7 @@ const makeStyles = (colors: ColorSet) =>
       borderRadius: 12,
       justifyContent: 'center',
       alignItems: 'flex-start',
-      paddingLeft: 20,
+      paddingStart: 20,
     },
     actionPanelBg: {
       position: 'absolute',
@@ -113,12 +113,12 @@ const makeStyles = (colors: ColorSet) =>
     },
     actionPanel: {
       position: 'absolute',
-      right: 0,
+      end: 0,
       top: 0,
       bottom: 0,
       flexDirection: 'row',
-      borderTopRightRadius: 12,
-      borderBottomRightRadius: 12,
+      borderTopEndRadius: 12,
+      borderBottomEndRadius: 12,
       overflow: 'hidden',
     },
     actionButton: {
@@ -147,6 +147,10 @@ function WorkSessionCardImpl({
   const [actionsRevealed, setActionsRevealed] = useState(false);
   const [now, setNow] = useState(() => Date.now());
 
+  const isRTL = I18nManager.isRTL;
+  const startSign = isRTL ? -1 : 1;
+  const panelOffset = isRTL ? PANEL_WIDTH : -PANEL_WIDTH;
+
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
@@ -166,38 +170,38 @@ function WorkSessionCardImpl({
     .activeOffsetX([-10, 10])
     .failOffsetY([-10, 10])
     .onUpdate((e) => {
-      const base = actionsRevealedSV.value ? -PANEL_WIDTH : 0;
+      const base = actionsRevealedSV.value ? panelOffset : 0;
       translateX.value = base + e.translationX;
       if (
-        e.translationX > REVEAL_THRESHOLD &&
-        hapticFiredDir.value !== 1 &&
+        startSign * e.translationX > REVEAL_THRESHOLD &&
+        hapticFiredDir.value !== startSign &&
         !actionsRevealedSV.value
       ) {
-        hapticFiredDir.value = 1;
+        hapticFiredDir.value = startSign;
         runOnJS(haptic.light)();
       } else if (
-        e.translationX < -REVEAL_THRESHOLD &&
-        hapticFiredDir.value !== -1 &&
+        -startSign * e.translationX > REVEAL_THRESHOLD &&
+        hapticFiredDir.value !== -startSign &&
         !actionsRevealedSV.value
       ) {
-        hapticFiredDir.value = -1;
+        hapticFiredDir.value = -startSign;
         runOnJS(haptic.medium)();
       }
     })
     .onEnd((e) => {
       if (actionsRevealedSV.value) {
-        if (e.translationX > -20) {
+        if (isRTL ? e.translationX < 20 : e.translationX > -20) {
           actionsRevealedSV.value = false;
           translateX.value = withSpring(0);
         } else {
-          translateX.value = withSpring(-PANEL_WIDTH);
+          translateX.value = withSpring(panelOffset);
         }
-      } else if (e.translationX > REVEAL_THRESHOLD) {
+      } else if (startSign * e.translationX > REVEAL_THRESHOLD) {
         runOnJS(onComplete)(session);
         translateX.value = withSpring(0);
-      } else if (e.translationX < -REVEAL_THRESHOLD) {
+      } else if (-startSign * e.translationX > REVEAL_THRESHOLD) {
         actionsRevealedSV.value = true;
-        translateX.value = withSpring(-PANEL_WIDTH);
+        translateX.value = withSpring(panelOffset);
       } else {
         translateX.value = withSpring(0);
       }
@@ -206,7 +210,7 @@ function WorkSessionCardImpl({
       hapticFiredDir.value = 0;
       if (!success) {
         translateX.value = withSpring(
-          actionsRevealedSV.value ? -PANEL_WIDTH : 0,
+          actionsRevealedSV.value ? panelOffset : 0,
         );
       }
     });
@@ -215,10 +219,16 @@ function WorkSessionCardImpl({
     transform: [{ translateX: translateX.value }],
   }));
   const doneBgStyle = useAnimatedStyle(() => ({
-    opacity: Math.min(1, Math.max(0, translateX.value / REVEAL_THRESHOLD)),
+    opacity: Math.min(
+      1,
+      Math.max(0, (startSign * translateX.value) / REVEAL_THRESHOLD),
+    ),
   }));
   const actionPanelBgStyle = useAnimatedStyle(() => ({
-    opacity: Math.min(1, Math.max(0, -translateX.value / REVEAL_THRESHOLD)),
+    opacity: Math.min(
+      1,
+      Math.max(0, (-startSign * translateX.value) / REVEAL_THRESHOLD),
+    ),
   }));
 
   const elapsed = now - new Date(session.started_at).getTime();
@@ -263,7 +273,7 @@ function WorkSessionCardImpl({
             styles.actionButton,
             {
               width: ACTION_BUTTON_WIDTH + CARD_BORDER_RADIUS,
-              paddingLeft: CARD_BORDER_RADIUS,
+              paddingStart: CARD_BORDER_RADIUS,
               backgroundColor: colors.red,
             },
           ]}

@@ -742,7 +742,7 @@ const makeStyles = (colors: ColorSet) =>
       alignItems: 'flex-start',
     },
     weekdayLabels: {
-      marginRight: 4,
+      marginEnd: 4,
     },
     weekdayLabel: {
       fontSize: 10,
@@ -751,13 +751,14 @@ const makeStyles = (colors: ColorSet) =>
     },
     heatmapScroll: {
       flexDirection: 'row',
+      paddingEnd: 16,
     },
     heatmapGrid: {
       flexDirection: 'row',
     },
     weekColumn: {
       flexDirection: 'column',
-      marginRight: 2,
+      marginEnd: 2,
     },
     cell: {
       width: 14,
@@ -785,6 +786,7 @@ const makeStyles = (colors: ColorSet) =>
     },
     barScroll: {
       flexDirection: 'row',
+      paddingEnd: 16,
     },
     barChart: {
       flexDirection: 'row',
@@ -792,7 +794,7 @@ const makeStyles = (colors: ColorSet) =>
     },
     barColumn: {
       width: 24,
-      marginRight: 4,
+      marginEnd: 4,
       alignItems: 'center',
     },
     barStack: {
@@ -842,7 +844,7 @@ const makeStyles = (colors: ColorSet) =>
       width: 10,
       height: 10,
       borderRadius: 5,
-      marginRight: 10,
+      marginEnd: 10,
     },
     habitTitle: {
       flex: 1,

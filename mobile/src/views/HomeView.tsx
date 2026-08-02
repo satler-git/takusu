@@ -264,8 +264,8 @@ const makeStyles = (colors: ColorSet) =>
     bottomBar: {
       position: 'absolute',
       bottom: 0,
-      left: 0,
-      right: 0,
+      start: 0,
+      end: 0,
       flexDirection: 'row',
       justifyContent: 'center',
       alignItems: 'center',
@@ -275,7 +275,7 @@ const makeStyles = (colors: ColorSet) =>
     },
     startDoneButton: {
       position: 'absolute',
-      right: 24,
+      end: 24,
       bottom: 16,
       width: 48,
       height: 48,
@@ -2354,7 +2354,7 @@ export function HomeView() {
         <Reanimated.View
           style={[
             styles.startDoneHint,
-            { bottom: 72 + insets.bottom, right: 20 },
+            { bottom: 72 + insets.bottom, end: 20 },
             startDoneHintStyle,
           ]}
           pointerEvents="none"

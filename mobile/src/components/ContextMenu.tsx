@@ -6,12 +6,20 @@
 //   handlers are provided.
 
 import { useState, useMemo } from 'react';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  I18nManager,
+  Modal,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useColors, type ColorSet } from '@/src/theme';
 import { undoRedo } from '@/src/api/undoRedo';
 import { haptic } from '@/src/components/haptics';
 import { PressableScale } from '@/src/components/PressableScale';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { TaskStatus } from '@/src/api/types';
 
 interface ContextMenuProps {
@@ -57,8 +65,7 @@ const makeStyles = (colors: ColorSet) =>
     },
     menu: {
       position: 'absolute',
-      top: 60,
-      left: 12,
+      start: 12,
       borderRadius: 12,
       paddingVertical: 4,
       minWidth: 240,
@@ -117,6 +124,8 @@ export function ContextMenu({
 }: ContextMenuProps) {
   const colors = useColors();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+  const insets = useSafeAreaInsets();
+  const startInset = I18nManager.isRTL ? insets.right : insets.left;
   const [open, setOpen] = useState(false);
   const [statusSubmenu, setStatusSubmenu] = useState(false);
 
@@ -281,7 +290,16 @@ export function ContextMenu({
         onRequestClose={() => setOpen(false)}
       >
         <Pressable style={styles.overlay} onPress={() => setOpen(false)}>
-          <View style={[styles.menu, { backgroundColor: colors.white }]}>
+          <View
+            style={[
+              styles.menu,
+              {
+                backgroundColor: colors.white,
+                top: 56 + insets.top,
+                start: 12 + startInset,
+              },
+            ]}
+          >
             {alwaysItems.map(renderItem)}
             {hasSelection && (
               <View
@@ -307,7 +325,16 @@ export function ContextMenu({
           style={styles.overlay}
           onPress={() => setStatusSubmenu(false)}
         >
-          <View style={[styles.menu, { backgroundColor: colors.white }]}>
+          <View
+            style={[
+              styles.menu,
+              {
+                backgroundColor: colors.white,
+                top: 56 + insets.top,
+                start: 12 + startInset,
+              },
+            ]}
+          >
             <Text style={[styles.submenuHeader, { color: colors.gray }]}>
               ステータスを選択
             </Text>

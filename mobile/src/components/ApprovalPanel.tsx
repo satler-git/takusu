@@ -84,7 +84,7 @@ const makeStyles = (colors: ColorSet) =>
       paddingHorizontal: 8,
       paddingVertical: 3,
       borderRadius: 12,
-      marginLeft: 'auto',
+      marginStart: 'auto',
     },
     changeTarget: {
       fontWeight: '700',
@@ -126,7 +126,7 @@ const makeStyles = (colors: ColorSet) =>
       gap: 8,
     },
     stepDetails: {
-      paddingLeft: 28,
+      paddingStart: 28,
       gap: 2,
     },
     stepNumber: {
@@ -170,7 +170,7 @@ const makeStyles = (colors: ColorSet) =>
       padding: 10,
       gap: 4,
     },
-    actions: { flexDirection: 'row', gap: 8 },
+    actions: { flexDirection: 'row', gap: 12 },
     pager: {
       flexDirection: 'row',
       alignItems: 'center',

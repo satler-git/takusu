@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useMemo } from 'react';
-import { StyleSheet } from 'react-native';
+import { I18nManager, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { CrossFadeIcon } from '@/src/components/CrossFadeIcon';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -53,7 +53,7 @@ const makeStyles = (colors: ColorSet) =>
       borderWidth: 1,
     },
     cancelHint: {
-      left: -44,
+      start: -44,
       borderColor: colors.destructive,
       borderWidth: 1,
     },
@@ -82,6 +82,9 @@ export function ComposerRecordButton({
   const gestureAxis = useSharedValue<'none' | 'vertical' | 'horizontal'>(
     'none',
   );
+
+  const isRTL = I18nManager.isRTL;
+  const startSign = isRTL ? 1 : -1;
 
   useEffect(() => {
     recordingRef.current = isRecording;
@@ -286,9 +289,13 @@ export function ComposerRecordButton({
           runOnJS(handleLock)();
         }
       } else if (gestureAxis.value === 'horizontal') {
-        translateX.value = Math.min(0, e.translationX);
+        // Clamp to the start side (left in LTR, right in RTL).
+        translateX.value = startSign * Math.max(0, startSign * e.translationX);
         translateY.value = withSpring(0);
-        if (e.translationX < -CANCEL_THRESHOLD && !willCancelShared.value) {
+        if (
+          startSign * e.translationX > CANCEL_THRESHOLD &&
+          !willCancelShared.value
+        ) {
           runOnJS(handleCancel)();
         }
       } else {
@@ -333,7 +340,7 @@ export function ComposerRecordButton({
 
   const cancelHintStyle = useAnimatedStyle(() => ({
     opacity: willCancelShared.value ? 1 : 0,
-    transform: [{ translateX: willCancelShared.value ? -8 : 0 }],
+    transform: [{ translateX: willCancelShared.value ? startSign * 8 : 0 }],
   }));
 
   return (

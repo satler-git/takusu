@@ -164,7 +164,7 @@ const makeStyles = (colors: ColorSet) =>
     title: {
       fontSize: 18,
       fontWeight: '600',
-      marginLeft: 8,
+      marginStart: 8,
     },
     body: {
       flex: 1,

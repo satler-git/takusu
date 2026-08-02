@@ -180,7 +180,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 18,
     fontWeight: '600',
-    marginLeft: 8,
+    marginStart: 8,
   },
   content: {
     padding: 16,

@@ -161,7 +161,7 @@ const makeStyles = (colors: ColorSet) =>
       fontSize: 12,
       fontWeight: '700',
       fontVariant: ['tabular-nums'],
-      marginLeft: 2,
+      marginStart: 2,
     },
     headerCard: {
       marginHorizontal: 12,
@@ -271,7 +271,7 @@ const makeStyles = (colors: ColorSet) =>
     },
     stepLine: {
       position: 'absolute',
-      left: 13,
+      start: 13,
       top: 30,
       bottom: -2,
       width: 2,
@@ -371,7 +371,7 @@ const makeStyles = (colors: ColorSet) =>
     pips: {
       flexDirection: 'row',
       gap: 3,
-      marginLeft: 4,
+      marginStart: 4,
     },
     pip: {
       width: 9,

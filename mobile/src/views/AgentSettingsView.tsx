@@ -96,7 +96,7 @@ const makeStyles = (colors: ColorSet) =>
       alignItems: 'center',
       borderWidth: 1,
       borderRadius: 8,
-      gap: 8,
+      gap: 12,
     },
     rowMain: {
       flex: 1,
@@ -110,7 +110,7 @@ const makeStyles = (colors: ColorSet) =>
     editButton: {
       paddingVertical: 6,
       paddingHorizontal: 12,
-      marginRight: 10,
+      marginEnd: 10,
       borderWidth: 1,
       borderRadius: 8,
     },
@@ -142,7 +142,7 @@ const makeStyles = (colors: ColorSet) =>
       alignItems: 'center',
       justifyContent: 'center',
     },
-    actions: { flexDirection: 'row', gap: 8, marginTop: 4 },
+    actions: { flexDirection: 'row', gap: 12, marginTop: 4 },
     save: {
       flex: 1,
       minHeight: 44,
@@ -164,8 +164,9 @@ const makeStyles = (colors: ColorSet) =>
     remove: { alignItems: 'center', padding: 12, marginTop: 8 },
     removeText: { color: colors.destructive },
     countInput: {
-      width: 48,
-      height: 36,
+      minWidth: 48,
+      minHeight: 36,
+      paddingHorizontal: 8,
       borderWidth: 1,
       borderRadius: 8,
       textAlign: 'center',

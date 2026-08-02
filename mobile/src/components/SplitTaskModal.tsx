@@ -211,7 +211,7 @@ export function SplitTaskModal({
               onPress={() => setSetDependency((v) => !v)}
               color={colors.brand}
             />
-            <Text style={{ color: colors.black, marginLeft: 8 }}>
+            <Text style={{ color: colors.black, marginStart: 8 }}>
               残りを元タスクに依存させる
             </Text>
           </Pressable>
