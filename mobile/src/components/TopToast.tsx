@@ -515,7 +515,7 @@ const styles = StyleSheet.create({
   action: {
     paddingHorizontal: 4,
     paddingVertical: 4,
-    marginLeft: 12,
+    marginStart: 12,
   },
   actionText: {
     fontSize: 14,

@@ -1,12 +1,13 @@
 // TaskCard component — displays a single task in the list
 // Left: start/end time, Center: title, Right-bottom: cost (avg, sigma)
 // Background color based on abandonability
-// Slide right cycles: start → complete → revert (#312)
-// Slide left past the threshold reveals skip + delete action buttons (#1044)
+// Swipe toward start cycles: start → complete → revert (#312)
+// Swipe toward end past the threshold reveals skip + delete action buttons (#1044)
 // Done tasks: strikethrough + gray
 
 import { memo, useCallback, useMemo, useState } from 'react';
 import {
+  I18nManager,
   Pressable,
   StyleSheet,
   Text,
@@ -112,7 +113,7 @@ const makeStyles = (colors: ColorSet) =>
       borderRadius: 12,
       justifyContent: 'center',
       alignItems: 'flex-start',
-      paddingLeft: 20,
+      paddingStart: 20,
     },
     // #1170: full-width background behind the action panel so over-sliding
     // left never reveals a gap between the card edge and the panel.
@@ -126,12 +127,12 @@ const makeStyles = (colors: ColorSet) =>
     // #1044: revealed skip/delete action panel behind the card
     actionPanel: {
       position: 'absolute',
-      right: 0,
+      end: 0,
       top: 0,
       bottom: 0,
       flexDirection: 'row',
-      borderTopRightRadius: 12,
-      borderBottomRightRadius: 12,
+      borderTopEndRadius: 12,
+      borderBottomEndRadius: 12,
       overflow: 'hidden',
     },
     actionButton: {
@@ -229,69 +230,75 @@ function TaskCardImpl({
     (onSkip && !isDone ? ACTION_BUTTON_WIDTH : 0);
   const REVEAL_THRESHOLD = 80;
 
-  // The task card's rounded right corners expose a small concave notch next
-  // to the leftmost swipe action while the card is slid open. Widen the
-  // action panel and extend the leftmost button 12dp under the card so its
+  // The task card's rounded end corners expose a small concave notch next
+  // to the leading swipe action while the card is slid open. Widen the
+  // action panel and extend the leading button 12dp under the card so its
   // background fills that notch (issue #1097).
   const CARD_BORDER_RADIUS = 12;
   const PANEL_WIDTH = ACTION_PANEL_WIDTH + CARD_BORDER_RADIUS;
   const skipVisible = onSkip && !isDone;
-  const leftActionStyle = {
+  const isRTL = I18nManager.isRTL;
+  const startSign = isRTL ? -1 : 1;
+  const panelOffset = isRTL ? ACTION_PANEL_WIDTH : -ACTION_PANEL_WIDTH;
+  const startActionStyle = {
     width: ACTION_BUTTON_WIDTH + CARD_BORDER_RADIUS,
-    paddingLeft: CARD_BORDER_RADIUS,
+    paddingStart: CARD_BORDER_RADIUS,
   };
-  const rightActionStyle = { width: ACTION_BUTTON_WIDTH };
+  const endActionStyle = { width: ACTION_BUTTON_WIDTH };
 
-  // Single pan gesture handles swipe-right (done) and swipe-left (actions).
-  // Using Gesture.Race with two separate pans was unreliable for left swipe
-  // (#230): Race resolution between gestures with activeOffsetX in opposite
-  // directions can fail to activate. A single gesture with bidirectional
-  // activeOffsetX avoids the issue entirely.
+  // Single pan gesture handles swipe toward start (done) and swipe toward end
+  // (actions). Using Gesture.Race with two separate pans was unreliable for
+  // the end-direction swipe (#230): Race resolution between gestures with
+  // activeOffsetX in opposite directions can fail to activate. A single
+  // gesture with bidirectional activeOffsetX avoids the issue entirely.
   const pan = Gesture.Pan()
     .activeOffsetX([-10, 10])
     .failOffsetY([-10, 10])
     .onUpdate((e) => {
       // If already revealed, start from the revealed position.
-      const base = actionsRevealedSV.value ? -ACTION_PANEL_WIDTH : 0;
+      const base = actionsRevealedSV.value ? panelOffset : 0;
       translateX.value = base + e.translationX;
       // Fire haptic when crossing the action threshold mid-slide (#313).
       // Suppress haptics when actions are revealed — no action will fire
       // regardless of swipe direction.
       if (
-        e.translationX > REVEAL_THRESHOLD &&
+        startSign * e.translationX > REVEAL_THRESHOLD &&
         onDone &&
-        hapticFiredDir.value !== 1 &&
+        hapticFiredDir.value !== startSign &&
         !actionsRevealedSV.value
       ) {
-        hapticFiredDir.value = 1;
+        hapticFiredDir.value = startSign;
         runOnJS(haptic.light)();
       } else if (
-        e.translationX < -REVEAL_THRESHOLD &&
+        -startSign * e.translationX > REVEAL_THRESHOLD &&
         ACTION_PANEL_WIDTH > 0 &&
-        hapticFiredDir.value !== -1 &&
+        hapticFiredDir.value !== -startSign &&
         !actionsRevealedSV.value
       ) {
-        hapticFiredDir.value = -1;
+        hapticFiredDir.value = -startSign;
         runOnJS(haptic.medium)();
       }
     })
     .onEnd((e) => {
       if (actionsRevealedSV.value) {
-        // When actions are revealed, swipe back toward the right to hide.
+        // When actions are revealed, swipe back toward the start to hide.
         // Don't trigger onDone even if the swipe passes the threshold.
-        if (e.translationX > -20) {
+        if (isRTL ? e.translationX < 20 : e.translationX > -20) {
           actionsRevealedSV.value = false;
           translateX.value = withSpring(0);
         } else {
-          translateX.value = withSpring(-ACTION_PANEL_WIDTH);
+          translateX.value = withSpring(panelOffset);
         }
-      } else if (e.translationX > REVEAL_THRESHOLD && onDone) {
+      } else if (startSign * e.translationX > REVEAL_THRESHOLD && onDone) {
         runOnJS(onDone)(task);
         translateX.value = withSpring(0);
-      } else if (e.translationX < -REVEAL_THRESHOLD && ACTION_PANEL_WIDTH > 0) {
+      } else if (
+        -startSign * e.translationX > REVEAL_THRESHOLD &&
+        ACTION_PANEL_WIDTH > 0
+      ) {
         // Reveal the skip/delete action panel.
         actionsRevealedSV.value = true;
-        translateX.value = withSpring(-ACTION_PANEL_WIDTH);
+        translateX.value = withSpring(panelOffset);
       } else {
         translateX.value = withSpring(0);
       }
@@ -305,7 +312,7 @@ function TaskCardImpl({
       hapticFiredDir.value = 0;
       if (!success) {
         translateX.value = withSpring(
-          actionsRevealedSV.value ? -ACTION_PANEL_WIDTH : 0,
+          actionsRevealedSV.value ? panelOffset : 0,
         );
       }
     });
@@ -314,17 +321,22 @@ function TaskCardImpl({
     transform: [{ translateX: translateX.value }],
   }));
 
-  // Background preview opacity for slide-right done action (#170).
+  // Background preview opacity for swipe toward start (done) action (#170).
   const doneBgStyle = useAnimatedStyle(() => ({
-    opacity: Math.min(1, Math.max(0, translateX.value / REVEAL_THRESHOLD)),
+    opacity: Math.min(
+      1,
+      Math.max(0, (startSign * translateX.value) / REVEAL_THRESHOLD),
+    ),
   }));
 
-  // #1170: action panel background only visible while sliding left
-  // (translateX < 0). Keeping it transparent during the right-swipe done
-  // transition prevents the skip/delete color from bleeding through the
-  // partial-opacity doneBg.
+  // #1170: action panel background only visible while sliding toward end.
+  // Keeping it transparent during the start-swipe done transition prevents
+  // the skip/delete color from bleeding through the partial-opacity doneBg.
   const actionPanelBgStyle = useAnimatedStyle(() => ({
-    opacity: Math.min(1, Math.max(0, -translateX.value / REVEAL_THRESHOLD)),
+    opacity: Math.min(
+      1,
+      Math.max(0, (-startSign * translateX.value) / REVEAL_THRESHOLD),
+    ),
   }));
 
   const bgColor = taskCardColor(
@@ -416,7 +428,7 @@ function TaskCardImpl({
             <PressableScale
               style={[
                 styles.actionButton,
-                leftActionStyle,
+                startActionStyle,
                 { backgroundColor: colors.gray },
               ]}
               onPress={() => {
@@ -438,7 +450,7 @@ function TaskCardImpl({
             <PressableScale
               style={[
                 styles.actionButton,
-                skipVisible ? rightActionStyle : leftActionStyle,
+                skipVisible ? endActionStyle : startActionStyle,
                 { backgroundColor: colors.red },
               ]}
               onPress={() => {
@@ -464,8 +476,8 @@ function TaskCardImpl({
               pressed && styles.pressed,
               selected && styles.cardSelected,
               isInProgress && {
-                borderLeftColor: colors.brand,
-                borderLeftWidth: 4,
+                borderStartColor: colors.brand,
+                borderStartWidth: 4,
               },
             ]}
             onPress={handlePress}
@@ -655,7 +667,7 @@ function ParallelGroupCardImpl({
       <View
         style={[
           groupStyles.rail,
-          { backgroundColor: hostBgColor, borderRightColor: outlineColor },
+          { backgroundColor: hostBgColor, borderEndColor: outlineColor },
         ]}
       />
       <View style={groupStyles.cards}>
@@ -706,10 +718,10 @@ const groupStyles = StyleSheet.create({
   container: {
     marginHorizontal: 12,
     marginVertical: 4,
-    borderTopLeftRadius: 6,
-    borderTopRightRadius: 12,
-    borderBottomLeftRadius: 6,
-    borderBottomRightRadius: 12,
+    borderTopStartRadius: 6,
+    borderTopEndRadius: 12,
+    borderBottomStartRadius: 6,
+    borderBottomEndRadius: 12,
     overflow: 'hidden',
     borderWidth: 2,
     borderColor: 'transparent',
@@ -718,15 +730,15 @@ const groupStyles = StyleSheet.create({
   },
   rail: {
     position: 'absolute',
-    left: 0,
+    start: 0,
     top: 0,
     bottom: 0,
     width: INDENT_WIDTH,
-    borderTopLeftRadius: 4,
-    borderTopRightRadius: 4,
-    borderBottomLeftRadius: 4,
-    borderBottomRightRadius: 4,
-    borderRightWidth: OUTLINE_WIDTH,
+    borderTopStartRadius: 4,
+    borderTopEndRadius: 4,
+    borderBottomStartRadius: 4,
+    borderBottomEndRadius: 4,
+    borderEndWidth: OUTLINE_WIDTH,
   },
   cards: {
     flexDirection: 'column',
@@ -734,7 +746,7 @@ const groupStyles = StyleSheet.create({
   groupCard: {
     marginHorizontal: 0,
     marginVertical: 0,
-    marginLeft: INDENT_WIDTH,
+    marginStart: INDENT_WIDTH,
   },
 });
 

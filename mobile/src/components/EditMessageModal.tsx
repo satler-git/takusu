@@ -54,7 +54,8 @@ const makeStyles = (colors: ColorSet) =>
     },
     input: {
       width: '100%',
-      height: 120,
+      minHeight: 120,
+      maxHeight: 240,
       paddingHorizontal: 12,
       paddingVertical: 10,
       fontSize: 15,

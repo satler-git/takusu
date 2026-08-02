@@ -1,8 +1,8 @@
 import { useMemo } from 'react';
-// ViewChanger — left side bottom, vertical buttons to switch between views
+// ViewChanger — start side bottom, vertical buttons to switch between views
 // habit / task / graph
 
-import { StyleSheet, View } from 'react-native';
+import { I18nManager, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors, type ColorSet } from '@/src/theme';
@@ -26,9 +26,9 @@ const makeStyles = (colors: ColorSet) =>
   StyleSheet.create({
     container: {
       position: 'absolute',
-      left: 8,
+      start: 8,
       bottom: 80,
-      gap: 4,
+      gap: 12,
       zIndex: 10,
     },
     button: {
@@ -55,9 +55,15 @@ export function ViewChanger({ current, onChange }: ViewChangerProps) {
   const colors = useColors();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const insets = useSafeAreaInsets();
+  const startInset = I18nManager.isRTL ? insets.right : insets.left;
   const views: ViewType[] = ['task', 'graph', 'habit'];
   return (
-    <View style={[styles.container, { bottom: 80 + insets.bottom }]}>
+    <View
+      style={[
+        styles.container,
+        { bottom: 80 + insets.bottom, start: 8 + startInset },
+      ]}
+    >
       {views.map((v) => (
         <PressableScale
           key={v}

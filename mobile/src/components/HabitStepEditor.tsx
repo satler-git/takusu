@@ -71,7 +71,7 @@ const makeStyles = (colors: ColorSet) =>
     stepHeaderActions: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 6,
+      gap: 12,
     },
     stepBody: {
       marginTop: 8,

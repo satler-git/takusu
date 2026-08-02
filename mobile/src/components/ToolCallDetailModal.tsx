@@ -114,7 +114,7 @@ function ObjectRows({ object, colors, depth = 0 }: ObjectRowsProps) {
         {
           backgroundColor: colors.surface,
           borderColor: colors.separator,
-          marginLeft: isNested ? 12 : 0,
+          marginStart: isNested ? 12 : 0,
         },
       ]}
     >
@@ -147,7 +147,7 @@ function ArrayRows({ array, colors, depth = 0 }: ArrayRowsProps) {
         {
           backgroundColor: colors.surface,
           borderColor: colors.separator,
-          marginLeft: isNested ? 12 : 0,
+          marginStart: isNested ? 12 : 0,
         },
       ]}
     >

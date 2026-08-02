@@ -190,7 +190,7 @@ const makeStyles = (colors: ColorSet) =>
       fontSize: 12,
       fontWeight: '700',
       fontVariant: ['tabular-nums'],
-      marginLeft: 2,
+      marginStart: 2,
     },
     headerCard: {
       marginHorizontal: 12,
@@ -248,7 +248,7 @@ const makeStyles = (colors: ColorSet) =>
       fontSize: 15,
     },
     headChipRight: {
-      marginLeft: 'auto',
+      marginStart: 'auto',
     },
     track: {
       height: 6,
@@ -257,7 +257,7 @@ const makeStyles = (colors: ColorSet) =>
     },
     fill: {
       position: 'absolute',
-      left: 0,
+      start: 0,
       top: 0,
       bottom: 0,
       borderRadius: 3,
@@ -450,7 +450,7 @@ const makeStyles = (colors: ColorSet) =>
     },
     minibarFill: {
       position: 'absolute',
-      left: 0,
+      start: 0,
       top: 0,
       bottom: 0,
       borderRadius: 3,
@@ -484,7 +484,7 @@ const makeStyles = (colors: ColorSet) =>
     pips: {
       flexDirection: 'row',
       gap: 3,
-      marginLeft: 4,
+      marginStart: 4,
     },
     pip: {
       width: 9,
@@ -1692,7 +1692,7 @@ export function TaskDetailView() {
                           {
                             borderColor: colors.brand,
                             backgroundColor: headerBg,
-                            left: `${Math.max(
+                            start: `${Math.max(
                               0,
                               Math.min(
                                 100,
@@ -2130,7 +2130,7 @@ export function TaskDetailView() {
                           styles.paceMarker,
                           {
                             backgroundColor: colors.warning,
-                            left: `${paceFrac * 100}%`,
+                            start: `${paceFrac * 100}%`,
                           },
                         ]}
                       />

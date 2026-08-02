@@ -381,7 +381,7 @@ const styles = StyleSheet.create({
   },
   chipsContent: {
     gap: 6,
-    paddingRight: 8,
+    paddingEnd: 8,
   },
   chip: {
     flexDirection: 'row',

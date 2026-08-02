@@ -62,7 +62,7 @@ export const makeStyles = (colors: ColorSet) =>
     },
     card: {
       width: '100%',
-      height: '80%',
+      maxHeight: '80%',
       borderRadius: 16,
       padding: 16,
       gap: 12,

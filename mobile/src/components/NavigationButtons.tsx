@@ -7,7 +7,15 @@
 //   Calendar button (opens calendar overlay)
 
 import { useState, useMemo } from 'react';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  I18nManager,
+  Modal,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useColors } from '@/src/theme';
 import { type ColorSet } from '@/src/theme';
@@ -27,10 +35,10 @@ const makeStyles = (colors: ColorSet) =>
   StyleSheet.create({
     container: {
       position: 'absolute',
-      right: 8,
+      end: 8,
       top: '40%',
       transform: [{ translateY: -100 }],
-      gap: 4,
+      gap: 12,
       zIndex: 10,
     },
     navButton: {
@@ -57,7 +65,8 @@ const makeStyles = (colors: ColorSet) =>
     calendar: {
       borderRadius: 16,
       padding: 16,
-      width: 300,
+      width: '100%',
+      maxWidth: 360,
       shadowColor: colors.shadow,
       shadowOffset: { width: 0, height: 4 },
       shadowOpacity: 0.3,
@@ -123,6 +132,8 @@ export function NavigationButtons({
   markedDates,
 }: NavigationButtonsProps) {
   const colors = useColors();
+  const insets = useSafeAreaInsets();
+  const endInset = I18nManager.isRTL ? insets.left : insets.right;
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
   function NavButton({
@@ -207,7 +218,7 @@ export function NavigationButtons({
 
   return (
     <>
-      <View style={styles.container}>
+      <View style={[styles.container, { end: 8 + endInset }]}>
         <NavButton
           icon="arrow-up"
           onPress={onScrollUpByDay}
