@@ -249,7 +249,11 @@ function WorkSessionCardImpl({
   };
 
   return (
-    <View style={styles.container}>
+    // The action panel is absolute and the card is inside a GestureDetector
+    // wrapper. With the new architecture's view flattening, the absolute panel
+    // can render on top of the card's wrapper child. Keep this view from
+    // collapsing so sibling source order (and thus z-order) is respected.
+    <View style={styles.container} collapsable={false}>
       <Reanimated.View
         style={[
           styles.actionPanelBg,
