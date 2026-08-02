@@ -657,7 +657,7 @@ export function TaskDetailView() {
       setDescription(t.description ?? '');
       setAbandonability(t.abandonability);
       setAvgMinutes(String(t.avg_minutes));
-      setSigmaMinutes(t.sigma_minutes > 0 ? String(t.sigma_minutes) : '');
+      setSigmaMinutes(String(t.sigma_minutes));
       setQuantityTotal(
         t.quantity_total != null && t.quantity_total > 0
           ? String(t.quantity_total)
@@ -766,13 +766,9 @@ export function TaskDetailView() {
       const v = parseDuration(avgMinutes);
       if (v !== null && v > 0) updates.avg_minutes = v;
     }
-    if (
-      sigmaMinutes !==
-      (task.sigma_minutes > 0 ? String(task.sigma_minutes) : '')
-    ) {
-      const v = parseDuration(sigmaMinutes);
-      if (v !== null && v >= 0) updates.sigma_minutes = v;
-    }
+    const sigma = parseDuration(sigmaMinutes);
+    if (sigma !== null && sigma !== task.sigma_minutes)
+      updates.sigma_minutes = sigma;
     if (quantityTotal !== String(task.quantity_total ?? '')) {
       const v = parseInt(quantityTotal, 10);
       if (!isNaN(v) && v > 0) updates.quantity_total = v;

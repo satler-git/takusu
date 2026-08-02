@@ -546,7 +546,7 @@ export function HabitDetailView() {
   const [startTime, setStartTime] = useState('09:00');
   const [endTime, setEndTime] = useState('10:00');
   const [avgMinutes, setAvgMinutes] = useState('60');
-  const [sigmaMinutes, setSigmaMinutes] = useState('0');
+  const [sigmaMinutes, setSigmaMinutes] = useState('');
   const [abandonability, setAbandonability] = useState(0.5);
   const [parallelizable, setParallelizable] = useState(false);
   const [allowsParallel, setAllowsParallel] = useState(false);
@@ -614,7 +614,7 @@ export function HabitDetailView() {
           setStartTime(h.start_time);
           setEndTime(h.end_time);
           setAvgMinutes(String(h.avg_minutes));
-          setSigmaMinutes(h.sigma_minutes > 0 ? String(h.sigma_minutes) : '');
+          setSigmaMinutes(String(h.sigma_minutes));
           setAbandonability(h.abandonability);
           setParallelizable(h.parallelizable);
           setAllowsParallel(h.allows_parallel);
@@ -705,13 +705,9 @@ export function HabitDetailView() {
       const v = parseDuration(avgMinutes);
       if (v !== null && v > 0) updates.avg_minutes = v;
     }
-    if (
-      sigmaMinutes !==
-      (habit.sigma_minutes > 0 ? String(habit.sigma_minutes) : '')
-    ) {
-      const v = parseDuration(sigmaMinutes);
-      if (v !== null && v >= 0) updates.sigma_minutes = v;
-    }
+    const sigma = parseDuration(sigmaMinutes);
+    if (sigma !== null && sigma !== habit.sigma_minutes)
+      updates.sigma_minutes = sigma;
     if (abandonability !== habit.abandonability)
       updates.abandonability = abandonability;
     if (parallelizable !== habit.parallelizable)
