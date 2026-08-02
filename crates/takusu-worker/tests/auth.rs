@@ -6,6 +6,7 @@ use common::*;
 #[ignore]
 fn auth_integration() {
     let _g = start_wrangler();
+    let token = root_token();
 
     // /health requires no auth
     {
@@ -23,7 +24,7 @@ fn auth_integration() {
 
     // /api/auth/verify — root token → 200
     {
-        let (status, _body) = http_get("/api/auth/verify", Some("tsk_test_root_dev")).unwrap();
+        let (status, _body) = http_get("/api/auth/verify", Some(&token)).unwrap();
         assert_eq!(status, 200);
     }
 
@@ -50,7 +51,7 @@ fn auth_integration() {
 
     // /api/tasks — root token → 200
     {
-        let (status, _body) = http_get("/api/tasks", Some("tsk_test_root_dev")).unwrap();
+        let (status, _body) = http_get("/api/tasks", Some(&token)).unwrap();
         assert_eq!(status, 200);
     }
 

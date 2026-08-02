@@ -7,8 +7,7 @@
 //! Invariant: a cached `Invalid` answer is also valid until TTL. To make
 //! revocation effective sooner, call `invalidate` after revoking.
 
-use std::time::Duration as StdDuration;
-use web_time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use moka::Expiry;
 use moka::sync::Cache;
@@ -53,14 +52,6 @@ fn entry_ttl(base: Duration, state: &TokenState) -> Duration {
     std::cmp::min(base, Duration::from_secs(remaining))
 }
 
-/// Computes a `std::time::Duration` from `web_time::Duration`.
-///
-/// Moka's `Expiry` trait uses `std::time::Duration`, while the rest of the
-/// crate uses `web_time` for WASM portability. The two types convert 1:1.
-fn to_std_duration(d: Duration) -> StdDuration {
-    StdDuration::from_secs(d.as_secs()) + StdDuration::from_nanos(d.subsec_nanos() as u64)
-}
-
 /// Per-entry expiration for the token cache.
 ///
 /// For `Valid` entries, the TTL is capped at the JWT `exp` so the cache does
@@ -76,7 +67,7 @@ impl Expiry<String, TokenState> for TokenExpiry {
         _key: &String,
         value: &TokenState,
         _created_at: std::time::Instant,
-    ) -> Option<StdDuration> {
+    ) -> Option<Duration> {
         Some(self.ttl_for(value))
     }
 
@@ -85,21 +76,21 @@ impl Expiry<String, TokenState> for TokenExpiry {
         _key: &String,
         value: &TokenState,
         _updated_at: std::time::Instant,
-        _current_duration: Option<StdDuration>,
-    ) -> Option<StdDuration> {
+        _current_duration: Option<Duration>,
+    ) -> Option<Duration> {
         Some(self.ttl_for(value))
     }
 }
 
 impl TokenExpiry {
-    fn ttl_for(&self, value: &TokenState) -> StdDuration {
+    fn ttl_for(&self, value: &TokenState) -> Duration {
         let ttl = entry_ttl(self.base, value);
         if ttl.is_zero() {
             // Moka does not treat a zero duration as "already expired", so use
             // the smallest positive duration to ensure immediate eviction.
-            return StdDuration::from_nanos(1);
+            return Duration::from_nanos(1);
         }
-        to_std_duration(ttl)
+        ttl
     }
 }
 

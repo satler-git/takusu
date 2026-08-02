@@ -4,8 +4,6 @@
 //! (Cloudflare Workers). No `jsonwebtoken`/`ring` dependency, avoiding WASM
 //! compatibility issues.
 
-use web_time::{SystemTime, UNIX_EPOCH};
-
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use hmac::{Hmac, KeyInit, Mac};
@@ -95,10 +93,11 @@ pub enum JwtError {
 }
 
 fn now_seconds() -> Result<i64, JwtError> {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .map_err(|_| JwtError::ClockError)
+    let now = jiff::Timestamp::now().as_second();
+    if now < 0 {
+        return Err(JwtError::ClockError);
+    }
+    Ok(now)
 }
 
 fn sign_message(secret: &str, message: &str) -> String {

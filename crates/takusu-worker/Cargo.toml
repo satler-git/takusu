@@ -23,10 +23,12 @@ takusu-contracts.workspace = true
 worker = { version = "0.8", features = ["d1"] }
 getrandom = { version = "0.4", features = ["wasm_js"] }
 wasm-bindgen = "0.2"
-jiff.workspace = true
-web-time = "1.1"
 log = "0.4"
 wasm-logger = "0.2"
 console_error_panic_hook = "0.1"
 async-trait.workspace = true
-uuid = { workspace = true, features = ["js"] }
+takusu-types = { workspace = true, features = ["js"] }
+
+[dev-dependencies]
+tempfile = "3"
+libc = "0.2"

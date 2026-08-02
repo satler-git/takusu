@@ -153,7 +153,6 @@ pub fn spawn_wrangler() -> WranglerGuard {
             persist_path,
         ])
         .current_dir(worker_dir())
-        .env("TAKUSU_JWT_SECRET", JWT_SECRET)
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .status()
