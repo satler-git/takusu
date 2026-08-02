@@ -6,9 +6,8 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-uuid = { workspace = true, features = ["js"] }
-jiff.workspace = true
-web-time = "1.1"
+uuid = { workspace = true }
+jiff = { workspace = true }
 serde.workspace = true
 serde_json.workspace = true
 schemars.workspace = true
@@ -22,3 +21,4 @@ clap = { version = "4", optional = true, default-features = false, features = ["
 
 [features]
 clap = ["dep:clap"]
+js = ["jiff/js", "uuid/js"]

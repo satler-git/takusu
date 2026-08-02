@@ -1,6 +1,5 @@
 use jiff::{Timestamp, civil::Date, tz::TimeZone};
 use std::str::FromStr;
-use web_time::{SystemTime, UNIX_EPOCH};
 
 /// Return the current UTC timestamp as an RFC 3339 string with whole-second
 /// precision (e.g. `2026-07-23T09:00:00Z`).
@@ -12,12 +11,10 @@ pub fn now_rfc3339() -> String {
 }
 
 pub fn now_timestamp() -> Result<Timestamp, String> {
-    let nanos: i128 = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .map_err(|_| "system clock error".to_string())?
-        .try_into()
-        .map_err(|_| "system clock out of range".to_string())?;
+    let nanos = jiff::Timestamp::now().as_nanosecond();
+    if nanos < 0 {
+        return Err("system clock error".to_string());
+    }
     jiff::Timestamp::from_nanosecond(nanos).map_err(|e| format!("invalid timestamp: {e}"))
 }
 

@@ -640,10 +640,7 @@ pub(super) async fn record_memory_operation(
 // ── Token helper ────────────────────────────────────────────────────────
 
 pub(super) fn token_expires_at(ttl_seconds: i64) -> Option<String> {
-    let now = web_time::SystemTime::now()
-        .duration_since(web_time::UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0);
+    let now = jiff::Timestamp::now().as_second();
     let exp = now.saturating_add(ttl_seconds);
     jiff::Timestamp::from_second(exp)
         .ok()

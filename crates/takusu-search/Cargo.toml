@@ -8,7 +8,6 @@ repository.workspace = true
 [dependencies]
 takusu-types.workspace = true
 jiff.workspace = true
-web-time = "1.1"
 serde.workspace = true
 serde_json.workspace = true
 schemars.workspace = true
