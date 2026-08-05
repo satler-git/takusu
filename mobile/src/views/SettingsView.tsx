@@ -55,6 +55,7 @@ import { haptic } from '@/src/components/haptics';
 import { PressableScale } from '@/src/components/PressableScale';
 import { useTopToast } from '@/src/components/TopToast';
 import { showError } from '@/src/api/errors';
+import { ExactAlarmPermissionRow } from '@/src/components/ExactAlarmPermissionRow';
 import TakusuServerModule from '../../modules/takusu-server/src/TakusuServerModule';
 import { AgentSettingsView } from '@/src/views/AgentSettingsView';
 import { SkillsSettingsView } from '@/src/views/SkillsSettingsView';
@@ -1459,6 +1460,8 @@ export function SettingsDetailView({
 
               {notifications.enabled && (
                 <>
+                  <ExactAlarmPermissionRow />
+
                   {/* Morning briefing */}
                   <View style={styles.notifGroup}>
                     <View style={styles.settingRow}>

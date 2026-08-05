@@ -12,7 +12,8 @@
         "foregroundImage": "./assets/android-icon-foreground.png"
       },
       "predictiveBackGestureEnabled": true,
-      "package": "dev.satler.takusu"
+      "package": "dev.satler.takusu",
+      "permissions": ["android.permission.SCHEDULE_EXACT_ALARM"]
     },
     "plugins": [
       "expo-router",
