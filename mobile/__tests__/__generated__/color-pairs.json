@@ -239,6 +239,34 @@
       "source": "text"
     },
     {
+      "fg": "textOnCard",
+      "bg": "warningBg",
+      "file": "components/ExactAlarmPermissionRow.tsx",
+      "kind": "parent-child",
+      "source": "text"
+    },
+    {
+      "fg": "textOnCardSecondary",
+      "bg": "warningBg",
+      "file": "components/ExactAlarmPermissionRow.tsx",
+      "kind": "parent-child",
+      "source": "text"
+    },
+    {
+      "fg": "onBrand",
+      "bg": "brand",
+      "file": "components/ExactAlarmPermissionRow.tsx",
+      "kind": "parent-child",
+      "source": "text"
+    },
+    {
+      "fg": "warningIcon",
+      "bg": "warningBg",
+      "file": "components/ExactAlarmPermissionRow.tsx",
+      "kind": "parent-child",
+      "source": "icon"
+    },
+    {
       "fg": "brand",
       "bg": "surfaceTranslucent",
       "file": "components/FloatingVoiceButton.tsx",
@@ -2026,5 +2054,5 @@
       "source": "icon"
     }
   ],
-  "generatedAt": "2026-08-02T02:54:59.219Z"
+  "generatedAt": "2026-08-05T12:25:29.546Z"
 }
