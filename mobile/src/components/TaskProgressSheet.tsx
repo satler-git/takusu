@@ -336,7 +336,7 @@ export function TaskProgressSheet({
       animationType="slide"
       onRequestClose={onCancel}
     >
-      <View style={{ flex: 1 }}>
+      <View style={{ flex: 1, justifyContent: 'flex-end' }}>
         <Pressable style={styles.overlay} onPress={onCancel} />
         <View
           style={[
