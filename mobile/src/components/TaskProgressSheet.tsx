@@ -232,7 +232,6 @@ export function TaskProgressSheet({
 
   const pressProgress = useSharedValue(0);
   const pressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const longPressFiredRef = useRef(false);
   const mountedRef = useRef(true);
 
   const pressFillStyle = useAnimatedStyle(() => ({
@@ -264,7 +263,8 @@ export function TaskProgressSheet({
     if (visible) {
       progress.reset();
     }
-  }, [visible, progress]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
 
   function switchInputMode(next: 'delta' | 'cumulative') {
     haptic.light();
@@ -284,7 +284,10 @@ export function TaskProgressSheet({
     setIsSubmitting(true);
     try {
       const payload = progress.buildPayload();
-      if (progress.action === 'record' && onRecord) {
+      // Use the synchronous action value, not the React state, to decide
+      // the press action. The state may still be stale if React has not yet
+      // re-rendered after the timer-driven action change.
+      if (progress.getAction() === 'record' && onRecord) {
         await onRecord(payload);
       } else {
         await onConfirm(payload);
@@ -293,6 +296,7 @@ export function TaskProgressSheet({
       if (mountedRef.current) {
         setIsSubmitting(false);
       }
+      progress.setAction('confirm');
     }
   }
 
@@ -300,16 +304,18 @@ export function TaskProgressSheet({
     if (!canToggle) {
       return;
     }
-    longPressFiredRef.current = false;
+    // Reset to the default confirm action at the start of every press so a
+    // short tap always executes onConfirm, even if a previous long-press was
+    // cancelled after switching to record.
+    progress.setAction('confirm');
     pressProgress.value = withTiming(1, {
       duration: LONG_PRESS_MS,
       easing: ReanimatedEasing.linear,
     });
     pressTimerRef.current = setTimeout(() => {
-      longPressFiredRef.current = true;
       pressTimerRef.current = null;
       haptic.medium();
-      progress.toggleAction();
+      progress.setAction('record');
     }, LONG_PRESS_MS);
   }
 
@@ -323,7 +329,6 @@ export function TaskProgressSheet({
 
   function onPressablePress() {
     pressProgress.value = 0;
-    longPressFiredRef.current = false;
     void handlePrimaryPress();
   }
 

@@ -205,4 +205,55 @@ describe('useTaskProgress', () => {
     expect(result.current.afterTotal).toBe(20);
     expect(result.current.previewPct).toBe(50);
   });
+
+  it('exposes a synchronous getAction that returns the current action', async () => {
+    const { result } = await setup({ mode: 'pause' });
+
+    expect(result.current.getAction()).toBe('confirm');
+
+    await act(() => {
+      result.current.setAction('record');
+    });
+
+    expect(result.current.getAction()).toBe('record');
+    expect(result.current.action).toBe('record');
+    expect(result.current.primaryLabel).toBe('記録');
+  });
+
+  it('getAction stays consistent after a cancelled toggle', async () => {
+    const { result } = await setup({ mode: 'pause' });
+
+    await act(() => {
+      result.current.setAction('record');
+      result.current.setAction('confirm');
+      result.current.setAction('record');
+    });
+
+    expect(result.current.getAction()).toBe('record');
+  });
+
+  it('handles a session with no quantity total', async () => {
+    const { result } = await setup({
+      session: makeSession({
+        quantity_done: 0,
+        quantity_total: null,
+        quantity_unit: null,
+      }),
+      mode: 'pause',
+    });
+
+    expect(result.current.total).toBe('');
+    expect(result.current.afterTotal).toBe(0);
+    expect(result.current.primaryLabel).toBe('停止');
+
+    await act(() => {
+      result.current.handleQtyChange('5');
+    });
+
+    expect(result.current.buildPayload()).toEqual({
+      quantityDone: 5,
+      note: undefined,
+      quantityTotal: undefined,
+    });
+  });
 });

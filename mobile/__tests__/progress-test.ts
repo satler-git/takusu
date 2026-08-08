@@ -109,6 +109,21 @@ describe('recordProgressWithTotal', () => {
     );
   });
 
+  it('does not pass quantity_total when it is undefined and the session has no total', async () => {
+    const client = makeClient();
+    const session = makeSession({
+      quantity_total: undefined,
+    });
+    await recordProgressWithTotal(client, session, {
+      quantityDone: 5,
+    });
+    expect(client.recordWorkSessionProgress).toHaveBeenCalledWith(
+      'session-1',
+      { quantity_done: 5, note: undefined },
+      expect.any(String),
+    );
+  });
+
   it('does not update the task directly', async () => {
     const client = makeClient();
     const session = makeSession({ quantity_total: 10 });
