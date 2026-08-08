@@ -4283,6 +4283,113 @@ async fn progress_lifecycle() {
 }
 
 #[tokio::test]
+async fn progress_lifecycle_without_quantity() {
+    let (state, _pool) = setup().await;
+    let app = build_router(state);
+
+    // Create a non-quantitative task.
+    let create = auth_req_body(
+        Method::POST,
+        "/api/tasks",
+        json!({
+            "title": "no-quantity",
+            "end_at": "2026-07-22T18:00:00+09:00",
+            "avg_minutes": 30
+        }),
+    );
+    let res = app.clone().oneshot(create).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let task: serde_json::Value =
+        serde_json::from_str(&body_str(res.into_body()).await).unwrap();
+    let id = task["id"].as_str().unwrap();
+    assert!(task["quantity_total"].is_null());
+    assert_eq!(task["quantity_done"], 0);
+
+    // Start work on the task.
+    let req = auth_req_body(
+        Method::POST,
+        "/api/work-sessions",
+        json!({"task_id": id}),
+    );
+    let res = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let session: serde_json::Value =
+        serde_json::from_str(&body_str(res.into_body()).await).unwrap();
+    let session_id = session["id"].as_str().unwrap();
+    assert!(session["ended_at"].is_null());
+    assert!(session["quantity_total"].is_null());
+    assert_eq!(session["quantity_done"], 0);
+
+    // Recording progress without a quantity should keep the session open
+    // and not auto-complete the task (#1443).
+    let req = auth_req_body(
+        Method::POST,
+        &format!("/api/work-sessions/{session_id}/progress"),
+        json!({"quantity_done": 0}),
+    );
+    let res = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let no_op: serde_json::Value =
+        serde_json::from_str(&body_str(res.into_body()).await).unwrap();
+    assert!(no_op["event"].is_null());
+    assert!(!no_op["suggests_completion"].as_bool().unwrap());
+
+    // List work sessions for the task; the open session is still present.
+    let req = auth_req(Method::GET, &format!("/api/work-sessions?task_id={id}"));
+    let res = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let detail: serde_json::Value = serde_json::from_str(&body_str(res.into_body()).await).unwrap();
+    let sessions = detail.as_array().unwrap();
+    assert_eq!(sessions.len(), 1);
+    assert!(sessions[0]["ended_at"].is_null());
+
+    // The task should still be in_progress.
+    let req = auth_req(Method::GET, &format!("/api/tasks/{id}"));
+    let res = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let task: serde_json::Value =
+        serde_json::from_str(&body_str(res.into_body()).await).unwrap();
+    assert_eq!(task["status"], "in_progress");
+    assert!(task["quantity_total"].is_null());
+    assert_eq!(task["quantity_done"], 0);
+
+    // Recording a positive quantity on a session with no total should
+    // update quantity_done but keep the session open.
+    let req = auth_req_body(
+        Method::POST,
+        &format!("/api/work-sessions/{session_id}/progress"),
+        json!({"quantity_done": 5}),
+    );
+    let res = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let progress: serde_json::Value =
+        serde_json::from_str(&body_str(res.into_body()).await).unwrap();
+    assert!(progress["event"]["delta_quantity"].as_i64().unwrap() > 0);
+    assert_eq!(progress["work_session"]["quantity_done"], 5);
+    assert!(!progress["suggests_completion"].as_bool().unwrap());
+
+    // The session is still open.
+    let req = auth_req(Method::GET, &format!("/api/work-sessions/{session_id}"));
+    let res = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let session: serde_json::Value =
+        serde_json::from_str(&body_str(res.into_body()).await).unwrap();
+    assert!(session["ended_at"].is_null());
+    assert_eq!(session["quantity_done"], 5);
+    assert!(session["quantity_total"].is_null());
+
+    // The task is still in_progress and now has quantity_done > 0.
+    let req = auth_req(Method::GET, &format!("/api/tasks/{id}"));
+    let res = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let task: serde_json::Value =
+        serde_json::from_str(&body_str(res.into_body()).await).unwrap();
+    assert_eq!(task["status"], "in_progress");
+    assert!(task["quantity_total"].is_null());
+    assert_eq!(task["quantity_done"], 5);
+}
+
+#[tokio::test]
 async fn concurrent_work_sessions_across_tasks() {
     let (state, _pool) = setup().await;
     let app = build_router(state);

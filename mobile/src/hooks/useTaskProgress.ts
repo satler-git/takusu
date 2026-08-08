@@ -2,7 +2,7 @@
 // Kept in a hook so state transitions and payload construction can be unit
 // tested independently of React Native rendering.
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import type { WorkSessionRow } from '@/src/api/types';
 import { type ProgressPayload } from '@/src/utils/progress';
 
@@ -32,6 +32,8 @@ export interface UseTaskProgressReturn {
   switchInputMode: (next: TaskProgressInputMode) => void;
   adjustQty: (delta: number) => void;
   toggleAction: () => void;
+  setAction: (next: TaskProgressAction) => void;
+  getAction: () => TaskProgressAction;
   buildPayload: () => ProgressPayload;
   reset: () => void;
 }
@@ -177,7 +179,15 @@ export function useTaskProgress({
     currentTotal > 0 ? String(currentTotal) : '',
   );
   const [note, setNote] = useState('');
-  const [action, setAction] = useState<TaskProgressAction>('confirm');
+  const [action, setActionState] = useState<TaskProgressAction>('confirm');
+  const actionRef = useRef(action);
+
+  const setAction = (next: TaskProgressAction) => {
+    actionRef.current = next;
+    setActionState(next);
+  };
+
+  const getAction = () => actionRef.current;
 
   const reset = () => {
     setInputMode('delta');
@@ -229,7 +239,7 @@ export function useTaskProgress({
   };
 
   const toggleAction = () => {
-    setAction((prev) => (prev === 'confirm' ? 'record' : 'confirm'));
+    setAction(getAction() === 'confirm' ? 'record' : 'confirm');
   };
 
   const buildPayload = () =>
@@ -252,6 +262,8 @@ export function useTaskProgress({
     switchInputMode,
     adjustQty,
     toggleAction,
+    setAction,
+    getAction,
     buildPayload,
     reset,
   };
