@@ -5283,7 +5283,7 @@ async fn delete_task_nullifies_split_from_task_id() {
 }
 
 #[tokio::test]
-async fn delete_task_nullifies_work_session_and_event_task_id() {
+async fn delete_task_closes_and_detaches_work_session_and_event_task_id() {
     let (state, pool) = setup().await;
     let app = build_router(state);
 
@@ -5346,16 +5346,17 @@ async fn delete_task_nullifies_work_session_and_event_task_id() {
         .unwrap();
     assert_eq!(count, 0);
 
-    // Work sessions and their events are intentionally detached rather than
-    // deleted when a task is removed (#1393).
-    let session: Option<(String,)> = sqlx::query_as(
-        "SELECT id FROM work_sessions WHERE id = ? AND task_id IS NULL",
+    // Work sessions and their events remain available for history, but deleting
+    // a task closes and detaches them (#1393).
+    let session: Option<(String, Option<String>)> = sqlx::query_as(
+        "SELECT id, ended_at FROM work_sessions WHERE id = ? AND task_id IS NULL",
     )
     .bind(&session_id)
     .fetch_optional(&pool)
     .await
     .unwrap();
-    assert!(session.is_some());
+    let session = session.expect("deleted task's work session");
+    assert!(session.1.is_some());
 }
 
 #[tokio::test]

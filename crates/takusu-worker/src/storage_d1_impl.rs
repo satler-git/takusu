@@ -440,6 +440,13 @@ impl Storage for D1Storage {
                 .bind(&[JsValue::from_str(&full)])
                 .map_err(d1_err)?,
             self.db
+                .prepare("UPDATE work_sessions SET ended_at = ?1 WHERE task_id = ?2 AND ended_at IS NULL")
+                .bind(&[
+                    JsValue::from_str(&takusu_types::now_rfc3339()),
+                    JsValue::from_str(&full),
+                ])
+                .map_err(d1_err)?,
+            self.db
                 .prepare("UPDATE work_sessions SET task_id = NULL WHERE task_id = ?1")
                 .bind(&[JsValue::from_str(&full)])
                 .map_err(d1_err)?,
@@ -624,6 +631,7 @@ impl Storage for D1Storage {
         let stmts = vec![
             self.db.prepare("UPDATE tasks SET split_from_task_id = NULL WHERE split_from_task_id IN (SELECT id FROM tasks WHERE habit_id = ?1)").bind(&[JsValue::from_str(&full)]).map_err(d1_err)?,
             self.db.prepare("DELETE FROM google_cal_events WHERE task_id IN (SELECT id FROM tasks WHERE habit_id = ?1)").bind(&[JsValue::from_str(&full)]).map_err(d1_err)?,
+            self.db.prepare("UPDATE work_sessions SET ended_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE task_id IN (SELECT id FROM tasks WHERE habit_id = ?1) AND ended_at IS NULL").bind(&[JsValue::from_str(&full)]).map_err(d1_err)?,
             self.db.prepare("UPDATE work_sessions SET task_id = NULL WHERE task_id IN (SELECT id FROM tasks WHERE habit_id = ?1)").bind(&[JsValue::from_str(&full)]).map_err(d1_err)?,
             self.db.prepare("UPDATE progress_events SET task_id = NULL WHERE task_id IN (SELECT id FROM tasks WHERE habit_id = ?1)").bind(&[JsValue::from_str(&full)]).map_err(d1_err)?,
             self.db.prepare("DELETE FROM tasks WHERE habit_id = ?1").bind(&[JsValue::from_str(&full)]).map_err(d1_err)?,

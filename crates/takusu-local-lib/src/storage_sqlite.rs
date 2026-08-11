@@ -803,6 +803,7 @@ impl Storage for SqliteStorage {
             .execute(&mut *tx)
             .await
             .map_err(map_err)?;
+        work_session::cleanup_work_sessions(&mut *tx, &full).await?;
         sqlx::query("UPDATE work_sessions SET task_id = NULL WHERE task_id = ?")
             .bind(&full)
             .execute(&mut *tx)
@@ -976,6 +977,13 @@ impl Storage for SqliteStorage {
         // Delete child rows explicitly so deletion is deterministic even if the
         // foreign_keys pragma is temporarily disabled.
         sqlx::query("DELETE FROM google_cal_events WHERE task_id IN (SELECT id FROM tasks WHERE habit_id = ?)")
+            .bind(&full)
+            .execute(&mut *tx)
+            .await
+            .map_err(map_err)?;
+        let now = takusu_types::now_rfc3339();
+        sqlx::query("UPDATE work_sessions SET ended_at = ? WHERE task_id IN (SELECT id FROM tasks WHERE habit_id = ?) AND ended_at IS NULL")
+            .bind(&now)
             .bind(&full)
             .execute(&mut *tx)
             .await

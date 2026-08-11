@@ -24,7 +24,7 @@ const SELECT_PROGRESS_EVENTS_BY_SESSION: &str = "SELECT id, work_session_id, tas
 const LAST_PROGRESS_EVENT: &str = "SELECT id, work_session_id, task_id, at, quantity_done, delta_quantity, active_minutes, note FROM progress_events WHERE work_session_id = ? ORDER BY at DESC, id DESC LIMIT 1";
 
 /// Close any open work session for `task_id` so active time is not left
-/// dangling when a task reaches a terminal status (#1044).
+/// dangling when the task is no longer active (#1044, #1438).
 pub(crate) async fn cleanup_work_sessions<'c, E>(executor: E, full: &str) -> StorageResult<()>
 where
     E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
