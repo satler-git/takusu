@@ -56,7 +56,10 @@ import {
   makeProgressOperationId,
   recordProgressWithTotal,
   findOpenWorkSessionForTask,
+  completeTaskWithOptionalWorkSession,
+  restoreTaskAfterCompletion,
   type ProgressPayload,
+  type TaskCompletionMode,
 } from '@/src/utils/progress';
 import {
   DependencyGraph,
@@ -1138,12 +1141,17 @@ export function TaskDetailView() {
 
   async function completeTask() {
     if (!client || !task) return;
-    const session = await findOpenWorkSessionForTask(client, task.id);
+    const prevStatus = task.status;
     const prevQuantityDone = task.quantity_done;
     const total = task.quantity_total;
     const operationId = makeProgressOperationId();
+    let completionMode: TaskCompletionMode;
     try {
-      await client.completeWorkSession(session.id, operationId);
+      completionMode = await completeTaskWithOptionalWorkSession(
+        client,
+        task.id,
+        { operationId, quantityTotal: total },
+      );
     } catch (e) {
       showError(e, 'タスクの完了に失敗');
       return;
@@ -1158,13 +1166,12 @@ export function TaskDetailView() {
       description: `complete: ${task.title}`,
       undo: async () => {
         try {
-          await client.updateTask(task.id, {
-            status: 'in_progress',
-            quantity_done: prevQuantityDone,
-          });
-          await client.createWorkSession(
-            { task_id: task.id },
-            makeProgressOperationId(),
+          await restoreTaskAfterCompletion(
+            client,
+            task.id,
+            prevStatus,
+            prevQuantityDone,
+            completionMode,
           );
         } catch (e) {
           showError(e, 'タスクの巻き戻しに失敗');
