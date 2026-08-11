@@ -149,7 +149,7 @@ function WorkSessionCardImpl({
 
   const isRTL = I18nManager.isRTL;
   const startSign = isRTL ? -1 : 1;
-  const panelOffset = isRTL ? PANEL_WIDTH : -PANEL_WIDTH;
+  const panelOffset = isRTL ? ACTION_BUTTON_WIDTH : -ACTION_BUTTON_WIDTH;
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
