@@ -18,8 +18,8 @@ use std::sync::LazyLock;
 
 use rstest::rstest;
 use takusu_contracts::{
-    CreateHabit, CreateHabitScheduledSpan, CreateMemory, CreateTask, MemoryQuery, Storage,
-    StorageError, TaskQuery, UpdateMemory, UpdateTask,
+    CreateHabit, CreateHabitScheduledSpan, CreateMemory, CreateTask, MemoryQuery, StartWorkSession,
+    Storage, StorageError, TaskQuery, UpdateMemory, UpdateTask,
 };
 use takusu_local_lib::config::LocalConfig;
 use takusu_local_lib::storage_sqlite::SqliteStorage;
@@ -230,6 +230,112 @@ async fn delete_task(#[case] backend: &str) {
         .await
         .expect("list_tasks");
     assert!(rows.is_empty());
+}
+
+#[rstest]
+#[case::sqlite("sqlite")]
+#[case::workers("workers")]
+#[tokio::test]
+#[ignore]
+async fn delete_task_closes_open_work_session(#[case] backend: &str) {
+    let storage = match backend {
+        "sqlite" => setup_sqlite().await,
+        "workers" => setup_workers().await,
+        _ => unreachable!(),
+    };
+    cleanup(&*storage).await;
+
+    let created = storage
+        .create_task(&sample_task("task with session"))
+        .await
+        .expect("create_task");
+    let session = storage
+        .start_work_session(
+            &StartWorkSession {
+                task_id: Some(created.id.clone()),
+                ..Default::default()
+            },
+            None,
+        )
+        .await
+        .expect("start_work_session");
+
+    storage
+        .delete_task(&created.id)
+        .await
+        .expect("delete_task");
+
+    let stopped = storage
+        .get_work_session(&session.id)
+        .await
+        .expect("get_work_session");
+    assert!(stopped.task_id.is_none());
+    assert!(stopped.ended_at.is_some());
+}
+
+#[rstest]
+#[case::sqlite("sqlite")]
+#[case::workers("workers")]
+#[tokio::test]
+#[ignore]
+async fn delete_habit_closes_open_work_session(#[case] backend: &str) {
+    let storage = match backend {
+        "sqlite" => setup_sqlite().await,
+        "workers" => setup_workers().await,
+        _ => unreachable!(),
+    };
+    cleanup(&*storage).await;
+
+    let habit = storage
+        .create_habit(&CreateHabit {
+            title: "habit with session".into(),
+            description: None,
+            recurrence: r#"{"freq":"daily","interval":1,"by_day":[],"by_month":[],"by_month_day":[],"count":null,"exdates":[]}"#.into(),
+            start_time: "09:00".parse().unwrap(),
+            end_time: "10:00".parse().unwrap(),
+            avg_minutes: 30,
+            sigma_minutes: None,
+            parallelizable: None,
+            allows_parallel: None,
+            abandonability: None,
+            fixed: None,
+            window_mode: None,
+        })
+        .await
+        .expect("create_habit");
+    let task = storage
+        .create_task(&CreateTask {
+            habit_id: Some(habit.id.clone()),
+            ..sample_task("generated habit task")
+        })
+        .await
+        .expect("create_task");
+    let session = storage
+        .start_work_session(
+            &StartWorkSession {
+                task_id: Some(task.id.clone()),
+                ..Default::default()
+            },
+            None,
+        )
+        .await
+        .expect("start_work_session");
+
+    storage
+        .delete_habit(&habit.id)
+        .await
+        .expect("delete_habit");
+
+    assert!(matches!(
+        storage.get_task(&task.id).await,
+        Err(StorageError::NotFound(_))
+    ));
+    let stopped = storage
+        .get_work_session(&session.id)
+        .await
+        .expect("get_work_session");
+    assert!(stopped.task_id.is_none());
+    assert!(stopped.ended_at.is_some());
 }
 
 #[rstest]
