@@ -51,7 +51,7 @@ takusu の planner は現実のすべての予定が登録されていること�
 - **check-in**: agent からユーザーへの、現在の行動を確かめる一往復の接触。「今なにしてる?」「始める?」「どこまで進んだ?」の形をとる。
 - **精算**: 既に過ぎた時間の使途を、遡って計画と記録に反映させる操作。
 - **intake**: 使い始めに現実の予定を集中的に聞き取る、インタビュー形式の capture。
-- **voice 役**: 複数デバイスのうち、wake word に応答し proactive に発話する権利を持つ一台。多デバイス調停の節で定める。
+- **resident 役**: 複数デバイスのうち、planner event を評価し、proactive な接触を生成して発話する一台。多デバイス調停の節で定める。
 - **private channel**: 発話が本人にしか聞こえない出力経路。イヤホン(有線、Bluetooth)接続中の Android と、自宅前提の desktop スピーカーを指す。
 - **reactive / proactive**: ユーザーが話しかけたことへの応答が reactive、Agent 側から話しかけることが proactive。発話可否の判定はこの二つで異なる。
 
@@ -67,12 +67,12 @@ sync: ズレの検出 → 調整
   計画と現実が乖離したとき、即座に接触し、行動させるか計画を現実に追従させる
 
 execution loop: 着手 → 進捗 → 完了
-  作業中のタスクの状態を追い、σ を超えた逸脱に介入する
+  作業中のタスクの状態を追い、所要時間分布から逸脱したときに介入する
 ```
 
 三つは独立ではない。
 sync の接触で「takusu が知らない活動」が見つかれば、それは capture の入力になる。
-execution loop の進捗報告は estimator を更新し、σ が締まることで sync と execution loop の介入精度が上がる。
+execution loop の進捗報告は estimator を更新し、総所要時間の事後分布が締まることで sync と execution loop の介入精度が上がる。
 つまり、同期を維持する行為そのものが、takusu を賢くするデータ収集を兼ねる。
 
 旧版の本文書は execution loop だけを設計していた。
@@ -90,8 +90,9 @@ Agent を開くために専用チャット画面へ移動することを必須�
 - Android: 画面右側の円形 resident button。ドラッグで位置を変更でき、キーボード、modal、承認 sheet、OS gesture 領域を避けられる。タップで compact panel、長押しで Listen。
 - Linux: system tray icon。クリックで compact popover、通知はデスクトップ通知として action button 付きで出す。
 
-surface は見た目が違っても一つの Agent session の状態を表示する。
-UI surface が切り替わっても recording、turn、TTS、approval の所有者は変わらない。
+同じ device 上の surface は、見た目が違っても一つの AgentSession の状態を表示する。
+同じ device 内で UI surface が切り替わっても recording、turn、TTS、approval の所有者は変わらない。
+別 device は独立した AgentSession を持ち、user-scoped な planner state だけを共有する。
 
 resident button は暫定の入口である。
 本命は ambient listening であり、button は音声を使えない場面と ambient 導入前の受け皿として残す。
@@ -103,9 +104,9 @@ agent からユーザーへの接触は、原則として check-in の形をと�
 
 | 状況 | check-in の意味 | 給餌先 |
 |---|---|---|
-| 予定のない時間、または計画と違う気配 | 「今なにしてる?」その活動を登録するか | capture |
+| 未分類 gap、または計画と違う明確な気配 | 「今なにしてる?」その活動を登録するか | capture |
 | 開始時刻を過ぎて着手記録がない | 「始める? ズラす?」 | sync |
-| 着手済みタスクが σ を超過 | 「どこまで進んだ?」 | execution loop |
+| 着手済みタスクが所要時間分布の注意範囲へ入る | 「どこまで進んだ?」 | execution loop |
 
 check-in への応答は一言で完結しなければならない。
 答えを受けた agent は、既知タスクへの照合、登録候補化、ズラし提案のいずれかに一往復で落とす。
@@ -186,25 +187,32 @@ tool result、schedule state、approval request などの型付きデータか�
 
 active work time は wall-clock time ではなく work session の start / pause から計測する。
 
-### 介入は σ で駆動する
+### 着手後の介入は所要時間分布で駆動する
 
-takusu の cost は `NormalDist(avg, sigma)` であり、着手済みタスクの予定からのズレを分単位の固定閾値ではなく σ 単位で測れる。
-固定閾値では、ばらつきの大きいタスクで騒ぎすぎ、正確なタスクで鈍くなる。
-介入の強度をズレの z-score に比例させる。
+takusu の cost は所要時間の事前分布 `NormalDist(avg, sigma)` である。
+ただし、「σ のズレ」を一つの計算式で扱わない。
+観測できる情報に応じて、異なる確率変数と観測を使う。
+
+- **進捗なしの超過**: 確率変数はタスクの総所要時間 `T`、観測は `T > active_elapsed` という右打ち切り観測である。単純な `(active_elapsed - avg) / sigma` だけではなく、現時点で未完了である条件を反映した事後分布から介入強度を決める。
+- **進捗ありのペース逸脱**: 確率変数は進捗から予測した総所要時間、観測は active work time と quantity の完了率である。更新後の総所要時間分布が事前分布からどれだけ遅い側へ移動したかで介入強度を決める。
+- **未着手の開始遅延**: 所要時間分布の観測ではないため σ と呼ばない。開始時刻イベントと sync の check-in が受け持つ。
+
+各イベント定義は、対象となる確率変数、観測値、事前分布または更新後分布、閾値を必ず一組で定める。
+`sigma = 0` の固定予定は所要時間の逸脱判定から除外し、未着手と終了予定の規則だけを使う。
+履歴のないタスクは、タスク種別から得た事前分布を使い、事前分布も作れない場合は明示した固定時間の fallback を使う。
+
+介入強度は次の三段階に正規化する。
 
 ```text
-ズレ < 1σ   : 何もしない(ノイズの範囲として扱う)
-1σ 〜 2σ    : 進捗を聞きに行く(「思ったより時間がかかってる? どこまで進んだ?」)
-> 2σ       : 再計画を提案する(「このペースだと後ろが崩れる。組み直す?」)
+通常範囲       : 何もしない
+注意範囲       : 進捗を聞く(「思ったより時間がかかってる? どこまで進んだ?」)
+再計画範囲     : 再計画を提案する(「このペースだと後ろが崩れる。組み直す?」)
 ```
 
-「進捗を聞きに行く」段階は体験上のマナーであると同時に、estimator にとって情報価値が最も高いタイミングでの観測になる。
-進捗報告が入れば見積もりが更新され、σ 自体も締まる。
-介入とデータ収集を同じ行為にする。
-
-σ の物差しが使えるのは着手済みのタスクに限られる。
-未着手のズレ(開始時刻を過ぎても着手記録がない)は work session が存在せず σ に映らないため、開始時刻イベントと sync の check-in が受け持つ。
-着手後の遅延検知と超過検知は、原則としてすべて σ の物差しに従属させる。
+進捗を聞くことは、体験上のマナーであると同時に estimator への観測になる。
+進捗報告が入れば総所要時間の事後分布が更新され、その後の介入精度が上がる。
+同じタスクと同じ分布 revision に対する閾値発火は一度だけとする。
+進捗報告によって注意範囲を下回った後、再び超えた場合は、分布 revision が変わっていれば新しい発火として扱う。
 
 ### proactive 発話は private channel に限る
 
@@ -244,11 +252,17 @@ approve / deny の判定自体は閉じた語彙の分類であり、端末内�
 
 | 層 | 対象 | 確定方法 | 話者照合 |
 |---|---|---|---|
-| 即時確定 | start, pause(可逆で被害ゼロ) | 確認なしで実行し、結果を読み上げる | 不問 |
+| 即時確定 | 画面、通知 action、または明示的に開始した continuous session 内の start / pause | 確認なしで実行し、結果を提示する | continuous session では開始時に本人性を確立 |
+| ambient 即時確定 | wake word から始まった start / pause | 確認なしで実行し、結果を読み上げる | 必須。失敗時は画面 fallback |
 | 音声確定 | progress, complete, 単発の作成・変更と読み上げ可能な範囲の玉突き | 変更内容を読み上げた後の明示的な肯定(「いいよ」) | 必須 |
 | 画面必須 | delete、schedule 全体の置き換え、影響が読み上げ切れない変更 | 変更内容に固有の応答か、画面での承認 | 画面のため対象外 |
 
-即時確定層は「承認不要」ではなく、既存の permission システムでデフォルト永続許可されている権限クラスとして定義する。
+start と pause は簡単に戻せるが、被害ゼロではない。
+work session、task status、estimator の観測、current task、後続の介入時刻を変更するためである。
+したがって入力経路を承認層の判定に含め、ambient では誤帰属を防ぐ。
+
+即時確定層は「承認不要」ではなく、既存の permission system でデフォルト永続許可されている権限クラスとして定義する。
+誤った start / pause を undo した場合は work session だけでなく estimator に渡った観測も取り消す。
 これにより `plan/plan-agent.md` の承認境界と矛盾しない。
 
 **話者照合**(speaker verification)は、登録済みの声紋 embedding と発話の類似度を端末内で判定するゲートである。
@@ -257,7 +271,7 @@ approve / deny の判定自体は閉じた語彙の分類であり、端末内�
 
 ただし話者照合は false reject が起きる(風邪声、遠距離、口元にマイクがない)。
 本人なのに弾かれる体験は他人に反応するのと同じだけ信頼を削るため、ハードゲートにせずソフト信号として使う。
-照合が通らない場合は拒否ではなく画面 fallback に降格し、reactive な応答と即時確定層では照合を要求しない。
+照合が通らない場合は拒否ではなく画面 fallback に降格する。情報取得だけの reactive な応答と、画面や通知 action からの即時確定では照合を要求しない。
 
 曖昧な応答、無応答、timeout の場合は画面に fallback し、surface に waiting_for_approval を灯したまま残す。
 
@@ -288,7 +302,21 @@ approve / deny の判定自体は閉じた語彙の分類であり、端末内�
 - 一回のセッションは 10〜15 分で中断でき、いつでも再開できる。完了を要求しない。
 
 intake で取り切れなかった予定は、日々の sync が拾う(次節)。
-したがって intake の目標は完全性ではなく、「今日の計画が立つ最小限」に早く到達することである。
+ただし、不完全な計画を権威ある「今やること」として表示してはならない。
+intake の目標は、まず今日の固定予定と目前の締め切りを確認し、今日について限定された信頼を作ることである。
+
+### coverage と計画への信頼
+
+全予定が必要という前提と、intake を中断できる体験は、計画の信頼状態を明示することで両立させる。
+
+- **bootstrap**: 把握範囲が狭い。current task は「今やること」ではなく候補として表示し、不足している予定の intake を促す。
+- **today-covered**: 今日の固定予定、締め切り、既知の割り込みを確認済みである。今日に限って current task を「今やること」として提示できる。
+- **trusted**: intake と継続的な sync により、対象期間の生活を planner に預けられる。
+- **stale**: 最後の確認から期間が空いた、未精算の時間が残る、または calendar sync が失敗した。current task の権威を下げ、精算を先に提示する。
+
+信頼状態は、単に登録件数から推測しない。
+どの期間を最後に確認したか、未分類 gap と未精算時間が残っているか、外部 calendar が同期済みかという観測可能な条件から決める。
+ユーザーが申告していない現実を検出できない以上、`trusted` は完全性の証明ではなく、確認手順を通過した状態である。
 
 ### sync による coverage の成長
 
@@ -313,17 +341,27 @@ agent: 「火曜の定期タスクとして登録しておく。今日はこの�
 sync が扱うズレは三種類ある。
 
 - **未着手**: 開始時刻を過ぎたのに着手記録がない。
-- **未知の活動**: 予定のない時間帯、または計画されたタスクと違うことをしている気配がある。
+- **未分類 gap**: planner が自由時間、buffer、routine として説明できない空白が続いている。
 - **計画外の現実**: takusu が知らない予定や割り込みが発生した(ユーザー側からの申告で判明することが多い)。
 
-接触のタイミングは早い方がよい。
-ズレの兆候の時点で声をかけることは、前提とするユーザーにとって煩わしさではなく助けである。
-煩わしさを生むのは接触の早さではなく、接触が「行動」と「ズラす」を差し出さないことである(Product principles)。
+schedule 上の空白を一種類にまとめない。
+
+- **自由時間**: 意図した休息や余暇であり、check-in しない。
+- **buffer**: タスクの不確実性に備えた余白であり、check-in しない。
+- **routine**: 食事、移動、身支度など、毎回個別タスクへする必要がない既知の活動であり、必要なら開始時刻だけを案内する。
+- **未分類 gap**: planner が理由を説明できない空白であり、capture の check-in 対象になる。
+- **生成失敗**: task があるのに配置できなかった状態であり、check-in ではなく planner error と再計画を提示する。
+
+接触のタイミングは早い方がよいが、不要な接触にも認知コストがある。
+ズレの兆候があることに加え、未分類 gap または未着手という明確な根拠がある場合だけ接触する。
+接触は「行動」と「ズラす」を差し出す(Product principles)。
 
 接触後の振る舞いは引き下がりを基本とする。
 
 - 応答がなければ通知に降格し、聞き直さない。
 - 降格後の再接触は、次のイベント(次のタスクの開始時刻など)まで行わない。同じズレについて接触を繰り返してエスカレーションしない。
+- 無応答が続いた時間帯では、その日の残りの check-in 頻度を下げる。
+- 一日の proactive check-in には上限を設ける。開始時刻や deadline の通知は上限に含めず、未知活動を尋ねる check-in だけを制限する。
 - 「ほっといて」の指示は期間付きの接触停止として即座に効く。
 
 ### 精算
@@ -360,7 +398,7 @@ stale な計画は「今やること」表示の権威を殺し、実行機能�
 
 ### Agent surface と状態機械
 
-surface は最低限以下の状態を持ち、全 surface で共有する。
+surface は最低限以下の状態を持ち、同じ device の全 surface で共有する。
 
 ```text
 idle
@@ -426,16 +464,29 @@ AEC が効かない環境では「TTS 中はタップで停止」に fallback �
 
 ## 多デバイス調停
 
-desktop と Android の両方が Agent surface を持つと、同じ planner event を両方が喋る、wake word に両方が反応する、という衝突が起きる。
+desktop と Android の両方が Agent surface を持つと、同じ planner event を両方が検知して発話する、wake word に両方が反応する、という衝突が起きる。
 調停は優先度リストと生存確認で機械的に決める。
 
 - デバイス優先度リストを設定として storage に持つ(既定: desktop > Android)。
-- 各デバイスの agent service が heartbeat を打ち、生きている中で最上位のデバイスが voice 役になる。
-- voice 役以外のデバイスは通知のみに降格する。通知は全デバイスに出す。
-- desktop がスリープすれば heartbeat が切れ、Android が自動昇格する。voice 役の切り替えは無言で行う。
-- オフライン時は最後に知っている役割を維持する。稀に二台が同時に応答することを許容し、分散合意は実装しない。個人利用の規模では、片方を止める操作の方が安い。
+- 各デバイスの agent service が heartbeat を打ち、生きている中で最上位のデバイスが resident 役になる。
+- resident 役は planner event の評価、proactive check-in の生成、proactive voice の発話を担う。
+- resident 役以外のデバイスは、確定済み event の通知、surface 表示、ユーザー起点の reactive turn、quick action を担う。
+- desktop がスリープすれば heartbeat が切れ、Android が自動昇格する。resident 役の切り替えは無言で行う。
+- オフライン時は最後に知っている役割を維持する。partition 中は二台が同じ event を検知して発話する可能性を許容し、再接続後に一台へ収束する。分散合意は実装しない。
 
-pending approval は現状 AgentSession 内にあり、承認できるのは提案を出したデバイスに限られる。
+resident 役だけでは crash retry と partition 後の重複を処理できないため、event を storage の ledger に記録する。
+event ID は event kind、対象 task、scheduled time または threshold、schedule revision、分布 revision から決定的に作る。
+通常接続時は event ID の一意制約で発火を一回にし、再送と再接続後の merge でも同じ mutation を重複実行しない。
+
+状態の所有範囲は次のように分ける。
+
+- **user-scoped**: planner state、coverage、planner event、提案内容。
+- **session-scoped**: turn、会話履歴、pending approval。session は開始したデバイスに属する。
+- **device-scoped**: recording、TTS、audio route、surface state。
+- **ephemeral coordination**: resident 役、heartbeat、event delivery claim。
+
+同じユーザーが二台から同時に turn を開始することは許容するが、planner mutation は storage の transaction と request ID で直列化し、同じ mutation を重複適用しない。
+pending approval は現状 session-scoped であり、承認できるのは提案を出したデバイスに限られる。
 どの端末でも承認できるようにするかは open question とする(後述)。
 
 ## Event-driven assistance
@@ -444,19 +495,24 @@ pending approval は現状 AgentSession 内にあり、承認できるのは提�
 介入姿勢は積極側に倒す。
 黙って予定が崩れるより、早めに声をかけて小さく直す方が planner の価値が出る。
 ただし発話するかどうかは private channel 原則に、接触の形は「行動とズラす」の原則に従う。
-着手済みタスクに関する発火条件は σ 駆動の原則に従う。
+着手済みタスクに関する発火条件は、観測に対応する所要時間分布から決める。
 
 対象イベント:
 
 - task の開始時刻
 - 開始時刻を過ぎた未着手の継続(sync の check-in)
-- 予定のない時間帯、または計画との乖離の気配(capture / sync の check-in)
-- task の終了予定超過(σ 換算)
+- 未分類 gap の継続(capture / sync の check-in)
+- task の所要時間分布に対する超過またはペース逸脱
 - deadline 違反の予測
-- schedule gap
 - 未完了タスクの持ち越し(精算の入口)
-- schedule 未生成
+- schedule 未生成または生成失敗
 - 睡眠時間への影響
+
+planner event の評価は常駐 timer の有無に依存させない。
+イベントエンジンは planner snapshot、progress snapshot、現在時刻、event ledger から、発火すべき event と次に評価結果が変わり得る時刻を返す。
+状態や schedule が変わるたびに次の評価時刻を再計算する。
+Android はその一時刻を exact alarm として予約し、receiver がローカル状態を評価して event を ledger に確定し、次の alarm を予約する。
+マイクを使わない状態評価は microphone foreground service と分離する。
 
 イベントは直接 LLM turn を起動するとは限らない。
 決定的に生成できる通知や action はアプリ側で生成し、曖昧な調整、説明、提案が必要な場合だけ Agent を呼ぶ。
@@ -502,18 +558,25 @@ task-related utterance を端末内分類で拾う wake-word-less mode は、作
 
 ### マイクの所有と常駐の段階
 
-「常時」はマイクを所有するプロセスの寿命で決まる。
+「常時」はマイクを所有する process の寿命と、OS が許す再開契機で決まる。
 
 1. **アプリ画面内のみ**: UI がマイクを持つ。現状の push-to-talk。
-2. **アプリプロセス生存中**: Android では microphone foreground service、Linux では tray デーモンが持つ。画面を離れてもロック中でも聞き続ける。
-3. **端末起動中**: boot 時に service を自動起動する。
+2. **明示開始後の継続**: Android ではユーザーが visible activity、通知、または widget から開始した microphone foreground service、Linux では tray デーモンが持つ。開始後は画面を離れてもロック中でも聞き続ける。
+3. **端末起動中**: 一度有効化すると端末起動中は継続する。Android では再起動または OS による service 終了後に「Listen を再開」通知を出し、その一操作で再武装する。アプリ画面を開く必要はない。
+
+Android 14 以降では `RECORD_AUDIO` は while-in-use permission であり、background や `BOOT_COMPLETED` receiver から microphone foreground service を新規作成できない。
+そのため、boot receiver は録音を開始せず、event evaluation の alarm を復元して再開通知を表示する。
+通知 action の `PendingIntent` が microphone foreground service を開始する。
+Ok Google を残すため、takusu は既定 assistant を要求せず、`VoiceInteractionService` も採用しない。
+
+service の自動再生成だけに録音の回復を依存しない。
+OS が既存 service を維持または再生成できる場合は継続してよいが、force-stop、再起動、復帰不能な process kill の後に保証する回復経路は通知の一操作とする。
+状態 evaluator は「ambient が有効だが microphone service が不在」という状態を検出し、再開通知を維持する。
 
 ambient の単位はアプリではなく service とする。
-2 と 3 の差はマイク処理の実装ではなく起動契機だけなので、boot 自動起動は独立した opt-in 設定にする。
-体験としての本命は 3 であり、2 はその検証段階である。
-
+状態検知は microphone service から分離し、service が停止中でも exact alarm から評価と通知を続ける。
 Expo / React Native の component lifecycle に常時録音を所有させない。
-platform shell(Android native service / Linux デーモン)が録音と lifecycle を所有し、Rust が VAD、KWS、ASR、Agent session を担当する。
+platform shell(Android native service / Linux デーモン)が録音と lifecycle を所有し、Rust が VAD、KWS、ASR と event evaluation を担当する。
 JS ほか UI 層は状態表示とユーザー操作の購読に徹する。
 
 ### desktop を実験場にする
@@ -540,34 +603,34 @@ Android には foreground service、background start 制限、電池、発熱、
 
 ## Architecture
 
-Agent の状態は surface ごとに重複して持たず、共有の Rust core に集約する。
-プラットフォームごとに変わるのはマイクの所有と surface の実体だけである。
+「共有 Rust core」は、一つの process が全端末の状態を所有することを意味しない。
+各 platform shell が同じ状態モデルと遷移規則を使い、user-scoped な状態だけを storage で共有する。
 
 ```text
-[surface 層]
-Android UI                      Linux desktop
-├── ResidentAgentButton         ├── tray icon
-├── AgentCompactPanel           ├── compact popover
-├── ApprovalSheet               └── desktop notification (actions 付き)
-├── FullAgentView
-└── 通知 (actions 付き)
-        ↕ 状態購読 / コマンド          ↕ 状態購読 / コマンド
-
-[platform shell]
-Android AgentService            Linux デーモン (systemd user service)
-├── 録音 lifecycle               ├── 録音 lifecycle
-├── foreground notification     ├── tray 常駐
-└── audio focus / 電源状態       └── セッション / 電源状態
-        ↕ PCM / 状態                   ↕ PCM / 状態
-
-[共有 Rust core]
-├── VAD / denoise / KWS / 話者照合 / ASR
-├── AgentSession(状態機械、turn、approval)
-├── planner / progress tools
-├── event 検知(σ 駆動、check-in 発火)
-├── 多デバイス調停(heartbeat、voice 役)
-└── TTS adapter
+[user-scoped / storage]
+planner state / coverage / event ledger / proposal / request idempotency
+                 ↕
+[resident coordination]
+priority / heartbeat / resident role / delivery claim
+                 ↕
+[device-scoped Rust core]                    [device-scoped Rust core]
+Android                                      Linux desktop
+├── AgentSession                             ├── AgentSession
+├── recording / TTS / audio route            ├── recording / TTS / audio route
+├── surface state                            ├── surface state
+├── event evaluator + exact alarm            ├── event evaluator + daemon timer
+└── microphone foreground service            └── tray daemon
+        ↕                                             ↕
+Android UI                                   tray / notification
 ```
+
+AgentSession は device 内の session-scoped な turn、会話履歴、pending approval を所有する。
+planner state、coverage、planner event、提案内容は user-scoped であり、device をまたいで同じ storage 表現を読む。
+recording、TTS、audio route、surface state は device-scoped であり、別端末へ引き継がない。
+
+Android の event evaluator と microphone foreground service は独立している。
+evaluator はマイクが停止していても alarm から planner state を評価し、resident 役なら event を確定する。
+ambient service が稼働中なら private-channel policy に従って発話し、停止中なら通知へ降格する。
 
 ライブラリやモデルの選定、crate 構成、API の形は `plan/resident-agent.md` が定める。
 
@@ -590,11 +653,12 @@ progress の storage、API、Agent tools は実装済みである。
 
 surface を片方ずつ厚く作るのではなく、共有層を先に固め、両プラットフォームの surface は薄く同時に置く。
 
-- Rust core への session state 集約(状態機械、surface protocol)
+- user-scoped、session-scoped、device-scoped state の境界と surface protocol
 - Android: resident button の全画面化(draggable)、compact panel
 - Linux: tray icon、compact popover、actions 付き通知
-- planner event notification と deep link(未着手継続、持ち越し精算の入口を含む)
-- 多デバイス調停(優先度リスト、heartbeat、voice 役)
+- planner event evaluator、event ledger、Android exact alarm、通知と deep link
+- coverage の信頼状態と、bootstrap / stale 時の presentation
+- 多デバイス調停(優先度リスト、heartbeat、resident 役、delivery claim)
 
 ### Phase 3: voice loop と capture
 
@@ -602,7 +666,7 @@ surface を片方ずつ厚く作るのではなく、共有層を先に固め、
 - 音声承認の三層
 - 一言 capture(音声からの登録、LLM 補完、まとめて承認)
 - intake インタビュー(中断再開可能)
-- event-driven の発話(σ 駆動、private channel 原則、先送り理由の聴取)
+- event-driven の発話(所要時間分布、private channel 原則、先送り理由の聴取)
 - 精算の会話形(「今までゲームしてた」からの一括組み直し)
 - 磨き込み: barge-in、レイテンシ予算、interruption / timeout / error recovery
 
@@ -611,7 +675,10 @@ surface を片方ずつ厚く作るのではなく、共有層を先に固め、
 - desktop tray デーモンでの opt-in ambient(VAD → KWS → ASR ゲート)
 - wake word の実機評価(誤発火率、日本語 KWS の成否)
 - 未知時間帯の check-in(「今なにしてる?」)の proactive 発火
-- Android: microphone foreground service、永続通知と即時停止、boot 自動起動 opt-in
+- Android: ユーザー操作から開始する microphone foreground service、永続通知と即時停止
+- boot 後と service 終了後の「Listen を再開」通知、通知 action による一操作の再武装
+- event evaluator と microphone service の独立 lifecycle
+- ambient start / pause の話者照合と、誤操作を estimator からも消す undo
 - privacy、電池、発熱、false positive の実機評価
 - background / lock screen lifecycle
 
@@ -626,6 +693,8 @@ surface を片方ずつ厚く作るのではなく、共有層を先に固め、
 - full-duplex の会話 API を採用しない。
 - センサーによる場面推定(ポケット検出、activity recognition)を v1 で行わない。
 - 多デバイス間の分散合意を実装しない。
+- takusu を Android の既定 assistant にせず、`VoiceInteractionService` を実装しない。Ok Google と併存する通常アプリとして動作する。
+- Android の再起動直後にユーザー操作なしで録音を再開しない。OS の while-in-use permission 境界を回避しない。
 - desktop の full Agent view / planner 全体 UI を作らない(web と CLI の再設計は別トラック)。
 - 接触ゼロを目指さない。nag の回避は接触を減らす方向ではなく、接触に選択肢を持たせる方向で行う。
 - 一括入力フォームによる census 型の初期登録を要求しない。
@@ -633,10 +702,10 @@ surface を片方ずつ厚く作るのではなく、共有層を先に固め、
 
 ## Open questions
 
-- **check-in の頻度統治**: 未知時間帯の check-in をどの間隔と時間帯で発火させるか。歓迎される接触と尋問の境界は実機で使いながら決めるしかない。
+- **check-in の頻度統治**: 未分類 gap の check-in を何分後に発火し、一日の上限を何回にするか。無応答による頻度低下の係数は実機利用で決める。
 - **精算の粒度**: 何分以上のズレから精算対象にするか。数分の遅れまで記録を求めると申告コストが原則に反する。
-- **乖離の気配の検出**: 「計画と違うことをしている気配」をセンサーなしでどの信号から得るか(未着手の継続、通知の無視、デバイスの activity など)。v1 は未着手と予定のない時間帯だけでよい可能性が高い。
-- **データ希薄なタスクの σ**: 履歴がないタスクは σ が大きく、σ 駆動の介入がほぼ発火しない。事前分布か固定閾値の fallback を置くか。
+- **乖離の気配の検出**: 「計画と違うことをしている気配」をセンサーなしでどの信号から得るか。v1 は未着手と未分類 gap だけを使う。
+- **所要時間分布の更新**: 右打ち切り観測と quantity 進捗から事後分布をどう更新し、通常、注意、再計画の境界をどの確率に置くか。
 - **承認の可搬性**: pending approval を storage に持ち上げ、提案を出したデバイス以外でも承認できるようにするか。session 内で閉じる現設計との整合が必要。
 - **wake word の実フレーズと日本語 KWS**: 事前学習モデルは中国語と英語が中心で、日本語フレーズがそのまま動くかは実機検証が要る。代替は wake word 自作学習、または desktop 限定で streaming ASR 常時稼働 + テキストマッチ。
 - **ローカル TTS への移行基準**: 当面 Cartesia を使う。日本語品質と低レイテンシが CPU で成立するローカル TTS が現れたら proactive 発話から移行する。
@@ -649,16 +718,20 @@ surface を片方ずつ厚く作るのではなく、共有層を先に固め、
 
 - 新しいタスクが一言の申告から、見積もり込みで登録される。ユーザーが quantity や見積もりを入力する必要がない。
 - intake を完了しなくても takusu を使い始められ、coverage が日々の sync で成長する。
-- 計画とズレた日でも、一日の終わりに計画が現実を反映した状態に戻っている。
+- bootstrap では current task が候補として表示され、today-covered 以降で初めて権威ある「今やること」になる。
+- stale を検出したときは current task より先に精算が提示される。
+- 計画とズレた日でも、一日の終わりに today-covered 以上へ戻っている。
 - ズレへの接触が常に「行動」と「ズラす」の両方を差し出し、どちらも一操作または一言で完了する。
 - check-in への応答が一言で完結する。無視した場合に追撃がない。
 - ユーザーが full Agent view を開かずに着手、進捗、完了、延期を行える。
 - Agent の結果が Home、schedule、widget、全 surface に即時反映される。
 - 一つの明示的な音声セッション内で複数 turn を継続できる。
-- σ の範囲内のズレで Agent が騒がない。σ を超えたズレでは進捗確認か再計画提案が届く。
+- 所要時間分布の通常範囲で Agent が騒がず、注意または再計画範囲で対応する介入が届く。
+- 自由時間、buffer、routine に未知活動の check-in が出ない。
 - イヤホンなしの Android がスピーカーで proactive に発話しない。
-- 同じ event に対して voice で応答するデバイスが常に一台である。
-- ambient listening の開始、稼働、停止が常に視認できる。
+- server と通信できるデバイス群では resident 役が一台だけであり、partition 後は再接続から規定時間内に一台へ収束する。
+- 同じ event に由来する planner mutation が重複実行されない。
+- Android で ambient listening の開始、稼働、停止、再武装待ちが常に視認できる。再起動後は通知一操作で録音を再開できる。
 - 対象外音声が外部送信も永続化もされない。
 - planner mutation はすべて三層の承認境界を維持する。
 - 登録話者以外の声で音声確定層の変更が確定しない。
@@ -670,12 +743,12 @@ presentation 型、event 発火、承認層の仕様は、この台本の各場�
 前提: desktop(tray 常駐、ambient 有効)と Android(優先度 2 位)、wake word は仮に「たくす」。
 
 ```text
-■ 07:30 起床 habit の時刻。desktop はスリープ → Android が voice 役
+■ 07:30 起床 habit の時刻。desktop はスリープ → Android が resident 役
   イヤホン未接続のため発話せず、Android 通知:
   「おはよう。今日は7件、まず 9:00 レポート。睡眠は予定通り。」
   [今日の予定] [組み直す]
 
-■ 08:55 desktop に着席、スリープ解除。voice 役が無言で desktop に戻る
+■ 08:55 desktop に着席、スリープ解除。resident 役が無言で desktop に戻る
 
 ■ 09:00 タスク開始時刻
   desktop(発話): 「9時になった。レポート、始める?」
@@ -687,17 +760,17 @@ presentation 型、event 発火、承認層の仕様は、この台本の各場�
   (raw audio は破棄され、ログにも残らない)
 
 ■ 10:20 ユーザー: 「たくす、演習半分終わった」
-  agent: 「15題完了だね。ペースは見積もりから 0.5σ 遅れ。このままでいこう。」
-  (1σ 未満のズレでは再計画を持ちかけない)
+  agent: 「15題完了だね。予測は見積もりの通常範囲。このままでいこう。」
+  (quantity の進捗から総所要時間の事後分布を更新するが、注意範囲には入らない)
 
-■ 11:10 実働時間が見積もりを 1σ 超過
+■ 11:10 未完了という右打ち切り観測により注意範囲へ入る
   desktop(発話): 「思ったより時間かかってる? いまどのへん?」
   ユーザー: 「あと5題」
   agent: 「なら残り20分くらい。11時半までに伸ばして、昼を10分ずらす。いい?」
   ユーザー: 「いいよ」(音声確定層: 読み上げ済みの複合変更を肯定で確定)
   agent: 「更新した。」
 
-■ 11:45 次のタスクの開始が 1σ 相当遅延
+■ 11:45 次のタスクの開始時刻を15分超過(未着手の sync event。σ は使わない)
   desktop(発話): 「『申請書を出す』が押してる。今から10分でやる? 午後に回す?」
   ユーザー: 「午後に回して」
   agent: 「なにか詰まってる? それとも時間だけ?」(先送り理由を一問だけ聞く)
@@ -713,7 +786,7 @@ presentation 型、event 発火、承認層の仕様は、この台本の各場�
 ■ 14:00 agent の発話中にユーザーが「たくす、ちがう」
   → barge-in。TTS を停止して聞き直す(Phase 3 の磨き込みまではタップ停止で代替)
 
-■ 15:00 外出。desktop の heartbeat が切れ、Android が voice 役に昇格
+■ 15:00 外出。desktop の heartbeat が切れ、Android が resident 役に昇格
   イヤホン未接続のため、ポケットの中では発話せず通知のみ:
   「『申請書を出す』の時間。」 [着手] [15分後] [相談]
 
@@ -761,10 +834,10 @@ sync と精算の仕様は、この台本の各場面と矛盾しないように
   agent: 「更新した。13時からレポート。」
   (精算: 白状が一言で計画に反映される。説教も採点もしない)
 
-■ 13:00 レポート開始。15:30 に 2σ 超過で再計画提案、承認
+■ 13:00 レポート開始。15:30 に総所要時間の事後分布が再計画範囲へ入り、再計画提案、承認
   (ここからは canonical scenario と同じ execution loop)
 
-■ 16:40 予定のない時間帯に 40 分経過(ambient 有効時のみ)
+■ 16:40 未分類 gap が 40 分継続(自由時間、buffer、routine ではない。ambient 有効時のみ)
   desktop(発話): 「今なにしてる?」
   ユーザー: 「部屋の片付け」
   agent: 「30分いれておく? 申請書は17時半に下げる。」
