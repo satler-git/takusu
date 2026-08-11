@@ -1,6 +1,8 @@
 import {
+  completeTaskWithOptionalWorkSession,
   recordProgressWithTotal,
   makeProgressOperationId,
+  restoreTaskAfterCompletion,
 } from '@/src/utils/progress';
 import type { TakusuClient } from '@/src/api/client';
 import type { WorkSessionRow } from '@/src/api/types';
@@ -27,6 +29,73 @@ function makeClient(
     ...overrides,
   } as unknown as TakusuClient;
 }
+
+describe('completeTaskWithOptionalWorkSession', () => {
+  it('updates the task directly when no work session is open', async () => {
+    const client = makeClient({
+      listWorkSessions: jest.fn().mockResolvedValue([]),
+      updateTask: jest.fn().mockResolvedValue({} as never),
+      completeWorkSession: jest.fn(),
+    });
+
+    const mode = await completeTaskWithOptionalWorkSession(client, 'task-1', {
+      quantityTotal: 10,
+    });
+
+    expect(mode).toBe('direct');
+    expect(client.updateTask).toHaveBeenCalledWith('task-1', {
+      status: 'completed',
+      quantity_done: 10,
+    });
+    expect(client.completeWorkSession).not.toHaveBeenCalled();
+  });
+
+  it('completes the open work session when one exists', async () => {
+    const client = makeClient({
+      listWorkSessions: jest.fn().mockResolvedValue([makeSession()]),
+      updateTask: jest.fn(),
+      completeWorkSession: jest.fn().mockResolvedValue({} as never),
+    });
+
+    const mode = await completeTaskWithOptionalWorkSession(client, 'task-1', {
+      operationId: 'op-123',
+      quantityTotal: 10,
+    });
+
+    expect(mode).toBe('work_session');
+    expect(client.completeWorkSession).toHaveBeenCalledWith(
+      'session-1',
+      'op-123',
+    );
+    expect(client.updateTask).not.toHaveBeenCalled();
+  });
+});
+
+describe('restoreTaskAfterCompletion', () => {
+  it('reopens a work session when restoring direct completion of in_progress', async () => {
+    const client = makeClient({
+      updateTask: jest.fn().mockResolvedValue({} as never),
+      createWorkSession: jest.fn().mockResolvedValue({} as never),
+    });
+
+    await restoreTaskAfterCompletion(
+      client,
+      'task-1',
+      'in_progress',
+      3,
+      'direct',
+    );
+
+    expect(client.updateTask).toHaveBeenCalledWith('task-1', {
+      status: 'in_progress',
+      quantity_done: 3,
+    });
+    expect(client.createWorkSession).toHaveBeenCalledWith(
+      { task_id: 'task-1' },
+      expect.any(String),
+    );
+  });
+});
 
 describe('recordProgressWithTotal', () => {
   it('generates and passes an operationId to recordWorkSessionProgress', async () => {
