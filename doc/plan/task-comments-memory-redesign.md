@@ -3,6 +3,10 @@
 Closes #1266 (memory のリデザイン) and #1315 (description よりもコメント？). Also resolves #1003
 (memory を読む選択肢がなかなかない).
 
+> **Status**: WI-1 (comment server layer) and WI-2 (`task_note` migration + removal) are
+> implemented. Migrations landed at `028`/`029` (local) and `029`/`030` (worker). WI-3, WI-4,
+> and WI-5 remain.
+
 ## Summary
 
 Add two mechanisms alongside the existing task model:

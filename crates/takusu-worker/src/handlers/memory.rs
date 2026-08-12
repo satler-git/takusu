@@ -21,10 +21,10 @@ fn operation_id(req: &Request) -> Option<String> {
 fn validate_create(body: &CreateMemory) -> Result<(), WorkerError> {
     if !matches!(
         body.kind,
-        MemoryKind::ProperNoun | MemoryKind::Fact | MemoryKind::TaskNote
+        MemoryKind::ProperNoun | MemoryKind::Fact
     ) {
         return Err(WorkerError::BadRequest(
-            "kind must be 'proper_noun', 'fact', or 'task_note'".into(),
+            "kind must be 'proper_noun' or 'fact'".into(),
         ));
     }
     memory::normalize_key(&body.key)
@@ -40,18 +40,6 @@ fn validate_create(body: &CreateMemory) -> Result<(), WorkerError> {
     }
     if body.subject_id.as_ref().is_some_and(|s| s.len() > 64) {
         return Err(WorkerError::BadRequest("subject_id too long".into()));
-    }
-    if body.kind == MemoryKind::TaskNote {
-        if body.subject_type != Some(SubjectType::Task) {
-            return Err(WorkerError::BadRequest(
-                "task_note requires subject_type='task'".into(),
-            ));
-        }
-        if body.subject_id.as_ref().is_none_or(|s| s.is_empty()) {
-            return Err(WorkerError::BadRequest(
-                "task_note requires subject_id".into(),
-            ));
-        }
     }
     Ok(())
 }

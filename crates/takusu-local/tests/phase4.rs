@@ -18,12 +18,13 @@ use axum::routing::get;
 use http_body_util::BodyExt;
 use serde_json::json;
 use takusu_contracts::{
-    CreateHabit, CreateHabitScheduledSpan, CreateTask, GoogleCalEventRow, GoogleCalSettingsRow,
-    HabitRow, HabitScheduledSpanRow, HabitStepInput, HabitStepRow, SaveScheduleRequest,
-    ScheduleRow, SettingsRow, Storage, StorageError, TaskQuery, TaskRow, TokenCreateResponse,
-    TokenRow, UpdateGoogleCalSettings, UpdateHabit, UpdateSettings, UpdateTask,
-    storage::StorageResult,
+    CommentRow, CreateHabit, CreateHabitScheduledSpan, CreateTask, GoogleCalEventRow,
+    GoogleCalSettingsRow, HabitRow, HabitScheduledSpanRow, HabitStepInput, HabitStepRow,
+    SaveScheduleRequest, ScheduleRow, SettingsRow, Storage, StorageError, TaskQuery, TaskRow,
+    TokenCreateResponse, TokenRow, UpdateGoogleCalSettings, UpdateHabit, UpdateSettings,
+    UpdateTask, storage::StorageResult,
 };
+use takusu_types::CommentAuthor;
 use takusu_local::router::router;
 use takusu_local::state::AppState;
 use takusu_local_lib::TokenClaims;
@@ -132,6 +133,21 @@ impl Storage for CountingStorage {
         Err(StorageError::Internal("n/a".into()))
     }
     async fn delete_task(&self, _id: &str) -> StorageResult<()> {
+        Ok(())
+    }
+    async fn list_comments(&self, _task_id: &str) -> StorageResult<Vec<CommentRow>> {
+        Ok(vec![])
+    }
+    async fn create_comment(
+        &self,
+        _task_id: &str,
+        _author: CommentAuthor,
+        _content: &str,
+        _operation_id: Option<&str>,
+    ) -> StorageResult<CommentRow> {
+        Err(StorageError::Internal("n/a".into()))
+    }
+    async fn delete_comment(&self, _id: &str) -> StorageResult<()> {
         Ok(())
     }
     async fn list_habits(&self) -> StorageResult<Vec<HabitRow>> {

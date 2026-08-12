@@ -4,8 +4,8 @@ use async_trait::async_trait;
 use takusu_contracts::storage::StorageResult;
 use takusu_contracts::validate::validate_task_datetimes;
 use takusu_contracts::{
-    AttachWorkSession, ConvertWorkSession, CreateHabit, CreateHabitScheduledSpan, CreateMemory,
-    CreateSkill, CreateTask, GoogleCalEventRow, GoogleCalSettingsRow, HabitRow,
+    AttachWorkSession, CommentRow, ConvertWorkSession, CreateHabit, CreateHabitScheduledSpan,
+    CreateMemory, CreateSkill, CreateTask, GoogleCalEventRow, GoogleCalSettingsRow, HabitRow,
     HabitScheduledSpanRow, HabitStepEstimateInput, HabitStepInput, HabitStepRow, MemoryQuery,
     MemoryRow, ProgressEventRow, RecordWorkSessionProgress, SaveScheduleRequest, ScheduleRow,
     SettingsRow, SimilarTaskQuery, SimilarTaskRow, SkillRow, SplitResult, SplitTask, StartWorkSession,
@@ -15,8 +15,8 @@ use takusu_contracts::{
 };
 use takusu_types::jwt::{DEFAULT_TOKEN_TTL_SECONDS, generate_token_jwt};
 use takusu_types::{
-    DependencyList, EnumLabel, Minutes, Quantity, TaskStatus, TaskStatusFilter, TokenClaims,
-    WindowMode,
+    CommentAuthor, DependencyList, EnumLabel, Minutes, Quantity, TaskStatus, TaskStatusFilter,
+    TokenClaims, WindowMode,
 };
 use wasm_bindgen::JsValue;
 
@@ -440,6 +440,10 @@ impl Storage for D1Storage {
                 .bind(&[JsValue::from_str(&full)])
                 .map_err(d1_err)?,
             self.db
+                .prepare("DELETE FROM task_comments WHERE task_id = ?1")
+                .bind(&[JsValue::from_str(&full)])
+                .map_err(d1_err)?,
+            self.db
                 .prepare("UPDATE work_sessions SET ended_at = ?1 WHERE task_id = ?2 AND ended_at IS NULL")
                 .bind(&[
                     JsValue::from_str(&takusu_types::now_rfc3339()),
@@ -460,6 +464,136 @@ impl Storage for D1Storage {
                 .map_err(d1_err)?,
         ];
         self.db.batch(stmts).await.map_err(d1_err)?;
+        Ok(())
+    }
+
+    // ── Task comments (WI-1) ──────────────────────────────────────────
+
+    async fn list_comments(&self, task_id: &str) -> StorageResult<Vec<CommentRow>> {
+        let full = resolve_task_id(&self.db, task_id).await?;
+        let stmt = self.db.prepare(format!(
+            "{} WHERE task_id = ?1 ORDER BY seq ASC",
+            comment_select()
+        ));
+        d1_all(&stmt.bind(&[JsValue::from_str(&full)]).map_err(d1_err)?).await
+    }
+
+    async fn create_comment(
+        &self,
+        task_id: &str,
+        author: CommentAuthor,
+        content: &str,
+        operation_id: Option<&str>,
+    ) -> StorageResult<CommentRow> {
+        let full = resolve_task_id(&self.db, task_id).await?;
+
+        let payload = format!("create:{full}:{}:{content}", author.as_str());
+        let hash = comment_request_hash(&payload, operation_id);
+        if let Some(op_id) = operation_id
+            && let Some(json) = check_comment_idempotency(&self.db, op_id, &hash).await?
+        {
+            let row: CommentRow = serde_json::from_str(&json).map_err(|e| {
+                StorageError::Internal(format!("corrupt idempotency response: {e}"))
+            })?;
+            return Ok(row);
+        }
+
+        let id = uuid::Uuid::now_v7().to_string();
+        let seq_stmt = self.db.prepare(
+            "SELECT COALESCE(MAX(seq), 0) + 1 AS c FROM task_comments WHERE task_id = ?1",
+        );
+        let rows: Vec<CountRow> =
+            d1_all(&seq_stmt.bind(&[JsValue::from_str(&full)]).map_err(d1_err)?).await?;
+        let seq = rows.into_iter().next().map(|r| r.c).unwrap_or(1);
+
+        // The comment insert and the receipt insert are issued together in a
+        // single D1 batch, which runs atomically (a transaction). This closes
+        // the check-then-insert race: under concurrent same-key requests, both
+        // compute the same seq, so the loser's comment insert collides on the
+        // unique (task_id, seq) index and the whole batch — including its
+        // receipt insert — rolls back. The loser then replays the winner's
+        // stored receipt below.
+        let now = takusu_types::now_rfc3339();
+        let created_at: takusu_types::Timestamp = now.parse().map_err(|e| {
+            StorageError::Internal(format!("invalid generated timestamp {now}: {e}"))
+        })?;
+        let row = CommentRow {
+            id: id.clone(),
+            task_id: full.clone(),
+            author,
+            content: content.to_string(),
+            seq,
+            created_at,
+        };
+
+        let mut stmts = vec![self
+            .db
+            .prepare(
+                "INSERT INTO task_comments (id, task_id, author, content, seq, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            )
+            .bind(&[
+                JsValue::from_str(&id),
+                JsValue::from_str(&full),
+                JsValue::from_str(author.as_str()),
+                JsValue::from_str(content),
+                JsValue::from_f64(seq as f64),
+                JsValue::from_str(&now),
+            ])
+            .map_err(d1_err)?];
+
+        if let Some(op_id) = operation_id {
+            let response_json = serde_json::to_string(&row)
+                .map_err(|e| StorageError::Internal(format!("serialize response: {e}")))?;
+            stmts.push(
+                self.db
+                    .prepare(
+                        "INSERT INTO comment_operations (operation_id, request_hash, response_json, created_at) VALUES (?1, ?2, ?3, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))",
+                    )
+                    .bind(&[
+                        JsValue::from_str(op_id),
+                        JsValue::from_str(&hash),
+                        JsValue::from_str(&response_json),
+                    ])
+                    .map_err(d1_err)?,
+            );
+        }
+
+        match self.db.batch(stmts).await {
+            Ok(_) => Ok(row),
+            Err(e) if operation_id.is_some() => {
+                // A concurrent request with the same Idempotency-Key likely won
+                // the race and committed its comment + receipt. Replay its
+                // stored response; if no receipt exists this was a genuine
+                // failure (e.g. an unrelated seq conflict), so surface it.
+                let op_id = operation_id.expect("guarded by match arm");
+                if let Some(json) = check_comment_idempotency(&self.db, op_id, &hash).await? {
+                    let replay: CommentRow = serde_json::from_str(&json).map_err(|e| {
+                        StorageError::Internal(format!("corrupt idempotency response: {e}"))
+                    })?;
+                    return Ok(replay);
+                }
+                Err(d1_err(e))
+            }
+            Err(e) => Err(d1_err(e)),
+        }
+    }
+
+    async fn delete_comment(&self, id: &str) -> StorageResult<()> {
+        let stmt = self.db.prepare("DELETE FROM task_comments WHERE id = ?1");
+        let result = stmt
+            .bind(&[JsValue::from_str(id)])
+            .map_err(d1_err)?
+            .run()
+            .await
+            .map_err(d1_err)?;
+        let affected = result
+            .meta()
+            .map_err(d1_err)?
+            .and_then(|m| m.rows_written)
+            .unwrap_or(0);
+        if affected == 0 {
+            return Err(not_found(format!("comment {id} not found")));
+        }
         Ok(())
     }
 

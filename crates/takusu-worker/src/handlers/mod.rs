@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod comments;
 pub mod habits;
 pub mod health;
 pub mod memory;

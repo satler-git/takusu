@@ -12,6 +12,32 @@ interface components$1 {
         AttachWorkSession: {
             task_id: string;
         };
+        /**
+         * @description Author of a task comment (`task_comments` table, WI-1).
+         *
+         *     `User` is assigned by the public comment endpoint, `Agent` by the
+         *     agent-only endpoint, and `System` is created only server-side
+         *     (migrations, hooks) — never accepted from any request.
+         * @enum {string}
+         */
+        CommentAuthor: 'user' | 'agent' | 'system';
+        /**
+         * @description A single entry in a task's comment timeline (WI-1).
+         *
+         *     Comments are append-only: there is no edit operation, and `author` is
+         *     server-assigned when the row is created. `seq` is a per-task monotonic
+         *     sequence assigned by storage, so ordering is deterministic even when
+         *     multiple rows share a `created_at` timestamp.
+         */
+        CommentRow: {
+            author: components$1['schemas']['CommentAuthor'];
+            content: string;
+            created_at: components$1['schemas']['Timestamp'];
+            id: string;
+            /** Format: int64 */
+            seq: number;
+            task_id: string;
+        };
         CompleteQuery: {
             /** Format: uint */
             limit?: number | null;
@@ -27,6 +53,17 @@ interface components$1 {
             fixed?: boolean | null;
             status?: components$1['schemas']['TaskStatus'] | null;
             title?: string | null;
+        };
+        /**
+         * @description Request body for creating a task comment (WI-1).
+         *
+         *     Contains only `content`. `author` is deliberately absent: it is assigned by
+         *     the server based on which endpoint is used (public `/tasks/:id/comments` →
+         *     `user`, `/tasks/:id/comments/agent` → `agent`), so ordinary clients cannot
+         *     impersonate the agent or system (invariant 2).
+         */
+        CreateComment: {
+            content: string;
         };
         CreateHabit: {
             abandonability?: components$1['schemas']['Abandonability'] | null;
@@ -572,7 +609,7 @@ interface components$1 {
          */
         JsonString2: string;
         /** @enum {string} */
-        MemoryKind: 'proper_noun' | 'fact' | 'task_note';
+        MemoryKind: 'proper_noun' | 'fact';
         MemoryQuery: {
             kind?: components$1['schemas']['MemoryKind'] | null;
             /** Format: int64 */
@@ -1485,6 +1522,9 @@ type WorkSessionProgressResult = S['WorkSessionProgressResult'];
 type ProgressEventRow = S['ProgressEventRow'];
 type SplitTask = S['SplitTask'];
 type SplitResult = S['SplitResult'];
+type CommentRow = S['CommentRow'];
+type CreateComment = S['CreateComment'];
+type CommentAuthor = S['CommentAuthor'];
 type SyncTriggerResponse = S['SyncTriggerResponse'];
 type OAuthCallbackResponse = S['OAuthCallbackResponse'];
 type WindowMode = S['WindowMode'];
@@ -1525,6 +1565,10 @@ declare class TakusuClient {
     updateTask(id: string, body: UpdateTask): Promise<TaskRow>;
     replaceTask(id: string, body: CreateTask): Promise<TaskRow>;
     deleteTask(id: string): Promise<void>;
+    listComments(taskId: string): Promise<CommentRow[]>;
+    createComment(taskId: string, body: CreateComment, operationId?: string): Promise<CommentRow>;
+    createAgentComment(taskId: string, body: CreateComment, operationId?: string): Promise<CommentRow>;
+    deleteComment(id: string): Promise<void>;
     createWorkSession(body: StartWorkSession, operationId?: string): Promise<WorkSessionRow>;
     listWorkSessions(taskId?: string): Promise<WorkSessionRow[]>;
     getWorkSession(id: string): Promise<WorkSessionRow>;
@@ -1584,4 +1628,4 @@ declare class TakusuClient {
     }>;
 }
 
-export { type AgentTurnResult, ApiError, type ApprovalResult, type AttachWorkSession, type ChangeOperation, type Completion, type ConvertWorkSession, type CreateHabit, type CreateHabitScheduledSpan, type CreateSkill, type CreateTask, type DeleteAllGcalFailure, type DeleteAllGcalResponse, type DependencyAnalysisResponse, type DependencyNode, type GenerateSchedule, type GoogleCalEventMapping, type GoogleCalSettings, type HabitDetail, type HabitEstimateRequest, type HabitEstimateResult, type HabitEstimateSample, type HabitEstimateStep, type HabitPreviewRequest, type HabitPreviewTask, type HabitRow, type HabitScheduledSpanRow, type HabitStepInput, type HabitStepRow, type IcalImportResult, type MoveEntryRequest, type MoveEntryResponse, type OAuthCallbackResponse, type ProgressEventRow, type RecordWorkSessionProgress, type RedundantDependency, type RescheduleRequest, type ScheduleEntry, type ScheduleRow, type SettingsRow, type SkillRow, type SplitResult, type SplitTask, type StartWorkSession, type SyncTriggerResponse, TakusuClient, type TargetKind, type TaskQuery, type TaskRow, type TaskStatus, type TokenCreateResponse, type TokenRow, type UpdateGoogleCalSettings, type UpdateHabit, type UpdateSettings, type UpdateSkill, type UpdateTask, WINDOW_MODE_DAY, WINDOW_MODE_PERIOD, type WindowMode, type WorkSessionProgressResult, type WorkSessionRow, type components, parseDepends, parseDependsOn, parseHorizonTaskIds, parseSchedule };
+export { type AgentTurnResult, ApiError, type ApprovalResult, type AttachWorkSession, type ChangeOperation, type CommentAuthor, type CommentRow, type Completion, type ConvertWorkSession, type CreateComment, type CreateHabit, type CreateHabitScheduledSpan, type CreateSkill, type CreateTask, type DeleteAllGcalFailure, type DeleteAllGcalResponse, type DependencyAnalysisResponse, type DependencyNode, type GenerateSchedule, type GoogleCalEventMapping, type GoogleCalSettings, type HabitDetail, type HabitEstimateRequest, type HabitEstimateResult, type HabitEstimateSample, type HabitEstimateStep, type HabitPreviewRequest, type HabitPreviewTask, type HabitRow, type HabitScheduledSpanRow, type HabitStepInput, type HabitStepRow, type IcalImportResult, type MoveEntryRequest, type MoveEntryResponse, type OAuthCallbackResponse, type ProgressEventRow, type RecordWorkSessionProgress, type RedundantDependency, type RescheduleRequest, type ScheduleEntry, type ScheduleRow, type SettingsRow, type SkillRow, type SplitResult, type SplitTask, type StartWorkSession, type SyncTriggerResponse, TakusuClient, type TargetKind, type TaskQuery, type TaskRow, type TaskStatus, type TokenCreateResponse, type TokenRow, type UpdateGoogleCalSettings, type UpdateHabit, type UpdateSettings, type UpdateSkill, type UpdateTask, WINDOW_MODE_DAY, WINDOW_MODE_PERIOD, type WindowMode, type WorkSessionProgressResult, type WorkSessionRow, type components, parseDepends, parseDependsOn, parseHorizonTaskIds, parseSchedule };

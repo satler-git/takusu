@@ -1056,6 +1056,78 @@ impl Client {
         let resp = Self::handle_response(resp).await?;
         Ok(resp.json().await?)
     }
+
+    // ── Task comments (WI-1) ──
+
+    pub async fn list_comments(&self, task_id: &str) -> Result<Vec<CommentRow>, ClientError> {
+        let resp = self
+            .request(
+                reqwest::Method::GET,
+                &format!("/api/tasks/{}/comments", url_encode(task_id)),
+            )
+            .await
+            .send()
+            .await?;
+        let resp = Self::handle_response(resp).await?;
+        Ok(resp.json().await?)
+    }
+
+    /// Create a comment attributed to the user (public endpoint).
+    pub async fn create_comment(
+        &self,
+        task_id: &str,
+        body: &CreateComment,
+        operation_id: Option<&str>,
+    ) -> Result<CommentRow, ClientError> {
+        let mut req = self
+            .request(
+                reqwest::Method::POST,
+                &format!("/api/tasks/{}/comments", url_encode(task_id)),
+            )
+            .await
+            .json(body);
+        if let Some(op_id) = operation_id {
+            req = req.header("Idempotency-Key", op_id);
+        }
+        let resp = req.send().await?;
+        let resp = Self::handle_response(resp).await?;
+        Ok(resp.json().await?)
+    }
+
+    /// Create a comment attributed to the agent (agent-only endpoint).
+    pub async fn create_agent_comment(
+        &self,
+        task_id: &str,
+        body: &CreateComment,
+        operation_id: Option<&str>,
+    ) -> Result<CommentRow, ClientError> {
+        let mut req = self
+            .request(
+                reqwest::Method::POST,
+                &format!("/api/tasks/{}/comments/agent", url_encode(task_id)),
+            )
+            .await
+            .json(body);
+        if let Some(op_id) = operation_id {
+            req = req.header("Idempotency-Key", op_id);
+        }
+        let resp = req.send().await?;
+        let resp = Self::handle_response(resp).await?;
+        Ok(resp.json().await?)
+    }
+
+    pub async fn delete_comment(&self, id: &str) -> Result<(), ClientError> {
+        let resp = self
+            .request(
+                reqwest::Method::DELETE,
+                &format!("/api/comments/{}", url_encode(id)),
+            )
+            .await
+            .send()
+            .await?;
+        Self::handle_response(resp).await?;
+        Ok(())
+    }
 }
 
 // ── Shared domain types (re-exported from takusu-contracts) ──

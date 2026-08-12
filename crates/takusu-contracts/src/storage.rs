@@ -24,6 +24,21 @@ pub trait Storage: Send + Sync + 'static {
     async fn replace_task(&self, id: &str, body: &CreateTask) -> StorageResult<TaskRow>;
     async fn delete_task(&self, id: &str) -> StorageResult<()>;
 
+    // ── Task comments (WI-1) ────────────────────────────────
+    /// List a task's comments in ascending `seq` order.
+    async fn list_comments(&self, task_id: &str) -> StorageResult<Vec<CommentRow>>;
+    /// Append a comment to a task. `author` is decided by the caller (the
+    /// server), never by the HTTP body.
+    async fn create_comment(
+        &self,
+        task_id: &str,
+        author: takusu_types::CommentAuthor,
+        content: &str,
+        operation_id: Option<&str>,
+    ) -> StorageResult<CommentRow>;
+    /// Delete a comment (user-only operation).
+    async fn delete_comment(&self, id: &str) -> StorageResult<()>;
+
     /// Check whether a task with the given iCal UID already exists.
     async fn task_exists_by_ical_uid(&self, uid: &str) -> StorageResult<bool>;
 

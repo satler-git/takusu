@@ -44,6 +44,8 @@ import type {
   SplitTask,
   SplitResult,
   Completion,
+  CommentRow,
+  CreateComment,
 } from './types';
 
 export class ApiError extends Error {
@@ -157,6 +159,44 @@ export class TakusuClient {
 
   async deleteTask(id: string): Promise<void> {
     return this.request('DELETE', `/api/tasks/${encodeURIComponent(id)}`);
+  }
+
+  // ── Task comments (WI-1) ──
+  async listComments(taskId: string): Promise<CommentRow[]> {
+    return this.request(
+      'GET',
+      `/api/tasks/${encodeURIComponent(taskId)}/comments`,
+    );
+  }
+
+  async createComment(
+    taskId: string,
+    body: CreateComment,
+    operationId?: string,
+  ): Promise<CommentRow> {
+    return this.request(
+      'POST',
+      `/api/tasks/${encodeURIComponent(taskId)}/comments`,
+      body,
+      operationId,
+    );
+  }
+
+  async createAgentComment(
+    taskId: string,
+    body: CreateComment,
+    operationId?: string,
+  ): Promise<CommentRow> {
+    return this.request(
+      'POST',
+      `/api/tasks/${encodeURIComponent(taskId)}/comments/agent`,
+      body,
+      operationId,
+    );
+  }
+
+  async deleteComment(id: string): Promise<void> {
+    return this.request('DELETE', `/api/comments/${encodeURIComponent(id)}`);
   }
 
   // ── Work sessions (#1393) ──

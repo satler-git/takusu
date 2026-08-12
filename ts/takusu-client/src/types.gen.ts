@@ -1141,6 +1141,421 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/tasks/{id}/comments': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['CommentRow'][];
+          };
+        };
+        /** @description Error */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        500: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+      };
+    };
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      /**
+       * @description Request body for creating a task comment (WI-1).
+       *
+       *     Contains only `content`. `author` is deliberately absent: it is assigned by
+       *     the server based on which endpoint is used (public `/tasks/:id/comments` →
+       *     `user`, `/tasks/:id/comments/agent` → `agent`), so ordinary clients cannot
+       *     impersonate the agent or system (invariant 2).
+       */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['CreateComment'];
+        };
+      };
+      responses: {
+        /**
+         * @description A single entry in a task's comment timeline (WI-1).
+         *
+         *     Comments are append-only: there is no edit operation, and `author` is
+         *     server-assigned when the row is created. `seq` is a per-task monotonic
+         *     sequence assigned by storage, so ordering is deterministic even when
+         *     multiple rows share a `created_at` timestamp.
+         */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['CommentRow'];
+          };
+        };
+        /** @description Error */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Expected request with `Content-Type: application/json` */
+        415: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Failed to deserialize the JSON body into the target type */
+        422: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Error */
+        500: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/tasks/{id}/comments/agent': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      /**
+       * @description Request body for creating a task comment (WI-1).
+       *
+       *     Contains only `content`. `author` is deliberately absent: it is assigned by
+       *     the server based on which endpoint is used (public `/tasks/:id/comments` →
+       *     `user`, `/tasks/:id/comments/agent` → `agent`), so ordinary clients cannot
+       *     impersonate the agent or system (invariant 2).
+       */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['CreateComment'];
+        };
+      };
+      responses: {
+        /**
+         * @description A single entry in a task's comment timeline (WI-1).
+         *
+         *     Comments are append-only: there is no edit operation, and `author` is
+         *     server-assigned when the row is created. `seq` is a per-task monotonic
+         *     sequence assigned by storage, so ordering is deterministic even when
+         *     multiple rows share a `created_at` timestamp.
+         */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['CommentRow'];
+          };
+        };
+        /** @description Error */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Expected request with `Content-Type: application/json` */
+        415: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Failed to deserialize the JSON body into the target type */
+        422: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Error */
+        500: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/comments/{id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description No Content */
+        204: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content?: never;
+        };
+        /** @description Error */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        500: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+      };
+    };
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/work-sessions': {
     parameters: {
       query?: never;
@@ -7565,6 +7980,32 @@ export interface components {
     AttachWorkSession: {
       task_id: string;
     };
+    /**
+     * @description Author of a task comment (`task_comments` table, WI-1).
+     *
+     *     `User` is assigned by the public comment endpoint, `Agent` by the
+     *     agent-only endpoint, and `System` is created only server-side
+     *     (migrations, hooks) — never accepted from any request.
+     * @enum {string}
+     */
+    CommentAuthor: 'user' | 'agent' | 'system';
+    /**
+     * @description A single entry in a task's comment timeline (WI-1).
+     *
+     *     Comments are append-only: there is no edit operation, and `author` is
+     *     server-assigned when the row is created. `seq` is a per-task monotonic
+     *     sequence assigned by storage, so ordering is deterministic even when
+     *     multiple rows share a `created_at` timestamp.
+     */
+    CommentRow: {
+      author: components['schemas']['CommentAuthor'];
+      content: string;
+      created_at: components['schemas']['Timestamp'];
+      id: string;
+      /** Format: int64 */
+      seq: number;
+      task_id: string;
+    };
     CompleteQuery: {
       /** Format: uint */
       limit?: number | null;
@@ -7580,6 +8021,17 @@ export interface components {
       fixed?: boolean | null;
       status?: components['schemas']['TaskStatus'] | null;
       title?: string | null;
+    };
+    /**
+     * @description Request body for creating a task comment (WI-1).
+     *
+     *     Contains only `content`. `author` is deliberately absent: it is assigned by
+     *     the server based on which endpoint is used (public `/tasks/:id/comments` →
+     *     `user`, `/tasks/:id/comments/agent` → `agent`), so ordinary clients cannot
+     *     impersonate the agent or system (invariant 2).
+     */
+    CreateComment: {
+      content: string;
     };
     CreateHabit: {
       abandonability?: components['schemas']['Abandonability'] | null;
@@ -8125,7 +8577,7 @@ export interface components {
      */
     JsonString2: string;
     /** @enum {string} */
-    MemoryKind: 'proper_noun' | 'fact' | 'task_note';
+    MemoryKind: 'proper_noun' | 'fact';
     MemoryQuery: {
       kind?: components['schemas']['MemoryKind'] | null;
       /** Format: int64 */

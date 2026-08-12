@@ -4,7 +4,7 @@ expression: def
 ---
 {
   "function": {
-    "description": "Propose saving a memory (proper noun, fact, or task note). Generates an approval request; does not write immediately.",
+    "description": "Propose saving a memory (proper noun or fact). Generates an approval request; does not write immediately.",
     "name": "memory_save",
     "parameters": {
       "additionalProperties": false,
@@ -44,7 +44,7 @@ expression: def
           "type": "string"
         },
         "kind": {
-          "description": "proper_noun, fact, or task_note.",
+          "description": "proper_noun or fact.",
           "type": "string"
         },
         "proposal_id": {
@@ -52,11 +52,11 @@ expression: def
           "type": "string"
         },
         "subject_id": {
-          "description": "Optional task ID when subject_type is 'task'.",
+          "description": "Optional subject id.",
           "type": "string"
         },
         "subject_type": {
-          "description": "Optional. For task_note set to 'task'.",
+          "description": "Optional subject type.",
           "type": "string"
         },
         "warnings": {

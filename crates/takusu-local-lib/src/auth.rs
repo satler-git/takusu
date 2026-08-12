@@ -144,8 +144,29 @@ mod tests {
         ) -> Result<TaskRow, takusu_contracts::StorageError> {
             unimplemented()
         }
-        async fn delete_task(&self, _: &str) -> Result<(), takusu_contracts::StorageError> {
-            unimplemented()
+async fn delete_task(&self, _: &str) -> Result<(), takusu_contracts::StorageError> {
+            unimplemented!()
+        }
+        async fn list_comments(
+            &self,
+            _: &str,
+        ) -> Result<Vec<takusu_contracts::CommentRow>, takusu_contracts::StorageError> {
+            unimplemented!()
+        }
+        async fn create_comment(
+            &self,
+            _: &str,
+            _: takusu_types::CommentAuthor,
+            _: &str,
+            _: Option<&str>,
+        ) -> Result<takusu_contracts::CommentRow, takusu_contracts::StorageError> {
+            unimplemented!()
+        }
+        async fn delete_comment(
+            &self,
+            _: &str,
+        ) -> Result<(), takusu_contracts::StorageError> {
+            unimplemented!()
         }
         async fn list_habits(&self) -> Result<Vec<HabitRow>, takusu_contracts::StorageError> {
             unimplemented()

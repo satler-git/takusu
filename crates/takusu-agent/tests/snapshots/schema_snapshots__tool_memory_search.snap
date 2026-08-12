@@ -10,7 +10,7 @@ expression: def
       "additionalProperties": false,
       "properties": {
         "kind": {
-          "description": "Filter by kind. Values: proper_noun, fact, task_note.",
+          "description": "Filter by kind. Values: proper_noun, fact.",
           "type": "string"
         },
         "limit": {
