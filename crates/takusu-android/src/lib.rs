@@ -4,7 +4,8 @@ mod audio;
 mod log_buffer;
 mod model;
 
-use std::sync::{Arc, Mutex};
+use std::collections::HashMap;
+use std::sync::{Arc, LazyLock, Mutex, Weak};
 
 use tokio::runtime::{Builder, Runtime};
 use tokio::sync::RwLock;
@@ -48,6 +49,17 @@ pub enum ServerStatus {
 ///
 /// Spawns an axum server on localhost that serves the full takusu-local REST API.
 /// Storage backend is WorkersStorage (HTTP → Cloudflare Worker).
+/// Process-wide registry of running servers keyed by bound port.
+///
+/// The foreground module and the background workers each create their own
+/// `TakusuServer` instance, so a per-object `runtime` field alone cannot tell
+/// them that another instance already holds the port. Binding the same port
+/// twice then fails with "Address already in use". This registry makes the
+/// port the single source of truth: `start` is idempotent per port, and only
+/// the instance that actually owns the runtime shuts it down on `stop`.
+static REGISTRY: LazyLock<Mutex<HashMap<u16, Weak<Runtime>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
 #[derive(uniffi::Object)]
 pub struct TakusuServer {
     runtime: Mutex<Option<Arc<Runtime>>>,
@@ -98,6 +110,22 @@ impl TakusuServer {
         if runtime_guard.is_some() {
             tracing::error!("server already running");
             return Err(TakusuError::AlreadyRunning);
+        }
+
+        // A live server from another instance (e.g. a background worker) may
+        // already own this port. Treat that as success and reuse it instead of
+        // attempting a second bind, which would fail with "Address already in
+        // use". The caller does not own this instance's runtime, but it records
+        // the port so that status() reports the live server as running and a
+        // later stop() is an idempotent no-op that cannot tear down the owner.
+        {
+            let mut registry = REGISTRY.lock().unwrap_or_else(|e| e.into_inner());
+            registry.retain(|_, w| w.strong_count() > 0);
+            if registry.get(&port).is_some_and(|w| w.strong_count() > 0) {
+                *self.port.lock().unwrap_or_else(|e| e.into_inner()) = port;
+                tracing::info!("takusu-local already running on port {port}; reusing existing server");
+                return Ok(());
+            }
         }
 
         if workers_url.is_empty() {
@@ -198,23 +226,49 @@ impl TakusuServer {
         ));
 
         let bind_addr = format!("127.0.0.1:{port}");
-        let listener = runtime
-            .block_on(async { TcpListener::bind(&bind_addr).await })
-            .map_err(|e| {
-                let detail = format!("failed to bind {bind_addr}: {e}");
-                tracing::error!("{detail}");
-                TakusuError::Server { detail }
-            })?;
+        // The check → bind → register sequence must be atomic across all
+        // instances, otherwise two concurrent start() calls (e.g. the
+        // foreground module and a WorkManager worker) can both pass the
+        // "no entry" check and race to bind the same port. Holding the
+        // registry lock here serialises them: the first re-check sees no
+        // entry and binds; the second re-check sees the entry and reuses.
+        let (listener, actual_port) = {
+            let mut registry = REGISTRY.lock().unwrap_or_else(|e| e.into_inner());
+            registry.retain(|_, w| w.strong_count() > 0);
+            if registry.get(&port).is_some_and(|w| w.strong_count() > 0) {
+                // Another instance registered while we were building the
+                // router. Reuse it instead of binding.
+                *self.port.lock().unwrap_or_else(|e| e.into_inner()) = port;
+                tracing::info!("takusu-local already running on port {port}; reusing existing server");
+                return Ok(());
+            }
+            let listener = runtime
+                .block_on(async { TcpListener::bind(&bind_addr).await })
+                .map_err(|e| {
+                    let detail = format!("failed to bind {bind_addr}: {e}");
+                    tracing::error!("{detail}");
+                    TakusuError::Server { detail }
+                })?;
+            let actual_port = listener.local_addr().map(|a| a.port()).unwrap_or(port);
+            registry.insert(actual_port, Arc::downgrade(&runtime));
+            (listener, actual_port)
+        };
 
-        let actual_port = listener.local_addr().map(|a| a.port()).unwrap_or(port);
         *self.port.lock().unwrap_or_else(|e| e.into_inner()) = actual_port;
 
         tracing::info!("takusu-local listening on 127.0.0.1:{actual_port} (workers storage)");
 
+        let task_port = actual_port;
         runtime.spawn(async move {
             if let Err(e) = axum::serve(listener, app_router).await {
                 tracing::error!("server error: {e}");
             }
+            // The HTTP listener has shut down. Drop the registry entry so a
+            // future start() re-binds instead of reusing a now-dead server.
+            REGISTRY
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .remove(&task_port);
         });
 
         *runtime_guard = Some(runtime);
@@ -222,25 +276,60 @@ impl TakusuServer {
     }
 
     /// Stop the server gracefully.
+    ///
+    /// Idempotent: returns Ok if this instance owned a runtime (shutting it
+    /// down) or reused an existing server (orphaning it), and only returns
+    /// `NotRunning` for an instance that never started. This lets the Kotlin
+    /// module clear its reference even when it adopted a server it does not
+    /// own.
     pub fn stop(&self) -> Result<(), TakusuError> {
         let mut runtime_guard = self.runtime.lock().unwrap_or_else(|e| e.into_inner());
-        let arc = runtime_guard.take().ok_or(TakusuError::NotRunning)?;
+        let arc = runtime_guard.take();
+        let owned = arc.is_some();
+        let port = *self.port.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(arc) = &arc {
+            // Only deregister if this instance is the one that registered the
+            // port. Instances that reused an existing server never registered,
+            // so they cannot tear down another instance's server.
+            let mut registry = REGISTRY.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(weak) = registry.get(&port)
+                && weak
+                    .upgrade()
+                    .is_none_or(|reg_runtime| Arc::ptr_eq(&reg_runtime, arc))
+            {
+                registry.remove(&port);
+            }
+        }
         *self.port.lock().unwrap_or_else(|e| e.into_inner()) = 0;
         // If another caller still holds a clone of the runtime, let that task
         // finish; the runtime will be dropped once the last clone is released.
         drop(runtime_guard);
-        if let Ok(runtime) = Arc::try_unwrap(arc) {
+        if let Some(arc) = arc
+            && let Ok(runtime) = Arc::try_unwrap(arc)
+        {
             runtime.shutdown_background();
         }
-        Ok(())
+        if owned || port != 0 {
+            Ok(())
+        } else {
+            Err(TakusuError::NotRunning)
+        }
     }
 
     /// Get the current server status.
+    ///
+    /// The registry is the source of truth for whether the port is live, so an
+    /// instance that reused an existing server reports `Running` just like the
+    /// owner does, and a server whose HTTP task died reports `Stopped` even if
+    /// this instance still holds a runtime.
     pub fn status(&self) -> ServerStatus {
-        let runtime_guard = self.runtime.lock().unwrap_or_else(|e| e.into_inner());
-        let port_guard = self.port.lock().unwrap_or_else(|e| e.into_inner());
-        if runtime_guard.is_some() && *port_guard > 0 {
-            ServerStatus::Running { port: *port_guard }
+        let port = *self.port.lock().unwrap_or_else(|e| e.into_inner());
+        if port == 0 {
+            return ServerStatus::Stopped;
+        }
+        let registry = REGISTRY.lock().unwrap_or_else(|e| e.into_inner());
+        if registry.get(&port).is_some_and(|w| w.strong_count() > 0) {
+            ServerStatus::Running { port }
         } else {
             ServerStatus::Stopped
         }
@@ -266,4 +355,95 @@ fn clear_logs() {
 #[uniffi::export]
 fn push_log(line: String) {
     log_buffer::push_log(line);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn free_port() -> u16 {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+        port
+    }
+
+    fn start(server: &TakusuServer, port: u16) -> Result<(), TakusuError> {
+        server.start_with_agent_config(
+            port,
+            "https://workers.example.test".to_string(),
+            "root-token".to_string(),
+            String::new(),
+        )
+    }
+
+    #[test]
+    fn start_is_idempotent_per_port_and_owner_only_stops() {
+        let port = free_port();
+        let owner = TakusuServer::new();
+        let reuser = TakusuServer::new();
+
+        start(&owner, port).expect("first bind should succeed");
+        assert!(matches!(owner.status(), ServerStatus::Running { port: p } if p == port));
+
+        // A second instance starting on the same port must reuse the existing
+        // server instead of failing with "Address already in use".
+        start(&reuser, port).expect("second start on the same port should reuse");
+
+        // Both the owner and the reuser report Running, so the JS/Kotlin layer
+        // that checks status() after start() sees a live server (#reuser-status).
+        assert!(matches!(owner.status(), ServerStatus::Running { port: p } if p == port));
+        assert!(matches!(reuser.status(), ServerStatus::Running { port: p } if p == port));
+
+        // The reuser does not own the runtime, but its stop() returns Ok so the
+        // Kotlin module can clear its reference, and it must not tear down the
+        // owner's server.
+        assert!(reuser.stop().is_ok());
+        assert!(matches!(owner.status(), ServerStatus::Running { port: p } if p == port));
+
+        owner.stop().expect("owner stop should succeed");
+        assert!(matches!(owner.status(), ServerStatus::Stopped));
+    }
+
+    #[test]
+    fn concurrent_start_never_double_binds() {
+        let port = free_port();
+        let owner = TakusuServer::new();
+        let reuser = TakusuServer::new();
+
+        // Race both instances through the check → bind → register path at once.
+        std::thread::scope(|s| {
+            s.spawn(|| start(&owner, port));
+            s.spawn(|| start(&reuser, port));
+        });
+
+        // Exactly one instance owns the runtime; the other reused it. Neither
+        // failed with "Address already in use", and both report running.
+        let owner_running = matches!(owner.status(), ServerStatus::Running { port: p } if p == port);
+        let reuser_running = matches!(reuser.status(), ServerStatus::Running { port: p } if p == port);
+        assert!(
+            owner_running && reuser_running,
+            "both instances should report running, got owner={owner_running} reuser={reuser_running}"
+        );
+
+        // Whichever instance won the bind is the owner; the other is a reuser
+        // whose stop() is a no-op. Stopping both tears the shared server down
+        // exactly once and leaves both instances reported stopped.
+        owner.stop().ok();
+        reuser.stop().ok();
+        assert!(matches!(owner.status(), ServerStatus::Stopped));
+        assert!(matches!(reuser.status(), ServerStatus::Stopped));
+    }
+
+    #[test]
+    fn registry_is_clean_after_stop() {
+        let port = free_port();
+        {
+            let server = TakusuServer::new();
+            start(&server, port).expect("bind should succeed");
+            server.stop().expect("stop should succeed");
+        }
+        let registry = REGISTRY.lock().unwrap_or_else(|e| e.into_inner());
+        assert!(!registry.contains_key(&port));
+    }
 }
