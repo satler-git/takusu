@@ -329,12 +329,10 @@ impl Validate for crate::CreateMemory {
     fn validate(&self) -> Result<(), StorageError> {
         if !matches!(
             self.kind,
-            takusu_types::MemoryKind::ProperNoun
-                | takusu_types::MemoryKind::Fact
-                | takusu_types::MemoryKind::TaskNote
+            takusu_types::MemoryKind::ProperNoun | takusu_types::MemoryKind::Fact
         ) {
             return Err(StorageError::BadRequest(
-                "kind must be 'proper_noun', 'fact', or 'task_note'".into(),
+                "kind must be 'proper_noun' or 'fact'".into(),
             ));
         }
         if takusu_search::memory::normalize_key(&self.key).is_err() {
@@ -353,17 +351,22 @@ impl Validate for crate::CreateMemory {
         if self.subject_id.as_ref().is_some_and(|s| s.len() > 64) {
             return Err(StorageError::BadRequest("subject_id too long".into()));
         }
-        if self.kind == takusu_types::MemoryKind::TaskNote {
-            if self.subject_type != Some(takusu_types::SubjectType::Task) {
-                return Err(StorageError::BadRequest(
-                    "task_note requires subject_type='task'".into(),
-                ));
-            }
-            if self.subject_id.as_ref().is_none_or(|s| s.is_empty()) {
-                return Err(StorageError::BadRequest(
-                    "task_note requires subject_id".into(),
-                ));
-            }
+        Ok(())
+    }
+}
+
+impl Validate for crate::CreateComment {
+    fn validate(&self) -> Result<(), StorageError> {
+        const MAX_COMMENT_CHARS: usize = 4096;
+        if self.content.trim().is_empty() {
+            return Err(StorageError::BadRequest(
+                "comment content must not be empty".into(),
+            ));
+        }
+        if self.content.chars().count() > MAX_COMMENT_CHARS {
+            return Err(StorageError::BadRequest(format!(
+                "comment content must be at most {MAX_COMMENT_CHARS} characters"
+            )));
         }
         Ok(())
     }

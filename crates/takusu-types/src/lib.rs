@@ -19,8 +19,8 @@ pub use date::{
 };
 pub use enum_label::enum_serde::option as enum_option_serde;
 pub use enum_label::{
-    EnumLabel, MemoryKind, MemorySource, ScheduleMode, SimilarityMetric, Solver, SubjectType,
-    TaskStatus, TaskStatusFilter, TokenScope, UnknownLabel, WindowMode, enum_serde,
+    CommentAuthor, EnumLabel, MemoryKind, MemorySource, ScheduleMode, SimilarityMetric, Solver,
+    SubjectType, TaskStatus, TaskStatusFilter, TokenScope, UnknownLabel, WindowMode, enum_serde,
 };
 pub use id_ref::{HabitRef, IdRefError, TaskRef};
 pub use json_string::{DependencyList, JsonString};

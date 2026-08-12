@@ -732,6 +732,37 @@ pub struct UpdateSkill {
     pub body: Option<String>,
 }
 
+/// A single entry in a task's comment timeline (WI-1).
+///
+/// Comments are append-only: there is no edit operation, and `author` is
+/// server-assigned when the row is created. `seq` is a per-task monotonic
+/// sequence assigned by storage, so ordering is deterministic even when
+/// multiple rows share a `created_at` timestamp.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+pub struct CommentRow {
+    pub id: String,
+    pub task_id: String,
+    #[serde(with = "takusu_types::enum_serde")]
+    #[cfg_attr(feature = "sqlx", sqlx(try_from = "String"))]
+    #[schemars(with = "takusu_types::CommentAuthor")]
+    pub author: takusu_types::CommentAuthor,
+    pub content: String,
+    pub seq: i64,
+    pub created_at: Timestamp,
+}
+
+/// Request body for creating a task comment (WI-1).
+///
+/// Contains only `content`. `author` is deliberately absent: it is assigned by
+/// the server based on which endpoint is used (public `/tasks/:id/comments` →
+/// `user`, `/tasks/:id/comments/agent` → `agent`), so ordinary clients cannot
+/// impersonate the agent or system (invariant 2).
+#[derive(Debug, Default, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct CreateComment {
+    pub content: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
 pub struct MemoryRow {

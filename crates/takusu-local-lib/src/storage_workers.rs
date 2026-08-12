@@ -8,7 +8,7 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::json;
 use takusu_contracts::{
-    ApplyHabitEstimateRequest, AttachWorkSession, ConvertWorkSession, CreateHabit,
+    ApplyHabitEstimateRequest, AttachWorkSession, CommentRow, ConvertWorkSession, CreateHabit,
     CreateHabitScheduledSpan, CreateMemory, CreateSkill, CreateTask, GoogleCalEventRow,
     GoogleCalSettingsRow, HabitRow, HabitScheduledSpanRow, HabitStepEstimateInput,
     HabitStepInput, HabitStepRow, MemoryQuery, MemoryRow, RecordWorkSessionProgress,
@@ -18,6 +18,7 @@ use takusu_contracts::{
     UpdateSettings, UpdateSkill, UpdateTask, WorkSessionProgressResult, WorkSessionRow,
     storage::StorageResult,
 };
+use takusu_types::CommentAuthor;
 use takusu_types::EnumLabel;
 use takusu_types::{TokenClaims, url_encode};
 use tokio::sync::RwLock;
@@ -58,6 +59,15 @@ mod paths {
     // segment so callers never need to remember it.
     pub fn task_path(id: &str) -> String {
         format!("/api/tasks/{}", url_encode(id))
+    }
+    pub fn task_comments_path(id: &str) -> String {
+        format!("/api/tasks/{}/comments", url_encode(id))
+    }
+    pub fn task_comments_agent_path(id: &str) -> String {
+        format!("/api/tasks/{}/comments/agent", url_encode(id))
+    }
+    pub fn comment_path(id: &str) -> String {
+        format!("/api/comments/{}", url_encode(id))
     }
     pub fn task_progress_path(id: &str) -> String {
         format!("/api/tasks/{}/progress", url_encode(id))
@@ -461,6 +471,60 @@ impl Storage for WorkersStorage {
         self.send_empty(
             reqwest::Method::DELETE,
             &paths::task_path(&full),
+            RequestBody::None,
+            None,
+        )
+        .await
+    }
+
+    // ── Task comments (WI-1) ────────────────────────────────
+
+    async fn list_comments(&self, task_id: &str) -> StorageResult<Vec<CommentRow>> {
+        let full = self.resolve_task_id(task_id).await?;
+        self.send_json(
+            reqwest::Method::GET,
+            &paths::task_comments_path(&full),
+            RequestBody::None,
+            None,
+        )
+        .await
+    }
+
+    async fn create_comment(
+        &self,
+        task_id: &str,
+        author: CommentAuthor,
+        content: &str,
+        operation_id: Option<&str>,
+    ) -> StorageResult<CommentRow> {
+        let full = self.resolve_task_id(task_id).await?;
+        // The worker assigns `author` server-side based on the endpoint: the
+        // public POST always records 'user'; `/comments/agent` records 'agent'.
+        // `System` rows are created only server-side and cannot be produced via
+        // any request (invariant 2), so reject it here.
+        let path = match author {
+            CommentAuthor::User => paths::task_comments_path(&full),
+            CommentAuthor::Agent => paths::task_comments_agent_path(&full),
+            CommentAuthor::System => {
+                return Err(StorageError::Internal(
+                    "system comments cannot be created via the API".into(),
+                ))
+            }
+        };
+        let body = json!({ "content": content });
+        self.send_json(
+            reqwest::Method::POST,
+            &path,
+            RequestBody::json(&body)?,
+            operation_id,
+        )
+        .await
+    }
+
+    async fn delete_comment(&self, id: &str) -> StorageResult<()> {
+        self.send_empty(
+            reqwest::Method::DELETE,
+            &paths::comment_path(id),
             RequestBody::None,
             None,
         )

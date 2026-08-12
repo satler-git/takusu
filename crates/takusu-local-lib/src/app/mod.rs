@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 use takusu_contracts::{
-    CreateMemory, CreateSkill, MemoryQuery, MemoryRow, SettingsRow, SimilarTaskQuery,
-    SimilarTaskRow, SkillRow, Storage, TokenCreateResponse, TokenRow, UpdateMemory, UpdateSettings,
-    UpdateSkill,
+    CommentRow, CreateComment, CreateMemory, CreateSkill, MemoryQuery, MemoryRow, SettingsRow,
+    SimilarTaskQuery, SimilarTaskRow, SkillRow, Storage, TokenCreateResponse, TokenRow,
+    UpdateMemory, UpdateSettings, UpdateSkill,
 };
-use takusu_types::MemoryKind;
+use takusu_types::CommentAuthor;
 
 use crate::error::storage_to_app;
 use crate::error::{AppError, BadRequestKind, ConflictKind, SkillOp};
@@ -203,18 +203,8 @@ impl TakusuApp {
         operation_id: Option<&str>,
     ) -> Result<MemoryRow, AppError> {
         body.validate()?;
-        let mut body = body.clone();
-        if body.kind == MemoryKind::TaskNote {
-            let task_id = body.subject_id.as_deref().unwrap_or("");
-            let task = self
-                .storage
-                .get_task(task_id)
-                .await
-                .map_err(storage_to_app)?;
-            body.subject_id = Some(task.id);
-        }
         self.storage
-            .create_memory(&body, operation_id)
+            .create_memory(body, operation_id)
             .await
             .map_err(storage_to_app)
     }
@@ -286,6 +276,36 @@ impl TakusuApp {
         }
         self.storage
             .find_similar_tasks(query)
+            .await
+            .map_err(storage_to_app)
+    }
+
+    // ── Task comments (WI-1) ──────────────────────────────
+
+    pub async fn list_comments(&self, task_id: &str) -> Result<Vec<CommentRow>, AppError> {
+        self.storage
+            .list_comments(task_id)
+            .await
+            .map_err(storage_to_app)
+    }
+
+    pub async fn create_comment(
+        &self,
+        task_id: &str,
+        author: CommentAuthor,
+        body: &CreateComment,
+        operation_id: Option<&str>,
+    ) -> Result<CommentRow, AppError> {
+        body.validate()?;
+        self.storage
+            .create_comment(task_id, author, &body.content, operation_id)
+            .await
+            .map_err(storage_to_app)
+    }
+
+    pub async fn delete_comment(&self, id: &str) -> Result<(), AppError> {
+        self.storage
+            .delete_comment(id)
             .await
             .map_err(storage_to_app)
     }

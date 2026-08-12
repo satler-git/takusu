@@ -3,8 +3,8 @@ use jiff::tz::TimeZone;
 use sqlx::SqlitePool;
 use sqlx::sqlite::SqlitePoolOptions;
 use takusu_contracts::{
-    AttachWorkSession, ConvertWorkSession, CreateHabit, CreateHabitScheduledSpan, CreateMemory,
-    CreateSkill, CreateTask, GoogleCalEventRow, GoogleCalSettingsRow, HabitRow,
+    AttachWorkSession, CommentRow, ConvertWorkSession, CreateHabit, CreateHabitScheduledSpan,
+    CreateMemory, CreateSkill, CreateTask, GoogleCalEventRow, GoogleCalSettingsRow, HabitRow,
     HabitScheduledSpanRow, HabitStepEstimateInput, HabitStepInput, HabitStepRow, MemoryQuery,
     MemoryRow, RecordWorkSessionProgress, SaveScheduleRequest, ScheduleEntry, ScheduleRow,
     SettingsRow, SimilarTaskQuery, SimilarTaskRow, SkillRow, SplitResult, SplitTask, StartWorkSession,
@@ -15,7 +15,9 @@ use takusu_contracts::{
 use takusu_search::search::{EvalContext, filter_tasks};
 use takusu_types::Minutes;
 use takusu_types::{DEFAULT_AUD, SCOPE_READ_WRITE};
-use takusu_types::{EnumLabel, Quantity, TaskStatus, TaskStatusFilter, Timestamp, WindowMode};
+use takusu_types::{
+    CommentAuthor, EnumLabel, Quantity, TaskStatus, TaskStatusFilter, Timestamp, WindowMode,
+};
 
 use crate::config::LocalConfig;
 use takusu_contracts::validate::{validate_quantity, validate_scheduled_span_dates};
@@ -57,6 +59,8 @@ const MIGRATION_024: &str = include_str!("../migrations/024_zero_quantity_to_nul
 const MIGRATION_025: &str = include_str!("../migrations/025_task_normalized_title.sql");
 const MIGRATION_026: &str = include_str!("../migrations/026_work_sessions.sql");
 const MIGRATION_027: &str = include_str!("../migrations/027_horizon.sql");
+const MIGRATION_028: &str = include_str!("../migrations/028_task_comments.sql");
+const MIGRATION_029: &str = include_str!("../migrations/029_task_note_comments.sql");
 
 mod work_session;
 
@@ -449,6 +453,29 @@ impl SqliteStorage {
             sqlx::raw_sql(MIGRATION_027).execute(&pool).await?;
         }
 
+        // Migration 028 creates the task_comments and comment_operations
+        // tables (idempotent).
+        sqlx::raw_sql(MIGRATION_028).execute(&pool).await?;
+
+        // Migration 029 (WI-2): migrate task_note memories to comments and
+        // drop 'task_note' from the memories kind CHECK constraint. The guard
+        // is the CHECK constraint itself: once the table is rebuilt it no
+        // longer mentions task_note, so this runs exactly once per database.
+        // The whole migration runs inside a transaction so a failure mid-way
+        // cannot leave a partial comment backfill or a half-rebuilt table.
+        let memories_sql: Option<String> =
+            sqlx::query_scalar("SELECT sql FROM sqlite_master WHERE type='table' AND name='memories'")
+                .fetch_optional(&pool)
+                .await?;
+        if memories_sql
+            .as_deref()
+            .is_some_and(|sql| sql.contains("task_note"))
+        {
+            let mut tx = pool.begin().await?;
+            sqlx::raw_sql(MIGRATION_029).execute(&mut *tx).await?;
+            tx.commit().await?;
+        }
+
         Ok(Self { pool, jwt_secret })
     }
 
@@ -803,6 +830,11 @@ impl Storage for SqliteStorage {
             .execute(&mut *tx)
             .await
             .map_err(map_err)?;
+        sqlx::query("DELETE FROM task_comments WHERE task_id = ?")
+            .bind(&full)
+            .execute(&mut *tx)
+            .await
+            .map_err(map_err)?;
         work_session::cleanup_work_sessions(&mut *tx, &full).await?;
         sqlx::query("UPDATE work_sessions SET task_id = NULL WHERE task_id = ?")
             .bind(&full)
@@ -820,6 +852,83 @@ impl Storage for SqliteStorage {
             .await
             .map_err(map_err)?;
         tx.commit().await.map_err(map_err)?;
+        Ok(())
+    }
+
+    // ── Task comments (WI-1) ────────────────────────────────
+
+    async fn list_comments(&self, task_id: &str) -> StorageResult<Vec<CommentRow>> {
+        let full = resolve_task_id(&self.pool, task_id).await?;
+        sqlx::query_as::<_, CommentRow>(
+            "SELECT * FROM task_comments WHERE task_id = ? ORDER BY seq ASC",
+        )
+        .bind(&full)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(map_err)
+    }
+
+    async fn create_comment(
+        &self,
+        task_id: &str,
+        author: CommentAuthor,
+        content: &str,
+        operation_id: Option<&str>,
+    ) -> StorageResult<CommentRow> {
+        let mut tx = self.pool.begin().await.map_err(map_err)?;
+        let full = resolve_task_id(&mut *tx, task_id).await?;
+
+        let payload = format!("create:{full}:{}:{content}", author.as_str());
+        let hash = comment_request_hash(&payload, operation_id);
+        if let Some(op_id) = operation_id
+            && let Some(stored) = Self::check_comment_idempotency(&mut *tx, op_id, &hash).await?
+        {
+            return stored;
+        }
+
+        let id = uuid::Uuid::now_v7().to_string();
+        let seq: i64 =
+            sqlx::query_scalar("SELECT COALESCE(MAX(seq), 0) + 1 FROM task_comments WHERE task_id = ?")
+                .bind(&full)
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(map_err)?;
+
+        sqlx::query(
+            "INSERT INTO task_comments (id, task_id, author, content, seq, created_at) VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))",
+        )
+        .bind(&id)
+        .bind(&full)
+        .bind(author.as_str())
+        .bind(content)
+        .bind(seq)
+        .execute(&mut *tx)
+        .await
+        .map_err(map_err)?;
+
+        let row: CommentRow = sqlx::query_as("SELECT * FROM task_comments WHERE id = ?")
+            .bind(&id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(map_err)?;
+        if let Some(op_id) = operation_id {
+            Self::record_comment_operation(&mut *tx, op_id, &hash, &row).await?;
+        }
+        tx.commit().await.map_err(map_err)?;
+        Ok(row)
+    }
+
+    async fn delete_comment(&self, id: &str) -> StorageResult<()> {
+        let result = sqlx::query("DELETE FROM task_comments WHERE id = ?")
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .map_err(map_err)?;
+        if result.rows_affected() == 0 {
+            return Err(StorageError::NotFound(format!(
+                "comment {id} not found"
+            )));
+        }
         Ok(())
     }
 
@@ -2332,6 +2441,66 @@ impl SqliteStorage {
         .map_err(map_err)?;
         Ok(())
     }
+
+    /// Idempotency replay for comment creation (WI-1). Mirrors
+    /// `check_idempotency` but reads the `comment_operations` receipt table.
+    async fn check_comment_idempotency<'c, E>(
+        executor: E,
+        operation_id: &str,
+        request_hash: &str,
+    ) -> StorageResult<Option<StorageResult<CommentRow>>>
+    where
+        E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
+    {
+        #[derive(sqlx::FromRow)]
+        struct OpRow {
+            request_hash: String,
+            response_json: String,
+        }
+        let row: Option<OpRow> = sqlx::query_as(
+            "SELECT request_hash, response_json FROM comment_operations WHERE operation_id = ?",
+        )
+        .bind(operation_id)
+        .fetch_optional(executor)
+        .await
+        .map_err(map_err)?;
+
+        if let Some(row) = row {
+            if row.request_hash != request_hash {
+                return Err(StorageError::Conflict(
+                    "idempotency key reused with different request".into(),
+                ));
+            }
+            let value: CommentRow = serde_json::from_str(&row.response_json).map_err(|e| {
+                StorageError::Internal(format!("corrupt idempotency response: {e}"))
+            })?;
+            return Ok(Some(Ok(value)));
+        }
+        Ok(None)
+    }
+
+    async fn record_comment_operation<'c, E>(
+        executor: E,
+        operation_id: &str,
+        request_hash: &str,
+        value: &CommentRow,
+    ) -> StorageResult<()>
+    where
+        E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
+    {
+        let response_json = serde_json::to_string(value)
+            .map_err(|e| StorageError::Internal(format!("serialize idempotency response: {e}")))?;
+        sqlx::query(
+            "INSERT INTO comment_operations (operation_id, request_hash, response_json, created_at) VALUES (?, ?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))",
+        )
+        .bind(operation_id)
+        .bind(request_hash)
+        .bind(response_json)
+        .execute(executor)
+        .await
+        .map_err(map_err)?;
+        Ok(())
+    }
 }
 
 fn memory_request_hash(payload: &str, operation_id: Option<&str>) -> String {
@@ -2339,6 +2508,10 @@ fn memory_request_hash(payload: &str, operation_id: Option<&str>) -> String {
 }
 
 pub(crate) fn progress_request_hash(payload: &str, operation_id: Option<&str>) -> String {
+    crate::auth::hash_token(&format!("{}:{}", payload, operation_id.unwrap_or("")))
+}
+
+fn comment_request_hash(payload: &str, operation_id: Option<&str>) -> String {
     crate::auth::hash_token(&format!("{}:{}", payload, operation_id.unwrap_or("")))
 }
 
@@ -2789,5 +2962,111 @@ mod tests {
         };
         let plan = validate_task_update(&body, &existing).unwrap();
         assert!(plan.original_quantity_total.is_none());
+    }
+
+    /// WI-2: `task_note` memories migrate to task comments with the correct
+    /// source→author mapping, dead-subject rows are dropped, and the memories
+    /// CHECK constraint no longer accepts `task_note`.
+    #[tokio::test]
+    async fn migrate_task_note_memories_to_comments() {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        // Build the pre-029 schema: base tables + memories (with task_note) +
+        // task_comments.
+        sqlx::raw_sql(MIGRATION_001).execute(&pool).await.unwrap();
+        sqlx::raw_sql(MIGRATION_016).execute(&pool).await.unwrap();
+        sqlx::raw_sql(MIGRATION_028).execute(&pool).await.unwrap();
+
+        // A live task that two of the notes reference.
+        let task_id = uuid::Uuid::now_v7().to_string();
+        sqlx::query(
+            "INSERT INTO tasks (id, title, end_at, avg_minutes, sigma_minutes, status, created_at, updated_at) VALUES (?, 'mig task', '2030-01-01T00:00:00Z', 30, 0, 'pending', '2025-01-01T00:00:00Z', '2025-01-01T00:00:00Z')",
+        )
+        .bind(&task_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // A pre-existing comment claims seq = 1; migrated task_note rows must
+        // be offset past it so they do not collide on (task_id, seq).
+        sqlx::query(
+            "INSERT INTO task_comments (id, task_id, author, content, seq, created_at) VALUES ('pre-existing', ?, 'user', 'before migration', 1, '2024-01-01T00:00:00Z')",
+        )
+        .bind(&task_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Insert task_note memories: user_confirmed and agent_inferred on the
+        // live task, imported on a dead (non-existent) task.
+        async fn insert_note(
+            pool: &SqlitePool,
+            key: &str,
+            source: &str,
+            subject: &str,
+        ) {
+            let id = uuid::Uuid::now_v7().to_string();
+            sqlx::query(
+                "INSERT INTO memories (id, kind, key, normalized_key, content, normalized_content, subject_type, subject_id, source, revision, created_at, updated_at) VALUES (?, 'task_note', ?, ?, ?, ?, 'task', ?, ?, 1, ?, ?)",
+            )
+            .bind(&id)
+            .bind(key)
+            .bind(key)
+            .bind(key)
+            .bind(key)
+            .bind(subject)
+            .bind(source)
+            .bind("2025-01-01T00:00:00Z")
+            .bind("2025-01-01T00:00:00Z")
+            .execute(pool)
+            .await
+            .unwrap();
+        }
+        insert_note(&pool, "live-user", "user_confirmed", &task_id).await;
+        insert_note(&pool, "live-agent", "agent_inferred", &task_id).await;
+        insert_note(&pool, "dead-imported", "imported", "no-such-task").await;
+
+        // Run the migration.
+        sqlx::raw_sql(MIGRATION_029).execute(&pool).await.unwrap();
+
+        // All three task_note rows are gone.
+        let remaining: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM memories")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(remaining, 0);
+
+        // Only the live tasks produced comments. The pre-existing comment
+        // keeps seq 1; migrated rows are offset to seq 2 and 3, in seq order,
+        // with the correct author mapping and preserved created_at.
+        let comments: Vec<CommentRow> = sqlx::query_as(
+            "SELECT * FROM task_comments WHERE task_id = ? ORDER BY seq ASC",
+        )
+        .bind(&task_id)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert_eq!(comments.len(), 3);
+        assert_eq!(comments[0].seq, 1);
+        assert_eq!(comments[0].author, CommentAuthor::User);
+        assert_eq!(comments[0].content, "before migration");
+        assert_eq!(comments[1].seq, 2);
+        assert_eq!(comments[1].author, CommentAuthor::User);
+        assert_eq!(comments[1].content, "live-user");
+        assert_eq!(comments[1].created_at.to_string(), "2025-01-01T00:00:00Z");
+        assert_eq!(comments[2].seq, 3);
+        assert_eq!(comments[2].author, CommentAuthor::Agent);
+        assert_eq!(comments[2].content, "live-agent");
+
+        // The rebuilt CHECK constraint rejects task_note.
+        let rejected = sqlx::query(
+            "INSERT INTO memories (id, kind, key, normalized_key, content, normalized_content, subject_type, subject_id, source, revision, created_at, updated_at) VALUES ('x', 'task_note', 'k','k','c','c','task', 't', 'user_confirmed', 1, '2025-01-01T00:00:00Z', '2025-01-01T00:00:00Z')",
+        )
+        .execute(&pool)
+        .await;
+        assert!(rejected.is_err(), "task_note should be rejected after migration");
     }
 }

@@ -24,7 +24,7 @@ use takusu_contracts::{
 use takusu_local_lib::config::LocalConfig;
 use takusu_local_lib::storage_sqlite::SqliteStorage;
 use takusu_local_lib::storage_workers::WorkersStorage;
-use takusu_types::{EnumLabel, MemoryKind, Quantity, TaskStatus, TaskStatusFilter};
+use takusu_types::{CommentAuthor, EnumLabel, MemoryKind, Quantity, TaskStatus, TaskStatusFilter};
 
 use common::{JWT_SECRET, WRANGLER_PORT, root_token, spawn_wrangler};
 
@@ -622,6 +622,189 @@ async fn memory_crud(#[case] backend: &str) {
         .expect("delete_memory");
     let after = storage.get_memory(&id).await;
     assert!(matches!(after, Err(StorageError::NotFound(_))));
+}
+
+#[rstest]
+#[case::sqlite("sqlite")]
+#[case::workers("workers")]
+#[tokio::test]
+#[ignore]
+async fn comment_crud(#[case] backend: &str) {
+    let storage = match backend {
+        "sqlite" => setup_sqlite().await,
+        "workers" => setup_workers().await,
+        _ => unreachable!(),
+    };
+    cleanup(&*storage).await;
+
+    let task = storage
+        .create_task(&sample_task("comment target"))
+        .await
+        .expect("create task");
+
+    // Append comments with different authors; seq must be assigned in order.
+    let c1 = storage
+        .create_comment(&task.id, CommentAuthor::User, "first", None)
+        .await
+        .expect("create user comment");
+    let c2 = storage
+        .create_comment(&task.id, CommentAuthor::Agent, "second", None)
+        .await
+        .expect("create agent comment");
+    let c3 = storage
+        .create_comment(&task.id, CommentAuthor::User, "third", None)
+        .await
+        .expect("create user comment");
+    assert_eq!(c1.seq, 1);
+    assert_eq!(c2.seq, 2);
+    assert_eq!(c3.seq, 3);
+
+    // Author is stored as passed (server-assigned at the endpoint boundary).
+    assert_eq!(c1.author, CommentAuthor::User);
+    assert_eq!(c2.author, CommentAuthor::Agent);
+    assert_eq!(c3.author, CommentAuthor::User);
+
+    // List returns ascending seq order.
+    let all = storage
+        .list_comments(&task.id)
+        .await
+        .expect("list_comments");
+    let seqs: Vec<i64> = all.iter().map(|c| c.seq).collect();
+    assert_eq!(seqs, vec![1, 2, 3]);
+    let contents: Vec<&str> = all.iter().map(|c| c.content.as_str()).collect();
+    assert_eq!(contents, vec!["first", "second", "third"]);
+
+    // delete_comment removes one row.
+    storage
+        .delete_comment(&c2.id)
+        .await
+        .expect("delete_comment");
+    let remaining = storage
+        .list_comments(&task.id)
+        .await
+        .expect("list_comments after delete");
+    assert_eq!(remaining.len(), 2);
+
+    // Deleting a missing comment is NotFound.
+    let missing = storage.delete_comment(&c2.id).await;
+    assert!(matches!(missing, Err(StorageError::NotFound(_))));
+
+    // Cascade: deleting the task removes its comments.
+    storage
+        .delete_task(&task.id)
+        .await
+        .expect("delete task");
+    let gone = storage.delete_comment(&c3.id).await;
+    assert!(matches!(gone, Err(StorageError::NotFound(_))));
+}
+
+#[rstest]
+#[case::sqlite("sqlite")]
+#[case::workers("workers")]
+#[tokio::test]
+#[ignore]
+async fn comment_idempotency_replay(#[case] backend: &str) {
+    let storage = match backend {
+        "sqlite" => setup_sqlite().await,
+        "workers" => setup_workers().await,
+        _ => unreachable!(),
+    };
+    cleanup(&*storage).await;
+
+    let task = storage
+        .create_task(&sample_task("idempotent comment"))
+        .await
+        .expect("create task");
+    let op = "op-comment-1".to_string();
+
+    let first = storage
+        .create_comment(&task.id, CommentAuthor::User, "hello", Some(&op))
+        .await
+        .expect("first create_comment");
+    let replay = storage
+        .create_comment(&task.id, CommentAuthor::User, "hello", Some(&op))
+        .await
+        .expect("replay create_comment");
+    assert_eq!(replay.id, first.id);
+    assert_eq!(replay.seq, first.seq);
+
+    // Only one row was created despite two calls.
+    let all = storage
+        .list_comments(&task.id)
+        .await
+        .expect("list_comments");
+    assert_eq!(all.len(), 1);
+}
+
+#[rstest]
+#[case::sqlite("sqlite")]
+#[case::workers("workers")]
+#[tokio::test]
+#[ignore]
+async fn comment_unknown_task_not_found(#[case] backend: &str) {
+    let storage = match backend {
+        "sqlite" => setup_sqlite().await,
+        "workers" => setup_workers().await,
+        _ => unreachable!(),
+    };
+    cleanup(&*storage).await;
+
+    let err = storage
+        .create_comment(
+            "does-not-exist",
+            CommentAuthor::User,
+            "no task",
+            None,
+        )
+        .await;
+    assert!(matches!(err, Err(StorageError::NotFound(_))));
+}
+
+/// Fire many same-key create_comment calls concurrently and assert exactly one
+/// comment is persisted. This exercises the D1 batch + replay path (WI-1 review
+/// issue 1): without atomicity, a concurrent loser would leave a stray comment.
+/// Requires the worker backend, so it is `#[ignore]`d like the other suite
+/// tests.
+#[tokio::test]
+#[ignore]
+async fn comment_concurrent_same_key_worker_idempotent() {
+    let storage = setup_workers().await;
+    cleanup(&*storage).await;
+
+    let task = storage
+        .create_task(&sample_task("concurrent comments"))
+        .await
+        .expect("create task");
+    let op = "op-comment-concurrent".to_string();
+
+    let mut handles = Vec::new();
+    for _ in 0..8 {
+        let storage = storage.clone();
+        let tid = task.id.clone();
+        let op = op.clone();
+        handles.push(tokio::spawn(async move {
+            storage
+                .create_comment(&tid, CommentAuthor::User, "same", Some(&op))
+                .await
+        }));
+    }
+    for h in handles {
+        let r = h.await.expect("task handle");
+        assert!(
+            r.is_ok(),
+            "concurrent same-key create_comment must not error: {r:?}"
+        );
+    }
+
+    let all = storage
+        .list_comments(&task.id)
+        .await
+        .expect("list_comments");
+    assert_eq!(
+        all.len(),
+        1,
+        "same-key concurrent creates must produce exactly one comment"
+    );
 }
 
 #[rstest]

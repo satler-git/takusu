@@ -489,7 +489,19 @@ enum_label! {
     pub enum MemoryKind {
         #[default] ProperNoun = "proper_noun",
         Fact = "fact",
-        TaskNote = "task_note",
+    }
+}
+
+enum_label! {
+    /// Author of a task comment (`task_comments` table, WI-1).
+    ///
+    /// `User` is assigned by the public comment endpoint, `Agent` by the
+    /// agent-only endpoint, and `System` is created only server-side
+    /// (migrations, hooks) — never accepted from any request.
+    pub enum CommentAuthor {
+        #[default] User = "user",
+        Agent = "agent",
+        System = "system",
     }
 }
 

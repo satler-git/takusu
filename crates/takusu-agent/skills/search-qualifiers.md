@@ -31,7 +31,7 @@ Dates accept `YYYY-MM-DD`, `today`, `tomorrow`, `yesterday`, `Nd` (relative), an
 ## Memory search syntax
 - Multiple keywords are ANDed.
 - `*` is a wildcard matching any sequence of characters.
-- `kind` parameter accepts comma-separated OR values: `proper_noun,fact,task_note`.
+- `kind` parameter accepts comma-separated OR values: `proper_noun,fact`.
 
 ## Examples
 - `status:pending 買い物`

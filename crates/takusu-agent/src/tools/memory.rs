@@ -132,7 +132,7 @@ struct MemorySearchArgs {
     #[serde(deserialize_with = "deserialize_trimmed_required")]
     #[schemars(with = "String")]
     q: String,
-    /// Filter by kind. Values: proper_noun, fact, task_note.
+    /// Filter by kind. Values: proper_noun, fact.
     #[serde(default, deserialize_with = "deserialize_trimmed_optional")]
     #[schemars(with = "Option<String>")]
     kind: Option<String>,
@@ -238,7 +238,7 @@ struct MemorySave;
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct MemorySaveArgs {
-    /// proper_noun, fact, or task_note.
+    /// proper_noun or fact.
     #[serde(deserialize_with = "deserialize_trimmed_required")]
     #[schemars(with = "String")]
     kind: String,
@@ -250,11 +250,11 @@ struct MemorySaveArgs {
     #[serde(deserialize_with = "deserialize_trimmed_required")]
     #[schemars(with = "String")]
     content: String,
-    /// Optional. For task_note set to 'task'.
+    /// Optional subject type.
     #[serde(default, deserialize_with = "deserialize_trimmed_optional")]
     #[schemars(with = "Option<String>")]
     subject_type: Option<String>,
-    /// Optional task ID when subject_type is 'task'.
+    /// Optional subject id.
     #[serde(default, deserialize_with = "deserialize_trimmed_optional")]
     #[schemars(with = "Option<String>")]
     subject_id: Option<String>,
@@ -281,7 +281,7 @@ impl TypedTool for MemorySave {
         ToolName::MemorySave.into()
     }
     fn description(&self) -> &'static str {
-        "Propose saving a memory (proper noun, fact, or task note). Generates an approval request; does not write immediately."
+        "Propose saving a memory (proper noun or fact). Generates an approval request; does not write immediately."
     }
     fn exposure(&self) -> ToolExposure {
         ToolExposure::Deferred
@@ -299,23 +299,10 @@ impl TypedTool for MemorySave {
     }
 
     fn validate_args(&self, args: &Self::Params) -> Result<(), InvalidArgsError> {
-        let kind: MemoryKind = args.kind.parse().map_err(|e: takusu_types::UnknownLabel| {
-            InvalidArgsError::new("kind", e.to_string())
-        })?;
-        if kind == MemoryKind::TaskNote {
-            if args.subject_type.as_deref() != Some("task") {
-                return Err(InvalidArgsError::new(
-                    "subject_type",
-                    "task_note requires subject_type='task'",
-                ));
-            }
-            if args.subject_id.is_none() {
-                return Err(InvalidArgsError::new(
-                    "subject_id",
-                    "task_note requires subject_id",
-                ));
-            }
-        } else if let Some(st) = &args.subject_type {
+        args.kind
+            .parse::<MemoryKind>()
+            .map_err(|e: takusu_types::UnknownLabel| InvalidArgsError::new("kind", e.to_string()))?;
+        if let Some(st) = &args.subject_type {
             st.parse::<SubjectType>()
                 .map_err(|e: takusu_types::UnknownLabel| {
                     InvalidArgsError::new("subject_type", e.to_string())

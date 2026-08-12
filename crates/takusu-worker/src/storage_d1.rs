@@ -32,6 +32,7 @@ pub(super) const SCHEDULED_SPAN_COLS: &str =
 pub(super) const SKILL_COLS: &str =
     "slug, name, description, body, built_in, created_at, updated_at";
 pub(super) const MEMORY_COLS: &str = "id, kind, key, normalized_key, content, normalized_content, subject_type, subject_id, source, revision, created_at, updated_at, last_used_at";
+pub(super) const COMMENT_COLS: &str = "id, task_id, author, content, seq, created_at";
 
 pub(super) const WORK_SESSION_COLS: &str = "id, task_id, title, note, quantity_total, quantity_done, quantity_unit, started_at, ended_at, created_at";
 pub(super) const PROGRESS_EVENT_COLS: &str = "id, work_session_id, task_id, at, quantity_done, delta_quantity, active_minutes, note";
@@ -46,6 +47,10 @@ pub(super) fn select_habits() -> String {
 
 pub(super) fn memory_select() -> String {
     format!("SELECT {MEMORY_COLS} FROM memories")
+}
+
+pub(super) fn comment_select() -> String {
+    format!("SELECT {COMMENT_COLS} FROM task_comments")
 }
 
 pub(super) fn select_skills() -> String {
@@ -635,6 +640,37 @@ pub(super) async fn record_memory_operation(
     .await
     .map_err(d1_err)?;
     Ok(())
+}
+
+// ── Comment idempotency (WI-1) ─────────────────────────────────────────
+
+pub(super) fn comment_request_hash(payload: &str, operation_id: Option<&str>) -> String {
+    crate::util::hash_token(&format!("{}:{}", payload, operation_id.unwrap_or("")))
+}
+
+pub(super) async fn check_comment_idempotency(
+    database: &D1Database,
+    op_id: &str,
+    expected_hash: &str,
+) -> StorageResult<Option<String>> {
+    let stmt = database.prepare(
+        "SELECT request_hash, response_json FROM comment_operations WHERE operation_id = ?1",
+    );
+    #[derive(serde::Deserialize)]
+    struct OpRow {
+        pub(super) request_hash: String,
+        pub(super) response_json: String,
+    }
+    let rows: Vec<OpRow> = d1_all(&stmt.bind(&[JsValue::from_str(op_id)]).map_err(d1_err)?).await?;
+    if let Some(row) = rows.into_iter().next() {
+        if row.request_hash != expected_hash {
+            return Err(StorageError::Conflict(
+                "idempotency key reused with different request".into(),
+            ));
+        }
+        return Ok(Some(row.response_json));
+    }
+    Ok(None)
 }
 
 // ── Token helper ────────────────────────────────────────────────────────
