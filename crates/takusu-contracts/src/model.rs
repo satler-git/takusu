@@ -848,6 +848,39 @@ pub struct MemoryQuery {
     pub limit: Option<i64>,
 }
 
+/// Query for the memory read auto-injection retrieval path (WI-4 / #1003).
+///
+/// Unlike [`MemoryQuery`] (user-facing keyword search), this is a *reverse*
+/// lookup: memories whose `normalized_key` occurs as a substring of `text`
+/// are candidates, ranked server-side by key specificity and recency. Used at
+/// turn start to surface `proper_noun` / `fact` memories without the agent
+/// calling any search tool.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct MemoryInjectionQuery {
+    /// The raw user utterance. Normalized server-side before matching.
+    pub text: String,
+    /// Maximum number of memories to return (default 5, capped at 20).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub limit: Option<u32>,
+}
+
+/// Result of a memory read auto-injection retrieval (WI-4 / #1003).
+#[derive(Debug, Default, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct MemoryInjectionResult {
+    /// Matching `proper_noun` / `fact` memories, ranked for injection.
+    pub memories: Vec<MemoryRow>,
+    /// Per-kind memory counts so the agent knows whether the store is
+    /// non-empty even when no memory matches the utterance.
+    pub counts: MemoryKindCounts,
+}
+
+/// Total memory rows per kind, used for the system-prompt memory hint.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct MemoryKindCounts {
+    pub proper_noun: i64,
+    pub fact: i64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
 pub struct SimilarTaskRow {

@@ -306,6 +306,12 @@ impl Storage for CountingStorage {
     ) -> StorageResult<Vec<takusu_contracts::MemoryRow>> {
         Ok(vec![])
     }
+    async fn injectable_memories(
+        &self,
+        _q: &takusu_contracts::MemoryInjectionQuery,
+    ) -> StorageResult<takusu_contracts::MemoryInjectionResult> {
+        Ok(takusu_contracts::MemoryInjectionResult::default())
+    }
     async fn find_similar_tasks(
         &self,
         _q: &takusu_contracts::SimilarTaskQuery,

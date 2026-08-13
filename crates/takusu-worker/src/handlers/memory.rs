@@ -7,7 +7,9 @@ use crate::handlers::auth::storage;
 use crate::handlers::tokens::{json_created, json_ok, parse_json};
 use crate::memory;
 use crate::models::{CreateMemory, UpdateMemory};
-use takusu_contracts::{MemoryQuery, SimilarTaskQuery, Storage};
+use takusu_contracts::{
+    MemoryInjectionQuery, MemoryQuery, SimilarTaskQuery, Storage,
+};
 use takusu_types::{EnumLabel, MemoryKind, SubjectType};
 
 fn operation_id(req: &Request) -> Option<String> {
@@ -29,6 +31,12 @@ fn validate_create(body: &CreateMemory) -> Result<(), WorkerError> {
     }
     memory::normalize_key(&body.key)
         .map_err(|e| WorkerError::BadRequest(format!("invalid key: {e}")))?;
+    // Bounding the raw key (not just the normalized length) keeps injected
+    // keys small in the system prompt even when they are whitespace-heavy
+    // (WI-4 / #1003).
+    if body.key.chars().count() > takusu_search::memory::MAX_KEY_SCALARS {
+        return Err(WorkerError::BadRequest("key too long".into()));
+    }
     memory::normalize_content(&body.content)
         .map_err(|e| WorkerError::BadRequest(format!("invalid content: {e}")))?;
     if body
@@ -138,6 +146,16 @@ pub async fn search(req: Request, env: Env) -> Result<Response, WorkerError> {
     let store = storage(&env)?;
     let rows = store.search_memories(&query).await?;
     json_ok(&rows)
+}
+
+pub async fn inject(mut req: Request, env: Env) -> Result<Response, WorkerError> {
+    let query: MemoryInjectionQuery = parse_json(&mut req).await?;
+    if query.text.trim().is_empty() {
+        return Err(WorkerError::BadRequest("text is required".into()));
+    }
+    let store = storage(&env)?;
+    let result = store.injectable_memories(&query).await?;
+    json_ok(&result)
 }
 
 pub async fn similar_tasks(req: Request, env: Env) -> Result<Response, WorkerError> {

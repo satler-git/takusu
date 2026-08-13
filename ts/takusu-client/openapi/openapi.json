@@ -8696,6 +8696,148 @@
         }
       }
     },
+    "/memory/inject": {
+      "post": {
+        "requestBody": {
+          "description": "Query for the memory read auto-injection retrieval path (WI-4 / #1003).\n\nUnlike [`MemoryQuery`] (user-facing keyword search), this is a *reverse*\nlookup: memories whose `normalized_key` occurs as a substring of `text`\nare candidates, ranked server-side by key specificity and recency. Used at\nturn start to surface `proper_noun` / `fact` memories without the agent\ncalling any search tool.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemoryInjectionQuery"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Result of a memory read auto-injection retrieval (WI-4 / #1003).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryInjectionResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Expected request with `Content-Type: application/json`",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Failed to deserialize the JSON body into the target type",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/memory/{id}": {
       "get": {
         "responses": {
@@ -11849,9 +11991,63 @@
         "description": "A wrapper that serializes `T` as a JSON string on the wire and in the DB.\n\nCommon instantiations:\n- `JsonString<Vec<String>>` — task / step dependency lists\n- `JsonString<Vec<ScheduleEntry>>` — schedule entry arrays",
         "type": "string"
       },
+      "MemoryInjectionQuery": {
+        "description": "Query for the memory read auto-injection retrieval path (WI-4 / #1003).\n\nUnlike [`MemoryQuery`] (user-facing keyword search), this is a *reverse*\nlookup: memories whose `normalized_key` occurs as a substring of `text`\nare candidates, ranked server-side by key specificity and recency. Used at\nturn start to surface `proper_noun` / `fact` memories without the agent\ncalling any search tool.",
+        "type": "object",
+        "properties": {
+          "limit": {
+            "description": "Maximum number of memories to return (default 5, capped at 20).",
+            "type": ["integer", "null"],
+            "format": "uint32",
+            "minimum": 0
+          },
+          "text": {
+            "description": "The raw user utterance. Normalized server-side before matching.",
+            "type": "string"
+          }
+        },
+        "required": ["text"]
+      },
+      "MemoryInjectionResult": {
+        "description": "Result of a memory read auto-injection retrieval (WI-4 / #1003).",
+        "type": "object",
+        "properties": {
+          "counts": {
+            "description": "Per-kind memory counts so the agent knows whether the store is\nnon-empty even when no memory matches the utterance.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MemoryKindCounts"
+              }
+            ]
+          },
+          "memories": {
+            "description": "Matching `proper_noun` / `fact` memories, ranked for injection.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MemoryRow"
+            }
+          }
+        },
+        "required": ["memories", "counts"]
+      },
       "MemoryKind": {
         "type": "string",
         "enum": ["proper_noun", "fact"]
+      },
+      "MemoryKindCounts": {
+        "description": "Total memory rows per kind, used for the system-prompt memory hint.",
+        "type": "object",
+        "properties": {
+          "fact": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "proper_noun": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "required": ["proper_noun", "fact"]
       },
       "MemoryQuery": {
         "type": "object",
@@ -13761,6 +13957,14 @@
             "default": [],
             "items": {
               "$ref": "#/components/schemas/HistoryMessage"
+            }
+          },
+          "injected_memory_ids": {
+            "description": "Memory ids already injected into the system context, so a resumed\nsession does not re-inject them (WI-4 / #1003).",
+            "type": "array",
+            "default": [],
+            "items": {
+              "type": "string"
             }
           },
           "pending_approval": {

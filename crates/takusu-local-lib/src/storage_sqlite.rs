@@ -5,7 +5,8 @@ use sqlx::sqlite::SqlitePoolOptions;
 use takusu_contracts::{
     AttachWorkSession, CommentRow, ConvertWorkSession, CreateHabit, CreateHabitScheduledSpan,
     CreateMemory, CreateSkill, CreateTask, GoogleCalEventRow, GoogleCalSettingsRow, HabitRow,
-    HabitScheduledSpanRow, HabitStepEstimateInput, HabitStepInput, HabitStepRow, MemoryQuery,
+    HabitScheduledSpanRow, HabitStepEstimateInput, HabitStepInput, HabitStepRow,
+    MemoryInjectionQuery, MemoryInjectionResult, MemoryKindCounts, MemoryQuery,
     MemoryRow, RecordWorkSessionProgress, SaveScheduleRequest, ScheduleEntry, ScheduleRow,
     SettingsRow, SimilarTaskQuery, SimilarTaskRow, SkillRow, SplitResult, SplitTask, StartWorkSession,
     Storage, StorageError, TaskProgress, TaskQuery, TaskRow, TokenCreateResponse, TokenRow,
@@ -1983,6 +1984,61 @@ impl Storage for SqliteStorage {
         Ok(rows)
     }
 
+    async fn injectable_memories(
+        &self,
+        query: &MemoryInjectionQuery,
+    ) -> StorageResult<MemoryInjectionResult> {
+        let normalized = takusu_search::memory::normalize_text(
+            &query.text,
+            Some(takusu_search::memory::MAX_INJECTION_UTTERANCE_SCALARS),
+        )
+        .map_err(|e| StorageError::BadRequest(format!("invalid text: {e}")))?;
+
+        let counts = self.memory_counts().await?;
+
+        if normalized.is_empty() {
+            return Ok(MemoryInjectionResult {
+                memories: Vec::new(),
+                counts,
+            });
+        }
+
+        // The SQL pre-filter already narrows candidates by the reverse lookup
+        // (key occurs as a substring of the utterance) and orders them by the
+        // injection ranking (key length desc, recency desc) so the LIMIT bounds
+        // the number of rows read from the database per turn — the bigram-free
+        // `instr` match on a ubiquitous short key would otherwise load an
+        // unbounded row set (review #1003).
+        let sql_limit = query
+            .limit
+            .unwrap_or(5)
+            .clamp(1, takusu_search::memory::MAX_INJECTION_RESULTS as u32) as i32;
+
+        let mut rows: Vec<MemoryRow> = sqlx::query_as(
+            "SELECT * FROM memories
+            WHERE kind IN ('proper_noun', 'fact')
+              AND instr(?, normalized_key) > 0
+            ORDER BY length(normalized_key) DESC, updated_at DESC, id ASC
+            LIMIT ?",
+        )
+        .bind(&normalized)
+        .bind(sql_limit)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(map_err)?;
+
+        let matched =
+            takusu_search::memory::rank_memories_for_injection(&normalized, &mut rows);
+        let limit = query
+            .limit
+            .map_or(5, |n| n.min(takusu_search::memory::MAX_INJECTION_RESULTS as u32) as usize);
+        rows.truncate(matched.min(limit));
+        Ok(MemoryInjectionResult {
+            memories: rows,
+            counts,
+        })
+    }
+
     async fn find_similar_tasks(
         &self,
         query: &SimilarTaskQuery,
@@ -2314,6 +2370,27 @@ async fn filter_rows_with_query(
 }
 
 impl SqliteStorage {
+    async fn memory_counts(&self) -> StorageResult<MemoryKindCounts> {
+        let rows: Vec<(String, i64)> = sqlx::query_as(
+            "SELECT kind, COUNT(*) AS n FROM memories WHERE kind IN ('proper_noun', 'fact') GROUP BY kind",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(map_err)?;
+        let mut counts = MemoryKindCounts {
+            proper_noun: 0,
+            fact: 0,
+        };
+        for (kind, n) in rows {
+            match kind.as_str() {
+                "proper_noun" => counts.proper_noun = n,
+                "fact" => counts.fact = n,
+                _ => {}
+            }
+        }
+        Ok(counts)
+    }
+
     async fn check_idempotency<'c, E, T: serde::de::DeserializeOwned>(
         executor: E,
         operation_id: &str,

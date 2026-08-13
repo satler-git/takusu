@@ -371,6 +371,15 @@ async fn delete_task(&self, _: &str) -> Result<(), takusu_contracts::StorageErro
         ) -> Result<Vec<takusu_contracts::MemoryRow>, takusu_contracts::StorageError> {
             unimplemented()
         }
+        async fn injectable_memories(
+            &self,
+            _: &takusu_contracts::MemoryInjectionQuery,
+        ) -> Result<
+            takusu_contracts::MemoryInjectionResult,
+            takusu_contracts::StorageError,
+        > {
+            unimplemented()
+        }
         async fn find_similar_tasks(
             &self,
             _: &takusu_contracts::SimilarTaskQuery,

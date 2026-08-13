@@ -1043,6 +1043,27 @@ impl Client {
         Ok(resp.json().await?)
     }
 
+    /// Read auto-injection retrieval (WI-4): matches `proper_noun` / `fact`
+    /// memories whose `normalized_key` occurs as a substring of the utterance,
+    /// plus per-kind counts, all computed server-side.
+    ///
+    /// The utterance is sent in the JSON body (POST), not a URL query, so long
+    /// utterances do not hit proxy URI-length limits and the text is not
+    /// committed to URL access logs.
+    pub async fn injectable_memories(
+        &self,
+        query: &MemoryInjectionQuery,
+    ) -> Result<MemoryInjectionResult, ClientError> {
+        let resp = self
+            .request(reqwest::Method::POST, "/api/memory/inject")
+            .await
+            .json(query)
+            .send()
+            .await?;
+        let resp = Self::handle_response(resp).await?;
+        Ok(resp.json().await?)
+    }
+
     pub async fn find_similar_tasks(
         &self,
         query: &SimilarTaskQuery,

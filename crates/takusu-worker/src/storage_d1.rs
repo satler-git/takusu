@@ -8,7 +8,8 @@
 
 use takusu_contracts::storage::StorageResult;
 use takusu_contracts::{
-    HabitRow, HabitStepRow, MemoryRow, ScheduleRow, SettingsRow, SkillRow, StorageError, TaskRow,
+    HabitRow, HabitStepRow, MemoryKindCounts, MemoryRow, ScheduleRow, SettingsRow, SkillRow,
+    StorageError, TaskRow,
 };
 use takusu_types::{Quantity, parse_timezone};
 use wasm_bindgen::JsValue;
@@ -70,6 +71,27 @@ impl D1Storage {
     pub(crate) fn new(db: D1Database, jwt_secret: String) -> Self {
         Self { db, jwt_secret }
     }
+
+    /// Total `proper_noun` / `fact` memory rows per kind, for the agent's
+    /// memory-store hint (WI-4 / #1003).
+    pub(super) async fn memory_counts(&self) -> StorageResult<MemoryKindCounts> {
+        let stmt = self.db.prepare(
+            "SELECT kind, COUNT(*) AS n FROM memories WHERE kind IN ('proper_noun', 'fact') GROUP BY kind",
+        );
+        let rows: Vec<MemoryCountRow> = d1_all(&stmt).await?;
+        let mut counts = MemoryKindCounts {
+            proper_noun: 0,
+            fact: 0,
+        };
+        for r in rows {
+            match r.kind.as_str() {
+                "proper_noun" => counts.proper_noun = r.n,
+                "fact" => counts.fact = r.n,
+                _ => {}
+            }
+        }
+        Ok(counts)
+    }
 }
 
 // ── Error mapping ───────────────────────────────────────────────────────
@@ -98,6 +120,14 @@ pub(super) struct DisplayIdRow {
 pub(super) struct CountRow {
     #[serde(rename = "c")]
     pub(super) c: i64,
+}
+
+#[derive(serde::Deserialize)]
+pub(super) struct MemoryCountRow {
+    #[serde(rename = "kind")]
+    pub(super) kind: String,
+    #[serde(rename = "n")]
+    pub(super) n: i64,
 }
 
 // ── D1Result helpers ────────────────────────────────────────────────────

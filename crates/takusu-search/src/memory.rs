@@ -304,6 +304,58 @@ pub fn memory_like_patterns(terms: &[String]) -> Vec<String> {
         .collect()
 }
 
+/// Worst-case cap on the utterance accepted for memory read auto-injection.
+pub const MAX_INJECTION_UTTERANCE_SCALARS: usize = 4096;
+/// Hard cap on the number of memories returned for auto-injection.
+pub const MAX_INJECTION_RESULTS: usize = 20;
+
+/// Rank memories for read auto-injection (WI-4 / #1003) — a *reverse* lookup.
+///
+/// [`sort_memories`] ANDs whitespace-separated keywords over key + content,
+/// which fails for an unsegmented Japanese utterance (no spaces → a single
+/// giant keyword) or over-constrains segmented text (every word must occur in
+/// one memory). Injection instead matches memories whose `normalized_key`
+/// occurs as a substring of the *normalized* utterance, ranked by:
+///
+/// 1. key length, descending — longer keys are more specific;
+/// 2. recency (`updated_at`), descending;
+/// 3. `id`, ascending (deterministic tie-break).
+///
+/// Sorts `items` in place so matches move to the front and returns the match
+/// count. The caller should truncate to its own bound but never past the
+/// returned count (non-matches sit after it).
+pub fn rank_memories_for_injection<T: MemoryRankable>(
+    normalized_utterance: &str,
+    items: &mut [T],
+) -> usize {
+    let utt = normalized_utterance;
+    if utt.is_empty() {
+        return 0;
+    }
+    items.sort_by(|a, b| {
+        let a_maybe = utt.contains(a.normalized_key());
+        let b_maybe = utt.contains(b.normalized_key());
+        match (a_maybe, b_maybe) {
+            (true, false) => std::cmp::Ordering::Less,
+            (false, true) => std::cmp::Ordering::Greater,
+            (true, true) => b
+                .normalized_key()
+                .len()
+                .cmp(&a.normalized_key().len())
+                .then_with(|| b.updated_at().cmp(&a.updated_at()))
+                .then_with(|| a.id().cmp(b.id())),
+            (false, false) => b
+                .updated_at()
+                .cmp(&a.updated_at())
+                .then_with(|| a.id().cmp(b.id())),
+        }
+    });
+    items
+        .iter()
+        .take_while(|m| utt.contains(m.normalized_key()))
+        .count()
+}
+
 /// Sort `items` by the deterministic memory search ranking in place.
 /// After sorting, the caller should truncate to the desired `limit`.
 pub fn sort_memories<T: MemoryRankable>(query: &str, items: &mut [T]) {
@@ -399,6 +451,10 @@ pub fn similar_task_filter_patterns(normalized_query: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn norm(s: &str) -> String {
+        normalize_key(s).unwrap()
+    }
 
     #[test]
     fn normalize_nfkc_case_and_whitespace() {
@@ -552,6 +608,97 @@ mod tests {
     fn tokenize_query_splits_keywords_and_keeps_wildcard() {
         let terms = tokenize_query("  研究室 *大学  ").unwrap();
         assert_eq!(terms, vec!["研究室", "*大学"]);
+    }
+
+    #[test]
+    fn injection_rank_unsegmented_japanese() {
+        struct M {
+            id: String,
+            key: String,
+            content: String,
+            updated: String,
+        }
+        impl MemoryRankable for M {
+            fn id(&self) -> &str {
+                &self.id
+            }
+            fn normalized_key(&self) -> &str {
+                &self.key
+            }
+            fn normalized_content(&self) -> &str {
+                &self.content
+            }
+            fn updated_at(&self) -> String {
+                self.updated.clone()
+            }
+        }
+        // 研究室→研究室 are normalized (brackets). The utterance is unsegmented: no spaces.
+        let mut items = vec![
+            M {
+                id: "1".into(),
+                key: norm("研究室"),
+                content: String::new(),
+                updated: "2025-01-01T00:00:00Z".into(),
+            },
+            M {
+                id: "2".into(),
+                key: norm("大学の研究室"),
+                content: String::new(),
+                updated: "2025-01-02T00:00:00Z".into(),
+            },
+            M {
+                id: "3".into(),
+                key: norm("研究"),
+                content: String::new(),
+                updated: "2025-01-03T00:00:00Z".into(),
+            },
+            M {
+                id: "4".into(),
+                key: norm("演習"),
+                content: String::new(),
+                updated: "2025-01-04T00:00:00Z".into(),
+            },
+        ];
+        let utt = norm("大学の研究室は何時からですか");
+        let matches = rank_memories_for_injection(&utt, &mut items);
+        assert_eq!(matches, 3);
+        // Longer, more specific keys first; recency breaks ties.
+        assert_eq!(items[0].id, "2"); // 大学の研究室 (longest)
+        assert_eq!(items[1].id, "1"); // 研究室 (longer than 研究)
+        assert_eq!(items[2].id, "3"); // 研究
+        // Non-matching item id 4 sits after the match count.
+        assert_eq!(items[3].id, "4");
+    }
+
+    #[test]
+    fn injection_rank_empty_utterance_matches_none() {
+        struct M {
+            id: String,
+            key: String,
+            content: String,
+            updated: String,
+        }
+        impl MemoryRankable for M {
+            fn id(&self) -> &str {
+                &self.id
+            }
+            fn normalized_key(&self) -> &str {
+                &self.key
+            }
+            fn normalized_content(&self) -> &str {
+                &self.content
+            }
+            fn updated_at(&self) -> String {
+                self.updated.clone()
+            }
+        }
+        let mut items = vec![M {
+            id: "1".into(),
+            key: norm("研究室"),
+            content: String::new(),
+            updated: "2025-01-01T00:00:00Z".into(),
+        }];
+        assert_eq!(rank_memories_for_injection("", &mut items), 0);
     }
 
     #[test]

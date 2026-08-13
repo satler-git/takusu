@@ -138,6 +138,10 @@ pub trait Storage: Send + Sync + 'static {
         operation_id: Option<&str>,
     ) -> StorageResult<()>;
     async fn search_memories(&self, query: &MemoryQuery) -> StorageResult<Vec<MemoryRow>>;
+    async fn injectable_memories(
+        &self,
+        query: &MemoryInjectionQuery,
+    ) -> StorageResult<MemoryInjectionResult>;
     async fn find_similar_tasks(
         &self,
         query: &SimilarTaskQuery,

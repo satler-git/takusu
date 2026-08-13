@@ -11,7 +11,8 @@ use takusu_contracts::{
     ApplyHabitEstimateRequest, AttachWorkSession, CommentRow, ConvertWorkSession, CreateHabit,
     CreateHabitScheduledSpan, CreateMemory, CreateSkill, CreateTask, GoogleCalEventRow,
     GoogleCalSettingsRow, HabitRow, HabitScheduledSpanRow, HabitStepEstimateInput,
-    HabitStepInput, HabitStepRow, MemoryQuery, MemoryRow, RecordWorkSessionProgress,
+    HabitStepInput, HabitStepRow, MemoryInjectionQuery, MemoryInjectionResult, MemoryQuery,
+    MemoryRow, RecordWorkSessionProgress,
     SaveScheduleRequest, ScheduleRow, SettingsRow, SimilarTaskQuery, SimilarTaskRow, SkillRow,
     SplitResult, SplitTask, StartWorkSession, Storage, StorageError, TaskProgress, TaskQuery,
     TaskRow, TokenCreateResponse, TokenRow, UpdateGoogleCalSettings, UpdateHabit, UpdateMemory,
@@ -51,6 +52,7 @@ mod paths {
     pub const SKILLS: &str = "/api/skills";
     pub const MEMORY: &str = "/api/memory";
     pub const MEMORY_SEARCH: &str = "/api/memory/search";
+    pub const MEMORY_INJECT: &str = "/api/memory/inject";
     pub const TASKS_SIMILAR: &str = "/api/tasks/similar";
     pub const AUTH_VERIFY: &str = "/api/auth/verify";
     pub const HEALTH: &str = "/health";
@@ -980,6 +982,19 @@ impl Storage for WorkersStorage {
         path.push_str(&parts.join("&"));
         self.send_json(reqwest::Method::GET, &path, RequestBody::None, None)
             .await
+    }
+
+    async fn injectable_memories(
+        &self,
+        query: &MemoryInjectionQuery,
+    ) -> StorageResult<MemoryInjectionResult> {
+        self.send_json(
+            reqwest::Method::POST,
+            paths::MEMORY_INJECT,
+            RequestBody::json(query)?,
+            None,
+        )
+        .await
     }
 
     async fn find_similar_tasks(

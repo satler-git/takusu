@@ -161,7 +161,10 @@ impl TypedTool for MemorySearch {
         "Search saved memory by key or content. Returns a list of matching memory entries."
     }
     fn exposure(&self) -> ToolExposure {
-        ToolExposure::Deferred
+        // Direct: an explicit, always-visible fallback on top of the read
+        // auto-injection (WI-4 / #1003). Readers are cheap and never proposal-
+        // gated; only writes stay Deferred.
+        ToolExposure::Direct
     }
     async fn call_typed(&self, args: Self::Params) -> Result<ToolOutput, ToolError> {
         let query = MemoryQuery {

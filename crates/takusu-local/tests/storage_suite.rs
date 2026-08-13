@@ -18,7 +18,8 @@ use std::sync::LazyLock;
 
 use rstest::rstest;
 use takusu_contracts::{
-    CreateHabit, CreateHabitScheduledSpan, CreateMemory, CreateTask, MemoryQuery, StartWorkSession,
+    CreateHabit, CreateHabitScheduledSpan, CreateMemory, CreateTask, MemoryInjectionQuery,
+    MemoryQuery, StartWorkSession,
     Storage, StorageError, TaskQuery, UpdateMemory, UpdateTask,
 };
 use takusu_local_lib::config::LocalConfig;
@@ -622,6 +623,83 @@ async fn memory_crud(#[case] backend: &str) {
         .expect("delete_memory");
     let after = storage.get_memory(&id).await;
     assert!(matches!(after, Err(StorageError::NotFound(_))));
+}
+
+#[rstest]
+#[case::sqlite("sqlite")]
+#[case::workers("workers")]
+#[tokio::test]
+#[ignore]
+async fn memory_injection_retrieval(#[case] backend: &str) {
+    let storage = match backend {
+        "sqlite" => setup_sqlite().await,
+        "workers" => setup_workers().await,
+        _ => unreachable!(),
+    };
+    cleanup(&*storage).await;
+
+    let pn = storage
+        .create_memory(
+            &CreateMemory {
+                kind: MemoryKind::ProperNoun,
+                key: "研究室".into(),
+                content: "大学の研究室".into(),
+                subject_type: None,
+                subject_id: None,
+                upsert: false,
+            },
+            None,
+        )
+        .await
+        .expect("create proper_noun");
+    let fact = storage
+        .create_memory(
+            &CreateMemory {
+                kind: MemoryKind::Fact,
+                key: "昼食".into(),
+                content: "12時30分ごろ".into(),
+                subject_type: None,
+                subject_id: None,
+                upsert: false,
+            },
+            None,
+        )
+        .await
+        .expect("create fact");
+
+    // Reverse lookup: the key 研究室 occurs inside an unsegmented utterance.
+    let result = storage
+        .injectable_memories(&MemoryInjectionQuery {
+            text: "研究室は何時からですか".into(),
+            limit: Some(5),
+        })
+        .await
+        .expect("injectable_memories");
+    assert!(result.memories.iter().any(|m| m.id == pn.id));
+    assert!(!result.memories.iter().any(|m| m.id == fact.id));
+    assert_eq!(result.counts.proper_noun, 1);
+    assert_eq!(result.counts.fact, 1);
+
+    // A non-matching utterance returns no memories but still reports counts.
+    let no_hit = storage
+        .injectable_memories(&MemoryInjectionQuery {
+            text: "映画を見に行く".into(),
+            limit: Some(5),
+        })
+        .await
+        .expect("injectable_memories (no match)");
+    assert!(no_hit.memories.is_empty());
+    assert_eq!(no_hit.counts.proper_noun, 1);
+    assert_eq!(no_hit.counts.fact, 1);
+
+    storage
+        .delete_memory(&pn.id, pn.revision, None)
+        .await
+        .expect("cleanup proper_noun");
+    storage
+        .delete_memory(&fact.id, fact.revision, None)
+        .await
+        .expect("cleanup fact");
 }
 
 #[rstest]
