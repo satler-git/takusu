@@ -59,7 +59,6 @@ import {
   completeTaskWithOptionalWorkSession,
   restoreTaskAfterCompletion,
   type ProgressPayload,
-  type TaskCompletionMode,
 } from '@/src/utils/progress';
 import {
   DependencyGraph,
@@ -1145,13 +1144,11 @@ export function TaskDetailView() {
     const prevQuantityDone = task.quantity_done;
     const total = task.quantity_total;
     const operationId = makeProgressOperationId();
-    let completionMode: TaskCompletionMode;
     try {
-      completionMode = await completeTaskWithOptionalWorkSession(
-        client,
-        task.id,
-        { operationId, quantityTotal: total },
-      );
+      await completeTaskWithOptionalWorkSession(client, task.id, {
+        operationId,
+        quantityTotal: total,
+      });
     } catch (e) {
       showError(e, 'タスクの完了に失敗');
       return;
@@ -1171,7 +1168,6 @@ export function TaskDetailView() {
             task.id,
             prevStatus,
             prevQuantityDone,
-            completionMode,
           );
         } catch (e) {
           showError(e, 'タスクの巻き戻しに失敗');

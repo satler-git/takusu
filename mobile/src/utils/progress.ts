@@ -100,13 +100,16 @@ export async function restoreTaskAfterCompletion(
   taskId: string,
   previousStatus: TaskStatus,
   previousQuantityDone: number,
-  completionMode: TaskCompletionMode,
 ): Promise<void> {
   await client.updateTask(taskId, {
     status: previousStatus,
     quantity_done: previousQuantityDone,
   });
-  if (completionMode === 'work_session' || previousStatus === 'in_progress') {
+  // A completed work session does not imply that the task was in progress
+  // before completion. Recreating one for a scheduled task would promote it
+  // to in_progress again, which is especially problematic after a bulk status
+  // update left an inconsistent open session behind.
+  if (previousStatus === 'in_progress') {
     await client.createWorkSession(
       { task_id: taskId },
       makeProgressOperationId(),
