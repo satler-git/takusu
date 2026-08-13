@@ -1,8 +1,10 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use takusu_contracts::{
-    GenerateSchedule, HabitRow, Reschedule, ScheduleEntry, SettingsRow, SleepInput, TaskRow,
+    CommentRow, GenerateSchedule, HabitRow, Reschedule, ScheduleEntry, SettingsRow, SleepInput,
+    TaskRow,
 };
 use takusu_local_lib::app::TakusuApp;
 use takusu_types::{EnumLabel, ScheduleMode};
@@ -44,6 +46,17 @@ pub enum Modal {
     Help,
 }
 
+/// Load state of one task's comment timeline (WI-5). Distinguishes not-yet-
+/// loaded, in-flight, empty, loaded, and failed so the detail pane never
+/// renders an error as an empty timeline.
+#[derive(Debug, Clone)]
+pub enum CommentState {
+    Loading,
+    Empty,
+    Loaded(Vec<CommentRow>),
+    Error,
+}
+
 pub struct App {
     pub app: Arc<TakusuApp>,
     pub tz: jiff::tz::TimeZone,
@@ -55,6 +68,7 @@ pub struct App {
     pub all_tasks: Vec<TaskRow>,
     pub task_list: StatefulList,
     pub task_filter: Option<String>,
+    pub comments: HashMap<String, CommentState>,
 
     pub habits: Vec<HabitRow>,
     pub habit_list: StatefulList,
@@ -79,6 +93,7 @@ impl App {
             all_tasks: Vec::new(),
             task_list: StatefulList::new(),
             task_filter: None,
+            comments: HashMap::new(),
             habits: Vec::new(),
             habit_list: StatefulList::new(),
             schedule_entries: Vec::new(),
@@ -110,6 +125,38 @@ impl App {
                 None => self.all_tasks.clone(),
             };
             self.task_list.set_len(self.tasks.len());
+        }
+    }
+
+    /// Lazily load the comment timeline for a single task. Only the task
+    /// currently shown in the detail pane is fetched, avoiding an N+1 query
+    /// over all tasks on every reload. `CommentState` distinguishes not-yet-
+    /// loaded, in-flight, loaded, and failed so the UI never mistakes an error
+    /// for an empty timeline (WI-5).
+    pub async fn ensure_comments(&mut self, task_id: &str) {
+        match self.comments.get(task_id) {
+            // Already loaded or in flight; nothing to do.
+            Some(CommentState::Loaded(_))
+            | Some(CommentState::Loading)
+            | Some(CommentState::Empty) => return,
+            // Allow a retry after a failure.
+            Some(CommentState::Error) | None => {}
+        }
+        self.comments
+            .insert(task_id.to_string(), CommentState::Loading);
+        match self.app.list_comments(task_id).await {
+            Ok(rows) => {
+                let state = if rows.is_empty() {
+                    CommentState::Empty
+                } else {
+                    CommentState::Loaded(rows)
+                };
+                self.comments.insert(task_id.to_string(), state);
+            }
+            Err(_) => {
+                self.comments
+                    .insert(task_id.to_string(), CommentState::Error);
+            }
         }
     }
 
@@ -354,5 +401,24 @@ impl App {
 
     pub fn task_by_id(&self, id: &str) -> Option<&TaskRow> {
         self.all_tasks.iter().find(|t| t.id == id)
+    }
+
+    /// The id of the task shown in the right-hand detail pane, if any.
+    fn detail_task_id(&self) -> Option<String> {
+        match self.tab {
+            Tab::Schedule => self
+                .selected_entry()
+                .and_then(|e| self.task_by_id(&e.task_id))
+                .map(|t| t.id.clone()),
+            Tab::Tasks => self.selected_task().map(|t| t.id.clone()),
+            _ => None,
+        }
+    }
+
+    /// Lazily load comments for the task currently in the detail pane (WI-5).
+    pub async fn ensure_selected_comments(&mut self) {
+        if let Some(id) = self.detail_task_id() {
+            self.ensure_comments(&id).await;
+        }
     }
 }

@@ -1447,8 +1447,17 @@ async fn run_task_verbs(
                 }
                 Err(_) => None,
             };
+            // Load the comment timeline (WI-5). A fetch failure is surfaced
+            // distinctly rather than being mistaken for an empty timeline.
+            let comments = match app.list_comments(&task.id).await {
+                Ok(rows) => rows,
+                Err(e) => {
+                    eprintln!("warning: could not load comments: {e}");
+                    Vec::new()
+                }
+            };
             mode.formatter()
-                .display_task_detail(&task, entry.as_ref(), tz, &habit_map);
+                .display_task_detail(&task, entry.as_ref(), tz, &habit_map, &comments);
 
             // Show work sessions and progress events.
             let progress = app.get_task_progress(&args.id).await?;

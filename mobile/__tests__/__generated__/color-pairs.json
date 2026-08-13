@@ -1947,6 +1947,13 @@
       "source": "text"
     },
     {
+      "fg": "red",
+      "bg": "white",
+      "file": "views/TaskDetailView.tsx",
+      "kind": "parent-child",
+      "source": "text"
+    },
+    {
       "fg": "white",
       "bg": "green",
       "file": "views/TaskDetailView.tsx",
@@ -2068,5 +2075,5 @@
       "source": "icon"
     }
   ],
-  "generatedAt": "2026-08-13T17:59:54.687Z"
+  "generatedAt": "2026-08-13T18:37:05.727Z"
 }

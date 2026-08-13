@@ -34,6 +34,11 @@ async fn run_loop(
     state.load_initial().await;
 
     loop {
+        // Load the detail pane's comments before drawing so the selection that
+        // changed on the previous key is reflected immediately (WI-5). This is
+        // lazily cached per task, so it does not cause queries for other tasks.
+        state.ensure_selected_comments().await;
+
         terminal.draw(|f| ui::draw(f, &mut state))?;
 
         match rx.recv().await {

@@ -40,6 +40,11 @@ export function makeProgressOperationId(): string {
   return `${Date.now()}-${randomAlphanumeric(16)}`;
 }
 
+/** Stable idempotency key for a user-submitted task comment (WI-5). */
+export function makeCommentOperationId(): string {
+  return makeProgressOperationId();
+}
+
 export async function findOptionalOpenWorkSessionForTask(
   client: TakusuClient,
   taskId: string,

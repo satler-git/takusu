@@ -6,12 +6,15 @@
 use comfy_table::{Cell, Color, ContentArrangement, Table, presets::UTF8_FULL};
 use std::collections::HashMap;
 use takusu_contracts::{
-    HabitRow, HabitScheduledSpanRow, HabitStepRow, ScheduleEntry, SkillRow, TaskRow, TokenRow,
+    CommentRow, HabitRow, HabitScheduledSpanRow, HabitStepRow, ScheduleEntry, SkillRow, TaskRow,
+    TokenRow,
 };
 use takusu_habit::{RecurrenceRule, summarize};
 use takusu_types::{TaskStatus, Timestamp, WindowMode};
 
-use crate::display_common::{DisplayFormatter, format_duration, habit_label_by_id, progress_text};
+use crate::display_common::{
+    DisplayFormatter, format_duration, habit_label_by_id, progress_text, sanitize_terminal,
+};
 use crate::task_ref::task_reference;
 
 /// `comfy-table` renderer for [`crate::DisplayMode::Rich`].
@@ -48,6 +51,7 @@ impl DisplayFormatter for RichFormatter {
         entry: Option<&ScheduleEntry>,
         tz: &jiff::tz::TimeZone,
         habit_map: &HashMap<String, i64>,
+        comments: &[CommentRow],
     ) {
         let status_color = status_color(task.status);
 
@@ -112,6 +116,32 @@ impl DisplayFormatter for RichFormatter {
             let end = format_datetime(&entry.end_at, tz);
             let dur = format_duration(&entry.start_at, &entry.end_at);
             table.add_row(vec![Cell::new(start), Cell::new(end), Cell::new(dur)]);
+            println!("{table}");
+        }
+
+        if !comments.is_empty() {
+            println!();
+            let mut table = Table::new();
+            table
+                .load_preset(UTF8_FULL)
+                .set_content_arrangement(ContentArrangement::Dynamic);
+            table.set_header(vec![
+                Cell::new("Time").fg(Color::Cyan),
+                Cell::new("Author").fg(Color::Cyan),
+                Cell::new("Comment").fg(Color::Cyan),
+            ]);
+            for c in comments {
+                let author = match c.author {
+                    takusu_types::CommentAuthor::User => "user",
+                    takusu_types::CommentAuthor::Agent => "agent",
+                    takusu_types::CommentAuthor::System => "system",
+                };
+                table.add_row(vec![
+                    Cell::new(format_datetime(&c.created_at, tz)),
+                    Cell::new(author),
+                    Cell::new(sanitize_terminal(&c.content)),
+                ]);
+            }
             println!("{table}");
         }
     }
