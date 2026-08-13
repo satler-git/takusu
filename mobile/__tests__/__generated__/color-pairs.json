@@ -842,6 +842,20 @@
     },
     {
       "fg": "white",
+      "bg": "brand",
+      "file": "components/TaskCard.tsx",
+      "kind": "parent-child",
+      "source": "icon"
+    },
+    {
+      "fg": "white",
+      "bg": "green",
+      "file": "components/TaskCard.tsx",
+      "kind": "parent-child",
+      "source": "icon"
+    },
+    {
+      "fg": "white",
       "bg": "gray",
       "file": "components/TaskCard.tsx",
       "kind": "parent-child",
@@ -2054,5 +2068,5 @@
       "source": "icon"
     }
   ],
-  "generatedAt": "2026-08-05T12:25:29.546Z"
+  "generatedAt": "2026-08-13T17:59:54.687Z"
 }

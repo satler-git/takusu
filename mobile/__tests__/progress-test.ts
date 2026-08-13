@@ -78,13 +78,7 @@ describe('restoreTaskAfterCompletion', () => {
       createWorkSession: jest.fn().mockResolvedValue({} as never),
     });
 
-    await restoreTaskAfterCompletion(
-      client,
-      'task-1',
-      'in_progress',
-      3,
-      'direct',
-    );
+    await restoreTaskAfterCompletion(client, 'task-1', 'in_progress', 3);
 
     expect(client.updateTask).toHaveBeenCalledWith('task-1', {
       status: 'in_progress',
@@ -94,6 +88,21 @@ describe('restoreTaskAfterCompletion', () => {
       { task_id: 'task-1' },
       expect.any(String),
     );
+  });
+
+  it('does not reopen a session when restoring a scheduled task', async () => {
+    const client = makeClient({
+      updateTask: jest.fn().mockResolvedValue({} as never),
+      createWorkSession: jest.fn().mockResolvedValue({} as never),
+    });
+
+    await restoreTaskAfterCompletion(client, 'task-1', 'scheduled', 3);
+
+    expect(client.updateTask).toHaveBeenCalledWith('task-1', {
+      status: 'scheduled',
+      quantity_done: 3,
+    });
+    expect(client.createWorkSession).not.toHaveBeenCalled();
   });
 });
 

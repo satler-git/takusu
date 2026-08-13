@@ -5,7 +5,7 @@
 // Swipe toward end past the threshold reveals skip + delete action buttons (#1044)
 // Done tasks: strikethrough + gray
 
-import { memo, useCallback, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   I18nManager,
   Pressable,
@@ -38,6 +38,8 @@ interface TaskCardProps {
   isDone: boolean;
   onPress: (task: TaskRow) => void;
   onDone?: (task: TaskRow) => void | Promise<void>;
+  onStart?: (task: TaskRow) => void | Promise<void>;
+  onComplete?: (task: TaskRow) => void | Promise<void>;
   onSkip?: (task: TaskRow) => void | Promise<void>;
   onDelete?: (task: TaskRow) => void | Promise<void>;
   onLongPress?: (task: TaskRow) => void;
@@ -135,6 +137,17 @@ const makeStyles = (colors: ColorSet) =>
       borderBottomEndRadius: 12,
       overflow: 'hidden',
     },
+    // Revealed start/done action panel for scheduled tasks.
+    startActionPanel: {
+      position: 'absolute',
+      start: 0,
+      top: 0,
+      bottom: 0,
+      flexDirection: 'row',
+      borderTopStartRadius: 12,
+      borderBottomStartRadius: 12,
+      overflow: 'hidden',
+    },
     actionButton: {
       justifyContent: 'center',
       alignItems: 'center',
@@ -191,6 +204,8 @@ function TaskCardImpl({
   isDone,
   onPress,
   onDone,
+  onStart,
+  onComplete,
   onSkip,
   onDelete,
   onLongPress,
@@ -210,6 +225,8 @@ function TaskCardImpl({
   // state in gesture callbacks) and mirror to React state for rendering.
   const actionsRevealedSV = useSharedValue(false);
   const [actionsRevealed, setActionsRevealed] = useState(false);
+  const startActionsRevealedSV = useSharedValue(false);
+  const [startActionsRevealed, setStartActionsRevealed] = useState(false);
 
   // Keep React state in sync with the UI-thread shared value so
   // pointerEvents updates as soon as the panel is revealed or hidden.
@@ -222,6 +239,15 @@ function TaskCardImpl({
     },
     [],
   );
+  useAnimatedReaction(
+    () => startActionsRevealedSV.value,
+    (current, prev) => {
+      if (current !== prev) {
+        runOnJS(setStartActionsRevealed)(current);
+      }
+    },
+    [],
+  );
 
   // Width of each action button and the full revealed panel.
   const ACTION_BUTTON_WIDTH = 72;
@@ -229,6 +255,12 @@ function TaskCardImpl({
     (onDelete ? ACTION_BUTTON_WIDTH : 0) +
     (onSkip && !isDone ? ACTION_BUTTON_WIDTH : 0);
   const REVEAL_THRESHOLD = 80;
+  const START_ACTION_REVEAL_THRESHOLD = REVEAL_THRESHOLD * 2;
+  const startActionsAvailable =
+    task.status === 'scheduled' && Boolean(onStart && onComplete);
+  const START_ACTION_PANEL_WIDTH = startActionsAvailable
+    ? ACTION_BUTTON_WIDTH * 2
+    : 0;
 
   // The task card's rounded end corners expose a small concave notch next
   // to the leading swipe action while the card is slid open. Widen the
@@ -236,15 +268,29 @@ function TaskCardImpl({
   // background fills that notch (issue #1097).
   const CARD_BORDER_RADIUS = 12;
   const PANEL_WIDTH = ACTION_PANEL_WIDTH + CARD_BORDER_RADIUS;
+  const START_PANEL_WIDTH = START_ACTION_PANEL_WIDTH + CARD_BORDER_RADIUS;
   const skipVisible = onSkip && !isDone;
   const isRTL = I18nManager.isRTL;
   const startSign = isRTL ? -1 : 1;
   const panelOffset = isRTL ? ACTION_PANEL_WIDTH : -ACTION_PANEL_WIDTH;
+  const startPanelOffset = startSign * START_ACTION_PANEL_WIDTH;
   const startActionStyle = {
     width: ACTION_BUTTON_WIDTH + CARD_BORDER_RADIUS,
     paddingStart: CARD_BORDER_RADIUS,
   };
   const endActionStyle = { width: ACTION_BUTTON_WIDTH };
+  const startPanelActionStyle = { width: ACTION_BUTTON_WIDTH };
+  const startPanelDoneStyle = {
+    width: ACTION_BUTTON_WIDTH + CARD_BORDER_RADIUS,
+    paddingEnd: CARD_BORDER_RADIUS,
+  };
+
+  useEffect(() => {
+    if (startActionsAvailable) return;
+    startActionsRevealedSV.value = false;
+    setStartActionsRevealed(false);
+    translateX.value = withSpring(0);
+  }, [startActionsAvailable, startActionsRevealedSV, translateX]);
 
   // Single pan gesture handles swipe toward start (done) and swipe toward end
   // (actions). Using Gesture.Race with two separate pans was unreliable for
@@ -252,11 +298,17 @@ function TaskCardImpl({
   // activeOffsetX in opposite directions can fail to activate. A single
   // gesture with bidirectional activeOffsetX avoids the issue entirely.
   const pan = Gesture.Pan()
+    // testID allows threshold behavior to be covered without a device.
+    .withTestId(`task-card-pan-${task.id}`)
     .activeOffsetX([-10, 10])
     .failOffsetY([-10, 10])
     .onUpdate((e) => {
       // If already revealed, start from the revealed position.
-      const base = actionsRevealedSV.value ? panelOffset : 0;
+      const base = actionsRevealedSV.value
+        ? panelOffset
+        : startActionsRevealedSV.value
+          ? startPanelOffset
+          : 0;
       translateX.value = base + e.translationX;
       // Fire haptic when crossing the action threshold mid-slide (#313).
       // Suppress haptics when actions are revealed — no action will fire
@@ -265,7 +317,8 @@ function TaskCardImpl({
         startSign * e.translationX > REVEAL_THRESHOLD &&
         onDone &&
         hapticFiredDir.value !== startSign &&
-        !actionsRevealedSV.value
+        !actionsRevealedSV.value &&
+        !startActionsRevealedSV.value
       ) {
         hapticFiredDir.value = startSign;
         runOnJS(haptic.light)();
@@ -273,7 +326,8 @@ function TaskCardImpl({
         -startSign * e.translationX > REVEAL_THRESHOLD &&
         ACTION_PANEL_WIDTH > 0 &&
         hapticFiredDir.value !== -startSign &&
-        !actionsRevealedSV.value
+        !actionsRevealedSV.value &&
+        !startActionsRevealedSV.value
       ) {
         hapticFiredDir.value = -startSign;
         runOnJS(haptic.medium)();
@@ -289,6 +343,22 @@ function TaskCardImpl({
         } else {
           translateX.value = withSpring(panelOffset);
         }
+      } else if (startActionsRevealedSV.value) {
+        // When the start actions are revealed, swipe toward the end to hide.
+        if (isRTL ? e.translationX > -20 : e.translationX < 20) {
+          startActionsRevealedSV.value = false;
+          translateX.value = withSpring(0);
+        } else {
+          translateX.value = withSpring(startPanelOffset);
+        }
+      } else if (
+        startActionsAvailable &&
+        startSign * e.translationX > START_ACTION_REVEAL_THRESHOLD
+      ) {
+        // Keep the existing threshold behavior for normal slides, but reveal
+        // explicit Start/Done actions when a scheduled task is over-slid.
+        startActionsRevealedSV.value = true;
+        translateX.value = withSpring(startPanelOffset);
       } else if (startSign * e.translationX > REVEAL_THRESHOLD && onDone) {
         runOnJS(onDone)(task);
         translateX.value = withSpring(0);
@@ -312,7 +382,11 @@ function TaskCardImpl({
       hapticFiredDir.value = 0;
       if (!success) {
         translateX.value = withSpring(
-          actionsRevealedSV.value ? panelOffset : 0,
+          actionsRevealedSV.value
+            ? panelOffset
+            : startActionsRevealedSV.value
+              ? startPanelOffset
+              : 0,
         );
       }
     });
@@ -370,11 +444,13 @@ function TaskCardImpl({
         : colors.brand;
 
   const handlePress = () => {
-    if (actionsRevealed) {
+    if (actionsRevealed || startActionsRevealed) {
       // Tapping the card when actions are revealed snaps it back.
       haptic.light();
       actionsRevealedSV.value = false;
+      startActionsRevealedSV.value = false;
       setActionsRevealed(false);
+      setStartActionsRevealed(false);
       translateX.value = withSpring(0);
       return;
     }
@@ -383,10 +459,12 @@ function TaskCardImpl({
   };
   const handleLongPress = onLongPress
     ? () => {
-        if (actionsRevealed) {
+        if (actionsRevealed || startActionsRevealed) {
           haptic.light();
           actionsRevealedSV.value = false;
+          startActionsRevealedSV.value = false;
           setActionsRevealed(false);
+          setStartActionsRevealed(false);
           translateX.value = withSpring(0);
           return;
         }
@@ -418,6 +496,50 @@ function TaskCardImpl({
       >
         <CrossFadeIcon name={doneIcon} size={28} color={colors.white} />
       </Reanimated.View>
+      {/* Revealed start/done action panel for scheduled tasks. */}
+      {startActionsAvailable && (
+        <View
+          style={[styles.startActionPanel, { width: START_PANEL_WIDTH }]}
+          pointerEvents={startActionsRevealed ? 'auto' : 'none'}
+        >
+          <PressableScale
+            style={[
+              styles.actionButton,
+              startPanelActionStyle,
+              { backgroundColor: colors.brand },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="タスクを開始"
+            onPress={() => {
+              haptic.light();
+              startActionsRevealedSV.value = false;
+              setStartActionsRevealed(false);
+              translateX.value = withSpring(0);
+              onStart?.(task);
+            }}
+          >
+            <Ionicons name="play" size={24} color={colors.white} />
+          </PressableScale>
+          <PressableScale
+            style={[
+              styles.actionButton,
+              startPanelDoneStyle,
+              { backgroundColor: colors.green },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="タスクを完了"
+            onPress={() => {
+              haptic.medium();
+              startActionsRevealedSV.value = false;
+              setStartActionsRevealed(false);
+              translateX.value = withSpring(0);
+              onComplete?.(task);
+            }}
+          >
+            <Ionicons name="checkmark" size={24} color={colors.white} />
+          </PressableScale>
+        </View>
+      )}
       {/* #1044: revealed skip/delete action panel */}
       {ACTION_PANEL_WIDTH > 0 && (
         <View
@@ -468,6 +590,7 @@ function TaskCardImpl({
       )}
       <GestureDetector gesture={pan}>
         <Reanimated.View
+          testID={`task-card-${task.id}`}
           style={[styles.card, { backgroundColor: bgColor }, animatedStyle]}
         >
           <Pressable
@@ -610,6 +733,8 @@ interface ParallelGroupCardProps {
   onGuestPress: (guest: TaskRow) => void;
   onToggle: (allIds: string[]) => void;
   onDone?: (task: TaskRow) => void | Promise<void>;
+  onStart?: (task: TaskRow) => void | Promise<void>;
+  onComplete?: (task: TaskRow) => void | Promise<void>;
   onSkip?: (task: TaskRow) => void | Promise<void>;
   onDelete?: (task: TaskRow) => void | Promise<void>;
   // habit_id → display_id map for habit-based coloring (#309).
@@ -630,6 +755,8 @@ function ParallelGroupCardImpl({
   onGuestPress,
   onToggle,
   onDone,
+  onStart,
+  onComplete,
   onSkip,
   onDelete,
   habitDisplayIdMap,
@@ -678,6 +805,8 @@ function ParallelGroupCardImpl({
           isDone={host.status === 'completed' || host.status === 'skipped'}
           onPress={onHostPress}
           onDone={onDone}
+          onStart={onStart}
+          onComplete={onComplete}
           onSkip={onSkip}
           onDelete={onDelete}
           onLongPress={handleGroupLongPress}
@@ -700,6 +829,8 @@ function ParallelGroupCardImpl({
               }
               onPress={onGuestPress}
               onDone={onDone}
+              onStart={onStart}
+              onComplete={onComplete}
               onSkip={onSkip}
               onDelete={onDelete}
               onLongPress={handleGroupLongPress}

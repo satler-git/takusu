@@ -72,6 +72,8 @@ import {
   makeProgressOperationId,
   recordProgressWithTotal,
   findOpenWorkSessionForTask,
+  completeTaskWithOptionalWorkSession,
+  restoreTaskAfterCompletion,
   type ProgressPayload,
 } from '@/src/utils/progress';
 import type { HabitRow } from '@/src/api/types';
@@ -1207,6 +1209,51 @@ export function HomeView() {
     [openProgressSheet],
   );
 
+  const markComplete = useCallback(async (task: TaskRow) => {
+    const currentClient = clientRef.current;
+    if (!currentClient || task.status !== 'scheduled') return;
+    const prevStatus = task.status;
+    const prevQuantityDone = task.quantity_done;
+    const total = task.quantity_total;
+    try {
+      await completeTaskWithOptionalWorkSession(currentClient, task.id, {
+        operationId: makeProgressOperationId(),
+        quantityTotal: total,
+      });
+    } catch (e) {
+      showError(e, 'タスクの完了に失敗');
+      return;
+    }
+    dismissTaskNotifications(task.id).catch((e) => logError('通知の消去', e));
+    cancelScheduledTaskNotifications(task.id).catch((e) =>
+      logError('通知のキャンセル', e),
+    );
+    undoRedo.push({
+      description: `mark done: ${task.title}`,
+      undo: async () => {
+        const undoClient = clientRef.current;
+        if (!undoClient) return;
+        await restoreTaskAfterCompletion(
+          undoClient,
+          task.id,
+          prevStatus,
+          prevQuantityDone,
+        );
+        await refreshRef.current();
+      },
+      redo: async () => {
+        const redoClient = clientRef.current;
+        if (!redoClient) return;
+        await completeTaskWithOptionalWorkSession(redoClient, task.id, {
+          operationId: makeProgressOperationId(),
+          quantityTotal: total,
+        });
+        await refreshRef.current();
+      },
+    });
+    await refreshRef.current();
+  }, []);
+
   const markSkipped = useCallback(async (task: TaskRow) => {
     const currentClient = clientRef.current;
     if (!currentClient) return;
@@ -2055,6 +2102,8 @@ export function HomeView() {
             onGuestPress={handleGuestPress}
             onToggle={handleGroupToggle}
             onDone={markDone}
+            onStart={markDone}
+            onComplete={markComplete}
             onSkip={markSkipped}
             onDelete={deleteTask}
           />
@@ -2077,6 +2126,8 @@ export function HomeView() {
           onPress={handleTaskPress}
           onLongPress={handleTaskLongPress}
           onDone={markDone}
+          onStart={markDone}
+          onComplete={markComplete}
           onSkip={markSkipped}
           onDelete={deleteTask}
         />
@@ -2089,6 +2140,7 @@ export function HomeView() {
       handleGuestPress,
       handleGroupToggle,
       markDone,
+      markComplete,
       markSkipped,
       deleteTask,
       showHorizon,
