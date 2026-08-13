@@ -4,9 +4,9 @@ Closes #1266 (memory のリデザイン) and #1315 (description よりもコメ�
 (memory を読む選択肢がなかなかない).
 
 > **Status**: WI-1 (comment server layer), WI-2 (`task_note` migration + removal), WI-3
-> (comment agent tool, automatic attachment, and completion hook) and WI-4 (memory read
-> auto-injection, #1003) are implemented. Migrations landed at `028`/`029` (local) and
-> `029`/`030` (worker). WI-5 remains.
+> (comment agent tool, automatic attachment, and completion hook), WI-4 (memory read
+> auto-injection, #1003), and WI-5 (comment timeline UI) are implemented. Migrations landed
+> at `028`/`029` (local) and `029`/`030` (worker).
 
 ## Summary
 

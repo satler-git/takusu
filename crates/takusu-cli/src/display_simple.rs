@@ -5,11 +5,14 @@
 //! and the simple-specific datetime format.
 use std::collections::HashMap;
 use takusu_contracts::{
-    HabitRow, HabitScheduledSpanRow, HabitStepRow, ScheduleEntry, SkillRow, TaskRow, TokenRow,
+    CommentRow, HabitRow, HabitScheduledSpanRow, HabitStepRow, ScheduleEntry, SkillRow, TaskRow,
+    TokenRow,
 };
 use takusu_types::{TaskStatus, Timestamp};
 
-use crate::display_common::{DisplayFormatter, format_duration, habit_label_by_id, progress_text};
+use crate::display_common::{
+    DisplayFormatter, format_duration, habit_label_by_id, progress_text, sanitize_terminal,
+};
 use crate::task_ref::task_reference;
 
 /// Plain-text renderer for [`crate::DisplayMode::Simple`].
@@ -39,6 +42,7 @@ impl DisplayFormatter for SimpleFormatter {
         entry: Option<&ScheduleEntry>,
         tz: &jiff::tz::TimeZone,
         habit_map: &HashMap<String, i64>,
+        comments: &[CommentRow],
     ) {
         let marker = status_marker(task.status);
         println!(
@@ -76,6 +80,22 @@ impl DisplayFormatter for SimpleFormatter {
                 fmt_simple(&entry.end_at, tz),
                 format_duration(&entry.start_at, &entry.end_at)
             );
+        }
+        if !comments.is_empty() {
+            println!("   comments:");
+            for c in comments {
+                let author = match c.author {
+                    takusu_types::CommentAuthor::User => "user",
+                    takusu_types::CommentAuthor::Agent => "agent",
+                    takusu_types::CommentAuthor::System => "system",
+                };
+                println!(
+                    "     [{}] {} (@ {})",
+                    author,
+                    sanitize_terminal(&c.content),
+                    fmt_simple(&c.created_at, tz)
+                );
+            }
         }
         println!();
     }

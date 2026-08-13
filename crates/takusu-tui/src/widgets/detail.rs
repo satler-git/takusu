@@ -3,9 +3,16 @@ use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
 use takusu_contracts::TaskRow;
 use takusu_types::EnumLabel;
 
+use crate::app::CommentState;
 use crate::style;
 
-pub fn render_task_detail(frame: &mut Frame, area: Rect, task: &TaskRow, tz: &jiff::tz::TimeZone) {
+pub fn render_task_detail(
+    frame: &mut Frame,
+    area: Rect,
+    task: &TaskRow,
+    tz: &jiff::tz::TimeZone,
+    comments: &CommentState,
+) {
     let mut lines: Vec<Line> = Vec::new();
 
     lines.push(Line::from(vec![
@@ -100,6 +107,46 @@ pub fn render_task_detail(frame: &mut Frame, area: Rect, task: &TaskRow, tz: &ji
             Span::styled("Depends: ", Style::default().fg(style::HEADER_FG)),
             Span::raw(format!("{} task(s)", deps.len())),
         ]));
+    }
+
+    match comments {
+        CommentState::Loading => {
+            lines.push(Line::from(vec![
+                Span::styled("Comments: ", Style::default().fg(style::HEADER_FG)),
+                Span::styled("loading…", Style::default().fg(Color::DarkGray)),
+            ]));
+        }
+        CommentState::Empty => {
+            lines.push(Line::from(vec![
+                Span::styled("Comments: ", Style::default().fg(style::HEADER_FG)),
+                Span::raw("(none)"),
+            ]));
+        }
+        CommentState::Error => {
+            lines.push(Line::from(vec![
+                Span::styled("Comments: ", Style::default().fg(style::HEADER_FG)),
+                Span::styled("failed to load", Style::default().fg(Color::Red)),
+            ]));
+        }
+        CommentState::Loaded(comments) if !comments.is_empty() => {
+            lines.push(Line::from(""));
+            lines.push(Line::from(vec![
+                Span::styled("Comments: ", Style::default().fg(style::HEADER_FG)),
+                Span::raw(format!("{} entries", comments.len())),
+            ]));
+            for c in comments {
+                let author = match c.author {
+                    takusu_types::CommentAuthor::User => "user",
+                    takusu_types::CommentAuthor::Agent => "agent",
+                    takusu_types::CommentAuthor::System => "system",
+                };
+                lines.push(Line::from(vec![
+                    Span::styled(format!("  [{author}] "), Style::default().fg(Color::Cyan)),
+                    Span::raw(c.content.as_str()),
+                ]));
+            }
+        }
+        CommentState::Loaded(_) => {}
     }
 
     let para = Paragraph::new(lines)

@@ -33,6 +33,8 @@ import type {
   TaskStatus,
   RedundantDependency,
   WorkSessionRow,
+  CommentRow,
+  CommentAuthor,
 } from '@/src/api/types';
 import {
   useColors,
@@ -54,6 +56,7 @@ import { formatDate } from '@/src/formatDate';
 import { parseDuration, formatDuration } from '@/src/utils/duration';
 import {
   makeProgressOperationId,
+  makeCommentOperationId,
   recordProgressWithTotal,
   findOpenWorkSessionForTask,
   completeTaskWithOptionalWorkSession,
@@ -87,6 +90,12 @@ const STATUS_ICONS: Record<TaskStatus, keyof typeof Ionicons.glyphMap> = {
   in_progress: 'play-circle-outline',
   completed: 'checkmark-circle-outline',
   skipped: 'play-skip-forward-outline',
+};
+
+const AUTHOR_LABELS: Record<CommentAuthor, string> = {
+  user: 'あなた',
+  agent: 'エージェント',
+  system: 'システム',
 };
 
 const WEEKDAY_JA = ['日', '月', '火', '水', '木', '金', '土'];
@@ -590,6 +599,49 @@ const makeStyles = (colors: ColorSet) =>
       fontSize: 13,
       lineHeight: 22,
     },
+    commentBox: {
+      marginHorizontal: 12,
+      gap: 10,
+    },
+    commentRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 8,
+    },
+    commentHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      marginBottom: 2,
+    },
+    commentAuthor: {
+      fontSize: 12,
+      fontWeight: '800',
+    },
+    commentTime: {
+      fontSize: 11,
+    },
+    commentContent: {
+      fontSize: 13,
+      lineHeight: 20,
+      flex: 1,
+    },
+    commentDelete: {
+      padding: 2,
+      marginTop: -2,
+    },
+    commentInputRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      marginTop: 4,
+    },
+    commentInput: {
+      flex: 1,
+    },
+    commentEmpty: {
+      fontSize: 13,
+    },
   });
 
 export function TaskDetailView() {
@@ -638,6 +690,11 @@ export function TaskDetailView() {
   >('record');
   const [workSession, setWorkSession] = useState<WorkSessionRow | null>(null);
   const [splitModalVisible, setSplitModalVisible] = useState(false);
+  const [comments, setComments] = useState<CommentRow[]>([]);
+  const [commentInput, setCommentInput] = useState('');
+  const [commentsError, setCommentsError] = useState(false);
+  const [commentSending, setCommentSending] = useState(false);
+  const pendingCommentOpRef = useRef<string | null>(null);
   // Double-tap detection ref — must be before the early return to satisfy
   // React's Rules of Hooks (hooks must be called unconditionally).
   const lastTapRef = useRef(0);
@@ -681,6 +738,15 @@ export function TaskDetailView() {
     } catch (e) {
       logError('作業セッション取得', e);
       setWorkSession(null);
+    }
+
+    // Load the comment timeline (WI-5).
+    try {
+      setComments(await client.listComments(t.id));
+      setCommentsError(false);
+    } catch (e) {
+      logError('コメント取得', e);
+      setCommentsError(true);
     }
 
     if (t.habit_id) {
@@ -749,6 +815,13 @@ export function TaskDetailView() {
   }, [client, id]);
 
   useEffect(() => {
+    // Reset per-task state so a previous task's comments never leak into the
+    // freshly opened task while it is loading (WI-5).
+    setComments([]);
+    setCommentsError(false);
+    setCommentInput('');
+    pendingCommentOpRef.current = null;
+    setCommentSending(false);
     refresh();
   }, [refresh]);
 
@@ -839,6 +912,47 @@ export function TaskDetailView() {
     editingRef.current = false;
     setEditing(false);
     await refresh();
+  }
+
+  async function addComment() {
+    if (!client || !task) return;
+    const content = commentInput.trim();
+    if (!content) return;
+    // Guard against double-submit while a request is already in flight; the
+    // input is also disabled, but a double keypress could otherwise send twice.
+    if (commentSending) return;
+    // Stable idempotency key: reuse a previously failed attempt's key so a
+    // retry after a lost response does not double-post (WI-5).
+    const operationId = pendingCommentOpRef.current ?? makeCommentOperationId();
+    if (!pendingCommentOpRef.current) {
+      pendingCommentOpRef.current = operationId;
+    }
+    setCommentSending(true);
+    setCommentInput('');
+    try {
+      const created = await client.createComment(
+        task.id,
+        { content },
+        operationId,
+      );
+      pendingCommentOpRef.current = null;
+      setCommentSending(false);
+      setComments((prev) => [...prev, created]);
+    } catch (e) {
+      showError(e, 'コメントの追加に失敗');
+      setCommentSending(false);
+      setCommentInput(content);
+    }
+  }
+
+  async function deleteComment(commentId: string) {
+    if (!client) return;
+    try {
+      await client.deleteComment(commentId);
+      setComments((prev) => prev.filter((c) => c.id !== commentId));
+    } catch (e) {
+      showError(e, 'コメントの削除に失敗');
+    }
   }
 
   // Resolve a redundant dependency edge by removing `toId` from the
@@ -2545,6 +2659,65 @@ export function TaskDetailView() {
             )}
           </View>
         )}
+
+        {/* Comment timeline (WI-5) — alongside the description */}
+        <View style={styles.slabel}>
+          <Text style={[styles.slabelText, { color: colors.gray }]}>
+            {`コメント (${comments.length})`}
+          </Text>
+        </View>
+        <View style={styles.commentBox}>
+          <PaperTextInput
+            mode="outlined"
+            value={commentInput}
+            onChangeText={setCommentInput}
+            placeholder="メモを追加"
+            onSubmitEditing={addComment}
+            editable={!commentSending}
+            placeholderTextColor={colors.gray}
+            outlineColor={colors.separator}
+            activeOutlineColor={colors.brand}
+            style={styles.commentInput}
+          />
+          {commentsError ? (
+            <Text style={[styles.commentEmpty, { color: colors.red }]}>
+              コメントの取得に失敗しました
+            </Text>
+          ) : comments.length === 0 ? (
+            <Text style={[styles.commentEmpty, { color: colors.gray }]}>
+              コメントはありません
+            </Text>
+          ) : (
+            comments.map((c) => (
+              <View key={c.id} style={styles.commentRow}>
+                <View style={{ flex: 1 }}>
+                  <View style={styles.commentHeader}>
+                    <Text
+                      style={[styles.commentAuthor, { color: colors.black }]}
+                    >
+                      {AUTHOR_LABELS[c.author] ?? c.author}
+                    </Text>
+                    <Text style={[styles.commentTime, { color: colors.gray }]}>
+                      {formatDate(new Date(c.created_at))}
+                    </Text>
+                  </View>
+                  <Text style={[styles.commentContent, { color: colors.gray }]}>
+                    {c.content}
+                  </Text>
+                </View>
+                {c.author !== 'system' && (
+                  <IconButton
+                    icon="close"
+                    size={16}
+                    iconColor={colors.gray}
+                    onPress={() => deleteComment(c.id)}
+                    style={styles.commentDelete}
+                  />
+                )}
+              </View>
+            ))
+          )}
+        </View>
       </ScrollView>
 
       {/* Big save button — visible only in edit mode */}

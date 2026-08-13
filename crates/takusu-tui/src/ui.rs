@@ -3,7 +3,7 @@ use ratatui::widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Tabs, W
 use takusu_contracts::{ScheduleEntry, TaskRow};
 use takusu_types::{EnumLabel, TaskStatus, WindowMode};
 
-use crate::app::{App, Modal, Tab};
+use crate::app::{App, CommentState, Modal, Tab};
 use crate::style;
 use crate::widgets::detail::{fmt_day, fmt_dt, render_task_detail, render_text_detail};
 
@@ -92,7 +92,12 @@ fn draw_schedule_tab(frame: &mut Frame, app: &mut App, area: Rect) {
 
     if let Some(entry) = app.selected_entry() {
         if let Some(task) = app.task_by_id(&entry.task_id) {
-            render_task_detail(frame, chunks[1], task, &app.tz);
+            let comments = app
+                .comments
+                .get(&task.id)
+                .cloned()
+                .unwrap_or(CommentState::Loading);
+            render_task_detail(frame, chunks[1], task, &app.tz, &comments);
         } else {
             let lines = vec![
                 Line::from(Span::raw(format!(
@@ -207,7 +212,12 @@ fn draw_tasks_tab(frame: &mut Frame, app: &mut App, area: Rect) {
     frame.render_stateful_widget(list, chunks[0], &mut state);
 
     if let Some(task) = app.selected_task() {
-        render_task_detail(frame, chunks[1], task, &app.tz);
+        let comments = app
+            .comments
+            .get(&task.id)
+            .cloned()
+            .unwrap_or(CommentState::Loading);
+        render_task_detail(frame, chunks[1], task, &app.tz, &comments);
     } else {
         let p = Paragraph::new("(no task selected)")
             .block(Block::default().borders(Borders::ALL).title(" Detail "));

@@ -13,7 +13,8 @@
 use std::collections::HashMap;
 
 use takusu_contracts::{
-    HabitRow, HabitScheduledSpanRow, HabitStepRow, ScheduleEntry, SkillRow, TaskRow, TokenRow,
+    CommentRow, HabitRow, HabitScheduledSpanRow, HabitStepRow, ScheduleEntry, SkillRow, TaskRow,
+    TokenRow,
 };
 use takusu_types::Timestamp;
 
@@ -31,6 +32,7 @@ pub trait DisplayFormatter {
         entry: Option<&ScheduleEntry>,
         tz: &jiff::tz::TimeZone,
         habit_map: &HashMap<String, i64>,
+        comments: &[CommentRow],
     );
     fn display_tasks(
         &self,
@@ -93,4 +95,48 @@ pub fn habit_label_by_id<'a>(habit_id: &'a str, habits: &'a [HabitRow]) -> (&'a 
         .find(|h| h.id == habit_id)
         .map(|h| (h.title.as_str(), h.display_id, h.id.as_str()))
         .unwrap_or(("(unknown)", 0, habit_id))
+}
+
+/// Strip terminal control characters from untrusted user/agent content before
+/// printing it to the terminal (WI-5 review). C0 control characters (except tab
+/// and newline) and ANSI escape sequences (`ESC[...` through the final letter)
+/// are removed so a comment cannot corrupt or remap the caller's terminal.
+/// Tab/newline are preserved so multiline content stays readable.
+pub fn sanitize_terminal(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c == '\x1b' {
+            // Skip the ANSI CSI/SGR run: `ESC [` then parameter bytes until a
+            // final alphabetic byte. Just flush one ESC alone when malformed.
+            if chars.clone().next() == Some('[') {
+                chars.next();
+                for n in chars.by_ref() {
+                    if n.is_ascii_alphabetic() {
+                        break;
+                    }
+                }
+            }
+            continue;
+        }
+        let cp = c as u32;
+        if matches!(cp, 0x09 | 0x0A | 0x0D) || !(c.is_control()) {
+            out.push(c);
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sanitize_removes_ansi_escape_and_controls() {
+        assert_eq!(sanitize_terminal("plain"), "plain");
+        assert_eq!(sanitize_terminal("\x1b[31mred\x1b[0m"), "red");
+        assert_eq!(sanitize_terminal("a\x07b\x00c"), "abc");
+        // tab and newlines are preserved for multiline content
+        assert_eq!(sanitize_terminal("a\tb\nc"), "a\tb\nc");
+    }
 }
