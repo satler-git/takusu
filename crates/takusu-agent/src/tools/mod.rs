@@ -1,3 +1,4 @@
+pub mod comments;
 pub mod day_details;
 pub mod memory;
 pub mod progress;

@@ -194,6 +194,8 @@ pub enum ToolName {
     MemorySearch,
     #[strum(serialize = "similar_tasks")]
     SimilarTasks,
+    #[strum(serialize = "add_comment")]
+    AddComment,
     #[strum(serialize = "memory_save")]
     MemorySave,
     #[strum(serialize = "memory_update")]
@@ -269,6 +271,7 @@ enum_label! {
         Skill = "skill",
         Memory = "memory",
         Schedule = "schedule",
+        Comment = "comment",
     }
 }
 

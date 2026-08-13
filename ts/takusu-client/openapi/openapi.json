@@ -13665,6 +13665,47 @@
         },
         "required": ["ok"]
       },
+      "PendingCheckIn": {
+        "description": "A task completion that deviated beyond 1σ, awaiting a single check-in\nquestion on the next turn. The user's answer is stored as a task comment.\n\nThis is the \"next-turn prompt note\" delivery mechanism for the overrun\ncheck-in (WI-3); the resident-agent event channel is future work.",
+        "type": "object",
+        "properties": {
+          "actual_minutes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "avg_minutes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "delivered": {
+            "description": "Whether the overrun check-in has ever been surfaced in a system prompt.\n\nA check-in is only treated as answered when a comment is recorded for\nthe task *after* it has been delivered; comments added before delivery\n(e.g. an unrelated note) do not clear it.",
+            "type": "boolean",
+            "default": false
+          },
+          "display_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "sigma_minutes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "task_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "display_id",
+          "title",
+          "avg_minutes",
+          "actual_minutes",
+          "sigma_minutes"
+        ]
+      },
       "Permissions": {
         "description": "Permission map for auto-approving proposed changes.\n\nSerialized as a flat map of `\"target:operation\"` -> bool so that mobile\nclients can send it directly without wrapping it in an `allow` field.\nInternally the keys are typed (`PermissionKey`) to prevent typos and avoid\nper-lookup string allocation.",
         "type": "object",
@@ -13733,6 +13774,14 @@
             ],
             "default": null
           },
+          "pending_check_ins": {
+            "description": "Pending overrun check-ins awaiting an answer (WI-3). Restored so the\ncheck-in is not lost across CLI save/resume.",
+            "type": "array",
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PendingCheckIn"
+            }
+          },
           "permissions": {
             "anyOf": [
               {
@@ -13786,7 +13835,7 @@
       "TargetKind": {
         "description": "Target kind for a proposed or applied change.",
         "type": "string",
-        "enum": ["task", "habit", "skill", "memory", "schedule"]
+        "enum": ["task", "habit", "skill", "memory", "schedule", "comment"]
       },
       "ToolStat": {
         "type": "object",

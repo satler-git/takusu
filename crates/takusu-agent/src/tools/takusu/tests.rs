@@ -21,10 +21,10 @@ use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::sync::Arc;
 use takusu_client::{
-    Client, HabitDetail, HabitRow, HabitScheduledSpanRow, HabitStepRow, ScheduleEntry, ScheduleRow,
-    SettingsResponse, TaskRow,
+    Client, CommentRow, HabitDetail, HabitRow, HabitScheduledSpanRow, HabitStepRow, ScheduleEntry,
+    ScheduleRow, SettingsResponse, TaskRow,
 };
-use takusu_types::{Quantity, TaskStatus, TaskStatusFilter};
+use takusu_types::{CommentAuthor, Quantity, TaskStatus, TaskStatusFilter};
 
 // ── test-only helpers (moved from common.rs and mutation.rs) ─────────────
 
@@ -1241,4 +1241,57 @@ fn create_task_requires_mandatory_fields() {
     }))
     .unwrap_err();
     assert!(err.to_string().contains("end_at"));
+}
+
+#[tokio::test]
+async fn get_task_attaches_comment_timeline() {
+    let task = Arc::new(task_row("task-uuid", 42, "買い物", None, &[]));
+    let task_for_get = task.as_ref().clone();
+    let task_for_list = vec![task.as_ref().clone()];
+    let habits: Vec<HabitRow> = vec![];
+    let comments = [
+        CommentRow {
+            id: "c1".into(),
+            task_id: "task-uuid".into(),
+            author: CommentAuthor::Agent,
+            content: "思ったより手間取った".into(),
+            seq: 1,
+            created_at: "2025-06-01T00:00:00Z".parse().unwrap(),
+        },
+        CommentRow {
+            id: "c2".into(),
+            task_id: "task-uuid".into(),
+            author: CommentAuthor::User,
+            content: "次回は30分で".into(),
+            seq: 2,
+            created_at: "2025-06-02T00:00:00Z".parse().unwrap(),
+        },
+    ];
+
+    let app = Router::new()
+        .route("/api/tasks/{id}", get(move || async { Json(task_for_get) }))
+        .route("/api/tasks", get(move || async { Json(task_for_list) }))
+        .route("/api/habits", get(move || async { Json(habits) }))
+        .route(
+            "/api/tasks/{id}/comments",
+            get(move || async { Json(comments) }),
+        )
+        .route("/api/settings", get(|| async { Json(settings_response()) }));
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+    let client = Client::new(&format!("http://{addr}"), "");
+    let tz_cache = TimeZoneCache::new(client.clone());
+    let tool = crate::tool::Typed(GetTask { client, tz_cache });
+    let output = tool.call(json!({ "task_ref": ["#42"] })).await.unwrap();
+    let parsed: Value = serde_json::from_str(&output.content).unwrap();
+    let task_view = &parsed["tasks"][0];
+    assert_eq!(task_view["display_id"], 42);
+    assert_eq!(task_view["comment_count"], 2);
+    let attached = task_view["comments"].as_array().unwrap();
+    assert_eq!(attached.len(), 2);
+    assert_eq!(attached[0]["seq"], 1);
+    assert_eq!(attached[1]["author"], "user");
 }

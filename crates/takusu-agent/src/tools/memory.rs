@@ -2,7 +2,10 @@ use async_trait::async_trait;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use takusu_client::{Client, CreateMemory, MemoryQuery, MemoryRow, SimilarTaskQuery, UpdateMemory};
+use std::collections::HashMap;
+use takusu_client::{
+    Client, CommentRow, CreateMemory, MemoryQuery, MemoryRow, SimilarTaskQuery, UpdateMemory,
+};
 use takusu_types::{MemoryKind, MemorySource, SubjectType};
 
 use crate::tools::{ToolContext, ToolModule};
@@ -225,8 +228,31 @@ impl TypedTool for SimilarTasks {
             .find_similar_tasks(&query)
             .await
             .map_err(client_error)?;
+        // Attach each completed task's comment timeline so estimates can use
+        // qualitative history from past completions (WI-3). Fetch comments
+        // concurrently to avoid serializing up to `limit` HTTP round-trips.
+        let comments_by_id: HashMap<String, Vec<CommentRow>> =
+            futures_util::future::try_join_all(rows.iter().map(|row| {
+                let client = self.client.clone();
+                let task_id = row.task_id.clone();
+                async move {
+                    let comments = client.list_comments(&task_id).await.map_err(client_error)?;
+                    Ok::<_, ToolError>((task_id, comments))
+                }
+            }))
+            .await?
+            .into_iter()
+            .collect();
+        let mut results = Vec::with_capacity(rows.len());
+        for row in rows {
+            let mut value = serde_json::to_value(&row).unwrap_or_default();
+            if let Some(comments) = comments_by_id.get(&row.task_id) {
+                crate::tools::comments::attach_comments(&mut value, comments);
+            }
+            results.push(value);
+        }
         Ok(ToolOutput {
-            content: serde_json::to_string(&ResultsContent { results: rows }).unwrap(),
+            content: serde_json::to_string(&ResultsContent { results }).unwrap(),
             ..Default::default()
         })
     }
@@ -301,7 +327,9 @@ impl TypedTool for MemorySave {
     fn validate_args(&self, args: &Self::Params) -> Result<(), InvalidArgsError> {
         args.kind
             .parse::<MemoryKind>()
-            .map_err(|e: takusu_types::UnknownLabel| InvalidArgsError::new("kind", e.to_string()))?;
+            .map_err(|e: takusu_types::UnknownLabel| {
+                InvalidArgsError::new("kind", e.to_string())
+            })?;
         if let Some(st) = &args.subject_type {
             st.parse::<SubjectType>()
                 .map_err(|e: takusu_types::UnknownLabel| {

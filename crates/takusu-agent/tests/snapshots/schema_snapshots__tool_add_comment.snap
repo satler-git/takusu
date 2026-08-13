@@ -1,0 +1,30 @@
+---
+source: crates/takusu-agent/tests/schema_snapshots.rs
+assertion_line: 51
+expression: def
+---
+{
+  "function": {
+    "description": "Append a task-scoped time-series note/comment to a task timeline. Writes immediately (no approval); the comment is visible to the user and can be deleted by them. Use for overrun reasons and qualitative context, not for the task's current spec (that belongs in `description`).",
+    "name": "add_comment",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "content": {
+          "description": "Comment content (time-series note). Must be non-empty.",
+          "type": "string"
+        },
+        "task_ref": {
+          "description": "Task display reference such as #42 or h1#3.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "task_ref",
+        "content"
+      ],
+      "type": "object"
+    }
+  },
+  "type": "function"
+}
