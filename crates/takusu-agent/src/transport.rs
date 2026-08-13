@@ -311,6 +311,10 @@ pub struct ResumeSessionRequest {
     pub schedule_dirty: Option<bool>,
     #[serde(default)]
     pub compaction_summary: Option<String>,
+    /// Pending overrun check-ins awaiting an answer (WI-3). Restored so the
+    /// check-in is not lost across CLI save/resume.
+    #[serde(default)]
+    pub pending_check_ins: Vec<crate::tools::comments::PendingCheckIn>,
 }
 
 #[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
@@ -798,6 +802,10 @@ async fn resume_session(
     if let Some(approval) = body.value.pending_approval
         && let Err(e) = session.set_pending_approval(approval)
     {
+        return agent_error(e);
+    }
+
+    if let Err(e) = session.set_pending_check_ins(body.value.pending_check_ins) {
         return agent_error(e);
     }
 
@@ -1775,6 +1783,7 @@ mod tests {
                 pending_approval: None,
                 schedule_dirty: None,
                 compaction_summary: None,
+                pending_check_ins: Vec::new(),
             },
         };
         let res =
@@ -1898,6 +1907,7 @@ mod tests {
                 pending_approval: Some(approval),
                 schedule_dirty: None,
                 compaction_summary: None,
+                pending_check_ins: Vec::new(),
             },
         };
         let res =

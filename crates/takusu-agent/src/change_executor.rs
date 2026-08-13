@@ -249,6 +249,9 @@ async fn fetch_target_for_kind(ctx: &FetchContext<'_>) -> Result<TargetInfo, Age
         // `Schedule` is short-circuited by the blanket impl; this arm is
         // unreachable but kept exhaustive for `TargetKind`.
         TargetKind::Schedule => Ok(TargetInfo::default()),
+        // `Comment` never travels through the proposal pipeline; `add_comment`
+        // writes immediately outside the approval boundary. Kept exhaustive.
+        TargetKind::Comment => Ok(TargetInfo::default()),
     }
 }
 

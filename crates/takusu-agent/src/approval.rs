@@ -244,6 +244,14 @@ impl AgentSession {
                 }
             }
         }
+        // WI-3: queue a check-in for every task completion that overran beyond
+        // 1σ and actually executed, even if a later change in the same
+        // approval failed. The completed task's actuals are already saved, so
+        // its check-in must not be lost to the subsequent error.
+        self.record_completion_check_ins(&receipts)?;
+        // Drop check-ins for tasks deleted in this approval so prompt notes
+        // never reference a now-nonexistent task.
+        self.clear_check_ins_for_deleted_tasks(&receipts)?;
         if schedule_commit && execution_error.is_none() {
             schedule_dirty = false;
         }

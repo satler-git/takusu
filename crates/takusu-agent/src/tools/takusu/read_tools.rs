@@ -4,7 +4,7 @@ use jiff::civil::Date;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use takusu_client::{
     Client, HabitDetail, HabitScheduledSpanRow, SchedulePreviewRequest, TaskQuery,
 };
@@ -309,13 +309,32 @@ impl TypedTool for GetTask {
         )
         .map_err(client_error)?;
 
+        // Fetch each requested task's comment timeline so the model sees
+        // qualitative history alongside the current spec (WI-3).
+        let comments_by_id = try_join_all(tasks.iter().map(|task| {
+            let client = self.client.clone();
+            let task_id = task.id.clone();
+            async move {
+                let comments = client.list_comments(&task_id).await.map_err(client_error)?;
+                Ok::<_, ToolError>((task_id, comments))
+            }
+        }))
+        .await?
+        .into_iter()
+        .collect::<HashMap<_, _>>();
+
         let ctx = TaskContext::new(&all_tasks, &habits);
         let (deps, missing) = transitive_dependencies(&tasks, &all_tasks);
 
-        let tasks_json: Vec<Value> = tasks
+        let mut tasks_json: Vec<Value> = tasks
             .iter()
             .map(|task| task_json(task, &ctx, Some(&tz)))
             .collect();
+        for (value, task) in tasks_json.iter_mut().zip(&tasks) {
+            if let Some(comments) = comments_by_id.get(&task.id) {
+                crate::tools::comments::attach_comments(value, comments);
+            }
+        }
         let deps_json: Vec<Value> = deps
             .into_iter()
             .map(|task| task_json(task, &ctx, Some(&tz)))

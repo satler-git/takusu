@@ -1308,6 +1308,34 @@ interface components$1 {
             ok: boolean;
         };
         /**
+         * @description A task completion that deviated beyond 1σ, awaiting a single check-in
+         *     question on the next turn. The user's answer is stored as a task comment.
+         *
+         *     This is the "next-turn prompt note" delivery mechanism for the overrun
+         *     check-in (WI-3); the resident-agent event channel is future work.
+         */
+        PendingCheckIn: {
+            /** Format: int64 */
+            actual_minutes: number;
+            /** Format: int64 */
+            avg_minutes: number;
+            /**
+             * @description Whether the overrun check-in has ever been surfaced in a system prompt.
+             *
+             *     A check-in is only treated as answered when a comment is recorded for
+             *     the task *after* it has been delivered; comments added before delivery
+             *     (e.g. an unrelated note) do not clear it.
+             * @default false
+             */
+            delivered: boolean;
+            /** Format: int64 */
+            display_id: number;
+            /** Format: int64 */
+            sigma_minutes: number;
+            task_id: string;
+            title: string;
+        };
+        /**
          * @description Permission map for auto-approving proposed changes.
          *
          *     Serialized as a flat map of `"target:operation"` -> bool so that mobile
@@ -1339,6 +1367,12 @@ interface components$1 {
             history: components$1['schemas']['HistoryMessage'][];
             /** @default null */
             pending_approval: components$1['schemas']['ApprovalRequest'] | null;
+            /**
+             * @description Pending overrun check-ins awaiting an answer (WI-3). Restored so the
+             *     check-in is not lost across CLI save/resume.
+             * @default []
+             */
+            pending_check_ins: components$1['schemas']['PendingCheckIn'][];
             /** @default null */
             permissions: components$1['schemas']['Permissions'] | null;
             /** @default null */
@@ -1358,7 +1392,7 @@ interface components$1 {
          * @description Target kind for a proposed or applied change.
          * @enum {string}
          */
-        TargetKind: 'task' | 'habit' | 'skill' | 'memory' | 'schedule';
+        TargetKind: 'task' | 'habit' | 'skill' | 'memory' | 'schedule' | 'comment';
         ToolStat: {
             /** Format: uint64 */
             count: number;
