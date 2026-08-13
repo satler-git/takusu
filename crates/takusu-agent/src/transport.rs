@@ -315,6 +315,10 @@ pub struct ResumeSessionRequest {
     /// check-in is not lost across CLI save/resume.
     #[serde(default)]
     pub pending_check_ins: Vec<crate::tools::comments::PendingCheckIn>,
+    /// Memory ids already injected into the system context, so a resumed
+    /// session does not re-inject them (WI-4 / #1003).
+    #[serde(default)]
+    pub injected_memory_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
@@ -1784,6 +1788,7 @@ mod tests {
                 schedule_dirty: None,
                 compaction_summary: None,
                 pending_check_ins: Vec::new(),
+                injected_memory_ids: Vec::new(),
             },
         };
         let res =
@@ -1908,6 +1913,7 @@ mod tests {
                 schedule_dirty: None,
                 compaction_summary: None,
                 pending_check_ins: Vec::new(),
+                injected_memory_ids: Vec::new(),
             },
         };
         let res =

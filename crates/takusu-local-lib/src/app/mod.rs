@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use takusu_contracts::{
-    CommentRow, CreateComment, CreateMemory, CreateSkill, MemoryQuery, MemoryRow, SettingsRow,
+    CommentRow, CreateComment, CreateMemory, CreateSkill, MemoryInjectionQuery,
+    MemoryInjectionResult, MemoryQuery, MemoryRow, SettingsRow,
     SimilarTaskQuery, SimilarTaskRow, SkillRow, Storage, TokenCreateResponse, TokenRow,
     UpdateMemory, UpdateSettings, UpdateSkill,
 };
@@ -256,6 +257,26 @@ impl TakusuApp {
         }
         self.storage
             .search_memories(query)
+            .await
+            .map_err(storage_to_app)
+    }
+
+    pub async fn injectable_memories(
+        &self,
+        query: &MemoryInjectionQuery,
+    ) -> Result<MemoryInjectionResult, AppError> {
+        if takusu_search::memory::normalize_text(
+            &query.text,
+            Some(takusu_search::memory::MAX_INJECTION_UTTERANCE_SCALARS),
+        )
+        .is_err()
+        {
+            return Err(AppError::BadRequest(BadRequestKind::Other(
+                "invalid text".into(),
+            )));
+        }
+        self.storage
+            .injectable_memories(query)
             .await
             .map_err(storage_to_app)
     }

@@ -6,7 +6,8 @@ use takusu_contracts::validate::validate_task_datetimes;
 use takusu_contracts::{
     AttachWorkSession, CommentRow, ConvertWorkSession, CreateHabit, CreateHabitScheduledSpan,
     CreateMemory, CreateSkill, CreateTask, GoogleCalEventRow, GoogleCalSettingsRow, HabitRow,
-    HabitScheduledSpanRow, HabitStepEstimateInput, HabitStepInput, HabitStepRow, MemoryQuery,
+    HabitScheduledSpanRow, HabitStepEstimateInput, HabitStepInput, HabitStepRow,
+    MemoryInjectionQuery, MemoryInjectionResult, MemoryQuery,
     MemoryRow, ProgressEventRow, RecordWorkSessionProgress, SaveScheduleRequest, ScheduleRow,
     SettingsRow, SimilarTaskQuery, SimilarTaskRow, SkillRow, SplitResult, SplitTask, StartWorkSession,
     Storage, StorageError, TaskProgress, TaskQuery, TaskRow, TokenCreateResponse, TokenRow,
@@ -1532,6 +1533,46 @@ impl Storage for D1Storage {
         let limit = query.limit.unwrap_or(10).clamp(1, 50);
         rows.truncate(limit as usize);
         Ok(rows)
+    }
+
+    async fn injectable_memories(
+        &self,
+        query: &MemoryInjectionQuery,
+    ) -> StorageResult<MemoryInjectionResult> {
+        let normalized = takusu_search::memory::normalize_text(
+            &query.text,
+            Some(takusu_search::memory::MAX_INJECTION_UTTERANCE_SCALARS),
+        )
+        .map_err(|e| StorageError::BadRequest(format!("invalid text: {e}")))?;
+
+        let counts = self.memory_counts().await?;
+        if normalized.is_empty() {
+            return Ok(MemoryInjectionResult {
+                memories: Vec::new(),
+                counts,
+            });
+        }
+        // Bound rows read per turn: order by the injection ranking and LIMIT up
+        // front instead of loading every `instr` match (a ubiquitous short key
+        // could otherwise match an unbounded set).
+        let sql_limit = query
+            .limit
+            .unwrap_or(5)
+            .clamp(1, takusu_search::memory::MAX_INJECTION_RESULTS as u32);
+        let stmt = self.db.prepare(
+            "SELECT * FROM memories WHERE kind IN ('proper_noun', 'fact') AND instr(?1, normalized_key) > 0 ORDER BY length(normalized_key) DESC, updated_at DESC, id ASC LIMIT ?2",
+        );
+        let bindings = vec![JsValue::from_str(&normalized), JsValue::from_f64(sql_limit.into())];
+        let mut rows: Vec<MemoryRow> =
+            d1_all(&stmt.bind(&bindings).map_err(d1_err)?).await?;
+        let matched =
+            takusu_search::memory::rank_memories_for_injection(&normalized, &mut rows);
+        let limit = sql_limit as usize;
+        rows.truncate(matched.min(limit));
+        Ok(MemoryInjectionResult {
+            memories: rows,
+            counts,
+        })
     }
 
     async fn find_similar_tasks(

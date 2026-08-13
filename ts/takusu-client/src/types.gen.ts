@@ -6591,6 +6591,127 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/memory/inject': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      /**
+       * @description Query for the memory read auto-injection retrieval path (WI-4 / #1003).
+       *
+       *     Unlike [`MemoryQuery`] (user-facing keyword search), this is a *reverse*
+       *     lookup: memories whose `normalized_key` occurs as a substring of `text`
+       *     are candidates, ranked server-side by key specificity and recency. Used at
+       *     turn start to surface `proper_noun` / `fact` memories without the agent
+       *     calling any search tool.
+       */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['MemoryInjectionQuery'];
+        };
+      };
+      responses: {
+        /** @description Result of a memory read auto-injection retrieval (WI-4 / #1003). */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['MemoryInjectionResult'];
+          };
+        };
+        /** @description Error */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Expected request with `Content-Type: application/json` */
+        415: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Failed to deserialize the JSON body into the target type */
+        422: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Error */
+        500: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/memory/{id}': {
     parameters: {
       query?: never;
@@ -8576,8 +8697,43 @@ export interface components {
      *     - `JsonString<Vec<ScheduleEntry>>` — schedule entry arrays
      */
     JsonString2: string;
+    /**
+     * @description Query for the memory read auto-injection retrieval path (WI-4 / #1003).
+     *
+     *     Unlike [`MemoryQuery`] (user-facing keyword search), this is a *reverse*
+     *     lookup: memories whose `normalized_key` occurs as a substring of `text`
+     *     are candidates, ranked server-side by key specificity and recency. Used at
+     *     turn start to surface `proper_noun` / `fact` memories without the agent
+     *     calling any search tool.
+     */
+    MemoryInjectionQuery: {
+      /**
+       * Format: uint32
+       * @description Maximum number of memories to return (default 5, capped at 20).
+       */
+      limit?: number | null;
+      /** @description The raw user utterance. Normalized server-side before matching. */
+      text: string;
+    };
+    /** @description Result of a memory read auto-injection retrieval (WI-4 / #1003). */
+    MemoryInjectionResult: {
+      /**
+       * @description Per-kind memory counts so the agent knows whether the store is
+       *     non-empty even when no memory matches the utterance.
+       */
+      counts: components['schemas']['MemoryKindCounts'];
+      /** @description Matching `proper_noun` / `fact` memories, ranked for injection. */
+      memories: components['schemas']['MemoryRow'][];
+    };
     /** @enum {string} */
     MemoryKind: 'proper_noun' | 'fact';
+    /** @description Total memory rows per kind, used for the system-prompt memory hint. */
+    MemoryKindCounts: {
+      /** Format: int64 */
+      fact: number;
+      /** Format: int64 */
+      proper_noun: number;
+    };
     MemoryQuery: {
       kind?: components['schemas']['MemoryKind'] | null;
       /** Format: int64 */
@@ -9355,6 +9511,12 @@ export interface components {
       compaction_summary: string | null;
       /** @default [] */
       history: components['schemas']['HistoryMessage'][];
+      /**
+       * @description Memory ids already injected into the system context, so a resumed
+       *     session does not re-inject them (WI-4 / #1003).
+       * @default []
+       */
+      injected_memory_ids: string[];
       /** @default null */
       pending_approval: components['schemas']['ApprovalRequest'] | null;
       /**

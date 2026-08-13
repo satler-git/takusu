@@ -3,9 +3,10 @@
 Closes #1266 (memory のリデザイン) and #1315 (description よりもコメント？). Also resolves #1003
 (memory を読む選択肢がなかなかない).
 
-> **Status**: WI-1 (comment server layer), WI-2 (`task_note` migration + removal) and WI-3
-> (comment agent tool, automatic attachment, and completion hook) are implemented. Migrations
-> landed at `028`/`029` (local) and `029`/`030` (worker). WI-4 and WI-5 remain.
+> **Status**: WI-1 (comment server layer), WI-2 (`task_note` migration + removal), WI-3
+> (comment agent tool, automatic attachment, and completion hook) and WI-4 (memory read
+> auto-injection, #1003) are implemented. Migrations landed at `028`/`029` (local) and
+> `029`/`030` (worker). WI-5 remains.
 
 ## Summary
 
@@ -175,6 +176,19 @@ actuals.
 ## WI-4: Memory read auto-injection (#1003)
 
 **Files**: `takusu-agent` turn pipeline and system-context construction, `takusu-search`.
+A server-side reverse-lookup endpoint was required so the agent (which talks to the storage
+server over HTTP and has no raw `normalized_key` access) retrieves matching memories and
+per-kind counts in one call: `takusu-contracts` (`MemoryInjectionQuery` /
+`MemoryInjectionResult`), storage trait `injectable_memories`, both backends (sqlite, D1) +
+worker proxy, both routers/handlers, `takusu-client`, openapi + `ts/takusu-client`
+regeneration.
+
+Review hardening (#1003): `POST /api/memory/inject` (JSON body, not URL query — avoids proxy
+URI-length limits and access-log leakage); SQL pre-interation is bounded by
+`ORDER BY length(normalized_key) DESC, updated_at DESC, id ASC LIMIT ?` so every turn reads at
+most `MAX_INJECTION_RESULTS` rows instead of all `instr` matches; injected records are emitted
+as JSON-escaped single lines with the security reminder placed *after* the data, and both `key`
+and `content` are truncated and raw key length is bounded at save.
 
 - Define a dedicated retrieval path instead of reusing `memory_search`. The existing search ANDs
   whitespace-separated keywords, so passing a whole utterance fails in Japanese (no spaces → one

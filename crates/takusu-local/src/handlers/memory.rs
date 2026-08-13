@@ -1,7 +1,7 @@
 use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
-use takusu_contracts::{CreateMemory, MemoryQuery, SimilarTaskQuery, UpdateMemory};
+use takusu_contracts::{CreateMemory, MemoryInjectionQuery, MemoryQuery, SimilarTaskQuery, UpdateMemory};
 
 use crate::error::{HttpError, NoContent};
 use crate::handlers::common::operation_id;
@@ -64,6 +64,14 @@ pub async fn search_memory(
 ) -> Result<Json<Vec<takusu_contracts::MemoryRow>>, HttpError> {
     let memories = state.app.search_memories(&query).await?;
     Ok(Json(memories))
+}
+
+pub async fn injectable_memory(
+    State(state): State<AppState>,
+    Json(query): Json<MemoryInjectionQuery>,
+) -> Result<Json<takusu_contracts::MemoryInjectionResult>, HttpError> {
+    let result = state.app.injectable_memories(&query).await?;
+    Ok(Json(result))
 }
 
 pub async fn find_similar_tasks(

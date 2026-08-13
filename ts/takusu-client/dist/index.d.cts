@@ -608,8 +608,43 @@ interface components$1 {
          *     - `JsonString<Vec<ScheduleEntry>>` — schedule entry arrays
          */
         JsonString2: string;
+        /**
+         * @description Query for the memory read auto-injection retrieval path (WI-4 / #1003).
+         *
+         *     Unlike [`MemoryQuery`] (user-facing keyword search), this is a *reverse*
+         *     lookup: memories whose `normalized_key` occurs as a substring of `text`
+         *     are candidates, ranked server-side by key specificity and recency. Used at
+         *     turn start to surface `proper_noun` / `fact` memories without the agent
+         *     calling any search tool.
+         */
+        MemoryInjectionQuery: {
+            /**
+             * Format: uint32
+             * @description Maximum number of memories to return (default 5, capped at 20).
+             */
+            limit?: number | null;
+            /** @description The raw user utterance. Normalized server-side before matching. */
+            text: string;
+        };
+        /** @description Result of a memory read auto-injection retrieval (WI-4 / #1003). */
+        MemoryInjectionResult: {
+            /**
+             * @description Per-kind memory counts so the agent knows whether the store is
+             *     non-empty even when no memory matches the utterance.
+             */
+            counts: components$1['schemas']['MemoryKindCounts'];
+            /** @description Matching `proper_noun` / `fact` memories, ranked for injection. */
+            memories: components$1['schemas']['MemoryRow'][];
+        };
         /** @enum {string} */
         MemoryKind: 'proper_noun' | 'fact';
+        /** @description Total memory rows per kind, used for the system-prompt memory hint. */
+        MemoryKindCounts: {
+            /** Format: int64 */
+            fact: number;
+            /** Format: int64 */
+            proper_noun: number;
+        };
         MemoryQuery: {
             kind?: components$1['schemas']['MemoryKind'] | null;
             /** Format: int64 */
@@ -1365,6 +1400,12 @@ interface components$1 {
             compaction_summary: string | null;
             /** @default [] */
             history: components$1['schemas']['HistoryMessage'][];
+            /**
+             * @description Memory ids already injected into the system context, so a resumed
+             *     session does not re-inject them (WI-4 / #1003).
+             * @default []
+             */
+            injected_memory_ids: string[];
             /** @default null */
             pending_approval: components$1['schemas']['ApprovalRequest'] | null;
             /**

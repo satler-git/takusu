@@ -338,6 +338,13 @@ impl Validate for crate::CreateMemory {
         if takusu_search::memory::normalize_key(&self.key).is_err() {
             return Err(StorageError::BadRequest("invalid key".into()));
         }
+        // The raw key length is also bounded (normalize_key only checks the
+        // collapsed form, so a whitespace-heavy key would otherwise slurp an
+        // unbounded prompt when injected; see WI-4 / #1003).
+        const MAX_RAW_KEY_SCALARS: usize = takusu_search::memory::MAX_KEY_SCALARS;
+        if self.key.chars().count() > MAX_RAW_KEY_SCALARS {
+            return Err(StorageError::BadRequest("key too long".into()));
+        }
         if takusu_search::memory::normalize_content(&self.content).is_err() {
             return Err(StorageError::BadRequest("invalid content".into()));
         }

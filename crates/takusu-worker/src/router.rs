@@ -154,6 +154,7 @@ async fn dispatch(req: Request, env: Env) -> Result<Response, crate::error::Work
         (Method::Delete, ["skills", id]) => handlers::skills::delete(req, env, id).await,
         (Method::Post, ["memory"]) => handlers::memory::create(req, env).await,
         (Method::Get, ["memory", "search"]) => handlers::memory::search(req, env).await,
+        (Method::Post, ["memory", "inject"]) => handlers::memory::inject(req, env).await,
         (Method::Get, ["memory", id]) => handlers::memory::get(req, env, id).await,
         (Method::Patch, ["memory", id]) => handlers::memory::update(req, env, id).await,
         (Method::Delete, ["memory", id]) => handlers::memory::delete(req, env, id).await,
