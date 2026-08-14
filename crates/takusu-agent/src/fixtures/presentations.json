@@ -1,0 +1,58 @@
+[
+  {
+    "type": "work_transition",
+    "kind": "start",
+    "reference": "#7",
+    "title": "レポート",
+    "detail": "「レポート」の作業を開始"
+  },
+  {
+    "type": "schedule_summary",
+    "next": {
+      "reference": "#1",
+      "title": "朝会",
+      "start_at": "2026-08-14T09:00:00",
+      "end_at": "2026-08-14T09:30:00"
+    },
+    "entries": [
+      {
+        "reference": "#1",
+        "title": "朝会",
+        "start_at": "2026-08-14T09:00:00",
+        "end_at": "2026-08-14T09:30:00"
+      },
+      {
+        "reference": "#2",
+        "title": "出社",
+        "start_at": "2026-08-14T10:00:00",
+        "end_at": "2026-08-14T11:00:00"
+      }
+    ]
+  },
+  {
+    "type": "progress_summary",
+    "done": 3,
+    "in_progress": 1,
+    "scheduled": 5
+  },
+  {
+    "type": "check_in",
+    "question": "「レポート」は始めますか？",
+    "act": {
+      "title": "行動",
+      "actions": [{ "id": "ok-start", "label": "着手", "kind": "immediate" }]
+    },
+    "shift": {
+      "title": "ズラす",
+      "actions": [{ "id": "ok-snooze", "label": "10分後", "kind": "immediate" }]
+    }
+  },
+  {
+    "type": "clarification",
+    "message": "どちらの会話ですか？"
+  },
+  {
+    "type": "text",
+    "text": "こんにちは"
+  }
+]

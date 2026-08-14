@@ -20,7 +20,13 @@ Phase 3  voice loop + capture (VAD endpointing, voice approval layers, one-utter
 Phase 4  ambient listening (VAD → KWS → speaker → ASR gates on desktop first, then Android foreground service)
 ```
 
-Each work item (WI) should leave the repository working and tested before the next begins.
+Each work item (WI) should leave the repository working and tested before the next begins. Each WI
+is opened as its own pull request against the accumulating `resident-agent` branch (one WI per PR,
+parented on `main`), so review and rollout stay incremental; a later WI that depends on an earlier
+one builds on the merged PR. **At each phase boundary (`resident-agent` passes the phase gate
+below), it is merged into `main` and released as a normal release**; `resident-agent` is then
+re-based/re-cut from the new `main` tip so the next phase builds on the released code rather than
+carrying unreleased changes into the next phase.
 Contracts in this document may be refined when implementation reveals a problem, but the document
 and all affected clients must be updated in the same change.
 
@@ -154,7 +160,7 @@ crates/takusu-desktop           (new)  # Linux resident daemon (systemd user ser
 ├── src/main.rs                        # daemon: agent client, heartbeat, event subscription
 ├── src/tray.rs                        # StatusNotifierItem tray icon (ksni), state → icon
 ├── src/notify.rs                      # desktop notifications with action buttons (zbus)
-├── src/popover.rs                     # compact popover (phase 2: tray menu; window later)
+├── src/popover.rs                     # compact popover window (GPUI), replacing a tray menu
 └── src/audio.rs                       # PipeWire/cpal capture ownership, ambient gates (phase 4)
 
 takusu-local-lib / takusu-local        # existing; per-device app host and event evaluator
@@ -220,7 +226,7 @@ pub enum Presentation {
     CheckIn(CheckInCard),             // one question + [行動] [ズラす] (+相談) actions
     ChangeProposal(ApprovalRequest),  // rendered from the existing ApprovalRequest
     Clarification(FocusedQuestion),
-    Text(String),                     // fallback
+    Text { text: String },            // fallback (struct variant: serde cannot internally-tag a primitive newtype)
 }
 ```
 
@@ -652,11 +658,14 @@ a StatusNotifierItem tray icon (`ksni`) whose icon reflects the state machine. T
 the common backend and invokes the shared evaluator when this device holds resident authority;
 the tray daemon contains no planner logic. Desktop notifications (`zbus`
 `org.freedesktop.Notifications`) carry action buttons wired to server-issued capabilities and the
-same compact-panel commands as Android. The compact popover starts as a tray menu (current task,
-quick actions, open approval); a real popover window is deferred until the menu proves insufficient.
+same compact-panel commands as Android. The compact popover is a real window rendered with
+**GPUI** (from `zed-industries/gpui`), showing current task, quick actions, and the open approval
+panel; the StatusNotifierItem icon toggles this window. A StatusNotifierItem *menu* is only a
+fallback if the window cannot be brought up.
 
-Library choices (`ksni`, `zbus`) are the initial selection; if a target environment lacks SNI
-support, revisit with a fallback before expanding scope.
+Library choices are the initial selection: `ksni` for the StatusNotifierItem icon, `zbus` for
+desktop notifications, and **GPUI** (`zed-industries/gpui`) for the compact popover window. If a
+target environment lacks SNI support, revisit with a fallback before expanding scope.
 
 **Verify**: `cargo nextest run -p takusu-desktop` for state→icon mapping and notification action
 routing with a mock transport; manual smoke test on the user's desktop (tray states, notification
@@ -1037,9 +1046,13 @@ platform's surface runs ahead of the other. WI-11 must provide the evaluator lea
 enable event commits; WI-9 may develop its pure evaluator earlier but must remain disabled until
 arbitration is available. WI-16 and WI-17 are independent after WI-15. `task-comments-memory-redesign.md`
 is implemented; WI-17 and WI-18 use comments directly. Do not start a phase before the previous
-phase's gate criteria (below) hold in daily use.
+phase's gate criteria (below) hold in daily use. **After each phase's gate is met, merge
+`resident-agent` → `main` and ship a release**, then re-cut `resident-agent` from the new `main` tip
+before starting the next phase so the next phase is released incrementally rather than delayed by
+the full plan.
 
-Use one focused jj change per WI when practical. Before each push, rebase onto `main`, then run
+Use one focused jj change per WI when practical. Before each push, rebase onto `main` (or the
+current `resident-agent` tip), then run
 `cargo fmt`, `cargo clippy --workspace`, `cargo nextest run --workspace`, and for mobile WIs
 `npm run lint`, `npx tsc --noEmit`, `npm run fmt:check`. If a contract changes, update this
 document, `../resident-agent.md` when the design itself shifts, and all affected tests in the same

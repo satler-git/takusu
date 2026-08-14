@@ -73,7 +73,7 @@ impl UserInputProvider for ReplUserInputProvider {
 
 enum ReplEvent {
     Turn(TurnEvent),
-    Done(TurnResult),
+    Done(Box<TurnResult>),
     Error(AppError),
 }
 
@@ -180,7 +180,7 @@ pub async fn run(
             };
             match res {
                 Ok(result) => {
-                    let _ = turn_tx.send(ReplEvent::Done(result));
+                    let _ = turn_tx.send(ReplEvent::Done(Box::new(result)));
                 }
                 Err(e) => {
                     let _ = turn_tx.send(ReplEvent::Error(agent_err(e)));

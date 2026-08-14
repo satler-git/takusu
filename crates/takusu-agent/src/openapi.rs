@@ -211,6 +211,7 @@ async fn run_turn(
         changes: vec![],
         schedule_dirty: false,
         approval_request: None,
+        presentation: None,
     })
 }
 

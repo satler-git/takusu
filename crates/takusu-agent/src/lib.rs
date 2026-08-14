@@ -8,6 +8,7 @@ pub mod llm;
 #[cfg(feature = "openapi")]
 pub mod openapi;
 pub mod permissions;
+pub mod presentation;
 pub mod runner;
 pub mod tool;
 pub mod tool_stats;
@@ -22,6 +23,11 @@ pub(crate) mod habit_steps;
 pub(crate) mod history;
 
 pub use permissions::{PermissionKey, PermissionKeyParseError, Permissions};
+pub use presentation::{
+    Action, ActionGroup, ActionKind, CheckInCard, FocusedQuestion, NonEmptyVec, Presentation,
+    ProgressSummary, ScheduleAlert, ScheduleAlertKind, ScheduleEntry, ScheduleSummary, TaskAuthority,
+    TaskCard, WorkState, WorkTransition, WorkTransitionKind,
+};
 pub use tts_queue::TtsQueue;
 
 pub use crate::llm::CompactionSettings;
@@ -171,6 +177,10 @@ pub struct TurnResult {
     pub changes: Vec<ChangeReceipt>,
     pub schedule_dirty: bool,
     pub approval_request: Option<ApprovalRequest>,
+    /// Typed presentation derived from the turn's tool results (WI-1). `None`
+    /// when no tool result maps to a presentation kind.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub presentation: Option<Presentation>,
 }
 
 fn new_session_id() -> String {
@@ -209,7 +219,7 @@ pub enum TurnEvent {
         is_error: bool,
     },
     Error(String),
-    Done(TurnResult),
+    Done(Box<TurnResult>),
 }
 
 /// Serialized work turn result. Holds the assistant response text, any change receipts produced
@@ -479,6 +489,9 @@ impl AgentSession {
         let mut approval_warnings = Vec::new();
         let mut schedule_dirty = *self.schedule_dirty.lock()?;
         let mut tool_call_count = 0;
+        // Last typed presentation derived from a tool result (WI-1). Superseded
+        // by a ChangeProposal at the end when an approval is pending.
+        let mut presentation: Option<Presentation> = None;
         // Accumulates assistant text emitted alongside tool calls. Non-streaming
         // callers (CLI, transport) only receive the final `TurnResult.text`, so
         // intermediate text would be silently dropped without this. The text is
@@ -538,14 +551,20 @@ impl AgentSession {
                             changes: final_changes,
                             schedule_dirty: result.schedule_dirty,
                             approval_request: None,
+                            presentation,
                         });
                     }
                     *self.schedule_dirty.lock()? = schedule_dirty;
+                    let final_presentation = match approval_request.as_ref() {
+                        Some(request) => Some(Presentation::ChangeProposal(request.clone())),
+                        None => presentation,
+                    };
                     return Ok(TurnResult {
                         text: final_text,
                         changes,
                         schedule_dirty,
                         approval_request,
+                        presentation: final_presentation,
                     });
                 }
                 llm::LlmResponseContent::ToolCalls { text, calls } => {
@@ -581,6 +600,7 @@ impl AgentSession {
                             &mut inferred_fields,
                             &mut changes,
                             &mut schedule_dirty,
+                            &mut presentation,
                             |_| {},
                         )
                         .await?;
@@ -694,6 +714,7 @@ impl AgentSession {
         let mut schedule_dirty = *self.schedule_dirty.lock()?;
         let mut tool_call_count = 0;
         let mut tts_queue = TtsQueue::new();
+        let mut presentation: Option<Presentation> = None;
         let mut full_text = String::new();
 
         loop {
@@ -796,14 +817,20 @@ impl AgentSession {
                                     changes: final_changes,
                                     schedule_dirty: result.schedule_dirty,
                                     approval_request: None,
+                                    presentation,
                                 });
                             }
                             *self.schedule_dirty.lock()? = schedule_dirty;
+                            let final_presentation = match approval_request.as_ref() {
+                                Some(request) => Some(Presentation::ChangeProposal(request.clone())),
+                                None => presentation,
+                            };
                             return Ok(TurnResult {
                                 text: full_text,
                                 changes,
                                 schedule_dirty,
                                 approval_request,
+                                presentation: final_presentation,
                             });
                         }
 
@@ -826,19 +853,20 @@ impl AgentSession {
 
                         let is_truncated = finish_reason == Some(llm::FinishReason::Length);
                         let calls = std::mem::take(&mut current_calls);
-                        let tool_results = self
-                            .execute_tool_calls(
-                                calls,
-                                is_truncated,
-                                &mut approval_why,
-                                &mut approval_warnings,
-                                &mut proposed_changes,
-                                &mut inferred_fields,
-                                &mut changes,
-                                &mut schedule_dirty,
-                                &mut emit,
-                            )
-                            .await?;
+let tool_results = self
+                        .execute_tool_calls(
+                            calls,
+                            is_truncated,
+                            &mut approval_why,
+                            &mut approval_warnings,
+                            &mut proposed_changes,
+                            &mut inferred_fields,
+                            &mut changes,
+                            &mut schedule_dirty,
+                            &mut presentation,
+                            &mut emit,
+                        )
+                        .await?;
                         local.extend(tool_results);
 
                         break;
@@ -859,6 +887,7 @@ impl AgentSession {
         inferred_fields: &mut Vec<InferredField>,
         changes: &mut Vec<ChangeReceipt>,
         schedule_dirty: &mut bool,
+        presentation: &mut Option<Presentation>,
         mut emit: F,
     ) -> Result<Vec<llm::Message>, AgentError>
     where
@@ -903,6 +932,9 @@ impl AgentSession {
                     .await
                 {
                     Ok(output) => {
+                        // Extract the typed presentation before `output.why`
+                        // and `output.content` are moved below (WI-1).
+                        let tool_presentation = Presentation::from_tool_output(&call.name, &output);
                         tracing::info!(session_id = %self.session_id, tool = %call.name, is_error = output.is_error, "tool call completed");
                         self.tool_stats.record(&call.name, output.is_error);
                         if output.why.is_some() {
@@ -917,6 +949,9 @@ impl AgentSession {
                         self.discovered_tools
                             .lock()?
                             .extend(output.discovered_tools.iter().cloned());
+                        if let Some(p) = tool_presentation {
+                            *presentation = Some(p);
+                        }
                         emit(TurnEvent::ToolResult {
                             call_id: tool_call_id,
                             name: call.name.clone(),
