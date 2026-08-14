@@ -977,11 +977,7 @@ async fn update_task_to_terminal_status_closes_open_work_session() {
     }
 
     async fn start_work(app: &axum::Router, id: &str) {
-        let req = auth_req_body(
-            Method::POST,
-            "/api/work-sessions",
-            json!({"task_id": id}),
-        );
+        let req = auth_req_body(Method::POST, "/api/work-sessions", json!({"task_id": id}));
         let res = app.clone().oneshot(req).await.unwrap();
         assert_eq!(res.status(), StatusCode::OK);
     }
@@ -4197,11 +4193,7 @@ async fn progress_lifecycle() {
     let id = task["id"].as_str().unwrap();
 
     // Start work on the task.
-    let req = auth_req_body(
-        Method::POST,
-        "/api/work-sessions",
-        json!({"task_id": id}),
-    );
+    let req = auth_req_body(Method::POST, "/api/work-sessions", json!({"task_id": id}));
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
     let session: serde_json::Value =
@@ -4249,7 +4241,10 @@ async fn progress_lifecycle() {
     // Complete the work session. The task only reached 4/10, so completing it
     // splits the unfinished remainder into a new task (#1419) instead of
     // inflating quantity_done to the total.
-    let req = auth_req(Method::POST, &format!("/api/work-sessions/{session_id}/complete"));
+    let req = auth_req(
+        Method::POST,
+        &format!("/api/work-sessions/{session_id}/complete"),
+    );
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
     let completed: serde_json::Value =
@@ -4299,18 +4294,13 @@ async fn progress_lifecycle_without_quantity() {
     );
     let res = app.clone().oneshot(create).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let task: serde_json::Value =
-        serde_json::from_str(&body_str(res.into_body()).await).unwrap();
+    let task: serde_json::Value = serde_json::from_str(&body_str(res.into_body()).await).unwrap();
     let id = task["id"].as_str().unwrap();
     assert!(task["quantity_total"].is_null());
     assert_eq!(task["quantity_done"], 0);
 
     // Start work on the task.
-    let req = auth_req_body(
-        Method::POST,
-        "/api/work-sessions",
-        json!({"task_id": id}),
-    );
+    let req = auth_req_body(Method::POST, "/api/work-sessions", json!({"task_id": id}));
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
     let session: serde_json::Value =
@@ -4329,8 +4319,7 @@ async fn progress_lifecycle_without_quantity() {
     );
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let no_op: serde_json::Value =
-        serde_json::from_str(&body_str(res.into_body()).await).unwrap();
+    let no_op: serde_json::Value = serde_json::from_str(&body_str(res.into_body()).await).unwrap();
     assert!(no_op["event"].is_null());
     assert!(!no_op["suggests_completion"].as_bool().unwrap());
 
@@ -4347,8 +4336,7 @@ async fn progress_lifecycle_without_quantity() {
     let req = auth_req(Method::GET, &format!("/api/tasks/{id}"));
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let task: serde_json::Value =
-        serde_json::from_str(&body_str(res.into_body()).await).unwrap();
+    let task: serde_json::Value = serde_json::from_str(&body_str(res.into_body()).await).unwrap();
     assert_eq!(task["status"], "in_progress");
     assert!(task["quantity_total"].is_null());
     assert_eq!(task["quantity_done"], 0);
@@ -4382,8 +4370,7 @@ async fn progress_lifecycle_without_quantity() {
     let req = auth_req(Method::GET, &format!("/api/tasks/{id}"));
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let task: serde_json::Value =
-        serde_json::from_str(&body_str(res.into_body()).await).unwrap();
+    let task: serde_json::Value = serde_json::from_str(&body_str(res.into_body()).await).unwrap();
     assert_eq!(task["status"], "in_progress");
     assert!(task["quantity_total"].is_null());
     assert_eq!(task["quantity_done"], 5);
@@ -4476,14 +4463,11 @@ async fn progress_and_pause_cannot_share_operation_id() {
     let task: serde_json::Value = serde_json::from_str(&body_str(res.into_body()).await).unwrap();
     let id = task["id"].as_str().unwrap();
 
-    let req = auth_req_body(
-        Method::POST,
-        "/api/work-sessions",
-        json!({"task_id": id}),
-    );
+    let req = auth_req_body(Method::POST, "/api/work-sessions", json!({"task_id": id}));
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let session: serde_json::Value = serde_json::from_str(&body_str(res.into_body()).await).unwrap();
+    let session: serde_json::Value =
+        serde_json::from_str(&body_str(res.into_body()).await).unwrap();
     let session_id = session["id"].as_str().unwrap();
 
     // Reusing the same operationId for a different progress endpoint must fail
@@ -4539,26 +4523,22 @@ async fn progress_status_validation() {
     let id = task["id"].as_str().unwrap();
 
     // Start and complete the work session, which also completes the task.
-    let req = auth_req_body(
-        Method::POST,
-        "/api/work-sessions",
-        json!({"task_id": id}),
-    );
+    let req = auth_req_body(Method::POST, "/api/work-sessions", json!({"task_id": id}));
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let session: serde_json::Value = serde_json::from_str(&body_str(res.into_body()).await).unwrap();
+    let session: serde_json::Value =
+        serde_json::from_str(&body_str(res.into_body()).await).unwrap();
     let session_id = session["id"].as_str().unwrap();
 
-    let req = auth_req(Method::POST, &format!("/api/work-sessions/{session_id}/complete"));
+    let req = auth_req(
+        Method::POST,
+        &format!("/api/work-sessions/{session_id}/complete"),
+    );
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
 
     // Starting a new session for a completed task fails.
-    let req = auth_req_body(
-        Method::POST,
-        "/api/work-sessions",
-        json!({"task_id": id}),
-    );
+    let req = auth_req_body(Method::POST, "/api/work-sessions", json!({"task_id": id}));
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::BAD_REQUEST);
 
@@ -5332,12 +5312,11 @@ async fn delete_task_closes_and_detaches_work_session_and_event_task_id() {
     let res = app.oneshot(delete_req).await.unwrap();
     assert_eq!(res.status(), StatusCode::NO_CONTENT);
 
-    let count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM work_sessions WHERE task_id = ?")
-            .bind(&id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM work_sessions WHERE task_id = ?")
+        .bind(&id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
     assert_eq!(count, 0);
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM progress_events WHERE task_id = ?")
         .bind(&id)
@@ -5348,13 +5327,12 @@ async fn delete_task_closes_and_detaches_work_session_and_event_task_id() {
 
     // Work sessions and their events remain available for history, but deleting
     // a task closes and detaches them (#1393).
-    let session: Option<(String, Option<String>)> = sqlx::query_as(
-        "SELECT id, ended_at FROM work_sessions WHERE id = ? AND task_id IS NULL",
-    )
-    .bind(&session_id)
-    .fetch_optional(&pool)
-    .await
-    .unwrap();
+    let session: Option<(String, Option<String>)> =
+        sqlx::query_as("SELECT id, ended_at FROM work_sessions WHERE id = ? AND task_id IS NULL")
+            .bind(&session_id)
+            .fetch_optional(&pool)
+            .await
+            .unwrap();
     let session = session.expect("deleted task's work session");
     assert!(session.1.is_some());
 }

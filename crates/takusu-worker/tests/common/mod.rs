@@ -231,7 +231,11 @@ pub fn http_get(path: &str, auth_token: Option<&str>) -> Result<(u16, String), S
 }
 
 #[allow(dead_code)]
-pub fn http_post_json(path: &str, auth_token: Option<&str>, body: &str) -> Result<(u16, String), String> {
+pub fn http_post_json(
+    path: &str,
+    auth_token: Option<&str>,
+    body: &str,
+) -> Result<(u16, String), String> {
     let host = "127.0.0.1";
     let mut stream = TcpStream::connect((host, PORT)).map_err(|e| format!("connect: {e}"))?;
     stream.set_read_timeout(Some(Duration::from_secs(10))).ok();

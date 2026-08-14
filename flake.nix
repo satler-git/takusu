@@ -387,10 +387,12 @@
           # no CA certificates are loaded. We provide it via LINDERA_DICTIONARIES_PATH.
           linderaIpadicDict = pkgs.runCommand "lindera-ipadic-dict" { } ''
             mkdir -p $out/4.0.1
-            cp ${pkgs.fetchurl {
-              url = "https://Lindera.dev/mecab-ipadic-2.7.0-20250920.tar.gz";
-              hash = "sha256-p7qfZF/+cJTlauHEqB0QDfj7seKLvheSYi6XKOFi2z0=";
-            }} $out/4.0.1/mecab-ipadic-2.7.0-20250920.tar.gz
+            cp ${
+              pkgs.fetchurl {
+                url = "https://Lindera.dev/mecab-ipadic-2.7.0-20250920.tar.gz";
+                hash = "sha256-p7qfZF/+cJTlauHEqB0QDfj7seKLvheSYi6XKOFi2z0=";
+              }
+            } $out/4.0.1/mecab-ipadic-2.7.0-20250920.tar.gz
           '';
 
           # Cross-compile takusu-android .so for a list of Android targets.

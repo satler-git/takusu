@@ -6,19 +6,19 @@ use takusu_contracts::{
     AttachWorkSession, CommentRow, ConvertWorkSession, CreateHabit, CreateHabitScheduledSpan,
     CreateMemory, CreateSkill, CreateTask, GoogleCalEventRow, GoogleCalSettingsRow, HabitRow,
     HabitScheduledSpanRow, HabitStepEstimateInput, HabitStepInput, HabitStepRow,
-    MemoryInjectionQuery, MemoryInjectionResult, MemoryKindCounts, MemoryQuery,
-    MemoryRow, RecordWorkSessionProgress, SaveScheduleRequest, ScheduleEntry, ScheduleRow,
-    SettingsRow, SimilarTaskQuery, SimilarTaskRow, SkillRow, SplitResult, SplitTask, StartWorkSession,
-    Storage, StorageError, TaskProgress, TaskQuery, TaskRow, TokenCreateResponse, TokenRow,
+    MemoryInjectionQuery, MemoryInjectionResult, MemoryKindCounts, MemoryQuery, MemoryRow,
+    RecordWorkSessionProgress, SaveScheduleRequest, ScheduleEntry, ScheduleRow, SettingsRow,
+    SimilarTaskQuery, SimilarTaskRow, SkillRow, SplitResult, SplitTask, StartWorkSession, Storage,
+    StorageError, TaskProgress, TaskQuery, TaskRow, TokenCreateResponse, TokenRow,
     UpdateGoogleCalSettings, UpdateHabit, UpdateMemory, UpdateSettings, UpdateSkill, UpdateTask,
     WorkSessionProgressResult, WorkSessionRow, storage::StorageResult,
 };
 use takusu_search::search::{EvalContext, filter_tasks};
 use takusu_types::Minutes;
-use takusu_types::{DEFAULT_AUD, SCOPE_READ_WRITE};
 use takusu_types::{
     CommentAuthor, EnumLabel, Quantity, TaskStatus, TaskStatusFilter, Timestamp, WindowMode,
 };
+use takusu_types::{DEFAULT_AUD, SCOPE_READ_WRITE};
 
 use crate::config::LocalConfig;
 use takusu_contracts::validate::{validate_quantity, validate_scheduled_span_dates};
@@ -464,10 +464,11 @@ impl SqliteStorage {
         // longer mentions task_note, so this runs exactly once per database.
         // The whole migration runs inside a transaction so a failure mid-way
         // cannot leave a partial comment backfill or a half-rebuilt table.
-        let memories_sql: Option<String> =
-            sqlx::query_scalar("SELECT sql FROM sqlite_master WHERE type='table' AND name='memories'")
-                .fetch_optional(&pool)
-                .await?;
+        let memories_sql: Option<String> = sqlx::query_scalar(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='memories'",
+        )
+        .fetch_optional(&pool)
+        .await?;
         if memories_sql
             .as_deref()
             .is_some_and(|sql| sql.contains("task_note"))
@@ -888,12 +889,13 @@ impl Storage for SqliteStorage {
         }
 
         let id = uuid::Uuid::now_v7().to_string();
-        let seq: i64 =
-            sqlx::query_scalar("SELECT COALESCE(MAX(seq), 0) + 1 FROM task_comments WHERE task_id = ?")
-                .bind(&full)
-                .fetch_one(&mut *tx)
-                .await
-                .map_err(map_err)?;
+        let seq: i64 = sqlx::query_scalar(
+            "SELECT COALESCE(MAX(seq), 0) + 1 FROM task_comments WHERE task_id = ?",
+        )
+        .bind(&full)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(map_err)?;
 
         sqlx::query(
             "INSERT INTO task_comments (id, task_id, author, content, seq, created_at) VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))",
@@ -926,9 +928,7 @@ impl Storage for SqliteStorage {
             .await
             .map_err(map_err)?;
         if result.rows_affected() == 0 {
-            return Err(StorageError::NotFound(format!(
-                "comment {id} not found"
-            )));
+            return Err(StorageError::NotFound(format!("comment {id} not found")));
         }
         Ok(())
     }
@@ -1399,8 +1399,7 @@ impl Storage for SqliteStorage {
 
     async fn save_schedule(&self, req: &SaveScheduleRequest) -> StorageResult<ScheduleRow> {
         let schedule = takusu_contracts::ScheduleData::new(req.entries.clone());
-        let horizon_ids =
-            takusu_types::JsonString::new(req.horizon_task_ids.clone());
+        let horizon_ids = takusu_types::JsonString::new(req.horizon_task_ids.clone());
         let now = takusu_types::now_rfc3339();
         // Wrap the schedule upsert and the task status updates in a single
         // transaction so a failure mid-way cannot leave the schedule saved
@@ -2012,7 +2011,8 @@ impl Storage for SqliteStorage {
         let sql_limit = query
             .limit
             .unwrap_or(5)
-            .clamp(1, takusu_search::memory::MAX_INJECTION_RESULTS as u32) as i32;
+            .clamp(1, takusu_search::memory::MAX_INJECTION_RESULTS as u32)
+            as i32;
 
         let mut rows: Vec<MemoryRow> = sqlx::query_as(
             "SELECT * FROM memories
@@ -2027,11 +2027,10 @@ impl Storage for SqliteStorage {
         .await
         .map_err(map_err)?;
 
-        let matched =
-            takusu_search::memory::rank_memories_for_injection(&normalized, &mut rows);
-        let limit = query
-            .limit
-            .map_or(5, |n| n.min(takusu_search::memory::MAX_INJECTION_RESULTS as u32) as usize);
+        let matched = takusu_search::memory::rank_memories_for_injection(&normalized, &mut rows);
+        let limit = query.limit.map_or(5, |n| {
+            n.min(takusu_search::memory::MAX_INJECTION_RESULTS as u32) as usize
+        });
         rows.truncate(matched.min(limit));
         Ok(MemoryInjectionResult {
             memories: rows,
@@ -2892,10 +2891,12 @@ mod tests {
         .unwrap();
 
         // Non-positive delta must not panic; return the original estimate unchanged.
-        let result = work_session::compute_updated_estimate(&pool, "task-1", 60, 10, Some(10), 30, 0).await;
+        let result =
+            work_session::compute_updated_estimate(&pool, "task-1", 60, 10, Some(10), 30, 0).await;
         assert_eq!(result.unwrap(), (60, 10));
 
-        let result = work_session::compute_updated_estimate(&pool, "task-1", 60, 10, Some(10), 30, -5).await;
+        let result =
+            work_session::compute_updated_estimate(&pool, "task-1", 60, 10, Some(10), 30, -5).await;
         assert_eq!(result.unwrap(), (60, 10));
     }
 
@@ -3079,12 +3080,7 @@ mod tests {
 
         // Insert task_note memories: user_confirmed and agent_inferred on the
         // live task, imported on a dead (non-existent) task.
-        async fn insert_note(
-            pool: &SqlitePool,
-            key: &str,
-            source: &str,
-            subject: &str,
-        ) {
+        async fn insert_note(pool: &SqlitePool, key: &str, source: &str, subject: &str) {
             let id = uuid::Uuid::now_v7().to_string();
             sqlx::query(
                 "INSERT INTO memories (id, kind, key, normalized_key, content, normalized_content, subject_type, subject_id, source, revision, created_at, updated_at) VALUES (?, 'task_note', ?, ?, ?, ?, 'task', ?, ?, 1, ?, ?)",
@@ -3119,13 +3115,12 @@ mod tests {
         // Only the live tasks produced comments. The pre-existing comment
         // keeps seq 1; migrated rows are offset to seq 2 and 3, in seq order,
         // with the correct author mapping and preserved created_at.
-        let comments: Vec<CommentRow> = sqlx::query_as(
-            "SELECT * FROM task_comments WHERE task_id = ? ORDER BY seq ASC",
-        )
-        .bind(&task_id)
-        .fetch_all(&pool)
-        .await
-        .unwrap();
+        let comments: Vec<CommentRow> =
+            sqlx::query_as("SELECT * FROM task_comments WHERE task_id = ? ORDER BY seq ASC")
+                .bind(&task_id)
+                .fetch_all(&pool)
+                .await
+                .unwrap();
         assert_eq!(comments.len(), 3);
         assert_eq!(comments[0].seq, 1);
         assert_eq!(comments[0].author, CommentAuthor::User);
@@ -3144,6 +3139,9 @@ mod tests {
         )
         .execute(&pool)
         .await;
-        assert!(rejected.is_err(), "task_note should be rejected after migration");
+        assert!(
+            rejected.is_err(),
+            "task_note should be rejected after migration"
+        );
     }
 }
