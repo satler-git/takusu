@@ -261,3 +261,31 @@ export type AgentHistoryMessage =
     };
 
 export type AgentStreamEvent = TurnEvent | TtsBlockEvent;
+
+// ── Quick-action capability types (WI-2) ────────────────────────────────
+
+export type InputPath =
+  | 'screen_capability'
+  | 'notification_capability'
+  | 'explicit_voice_session'
+  | 'ambient_wake_word'
+  | 'plain_text';
+
+export interface ActionCapability {
+  id: string;
+  event_id?: string;
+  device_id: string;
+  action: string;
+  input_path: InputPath;
+  expires_at: string;
+  one_shot: boolean;
+}
+
+export interface CapabilityRequest {
+  task_id: string;
+  action: string;
+  device_id: string;
+  snooze_minutes?: number;
+  quantity_done?: number;
+  note?: string;
+}
