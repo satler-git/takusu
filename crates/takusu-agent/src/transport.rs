@@ -515,6 +515,7 @@ pub struct TurnResultDto {
     pub changes: Vec<crate::ChangeReceipt>,
     pub schedule_dirty: bool,
     pub approval_request: Option<ApprovalRequest>,
+    pub presentation: Option<crate::presentation::Presentation>,
 }
 
 impl From<TurnResult> for TurnResultDto {
@@ -524,6 +525,7 @@ impl From<TurnResult> for TurnResultDto {
             changes: result.changes,
             schedule_dirty: result.schedule_dirty,
             approval_request: result.approval_request,
+            presentation: result.presentation,
         }
     }
 }
@@ -961,8 +963,9 @@ async fn run_turn_stream(
             changes: result.changes.clone(),
             schedule_dirty: result.schedule_dirty,
             approval_request: result.approval_request.clone(),
+            presentation: result.presentation.clone(),
         };
-        let event = StreamEvent::Turn(TurnEvent::Done(cached));
+        let event = StreamEvent::Turn(TurnEvent::Done(Box::new(cached)));
         let json = event.to_json();
         let stream = futures_util::stream::once(std::future::ready(Ok::<_, Infallible>(
             Event::default().data(json),
@@ -989,7 +992,7 @@ async fn run_turn_stream(
                 match result {
                     Ok(result) => {
                         tracing::info!(session_id = %id2, text_len = result.text.len(), changes = result.changes.len(), schedule_dirty = result.schedule_dirty, "agent turn stream completed");
-                        let _ = tx.send(StreamEvent::Turn(TurnEvent::Done(result.clone())));
+                        let _ = tx.send(StreamEvent::Turn(TurnEvent::Done(Box::new(result.clone()))));
                         if let Some(key) = key2
                             && let Ok(mut results) = state2.turn_results.lock()
                         {
@@ -1039,8 +1042,9 @@ async fn edit_turn_stream(
             changes: result.changes.clone(),
             schedule_dirty: result.schedule_dirty,
             approval_request: result.approval_request.clone(),
+            presentation: result.presentation.clone(),
         };
-        let event = StreamEvent::Turn(TurnEvent::Done(cached));
+        let event = StreamEvent::Turn(TurnEvent::Done(Box::new(cached)));
         let json = event.to_json();
         let stream = futures_util::stream::once(std::future::ready(Ok::<_, Infallible>(
             Event::default().data(json),
@@ -1067,7 +1071,7 @@ async fn edit_turn_stream(
                 match result {
                     Ok(result) => {
                         tracing::info!(session_id = %id2, turn_index, text_len = result.text.len(), changes = result.changes.len(), schedule_dirty = result.schedule_dirty, "agent edit turn stream completed");
-                        let _ = tx.send(StreamEvent::Turn(TurnEvent::Done(result.clone())));
+                        let _ = tx.send(StreamEvent::Turn(TurnEvent::Done(Box::new(result.clone()))));
                         if let Some(key) = key2
                             && let Ok(mut results) = state2.turn_results.lock()
                         {
