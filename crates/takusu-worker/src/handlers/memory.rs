@@ -7,9 +7,7 @@ use crate::handlers::auth::storage;
 use crate::handlers::tokens::{json_created, json_ok, parse_json};
 use crate::memory;
 use crate::models::{CreateMemory, UpdateMemory};
-use takusu_contracts::{
-    MemoryInjectionQuery, MemoryQuery, SimilarTaskQuery, Storage,
-};
+use takusu_contracts::{MemoryInjectionQuery, MemoryQuery, SimilarTaskQuery, Storage};
 use takusu_types::{EnumLabel, MemoryKind, SubjectType};
 
 fn operation_id(req: &Request) -> Option<String> {
@@ -21,10 +19,7 @@ fn operation_id(req: &Request) -> Option<String> {
 }
 
 fn validate_create(body: &CreateMemory) -> Result<(), WorkerError> {
-    if !matches!(
-        body.kind,
-        MemoryKind::ProperNoun | MemoryKind::Fact
-    ) {
+    if !matches!(body.kind, MemoryKind::ProperNoun | MemoryKind::Fact) {
         return Err(WorkerError::BadRequest(
             "kind must be 'proper_noun' or 'fact'".into(),
         ));

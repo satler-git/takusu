@@ -155,8 +155,8 @@ pub fn weighted_estimate(
         .iter()
         .filter(|(a, d)| *a > 0 && *d > 0)
         .map(|(a, d)| {
-            let projection = ((*a as f64 / *d as f64) * total)
-                .clamp(MIN_ESTIMATE_MINUTES, MAX_ESTIMATE_MINUTES);
+            let projection =
+                ((*a as f64 / *d as f64) * total).clamp(MIN_ESTIMATE_MINUTES, MAX_ESTIMATE_MINUTES);
             (projection, *d as f64)
         })
         .collect();
@@ -166,14 +166,19 @@ pub fn weighted_estimate(
 
     let weight_sum: f64 = projections.iter().map(|(_, w)| w).sum();
     let mean = projections.iter().map(|(x, w)| x * w).sum::<f64>() / weight_sum;
-    let avg = mean.clamp(MIN_ESTIMATE_MINUTES, MAX_ESTIMATE_MINUTES).round() as i64;
+    let avg = mean
+        .clamp(MIN_ESTIMATE_MINUTES, MAX_ESTIMATE_MINUTES)
+        .round() as i64;
 
     if projections.len() < 2 {
         return Some((avg, 0));
     }
 
-    let weighted_variance =
-        projections.iter().map(|(x, w)| w * (x - mean).powi(2)).sum::<f64>() / weight_sum;
+    let weighted_variance = projections
+        .iter()
+        .map(|(x, w)| w * (x - mean).powi(2))
+        .sum::<f64>()
+        / weight_sum;
     let sigma = weighted_variance
         .sqrt()
         .clamp(MIN_ESTIMATE_MINUTES, MAX_ESTIMATE_MINUTES)
@@ -802,7 +807,10 @@ mod tests {
         assert_eq!(weighted_estimate(&[(10, 1)], Some(0)), None);
         assert_eq!(weighted_estimate(&[], Some(10)), None);
         // Non-positive observations are filtered out.
-        assert_eq!(weighted_estimate(&[(0, 5), (10, 0), (-3, 2)], Some(10)), None);
+        assert_eq!(
+            weighted_estimate(&[(0, 5), (10, 0), (-3, 2)], Some(10)),
+            None
+        );
     }
 
     #[test]
@@ -828,7 +836,10 @@ mod tests {
     #[test]
     fn weighted_estimate_clamps_projection() {
         // projection = (1 / 1) * 10000 clamps to MAX_ESTIMATE_MINUTES (1440)
-        assert_eq!(weighted_estimate(&[(1, 1)], Some(10000)), Some((24 * 60, 0)));
+        assert_eq!(
+            weighted_estimate(&[(1, 1)], Some(10000)),
+            Some((24 * 60, 0))
+        );
     }
 
     #[test]
@@ -843,7 +854,10 @@ mod tests {
     #[test]
     fn estimate_progress_falls_back_without_progress_or_total() {
         // Zero delta is a no-op.
-        assert_eq!(estimate_progress(50, 10, Some(10), 0, 0, &[(10, 1)]), (50, 10));
+        assert_eq!(
+            estimate_progress(50, 10, Some(10), 0, 0, &[(10, 1)]),
+            (50, 10)
+        );
         // No usable total -> fallback to the prior estimate.
         assert_eq!(estimate_progress(50, 10, None, 30, 5, &[]), (50, 10));
     }

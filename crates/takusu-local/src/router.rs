@@ -75,9 +75,18 @@ fn build_api_router(open_api: &mut OpenApi) -> Router<AppState> {
             "/comments/{id}",
             api::delete(handlers::comment::delete_comment),
         )
-        .api_route("/work-sessions", api::post(handlers::work_session::create_work_session))
-        .api_route("/work-sessions", api::get(handlers::work_session::list_work_sessions))
-        .api_route("/work-sessions/{id}", api::get(handlers::work_session::get_work_session))
+        .api_route(
+            "/work-sessions",
+            api::post(handlers::work_session::create_work_session),
+        )
+        .api_route(
+            "/work-sessions",
+            api::get(handlers::work_session::list_work_sessions),
+        )
+        .api_route(
+            "/work-sessions/{id}",
+            api::get(handlers::work_session::get_work_session),
+        )
         .api_route(
             "/work-sessions/{id}/pause",
             api::post(handlers::work_session::pause_work_session),
@@ -202,7 +211,10 @@ fn build_api_router(open_api: &mut OpenApi) -> Router<AppState> {
         )
         .api_route("/memory", api::post(handlers::memory::create_memory))
         .api_route("/memory/search", api::get(handlers::memory::search_memory))
-        .api_route("/memory/inject", api::post(handlers::memory::injectable_memory))
+        .api_route(
+            "/memory/inject",
+            api::post(handlers::memory::injectable_memory),
+        )
         .api_route("/memory/{id}", api::get(handlers::memory::get_memory))
         .api_route("/memory/{id}", api::patch(handlers::memory::update_memory))
         .api_route("/memory/{id}", api::delete(handlers::memory::delete_memory))

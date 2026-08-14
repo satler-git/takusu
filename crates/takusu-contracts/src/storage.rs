@@ -170,10 +170,8 @@ pub trait Storage: Send + Sync + 'static {
         operation_id: Option<&str>,
     ) -> StorageResult<WorkSessionProgressResult>;
     async fn get_work_session(&self, id: &str) -> StorageResult<WorkSessionRow>;
-    async fn list_work_sessions(
-        &self,
-        task_id: Option<&str>,
-    ) -> StorageResult<Vec<WorkSessionRow>>;
+    async fn list_work_sessions(&self, task_id: Option<&str>)
+    -> StorageResult<Vec<WorkSessionRow>>;
     async fn attach_work_session(
         &self,
         id: &str,

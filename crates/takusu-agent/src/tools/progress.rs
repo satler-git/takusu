@@ -564,7 +564,8 @@ impl TypedTool for TaskProgress {
                 }
                 Ok(None) => {
                     warnings.push(
-                        "作業セッションが開いていないため推定値のプレビューは更新されません".to_string(),
+                        "作業セッションが開いていないため推定値のプレビューは更新されません"
+                            .to_string(),
                     );
                 }
                 Err(e) => {

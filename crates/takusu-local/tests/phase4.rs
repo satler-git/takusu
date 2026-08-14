@@ -24,7 +24,6 @@ use takusu_contracts::{
     TokenCreateResponse, TokenRow, UpdateGoogleCalSettings, UpdateHabit, UpdateSettings,
     UpdateTask, storage::StorageResult,
 };
-use takusu_types::CommentAuthor;
 use takusu_local::router::router;
 use takusu_local::state::AppState;
 use takusu_local_lib::TokenClaims;
@@ -32,6 +31,7 @@ use takusu_local_lib::app::TakusuApp;
 use takusu_local_lib::generate_root_jwt;
 use takusu_local_lib::storage_workers::WorkersStorage;
 use takusu_local_lib::token_cache::TokenCache;
+use takusu_types::CommentAuthor;
 use tokio::net::TcpListener;
 use tokio::sync::RwLock;
 use tower::ServiceExt;

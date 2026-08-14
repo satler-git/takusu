@@ -383,9 +383,7 @@ pub enum Presentation {
     /// Represented as a struct variant so internally-tagged serialization works
     /// (serde cannot tag a primitive newtype like `Text(String)`), and so an
     /// unknown tag can degrade to `Text { text }`.
-    Text {
-        text: String,
-    },
+    Text { text: String },
 }
 
 impl Presentation {
@@ -523,9 +521,15 @@ fn title_and_reference(after: Option<&Value>) -> (String, String) {
 fn schedule_summary(output: &ToolOutput) -> Option<Presentation> {
     let value: Value = serde_json::from_str(&output.content).ok()?;
     let entries_raw = value.get("entries")?.as_array()?;
-    let entries: Vec<ScheduleEntry> = entries_raw.iter().filter_map(parse_schedule_entry).collect();
+    let entries: Vec<ScheduleEntry> = entries_raw
+        .iter()
+        .filter_map(parse_schedule_entry)
+        .collect();
     let next = entries.first().cloned();
-    Some(Presentation::ScheduleSummary(ScheduleSummary { next, entries }))
+    Some(Presentation::ScheduleSummary(ScheduleSummary {
+        next,
+        entries,
+    }))
 }
 
 fn parse_schedule_entry(v: &Value) -> Option<ScheduleEntry> {
@@ -588,14 +592,15 @@ impl<'de> Deserialize<'de> for Presentation {
         // A malformed known kind also degrades to the fallback text (version
         // tolerant), so a forward-extension or a parse surprise never fails the
         // whole turn.
-        let downgrade = |r: Result<Option<Presentation>, serde_json::Error>| -> Result<Self, D::Error> {
-            match r {
-                Ok(Some(p)) => Ok(p),
-                _ => Ok(Presentation::Text {
-                    text: fallback.clone(),
-                }),
-            }
-        };
+        let downgrade =
+            |r: Result<Option<Presentation>, serde_json::Error>| -> Result<Self, D::Error> {
+                match r {
+                    Ok(Some(p)) => Ok(p),
+                    _ => Ok(Presentation::Text {
+                        text: fallback.clone(),
+                    }),
+                }
+            };
         match tag.as_str() {
             "current_task" => downgrade(
                 serde_json::from_value(value).map(|c: TaskCard| Some(Presentation::CurrentTask(c))),
@@ -671,8 +676,12 @@ mod tests {
                 operation,
                 target: Target::new(TargetKind::Task, "#7"),
                 description: "「レポート」に変更".into(),
-                before: Some(json!({"title": "レポート", "reference": "#7", "status": "scheduled"})),
-                after: Some(json!({"title": "レポート", "reference": "#7", "status": "in_progress"})),
+                before: Some(
+                    json!({"title": "レポート", "reference": "#7", "status": "scheduled"}),
+                ),
+                after: Some(
+                    json!({"title": "レポート", "reference": "#7", "status": "in_progress"}),
+                ),
                 arguments: None,
                 observed_updated_at: None,
                 proposal_id: None,
@@ -715,8 +724,16 @@ mod tests {
     #[test]
     fn progress_tools_map_to_work_transition() {
         for (tool, kind, op) in [
-            ("task_start", WorkTransitionKind::Start, ChangeOperation::Start),
-            ("task_pause", WorkTransitionKind::Pause, ChangeOperation::Pause),
+            (
+                "task_start",
+                WorkTransitionKind::Start,
+                ChangeOperation::Start,
+            ),
+            (
+                "task_pause",
+                WorkTransitionKind::Pause,
+                ChangeOperation::Pause,
+            ),
             (
                 "task_progress",
                 WorkTransitionKind::Progress,
@@ -727,7 +744,11 @@ mod tests {
                 WorkTransitionKind::Complete,
                 ChangeOperation::Complete,
             ),
-            ("task_split", WorkTransitionKind::Split, ChangeOperation::Split),
+            (
+                "task_split",
+                WorkTransitionKind::Split,
+                ChangeOperation::Split,
+            ),
         ] {
             let out = task_output(op, json!({}));
             let p = Presentation::from_tool_output(tool, &out).expect("maps to a presentation");
