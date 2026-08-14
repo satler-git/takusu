@@ -10,14 +10,13 @@ use serde_json::json;
 use takusu_contracts::{
     ApplyHabitEstimateRequest, AttachWorkSession, CommentRow, ConvertWorkSession, CreateHabit,
     CreateHabitScheduledSpan, CreateMemory, CreateSkill, CreateTask, GoogleCalEventRow,
-    GoogleCalSettingsRow, HabitRow, HabitScheduledSpanRow, HabitStepEstimateInput,
-    HabitStepInput, HabitStepRow, MemoryInjectionQuery, MemoryInjectionResult, MemoryQuery,
-    MemoryRow, RecordWorkSessionProgress,
-    SaveScheduleRequest, ScheduleRow, SettingsRow, SimilarTaskQuery, SimilarTaskRow, SkillRow,
-    SplitResult, SplitTask, StartWorkSession, Storage, StorageError, TaskProgress, TaskQuery,
-    TaskRow, TokenCreateResponse, TokenRow, UpdateGoogleCalSettings, UpdateHabit, UpdateMemory,
-    UpdateSettings, UpdateSkill, UpdateTask, WorkSessionProgressResult, WorkSessionRow,
-    storage::StorageResult,
+    GoogleCalSettingsRow, HabitRow, HabitScheduledSpanRow, HabitStepEstimateInput, HabitStepInput,
+    HabitStepRow, MemoryInjectionQuery, MemoryInjectionResult, MemoryQuery, MemoryRow,
+    RecordWorkSessionProgress, SaveScheduleRequest, ScheduleRow, SettingsRow, SimilarTaskQuery,
+    SimilarTaskRow, SkillRow, SplitResult, SplitTask, StartWorkSession, Storage, StorageError,
+    TaskProgress, TaskQuery, TaskRow, TokenCreateResponse, TokenRow, UpdateGoogleCalSettings,
+    UpdateHabit, UpdateMemory, UpdateSettings, UpdateSkill, UpdateTask, WorkSessionProgressResult,
+    WorkSessionRow, storage::StorageResult,
 };
 use takusu_types::CommentAuthor;
 use takusu_types::EnumLabel;
@@ -510,7 +509,7 @@ impl Storage for WorkersStorage {
             CommentAuthor::System => {
                 return Err(StorageError::Internal(
                     "system comments cannot be created via the API".into(),
-                ))
+                ));
             }
         };
         let body = json!({ "content": content });

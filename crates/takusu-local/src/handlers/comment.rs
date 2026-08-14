@@ -45,7 +45,12 @@ pub async fn create_agent_comment(
 ) -> Result<Json<CommentRow>, HttpError> {
     let comment = state
         .app
-        .create_comment(&task_id, CommentAuthor::Agent, &body, operation_id(&headers))
+        .create_comment(
+            &task_id,
+            CommentAuthor::Agent,
+            &body,
+            operation_id(&headers),
+        )
         .await?;
     Ok(Json(comment))
 }

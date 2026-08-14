@@ -7,12 +7,12 @@ use takusu_contracts::{
     AttachWorkSession, CommentRow, ConvertWorkSession, CreateHabit, CreateHabitScheduledSpan,
     CreateMemory, CreateSkill, CreateTask, GoogleCalEventRow, GoogleCalSettingsRow, HabitRow,
     HabitScheduledSpanRow, HabitStepEstimateInput, HabitStepInput, HabitStepRow,
-    MemoryInjectionQuery, MemoryInjectionResult, MemoryQuery,
-    MemoryRow, ProgressEventRow, RecordWorkSessionProgress, SaveScheduleRequest, ScheduleRow,
-    SettingsRow, SimilarTaskQuery, SimilarTaskRow, SkillRow, SplitResult, SplitTask, StartWorkSession,
-    Storage, StorageError, TaskProgress, TaskQuery, TaskRow, TokenCreateResponse, TokenRow,
-    UpdateGoogleCalSettings, UpdateHabit, UpdateMemory, UpdateSettings, UpdateSkill, UpdateTask,
-    WorkSessionProgressResult, WorkSessionRow,
+    MemoryInjectionQuery, MemoryInjectionResult, MemoryQuery, MemoryRow, ProgressEventRow,
+    RecordWorkSessionProgress, SaveScheduleRequest, ScheduleRow, SettingsRow, SimilarTaskQuery,
+    SimilarTaskRow, SkillRow, SplitResult, SplitTask, StartWorkSession, Storage, StorageError,
+    TaskProgress, TaskQuery, TaskRow, TokenCreateResponse, TokenRow, UpdateGoogleCalSettings,
+    UpdateHabit, UpdateMemory, UpdateSettings, UpdateSkill, UpdateTask, WorkSessionProgressResult,
+    WorkSessionRow,
 };
 use takusu_types::jwt::{DEFAULT_TOKEN_TTL_SECONDS, generate_token_jwt};
 use takusu_types::{
@@ -500,9 +500,9 @@ impl Storage for D1Storage {
         }
 
         let id = uuid::Uuid::now_v7().to_string();
-        let seq_stmt = self.db.prepare(
-            "SELECT COALESCE(MAX(seq), 0) + 1 AS c FROM task_comments WHERE task_id = ?1",
-        );
+        let seq_stmt = self
+            .db
+            .prepare("SELECT COALESCE(MAX(seq), 0) + 1 AS c FROM task_comments WHERE task_id = ?1");
         let rows: Vec<CountRow> =
             d1_all(&seq_stmt.bind(&[JsValue::from_str(&full)]).map_err(d1_err)?).await?;
         let seq = rows.into_iter().next().map(|r| r.c).unwrap_or(1);
@@ -1562,11 +1562,12 @@ impl Storage for D1Storage {
         let stmt = self.db.prepare(
             "SELECT * FROM memories WHERE kind IN ('proper_noun', 'fact') AND instr(?1, normalized_key) > 0 ORDER BY length(normalized_key) DESC, updated_at DESC, id ASC LIMIT ?2",
         );
-        let bindings = vec![JsValue::from_str(&normalized), JsValue::from_f64(sql_limit.into())];
-        let mut rows: Vec<MemoryRow> =
-            d1_all(&stmt.bind(&bindings).map_err(d1_err)?).await?;
-        let matched =
-            takusu_search::memory::rank_memories_for_injection(&normalized, &mut rows);
+        let bindings = vec![
+            JsValue::from_str(&normalized),
+            JsValue::from_f64(sql_limit.into()),
+        ];
+        let mut rows: Vec<MemoryRow> = d1_all(&stmt.bind(&bindings).map_err(d1_err)?).await?;
+        let matched = takusu_search::memory::rank_memories_for_injection(&normalized, &mut rows);
         let limit = sql_limit as usize;
         rows.truncate(matched.min(limit));
         Ok(MemoryInjectionResult {
@@ -1706,12 +1707,25 @@ impl Storage for D1Storage {
             insert
                 .bind(&[
                     JsValue::from_str(&id),
-                    task_id.as_deref().map(JsValue::from_str).unwrap_or(JsValue::NULL),
-                    title.as_deref().map(JsValue::from_str).unwrap_or(JsValue::NULL),
-                    note.as_deref().map(JsValue::from_str).unwrap_or(JsValue::NULL),
-                    quantity_total.map(|q| JsValue::from_f64(f64::from(q))).unwrap_or(JsValue::NULL),
+                    task_id
+                        .as_deref()
+                        .map(JsValue::from_str)
+                        .unwrap_or(JsValue::NULL),
+                    title
+                        .as_deref()
+                        .map(JsValue::from_str)
+                        .unwrap_or(JsValue::NULL),
+                    note.as_deref()
+                        .map(JsValue::from_str)
+                        .unwrap_or(JsValue::NULL),
+                    quantity_total
+                        .map(|q| JsValue::from_f64(f64::from(q)))
+                        .unwrap_or(JsValue::NULL),
                     JsValue::from_f64(f64::from(Quantity::default())),
-                    quantity_unit.as_deref().map(JsValue::from_str).unwrap_or(JsValue::NULL),
+                    quantity_unit
+                        .as_deref()
+                        .map(JsValue::from_str)
+                        .unwrap_or(JsValue::NULL),
                     JsValue::from_str(&now),
                     JsValue::from_str(&now),
                 ])
@@ -1782,22 +1796,28 @@ impl Storage for D1Storage {
         let now = takusu_types::now_rfc3339();
         let was_open = session.ended_at.is_none();
         let mut stmts: Vec<worker::D1PreparedStatement> = Vec::new();
-        let update = self.db.prepare(
-            "UPDATE work_sessions SET ended_at = COALESCE(ended_at, ?1) WHERE id = ?2",
-        );
+        let update = self
+            .db
+            .prepare("UPDATE work_sessions SET ended_at = COALESCE(ended_at, ?1) WHERE id = ?2");
         stmts.push(
             update
                 .bind(&[JsValue::from_str(&now), JsValue::from_str(id)])
                 .map_err(d1_err)?,
         );
 
-        if let Some(ref task_id) = session.task_id && was_open {
+        if let Some(ref task_id) = session.task_id
+            && was_open
+        {
             let task = select_one_task(&self.db, task_id).await?;
             if task.status != TaskStatus::Completed && task.status != TaskStatus::Skipped {
                 let task_update = self.db.prepare(
                     "UPDATE tasks SET status = 'scheduled', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?1",
                 );
-                stmts.push(task_update.bind(&[JsValue::from_str(task_id)]).map_err(d1_err)?);
+                stmts.push(
+                    task_update
+                        .bind(&[JsValue::from_str(task_id)])
+                        .map_err(d1_err)?,
+                );
             }
         }
 
@@ -1825,8 +1845,7 @@ impl Storage for D1Storage {
         id: &str,
         operation_id: Option<&str>,
     ) -> StorageResult<WorkSessionRow> {
-        let payload =
-            serde_json::json!({"op": "complete_work_session", "id": id}).to_string();
+        let payload = serde_json::json!({"op": "complete_work_session", "id": id}).to_string();
         let request_hash = progress_request_hash(&payload, operation_id);
         if let Some(op_id) = operation_id
             && let Some(stored) =
@@ -1850,9 +1869,9 @@ impl Storage for D1Storage {
         let now_ts = takusu_types::Timestamp::now();
 
         let mut stmts: Vec<worker::D1PreparedStatement> = Vec::new();
-        let update = self.db.prepare(
-            "UPDATE work_sessions SET ended_at = COALESCE(ended_at, ?1) WHERE id = ?2",
-        );
+        let update = self
+            .db
+            .prepare("UPDATE work_sessions SET ended_at = COALESCE(ended_at, ?1) WHERE id = ?2");
         stmts.push(
             update
                 .bind(&[JsValue::from_str(&now_rfc), JsValue::from_str(id)])
@@ -1881,7 +1900,13 @@ impl Storage for D1Storage {
                 };
                 let total_active_minutes: i64 = sessions
                     .iter()
-                    .map(|s| if s.id == id { current_minutes } else { session_minutes(s) })
+                    .map(|s| {
+                        if s.id == id {
+                            current_minutes
+                        } else {
+                            session_minutes(s)
+                        }
+                    })
                     .sum();
 
                 // #1419 (P2): genuine partial progress (0 < done < total) splits
@@ -1919,9 +1944,19 @@ impl Storage for D1Storage {
                                 JsValue::from_str(&remainder_id),
                                 JsValue::from_f64(display_id as f64),
                                 JsValue::from_str(&task_before.title),
-                                normalized_title.as_deref().map(JsValue::from_str).unwrap_or(JsValue::NULL),
-                                task_before.description.as_deref().map(JsValue::from_str).unwrap_or(JsValue::NULL),
-                                task_before.start_at.map(|t| JsValue::from_str(&t.to_string())).unwrap_or(JsValue::NULL),
+                                normalized_title
+                                    .as_deref()
+                                    .map(JsValue::from_str)
+                                    .unwrap_or(JsValue::NULL),
+                                task_before
+                                    .description
+                                    .as_deref()
+                                    .map(JsValue::from_str)
+                                    .unwrap_or(JsValue::NULL),
+                                task_before
+                                    .start_at
+                                    .map(|t| JsValue::from_str(&t.to_string()))
+                                    .unwrap_or(JsValue::NULL),
                                 JsValue::from_str(&task_before.end_at.to_string()),
                                 JsValue::from_f64(task_before.avg_minutes as f64),
                                 JsValue::from_f64(task_before.sigma_minutes as f64),
@@ -1936,7 +1971,11 @@ impl Storage for D1Storage {
                                 JsValue::NULL,
                                 JsValue::from_f64(f64::from(remainder_quantity)),
                                 JsValue::from_f64(0.0),
-                                task_before.quantity_unit.as_deref().map(JsValue::from_str).unwrap_or(JsValue::NULL),
+                                task_before
+                                    .quantity_unit
+                                    .as_deref()
+                                    .map(JsValue::from_str)
+                                    .unwrap_or(JsValue::NULL),
                                 JsValue::NULL,
                                 JsValue::from_str(&task_id),
                                 JsValue::from_f64(f64::from(original_quantity_total)),
@@ -1992,7 +2031,9 @@ impl Storage for D1Storage {
                     task_update
                         .bind(&[
                             JsValue::from_str(&status.to_string()),
-                            completed_at.map(|t| JsValue::from_str(&t.to_string())).unwrap_or(JsValue::NULL),
+                            completed_at
+                                .map(|t| JsValue::from_str(&t.to_string()))
+                                .unwrap_or(JsValue::NULL),
                             JsValue::from_f64(f64::from(quantity_done)),
                             JsValue::from_f64(new_avg as f64),
                             JsValue::from_f64(new_sigma as f64),
@@ -2054,8 +2095,12 @@ impl Storage for D1Storage {
                 .to_string();
         let request_hash = progress_request_hash(&payload, operation_id);
         if let Some(op_id) = operation_id
-            && let Some(stored) =
-                check_progress_idempotency::<WorkSessionProgressResult>(&self.db, op_id, &request_hash).await?
+            && let Some(stored) = check_progress_idempotency::<WorkSessionProgressResult>(
+                &self.db,
+                op_id,
+                &request_hash,
+            )
+            .await?
         {
             return Ok(stored);
         }
@@ -2212,19 +2257,26 @@ impl Storage for D1Storage {
                 .bind(&[
                     JsValue::from_str(&event_id),
                     JsValue::from_str(id),
-                    session.task_id.as_deref().map(JsValue::from_str).unwrap_or(JsValue::NULL),
+                    session
+                        .task_id
+                        .as_deref()
+                        .map(JsValue::from_str)
+                        .unwrap_or(JsValue::NULL),
                     JsValue::from_str(&now_rfc),
                     JsValue::from_f64(f64::from(body.quantity_done)),
                     JsValue::from_f64(delta as f64),
                     JsValue::from_f64(active_minutes as f64),
-                    body.note.as_deref().map(JsValue::from_str).unwrap_or(JsValue::NULL),
+                    body.note
+                        .as_deref()
+                        .map(JsValue::from_str)
+                        .unwrap_or(JsValue::NULL),
                 ])
                 .map_err(d1_err)?,
         );
 
-        let ws_update = self.db.prepare(
-            "UPDATE work_sessions SET quantity_done = ?1 WHERE id = ?2",
-        );
+        let ws_update = self
+            .db
+            .prepare("UPDATE work_sessions SET quantity_done = ?1 WHERE id = ?2");
         stmts.push(
             ws_update
                 .bind(&[
@@ -2369,11 +2421,9 @@ impl Storage for D1Storage {
             .await?;
             Ok(sessions)
         } else {
-            let sessions: Vec<WorkSessionRow> = d1_all(
-                &self.db.prepare(format!(
-                    "SELECT {WORK_SESSION_COLS} FROM work_sessions ORDER BY started_at DESC",
-                )),
-            )
+            let sessions: Vec<WorkSessionRow> = d1_all(&self.db.prepare(format!(
+                "SELECT {WORK_SESSION_COLS} FROM work_sessions ORDER BY started_at DESC",
+            )))
             .await?;
             Ok(sessions)
         }
@@ -2416,14 +2466,18 @@ impl Storage for D1Storage {
         }
 
         let mut stmts: Vec<worker::D1PreparedStatement> = Vec::new();
-        let update = self.db.prepare("UPDATE work_sessions SET task_id = ?1 WHERE id = ?2");
+        let update = self
+            .db
+            .prepare("UPDATE work_sessions SET task_id = ?1 WHERE id = ?2");
         stmts.push(
             update
                 .bind(&[JsValue::from_str(&full), JsValue::from_str(id)])
                 .map_err(d1_err)?,
         );
 
-        let pe_update = self.db.prepare("UPDATE progress_events SET task_id = ?1 WHERE work_session_id = ?2");
+        let pe_update = self
+            .db
+            .prepare("UPDATE progress_events SET task_id = ?1 WHERE work_session_id = ?2");
         stmts.push(
             pe_update
                 .bind(&[JsValue::from_str(&full), JsValue::from_str(id)])
@@ -2434,7 +2488,11 @@ impl Storage for D1Storage {
             let task_update = self.db.prepare(
                 "UPDATE tasks SET status = 'in_progress', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?1",
             );
-            stmts.push(task_update.bind(&[JsValue::from_str(&full)]).map_err(d1_err)?);
+            stmts.push(
+                task_update
+                    .bind(&[JsValue::from_str(&full)])
+                    .map_err(d1_err)?,
+            );
         }
 
         self.db.batch(stmts).await.map_err(d1_err)?;
@@ -2475,9 +2533,9 @@ impl Storage for D1Storage {
         let now_rfc = takusu_types::now_rfc3339();
         let now_ts = takusu_types::Timestamp::now();
 
-        let update = self.db.prepare(
-            "UPDATE work_sessions SET ended_at = COALESCE(ended_at, ?1) WHERE id = ?2",
-        );
+        let update = self
+            .db
+            .prepare("UPDATE work_sessions SET ended_at = COALESCE(ended_at, ?1) WHERE id = ?2");
         update
             .bind(&[JsValue::from_str(&now_rfc), JsValue::from_str(id)])
             .map_err(d1_err)?
@@ -2552,8 +2610,14 @@ impl Storage for D1Storage {
                     JsValue::from_str(&task_id),
                     JsValue::from_f64(display_id as f64),
                     JsValue::from_str(&title),
-                    normalized_title.as_deref().map(JsValue::from_str).unwrap_or(JsValue::NULL),
-                    description.as_deref().map(JsValue::from_str).unwrap_or(JsValue::NULL),
+                    normalized_title
+                        .as_deref()
+                        .map(JsValue::from_str)
+                        .unwrap_or(JsValue::NULL),
+                    description
+                        .as_deref()
+                        .map(JsValue::from_str)
+                        .unwrap_or(JsValue::NULL),
                     JsValue::from_str(&session.started_at.to_string()),
                     JsValue::from_str(&end_at.to_string()),
                     JsValue::from_f64(avg_minutes as f64),
@@ -2567,10 +2631,16 @@ impl Storage for D1Storage {
                     JsValue::NULL,
                     JsValue::from_bool(fixed),
                     JsValue::NULL,
-                    quantity_total.map(|q| JsValue::from_f64(f64::from(q))).unwrap_or(JsValue::NULL),
+                    quantity_total
+                        .map(|q| JsValue::from_f64(f64::from(q)))
+                        .unwrap_or(JsValue::NULL),
                     JsValue::from_f64(f64::from(session.quantity_done)),
-                    quantity_unit.map(JsValue::from_str).unwrap_or(JsValue::NULL),
-                    completed_at.map(|t| JsValue::from_str(&t.to_string())).unwrap_or(JsValue::NULL),
+                    quantity_unit
+                        .map(JsValue::from_str)
+                        .unwrap_or(JsValue::NULL),
+                    completed_at
+                        .map(|t| JsValue::from_str(&t.to_string()))
+                        .unwrap_or(JsValue::NULL),
                     JsValue::NULL,
                     JsValue::NULL,
                     JsValue::from_str(&now_rfc),
@@ -2579,14 +2649,18 @@ impl Storage for D1Storage {
                 .map_err(d1_err)?,
         );
 
-        let ws_update = self.db.prepare("UPDATE work_sessions SET task_id = ?1 WHERE id = ?2");
+        let ws_update = self
+            .db
+            .prepare("UPDATE work_sessions SET task_id = ?1 WHERE id = ?2");
         stmts.push(
             ws_update
                 .bind(&[JsValue::from_str(&task_id), JsValue::from_str(id)])
                 .map_err(d1_err)?,
         );
 
-        let pe_update = self.db.prepare("UPDATE progress_events SET task_id = ?1 WHERE work_session_id = ?2");
+        let pe_update = self
+            .db
+            .prepare("UPDATE progress_events SET task_id = ?1 WHERE work_session_id = ?2");
         stmts.push(
             pe_update
                 .bind(&[JsValue::from_str(&task_id), JsValue::from_str(id)])
@@ -2638,7 +2712,6 @@ impl Storage for D1Storage {
             total_active_minutes,
         })
     }
-
 
     async fn split_task(
         &self,

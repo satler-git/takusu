@@ -31,7 +31,10 @@ use takusu_agent::{
 };
 use takusu_local_lib::error::{AppError, BadRequestKind};
 
-use crate::agent::{agent_err, agent_state_dir, load_session_snapshot, permissions_for_approval, write_private_file, ApprovalChoice};
+use crate::agent::{
+    ApprovalChoice, agent_err, agent_state_dir, load_session_snapshot, permissions_for_approval,
+    write_private_file,
+};
 
 pub struct QuestionEvent {
     pub questions: Vec<UserInputQuestion>,
@@ -57,7 +60,10 @@ impl UserInputProvider for ReplUserInputProvider {
     ) -> Result<Vec<UserInputAnswer>, ToolError> {
         let (answer_tx, answer_rx) = oneshot::channel();
         self.tx
-            .send(QuestionEvent { questions, answer_tx })
+            .send(QuestionEvent {
+                questions,
+                answer_tx,
+            })
             .map_err(|_| ToolError::Cancelled)?;
         answer_rx.await.map_err(|_| ToolError::Cancelled)
     }
@@ -204,7 +210,8 @@ pub async fn run(
     let mut spinner_frame: u8 = 0;
 
     let result: Result<(), AppError> = loop {
-        if let Err(e) = terminal.draw(|frame| draw(frame, &mut state, &mut textarea, spinner_frame)) {
+        if let Err(e) = terminal.draw(|frame| draw(frame, &mut state, &mut textarea, spinner_frame))
+        {
             break Err(AppError::Internal(e.to_string()));
         }
 
@@ -284,7 +291,11 @@ fn render_markdown(src: &str) -> Vec<Line<'static>> {
                     styles.push(Style::default().add_modifier(Modifier::CROSSED_OUT))
                 }
                 Tag::Link { dest_url, .. } => {
-                    styles.push(Style::default().fg(Color::Blue).add_modifier(Modifier::UNDERLINED));
+                    styles.push(
+                        Style::default()
+                            .fg(Color::Blue)
+                            .add_modifier(Modifier::UNDERLINED),
+                    );
                     link_url = Some(dest_url.to_string());
                 }
                 Tag::Image { dest_url, .. } => {
@@ -305,40 +316,47 @@ fn render_markdown(src: &str) -> Vec<Line<'static>> {
                 Tag::CodeBlock(_) => in_code_block = true,
                 _ => {}
             },
-            Event::End(tag) => {
-                match tag {
-                    TagEnd::Strong | TagEnd::Emphasis | TagEnd::Strikethrough | TagEnd::Heading(_) => {
-                        styles.pop();
-                    }
-                    TagEnd::Link => {
-                        styles.pop();
-                        if let Some(url) = link_url.take() {
-                            current.push(Span::styled(format!(" ({url})"), Style::default().fg(Color::DarkGray)));
-                        }
-                    }
-                    TagEnd::Image => {
-                        if let Some(url) = image_url.take() {
-                            current.push(Span::styled(format!(" ({url})"), Style::default().fg(Color::DarkGray)));
-                        }
-                    }
-                    TagEnd::CodeBlock => {
-                        in_code_block = false;
-                        if !code_block.is_empty() {
-                            for l in code_block.split('\n') {
-                                lines.push(Line::styled(format!("  {l}"), Style::default().fg(Color::DarkGray)));
-                            }
-                            code_block.clear();
-                        }
-                    }
-                    TagEnd::Paragraph | TagEnd::Item => {
-                        if !current.is_empty() {
-                            lines.push(Line::from(std::mem::take(&mut current)));
-                        }
-                    }
-                    TagEnd::List(_) => list_depth = list_depth.saturating_sub(1),
-                    _ => {}
+            Event::End(tag) => match tag {
+                TagEnd::Strong | TagEnd::Emphasis | TagEnd::Strikethrough | TagEnd::Heading(_) => {
+                    styles.pop();
                 }
-            }
+                TagEnd::Link => {
+                    styles.pop();
+                    if let Some(url) = link_url.take() {
+                        current.push(Span::styled(
+                            format!(" ({url})"),
+                            Style::default().fg(Color::DarkGray),
+                        ));
+                    }
+                }
+                TagEnd::Image => {
+                    if let Some(url) = image_url.take() {
+                        current.push(Span::styled(
+                            format!(" ({url})"),
+                            Style::default().fg(Color::DarkGray),
+                        ));
+                    }
+                }
+                TagEnd::CodeBlock => {
+                    in_code_block = false;
+                    if !code_block.is_empty() {
+                        for l in code_block.split('\n') {
+                            lines.push(Line::styled(
+                                format!("  {l}"),
+                                Style::default().fg(Color::DarkGray),
+                            ));
+                        }
+                        code_block.clear();
+                    }
+                }
+                TagEnd::Paragraph | TagEnd::Item => {
+                    if !current.is_empty() {
+                        lines.push(Line::from(std::mem::take(&mut current)));
+                    }
+                }
+                TagEnd::List(_) => list_depth = list_depth.saturating_sub(1),
+                _ => {}
+            },
             Event::Text(text) => {
                 if in_code_block {
                     code_block.push_str(&text);
@@ -352,7 +370,9 @@ fn render_markdown(src: &str) -> Vec<Line<'static>> {
             Event::Code(code) => {
                 current.push(Span::styled(
                     code.to_string(),
-                    Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(Color::DarkGray)
+                        .add_modifier(Modifier::BOLD),
                 ));
             }
             Event::SoftBreak => {
@@ -377,7 +397,10 @@ fn render_markdown(src: &str) -> Vec<Line<'static>> {
                 current.push(Span::raw(html.to_string()));
             }
             Event::FootnoteReference(label) => {
-                current.push(Span::styled(format!("[^{label}]"), Style::default().fg(Color::DarkGray)));
+                current.push(Span::styled(
+                    format!("[^{label}]"),
+                    Style::default().fg(Color::DarkGray),
+                ));
             }
             _ => {}
         }
@@ -388,7 +411,10 @@ fn render_markdown(src: &str) -> Vec<Line<'static>> {
     }
     if in_code_block && !code_block.is_empty() {
         for l in code_block.split('\n') {
-            lines.push(Line::styled(format!("  {l}"), Style::default().fg(Color::DarkGray)));
+            lines.push(Line::styled(
+                format!("  {l}"),
+                Style::default().fg(Color::DarkGray),
+            ));
         }
     }
 
@@ -431,10 +457,7 @@ fn draw(frame: &mut Frame, state: &mut ReplState, textarea: &mut TuiTextArea, sp
             }
             Message::ToolCall(name) => {
                 lines.push(Line::from(vec![
-                    Span::styled(
-                        "[tool call] ",
-                        Style::default().fg(Color::Blue),
-                    ),
+                    Span::styled("[tool call] ", Style::default().fg(Color::Blue)),
                     Span::raw(name.clone()),
                 ]));
             }
@@ -450,7 +473,10 @@ fn draw(frame: &mut Frame, state: &mut ReplState, textarea: &mut TuiTextArea, sp
                 ]));
             }
             Message::Info(text) => {
-                lines.push(Line::styled(text.clone(), Style::default().fg(Color::DarkGray)));
+                lines.push(Line::styled(
+                    text.clone(),
+                    Style::default().fg(Color::DarkGray),
+                ));
             }
         }
     }
@@ -500,9 +526,7 @@ fn draw(frame: &mut Frame, state: &mut ReplState, textarea: &mut TuiTextArea, sp
     frame.render_widget(&*textarea, input_area);
 
     let cursor = textarea.screen_cursor();
-    let inner = textarea
-        .block()
-        .map_or(input_area, |b| b.inner(input_area));
+    let inner = textarea.block().map_or(input_area, |b| b.inner(input_area));
     frame.set_cursor_position((
         inner.x + (cursor.col as u16).min(inner.width.saturating_sub(1)),
         inner.y + (cursor.row as u16).min(inner.height.saturating_sub(1)),
@@ -519,7 +543,10 @@ fn approval_lines(approval: &ApprovalRequest, lines: &mut Vec<Line>) {
     }
     if !approval.warnings.is_empty() {
         for w in &approval.warnings {
-            lines.push(Line::styled(format!("warning: {w}"), Style::default().fg(Color::Yellow)));
+            lines.push(Line::styled(
+                format!("warning: {w}"),
+                Style::default().fg(Color::Yellow),
+            ));
         }
     }
     for (i, change) in approval.changes.iter().enumerate() {
@@ -681,7 +708,11 @@ async fn handle_approval_key(
         Ok(result) => {
             state.messages.push(Message::Info(format!(
                 "{} {} change(s)",
-                if result.approved { "approved" } else { "denied" },
+                if result.approved {
+                    "approved"
+                } else {
+                    "denied"
+                },
                 result.changes.len()
             )));
             for r in &result.changes {
@@ -691,10 +722,14 @@ async fn handle_approval_key(
                 )));
             }
             if result.schedule_dirty {
-                state.messages.push(Message::Info("schedule dirty: true".into()));
+                state
+                    .messages
+                    .push(Message::Info("schedule dirty: true".into()));
             }
         }
-        Err(e) => state.messages.push(Message::Info(format!("approval failed: {e}"))),
+        Err(e) => state
+            .messages
+            .push(Message::Info(format!("approval failed: {e}"))),
     }
 
     state.mode = ReplMode::Chat;
@@ -710,7 +745,9 @@ async fn handle_question_key(
     if key.code == KeyCode::Esc {
         // cancel: use the original question text for remaining answers
         while let Some(q) = qs.questions.get(qs.answers.len()) {
-            qs.answers.push(UserInputAnswer { text: q.text.clone() });
+            qs.answers.push(UserInputAnswer {
+                text: q.text.clone(),
+            });
         }
         if let Some(tx) = qs.answer_tx.take() {
             let _ = tx.send(qs.answers.clone());
@@ -725,7 +762,11 @@ async fn handle_question_key(
         let text = textarea.lines().join("\n").trim_end().to_string();
         if let Some(q) = qs.questions.get(qs.answers.len()) {
             qs.answers.push(UserInputAnswer {
-                text: if text.is_empty() { q.text.clone() } else { text },
+                text: if text.is_empty() {
+                    q.text.clone()
+                } else {
+                    text
+                },
             });
         }
         if qs.answers.len() >= qs.questions.len() {
@@ -788,33 +829,47 @@ async fn handle_slash(
                 let mut guard = session.lock().await;
                 match guard.restore_from_snapshot(&snapshot) {
                     Ok(()) => state.messages.push(Message::Info("loaded".into())),
-                    Err(e) => state.messages.push(Message::Info(format!("load failed: {e}"))),
+                    Err(e) => state
+                        .messages
+                        .push(Message::Info(format!("load failed: {e}"))),
                 }
                 drop(guard);
                 Action::Continue
             }
             Ok(None) => {
-                state.messages.push(Message::Info("no saved session".into()));
+                state
+                    .messages
+                    .push(Message::Info("no saved session".into()));
                 Action::Continue
             }
             Err(e) => {
-                state.messages.push(Message::Info(format!("load failed: {e}")));
+                state
+                    .messages
+                    .push(Message::Info(format!("load failed: {e}")));
                 Action::Continue
             }
         },
         "save" => {
             let name = arg.unwrap_or("default");
             match save_named_session(session, name).await {
-                Ok(()) => state.messages.push(Message::Info(format!("saved '{name}'"))),
-                Err(e) => state.messages.push(Message::Info(format!("save failed: {e}"))),
+                Ok(()) => state
+                    .messages
+                    .push(Message::Info(format!("saved '{name}'"))),
+                Err(e) => state
+                    .messages
+                    .push(Message::Info(format!("save failed: {e}"))),
             }
             Action::Continue
         }
         "load" => {
             let name = arg.unwrap_or("default");
             match load_named_session(session, name).await {
-                Ok(()) => state.messages.push(Message::Info(format!("loaded '{name}'"))),
-                Err(e) => state.messages.push(Message::Info(format!("load failed: {e}"))),
+                Ok(()) => state
+                    .messages
+                    .push(Message::Info(format!("loaded '{name}'"))),
+                Err(e) => state
+                    .messages
+                    .push(Message::Info(format!("load failed: {e}"))),
             }
             Action::Continue
         }
@@ -822,14 +877,18 @@ async fn handle_slash(
             match list_named_sessions() {
                 Ok(names) => {
                     if names.is_empty() {
-                        state.messages.push(Message::Info("no saved sessions".into()));
+                        state
+                            .messages
+                            .push(Message::Info("no saved sessions".into()));
                     } else {
                         for n in names {
                             state.messages.push(Message::Info(n));
                         }
                     }
                 }
-                Err(e) => state.messages.push(Message::Info(format!("list failed: {e}"))),
+                Err(e) => state
+                    .messages
+                    .push(Message::Info(format!("list failed: {e}"))),
             }
             Action::Continue
         }
@@ -842,10 +901,14 @@ async fn handle_slash(
                         if allowed { "allowed" } else { "denied" },
                         key
                     ))),
-                    Err(e) => state.messages.push(Message::Info(format!("permission failed: {e}"))),
+                    Err(e) => state
+                        .messages
+                        .push(Message::Info(format!("permission failed: {e}"))),
                 }
             } else {
-                state.messages.push(Message::Info(format!("usage: /{command} <perm>")));
+                state
+                    .messages
+                    .push(Message::Info(format!("usage: /{command} <perm>")));
             }
             Action::Continue
         }
@@ -855,7 +918,9 @@ async fn handle_slash(
             Action::Continue
         }
         _ => {
-            state.messages.push(Message::Info(format!("unknown command: /{command}")));
+            state
+                .messages
+                .push(Message::Info(format!("unknown command: /{command}")));
             Action::Continue
         }
     }
@@ -884,12 +949,10 @@ async fn save_named_session(
     let path = named_session_path(name);
     let content = serde_json::to_string_pretty(&snapshot)
         .map_err(|e| AppError::Internal(format!("failed to serialize: {e}")))?;
-    tokio::task::spawn_blocking(move || {
-        write_private_file(&path, &content)
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("write task failed: {e}")))?
-    .map_err(|e| AppError::Internal(format!("failed to write: {e}")))?;
+    tokio::task::spawn_blocking(move || write_private_file(&path, &content))
+        .await
+        .map_err(|e| AppError::Internal(format!("write task failed: {e}")))?
+        .map_err(|e| AppError::Internal(format!("failed to write: {e}")))?;
     Ok(())
 }
 
@@ -969,11 +1032,7 @@ fn handle_turn_event(ev: ReplEvent, state: &mut ReplState) {
             state.thinking = false;
             state.messages.push(Message::ToolCall(name));
         }
-        ReplEvent::Turn(TurnEvent::ToolResult {
-            name,
-            is_error,
-            ..
-        }) => {
+        ReplEvent::Turn(TurnEvent::ToolResult { name, is_error, .. }) => {
             state.messages.push(Message::ToolResult(name, is_error));
         }
         ReplEvent::Done(result) => {
@@ -998,7 +1057,9 @@ fn handle_turn_event(ev: ReplEvent, state: &mut ReplState) {
                     }
                 }
                 if result.schedule_dirty {
-                    state.messages.push(Message::Info("schedule dirty: true".into()));
+                    state
+                        .messages
+                        .push(Message::Info("schedule dirty: true".into()));
                 }
             }
         }

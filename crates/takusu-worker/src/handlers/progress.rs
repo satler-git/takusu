@@ -81,7 +81,9 @@ pub async fn attach_work_session(
     let body: AttachWorkSession = parse_json(&mut req).await?;
     let op_id = operation_id(&req);
     let store = storage(&env)?;
-    let session = store.attach_work_session(id, &body, op_id.as_deref()).await?;
+    let session = store
+        .attach_work_session(id, &body, op_id.as_deref())
+        .await?;
     json_ok(&session)
 }
 
@@ -93,7 +95,9 @@ pub async fn convert_work_session(
     let body: ConvertWorkSession = parse_json(&mut req).await?;
     let op_id = operation_id(&req);
     let store = storage(&env)?;
-    let task = store.convert_work_session(id, &body, op_id.as_deref()).await?;
+    let task = store
+        .convert_work_session(id, &body, op_id.as_deref())
+        .await?;
     json_ok(&task)
 }
 

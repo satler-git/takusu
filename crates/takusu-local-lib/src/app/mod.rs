@@ -2,9 +2,8 @@ use std::sync::Arc;
 
 use takusu_contracts::{
     CommentRow, CreateComment, CreateMemory, CreateSkill, MemoryInjectionQuery,
-    MemoryInjectionResult, MemoryQuery, MemoryRow, SettingsRow,
-    SimilarTaskQuery, SimilarTaskRow, SkillRow, Storage, TokenCreateResponse, TokenRow,
-    UpdateMemory, UpdateSettings, UpdateSkill,
+    MemoryInjectionResult, MemoryQuery, MemoryRow, SettingsRow, SimilarTaskQuery, SimilarTaskRow,
+    SkillRow, Storage, TokenCreateResponse, TokenRow, UpdateMemory, UpdateSettings, UpdateSkill,
 };
 use takusu_types::CommentAuthor;
 

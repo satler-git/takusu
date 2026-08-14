@@ -9,8 +9,8 @@ use tokio::sync::mpsc;
 pub(crate) mod repl;
 use takusu_agent::tool::{ProposalDecision, ProposedChange};
 use takusu_agent::{
-    AgentConfig, AgentError, AgentSession, ApprovalRequest, Permissions, SessionSnapshot, ToolError,
-    TurnEvent, UserInputAnswer, UserInputProvider, UserInputQuestion,
+    AgentConfig, AgentError, AgentSession, ApprovalRequest, Permissions, SessionSnapshot,
+    ToolError, TurnEvent, UserInputAnswer, UserInputProvider, UserInputQuestion,
 };
 use takusu_client::Client;
 use takusu_local_lib::app::TakusuApp;
@@ -96,9 +96,7 @@ pub(crate) fn agent_state_dir() -> PathBuf {
                 p
             })
         })
-        .unwrap_or_else(|| {
-            std::env::temp_dir()
-        })
+        .unwrap_or_else(|| std::env::temp_dir())
 }
 
 pub(crate) fn agent_session_path() -> PathBuf {
@@ -175,7 +173,9 @@ fn apply_permissions_and_resume(
         if !session_permissions.allow.is_empty() {
             session
                 .set_session_permissions(session_permissions.clone())
-                .map_err(|e| AppError::Internal(format!("failed to set session permissions: {e}")))?;
+                .map_err(|e| {
+                    AppError::Internal(format!("failed to set session permissions: {e}"))
+                })?;
         }
     }
     Ok(())
@@ -206,13 +206,22 @@ fn validate_permission_key(key: &str) -> Result<(), AppError> {
         .map_err(|e| AppError::BadRequest(BadRequestKind::Other(e.to_string())))
 }
 
-async fn run_text(session: &AgentSession, text: &str, yes: bool, plain: bool) -> Result<(), AppError> {
+async fn run_text(
+    session: &AgentSession,
+    text: &str,
+    yes: bool,
+    plain: bool,
+) -> Result<(), AppError> {
     let tty = atty::is(atty::Stream::Stdout);
     let stream = !plain && tty;
 
     let mut output = String::new();
     let result = session
-        .run_turn_stream(text, |event| emit_stream_event(event, stream, &mut output), |_block| {})
+        .run_turn_stream(
+            text,
+            |event| emit_stream_event(event, stream, &mut output),
+            |_block| {},
+        )
         .await
         .map_err(agent_err)?;
     if stream && !output.is_empty() && !output.ends_with('\n') {
@@ -293,9 +302,7 @@ fn emit_stream_event(event: TurnEvent, stream: bool, output: &mut String) {
             output.push_str(&name);
             output.push('\n');
         }
-        TurnEvent::ToolResult {
-            name, is_error, ..
-        } => {
+        TurnEvent::ToolResult { name, is_error, .. } => {
             let status = if is_error { "error" } else { "ok" };
             println!("  [tool result] {name}: {status}");
             output.push_str("  [tool result] ");
@@ -308,11 +315,16 @@ fn emit_stream_event(event: TurnEvent, stream: bool, output: &mut String) {
     }
 }
 
-fn permissions_for_approval(approval: &ApprovalRequest, approved_ids: Option<&[String]>) -> Permissions {
+fn permissions_for_approval(
+    approval: &ApprovalRequest,
+    approved_ids: Option<&[String]>,
+) -> Permissions {
     let mut permissions = Permissions::default();
     for change in &approval.changes {
         if let Some(ids) = approved_ids {
-            let Some(id) = &change.proposal_id else { continue; };
+            let Some(id) = &change.proposal_id else {
+                continue;
+            };
             if !ids.contains(id) {
                 continue;
             }

@@ -36,7 +36,8 @@ pub(super) const MEMORY_COLS: &str = "id, kind, key, normalized_key, content, no
 pub(super) const COMMENT_COLS: &str = "id, task_id, author, content, seq, created_at";
 
 pub(super) const WORK_SESSION_COLS: &str = "id, task_id, title, note, quantity_total, quantity_done, quantity_unit, started_at, ended_at, created_at";
-pub(super) const PROGRESS_EVENT_COLS: &str = "id, work_session_id, task_id, at, quantity_done, delta_quantity, active_minutes, note";
+pub(super) const PROGRESS_EVENT_COLS: &str =
+    "id, work_session_id, task_id, at, quantity_done, delta_quantity, active_minutes, note";
 
 pub(super) fn select_tasks() -> String {
     format!("SELECT {TASK_COLS} FROM {TASK_FROM}")

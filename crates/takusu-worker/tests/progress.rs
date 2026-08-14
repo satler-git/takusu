@@ -21,8 +21,7 @@ fn record_work_session_progress_updates_quantity() {
     let task_id = task["id"].as_str().expect("task id");
 
     let start_body = format!(r#"{{"task_id": "{task_id}"}}"#);
-    let (status, body) =
-        http_post_json("/api/work-sessions", Some(&token), &start_body).unwrap();
+    let (status, body) = http_post_json("/api/work-sessions", Some(&token), &start_body).unwrap();
     assert_eq!(status, 200, "body: {body}");
     let session: serde_json::Value = serde_json::from_str(&body).expect("session json");
     let session_id = session["id"].as_str().expect("session id");

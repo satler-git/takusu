@@ -144,7 +144,7 @@ mod tests {
         ) -> Result<TaskRow, takusu_contracts::StorageError> {
             unimplemented()
         }
-async fn delete_task(&self, _: &str) -> Result<(), takusu_contracts::StorageError> {
+        async fn delete_task(&self, _: &str) -> Result<(), takusu_contracts::StorageError> {
             unimplemented!()
         }
         async fn list_comments(
@@ -162,10 +162,7 @@ async fn delete_task(&self, _: &str) -> Result<(), takusu_contracts::StorageErro
         ) -> Result<takusu_contracts::CommentRow, takusu_contracts::StorageError> {
             unimplemented!()
         }
-        async fn delete_comment(
-            &self,
-            _: &str,
-        ) -> Result<(), takusu_contracts::StorageError> {
+        async fn delete_comment(&self, _: &str) -> Result<(), takusu_contracts::StorageError> {
             unimplemented!()
         }
         async fn list_habits(&self) -> Result<Vec<HabitRow>, takusu_contracts::StorageError> {
@@ -374,10 +371,8 @@ async fn delete_task(&self, _: &str) -> Result<(), takusu_contracts::StorageErro
         async fn injectable_memories(
             &self,
             _: &takusu_contracts::MemoryInjectionQuery,
-        ) -> Result<
-            takusu_contracts::MemoryInjectionResult,
-            takusu_contracts::StorageError,
-        > {
+        ) -> Result<takusu_contracts::MemoryInjectionResult, takusu_contracts::StorageError>
+        {
             unimplemented()
         }
         async fn find_similar_tasks(
@@ -412,7 +407,8 @@ async fn delete_task(&self, _: &str) -> Result<(), takusu_contracts::StorageErro
             _: &str,
             _: &takusu_contracts::RecordWorkSessionProgress,
             _: Option<&str>,
-        ) -> Result<takusu_contracts::WorkSessionProgressResult, takusu_contracts::StorageError> {
+        ) -> Result<takusu_contracts::WorkSessionProgressResult, takusu_contracts::StorageError>
+        {
             unimplemented()
         }
         async fn get_work_session(

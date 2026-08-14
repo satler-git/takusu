@@ -123,7 +123,9 @@ impl TakusuServer {
             registry.retain(|_, w| w.strong_count() > 0);
             if registry.get(&port).is_some_and(|w| w.strong_count() > 0) {
                 *self.port.lock().unwrap_or_else(|e| e.into_inner()) = port;
-                tracing::info!("takusu-local already running on port {port}; reusing existing server");
+                tracing::info!(
+                    "takusu-local already running on port {port}; reusing existing server"
+                );
                 return Ok(());
             }
         }
@@ -239,7 +241,9 @@ impl TakusuServer {
                 // Another instance registered while we were building the
                 // router. Reuse it instead of binding.
                 *self.port.lock().unwrap_or_else(|e| e.into_inner()) = port;
-                tracing::info!("takusu-local already running on port {port}; reusing existing server");
+                tracing::info!(
+                    "takusu-local already running on port {port}; reusing existing server"
+                );
                 return Ok(());
             }
             let listener = runtime
@@ -419,8 +423,10 @@ mod tests {
 
         // Exactly one instance owns the runtime; the other reused it. Neither
         // failed with "Address already in use", and both report running.
-        let owner_running = matches!(owner.status(), ServerStatus::Running { port: p } if p == port);
-        let reuser_running = matches!(reuser.status(), ServerStatus::Running { port: p } if p == port);
+        let owner_running =
+            matches!(owner.status(), ServerStatus::Running { port: p } if p == port);
+        let reuser_running =
+            matches!(reuser.status(), ServerStatus::Running { port: p } if p == port);
         assert!(
             owner_running && reuser_running,
             "both instances should report running, got owner={owner_running} reuser={reuser_running}"
