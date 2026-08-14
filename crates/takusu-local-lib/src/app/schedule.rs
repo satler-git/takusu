@@ -208,10 +208,8 @@ impl super::TakusuApp {
         let all_rows = Self::merge_active_tasks(habit_rows, task_rows);
 
         let horizon = compute_horizon(from_point, settings.plan_length_days, &all_rows, &tz);
-        let (in_horizon, out_horizon): (Vec<_>, Vec<_>) = all_rows
-            .iter()
-            .cloned()
-            .partition(|row| {
+        let (in_horizon, out_horizon): (Vec<_>, Vec<_>) =
+            all_rows.iter().cloned().partition(|row| {
                 iso_to_point(&row.end_at.to_string(), &tz)
                     .map(|p| p.0 <= horizon.0)
                     .unwrap_or(true)
@@ -540,6 +538,20 @@ impl super::TakusuApp {
             .await
             .map_err(storage_to_app)?;
         let old_start = iso_to_point(&entries[idx].start_at.to_string(), &tz)?;
+
+        // If the schedule already starts at the requested point, there is
+        // nothing to change. This makes repeated `move_entry` calls with the
+        // same target idempotent (the agent's quick-action retry path depends
+        // on this) and avoids redundant calendar syncs.
+        if new_start_point == old_start {
+            return Ok(MoveEntryResponse {
+                task_id: full_task_id,
+                start_at: entries[idx].start_at,
+                end_at: entries[idx].end_at,
+                warnings: Vec::new(),
+            });
+        }
+
         let old_end = iso_to_point(&entries[idx].end_at.to_string(), &tz)?;
         let duration = Point::delta(old_end, old_start);
         let new_end = new_start_point + duration;

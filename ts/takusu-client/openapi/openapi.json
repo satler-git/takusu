@@ -9393,6 +9393,196 @@
             }
           }
         }
+      },
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "version": {
+                        "type": "integer",
+                        "maximum": 255,
+                        "minimum": 0
+                      }
+                    },
+                    "required": ["version"]
+                  },
+                  {
+                    "$ref": "#/components/schemas/CapabilityRequest"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "version": {
+                          "type": "integer",
+                          "maximum": 255,
+                          "minimum": 0
+                        }
+                      },
+                      "required": ["version"]
+                    },
+                    {
+                      "$ref": "#/components/schemas/ActionCapability"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Failed to parse the request body as JSON",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Expected request with `Content-Type: application/json`",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Failed to deserialize the JSON body into the target type",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Default error body returned by agent endpoints.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agent/v1/actions": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "version": {
+                        "type": "integer",
+                        "maximum": 255,
+                        "minimum": 0
+                      }
+                    },
+                    "required": ["version"]
+                  },
+                  {
+                    "$ref": "#/components/schemas/ActionCapability"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "version": {
+                          "type": "integer",
+                          "maximum": 255,
+                          "minimum": 0
+                        }
+                      },
+                      "required": ["version"]
+                    },
+                    {
+                      "$ref": "#/components/schemas/Presentation"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Failed to parse the request body as JSON",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Expected request with `Content-Type: application/json`",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Failed to deserialize the JSON body into the target type",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Default error body returned by agent endpoints.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/agent/v1/settings": {
@@ -13557,6 +13747,41 @@
         },
         "required": ["id", "label", "kind"]
       },
+      "ActionCapability": {
+        "description": "A server-issued, one-shot action capability.",
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "device_id": {
+            "type": "string"
+          },
+          "event_id": {
+            "type": ["string", "null"]
+          },
+          "expires_at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "input_path": {
+            "$ref": "#/components/schemas/InputPath"
+          },
+          "one_shot": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "device_id",
+          "action",
+          "input_path",
+          "expires_at",
+          "one_shot"
+        ]
+      },
       "ActionGroup": {
         "description": "One labelled group of actions. Never empty.",
         "type": "object",
@@ -13671,6 +13896,33 @@
           }
         },
         "required": ["audio_input", "tts", "approvals", "user_input"]
+      },
+      "CapabilityRequest": {
+        "description": "Request to mint a quick-action capability.",
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "device_id": {
+            "type": "string"
+          },
+          "note": {
+            "type": ["string", "null"]
+          },
+          "quantity_done": {
+            "type": ["integer", "null"],
+            "format": "int64"
+          },
+          "snooze_minutes": {
+            "type": ["integer", "null"],
+            "format": "int64"
+          },
+          "task_id": {
+            "type": "string"
+          }
+        },
+        "required": ["task_id", "action", "device_id"]
       },
       "ChangeOperation": {
         "description": "Operation kind for a proposed or applied change.",
@@ -13921,6 +14173,17 @@
         },
         "additionalProperties": false,
         "required": ["field", "value", "reason"]
+      },
+      "InputPath": {
+        "description": "Trusted input path for an action. The server, not the client, decides the\npath based on how the capability was issued.",
+        "type": "string",
+        "enum": [
+          "screen_capability",
+          "notification_capability",
+          "explicit_voice_session",
+          "ambient_wake_word",
+          "plain_text"
+        ]
       },
       "LlmProviderKind": {
         "description": "Identifies which LLM backend implementation to build.\n\nCurrently only `OpenAICompatible` exists — OpenAI, OpenRouter, and custom\nOpenAI-compatible endpoints are all served by [`OpenAIClient`]. The enum\nis kept as a single variant so that future non-OpenAI-compatible providers\n(e.g. Anthropic native, Gemini) can be added without touching the dispatch\nsites that call [`build_llm_client`].\n\nThe legacy `openai`, `openrouter`, and `custom` values (from the previous\nthree-variant enum) are accepted as aliases during deserialization so that\nexisting `agent.toml` files and persisted mobile settings keep working.\nThey all map to `OpenAICompatible`. Serialization always emits\n`openai_compatible`.",

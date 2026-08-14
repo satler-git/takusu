@@ -3,6 +3,76 @@
     {
       "fg": "black",
       "bg": "surfaceTint",
+      "file": "components/AgentCompactPanel.tsx",
+      "kind": "same-style",
+      "source": "text"
+    },
+    {
+      "fg": "black",
+      "bg": "surfaceTint",
+      "file": "components/AgentCompactPanel.tsx",
+      "kind": "parent-child",
+      "source": "text"
+    },
+    {
+      "fg": "textOnCard",
+      "bg": "surfaceTint",
+      "file": "components/AgentCompactPanel.tsx",
+      "kind": "parent-child",
+      "source": "text"
+    },
+    {
+      "fg": "textOnCard",
+      "bg": "brand",
+      "file": "components/AgentCompactPanel.tsx",
+      "kind": "parent-child",
+      "source": "text"
+    },
+    {
+      "fg": "onBrand",
+      "bg": "surfaceTint",
+      "file": "components/AgentCompactPanel.tsx",
+      "kind": "parent-child",
+      "source": "text"
+    },
+    {
+      "fg": "onBrand",
+      "bg": "brand",
+      "file": "components/AgentCompactPanel.tsx",
+      "kind": "parent-child",
+      "source": "text"
+    },
+    {
+      "fg": "black",
+      "bg": "surface",
+      "file": "components/AgentCompactPanel.tsx",
+      "kind": "parent-child",
+      "source": "text"
+    },
+    {
+      "fg": "textOnCardSecondary",
+      "bg": "surface",
+      "file": "components/AgentCompactPanel.tsx",
+      "kind": "parent-child",
+      "source": "text"
+    },
+    {
+      "fg": "textOnCard",
+      "bg": "surface",
+      "file": "components/AgentCompactPanel.tsx",
+      "kind": "parent-child",
+      "source": "icon"
+    },
+    {
+      "fg": "brand",
+      "bg": "surface",
+      "file": "components/AgentCompactPanel.tsx",
+      "kind": "parent-child",
+      "source": "icon"
+    },
+    {
+      "fg": "black",
+      "bg": "surfaceTint",
       "file": "components/ApprovalPanel.tsx",
       "kind": "same-style",
       "source": "text"
@@ -125,6 +195,55 @@
       "file": "components/ContextMenu.tsx",
       "kind": "parent-child",
       "source": "icon"
+    },
+    {
+      "fg": "textOnCard",
+      "bg": "surfaceTint",
+      "file": "components/CurrentTaskCard.tsx",
+      "kind": "parent-child",
+      "source": "text"
+    },
+    {
+      "fg": "textOnCard",
+      "bg": "brand",
+      "file": "components/CurrentTaskCard.tsx",
+      "kind": "parent-child",
+      "source": "text"
+    },
+    {
+      "fg": "onBrand",
+      "bg": "surfaceTint",
+      "file": "components/CurrentTaskCard.tsx",
+      "kind": "parent-child",
+      "source": "text"
+    },
+    {
+      "fg": "onBrand",
+      "bg": "brand",
+      "file": "components/CurrentTaskCard.tsx",
+      "kind": "parent-child",
+      "source": "text"
+    },
+    {
+      "fg": "textOnCardSecondary",
+      "bg": "surface",
+      "file": "components/CurrentTaskCard.tsx",
+      "kind": "parent-child",
+      "source": "text"
+    },
+    {
+      "fg": "black",
+      "bg": "surface",
+      "file": "components/CurrentTaskCard.tsx",
+      "kind": "parent-child",
+      "source": "text"
+    },
+    {
+      "fg": "textOnCardSecondary",
+      "bg": "surfaceTint",
+      "file": "components/CurrentTaskCard.tsx",
+      "kind": "parent-child",
+      "source": "text"
     },
     {
       "fg": "black",
@@ -2075,5 +2194,5 @@
       "source": "icon"
     }
   ],
-  "generatedAt": "2026-08-13T18:37:05.727Z"
+  "generatedAt": "2026-08-14T17:39:04.992Z"
 }

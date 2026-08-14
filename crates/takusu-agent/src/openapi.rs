@@ -15,7 +15,7 @@ use aide::openapi::{
     Info, MediaType, OpenApi, Operation, RequestBody, Response as OpenApiResponse, SchemaObject,
     Server, StatusCode,
 };
-use aide::operation::{set_body, OperationInput, OperationOutput};
+use aide::operation::{OperationInput, OperationOutput, set_body};
 use axum::body::Body;
 use axum::extract::{FromRequest, Json, Path, Request};
 use axum::http::header::CONTENT_TYPE;
@@ -24,13 +24,16 @@ use indexmap::IndexMap;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::transport::{
-    ApprovalDecisionRequest, ApprovalResultDto, CapabilitiesResponse, CreateSessionRequest,
-    CreateSessionResponse, EditTurnRequest, HealthResponse, ResumeSessionRequest,
-    ResumeSessionResponse, RevertRequest, SseEvent, TurnRequest, TurnResultDto,
-    UpdateAgentSettings, UpdateSessionSettings, UserInputResolutionRequest, Versioned, API_VERSION,
-};
+use crate::Presentation;
 use crate::ToolStatsSnapshot;
+use crate::capability::{ActionCapability, CapabilityRequest};
+use crate::transport::{
+    API_VERSION, ApprovalDecisionRequest, ApprovalResultDto, CapabilitiesResponse,
+    CreateSessionRequest, CreateSessionResponse, EditTurnRequest, HealthResponse,
+    ResumeSessionRequest, ResumeSessionResponse, RevertRequest, SseEvent, TurnRequest,
+    TurnResultDto, UpdateAgentSettings, UpdateSessionSettings, UserInputResolutionRequest,
+    Versioned,
+};
 
 /// Generic `{ "ok": true }` body used by several agent endpoints.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -278,15 +281,46 @@ async fn clear_tool_stats() -> NoContent {
     NoContent
 }
 
+/// Schema-only stub for `POST /agent/v1/capabilities`. The real handler is in
+/// `transport.rs`; this function exists only to register the OpenAPI shape.
+async fn mint_capability_schema(
+    Json(_body): Json<Versioned<CapabilityRequest>>,
+) -> Json<Versioned<ActionCapability>> {
+    versioned(ActionCapability {
+        id: "stub".to_string(),
+        event_id: None,
+        device_id: "stub".to_string(),
+        action: "start".to_string(),
+        input_path: crate::capability::InputPath::ScreenCapability,
+        expires_at: jiff::Timestamp::now(),
+        one_shot: true,
+    })
+}
+
+/// Schema-only stub for `POST /agent/v1/actions`. The real handler is in
+/// `transport.rs`; this function exists only to register the OpenAPI shape.
+async fn authorize_action_schema(
+    Json(_body): Json<Versioned<ActionCapability>>,
+) -> Json<Versioned<Presentation>> {
+    versioned(Presentation::Text {
+        text: "stub".to_string(),
+    })
+}
+
 fn build_api_router(open_api: &mut OpenApi) -> axum::Router {
     ApiRouter::new()
         .api_route("/agent/v1/health", api::get(health))
         .api_route("/agent/v1/capabilities", api::get(capabilities))
+        .api_route("/agent/v1/capabilities", api::post(mint_capability_schema))
+        .api_route("/agent/v1/actions", api::post(authorize_action_schema))
         .api_route("/agent/v1/settings", api::put(update_settings))
         .api_route("/agent/v1/sessions", api::post(create_session))
         .api_route("/agent/v1/sessions/resume", api::post(resume_session))
         .api_route("/agent/v1/sessions/{id}/turns", api::post(run_turn))
-        .api_route("/agent/v1/sessions/{id}/turns/stream", api::post(run_turn_stream))
+        .api_route(
+            "/agent/v1/sessions/{id}/turns/stream",
+            api::post(run_turn_stream),
+        )
         .api_route(
             "/agent/v1/sessions/{id}/turns/{turn_index}/edit/stream",
             api::post(edit_turn_stream),
@@ -295,7 +329,10 @@ fn build_api_router(open_api: &mut OpenApi) -> axum::Router {
             "/agent/v1/sessions/{id}/turns/{turn_index}/revert",
             api::post(revert_turn),
         )
-        .api_route("/agent/v1/sessions/{id}/settings", api::put(update_session_settings))
+        .api_route(
+            "/agent/v1/sessions/{id}/settings",
+            api::put(update_session_settings),
+        )
         .api_route("/agent/v1/sessions/{id}/approval", api::get(get_approval))
         .api_route(
             "/agent/v1/sessions/{id}/approvals/{approval_id}",
@@ -308,7 +345,9 @@ fn build_api_router(open_api: &mut OpenApi) -> axum::Router {
         .api_route("/agent/v1/sessions/{id}", api::delete(delete_session))
         .api_route("/agent/v1/stats/tools", api::get(get_tool_stats))
         .api_route("/agent/v1/stats/tools", api::delete(clear_tool_stats))
-        .finish_api_with(open_api, |api| api.default_response::<Json<ErrorResponse>>())
+        .finish_api_with(open_api, |api| {
+            api.default_response::<Json<ErrorResponse>>()
+        })
 }
 
 /// Generate the `OpenApi` document for the agent API.

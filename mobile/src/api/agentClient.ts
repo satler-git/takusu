@@ -1,13 +1,17 @@
 import type {
+  ActionCapability,
   AgentHistoryMessage,
   AgentStreamEvent,
   AgentTurnResult,
   ApprovalRequest,
   ApprovalResult,
+  CapabilityRequest,
+  Presentation,
   ProposalDecision,
   TurnEvent,
   UserInputAnswer,
 } from './agentTypes';
+import { decodePresentation } from './agentTypes';
 import type { HabitPreviewRequest, HabitPreviewTask } from './types';
 import type { PermissionsMap } from './settingsStore';
 
@@ -422,5 +426,30 @@ export class AgentClient {
 
   async clearToolStats(): Promise<void> {
     await this.request<void>('DELETE', '/api/agent/v1/stats/tools');
+  }
+
+  async mintCapability(request: CapabilityRequest): Promise<ActionCapability> {
+    return this.request<ActionCapability>(
+      'POST',
+      '/api/agent/v1/capabilities',
+      { version: 1, ...request },
+    );
+  }
+
+  async authorizeAction(capability: ActionCapability): Promise<Presentation> {
+    const raw = await this.request<Presentation>(
+      'POST',
+      '/api/agent/v1/actions',
+      {
+        version: 1,
+        ...capability,
+      },
+    );
+    return decodePresentation(raw);
+  }
+
+  async quickAction(request: CapabilityRequest): Promise<Presentation> {
+    const capability = await this.mintCapability(request);
+    return this.authorizeAction(capability);
   }
 }

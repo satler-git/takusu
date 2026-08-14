@@ -22,11 +22,13 @@ use tokio::sync::mpsc::unbounded_channel;
 use tokio::sync::oneshot;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
+use crate::capability::{ActionCapability, CapabilityRequest, CapabilityStore, InputPath};
 use crate::llm::{LlmClient, build_llm_client};
 use crate::{
     AgentConfig, AgentError, AgentSession, ApprovalRequest, ApprovalResult, InvalidArgsError,
     ToolError, TurnEvent, TurnResult, UserInputAnswer, UserInputProvider, UserInputQuestion,
 };
+use takusu_client::Client;
 
 pub const API_VERSION: u8 = 1;
 
@@ -129,6 +131,8 @@ pub struct AgentApiState {
     sessions: Mutex<BoundedMap<String, Arc<AgentSession>>>,
     turn_results: Mutex<BoundedMap<(String, String, &'static str), TurnResultDto>>,
     approval_results: Mutex<BoundedMap<(String, String), ApprovalResultDto>>,
+    pub(crate) capability_store: CapabilityStore,
+    planner_client: Client,
 }
 
 impl AgentApiState {
@@ -152,6 +156,7 @@ impl AgentApiState {
         user_input_provider: Arc<dyn UserInputProvider>,
         config: AgentConfig,
     ) -> Self {
+        let planner_client = Client::new_with_token(&config.server.url, Arc::clone(&token));
         Self {
             token,
             factory,
@@ -160,6 +165,8 @@ impl AgentApiState {
             sessions: Mutex::new(BoundedMap::new(MAX_SESSIONS)),
             turn_results: Mutex::new(BoundedMap::new(MAX_TURN_RESULTS)),
             approval_results: Mutex::new(BoundedMap::new(MAX_APPROVAL_RESULTS)),
+            capability_store: CapabilityStore::new(),
+            planner_client,
         }
     }
 
@@ -578,6 +585,8 @@ pub fn router(state: Arc<AgentApiState>) -> Router {
     Router::new()
         .route("/health", get(health))
         .route("/capabilities", get(capabilities))
+        .route("/capabilities", post(mint_capability))
+        .route("/actions", post(authorize_action))
         .route("/settings", put(update_settings))
         .route("/sessions", post(create_session))
         .route("/sessions/resume", post(resume_session))
@@ -632,6 +641,65 @@ async fn capabilities(State(state): State<Arc<AgentApiState>>, headers: HeaderMa
         },
     })
     .into_response()
+}
+
+async fn mint_capability(
+    State(state): State<Arc<AgentApiState>>,
+    headers: HeaderMap,
+    Json(body): Json<Versioned<CapabilityRequest>>,
+) -> Response {
+    if let Err(status) = auth_token(&state, &headers).await {
+        return status.into_response();
+    }
+    if body.version != API_VERSION {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    let request = body.value;
+    let capability =
+        crate::capability::mint_capability(request.clone(), InputPath::ScreenCapability);
+    state
+        .capability_store
+        .insert(request, capability.clone())
+        .await;
+    Json(Versioned {
+        version: API_VERSION,
+        value: capability,
+    })
+    .into_response()
+}
+
+async fn authorize_action(
+    State(state): State<Arc<AgentApiState>>,
+    headers: HeaderMap,
+    Json(body): Json<Versioned<ActionCapability>>,
+) -> Response {
+    if let Err(status) = auth_token(&state, &headers).await {
+        return status.into_response();
+    }
+    if body.version != API_VERSION {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    let record = match state.capability_store.get(&body.value.id).await {
+        Some(record) => record,
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "version": API_VERSION,
+                    "error": "capability not found",
+                })),
+            )
+                .into_response();
+        }
+    };
+    match crate::capability::authorize_action(&state.planner_client, record, &body.value).await {
+        Ok(presentation) => Json(Versioned {
+            version: API_VERSION,
+            value: presentation,
+        })
+        .into_response(),
+        Err(e) => agent_error(e.into()),
+    }
 }
 
 async fn update_settings(
@@ -1335,6 +1403,19 @@ fn agent_error(error: AgentError) -> Response {
         AgentError::Tool(crate::ToolError::Conflict(_)) => StatusCode::CONFLICT,
         AgentError::Tool(crate::ToolError::Cancelled) => StatusCode::GONE,
         AgentError::TooManyToolCalls => StatusCode::UNPROCESSABLE_ENTITY,
+        AgentError::Client(takusu_client::ClientError::Api { status, .. }) => {
+            // Propagate planner 4xx responses so the mobile client can show the
+            // right UI (e.g. 409 ScheduleViolation). 5xx and other client errors
+            // remain BAD_GATEWAY because they indicate a downstream failure.
+            if *status >= 400 && *status < 500 {
+                StatusCode::from_u16(*status).unwrap_or(StatusCode::BAD_GATEWAY)
+            } else {
+                StatusCode::BAD_GATEWAY
+            }
+        }
+        AgentError::Client(takusu_client::ClientError::MultipleOpenWorkSessions(_)) => {
+            StatusCode::CONFLICT
+        }
         _ => StatusCode::BAD_GATEWAY,
     };
     (

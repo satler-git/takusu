@@ -7142,7 +7142,147 @@ export interface paths {
       };
     };
     put?: never;
-    post?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          'application/json': {
+            version: number;
+          } & components['schemas']['CapabilityRequest'];
+        };
+      };
+      responses: {
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              version: number;
+            } & components['schemas']['ActionCapability'];
+          };
+        };
+        /** @description Failed to parse the request body as JSON */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Expected request with `Content-Type: application/json` */
+        415: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Failed to deserialize the JSON body into the target type */
+        422: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Default error body returned by agent endpoints. */
+        default: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['ErrorResponse'];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/agent/v1/actions': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          'application/json': {
+            version: number;
+          } & components['schemas']['ActionCapability'];
+        };
+      };
+      responses: {
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              version: number;
+            } & components['schemas']['Presentation'];
+          };
+        };
+        /** @description Failed to parse the request body as JSON */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Expected request with `Content-Type: application/json` */
+        415: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Failed to deserialize the JSON body into the target type */
+        422: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Default error body returned by agent endpoints. */
+        default: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['ErrorResponse'];
+          };
+        };
+      };
+    };
     delete?: never;
     options?: never;
     head?: never;
@@ -9323,6 +9463,16 @@ export interface components {
       kind: components['schemas']['ActionKind'];
       label: string;
     };
+    /** @description A server-issued, one-shot action capability. */
+    ActionCapability: {
+      action: string;
+      device_id: string;
+      event_id?: string | null;
+      expires_at: string;
+      id: string;
+      input_path: components['schemas']['InputPath'];
+      one_shot: boolean;
+    };
     /** @description One labelled group of actions. Never empty. */
     ActionGroup: {
       actions: components['schemas']['NonEmptyVecAction'];
@@ -9357,6 +9507,17 @@ export interface components {
       audio_input: boolean;
       tts: boolean;
       user_input: boolean;
+    };
+    /** @description Request to mint a quick-action capability. */
+    CapabilityRequest: {
+      action: string;
+      device_id: string;
+      note?: string | null;
+      /** Format: int64 */
+      quantity_done?: number | null;
+      /** Format: int64 */
+      snooze_minutes?: number | null;
+      task_id: string;
     };
     /**
      * @description Operation kind for a proposed or applied change.
@@ -9467,6 +9628,17 @@ export interface components {
       /** @description Inferred value for the field. */
       value: unknown;
     };
+    /**
+     * @description Trusted input path for an action. The server, not the client, decides the
+     *     path based on how the capability was issued.
+     * @enum {string}
+     */
+    InputPath:
+      | 'screen_capability'
+      | 'notification_capability'
+      | 'explicit_voice_session'
+      | 'ambient_wake_word'
+      | 'plain_text';
     /**
      * @description Identifies which LLM backend implementation to build.
      *
