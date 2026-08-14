@@ -29,7 +29,7 @@ use crate::ToolStatsSnapshot;
 use crate::capability::{ActionCapability, CapabilityRequest};
 use crate::transport::{
     API_VERSION, ApprovalDecisionRequest, ApprovalResultDto, CapabilitiesResponse,
-    CreateSessionRequest, CreateSessionResponse, EditTurnRequest, HealthResponse,
+    CreateSessionRequest, CreateSessionResponse, EditTurnRequest, HealthResponse, PlannerEvent,
     ResumeSessionRequest, ResumeSessionResponse, RevertRequest, SseEvent, TurnRequest,
     TurnResultDto, UpdateAgentSettings, UpdateSessionSettings, UserInputResolutionRequest,
     Versioned,
@@ -232,6 +232,10 @@ async fn edit_turn_stream(
     SseStream::default()
 }
 
+async fn events_stream() -> SseStream<PlannerEvent> {
+    SseStream::default()
+}
+
 async fn revert_turn(
     Path((_id, _turn_index)): Path<(String, usize)>,
     Json(_): Json<Versioned<RevertRequest>>,
@@ -310,6 +314,7 @@ async fn authorize_action_schema(
 fn build_api_router(open_api: &mut OpenApi) -> axum::Router {
     ApiRouter::new()
         .api_route("/agent/v1/health", api::get(health))
+        .api_route("/agent/v1/events", api::get(events_stream))
         .api_route("/agent/v1/capabilities", api::get(capabilities))
         .api_route("/agent/v1/capabilities", api::post(mint_capability_schema))
         .api_route("/agent/v1/actions", api::post(authorize_action_schema))
@@ -381,6 +386,7 @@ mod tests {
         let spec = generate_openapi();
         let paths = &spec.paths.unwrap().paths;
         assert!(paths.contains_key("/agent/v1/health"));
+        assert!(paths.contains_key("/agent/v1/events"));
         assert!(paths.contains_key("/agent/v1/sessions"));
         assert!(paths.contains_key("/agent/v1/sessions/{id}/turns/stream"));
     }

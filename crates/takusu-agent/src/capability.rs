@@ -45,6 +45,47 @@ pub enum InputPath {
     PlainText,
 }
 
+/// A quick action that a one-shot capability can authorize.
+///
+/// Kept as a string on the wire for forward compatibility, but parsed into this
+/// enum as soon as it reaches the server (WI-3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QuickAction {
+    Start,
+    Pause,
+    Progress,
+    Complete,
+    Delay,
+}
+
+impl std::fmt::Display for QuickAction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            Self::Start => "start",
+            Self::Pause => "pause",
+            Self::Progress => "progress",
+            Self::Complete => "complete",
+            Self::Delay => "delay",
+        };
+        f.write_str(s)
+    }
+}
+
+impl std::str::FromStr for QuickAction {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "start" => Ok(Self::Start),
+            "pause" => Ok(Self::Pause),
+            "progress" => Ok(Self::Progress),
+            "complete" => Ok(Self::Complete),
+            "delay" => Ok(Self::Delay),
+            _ => Err("unknown quick action"),
+        }
+    }
+}
+
 /// A server-issued, one-shot action capability.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ActionCapability {
@@ -123,6 +164,9 @@ pub struct CapabilityRecord {
     pub capability: ActionCapability,
     pub consumed: bool,
     pub result: Option<Presentation>,
+    /// Parsed `QuickAction` stored on first successful authorization so callers
+    /// do not have to re-parse the action string for state-change hints.
+    pub action: Option<QuickAction>,
     /// Original schedule start captured on the first delay attempt. Stored so
     /// retries move the entry to the same absolute target and the TTS detail
     /// can report the actual delay minutes.
@@ -192,6 +236,7 @@ impl CapabilityStore {
                 capability,
                 consumed: false,
                 result: None,
+                action: None,
                 snooze_original_start: None,
                 snooze_target: None,
             })),
@@ -245,14 +290,18 @@ pub async fn authorize_action(
     client: &Client,
     record: Arc<tokio::sync::Mutex<CapabilityRecord>>,
     capability: &ActionCapability,
-) -> Result<Presentation, CapabilityError> {
+) -> Result<(Presentation, QuickAction), CapabilityError> {
     let mut guard = record.lock().await;
 
     if guard.consumed {
         if capability != &guard.capability {
             return Err(CapabilityError::Mismatch);
         }
-        return guard.result.clone().ok_or(CapabilityError::Consumed);
+        return guard
+            .result
+            .clone()
+            .zip(guard.action)
+            .ok_or(CapabilityError::Consumed);
     }
 
     if capability.expires_at < JiffTimestamp::now() {
@@ -263,26 +312,31 @@ pub async fn authorize_action(
         return Err(CapabilityError::Mismatch);
     }
 
-    let action = guard.request.action.clone();
-    match action.as_str() {
-        "start" | "pause" | "progress" | "complete" | "delay" => {}
-        _ => return Err(CapabilityError::InvalidAction),
-    }
+    let action = match guard.action {
+        Some(action) => action,
+        None => guard
+            .request
+            .action
+            .parse()
+            .map_err(|_| CapabilityError::InvalidAction)?,
+    };
 
     let task = client.get_task(&guard.request.task_id).await?;
     let operation_id = capability.id.as_str();
-    let result = match action.as_str() {
-        "start" => execute_start(client, &task, operation_id).await?,
-        "pause" => execute_pause(client, &task, operation_id).await?,
-        "progress" => execute_progress(client, &guard.request, &task, operation_id).await?,
-        "complete" => execute_complete(client, &task, operation_id).await?,
-        "delay" => execute_delay(client, &task, &mut guard).await?,
-        _ => return Err(CapabilityError::InvalidAction),
+    let result = match action {
+        QuickAction::Start => execute_start(client, &task, operation_id).await?,
+        QuickAction::Pause => execute_pause(client, &task, operation_id).await?,
+        QuickAction::Progress => {
+            execute_progress(client, &guard.request, &task, operation_id).await?
+        }
+        QuickAction::Complete => execute_complete(client, &task, operation_id).await?,
+        QuickAction::Delay => execute_delay(client, &task, &mut guard).await?,
     };
 
     guard.consumed = true;
     guard.result = Some(result.clone());
-    Ok(result)
+    guard.action = Some(action);
+    Ok((result, action))
 }
 
 async fn execute_start(
@@ -546,6 +600,7 @@ mod tests {
             capability: capability.clone(),
             consumed: false,
             result: None,
+            action: None,
             snooze_original_start: None,
             snooze_target: None,
         }));
@@ -572,6 +627,7 @@ mod tests {
             capability,
             consumed: false,
             result: None,
+            action: None,
             snooze_original_start: None,
             snooze_target: None,
         }));
@@ -599,10 +655,11 @@ mod tests {
             capability: capability.clone(),
             consumed: true,
             result: Some(result.clone()),
+            action: Some(QuickAction::Start),
             snooze_original_start: None,
             snooze_target: None,
         }));
-        let got = authorize_action(&client, record, &capability)
+        let (got, _) = authorize_action(&client, record, &capability)
             .await
             .unwrap();
         assert!(matches!(got, Presentation::Text { text } if text == "ok"));
@@ -623,6 +680,7 @@ mod tests {
             capability: capability.clone(),
             consumed: false,
             result: None,
+            action: None,
             snooze_original_start: None,
             snooze_target: None,
         }));

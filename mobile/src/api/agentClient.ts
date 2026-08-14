@@ -6,6 +6,7 @@ import type {
   ApprovalRequest,
   ApprovalResult,
   CapabilityRequest,
+  PlannerStateEvent,
   Presentation,
   ProposalDecision,
   TurnEvent,
@@ -14,6 +15,74 @@ import type {
 import { decodePresentation } from './agentTypes';
 import type { HabitPreviewRequest, HabitPreviewTask } from './types';
 import type { PermissionsMap } from './settingsStore';
+
+/// Extract the `data:` payload from a single SSE block. Returns `undefined`
+/// when the block contains no `data:` lines.
+function parseSseBlock(block: string): string | undefined {
+  const dataLines: string[] = [];
+  for (const line of block.split('\n')) {
+    const trimmed = line.trimStart();
+    if (trimmed === '' || trimmed.startsWith(':')) {
+      continue;
+    }
+    if (trimmed.startsWith('data:')) {
+      const data = trimmed
+        .slice('data:'.length)
+        .trimStart()
+        .replace(/\r$/u, '');
+      dataLines.push(data);
+    }
+  }
+  if (dataLines.length === 0) {
+    return undefined;
+  }
+  return dataLines.join('\n');
+}
+
+/// Buffers incoming SSE text, splits it into discrete event blocks, and keeps
+/// the tail of an incomplete block for the next feed.
+class SseBuffer {
+  private buffer = '';
+  private lastTotal = 0;
+
+  feed(totalText: string) {
+    if (totalText.length > this.lastTotal) {
+      this.buffer += totalText.slice(this.lastTotal);
+      this.lastTotal = totalText.length;
+    }
+  }
+
+  takeBlocks(): string[] {
+    const blocks: string[] = [];
+    while (true) {
+      const lf = this.buffer.indexOf('\n\n');
+      const crlf = this.buffer.indexOf('\r\n\r\n');
+      let idx: number;
+      let delimLen: number;
+      if (lf === -1 && crlf === -1) {
+        break;
+      } else if (crlf === -1 || (lf !== -1 && lf < crlf)) {
+        idx = lf;
+        delimLen = 2;
+      } else {
+        idx = crlf;
+        delimLen = 4;
+      }
+      blocks.push(this.buffer.slice(0, idx));
+      this.buffer = this.buffer.slice(idx + delimLen);
+    }
+    return blocks;
+  }
+
+  tail(): string {
+    return this.buffer;
+  }
+
+  clear() {
+    this.buffer = '';
+    this.lastTotal = 0;
+  }
+}
 
 export type { AgentTurnResult };
 
@@ -230,9 +299,8 @@ export class AgentClient {
       xhr.setRequestHeader('Content-Type', 'application/json');
       xhr.setRequestHeader('Accept', 'text/event-stream');
 
-      let buffer = '';
-      let lastResponseLength = 0;
-      let done = false;
+      const sseBuffer = new SseBuffer();
+      const state = { done: false };
 
       const abort = () => {
         try {
@@ -250,67 +318,9 @@ export class AgentClient {
       }
       signal?.addEventListener('abort', abort);
 
-      const parseBlock = (block: string) => {
-        const dataLines: string[] = [];
-        for (const line of block.split('\n')) {
-          const trimmed = line.trimStart();
-          if (trimmed === '' || trimmed.startsWith(':')) {
-            continue;
-          }
-          if (trimmed.startsWith('data:')) {
-            const data = trimmed
-              .slice('data:'.length)
-              .trimStart()
-              .replace(/\r$/u, '');
-            dataLines.push(data);
-          }
-        }
-        if (dataLines.length === 0) {
-          return;
-        }
-        const payload = dataLines.join('\n');
-        if (payload === '[DONE]') {
-          return;
-        }
-        try {
-          const parsed = JSON.parse(payload) as { type: string };
-          if (done) {
-            return;
-          }
-          if (parsed.type === 'TtsBlock') {
-            onEvent(parsed as AgentStreamEvent);
-          } else {
-            const event = parsed as TurnEvent;
-            onEvent(event);
-            if (event.type === 'Done') {
-              done = true;
-              cleanupSignal();
-              resolve(event.data);
-            }
-          }
-        } catch {
-          // Ignore malformed SSE data.
-        }
-      };
-
-      const flush = () => {
-        while (true) {
-          const lf = buffer.indexOf('\n\n');
-          const crlf = buffer.indexOf('\r\n\r\n');
-          let idx: number;
-          let delimLen: number;
-          if (lf === -1 && crlf === -1) {
-            break;
-          } else if (crlf === -1 || (lf !== -1 && lf < crlf)) {
-            idx = lf;
-            delimLen = 2;
-          } else {
-            idx = crlf;
-            delimLen = 4;
-          }
-          const block = buffer.slice(0, idx);
-          buffer = buffer.slice(idx + delimLen);
-          parseBlock(block);
+      const handleBlocks = () => {
+        for (const block of sseBuffer.takeBlocks()) {
+          this.handleStreamBlock(block, onEvent, state, resolve, cleanupSignal);
         }
       };
 
@@ -318,12 +328,8 @@ export class AgentClient {
         if (xhr.status >= 400) {
           return;
         }
-        const response = xhr.responseText ?? '';
-        if (response.length > lastResponseLength) {
-          buffer += response.slice(lastResponseLength);
-          lastResponseLength = response.length;
-          flush();
-        }
+        sseBuffer.feed(xhr.responseText ?? '');
+        handleBlocks();
       };
 
       xhr.onload = () => {
@@ -334,12 +340,13 @@ export class AgentClient {
           );
           return;
         }
-        flush();
-        if (buffer.trim().length > 0) {
-          parseBlock(buffer);
-          buffer = '';
+        sseBuffer.feed(xhr.responseText ?? '');
+        handleBlocks();
+        const tail = sseBuffer.tail().trim();
+        if (tail.length > 0) {
+          this.handleStreamBlock(tail, onEvent, state, resolve, cleanupSignal);
         }
-        if (!done) {
+        if (!state.done) {
           reject(new Error('Stream ended without a Done event'));
         }
       };
@@ -358,6 +365,41 @@ export class AgentClient {
 
       xhr.send(JSON.stringify(body));
     });
+  }
+
+  private handleStreamBlock(
+    block: string,
+    onEvent: (event: AgentStreamEvent) => void,
+    state: { done: boolean },
+    resolve: (value: AgentTurnResult) => void,
+    cleanup: () => void,
+  ) {
+    const payload = parseSseBlock(block);
+    if (payload === undefined) {
+      return;
+    }
+    if (payload === '[DONE]') {
+      return;
+    }
+    try {
+      const parsed = JSON.parse(payload) as { type: string };
+      if (state.done) {
+        return;
+      }
+      if (parsed.type === 'TtsBlock') {
+        onEvent(parsed as AgentStreamEvent);
+      } else {
+        const event = parsed as TurnEvent;
+        onEvent(event);
+        if (event.type === 'Done') {
+          state.done = true;
+          cleanup();
+          resolve(event.data);
+        }
+      }
+    } catch {
+      // Ignore malformed SSE data.
+    }
   }
 
   async getApproval(sessionId: string): Promise<ApprovalRequest | null> {
@@ -451,5 +493,134 @@ export class AgentClient {
   async quickAction(request: CapabilityRequest): Promise<Presentation> {
     const capability = await this.mintCapability(request);
     return this.authorizeAction(capability);
+  }
+
+  /// Subscribe to the `/events` SSE stream and call `onEvent` for every
+  /// `PlannerStateChanged` broadcast from the server (WI-3). The stream
+  /// reconnects after transient network or server errors, but stops on auth
+  /// failures. Returns an unsubscribe function.
+  subscribeEvents(onEvent: (event: PlannerStateEvent) => void): () => void {
+    const url = `${this.baseUrl}/api/agent/v1/events`;
+    let unsubscribed = false;
+    let permanentlyFailed = false;
+    let currentXhr: XMLHttpRequest | null = null;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    const baseDelay = 1000;
+    const maxDelay = 30000;
+    const backoff = 1.5;
+    let nextDelay = baseDelay;
+
+    const isAuthError = (status: number): boolean =>
+      status === 401 || status === 403;
+
+    const stop = () => {
+      permanentlyFailed = true;
+      if (retryTimer !== null) {
+        clearTimeout(retryTimer);
+        retryTimer = null;
+      }
+    };
+
+    const handleBlock = (block: string) => {
+      const payload = parseSseBlock(block);
+      if (payload === undefined) {
+        return;
+      }
+      try {
+        const parsed = JSON.parse(payload) as { type: string };
+        if (parsed.type === 'state_changed') {
+          nextDelay = baseDelay;
+          onEvent(parsed as PlannerStateEvent);
+        }
+      } catch {
+        // Ignore malformed SSE data.
+      }
+    };
+
+    const scheduleReconnect = () => {
+      if (unsubscribed || permanentlyFailed) {
+        return;
+      }
+      retryTimer = setTimeout(() => {
+        nextDelay = Math.min(maxDelay, nextDelay * backoff);
+        connect();
+      }, nextDelay);
+    };
+
+    const connect = () => {
+      if (unsubscribed || permanentlyFailed) {
+        return;
+      }
+      const xhr = new XMLHttpRequest();
+      currentXhr = xhr;
+      const sseBuffer = new SseBuffer();
+      xhr.open('GET', url);
+      xhr.setRequestHeader('Authorization', `Bearer ${this.token}`);
+      xhr.setRequestHeader('Accept', 'text/event-stream');
+
+      xhr.onprogress = () => {
+        if (unsubscribed) {
+          return;
+        }
+        if (xhr.status >= 400) {
+          return;
+        }
+        sseBuffer.feed(xhr.responseText ?? '');
+        for (const block of sseBuffer.takeBlocks()) {
+          handleBlock(block);
+        }
+      };
+
+      xhr.onload = () => {
+        if (unsubscribed) {
+          return;
+        }
+        if (isAuthError(xhr.status)) {
+          stop();
+          return;
+        }
+        if (xhr.status >= 400) {
+          scheduleReconnect();
+          return;
+        }
+        sseBuffer.feed(xhr.responseText ?? '');
+        for (const block of sseBuffer.takeBlocks()) {
+          handleBlock(block);
+        }
+        const tail = sseBuffer.tail().trim();
+        if (tail.length > 0) {
+          handleBlock(tail);
+        }
+        scheduleReconnect();
+      };
+
+      xhr.onerror = () => {
+        if (unsubscribed || permanentlyFailed) {
+          return;
+        }
+        if (isAuthError(xhr.status)) {
+          stop();
+          return;
+        }
+        scheduleReconnect();
+      };
+
+      xhr.onabort = () => {
+        // Clean unsubscribe; do not reconnect.
+      };
+
+      xhr.send();
+    };
+
+    connect();
+
+    return () => {
+      unsubscribed = true;
+      if (retryTimer !== null) {
+        clearTimeout(retryTimer);
+        retryTimer = null;
+      }
+      currentXhr?.abort();
+    };
   }
 }
