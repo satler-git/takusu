@@ -1223,6 +1223,22 @@ interface components$1 {
         WorkersConfigUpdateResponse: {
             ok: boolean;
         };
+        /** @description A single quick action on a check-in or card. */
+        Action: {
+            id: string;
+            kind: components$1['schemas']['ActionKind'];
+            label: string;
+        };
+        /** @description One labelled group of actions. Never empty. */
+        ActionGroup: {
+            actions: components$1['schemas']['NonEmptyVecAction'];
+            title: string;
+        };
+        /**
+         * @description Kind of a quick action.
+         * @enum {string}
+         */
+        ActionKind: 'immediate' | 'approval' | 'panel';
         ApprovalDecisionRequest: {
             approve: boolean;
             idempotency_key?: string | null;
@@ -1264,6 +1280,20 @@ interface components$1 {
             target_revision?: number | null;
             target_type: components$1['schemas']['TargetKind'];
         };
+        /**
+         * @description A one-round-trip check-in that always offers 「行動」 and 「ズラす」.
+         *
+         *     The non-empty wrapper on both action groups makes a card without either
+         *     group unrepresentable, which enforces the product invariant that every
+         *     proactive contact offers both options.
+         */
+        CheckInCard: {
+            /** @description 「行動」 group. */
+            act: components$1['schemas']['ActionGroup'];
+            question: string;
+            /** @description 「ズラす」 group. */
+            shift: components$1['schemas']['ActionGroup'];
+        };
         CreateSessionRequest: {
             /** @default null */
             permissions: components$1['schemas']['Permissions'] | null;
@@ -1280,6 +1310,11 @@ interface components$1 {
             error: string;
             /** Format: uint8 */
             version: number;
+        };
+        /** @description A focused clarification question instead of a full interview. */
+        FocusedQuestion: {
+            choices?: string[];
+            message: string;
         };
         HealthResponse: {
             ok: boolean;
@@ -1338,6 +1373,7 @@ interface components$1 {
          * @enum {string}
          */
         LlmProviderKind: 'openai_compatible';
+        NonEmptyVecAction: components$1['schemas']['Action'][];
         /** @description Generic `{ "ok": true }` body used by several agent endpoints. */
         OkResponse: {
             ok: boolean;
@@ -1380,6 +1416,50 @@ interface components$1 {
          */
         Permissions: {
             [key: string]: boolean;
+        };
+        /**
+         * @description The typed presentation payload carried on a turn result or event.
+         *
+         *     Wire form is internally tagged by `type`; unknown tags decode as
+         *     [`Presentation::Text`].
+         */
+        Presentation: ({
+            /** @constant */
+            type: 'current_task';
+        } & components$1['schemas']['TaskCard']) | ({
+            /** @constant */
+            type: 'work_transition';
+        } & components$1['schemas']['WorkTransition']) | ({
+            /** @constant */
+            type: 'schedule_summary';
+        } & components$1['schemas']['ScheduleSummary']) | ({
+            /** @constant */
+            type: 'progress_summary';
+        } & components$1['schemas']['ProgressSummary']) | ({
+            /** @constant */
+            type: 'schedule_alert';
+        } & components$1['schemas']['ScheduleAlert']) | ({
+            /** @constant */
+            type: 'check_in';
+        } & components$1['schemas']['CheckInCard']) | ({
+            /** @constant */
+            type: 'change_proposal';
+        } & components$1['schemas']['ApprovalRequest']) | ({
+            /** @constant */
+            type: 'clarification';
+        } & components$1['schemas']['FocusedQuestion']) | {
+            text: string;
+            /** @constant */
+            type: 'text';
+        };
+        /** @description Aggregated progress counts from a task read. */
+        ProgressSummary: {
+            /** Format: uint */
+            done: number;
+            /** Format: uint */
+            in_progress: number;
+            /** Format: uint */
+            scheduled: number;
         };
         ProposalDecision: {
             approve: boolean;
@@ -1427,6 +1507,31 @@ interface components$1 {
         RevertRequest: {
             after_user: boolean;
         };
+        /** @description A planner error surfaced to the user (never a check-in). */
+        ScheduleAlert: {
+            kind: components$1['schemas']['ScheduleAlertKind'];
+            message: string;
+        };
+        /**
+         * @description Kind of a schedule alert.
+         * @enum {string}
+         */
+        ScheduleAlertKind: 'conflict' | 'overdue' | 'generation_failure';
+        /** @description Concise summary of the active schedule. */
+        ScheduleSummary: {
+            entries?: {
+                end_at?: string;
+                reference: string;
+                start_at?: string;
+                title: string;
+            }[];
+            next?: {
+                end_at?: string;
+                reference: string;
+                start_at?: string;
+                title: string;
+            } | null;
+        };
         /** @description A server-sent event payload emitted by the agent turn streams. */
         SseEvent: components$1['schemas']['TurnEvent'] | components$1['schemas']['TtsBlockEvent'];
         /**
@@ -1434,6 +1539,23 @@ interface components$1 {
          * @enum {string}
          */
         TargetKind: 'task' | 'habit' | 'skill' | 'memory' | 'schedule' | 'comment';
+        /**
+         * @description Coverage authority attached to a current-task card.
+         *
+         *     Until WI-10 derives it from observed coverage state, cards default to
+         *     [`TaskAuthority::Candidate`] (the safe side of the coverage invariant).
+         */
+        TaskAuthority: 'candidate' | 'today_covered';
+        /** @description Current + next task card with quick actions. */
+        TaskCard: {
+            authority: components$1['schemas']['TaskAuthority'];
+            end_at?: string | null;
+            next_task?: string | null;
+            reference: string;
+            start_at?: string | null;
+            title: string;
+            work_state: components$1['schemas']['WorkState'];
+        };
         ToolStat: {
             /** Format: uint64 */
             count: number;
@@ -1498,12 +1620,18 @@ interface components$1 {
         TurnResult: {
             approval_request?: components$1['schemas']['ApprovalRequest'] | null;
             changes: components$1['schemas']['ChangeReceipt'][];
+            /**
+             * @description Typed presentation derived from the turn's tool results (WI-1). `None`
+             *     when no tool result maps to a presentation kind.
+             */
+            presentation?: components$1['schemas']['Presentation'] | null;
             schedule_dirty: boolean;
             text: string;
         };
         TurnResultDto: {
             approval_request?: components$1['schemas']['ApprovalRequest'] | null;
             changes: components$1['schemas']['ChangeReceipt'][];
+            presentation?: components$1['schemas']['Presentation'] | null;
             schedule_dirty: boolean;
             text: string;
         };
@@ -1544,6 +1672,21 @@ interface components$1 {
         UserInputResolutionRequest: {
             answers: components$1['schemas']['UserInputAnswer'][];
         };
+        /**
+         * @description State of a task's work session shown on a card.
+         * @enum {string}
+         */
+        WorkState: 'not_started' | 'in_progress' | 'overdue';
+        /** @description Result of a start / pause / progress / complete / delay / split mutation. */
+        WorkTransition: {
+            /** @description Human-readable detail (e.g. new quantity, total active minutes). */
+            detail?: string;
+            kind: components$1['schemas']['WorkTransitionKind'];
+            reference: string;
+            title: string;
+        };
+        /** @description Kind of a recorded work transition. */
+        WorkTransitionKind: ('start' | 'pause' | 'progress' | 'complete' | 'split') | 'delay';
     };
     responses: never;
     parameters: never;
