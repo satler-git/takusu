@@ -9354,6 +9354,32 @@
         }
       }
     },
+    "/agent/v1/events": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Lightweight event broadcast on the agent transport so surfaces can refresh\nwhen planner state changes (WI-3). Slow subscribers can lag behind up to the\nchannel capacity; a new subscriber starts from the next event after it\nconnects, so clients should still refresh once on mount.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlannerEvent"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Default error body returned by agent endpoints.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/agent/v1/capabilities": {
       "get": {
         "responses": {
@@ -14253,6 +14279,46 @@
         "additionalProperties": {
           "type": "boolean"
         }
+      },
+      "PlannerEvent": {
+        "description": "Lightweight event broadcast on the agent transport so surfaces can refresh\nwhen planner state changes (WI-3). Slow subscribers can lag behind up to the\nchannel capacity; a new subscriber starts from the next event after it\nconnects, so clients should still refresh once on mount.",
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "state_changed"
+              }
+            },
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PlannerStateChanged"
+              }
+            ],
+            "required": ["type"]
+          }
+        ]
+      },
+      "PlannerStateChanged": {
+        "description": "A planner-state change notification.",
+        "type": "object",
+        "properties": {
+          "changed_at": {
+            "type": "string"
+          },
+          "kinds": {
+            "description": "What categories of state may have changed. Clients use this as a hint\nwhen they can refresh selectively; a full refresh is always safe.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": ["changed_at", "source", "kinds"]
       },
       "Presentation": {
         "description": "The typed presentation payload carried on a turn result or event.\n\nWire form is internally tagged by `type`; unknown tags decode as\n[`Presentation::Text`].",
