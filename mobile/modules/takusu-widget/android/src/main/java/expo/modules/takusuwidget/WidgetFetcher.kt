@@ -19,12 +19,18 @@ data class UpcomingTask(
     val endAt: String,
     val abandonability: Double,
     val fixed: Boolean,
+    // WI-3: authority is a placeholder (candidate/today_covered) until WI-10.
+    val authority: String = "candidate",
 )
 
 data class WidgetSnapshot(
     val doing: UpcomingTask?,
     val upcoming: List<UpcomingTask>,
     val unscheduledCount: Int,
+    // WI-3: placeholders for the full resident-agent surface (WI-10/WI-18/WI-4).
+    val coverage: String = "bootstrap",
+    val settlement: String? = null,
+    val capabilities: List<String> = emptyList(),
 )
 
 object WidgetFetcher {
@@ -72,6 +78,11 @@ object WidgetFetcher {
                 doing = doing,
                 upcoming = upcoming,
                 unscheduledCount = unscheduled,
+                // WI-3: coverage / settlement / capabilities are placeholders;
+                // the local API does not return them yet (WI-10 / WI-18 / WI-4).
+                coverage = "bootstrap",
+                settlement = null,
+                capabilities = emptyList(),
             )
         } catch (e: Exception) {
             null
@@ -93,6 +104,8 @@ object WidgetFetcher {
             endAt = endAt,
             abandonability = t.optDouble("abandonability", 0.75),
             fixed = t.optBoolean("fixed", false),
+            // WI-3: authority is a placeholder until the local API returns it (WI-10).
+            authority = t.optString("authority", "candidate"),
         )
     }
 

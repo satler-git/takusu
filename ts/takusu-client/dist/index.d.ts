@@ -1445,6 +1445,26 @@ interface components$1 {
             [key: string]: boolean;
         };
         /**
+         * @description Lightweight event broadcast on the agent transport so surfaces can refresh
+         *     when planner state changes (WI-3). Slow subscribers can lag behind up to the
+         *     channel capacity; a new subscriber starts from the next event after it
+         *     connects, so clients should still refresh once on mount.
+         */
+        PlannerEvent: {
+            /** @constant */
+            type: 'state_changed';
+        } & components$1['schemas']['PlannerStateChanged'];
+        /** @description A planner-state change notification. */
+        PlannerStateChanged: {
+            changed_at: string;
+            /**
+             * @description What categories of state may have changed. Clients use this as a hint
+             *     when they can refresh selectively; a full refresh is always safe.
+             */
+            kinds: string[];
+            source: string;
+        };
+        /**
          * @description The typed presentation payload carried on a turn result or event.
          *
          *     Wire form is internally tagged by `type`; unknown tags decode as

@@ -18,11 +18,14 @@ use axum::{Json, Router};
 use futures_util::StreamExt as _;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
+use tokio::sync::broadcast;
 use tokio::sync::mpsc::unbounded_channel;
 use tokio::sync::oneshot;
-use tokio_stream::wrappers::UnboundedReceiverStream;
+use tokio_stream::wrappers::{BroadcastStream, UnboundedReceiverStream};
 
-use crate::capability::{ActionCapability, CapabilityRequest, CapabilityStore, InputPath};
+use crate::capability::{
+    ActionCapability, CapabilityRequest, CapabilityStore, InputPath, QuickAction,
+};
 use crate::llm::{LlmClient, build_llm_client};
 use crate::{
     AgentConfig, AgentError, AgentSession, ApprovalRequest, ApprovalResult, InvalidArgsError,
@@ -97,6 +100,28 @@ impl<K: Clone + Eq + std::hash::Hash, V> BoundedMap<K, V> {
     }
 }
 
+/// Lightweight event broadcast on the agent transport so surfaces can refresh
+/// when planner state changes (WI-3). Slow subscribers can lag behind up to the
+/// channel capacity; a new subscriber starts from the next event after it
+/// connects, so clients should still refresh once on mount.
+#[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum PlannerEvent {
+    StateChanged(PlannerStateChanged),
+}
+
+/// A planner-state change notification.
+#[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
+pub struct PlannerStateChanged {
+    pub changed_at: String,
+    pub source: String,
+    /// What categories of state may have changed. Clients use this as a hint
+    /// when they can refresh selectively; a full refresh is always safe.
+    pub kinds: Vec<String>,
+}
+
+const PLANNER_EVENT_CAPACITY: usize = 16;
+
 /// Creates an AgentSession for an authenticated local user.
 ///
 /// The host owns configuration and secrets. They never arrive in a session
@@ -133,6 +158,7 @@ pub struct AgentApiState {
     approval_results: Mutex<BoundedMap<(String, String), ApprovalResultDto>>,
     pub(crate) capability_store: CapabilityStore,
     planner_client: Client,
+    planner_state_tx: broadcast::Sender<PlannerEvent>,
 }
 
 impl AgentApiState {
@@ -157,6 +183,7 @@ impl AgentApiState {
         config: AgentConfig,
     ) -> Self {
         let planner_client = Client::new_with_token(&config.server.url, Arc::clone(&token));
+        let (planner_state_tx, _) = broadcast::channel(PLANNER_EVENT_CAPACITY);
         Self {
             token,
             factory,
@@ -167,11 +194,56 @@ impl AgentApiState {
             approval_results: Mutex::new(BoundedMap::new(MAX_APPROVAL_RESULTS)),
             capability_store: CapabilityStore::new(),
             planner_client,
+            planner_state_tx,
         }
     }
 
     fn session(&self, id: &str) -> Option<Arc<AgentSession>> {
         self.sessions.lock().ok()?.get(id).cloned()
+    }
+
+    /// Broadcast a planner-state change to all connected event subscribers.
+    ///
+    /// Failing to send is best-effort: there may be no listeners yet, and a
+    /// lagging subscriber is not worth blocking the response path over.
+    fn emit_state_changed(&self, source: &str, kinds: Vec<String>) {
+        let event = PlannerEvent::StateChanged(PlannerStateChanged {
+            changed_at: jiff::Timestamp::now().to_string(),
+            source: source.to_string(),
+            kinds,
+        });
+        let _ = self.planner_state_tx.send(event);
+    }
+
+    fn state_changed_kinds_for_turn(
+        changes: &[crate::ChangeReceipt],
+        schedule_dirty: bool,
+        approval_request: Option<&crate::ApprovalRequest>,
+    ) -> Vec<String> {
+        let mut kinds = Vec::new();
+        if !changes.is_empty() {
+            kinds.push("tasks".to_string());
+        }
+        if schedule_dirty {
+            kinds.push("schedule".to_string());
+        }
+        if approval_request.is_some() {
+            kinds.push("approval".to_string());
+        }
+        if kinds.is_empty() {
+            kinds.push("session".to_string());
+        }
+        kinds
+    }
+
+    fn state_changed_kinds_for_action(action: QuickAction) -> Vec<String> {
+        match action {
+            QuickAction::Start
+            | QuickAction::Pause
+            | QuickAction::Progress
+            | QuickAction::Complete => vec!["tasks".to_string()],
+            QuickAction::Delay => vec!["schedule".to_string()],
+        }
     }
 }
 
@@ -584,6 +656,7 @@ pub struct HealthResponse {
 pub fn router(state: Arc<AgentApiState>) -> Router {
     Router::new()
         .route("/health", get(health))
+        .route("/events", get(planner_events))
         .route("/capabilities", get(capabilities))
         .route("/capabilities", post(mint_capability))
         .route("/actions", post(authorize_action))
@@ -625,6 +698,28 @@ async fn health(State(state): State<Arc<AgentApiState>>, headers: HeaderMap) -> 
         value: HealthResponse { ok: true },
     })
     .into_response()
+}
+
+/// Server-sent event stream of planner events.
+///
+/// Clients subscribe once and receive a `StateChanged` event whenever the
+/// agent, an approval, or a quick action writes planner state.
+async fn planner_events(State(state): State<Arc<AgentApiState>>, headers: HeaderMap) -> Response {
+    if let Err(status) = auth_token(&state, &headers).await {
+        return status.into_response();
+    }
+    let rx = state.planner_state_tx.subscribe();
+    let stream = BroadcastStream::new(rx).filter_map(|result| {
+        std::future::ready(match result {
+            Ok(event) => serde_json::to_string(&event)
+                .ok()
+                .map(|json| Ok::<_, Infallible>(Event::default().data(json))),
+            Err(_) => None,
+        })
+    });
+    Sse::new(stream)
+        .keep_alive(KeepAlive::default())
+        .into_response()
 }
 
 async fn capabilities(State(state): State<Arc<AgentApiState>>, headers: HeaderMap) -> Response {
@@ -693,11 +788,15 @@ async fn authorize_action(
         }
     };
     match crate::capability::authorize_action(&state.planner_client, record, &body.value).await {
-        Ok(presentation) => Json(Versioned {
-            version: API_VERSION,
-            value: presentation,
-        })
-        .into_response(),
+        Ok((presentation, action)) => {
+            let kinds = AgentApiState::state_changed_kinds_for_action(action);
+            state.emit_state_changed("action", kinds);
+            Json(Versioned {
+                version: API_VERSION,
+                value: presentation,
+            })
+            .into_response()
+        }
         Err(e) => agent_error(e.into()),
     }
 }
@@ -952,6 +1051,12 @@ async fn run_turn(
             return agent_error(error);
         }
     };
+    let kinds = AgentApiState::state_changed_kinds_for_turn(
+        &result.changes,
+        result.schedule_dirty,
+        result.approval_request.as_ref(),
+    );
+    state.emit_state_changed("turn", kinds);
     if let Some(key) = key
         && let Ok(mut results) = state.turn_results.lock()
     {
@@ -1060,6 +1165,12 @@ async fn run_turn_stream(
                 match result {
                     Ok(result) => {
                         tracing::info!(session_id = %id2, text_len = result.text.len(), changes = result.changes.len(), schedule_dirty = result.schedule_dirty, "agent turn stream completed");
+                        let kinds = AgentApiState::state_changed_kinds_for_turn(
+                            &result.changes,
+                            result.schedule_dirty,
+                            result.approval_request.as_ref(),
+                        );
+                        state2.emit_state_changed("turn", kinds);
                         let _ = tx.send(StreamEvent::Turn(TurnEvent::Done(Box::new(result.clone()))));
                         if let Some(key) = key2
                             && let Ok(mut results) = state2.turn_results.lock()
@@ -1139,6 +1250,12 @@ async fn edit_turn_stream(
                 match result {
                     Ok(result) => {
                         tracing::info!(session_id = %id2, turn_index, text_len = result.text.len(), changes = result.changes.len(), schedule_dirty = result.schedule_dirty, "agent edit turn stream completed");
+                        let kinds = AgentApiState::state_changed_kinds_for_turn(
+                            &result.changes,
+                            result.schedule_dirty,
+                            result.approval_request.as_ref(),
+                        );
+                        state2.emit_state_changed("edit", kinds);
                         let _ = tx.send(StreamEvent::Turn(TurnEvent::Done(Box::new(result.clone()))));
                         if let Some(key) = key2
                             && let Ok(mut results) = state2.turn_results.lock()
@@ -1296,6 +1413,19 @@ async fn resolve_approval(
     if let Ok(mut results) = state.approval_results.lock() {
         results.insert((id, key), result.clone());
     }
+    // Emit a state change whenever an approval is resolved, so surfaces
+    // holding a pending approval UI can refresh even when it is rejected.
+    let mut kinds = Vec::new();
+    if !result.changes.is_empty() {
+        kinds.push("tasks".to_string());
+    }
+    if result.schedule_dirty {
+        kinds.push("schedule".to_string());
+    }
+    if kinds.is_empty() {
+        kinds.push("session".to_string());
+    }
+    state.emit_state_changed("approval", kinds);
     Json(Versioned {
         version: API_VERSION,
         value: result,
@@ -2017,5 +2147,70 @@ mod tests {
             .unwrap();
         let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(value["id"].as_str(), Some("session-pa-approval-1"));
+    }
+
+    #[tokio::test]
+    async fn planner_events_rejects_missing_token() {
+        let state = make_state("test-token");
+        let res = planner_events(State(state), HeaderMap::new()).await;
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn planner_events_accepts_valid_token() {
+        let state = make_state("test-token");
+        let res = planner_events(State(state), auth_headers("test-token")).await;
+        assert_eq!(res.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn planner_state_change_broadcasts_to_subscribers() {
+        let state = make_state("test-token");
+        let mut rx = state.planner_state_tx.subscribe();
+
+        state.emit_state_changed("turn", vec!["schedule".to_string()]);
+
+        let event = tokio::time::timeout(Duration::from_secs(1), rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        match event {
+            PlannerEvent::StateChanged(PlannerStateChanged { source, kinds, .. }) => {
+                assert_eq!(source, "turn");
+                assert_eq!(kinds, vec!["schedule"]);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn planner_event_new_subscriber_starts_from_next_event() {
+        let state = make_state("test-token");
+
+        // First subscriber receives the first event.
+        let mut first = state.planner_state_tx.subscribe();
+        state.emit_state_changed("turn", vec!["schedule".to_string()]);
+        tokio::time::timeout(Duration::from_secs(1), first.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        // A new subscriber does not receive past events; it starts from the next one.
+        let mut second = state.planner_state_tx.subscribe();
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), second.recv())
+                .await
+                .is_err()
+        );
+
+        state.emit_state_changed("approval", vec!["session".to_string()]);
+        let event = tokio::time::timeout(Duration::from_secs(1), second.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        match event {
+            PlannerEvent::StateChanged(PlannerStateChanged { source, .. }) => {
+                assert_eq!(source, "approval");
+            }
+        }
     }
 }

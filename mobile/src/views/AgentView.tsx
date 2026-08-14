@@ -1171,6 +1171,16 @@ export function AgentView() {
     [workersToken],
   );
 
+  // Subscribe to server-side planner state changes (WI-3) so an open Agent
+  // view can resync its pending approval after a turn or quick action writes
+  // state from another surface.
+  useEffect(() => {
+    const unsubscribe = client.subscribeEvents(() => {
+      setPlannerStateSeq((n) => n + 1);
+    });
+    return unsubscribe;
+  }, [client]);
+
   const [messages, setMessages] = useState<Message[]>([]);
   const [text, setText] = useState('');
   const [sessionIds, setSessionIds] = useState<string[]>([]);
@@ -1188,6 +1198,7 @@ export function AgentView() {
   const [inputHeight, setInputHeight] = useState(44);
   const [messagesHeight, setMessagesHeight] = useState(0);
   const [historyReady, setHistoryReady] = useState(false);
+  const [plannerStateSeq, setPlannerStateSeq] = useState(0);
   const [isSwitching, setIsSwitching] = useState(false);
   const [userInput, setUserInput] = useState<{
     sessionId: string;
@@ -1618,7 +1629,7 @@ export function AgentView() {
     return () => {
       cancelled = true;
     };
-  }, [historyReady, activeIndex, client]);
+  }, [historyReady, activeIndex, client, plannerStateSeq]);
 
   useEffect(() => {
     if (!historyReady) return;

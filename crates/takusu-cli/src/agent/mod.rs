@@ -96,7 +96,7 @@ pub(crate) fn agent_state_dir() -> PathBuf {
                 p
             })
         })
-        .unwrap_or_else(|| std::env::temp_dir())
+        .unwrap_or_else(std::env::temp_dir)
 }
 
 pub(crate) fn agent_session_path() -> PathBuf {
