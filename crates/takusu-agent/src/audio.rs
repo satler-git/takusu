@@ -329,7 +329,12 @@ fn build_tts(config: &TtsConfig, api_sample_rate: u32) -> TtsBuildResult {
             tts_config.mute = config.mute;
             let voice_id = config.voice_id.clone();
             let speed = config.speed;
-            Ok((Arc::new(FishAudio::new(tts_config)), voice_id, speed, api_sample_rate))
+            Ok((
+                Arc::new(FishAudio::new(tts_config)),
+                voice_id,
+                speed,
+                api_sample_rate,
+            ))
         }
         // Android TTS is handled by the native mobile module, not by the
         // generic tokio-based AudioAdapter used on desktop.

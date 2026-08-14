@@ -19,8 +19,7 @@ use std::sync::LazyLock;
 use rstest::rstest;
 use takusu_contracts::{
     CreateHabit, CreateHabitScheduledSpan, CreateMemory, CreateTask, MemoryInjectionQuery,
-    MemoryQuery, StartWorkSession,
-    Storage, StorageError, TaskQuery, UpdateMemory, UpdateTask,
+    MemoryQuery, StartWorkSession, Storage, StorageError, TaskQuery, UpdateMemory, UpdateTask,
 };
 use takusu_local_lib::config::LocalConfig;
 use takusu_local_lib::storage_sqlite::SqliteStorage;
@@ -261,10 +260,7 @@ async fn delete_task_closes_open_work_session(#[case] backend: &str) {
         .await
         .expect("start_work_session");
 
-    storage
-        .delete_task(&created.id)
-        .await
-        .expect("delete_task");
+    storage.delete_task(&created.id).await.expect("delete_task");
 
     let stopped = storage
         .get_work_session(&session.id)
@@ -322,10 +318,7 @@ async fn delete_habit_closes_open_work_session(#[case] backend: &str) {
         .await
         .expect("start_work_session");
 
-    storage
-        .delete_habit(&habit.id)
-        .await
-        .expect("delete_habit");
+    storage.delete_habit(&habit.id).await.expect("delete_habit");
 
     assert!(matches!(
         storage.get_task(&task.id).await,
@@ -768,10 +761,7 @@ async fn comment_crud(#[case] backend: &str) {
     assert!(matches!(missing, Err(StorageError::NotFound(_))));
 
     // Cascade: deleting the task removes its comments.
-    storage
-        .delete_task(&task.id)
-        .await
-        .expect("delete task");
+    storage.delete_task(&task.id).await.expect("delete task");
     let gone = storage.delete_comment(&c3.id).await;
     assert!(matches!(gone, Err(StorageError::NotFound(_))));
 }
@@ -828,12 +818,7 @@ async fn comment_unknown_task_not_found(#[case] backend: &str) {
     cleanup(&*storage).await;
 
     let err = storage
-        .create_comment(
-            "does-not-exist",
-            CommentAuthor::User,
-            "no task",
-            None,
-        )
+        .create_comment("does-not-exist", CommentAuthor::User, "no task", None)
         .await;
     assert!(matches!(err, Err(StorageError::NotFound(_))));
 }

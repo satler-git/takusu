@@ -4,8 +4,8 @@ use axum::http::{HeaderMap, StatusCode};
 use serde::Deserialize;
 use std::str::FromStr;
 use takusu_contracts::{
-    CreateTask, CreateTaskBatch, CreateTaskBatchResult, SplitResult, SplitTask, TaskQuery,
-    TaskRow, UpdateTask,
+    CreateTask, CreateTaskBatch, CreateTaskBatchResult, SplitResult, SplitTask, TaskQuery, TaskRow,
+    UpdateTask,
 };
 use takusu_local_lib::app::{DependencyAnalysisResponse, IcalImportResult};
 use takusu_search::search::Completion;

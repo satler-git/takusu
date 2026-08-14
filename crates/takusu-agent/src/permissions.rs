@@ -168,9 +168,7 @@ impl schemars::JsonSchema for PermissionKey {
         concat!(module_path!(), "::PermissionKey").into()
     }
 
-    fn json_schema(
-        generator: &mut schemars::SchemaGenerator,
-    ) -> schemars::Schema {
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
         String::json_schema(generator)
     }
 }

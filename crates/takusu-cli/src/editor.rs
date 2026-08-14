@@ -8,8 +8,8 @@ use std::process::Command;
 use serde::{Deserialize, Serialize};
 use takusu_contracts::{HabitRow, HabitStepInput, HabitStepRow, TaskRow, UpdateHabit, UpdateTask};
 use takusu_types::{
-    parse_datetime_to_timestamp, parse_duration, Abandonability, Quantity, TaskStatus, TimeOfDay,
-    Timestamp, WindowMode,
+    Abandonability, Quantity, TaskStatus, TimeOfDay, Timestamp, WindowMode,
+    parse_datetime_to_timestamp, parse_duration,
 };
 
 use crate::task_ref::task_reference;
@@ -172,7 +172,10 @@ fn task_toml_header(task_ref: &str) -> String {
     )
 }
 
-fn parse_task_edit_file(file: &TaskEditFile, tz: &jiff::tz::TimeZone) -> Result<UpdateTask, String> {
+fn parse_task_edit_file(
+    file: &TaskEditFile,
+    tz: &jiff::tz::TimeZone,
+) -> Result<UpdateTask, String> {
     let title = match file.title.as_deref() {
         Some(s) if !s.trim().is_empty() => Some(s.to_string()),
         Some(_) => return Err("title cannot be empty".to_string()),
@@ -199,16 +202,12 @@ fn parse_task_edit_file(file: &TaskEditFile, tz: &jiff::tz::TimeZone) -> Result<
 
     let avg_minutes = match file.avg_time.as_deref() {
         None | Some("") => None,
-        Some(s) => Some(
-            parse_duration(s).map_err(|e| format!("invalid time '{s}': {e}"))?,
-        ),
+        Some(s) => Some(parse_duration(s).map_err(|e| format!("invalid time '{s}': {e}"))?),
     };
 
     let sigma_minutes = match file.sigma_time.as_deref() {
         None | Some("") => None,
-        Some(s) => Some(
-            parse_duration(s).map_err(|e| format!("invalid sigma '{s}': {e}"))?,
-        ),
+        Some(s) => Some(parse_duration(s).map_err(|e| format!("invalid sigma '{s}': {e}"))?),
     };
 
     let status = match file.status.as_deref() {
@@ -295,7 +294,11 @@ struct HabitEditFile {
     description: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     recurrence: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "start_time")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "start_time"
+    )]
     start_time: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none", rename = "end_time")]
     end_time: Option<String>,
@@ -368,29 +371,27 @@ fn parse_habit_edit_file(file: &HabitEditFile) -> Result<UpdateHabit, String> {
     let start_time = match file.start_time.as_deref() {
         None | Some("") => None,
         Some(s) => Some(
-            s.parse::<TimeOfDay>().map_err(|e| format!("invalid start_time '{s}': {e}"))?,
+            s.parse::<TimeOfDay>()
+                .map_err(|e| format!("invalid start_time '{s}': {e}"))?,
         ),
     };
 
     let end_time = match file.end_time.as_deref() {
         None | Some("") => None,
         Some(s) => Some(
-            s.parse::<TimeOfDay>().map_err(|e| format!("invalid end_time '{s}': {e}"))?,
+            s.parse::<TimeOfDay>()
+                .map_err(|e| format!("invalid end_time '{s}': {e}"))?,
         ),
     };
 
     let avg_minutes = match file.avg_time.as_deref() {
         None | Some("") => None,
-        Some(s) => Some(
-            parse_duration(s).map_err(|e| format!("invalid time '{s}': {e}"))?,
-        ),
+        Some(s) => Some(parse_duration(s).map_err(|e| format!("invalid time '{s}': {e}"))?),
     };
 
     let sigma_minutes = match file.sigma_time.as_deref() {
         None | Some("") => None,
-        Some(s) => Some(
-            parse_duration(s).map_err(|e| format!("invalid sigma '{s}': {e}"))?,
-        ),
+        Some(s) => Some(parse_duration(s).map_err(|e| format!("invalid sigma '{s}': {e}"))?),
     };
 
     let window_mode = match file.window.as_deref() {
@@ -450,7 +451,11 @@ struct StepEditFile {
     title: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     description: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "start_time")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "start_time"
+    )]
     start_time: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none", rename = "end_time")]
     end_time: Option<String>,
@@ -509,13 +514,14 @@ fn steps_toml_header(habit_ref: &str) -> String {
 }
 
 fn parse_step_edit_file(step: &StepEditFile) -> Result<HabitStepInput, String> {
-    let id = step
-        .id
-        .as_ref()
-        .and_then(|s| {
-            let s = s.trim();
-            if s.is_empty() { None } else { Some(s.to_string()) }
-        });
+    let id = step.id.as_ref().and_then(|s| {
+        let s = s.trim();
+        if s.is_empty() {
+            None
+        } else {
+            Some(s.to_string())
+        }
+    });
 
     let title = if step.title.trim().is_empty() {
         return Err("step title cannot be empty".to_string());
@@ -529,7 +535,12 @@ fn parse_step_edit_file(step: &StepEditFile) -> Result<HabitStepInput, String> {
         .filter(|s| !s.is_empty())
         .ok_or("step start_time is required")?
         .parse::<TimeOfDay>()
-        .map_err(|e| format!("invalid step start_time '{}': {e}", step.start_time.as_deref().unwrap_or("")))?;
+        .map_err(|e| {
+            format!(
+                "invalid step start_time '{}': {e}",
+                step.start_time.as_deref().unwrap_or("")
+            )
+        })?;
 
     let end_time = step
         .end_time
@@ -537,15 +548,20 @@ fn parse_step_edit_file(step: &StepEditFile) -> Result<HabitStepInput, String> {
         .filter(|s| !s.is_empty())
         .ok_or("step end_time is required")?
         .parse::<TimeOfDay>()
-        .map_err(|e| format!("invalid step end_time '{}': {e}", step.end_time.as_deref().unwrap_or("")))?;
+        .map_err(|e| {
+            format!(
+                "invalid step end_time '{}': {e}",
+                step.end_time.as_deref().unwrap_or("")
+            )
+        })?;
 
     let avg_time = step
         .avg_time
         .as_deref()
         .filter(|s| !s.is_empty())
         .ok_or("step time is required")?;
-    let avg_minutes = parse_duration(avg_time)
-        .map_err(|e| format!("invalid step time '{avg_time}': {e}"))?;
+    let avg_minutes =
+        parse_duration(avg_time).map_err(|e| format!("invalid step time '{avg_time}': {e}"))?;
 
     let sigma_minutes = step
         .sigma_time
@@ -580,9 +596,7 @@ fn parse_steps_edit_file(file: &StepsEditFile) -> Result<Vec<HabitStepInput>, St
     file.steps
         .iter()
         .enumerate()
-        .map(|(i, step)| {
-            parse_step_edit_file(step).map_err(|e| format!("step {}: {e}", i + 1))
-        })
+        .map(|(i, step)| parse_step_edit_file(step).map_err(|e| format!("step {}: {e}", i + 1)))
         .collect()
 }
 
@@ -658,9 +672,7 @@ fn strip_error_comments(content: &str) -> String {
     let mut skip_blank = false;
     for line in content.lines() {
         let trimmed = line.trim_start();
-        if trimmed.starts_with("# ERROR:")
-            || trimmed.starts_with("# Fix the error above")
-        {
+        if trimmed.starts_with("# ERROR:") || trimmed.starts_with("# Fix the error above") {
             skip_blank = true;
             continue;
         }
@@ -878,8 +890,14 @@ mod tests {
             ..Default::default()
         };
         let err = parse_task_edit_file(&file, &jiff::tz::TimeZone::UTC).unwrap_err();
-        assert!(err.contains("time"), "error should mention the field: {err}");
-        assert!(err.contains("abc"), "error should mention the bad value: {err}");
+        assert!(
+            err.contains("time"),
+            "error should mention the field: {err}"
+        );
+        assert!(
+            err.contains("abc"),
+            "error should mention the bad value: {err}"
+        );
     }
 
     #[test]
@@ -892,7 +910,11 @@ mod tests {
         let update = parse_task_edit_file(&file, &jiff::tz::TimeZone::UTC).unwrap();
         assert_eq!(
             update.depends,
-            Some(vec!["h1#5".to_string(), "3".to_string(), "task-uuid".to_string()])
+            Some(vec![
+                "h1#5".to_string(),
+                "3".to_string(),
+                "task-uuid".to_string()
+            ])
         );
     }
 
@@ -905,7 +927,12 @@ mod tests {
         let habit_task = task_row("task-b", 3, "habit task", Some("habit-1"), &[]);
         let edited = task_row("edited", 1, "edited", None, &["task-a", "task-b"]);
 
-        let file = build_task_edit_file(&edited, &[standalone, habit_task], &habit_map, &jiff::tz::TimeZone::UTC);
+        let file = build_task_edit_file(
+            &edited,
+            &[standalone, habit_task],
+            &habit_map,
+            &jiff::tz::TimeZone::UTC,
+        );
         assert_eq!(file.depends, Some(vec!["#3".into(), "h7#3".into()]));
     }
 
@@ -932,8 +959,14 @@ mod tests {
             ..Default::default()
         };
         let update = parse_habit_edit_file(&file).unwrap();
-        assert_eq!(update.start_time.map(|t| t.to_string()), Some("09:00".to_string()));
-        assert_eq!(update.end_time.map(|t| t.to_string()), Some("10:00".to_string()));
+        assert_eq!(
+            update.start_time.map(|t| t.to_string()),
+            Some("09:00".to_string())
+        );
+        assert_eq!(
+            update.end_time.map(|t| t.to_string()),
+            Some("10:00".to_string())
+        );
         assert_eq!(update.avg_minutes, Some(30));
         assert_eq!(update.window_mode, Some(WindowMode::Period));
     }

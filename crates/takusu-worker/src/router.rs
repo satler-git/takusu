@@ -102,20 +102,42 @@ async fn dispatch(req: Request, env: Env) -> Result<Response, crate::error::Work
         (Method::Patch, ["tasks", id]) => handlers::tasks::update(req, env, id).await,
         (Method::Put, ["tasks", id]) => handlers::tasks::replace(req, env, id).await,
         (Method::Delete, ["tasks", id]) => handlers::tasks::delete(req, env, id).await,
-        (Method::Get, ["tasks", id, "progress"]) => handlers::progress::get_task_progress(req, env, id).await,
-        (Method::Post, ["tasks", id, "split"]) => handlers::progress::split_task(req, env, id).await,
+        (Method::Get, ["tasks", id, "progress"]) => {
+            handlers::progress::get_task_progress(req, env, id).await
+        }
+        (Method::Post, ["tasks", id, "split"]) => {
+            handlers::progress::split_task(req, env, id).await
+        }
         (Method::Get, ["tasks", id, "comments"]) => handlers::comments::list(req, env, id).await,
-        (Method::Post, ["tasks", id, "comments"]) => handlers::comments::create_user(req, env, id).await,
-        (Method::Post, ["tasks", id, "comments", "agent"]) => handlers::comments::create_agent(req, env, id).await,
+        (Method::Post, ["tasks", id, "comments"]) => {
+            handlers::comments::create_user(req, env, id).await
+        }
+        (Method::Post, ["tasks", id, "comments", "agent"]) => {
+            handlers::comments::create_agent(req, env, id).await
+        }
         (Method::Delete, ["comments", id]) => handlers::comments::delete(req, env, id).await,
-        (Method::Post, ["work-sessions"]) => handlers::progress::create_work_session(req, env).await,
+        (Method::Post, ["work-sessions"]) => {
+            handlers::progress::create_work_session(req, env).await
+        }
         (Method::Get, ["work-sessions"]) => handlers::progress::list_work_sessions(req, env).await,
-        (Method::Get, ["work-sessions", id]) => handlers::progress::get_work_session(req, env, id).await,
-        (Method::Post, ["work-sessions", id, "pause"]) => handlers::progress::pause_work_session(req, env, id).await,
-        (Method::Post, ["work-sessions", id, "complete"]) => handlers::progress::complete_work_session(req, env, id).await,
-        (Method::Post, ["work-sessions", id, "progress"]) => handlers::progress::record_work_session_progress(req, env, id).await,
-        (Method::Post, ["work-sessions", id, "attach"]) => handlers::progress::attach_work_session(req, env, id).await,
-        (Method::Post, ["work-sessions", id, "convert"]) => handlers::progress::convert_work_session(req, env, id).await,
+        (Method::Get, ["work-sessions", id]) => {
+            handlers::progress::get_work_session(req, env, id).await
+        }
+        (Method::Post, ["work-sessions", id, "pause"]) => {
+            handlers::progress::pause_work_session(req, env, id).await
+        }
+        (Method::Post, ["work-sessions", id, "complete"]) => {
+            handlers::progress::complete_work_session(req, env, id).await
+        }
+        (Method::Post, ["work-sessions", id, "progress"]) => {
+            handlers::progress::record_work_session_progress(req, env, id).await
+        }
+        (Method::Post, ["work-sessions", id, "attach"]) => {
+            handlers::progress::attach_work_session(req, env, id).await
+        }
+        (Method::Post, ["work-sessions", id, "convert"]) => {
+            handlers::progress::convert_work_session(req, env, id).await
+        }
         (Method::Get, ["habits"]) => handlers::habits::list(req, env).await,
         (Method::Post, ["habits"]) => handlers::habits::create(req, env).await,
         (Method::Get, ["habits", "scheduled-spans"]) => {

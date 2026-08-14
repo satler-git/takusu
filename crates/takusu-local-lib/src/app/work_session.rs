@@ -4,8 +4,8 @@
 //! without a task, and can be attached to a task or converted into one later.
 
 use takusu_contracts::{
-    AttachWorkSession, ConvertWorkSession, RecordWorkSessionProgress, StartWorkSession,
-    TaskRow, WorkSessionProgressResult, WorkSessionRow,
+    AttachWorkSession, ConvertWorkSession, RecordWorkSessionProgress, StartWorkSession, TaskRow,
+    WorkSessionProgressResult, WorkSessionRow,
 };
 
 use crate::error::storage_to_app;
@@ -58,7 +58,10 @@ impl super::TakusuApp {
     }
 
     pub async fn get_work_session(&self, id: &str) -> Result<WorkSessionRow, AppError> {
-        self.storage.get_work_session(id).await.map_err(storage_to_app)
+        self.storage
+            .get_work_session(id)
+            .await
+            .map_err(storage_to_app)
     }
 
     pub async fn list_work_sessions(
@@ -79,7 +82,10 @@ impl super::TakusuApp {
         task_id: &str,
     ) -> Result<Option<WorkSessionRow>, AppError> {
         let sessions = self.list_work_sessions(Some(task_id)).await?;
-        let open: Vec<_> = sessions.into_iter().filter(|s| s.ended_at.is_none()).collect();
+        let open: Vec<_> = sessions
+            .into_iter()
+            .filter(|s| s.ended_at.is_none())
+            .collect();
         if open.len() > 1 {
             return Err(AppError::BadRequest(BadRequestKind::Other(format!(
                 "multiple open work sessions for task {task_id}"

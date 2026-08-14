@@ -233,7 +233,11 @@ impl Client {
         } else {
             "/api/work-sessions".into()
         };
-        let resp = self.request(reqwest::Method::GET, &path).await.send().await?;
+        let resp = self
+            .request(reqwest::Method::GET, &path)
+            .await
+            .send()
+            .await?;
         let resp = Self::handle_response(resp).await?;
         Ok(resp.json().await?)
     }
@@ -246,7 +250,10 @@ impl Client {
         task_id: &str,
     ) -> Result<Option<WorkSessionRow>, ClientError> {
         let sessions = self.list_work_sessions(Some(task_id)).await?;
-        let open: Vec<_> = sessions.into_iter().filter(|s| s.ended_at.is_none()).collect();
+        let open: Vec<_> = sessions
+            .into_iter()
+            .filter(|s| s.ended_at.is_none())
+            .collect();
         if open.len() > 1 {
             return Err(ClientError::MultipleOpenWorkSessions(task_id.into()));
         }
@@ -256,7 +263,10 @@ impl Client {
     pub async fn get_work_session(&self, id: &str) -> Result<WorkSessionRow, ClientError> {
         let encoded_id = url_encode(id);
         let resp = self
-            .request(reqwest::Method::GET, &format!("/api/work-sessions/{encoded_id}"))
+            .request(
+                reqwest::Method::GET,
+                &format!("/api/work-sessions/{encoded_id}"),
+            )
             .await
             .send()
             .await?;

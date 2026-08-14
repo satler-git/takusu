@@ -30,7 +30,12 @@ fn validate_create(body: &CreateComment) -> Result<(), WorkerError> {
     Ok(())
 }
 
-async fn create(req: &mut Request, env: &Env, task_id: &str, author: CommentAuthor) -> Result<Response, WorkerError> {
+async fn create(
+    req: &mut Request,
+    env: &Env,
+    task_id: &str,
+    author: CommentAuthor,
+) -> Result<Response, WorkerError> {
     let body: CreateComment = parse_json(req).await?;
     validate_create(&body)?;
     let op = operation_id(req);
@@ -41,11 +46,19 @@ async fn create(req: &mut Request, env: &Env, task_id: &str, author: CommentAuth
     json_created(&row)
 }
 
-pub async fn create_user(mut req: Request, env: Env, task_id: &str) -> Result<Response, WorkerError> {
+pub async fn create_user(
+    mut req: Request,
+    env: Env,
+    task_id: &str,
+) -> Result<Response, WorkerError> {
     create(&mut req, &env, task_id, CommentAuthor::User).await
 }
 
-pub async fn create_agent(mut req: Request, env: Env, task_id: &str) -> Result<Response, WorkerError> {
+pub async fn create_agent(
+    mut req: Request,
+    env: Env,
+    task_id: &str,
+) -> Result<Response, WorkerError> {
     create(&mut req, &env, task_id, CommentAuthor::Agent).await
 }
 

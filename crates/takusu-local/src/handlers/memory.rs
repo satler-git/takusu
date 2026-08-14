@@ -1,7 +1,9 @@
 use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
-use takusu_contracts::{CreateMemory, MemoryInjectionQuery, MemoryQuery, SimilarTaskQuery, UpdateMemory};
+use takusu_contracts::{
+    CreateMemory, MemoryInjectionQuery, MemoryQuery, SimilarTaskQuery, UpdateMemory,
+};
 
 use crate::error::{HttpError, NoContent};
 use crate::handlers::common::operation_id;
