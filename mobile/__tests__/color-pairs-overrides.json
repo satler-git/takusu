@@ -7,6 +7,18 @@
       "reason": "statusColor is a useMemo-derived variable (red/green/gray), not colors.white. AST extraction cannot resolve destructured useMemo returns."
     },
     {
+      "fg": "textOnCard",
+      "bg": "brand",
+      "file": "components/AgentCompactPanel.tsx",
+      "reason": "Conditional style array makes the extractor pair secondary textOnCard text with the primary brand background. The actual primary text uses onBrand."
+    },
+    {
+      "fg": "textOnCard",
+      "bg": "brand",
+      "file": "components/CurrentTaskCard.tsx",
+      "reason": "Conditional style array makes the extractor pair secondary textOnCard text with the primary brand background. The actual primary text uses onBrand."
+    },
+    {
       "fg": "black",
       "bg": "grayLight",
       "file": "components/SplitTaskModal.tsx",

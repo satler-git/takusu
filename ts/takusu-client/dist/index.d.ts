@@ -1229,6 +1229,16 @@ interface components$1 {
             kind: components$1['schemas']['ActionKind'];
             label: string;
         };
+        /** @description A server-issued, one-shot action capability. */
+        ActionCapability: {
+            action: string;
+            device_id: string;
+            event_id?: string | null;
+            expires_at: string;
+            id: string;
+            input_path: components$1['schemas']['InputPath'];
+            one_shot: boolean;
+        };
         /** @description One labelled group of actions. Never empty. */
         ActionGroup: {
             actions: components$1['schemas']['NonEmptyVecAction'];
@@ -1263,6 +1273,17 @@ interface components$1 {
             audio_input: boolean;
             tts: boolean;
             user_input: boolean;
+        };
+        /** @description Request to mint a quick-action capability. */
+        CapabilityRequest: {
+            action: string;
+            device_id: string;
+            note?: string | null;
+            /** Format: int64 */
+            quantity_done?: number | null;
+            /** Format: int64 */
+            snooze_minutes?: number | null;
+            task_id: string;
         };
         /**
          * @description Operation kind for a proposed or applied change.
@@ -1356,6 +1377,12 @@ interface components$1 {
             /** @description Inferred value for the field. */
             value: unknown;
         };
+        /**
+         * @description Trusted input path for an action. The server, not the client, decides the
+         *     path based on how the capability was issued.
+         * @enum {string}
+         */
+        InputPath: 'screen_capability' | 'notification_capability' | 'explicit_voice_session' | 'ambient_wake_word' | 'plain_text';
         /**
          * @description Identifies which LLM backend implementation to build.
          *
