@@ -154,6 +154,8 @@ pub enum QuantityError {
     Negative(i64),
     #[error("quantity overflow")]
     Overflow,
+    #[error("quantity exceeds the maximum safe integer: {0}")]
+    TooLarge(i64),
 }
 
 impl FromStr for Quantity {

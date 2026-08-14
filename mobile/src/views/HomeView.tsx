@@ -20,9 +20,14 @@ import {
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useServer } from '@/src/api/ServerProvider';
+import { useServer, DEFAULT_PORT } from '@/src/api/ServerProvider';
 import { TakusuClient } from '@/src/api/client';
 import { undoRedo } from '@/src/api/undoRedo';
+import { AgentClient } from '@/src/api/agentClient';
+import type {
+  TaskCard as TaskCardPresentation,
+  WorkState,
+} from '@/src/api/agentTypes';
 import { showError, logError } from '@/src/api/errors';
 import type {
   TaskRow,
@@ -37,6 +42,8 @@ import {
 } from '@/src/api/types';
 import { TaskCard, ParallelGroupCard } from '@/src/components/TaskCard';
 import { WorkSessionCard } from '@/src/components/WorkSessionCard';
+import { CurrentTaskCard } from '@/src/components/CurrentTaskCard';
+import { AgentCompactPanel } from '@/src/components/AgentCompactPanel';
 import { NavigationButtons } from '@/src/components/NavigationButtons';
 import { ViewChanger, type ViewType } from '@/src/components/ViewChanger';
 import { ContextMenu } from '@/src/components/ContextMenu';
@@ -362,6 +369,8 @@ export function HomeView() {
   const [openWorkSessions, setOpenWorkSessions] = useState<WorkSessionRow[]>(
     [],
   );
+  // Loading state for the quick-action buttons on the current-task card.
+  const [quickActionLoading, setQuickActionLoading] = useState(false);
   const [progressSheetVisible, setProgressSheetVisible] = useState(false);
   const [progressSession, setProgressSession] = useState<WorkSessionRow | null>(
     null,
@@ -372,6 +381,14 @@ export function HomeView() {
   const [progressSheetMode, setProgressSheetMode] = useState<
     'pause' | 'complete'
   >('pause');
+  const agentClient = useMemo(
+    () => new AgentClient(`http://127.0.0.1:${DEFAULT_PORT}`, workersToken),
+    [workersToken],
+  );
+  const [compactPanelVisible, setCompactPanelVisible] = useState(false);
+  const [compactPanelMode, setCompactPanelMode] = useState<
+    'complete' | 'delay' | 'progress'
+  >('complete');
   const startDoneButtonY = useSharedValue(0);
   const startDoneButtonPressed = useSharedValue(0);
   const listRef = useRef<FlatList<ListItem>>(null);
@@ -874,6 +891,56 @@ export function HomeView() {
     showHorizon,
   ]);
 
+  const currentTask = useMemo((): TaskRow | null => {
+    const inProgress = tasks.find((t) => t.status === 'in_progress');
+    if (inProgress) return inProgress;
+    for (const item of items) {
+      if (item.type === 'task' && !item.isDone) return item.task;
+      if (item.type === 'parallelGroup') return item.host;
+    }
+    return null;
+  }, [tasks, items]);
+
+  const currentTaskSchedule = useMemo(
+    () => (currentTask ? scheduleMap.get(currentTask.id) : undefined),
+    [currentTask, scheduleMap],
+  );
+
+  const currentTaskCard = useMemo((): TaskCardPresentation | null => {
+    if (!currentTask) return null;
+    const now = Date.now();
+    const startAt =
+      currentTaskSchedule?.start_at ?? currentTask.start_at ?? undefined;
+    const endAt = currentTaskSchedule?.end_at ?? currentTask.end_at;
+    const isOverdue =
+      currentTask.status !== 'in_progress' &&
+      !!endAt &&
+      new Date(endAt).getTime() < now;
+    const workState: WorkState =
+      currentTask.status === 'in_progress'
+        ? 'in_progress'
+        : isOverdue
+          ? 'overdue'
+          : 'not_started';
+    const habitDisplayId = currentTask.habit_id
+      ? habitDisplayIdMap.get(currentTask.habit_id)
+      : undefined;
+    const reference =
+      habitDisplayId !== undefined
+        ? `h${habitDisplayId}#${currentTask.display_id}`
+        : `#${currentTask.display_id}`;
+    return {
+      title: currentTask.title,
+      reference,
+      start_at: startAt,
+      end_at: endAt,
+      work_state: workState,
+      // WI-10: derive from actual coverage state; until then, default to the
+      // conservative "candidate" side of the coverage invariant.
+      authority: 'candidate',
+    };
+  }, [currentTask, currentTaskSchedule, habitDisplayIdMap]);
+
   // Whether there are any past tasks to show the toggle (#920)
   // #254: completed/skipped は end_at に関わらず過去扱い。
   const hasPast = useMemo(() => {
@@ -998,6 +1065,54 @@ export function HomeView() {
     },
     [],
   );
+
+  const runCurrentQuickAction = useCallback(
+    async (action: 'start' | 'pause') => {
+      if (!currentTask || quickActionLoading) return;
+      setQuickActionLoading(true);
+      try {
+        await agentClient.quickAction({
+          task_id: currentTask.id,
+          action,
+          device_id: 'mobile',
+        });
+        await refresh();
+      } catch (e) {
+        showError(
+          e,
+          `タスクの${action === 'start' ? '開始' : '一時停止'}に失敗`,
+        );
+      } finally {
+        setQuickActionLoading(false);
+      }
+    },
+    [agentClient, currentTask, quickActionLoading, refresh],
+  );
+
+  const openCompactPanel = useCallback(
+    (mode: 'complete' | 'delay' | 'progress') => {
+      haptic.light();
+      setCompactPanelMode(mode);
+      setCompactPanelVisible(true);
+    },
+    [],
+  );
+
+  const handleConsult = useCallback(() => {
+    haptic.light();
+    if (currentTask) {
+      router.push({
+        pathname: '/agent',
+        params: { initialText: currentTask.title },
+      });
+    } else {
+      router.push('/agent');
+    }
+  }, [currentTask, router]);
+
+  const handleCompactPanelSuccess = useCallback(async () => {
+    await refresh();
+  }, [refresh]);
 
   const markDone = useCallback(
     async (task: TaskRow) => {
@@ -2162,17 +2277,46 @@ export function HomeView() {
   const searching = searchQuery.length > 0;
   const listHeader = useMemo(
     () =>
-      !searching && hasPast ? (
-        <PressableScale style={styles.pastToggle} onPress={togglePast}>
-          <Reanimated.View style={chevronStyle}>
-            <Ionicons name="chevron-down" size={16} color={colors.brand} />
-          </Reanimated.View>
-          <Text style={styles.pastToggleText}>
-            {showPast ? '過去を隠す' : '過去を表示'}
-          </Text>
-        </PressableScale>
+      !searching ? (
+        <View style={{ gap: 8 }}>
+          {currentTaskCard ? (
+            <CurrentTaskCard
+              card={currentTaskCard}
+              loading={quickActionLoading}
+              onStart={() => runCurrentQuickAction('start')}
+              onPause={() => runCurrentQuickAction('pause')}
+              onProgress={() => openCompactPanel('progress')}
+              onComplete={() => openCompactPanel('complete')}
+              onDelay={() => openCompactPanel('delay')}
+              onConsult={handleConsult}
+            />
+          ) : null}
+          {hasPast ? (
+            <PressableScale style={styles.pastToggle} onPress={togglePast}>
+              <Reanimated.View style={chevronStyle}>
+                <Ionicons name="chevron-down" size={16} color={colors.brand} />
+              </Reanimated.View>
+              <Text style={styles.pastToggleText}>
+                {showPast ? '過去を隠す' : '過去を表示'}
+              </Text>
+            </PressableScale>
+          ) : null}
+        </View>
       ) : null,
-    [hasPast, showPast, chevronStyle, togglePast, searching, styles, colors],
+    [
+      currentTaskCard,
+      hasPast,
+      showPast,
+      chevronStyle,
+      togglePast,
+      searching,
+      styles,
+      colors,
+      quickActionLoading,
+      runCurrentQuickAction,
+      openCompactPanel,
+      handleConsult,
+    ],
   );
 
   const handleScroll = useCallback(
@@ -2431,6 +2575,22 @@ export function HomeView() {
             setProgressSheetVisible(false);
             setProgressSession(null);
           }}
+        />
+      )}
+
+      {/* Compact quick-action panel for complete / delay / progress */}
+      {currentTask && (
+        <AgentCompactPanel
+          visible={compactPanelVisible}
+          mode={compactPanelMode}
+          taskId={currentTask.id}
+          taskTitle={currentTask.title}
+          taskReference={
+            currentTaskCard?.reference ?? `#${currentTask.display_id}`
+          }
+          agentClient={agentClient}
+          onClose={() => setCompactPanelVisible(false)}
+          onSuccess={handleCompactPanelSuccess}
         />
       )}
 
