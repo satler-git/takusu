@@ -42,7 +42,7 @@ serde_json = { workspace = true }
 serde_path_to_error = { workspace = true }
 strum = { workspace = true }
 thiserror = { workspace = true }
-tokio-stream = "0.1"
+tokio-stream = { version = "0.1", features = ["sync"] }
 toml = "0.8"
 tokio = { workspace = true }
 tracing = { workspace = true }

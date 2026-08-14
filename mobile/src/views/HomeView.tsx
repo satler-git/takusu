@@ -534,6 +534,7 @@ export function HomeView() {
           endAt: string;
           abandonability: number;
           fixed: boolean;
+          authority: 'candidate' | 'today_covered';
         }[] = [];
         let doing: {
           id: string;
@@ -542,6 +543,7 @@ export function HomeView() {
           endAt: string;
           abandonability: number;
           fixed: boolean;
+          authority: 'candidate' | 'today_covered';
         } | null = null;
 
         for (const t of taskList) {
@@ -558,6 +560,9 @@ export function HomeView() {
               endAt,
               abandonability: t.abandonability,
               fixed: t.fixed,
+              // WI-3: authority/coverage/settlement/capabilities are
+              // placeholders until WI-10/WI-18/WI-4.
+              authority: 'candidate' as const,
             };
             if (t.status === 'in_progress' && doing == null) {
               doing = task;
@@ -578,6 +583,9 @@ export function HomeView() {
           doing,
           upcoming: scheduled,
           unscheduledCount,
+          coverage: 'bootstrap',
+          settlement: null,
+          capabilities: [],
           serverTz,
           scheme: Array.isArray(scheme) ? scheme[0] : scheme,
         });
@@ -615,6 +623,18 @@ export function HomeView() {
 
   const refreshRef = useRef(refresh);
   refreshRef.current = refresh;
+
+  // Subscribe to server-side planner state changes (WI-3). When a turn,
+  // approval, or quick action writes state, refetch tasks, schedule, and the
+  // widget snapshot without waiting for the user to pull-to-refresh.
+  useFocusEffect(
+    useCallback(() => {
+      const unsubscribe = agentClient.subscribeEvents(() => {
+        refreshRef.current();
+      });
+      return unsubscribe;
+    }, [agentClient]),
+  );
 
   const { showTopToast, hideTopToast } = useTopToast();
   const showUndoToast = useUndoableToast();

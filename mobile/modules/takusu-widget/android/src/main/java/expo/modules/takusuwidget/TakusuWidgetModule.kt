@@ -30,6 +30,9 @@ class WidgetTask : Record {
     @Field val abandonability: Double = 0.75
 
     @Field val fixed: Boolean = false
+
+    // WI-3: authority is a placeholder (candidate/today_covered) until WI-10.
+    @Field val authority: String = "candidate"
 }
 
 class WidgetSnapshotInput : Record {
@@ -38,6 +41,13 @@ class WidgetSnapshotInput : Record {
     @Field val upcoming: List<WidgetTask> = emptyList()
 
     @Field val unscheduledCount: Int = 0
+
+    // WI-3: placeholders for the full resident-agent surface (WI-10/WI-18/WI-4).
+    @Field val coverage: String = "bootstrap"
+
+    @Field val settlement: String? = null
+
+    @Field val capabilities: List<String> = emptyList()
 
     @Field val serverTz: String? = null
 
@@ -91,6 +101,9 @@ class TakusuWidgetModule : Module() {
                     input.doing?.let { snap.put("doing", taskJson(it)) } ?: snap.put("doing", JSONObject.NULL)
                     snap.put("upcoming", JSONArray(input.upcoming.map { taskJson(it) }))
                     snap.put("unscheduled_count", input.unscheduledCount)
+                    snap.put("coverage", input.coverage)
+                    snap.put("settlement", input.settlement ?: JSONObject.NULL)
+                    snap.put("capabilities", JSONArray(input.capabilities))
                     input.serverTz?.let { snap.put("server_tz", it) }
                     val scheme =
                         input.scheme?.takeIf { it.isNotEmpty() } ?: prefs.getString(WidgetUpdateWorker.KEY_SCHEME, null)
@@ -131,6 +144,7 @@ class TakusuWidgetModule : Module() {
         o.put("end_at", t.endAt)
         o.put("abandonability", t.abandonability)
         o.put("fixed", t.fixed)
+        o.put("authority", t.authority)
         return o
     }
 }
