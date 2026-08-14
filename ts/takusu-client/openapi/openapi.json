@@ -13541,6 +13541,40 @@
         },
         "required": ["ok"]
       },
+      "Action": {
+        "description": "A single quick action on a check-in or card.",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ActionKind"
+          },
+          "label": {
+            "type": "string"
+          }
+        },
+        "required": ["id", "label", "kind"]
+      },
+      "ActionGroup": {
+        "description": "One labelled group of actions. Never empty.",
+        "type": "object",
+        "properties": {
+          "actions": {
+            "$ref": "#/components/schemas/NonEmptyVecAction"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": ["title", "actions"]
+      },
+      "ActionKind": {
+        "description": "Kind of a quick action.",
+        "type": "string",
+        "enum": ["immediate", "approval", "panel"]
+      },
       "ApprovalDecisionRequest": {
         "type": "object",
         "properties": {
@@ -13680,6 +13714,32 @@
         },
         "required": ["operation", "target_type", "target_id"]
       },
+      "CheckInCard": {
+        "description": "A one-round-trip check-in that always offers 「行動」 and 「ズラす」.\n\nThe non-empty wrapper on both action groups makes a card without either\ngroup unrepresentable, which enforces the product invariant that every\nproactive contact offers both options.",
+        "type": "object",
+        "properties": {
+          "act": {
+            "description": "「行動」 group.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ActionGroup"
+              }
+            ]
+          },
+          "question": {
+            "type": "string"
+          },
+          "shift": {
+            "description": "「ズラす」 group.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ActionGroup"
+              }
+            ]
+          }
+        },
+        "required": ["question", "act", "shift"]
+      },
       "CreateSessionRequest": {
         "type": "object",
         "properties": {
@@ -13732,6 +13792,22 @@
           }
         },
         "required": ["version", "error"]
+      },
+      "FocusedQuestion": {
+        "description": "A focused clarification question instead of a full interview.",
+        "type": "object",
+        "properties": {
+          "choices": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": ["message"]
       },
       "HealthResponse": {
         "type": "object",
@@ -13851,6 +13927,12 @@
         "type": "string",
         "enum": ["openai_compatible"]
       },
+      "NonEmptyVecAction": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/Action"
+        }
+      },
       "OkResponse": {
         "description": "Generic `{ \"ok\": true }` body used by several agent endpoints.",
         "type": "object",
@@ -13908,6 +13990,175 @@
         "additionalProperties": {
           "type": "boolean"
         }
+      },
+      "Presentation": {
+        "description": "The typed presentation payload carried on a turn result or event.\n\nWire form is internally tagged by `type`; unknown tags decode as\n[`Presentation::Text`].",
+        "oneOf": [
+          {
+            "description": "Current + next task with quick actions.",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "current_task"
+              }
+            },
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TaskCard"
+              }
+            ],
+            "required": ["type"]
+          },
+          {
+            "description": "Start / pause / progress / complete / delay / split result.",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "work_transition"
+              }
+            },
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WorkTransition"
+              }
+            ],
+            "required": ["type"]
+          },
+          {
+            "description": "Schedule read summary.",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "schedule_summary"
+              }
+            },
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ScheduleSummary"
+              }
+            ],
+            "required": ["type"]
+          },
+          {
+            "description": "Task-count read summary.",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "progress_summary"
+              }
+            },
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ProgressSummary"
+              }
+            ],
+            "required": ["type"]
+          },
+          {
+            "description": "Conflict / overdue / generation failure.",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "schedule_alert"
+              }
+            },
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ScheduleAlert"
+              }
+            ],
+            "required": ["type"]
+          },
+          {
+            "description": "One-round-trip check-in with 行動 + ズラす.",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "check_in"
+              }
+            },
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CheckInCard"
+              }
+            ],
+            "required": ["type"]
+          },
+          {
+            "description": "An approval request, rendered from the existing type.",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "change_proposal"
+              }
+            },
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ApprovalRequest"
+              }
+            ],
+            "required": ["type"]
+          },
+          {
+            "description": "A focused clarification.",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "clarification"
+              }
+            },
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FocusedQuestion"
+              }
+            ],
+            "required": ["type"]
+          },
+          {
+            "description": "Free-form fallback text.\n\nRepresented as a struct variant so internally-tagged serialization works\n(serde cannot tag a primitive newtype like `Text(String)`), and so an\nunknown tag can degrade to `Text { text }`.",
+            "type": "object",
+            "properties": {
+              "text": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "const": "text"
+              }
+            },
+            "required": ["type", "text"]
+          }
+        ]
+      },
+      "ProgressSummary": {
+        "description": "Aggregated progress counts from a task read.",
+        "type": "object",
+        "properties": {
+          "done": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "in_progress": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "scheduled": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          }
+        },
+        "required": ["done", "in_progress", "scheduled"]
       },
       "ProposalDecision": {
         "type": "object",
@@ -14025,6 +14276,69 @@
         },
         "required": ["after_user"]
       },
+      "ScheduleAlert": {
+        "description": "A planner error surfaced to the user (never a check-in).",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/ScheduleAlertKind"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": ["kind", "message"]
+      },
+      "ScheduleAlertKind": {
+        "description": "Kind of a schedule alert.",
+        "type": "string",
+        "enum": ["conflict", "overdue", "generation_failure"]
+      },
+      "ScheduleSummary": {
+        "description": "Concise summary of the active schedule.",
+        "type": "object",
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "end_at": {
+                  "type": "string"
+                },
+                "reference": {
+                  "type": "string"
+                },
+                "start_at": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                }
+              },
+              "required": ["reference", "title"]
+            }
+          },
+          "next": {
+            "type": ["object", "null"],
+            "properties": {
+              "end_at": {
+                "type": "string"
+              },
+              "reference": {
+                "type": "string"
+              },
+              "start_at": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": ["reference", "title"]
+          }
+        }
+      },
       "SseEvent": {
         "description": "A server-sent event payload emitted by the agent turn streams.",
         "anyOf": [
@@ -14040,6 +14354,49 @@
         "description": "Target kind for a proposed or applied change.",
         "type": "string",
         "enum": ["task", "habit", "skill", "memory", "schedule", "comment"]
+      },
+      "TaskAuthority": {
+        "description": "Coverage authority attached to a current-task card.\n\nUntil WI-10 derives it from observed coverage state, cards default to\n[`TaskAuthority::Candidate`] (the safe side of the coverage invariant).",
+        "oneOf": [
+          {
+            "description": "Present as a candidate for the user to accept (bootstrap).",
+            "type": "string",
+            "const": "candidate"
+          },
+          {
+            "description": "Authoritative 「今やること」 because today is covered.",
+            "type": "string",
+            "const": "today_covered"
+          }
+        ]
+      },
+      "TaskCard": {
+        "description": "Current + next task card with quick actions.",
+        "type": "object",
+        "properties": {
+          "authority": {
+            "$ref": "#/components/schemas/TaskAuthority"
+          },
+          "end_at": {
+            "type": ["string", "null"]
+          },
+          "next_task": {
+            "type": ["string", "null"]
+          },
+          "reference": {
+            "type": "string"
+          },
+          "start_at": {
+            "type": ["string", "null"]
+          },
+          "title": {
+            "type": "string"
+          },
+          "work_state": {
+            "$ref": "#/components/schemas/WorkState"
+          }
+        },
+        "required": ["title", "reference", "work_state", "authority"]
       },
       "ToolStat": {
         "type": "object",
@@ -14229,6 +14586,17 @@
               "$ref": "#/components/schemas/ChangeReceipt"
             }
           },
+          "presentation": {
+            "description": "Typed presentation derived from the turn's tool results (WI-1). `None`\nwhen no tool result maps to a presentation kind.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Presentation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "schedule_dirty": {
             "type": "boolean"
           },
@@ -14256,6 +14624,16 @@
             "items": {
               "$ref": "#/components/schemas/ChangeReceipt"
             }
+          },
+          "presentation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Presentation"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "schedule_dirty": {
             "type": "boolean"
@@ -14414,6 +14792,45 @@
           }
         },
         "required": ["answers"]
+      },
+      "WorkState": {
+        "description": "State of a task's work session shown on a card.",
+        "type": "string",
+        "enum": ["not_started", "in_progress", "overdue"]
+      },
+      "WorkTransition": {
+        "description": "Result of a start / pause / progress / complete / delay / split mutation.",
+        "type": "object",
+        "properties": {
+          "detail": {
+            "description": "Human-readable detail (e.g. new quantity, total active minutes).",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/WorkTransitionKind"
+          },
+          "reference": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": ["kind", "reference", "title"]
+      },
+      "WorkTransitionKind": {
+        "description": "Kind of a recorded work transition.",
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": ["start", "pause", "progress", "complete", "split"]
+          },
+          {
+            "description": "Reserved for the WI-2 delay / Snooze quick action (「延期」). No\n`ChangeOperation` or tool emits it yet, so it is currently not reachable\nfrom `from_tool_output`; it is kept now so the WI-2 capability and wire\nshape do not change the contract.",
+            "type": "string",
+            "const": "delay"
+          }
+        ]
       }
     }
   }
