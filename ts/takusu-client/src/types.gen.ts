@@ -7104,6 +7104,55 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/agent/v1/events': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /**
+         * @description Lightweight event broadcast on the agent transport so surfaces can refresh
+         *     when planner state changes (WI-3). Slow subscribers can lag behind up to the
+         *     channel capacity; a new subscriber starts from the next event after it
+         *     connects, so clients should still refresh once on mount.
+         */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/event-stream': components['schemas']['PlannerEvent'];
+          };
+        };
+        /** @description Default error body returned by agent endpoints. */
+        default: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['ErrorResponse'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/agent/v1/capabilities': {
     parameters: {
       query?: never;
@@ -9699,6 +9748,26 @@ export interface components {
      */
     Permissions: {
       [key: string]: boolean;
+    };
+    /**
+     * @description Lightweight event broadcast on the agent transport so surfaces can refresh
+     *     when planner state changes (WI-3). Slow subscribers can lag behind up to the
+     *     channel capacity; a new subscriber starts from the next event after it
+     *     connects, so clients should still refresh once on mount.
+     */
+    PlannerEvent: {
+      /** @constant */
+      type: 'state_changed';
+    } & components['schemas']['PlannerStateChanged'];
+    /** @description A planner-state change notification. */
+    PlannerStateChanged: {
+      changed_at: string;
+      /**
+       * @description What categories of state may have changed. Clients use this as a hint
+       *     when they can refresh selectively; a full refresh is always safe.
+       */
+      kinds: string[];
+      source: string;
     };
     /**
      * @description The typed presentation payload carried on a turn result or event.

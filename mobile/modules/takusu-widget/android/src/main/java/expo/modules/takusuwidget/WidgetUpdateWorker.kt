@@ -106,6 +106,9 @@ class WidgetUpdateWorker(
             snap.put("doing", s.doing?.let { taskJson(it) } ?: JSONObject.NULL)
             snap.put("upcoming", JSONArray(s.upcoming.map { taskJson(it) }))
             snap.put("unscheduled_count", s.unscheduledCount)
+            snap.put("coverage", s.coverage)
+            snap.put("settlement", s.settlement ?: JSONObject.NULL)
+            snap.put("capabilities", JSONArray(s.capabilities))
             serverTz?.let { snap.put("server_tz", it) }
             scheme?.takeIf { it.isNotEmpty() }?.let { snap.put("scheme", it) }
 
@@ -127,6 +130,8 @@ class WidgetUpdateWorker(
             o.put("end_at", t.endAt)
             o.put("abandonability", t.abandonability)
             o.put("fixed", t.fixed)
+            // WI-3: authority is a placeholder until the local API returns it (WI-10).
+            o.put("authority", t.authority)
             return o
         }
 

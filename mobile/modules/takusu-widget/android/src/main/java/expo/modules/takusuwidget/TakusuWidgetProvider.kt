@@ -36,6 +36,10 @@ private data class Snapshot(
     val doing: UpcomingTask?,
     val upcoming: List<UpcomingTask>,
     val unscheduledCount: Int,
+    // WI-3: placeholders for the full resident-agent surface (WI-10/WI-18/WI-4).
+    val coverage: String?,
+    val settlement: String?,
+    val capabilities: List<String>,
     val serverTz: String?,
     val scheme: String?,
 )
@@ -633,6 +637,9 @@ class TakusuWidgetProvider : AppWidgetProvider() {
                 doing = doing ?: fallbackDoing,
                 upcoming = upcoming,
                 unscheduledCount = obj.optInt("unscheduled_count", 0),
+                coverage = optStringOrNull(obj, "coverage") ?: "bootstrap",
+                settlement = optStringOrNull(obj, "settlement"),
+                capabilities = parseStringArray(obj.optJSONArray("capabilities")),
                 serverTz = optStringOrNull(obj, "server_tz"),
                 scheme = optStringOrNull(obj, "scheme"),
             )
@@ -648,6 +655,7 @@ class TakusuWidgetProvider : AppWidgetProvider() {
                     endAt = obj.getString("end_at"),
                     abandonability = obj.optDouble("abandonability", 0.75),
                     fixed = obj.optBoolean("fixed", false),
+                    authority = obj.optString("authority", "candidate"),
                 )
             } catch (_: Exception) {
                 null
@@ -663,6 +671,7 @@ class TakusuWidgetProvider : AppWidgetProvider() {
                 endAt = "",
                 abandonability = 0.75,
                 fixed = false,
+                authority = "candidate",
             )
         }
 
@@ -670,6 +679,15 @@ class TakusuWidgetProvider : AppWidgetProvider() {
             obj: JSONObject,
             key: String,
         ): String? = if (obj.isNull(key) || !obj.has(key)) null else obj.optString(key, "")
+
+        private fun parseStringArray(arr: JSONArray?): List<String> {
+            if (arr == null) return emptyList()
+            val result = mutableListOf<String>()
+            for (i in 0 until arr.length()) {
+                result.add(arr.optString(i, ""))
+            }
+            return result.filter { it.isNotEmpty() }
+        }
 
         private fun computeProgress(
             startAt: String?,

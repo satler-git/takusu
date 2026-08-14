@@ -7,6 +7,8 @@ export interface WidgetConfig {
   port?: number;
 }
 
+export type WidgetTaskAuthority = 'candidate' | 'today_covered';
+
 export interface WidgetTaskData {
   id: string;
   title: string;
@@ -14,12 +16,25 @@ export interface WidgetTaskData {
   endAt: string;
   abandonability: number;
   fixed: boolean;
+  // WI-3: authority is a placeholder until WI-10 derives it from coverage.
+  authority: WidgetTaskAuthority;
 }
+
+export type WidgetCoverageState =
+  | 'bootstrap'
+  | 'stale'
+  | 'today_covered'
+  | 'trusted';
 
 export interface WidgetSnapshotData {
   doing: WidgetTaskData | null;
   upcoming: WidgetTaskData[];
   unscheduledCount: number;
+  // WI-3: coverage, settlement, and capabilities are placeholders for the
+  // full resident-agent surface (WI-10 / WI-18 / WI-4).
+  coverage?: WidgetCoverageState;
+  settlement?: string | null;
+  capabilities?: string[];
   serverTz?: string;
   scheme?: string;
 }

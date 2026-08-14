@@ -262,6 +262,15 @@ export type AgentHistoryMessage =
 
 export type AgentStreamEvent = TurnEvent | TtsBlockEvent;
 
+// ── Planner state sync (WI-3) ───────────────────────────────────────────
+
+export interface PlannerStateEvent {
+  type: 'state_changed';
+  changed_at: string;
+  source: string;
+  kinds: string[];
+}
+
 // ── Quick-action capability types (WI-2) ────────────────────────────────
 
 export type InputPath =
