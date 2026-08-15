@@ -5,18 +5,21 @@ import * as Notifications from 'expo-notifications';
 // Category for in-progress task notifications: DONE + CANCEL actions
 export const CATEGORY_TASK_IN_PROGRESS = 'taskinprogress';
 
-// Category for task start reminders: START action (#258)
+// Category for task start reminders with 行動/ズラす action groups (WI-4)
 export const CATEGORY_TASK_START = 'taskstart';
 
-// Action identifiers
+// Action identifiers for the start-time check-in card
 export const ACTION_DONE = 'action_done';
 export const ACTION_CANCEL = 'action_cancel';
 export const ACTION_START = 'action_start';
+export const ACTION_SNOOZE = 'action_snooze';
+export const ACTION_RESCHEDULE = 'action_reschedule';
 
 export async function setupNotificationCategories(): Promise<void> {
-  // Action buttons should not open the app. On Android (SDK 56+) the
-  // registered background task runs for action taps when the app is not in the
-  // foreground (#788).
+  // Immediate actions (着手, 10分後) should not open the app. On Android
+  // (SDK 56+) the registered background task runs for action taps when the app
+  // is not in the foreground (#788). The reschedule action needs the UI,
+  // so it opens the app to the foreground.
   const opensAppToForeground = false;
 
   await Notifications.setNotificationCategoryAsync(CATEGORY_TASK_IN_PROGRESS, [
@@ -34,8 +37,18 @@ export async function setupNotificationCategories(): Promise<void> {
   await Notifications.setNotificationCategoryAsync(CATEGORY_TASK_START, [
     {
       identifier: ACTION_START,
-      buttonTitle: '開始',
+      buttonTitle: '着手',
       options: { isDestructive: false, opensAppToForeground },
+    },
+    {
+      identifier: ACTION_SNOOZE,
+      buttonTitle: '10分後',
+      options: { isDestructive: false, opensAppToForeground },
+    },
+    {
+      identifier: ACTION_RESCHEDULE,
+      buttonTitle: '組み直す',
+      options: { isDestructive: false, opensAppToForeground: true },
     },
   ]);
 }

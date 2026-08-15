@@ -10,6 +10,7 @@ import { router } from 'expo-router';
 import * as Sentry from '@sentry/react-native';
 import { ServerProvider, useServer } from '@/src/api/ServerProvider';
 import { VoiceProvider } from '@/src/api/VoiceContext';
+import { AgentClient } from '@/src/api/agentClient';
 import { setRecordingChangeListener } from '@/src/utils/voice';
 import { FloatingVoiceButton } from '@/src/components/FloatingVoiceButton';
 import { installGlobalErrorHandler } from '@/src/api/installGlobalErrorHandler';
@@ -133,6 +134,7 @@ function ThemedApp() {
     theme,
     settingsLoaded,
     client,
+    workersToken,
     notifications,
     error: serverError,
   } = useServer();
@@ -234,8 +236,10 @@ function ThemedApp() {
         return;
       }
 
+      const agentClient = new AgentClient(client.baseUrl, workersToken);
       const handled = await handleActionButtonResponse(response, {
         client,
+        agentClient,
         inProgressNotifications: notifications.inProgress,
         haptic,
       });
@@ -257,7 +261,7 @@ function ThemedApp() {
         }
       }
     },
-    [client, notifications.inProgress, lastNotificationResponse],
+    [client, workersToken, notifications.inProgress, lastNotificationResponse],
   );
 
   // Drain queued action responses once `client` becomes available (#353).
