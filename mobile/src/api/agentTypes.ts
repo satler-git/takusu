@@ -175,36 +175,21 @@ export function decodePresentation(raw: unknown): Presentation {
 
   switch (type) {
     case 'current_task':
-      return hasStr(obj, 'title', 'reference')
-        ? (raw as Presentation)
-        : { type: 'text', text: fallback };
+      return decodeCurrentTask(obj) ?? { type: 'text', text: fallback };
     case 'work_transition':
-      return hasStr(obj, 'kind', 'reference', 'title')
-        ? (raw as Presentation)
-        : { type: 'text', text: fallback };
+      return decodeWorkTransition(obj) ?? { type: 'text', text: fallback };
     case 'schedule_summary':
-      // All fields are optional on this variant; only the object shape matters.
-      return raw as Presentation;
+      return decodeScheduleSummary(obj) ?? { type: 'text', text: fallback };
     case 'progress_summary':
-      return hasNum(obj, 'done', 'in_progress', 'scheduled')
-        ? (raw as Presentation)
-        : { type: 'text', text: fallback };
+      return decodeProgressSummary(obj) ?? { type: 'text', text: fallback };
     case 'schedule_alert':
-      return hasStr(obj, 'kind', 'message')
-        ? (raw as Presentation)
-        : { type: 'text', text: fallback };
+      return decodeScheduleAlert(obj) ?? { type: 'text', text: fallback };
     case 'check_in':
-      return hasStr(obj, 'question') && isObject(obj.act) && isObject(obj.shift)
-        ? (raw as Presentation)
-        : { type: 'text', text: fallback };
+      return decodeCheckIn(obj) ?? { type: 'text', text: fallback };
     case 'change_proposal':
-      return hasStr(obj, 'id', 'why') && Array.isArray(obj.changes)
-        ? (raw as Presentation)
-        : { type: 'text', text: fallback };
+      return decodeChangeProposal(obj) ?? { type: 'text', text: fallback };
     case 'clarification':
-      return hasStr(obj, 'message')
-        ? (raw as Presentation)
-        : { type: 'text', text: fallback };
+      return decodeClarification(obj) ?? { type: 'text', text: fallback };
     case 'text':
       return { type: 'text', text: fallback };
     default:
@@ -216,12 +201,376 @@ function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null;
 }
 
-function hasStr(o: Record<string, unknown>, ...keys: string[]): boolean {
-  return keys.every((k) => typeof o[k] === 'string');
+function strField(o: Record<string, unknown>, key: string): string | undefined {
+  const v = o[key];
+  return typeof v === 'string' ? v : undefined;
 }
 
-function hasNum(o: Record<string, unknown>, ...keys: string[]): boolean {
-  return keys.every((k) => typeof o[k] === 'number');
+function numField(o: Record<string, unknown>, key: string): number | undefined {
+  const v = o[key];
+  return typeof v === 'number' ? v : undefined;
+}
+
+function isValidWorkState(v: unknown): v is WorkState {
+  return v === 'not_started' || v === 'in_progress' || v === 'overdue';
+}
+
+function isValidTaskAuthority(v: unknown): v is TaskAuthority {
+  return v === 'candidate' || v === 'today_covered';
+}
+
+function isValidWorkTransitionKind(v: unknown): v is WorkTransitionKind {
+  return (
+    v === 'start' ||
+    v === 'pause' ||
+    v === 'progress' ||
+    v === 'complete' ||
+    v === 'delay' ||
+    v === 'split'
+  );
+}
+
+function isValidScheduleAlertKind(v: unknown): v is ScheduleAlertKind {
+  return v === 'conflict' || v === 'overdue' || v === 'generation_failure';
+}
+
+function isValidActionKind(v: unknown): v is ActionKind {
+  return v === 'immediate' || v === 'approval' || v === 'panel';
+}
+
+function isValidInputPath(v: unknown): v is InputPath {
+  return (
+    v === 'screen_capability' ||
+    v === 'notification_capability' ||
+    v === 'explicit_voice_session' ||
+    v === 'ambient_wake_word' ||
+    v === 'plain_text'
+  );
+}
+
+function isValidQuickAction(v: unknown): v is QuickAction {
+  return (
+    v === 'start' ||
+    v === 'pause' ||
+    v === 'progress' ||
+    v === 'complete' ||
+    v === 'delay'
+  );
+}
+
+function decodeCapabilityRequest(v: unknown): CapabilityRequest | undefined {
+  if (!isObject(v)) {
+    return undefined;
+  }
+  const o = v as Record<string, unknown>;
+  const taskId = strField(o, 'task_id');
+  const action = isValidQuickAction(o.action) ? o.action : undefined;
+  const deviceId = strField(o, 'device_id');
+  if (taskId === undefined || action === undefined || deviceId === undefined) {
+    return undefined;
+  }
+  const snoozeMinutes = numField(o, 'snooze_minutes');
+  const snoozeTarget = strField(o, 'snooze_target');
+  const quantityDone = numField(o, 'quantity_done');
+  const note = strField(o, 'note');
+  const scheduledAt = strField(o, 'scheduled_at');
+  return {
+    task_id: taskId,
+    action,
+    device_id: deviceId,
+    ...(snoozeMinutes !== undefined && { snooze_minutes: snoozeMinutes }),
+    ...(snoozeTarget !== undefined && { snooze_target: snoozeTarget }),
+    ...(quantityDone !== undefined && { quantity_done: quantityDone }),
+    ...(note !== undefined && { note }),
+    ...(scheduledAt !== undefined && { scheduled_at: scheduledAt }),
+  };
+}
+
+function decodeCurrentTask(
+  obj: Record<string, unknown>,
+): Presentation | undefined {
+  const title = strField(obj, 'title');
+  const reference = strField(obj, 'reference');
+  const workState = obj.work_state;
+  const authority = obj.authority;
+  if (
+    title === undefined ||
+    reference === undefined ||
+    !isValidWorkState(workState) ||
+    !isValidTaskAuthority(authority)
+  ) {
+    return undefined;
+  }
+  const startAt = strField(obj, 'start_at');
+  const endAt = strField(obj, 'end_at');
+  const nextTask = strField(obj, 'next_task');
+  return {
+    type: 'current_task',
+    title,
+    reference,
+    work_state: workState,
+    authority,
+    ...(startAt !== undefined && { start_at: startAt }),
+    ...(endAt !== undefined && { end_at: endAt }),
+    ...(nextTask !== undefined && { next_task: nextTask }),
+  } as Presentation;
+}
+
+function decodeWorkTransition(
+  obj: Record<string, unknown>,
+): Presentation | undefined {
+  const kind = obj.kind;
+  const reference = strField(obj, 'reference');
+  const title = strField(obj, 'title');
+  if (
+    !isValidWorkTransitionKind(kind) ||
+    reference === undefined ||
+    title === undefined
+  ) {
+    return undefined;
+  }
+  const detail = strField(obj, 'detail');
+  return {
+    type: 'work_transition',
+    kind,
+    reference,
+    title,
+    ...(detail !== undefined && { detail }),
+  } as Presentation;
+}
+
+function decodeScheduleAlert(
+  obj: Record<string, unknown>,
+): Presentation | undefined {
+  const kind = obj.kind;
+  const message = strField(obj, 'message');
+  if (!isValidScheduleAlertKind(kind) || message === undefined) {
+    return undefined;
+  }
+  return { type: 'schedule_alert', kind, message } as Presentation;
+}
+
+function decodeProgressSummary(
+  obj: Record<string, unknown>,
+): Presentation | undefined {
+  const done = numField(obj, 'done');
+  const inProgress = numField(obj, 'in_progress');
+  const scheduled = numField(obj, 'scheduled');
+  if (
+    done === undefined ||
+    inProgress === undefined ||
+    scheduled === undefined
+  ) {
+    return undefined;
+  }
+  return {
+    type: 'progress_summary',
+    done,
+    in_progress: inProgress,
+    scheduled,
+  } as Presentation;
+}
+
+function decodeScheduleEntry(v: unknown): ScheduleEntry | undefined {
+  if (!isObject(v)) {
+    return undefined;
+  }
+  const o = v as Record<string, unknown>;
+  const reference = strField(o, 'reference');
+  const title = strField(o, 'title');
+  if (reference === undefined || title === undefined) {
+    return undefined;
+  }
+  const startAt = strField(o, 'start_at');
+  const endAt = strField(o, 'end_at');
+  return {
+    reference,
+    title,
+    ...(startAt !== undefined && { start_at: startAt }),
+    ...(endAt !== undefined && { end_at: endAt }),
+  };
+}
+
+function decodeScheduleSummary(
+  obj: Record<string, unknown>,
+): Presentation | undefined {
+  let next: ScheduleEntry | undefined;
+  if (obj.next !== undefined) {
+    const n = decodeScheduleEntry(obj.next);
+    if (n === undefined) {
+      return undefined;
+    }
+    next = n;
+  }
+  let entries: ScheduleEntry[] | undefined;
+  if (obj.entries !== undefined) {
+    if (!Array.isArray(obj.entries)) {
+      return undefined;
+    }
+    const es: ScheduleEntry[] = [];
+    for (const e of obj.entries) {
+      const de = decodeScheduleEntry(e);
+      if (de === undefined) {
+        return undefined;
+      }
+      es.push(de);
+    }
+    entries = es;
+  }
+  return {
+    type: 'schedule_summary',
+    ...(next !== undefined && { next }),
+    ...(entries !== undefined && { entries }),
+  } as Presentation;
+}
+
+function decodeActionCapability(v: unknown): ActionCapability | undefined {
+  if (!isObject(v)) {
+    return undefined;
+  }
+  const o = v as Record<string, unknown>;
+  const id = strField(o, 'id');
+  const action = isValidQuickAction(o.action) ? o.action : undefined;
+  const deviceId = strField(o, 'device_id');
+  const taskId = strField(o, 'task_id');
+  const expiresAt = strField(o, 'expires_at');
+  const inputPath = isValidInputPath(o.input_path) ? o.input_path : undefined;
+  const oneShot = o.one_shot;
+  if (
+    id === undefined ||
+    action === undefined ||
+    deviceId === undefined ||
+    taskId === undefined ||
+    expiresAt === undefined ||
+    inputPath === undefined ||
+    typeof oneShot !== 'boolean'
+  ) {
+    return undefined;
+  }
+  const eventId = strField(o, 'event_id');
+  const snoozeMinutes = numField(o, 'snooze_minutes');
+  const snoozeTarget = strField(o, 'snooze_target');
+  const quantityDone = numField(o, 'quantity_done');
+  const note = strField(o, 'note');
+  const scheduledAt = strField(o, 'scheduled_at');
+  const request = isObject(o.request)
+    ? decodeCapabilityRequest(o.request)
+    : undefined;
+  return {
+    id,
+    action,
+    device_id: deviceId,
+    task_id: taskId,
+    expires_at: expiresAt,
+    input_path: inputPath,
+    one_shot: oneShot,
+    ...(eventId !== undefined && { event_id: eventId }),
+    ...(snoozeMinutes !== undefined && { snooze_minutes: snoozeMinutes }),
+    ...(snoozeTarget !== undefined && { snooze_target: snoozeTarget }),
+    ...(quantityDone !== undefined && { quantity_done: quantityDone }),
+    ...(note !== undefined && { note }),
+    ...(scheduledAt !== undefined && { scheduled_at: scheduledAt }),
+    ...(request !== undefined && { request }),
+  };
+}
+
+function decodeAction(v: unknown): Action | undefined {
+  if (!isObject(v)) {
+    return undefined;
+  }
+  const o = v as Record<string, unknown>;
+  const id = strField(o, 'id');
+  const label = strField(o, 'label');
+  const kind = isValidActionKind(o.kind) ? o.kind : undefined;
+  if (id === undefined || label === undefined || kind === undefined) {
+    return undefined;
+  }
+  if (kind === 'immediate') {
+    const capability = decodeActionCapability(o.capability);
+    if (capability === undefined) {
+      return undefined;
+    }
+    return { id, label, kind, capability };
+  }
+  return { id, label, kind };
+}
+
+function decodeActionGroup(v: unknown): ActionGroup | undefined {
+  if (!isObject(v)) {
+    return undefined;
+  }
+  const o = v as Record<string, unknown>;
+  const title = strField(o, 'title');
+  const actions = o.actions;
+  if (title === undefined || !Array.isArray(actions) || actions.length === 0) {
+    return undefined;
+  }
+  const decoded: Action[] = [];
+  for (const a of actions) {
+    const d = decodeAction(a);
+    if (d === undefined) {
+      return undefined;
+    }
+    decoded.push(d);
+  }
+  return { title, actions: decoded };
+}
+
+function decodeCheckIn(obj: Record<string, unknown>): Presentation | undefined {
+  const question = strField(obj, 'question');
+  const act = isObject(obj.act) ? decodeActionGroup(obj.act) : undefined;
+  const shift = isObject(obj.shift) ? decodeActionGroup(obj.shift) : undefined;
+  if (question === undefined || act === undefined || shift === undefined) {
+    return undefined;
+  }
+  return { type: 'check_in', question, act, shift } as Presentation;
+}
+
+function decodeChangeProposal(
+  obj: Record<string, unknown>,
+): Presentation | undefined {
+  const id = strField(obj, 'id');
+  const why = strField(obj, 'why');
+  const expiresAt = strField(obj, 'expires_at');
+  const changes = Array.isArray(obj.changes) ? obj.changes : [];
+  if (id === undefined || why === undefined || expiresAt === undefined) {
+    return undefined;
+  }
+  return {
+    type: 'change_proposal',
+    id,
+    why,
+    expires_at: expiresAt,
+    changes: changes as ProposedChange[],
+    inferred_fields: (Array.isArray(obj.inferred_fields)
+      ? obj.inferred_fields
+      : []) as InferredField[],
+    warnings: (Array.isArray(obj.warnings) ? obj.warnings : []) as string[],
+  } as Presentation;
+}
+
+function decodeClarification(
+  obj: Record<string, unknown>,
+): Presentation | undefined {
+  const message = strField(obj, 'message');
+  if (message === undefined) {
+    return undefined;
+  }
+  let choices: string[] | undefined;
+  if (obj.choices !== undefined) {
+    if (
+      !Array.isArray(obj.choices) ||
+      !obj.choices.every((c) => typeof c === 'string')
+    ) {
+      return undefined;
+    }
+    choices = obj.choices as string[];
+  }
+  return {
+    type: 'clarification',
+    message,
+    ...(choices !== undefined && { choices }),
+  } as Presentation;
 }
 
 export type TurnEvent =
@@ -282,11 +631,13 @@ export type InputPath =
   | 'ambient_wake_word'
   | 'plain_text';
 
+export type QuickAction = 'start' | 'pause' | 'progress' | 'complete' | 'delay';
+
 export interface ActionCapability {
   id: string;
   event_id?: string;
   device_id: string;
-  action: string;
+  action: QuickAction;
   input_path: InputPath;
   expires_at: string;
   one_shot: boolean;
@@ -294,6 +645,8 @@ export interface ActionCapability {
   task_id: string;
   /** Snooze duration in minutes, present for `delay` capabilities. */
   snooze_minutes?: number;
+  /** ISO 8601 target `start_at` for `delay` capabilities, computed client-side or on first tap. */
+  snooze_target?: string;
   /** Quantity completed, present for `progress` capabilities. */
   quantity_done?: number;
   /** Note to attach with progress, present for `progress` capabilities. */
@@ -306,9 +659,11 @@ export interface ActionCapability {
 
 export interface CapabilityRequest {
   task_id: string;
-  action: string;
+  action: QuickAction;
   device_id: string;
   snooze_minutes?: number;
+  /** ISO 8601 target `start_at` for `delay` capabilities, computed client-side or on first tap. */
+  snooze_target?: string;
   quantity_done?: number;
   note?: string;
   /** ISO 8601 timestamp for which the notification capability should remain valid. */

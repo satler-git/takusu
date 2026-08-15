@@ -7,9 +7,9 @@ use takusu_contracts::{
     CreateMemory, CreateSkill, CreateTask, GoogleCalEventRow, GoogleCalSettingsRow, HabitRow,
     HabitScheduledSpanRow, HabitStepEstimateInput, HabitStepInput, HabitStepRow,
     MemoryInjectionQuery, MemoryInjectionResult, MemoryKindCounts, MemoryQuery, MemoryRow,
-    RecordWorkSessionProgress, SaveScheduleRequest, ScheduleEntry, ScheduleRow, SettingsRow,
-    SimilarTaskQuery, SimilarTaskRow, SkillRow, SplitResult, SplitTask, StartWorkSession, Storage,
-    StorageError, TaskProgress, TaskQuery, TaskRow, TokenCreateResponse, TokenRow,
+    MoveEntryResponse, RecordWorkSessionProgress, SaveScheduleRequest, ScheduleEntry, ScheduleRow,
+    SettingsRow, SimilarTaskQuery, SimilarTaskRow, SkillRow, SplitResult, SplitTask, StartWorkSession,
+    Storage, StorageError, TaskProgress, TaskQuery, TaskRow, TokenCreateResponse, TokenRow,
     UpdateGoogleCalSettings, UpdateHabit, UpdateMemory, UpdateSettings, UpdateSkill, UpdateTask,
     WorkSessionProgressResult, WorkSessionRow, storage::StorageResult,
 };
@@ -2327,6 +2327,38 @@ impl Storage for SqliteStorage {
         }
         tx.commit().await.map_err(map_err)?;
         Ok(result)
+    }
+
+    async fn get_move_idempotency(
+        &self,
+        operation_id: &str,
+        request_hash: &str,
+    ) -> StorageResult<Option<MoveEntryResponse>> {
+        let mut tx = self.pool.begin().await.map_err(map_err)?;
+        let stored = Self::check_progress_idempotency::<_, MoveEntryResponse>(
+            &mut *tx,
+            operation_id,
+            request_hash,
+        )
+        .await?;
+        tx.commit().await.map_err(map_err)?;
+        Ok(match stored {
+            Some(Ok(response)) => Some(response),
+            Some(Err(e)) => return Err(e),
+            None => None,
+        })
+    }
+
+    async fn record_move_idempotency(
+        &self,
+        operation_id: &str,
+        request_hash: &str,
+        response: &MoveEntryResponse,
+    ) -> StorageResult<()> {
+        let mut tx = self.pool.begin().await.map_err(map_err)?;
+        Self::record_progress_operation(&mut *tx, operation_id, request_hash, response).await?;
+        tx.commit().await.map_err(map_err)?;
+        Ok(())
     }
 
     async fn health_check(&self) -> StorageResult<String> {

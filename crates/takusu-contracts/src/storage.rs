@@ -209,6 +209,29 @@ pub trait Storage: Send + Sync + 'static {
         Ok(())
     }
 
+    // ── Schedule move idempotency (WI-4) ─────────────────────────────────
+    /// Check whether a `move_entry` response for the same `operation_id` and
+    /// `request_hash` has already been persisted. Default backends that do not
+    /// implement idempotency return `Ok(None)`.
+    async fn get_move_idempotency(
+        &self,
+        _operation_id: &str,
+        _request_hash: &str,
+    ) -> StorageResult<Option<MoveEntryResponse>> {
+        Ok(None)
+    }
+
+    /// Persist a `move_entry` response so retries with the same
+    /// `operation_id` and `request_hash` can be replayed.
+    async fn record_move_idempotency(
+        &self,
+        _operation_id: &str,
+        _request_hash: &str,
+        _response: &MoveEntryResponse,
+    ) -> StorageResult<()> {
+        Ok(())
+    }
+
     /// Backend health check. Returns a short human-readable status string.
     /// For `WorkersStorage` this pings the Cloudflare Worker `/health`;
     /// for `SqliteStorage` it reports the local DB is reachable.

@@ -1,12 +1,13 @@
 use axum::Json;
 use axum::extract::{Path, State};
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use takusu_contracts::{
     GenerateSchedule, MoveEntry, MoveEntryResponse, Reschedule, SaveScheduleRequest,
     SchedulePreviewRequest, SchedulePreviewResponse, ScheduleRow,
 };
 
 use crate::error::{HttpError, NoContent};
+use crate::handlers::common::operation_id;
 use crate::state::AppState;
 
 pub async fn get_schedule(State(state): State<AppState>) -> Result<Json<ScheduleRow>, HttpError> {
@@ -47,11 +48,12 @@ pub async fn reschedule(
 pub async fn move_entry(
     State(state): State<AppState>,
     Path(task_id): Path<String>,
+    headers: HeaderMap,
     Json(body): Json<MoveEntry>,
 ) -> Result<Json<MoveEntryResponse>, HttpError> {
     let output = state
         .app
-        .move_entry(&task_id, body.start_at, body.force)
+        .move_entry(&task_id, body.start_at, body.force, operation_id(&headers))
         .await?;
     Ok(Json(output))
 }

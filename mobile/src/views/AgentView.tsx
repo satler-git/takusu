@@ -1103,7 +1103,11 @@ const makeStyles = (colors: ColorSet) =>
     sendText: { fontWeight: '700' },
   });
 
-export function AgentView() {
+export function AgentView({
+  rescheduleTaskId,
+}: {
+  rescheduleTaskId?: string;
+} = {}) {
   const router = useRouter();
   const colors = useColors();
   const styles = useMemo(() => makeStyles(colors), [colors]);
@@ -1161,11 +1165,17 @@ export function AgentView() {
   );
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const { workersToken, ready, pushAgentConfig } = useServer();
+  const {
+    workersToken,
+    ready,
+    pushAgentConfig,
+    client: takusuClient,
+  } = useServer();
   const { pendingSessionId, setPendingSessionId } = useVoice();
   const { showTopToast } = useTopToast();
   const [pendingResult, setPendingResult] = useState<VoiceResult | null>(null);
   const sendTextRef = useRef(sendText);
+  const hasRescheduledRef = useRef(false);
   const client = useMemo(
     () => new AgentClient(`http://127.0.0.1:${DEFAULT_PORT}`, workersToken),
     [workersToken],
@@ -1596,6 +1606,42 @@ export function AgentView() {
     setPendingSessionId,
     activateSessionId,
   ]);
+
+  // When opened from a RESCHEDULE notification, fetch the task and ask the
+  // agent to rebuild its start time once the session history is ready.
+  useEffect(() => {
+    if (
+      !historyReady ||
+      !rescheduleTaskId ||
+      !takusuClient ||
+      hasRescheduledRef.current
+    ) {
+      return;
+    }
+    const taskId = rescheduleTaskId;
+    const restClient = takusuClient;
+    hasRescheduledRef.current = true;
+    let cancelled = false;
+    async function fetchAndSend() {
+      try {
+        const task = await restClient.getTask(taskId);
+        if (cancelled) return;
+        const message =
+          'タスク「' +
+          task.title +
+          '」（' +
+          task.display_id +
+          '）の開始時間を組み直してください。';
+        sendTextRef.current(message);
+      } catch (e) {
+        if (!cancelled) void showError(e, 'タスクの取得に失敗');
+      }
+    }
+    void fetchAndSend();
+    return () => {
+      cancelled = true;
+    };
+  }, [historyReady, rescheduleTaskId, takusuClient]);
 
   // Sync the pending approval with the server whenever the active session
   // changes. This avoids showing a stale approval from the local snapshot

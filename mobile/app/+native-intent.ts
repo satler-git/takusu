@@ -22,6 +22,12 @@ export function redirectSystemPath({
         const p = url.pathname === '/' ? '' : url.pathname;
         return `/task${p}`;
       }
+      if (url.hostname === 'reschedule') {
+        const taskId = url.searchParams.get('taskId');
+        return taskId
+          ? `/agent?rescheduleTaskId=${encodeURIComponent(taskId)}`
+          : '/agent';
+      }
       return '/';
     }
     return path;

@@ -1877,7 +1877,7 @@ async fn run_schedule_verbs(
 
         ScheduleVerbs::Move(args) => {
             let result = app
-                .move_entry(&args.task_id, parse_dt(&args.start_at, tz)?, args.force)
+                .move_entry(&args.task_id, parse_dt(&args.start_at, tz)?, args.force, None)
                 .await?;
             println!("{}", serde_json::to_string_pretty(&result).unwrap());
         }

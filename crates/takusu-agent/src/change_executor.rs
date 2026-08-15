@@ -459,6 +459,7 @@ impl ChangeHandler for TaskMove {
                         start_at: args.start_at,
                         force: args.force,
                     },
+                    ctx.operation_id,
                 )
                 .await
                 .map_err(|error| match error {

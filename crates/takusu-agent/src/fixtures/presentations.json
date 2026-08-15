@@ -40,11 +40,42 @@
     "question": "「レポート」は始めますか？",
     "act": {
       "title": "行動",
-      "actions": [{ "id": "ok-start", "label": "着手", "kind": "immediate" }]
+      "actions": [
+        {
+          "id": "ok-start",
+          "label": "着手",
+          "kind": "immediate",
+          "capability": {
+            "id": "cap-ok-start",
+            "device_id": "mobile",
+            "action": "start",
+            "input_path": "notification_capability",
+            "task_id": "task-1",
+            "expires_at": "2026-08-14T09:05:00Z",
+            "one_shot": true
+          }
+        }
+      ]
     },
     "shift": {
       "title": "ズラす",
-      "actions": [{ "id": "ok-snooze", "label": "10分後", "kind": "immediate" }]
+      "actions": [
+        {
+          "id": "ok-snooze",
+          "label": "10分後",
+          "kind": "immediate",
+          "capability": {
+            "id": "cap-ok-snooze",
+            "device_id": "mobile",
+            "action": "delay",
+            "input_path": "notification_capability",
+            "task_id": "task-1",
+            "expires_at": "2026-08-14T09:15:00Z",
+            "one_shot": true,
+            "snooze_minutes": 10
+          }
+        }
+      ]
     }
   },
   {

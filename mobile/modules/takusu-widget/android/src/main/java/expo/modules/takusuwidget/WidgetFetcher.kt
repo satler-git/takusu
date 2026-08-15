@@ -97,6 +97,21 @@ object WidgetFetcher {
         val entry = scheduleMap[id]
         val startAt = entry?.first ?: optStringOrNull(t, "start_at")
         val endAt = entry?.second ?: t.getString("end_at")
+        val status = t.optString("status")
+        val authority =
+            when {
+                status == "in_progress" -> {
+                    "today_covered"
+                }
+
+                t.has("authority") -> {
+                    t.optString("authority", "candidate").takeIf { it.isNotEmpty() } ?: "candidate"
+                }
+
+                else -> {
+                    "candidate"
+                }
+            }
         return UpcomingTask(
             id = id,
             title = t.getString("title"),
@@ -104,8 +119,9 @@ object WidgetFetcher {
             endAt = endAt,
             abandonability = t.optDouble("abandonability", 0.75),
             fixed = t.optBoolean("fixed", false),
-            // WI-3: authority is a placeholder until the local API returns it (WI-10).
-            authority = t.optString("authority", "candidate"),
+            // WI-2: authority is derived from the task status. coverage,
+            // settlement, and capabilities remain placeholders (WI-10/WI-18/WI-4).
+            authority = authority,
         )
     }
 

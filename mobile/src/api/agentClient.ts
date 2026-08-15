@@ -235,11 +235,15 @@ export class AgentClient {
     text: string,
     idempotencyKey: string,
   ): Promise<AgentTurnResult> {
-    return this.request<AgentTurnResult>(
+    const result = await this.request<AgentTurnResult>(
       'POST',
       `/api/agent/v1/sessions/${encodeURIComponent(sessionId)}/turns`,
       { version: 1, text, idempotency_key: idempotencyKey },
     );
+    if (result?.presentation) {
+      result.presentation = decodePresentation(result.presentation);
+    }
+    return result;
   }
 
   runTurnStream(
@@ -383,14 +387,33 @@ export class AgentClient {
       return;
     }
     try {
-      const parsed = JSON.parse(payload) as { type: string };
+      const parsed: unknown = JSON.parse(payload);
+      if (
+        typeof parsed !== 'object' ||
+        parsed === null ||
+        Array.isArray(parsed)
+      ) {
+        return;
+      }
+      const eventLike = parsed as Record<string, unknown>;
+      const eventType =
+        typeof eventLike.type === 'string' ? eventLike.type : undefined;
+      if (eventType === undefined) {
+        return;
+      }
       if (state.done) {
         return;
       }
-      if (parsed.type === 'TtsBlock') {
+      if (eventType === 'TtsBlock') {
         onEvent(parsed as AgentStreamEvent);
       } else {
         const event = parsed as TurnEvent;
+        if (event.type === 'Done') {
+          const result = event.data;
+          if (result && typeof result === 'object' && result.presentation) {
+            result.presentation = decodePresentation(result.presentation);
+          }
+        }
         onEvent(event);
         if (event.type === 'Done') {
           state.done = true;
@@ -549,10 +572,23 @@ export class AgentClient {
         return;
       }
       try {
-        const parsed = JSON.parse(payload) as { type: string };
-        if (parsed.type === 'state_changed') {
-          nextDelay = baseDelay;
-          onEvent(parsed as PlannerStateEvent);
+        const parsed: unknown = JSON.parse(payload);
+        if (
+          typeof parsed === 'object' &&
+          parsed !== null &&
+          !Array.isArray(parsed)
+        ) {
+          const obj = parsed as Record<string, unknown>;
+          if (
+            obj.type === 'state_changed' &&
+            typeof obj.changed_at === 'string' &&
+            typeof obj.source === 'string' &&
+            Array.isArray(obj.kinds) &&
+            obj.kinds.every((k) => typeof k === 'string')
+          ) {
+            nextDelay = baseDelay;
+            onEvent(parsed as PlannerStateEvent);
+          }
         }
       } catch {
         // Ignore malformed SSE data.

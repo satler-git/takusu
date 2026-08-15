@@ -1,6 +1,7 @@
 // Notification action button handler (START / SNOOZE / RESCHEDULE / DONE / CANCEL).
 // Used both in the foreground UI and in the background notification task.
 
+import * as Linking from 'expo-linking';
 import * as Notifications from 'expo-notifications';
 import * as Sentry from '@sentry/react-native';
 import type { TakusuClient } from '@/src/api/client';
@@ -42,6 +43,8 @@ export interface ActionHandlerOptions {
   agentClient?: AgentClient;
   inProgressNotifications: boolean;
   haptic?: ActionHandlerHaptic;
+  /** Called for RESCHEDULE when the app is already in the foreground. */
+  onReschedule?: (taskId: string) => void;
 }
 
 function logActionError(
@@ -100,7 +103,17 @@ export async function handleActionButtonResponse(
     if (actionId === ACTION_RESCHEDULE) {
       // 組み直す opens the app so the user can use the compact rescheduling panel.
       haptic.medium();
-      // TODO: route to AgentCompactPanel for this task (#WI-4)
+      if (notificationTaskId) {
+        if (options.onReschedule) {
+          options.onReschedule(notificationTaskId);
+        } else {
+          await Linking.openURL(
+            Linking.createURL('/reschedule', {
+              queryParams: { taskId: notificationTaskId },
+            }),
+          );
+        }
+      }
       return true;
     }
 
@@ -109,6 +122,14 @@ export async function handleActionButtonResponse(
 
     haptic.medium();
     try {
+      if (
+        actionId === ACTION_SNOOZE &&
+        capabilityAction.capability.snooze_minutes != null
+      ) {
+        capabilityAction.capability.snooze_target = new Date(
+          Date.now() + capabilityAction.capability.snooze_minutes * 60_000,
+        ).toISOString();
+      }
       await agentClient.authorizeAction(capabilityAction.capability);
       await dismissTaskNotifications(notificationTaskId);
       await cancelScheduledStartNotifications(notificationTaskId);
@@ -177,9 +198,7 @@ function parseCheckIn(data: unknown): CheckInCard | null {
   const raw = (data as Record<string, unknown>).check_in;
   if (!raw) return null;
   const presentation = decodePresentation(raw);
-  return presentation?.type === 'check_in'
-    ? (presentation as CheckInCard)
-    : null;
+  return presentation.type === 'check_in' ? presentation : null;
 }
 
 function findActionByCategoryId(checkIn: CheckInCard, actionId: string) {
