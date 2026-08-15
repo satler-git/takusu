@@ -9611,6 +9611,8 @@ export interface components {
        * @description Snooze duration in minutes, present for `delay` capabilities.
        */
       snooze_minutes?: number | null;
+      /** @description Target `start_at` for `delay` capabilities, computed client-side or on first tap (WI-4). */
+      snooze_target?: string | null;
       /** @description The task this capability is authorized to act on. */
       task_id: string;
     };
@@ -9666,6 +9668,8 @@ export interface components {
       scheduled_at?: string | null;
       /** Format: int64 */
       snooze_minutes?: number | null;
+      /** @description Target `start_at` for `delay` capabilities (WI-4). */
+      snooze_target?: string | null;
       task_id: string;
     };
     /**

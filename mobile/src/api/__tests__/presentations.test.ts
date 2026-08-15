@@ -31,10 +31,14 @@ describe('presentation fixtures', () => {
     }
 
     const checkIn = decodePresentation(fixtures[3]);
+    expect(checkIn.type).toBe('check_in');
     if (checkIn.type === 'check_in') {
       // A check-in always carries both 行動 and ズラす groups.
       expect(checkIn.act.actions.length).toBeGreaterThan(0);
       expect(checkIn.shift.actions.length).toBeGreaterThan(0);
+      // Immediate actions always carry a server-issued capability.
+      expect(checkIn.act.actions[0]?.capability).toBeDefined();
+      expect(checkIn.shift.actions[0]?.capability).toBeDefined();
     }
 
     const clarification = decodePresentation(fixtures[4]);

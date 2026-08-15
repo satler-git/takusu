@@ -508,13 +508,34 @@ impl super::TakusuApp {
         task_id: &str,
         new_start: takusu_types::Timestamp,
         force: bool,
+        operation_id: Option<&str>,
     ) -> Result<MoveEntryResponse, AppError> {
+        if let Some(op_id) = operation_id {
+            tracing::debug!(operation_id = %op_id, "move_entry idempotency key received");
+        }
         let full_task_id = self
             .storage
             .get_task(task_id)
             .await
             .map(|t| t.id)
             .map_err(storage_to_app)?;
+
+        let request_hash = operation_id.map(|_| {
+            crate::auth::hash_token(&format!("move:{full_task_id}:{new_start}:{force}"))
+        });
+
+        // Check for a previously recorded response for this operation. A reused
+        // idempotency key with a different target returns a conflict instead of
+        // moving the task a second time.
+        if let (Some(op_id), Some(hash)) = (operation_id, request_hash.as_ref())
+            && let Some(response) = self
+                .storage
+                .get_move_idempotency(op_id, hash)
+                .await
+                .map_err(storage_to_app)?
+        {
+            return Ok(response);
+        }
 
         let settings = self.get_settings_or_default().await?;
         let tz = parse_settings_timezone(&settings.tz)?;
@@ -543,57 +564,67 @@ impl super::TakusuApp {
         // nothing to change. This makes repeated `move_entry` calls with the
         // same target idempotent (the agent's quick-action retry path depends
         // on this) and avoids redundant calendar syncs.
-        if new_start_point == old_start {
-            return Ok(MoveEntryResponse {
+        let response = if new_start_point == old_start {
+            MoveEntryResponse {
                 task_id: full_task_id,
                 start_at: entries[idx].start_at,
                 end_at: entries[idx].end_at,
                 warnings: Vec::new(),
-            });
-        }
+            }
+        } else {
+            let old_end = iso_to_point(&entries[idx].end_at.to_string(), &tz)?;
+            let duration = Point::delta(old_end, old_start);
+            let new_end = new_start_point + duration;
+            let new_entry = ScheduleEntry {
+                task_id: full_task_id.clone(),
+                start_at: point_to_iso(new_start_point.0)?,
+                end_at: point_to_iso(new_end.0)?,
+            };
 
-        let old_end = iso_to_point(&entries[idx].end_at.to_string(), &tz)?;
-        let duration = Point::delta(old_end, old_start);
-        let new_end = new_start_point + duration;
-        let new_entry = ScheduleEntry {
-            task_id: full_task_id.clone(),
-            start_at: point_to_iso(new_start_point.0)?,
-            end_at: point_to_iso(new_end.0)?,
+            // move_entry は deadline 超過のみチェックする。
+            // 依存関係違反、睡眠侵害、並列違反はチェックしない。
+            // これは意図的: 手動移動はユーザーの明示的な操作であり、
+            // 自動スケジューラの制約をすべて検証すると自由度が下がるため。
+            // force=true で強制上書きも可能。
+            let mut warnings = Vec::new();
+            let task_deadline = iso_to_point(&task_row.end_at.to_string(), &tz)?;
+            if new_end.0 > task_deadline.0 {
+                warnings.push("deadline_violation".to_string());
+            }
+            if !warnings.is_empty() && !force {
+                return Err(AppError::Conflict(ConflictKind::ScheduleViolation));
+            }
+            entries[idx] = new_entry;
+            self.storage
+                .save_schedule(&SaveScheduleRequest {
+                    entries,
+                    mark_scheduled_task_ids: vec![],
+                    horizon_task_ids: vec![],
+                })
+                .await
+                .map_err(storage_to_app)?;
+
+            if let Err(e) = self.do_sync().await {
+                tracing::warn!("google calendar sync failed: {e}");
+            }
+
+            MoveEntryResponse {
+                task_id: task_row.id,
+                start_at: point_to_iso(new_start_point.0)?,
+                end_at: point_to_iso(new_end.0)?,
+                warnings,
+            }
         };
 
-        // move_entry は deadline 超過のみチェックする。
-        // 依存関係違反、睡眠侵害、並列違反はチェックしない。
-        // これは意図的: 手動移動はユーザーの明示的な操作であり、
-        // 自動スケジューラの制約をすべて検証すると自由度が下がるため。
-        // force=true で強制上書きも可能。
-        let mut warnings = Vec::new();
-        let task_deadline = iso_to_point(&task_row.end_at.to_string(), &tz)?;
-        if new_end.0 > task_deadline.0 {
-            warnings.push("deadline_violation".to_string());
-        }
-        if !warnings.is_empty() && !force {
-            return Err(AppError::Conflict(ConflictKind::ScheduleViolation));
-        }
-        entries[idx] = new_entry;
-        self.storage
-            .save_schedule(&SaveScheduleRequest {
-                entries,
-                mark_scheduled_task_ids: vec![],
-                horizon_task_ids: vec![],
-            })
-            .await
-            .map_err(storage_to_app)?;
-
-        if let Err(e) = self.do_sync().await {
-            tracing::warn!("google calendar sync failed: {e}");
+        // Persist the response for any later retry with the same idempotency key.
+        if let (Some(op_id), Some(hash)) = (operation_id, request_hash.as_ref()) {
+            self.storage
+                .record_move_idempotency(op_id, hash, &response)
+                .await
+                .map_err(storage_to_app)?;
         }
 
-        Ok(MoveEntryResponse {
-            task_id: task_row.id,
-            start_at: point_to_iso(new_start_point.0)?,
-            end_at: point_to_iso(new_end.0)?,
-            warnings,
-        })
+        Ok(response)
     }
 
     pub async fn clear_schedule(&self) -> Result<(), AppError> {

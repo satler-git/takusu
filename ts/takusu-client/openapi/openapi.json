@@ -13916,6 +13916,10 @@
             "type": ["integer", "null"],
             "format": "int64"
           },
+          "snooze_target": {
+            "description": "Target `start_at` for `delay` capabilities, computed client-side or on first tap (WI-4).",
+            "type": ["string", "null"]
+          },
           "task_id": {
             "description": "The task this capability is authorized to act on.",
             "type": "string"
@@ -14070,6 +14074,10 @@
           "snooze_minutes": {
             "type": ["integer", "null"],
             "format": "int64"
+          },
+          "snooze_target": {
+            "description": "Target `start_at` for `delay` capabilities (WI-4).",
+            "type": ["string", "null"]
           },
           "task_id": {
             "type": "string"
@@ -14347,7 +14355,8 @@
         "type": "array",
         "items": {
           "$ref": "#/components/schemas/Action"
-        }
+        },
+        "minItems": 1
       },
       "OkResponse": {
         "description": "Generic `{ \"ok\": true }` body used by several agent endpoints.",

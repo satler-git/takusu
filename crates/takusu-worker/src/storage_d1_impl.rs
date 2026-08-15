@@ -7,12 +7,12 @@ use takusu_contracts::{
     AttachWorkSession, CommentRow, ConvertWorkSession, CreateHabit, CreateHabitScheduledSpan,
     CreateMemory, CreateSkill, CreateTask, GoogleCalEventRow, GoogleCalSettingsRow, HabitRow,
     HabitScheduledSpanRow, HabitStepEstimateInput, HabitStepInput, HabitStepRow,
-    MemoryInjectionQuery, MemoryInjectionResult, MemoryQuery, MemoryRow, ProgressEventRow,
-    RecordWorkSessionProgress, SaveScheduleRequest, ScheduleRow, SettingsRow, SimilarTaskQuery,
-    SimilarTaskRow, SkillRow, SplitResult, SplitTask, StartWorkSession, Storage, StorageError,
-    TaskProgress, TaskQuery, TaskRow, TokenCreateResponse, TokenRow, UpdateGoogleCalSettings,
-    UpdateHabit, UpdateMemory, UpdateSettings, UpdateSkill, UpdateTask, WorkSessionProgressResult,
-    WorkSessionRow,
+    MemoryInjectionQuery, MemoryInjectionResult, MemoryQuery, MemoryRow, MoveEntryResponse,
+    ProgressEventRow, RecordWorkSessionProgress, SaveScheduleRequest, ScheduleRow, SettingsRow,
+    SimilarTaskQuery, SimilarTaskRow, SkillRow, SplitResult, SplitTask, StartWorkSession, Storage,
+    StorageError, TaskProgress, TaskQuery, TaskRow, TokenCreateResponse, TokenRow,
+    UpdateGoogleCalSettings, UpdateHabit, UpdateMemory, UpdateSettings, UpdateSkill, UpdateTask,
+    WorkSessionProgressResult, WorkSessionRow,
 };
 use takusu_types::jwt::{DEFAULT_TOKEN_TTL_SECONDS, generate_token_jwt};
 use takusu_types::{
@@ -2965,6 +2965,23 @@ impl Storage for D1Storage {
         let stmt = self.db.prepare("DELETE FROM google_cal_events");
         stmt.run().await.map_err(d1_err)?;
         Ok(())
+    }
+
+    async fn get_move_idempotency(
+        &self,
+        operation_id: &str,
+        request_hash: &str,
+    ) -> StorageResult<Option<MoveEntryResponse>> {
+        check_progress_idempotency::<MoveEntryResponse>(&self.db, operation_id, request_hash).await
+    }
+
+    async fn record_move_idempotency(
+        &self,
+        operation_id: &str,
+        request_hash: &str,
+        response: &MoveEntryResponse,
+    ) -> StorageResult<()> {
+        record_progress_operation(&self.db, operation_id, request_hash, response).await
     }
 
     // ── Health ──────────────────────────────────────────────────────────

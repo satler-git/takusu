@@ -76,9 +76,14 @@ impl<T: schemars::JsonSchema> schemars::JsonSchema for NonEmptyVec<T> {
     }
 
     fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        // The non-empty invariant is enforced by construction and
-        // deserialization; here we reuse the standard array schema for a `Vec`.
-        generator.subschema_for::<Vec<T>>()
+        // The non-empty invariant is part of the JSON Schema contract.
+        let value = serde_json::json!({
+            "type": "array",
+            "minItems": 1,
+            "items": generator.subschema_for::<T>().to_value(),
+        });
+        schemars::Schema::try_from(value)
+            .expect("NonEmptyVec schema is a valid JSON Schema")
     }
 }
 

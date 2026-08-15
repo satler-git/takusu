@@ -301,6 +301,7 @@ async fn mint_capability_schema(
         one_shot: true,
         task_id: "stub".to_string(),
         snooze_minutes: None,
+        snooze_target: None,
         quantity_done: None,
         note: None,
         scheduled_at: None,

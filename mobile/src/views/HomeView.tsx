@@ -560,9 +560,13 @@ export function HomeView() {
               endAt,
               abandonability: t.abandonability,
               fixed: t.fixed,
-              // WI-3: authority/coverage/settlement/capabilities are
-              // placeholders until WI-10/WI-18/WI-4.
-              authority: 'candidate' as const,
+              // WI-2: authority is now derived from the task state.
+              // coverage/settlement/capabilities remain placeholder for
+              // WI-10/WI-18/WI-4.
+              authority:
+                t.status === 'in_progress'
+                  ? ('today_covered' as const)
+                  : ('candidate' as const),
             };
             if (t.status === 'in_progress' && doing == null) {
               doing = task;
@@ -578,12 +582,15 @@ export function HomeView() {
           return ta - tb;
         });
 
+        const coverage =
+          doing?.authority === 'today_covered' ? 'today_covered' : 'bootstrap';
+
         const scheme = Constants.expoConfig?.scheme;
         TakusuWidgetModule.saveSnapshot({
           doing,
           upcoming: scheduled,
           unscheduledCount,
-          coverage: 'bootstrap',
+          coverage,
           settlement: null,
           capabilities: [],
           serverTz,
@@ -956,9 +963,10 @@ export function HomeView() {
       start_at: startAt,
       end_at: endAt,
       work_state: workState,
-      // WI-10: derive from actual coverage state; until then, default to the
-      // conservative "candidate" side of the coverage invariant.
-      authority: 'candidate',
+      // WI-2: authority is derived from the actual task state. Coverage is not
+      // tracked yet, so use "today_covered" only while in progress.
+      authority:
+        currentTask.status === 'in_progress' ? 'today_covered' : 'candidate',
     };
   }, [currentTask, currentTaskSchedule, habitDisplayIdMap]);
 

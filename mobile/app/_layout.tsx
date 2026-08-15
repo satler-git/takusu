@@ -242,6 +242,12 @@ function ThemedApp() {
         agentClient,
         inProgressNotifications: notifications.inProgress,
         haptic,
+        onReschedule: (taskId) => {
+          router.push({
+            pathname: '/agent',
+            params: { rescheduleTaskId: taskId },
+          });
+        },
       });
       if (handled) {
         markProcessed();

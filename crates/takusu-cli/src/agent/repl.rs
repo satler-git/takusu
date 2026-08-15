@@ -1045,6 +1045,12 @@ fn handle_turn_event(ev: ReplEvent, state: &mut ReplState) {
             } else if !result.text.is_empty() {
                 state.messages.push(Message::Assistant(result.text));
             }
+            if let Some(ref presentation) = result.presentation {
+                state.messages.push(Message::Info(format!(
+                    "[presentation] {}",
+                    presentation.voice_template()
+                )));
+            }
             if let Some(approval) = result.approval_request {
                 state.mode = ReplMode::Approval(approval);
             } else {

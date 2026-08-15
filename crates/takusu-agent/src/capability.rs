@@ -108,6 +108,10 @@ pub struct ActionCapability {
     /// Snooze duration in minutes, present for `delay` capabilities.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub snooze_minutes: Option<i64>,
+    /// Target `start_at` for `delay` capabilities, computed client-side or on first tap (WI-4).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<String>")]
+    pub snooze_target: Option<Timestamp>,
     /// Quantity completed, present for `progress` capabilities.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quantity_done: Option<i64>,
@@ -140,6 +144,10 @@ pub struct CapabilityRequest {
     pub device_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub snooze_minutes: Option<i64>,
+    /// Target `start_at` for `delay` capabilities (WI-4).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<String>")]
+    pub snooze_target: Option<Timestamp>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quantity_done: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -313,6 +321,7 @@ impl CapabilityStore {
                 action: capability.action.clone(),
                 device_id: capability.device_id.clone(),
                 snooze_minutes: capability.snooze_minutes,
+                snooze_target: capability.snooze_target,
                 quantity_done: capability.quantity_done,
                 note: capability.note.clone(),
                 scheduled_at: capability.scheduled_at,
@@ -370,6 +379,7 @@ pub fn mint_capability(request: CapabilityRequest, input_path: InputPath) -> Act
         one_shot: true,
         task_id: request.task_id.clone(),
         snooze_minutes: request.snooze_minutes,
+        snooze_target: request.snooze_target,
         quantity_done: request.quantity_done,
         note: request.note.clone(),
         scheduled_at: request.scheduled_at,
@@ -380,6 +390,18 @@ pub fn mint_capability(request: CapabilityRequest, input_path: InputPath) -> Act
 /// Consume a capability and execute its action. Parallel calls on the same
 /// capability serialize on the per-capability mutex, so the first successful
 /// result is cached and returned on retry.
+/// Return a client capability that is safe to compare against the stored record.
+/// If the client did not include a `snooze_target` but the record already has
+/// one, inherit the record's value so a retry (or a server restart) is not
+/// rejected as a mismatch.
+fn normalized_capability(client: &ActionCapability, stored: &ActionCapability) -> ActionCapability {
+    let mut c = client.clone();
+    if c.snooze_target.is_none() {
+        c.snooze_target = stored.snooze_target;
+    }
+    c
+}
+
 pub async fn authorize_action(
     client: &Client,
     record: Option<Arc<tokio::sync::Mutex<CapabilityRecord>>>,
@@ -391,8 +413,18 @@ pub async fn authorize_action(
         None
     };
 
+    let action = match guard.as_ref().and_then(|g| g.action) {
+        Some(action) => action,
+        None => capability
+            .action
+            .parse()
+            .map_err(|_| CapabilityError::InvalidAction)?,
+    };
+
+    // Replay a previously consumed result. Allow the client to omit the
+    // server-computed `snooze_target` on retry.
     if let Some(ref g) = guard && g.consumed {
-        if capability != &g.capability {
+        if normalized_capability(capability, &g.capability) != g.capability {
             return Err(CapabilityError::Mismatch);
         }
         return g
@@ -402,11 +434,26 @@ pub async fn authorize_action(
             .ok_or(CapabilityError::Consumed);
     }
 
+    // Reject expired capabilities before mutating any in-memory record state.
     if capability.expires_at < JiffTimestamp::now() {
         return Err(CapabilityError::Expired);
     }
 
-    if let Some(ref g) = guard && capability != &g.capability {
+    // The client may add a `snooze_target` to a delay capability after minting
+    // (it is computed from the local clock at tap time). Accept this addition
+    // and keep the record's authoritative copy in sync.
+    if let Some(ref mut g) = guard
+        && matches!(action, QuickAction::Delay)
+        && g.capability.snooze_target.is_none()
+        && capability.snooze_target.is_some()
+    {
+        g.capability.snooze_target = capability.snooze_target;
+        g.snooze_target = capability.snooze_target;
+    }
+
+    if let Some(ref g) = guard
+        && normalized_capability(capability, &g.capability) != g.capability
+    {
         return Err(CapabilityError::Mismatch);
     }
 
@@ -425,14 +472,6 @@ pub async fn authorize_action(
         return Err(CapabilityError::Mismatch);
     }
 
-    let action = match guard.as_ref().and_then(|g| g.action) {
-        Some(action) => action,
-        None => capability
-            .action
-            .parse()
-            .map_err(|_| CapabilityError::InvalidAction)?,
-    };
-
     let task = client.get_task(&capability.task_id).await?;
     let operation_id = capability.id.as_str();
 
@@ -449,6 +488,7 @@ pub async fn authorize_action(
                 action: capability.action.clone(),
                 device_id: capability.device_id.clone(),
                 snooze_minutes: capability.snooze_minutes,
+                snooze_target: capability.snooze_target,
                 quantity_done: capability.quantity_done,
                 note: capability.note.clone(),
                 scheduled_at: capability.scheduled_at,
@@ -580,8 +620,11 @@ async fn execute_delay(
     // The target is computed from the time the user taps the action, not from
     // the original schedule start, so "10分後" consistently means "10 minutes
     // from now". The first computed target is cached in the record so retries
-    // are idempotent within the same server process.
-    let target = if let Some(target) = guard.snooze_target {
+    // are idempotent within the same server process. If the client already
+    // provided a target (e.g. across a server restart), use it as-is.
+    let target = if let Some(target) = guard.capability.snooze_target {
+        target
+    } else if let Some(target) = guard.snooze_target {
         target
     } else {
         let now = JiffTimestamp::now();
@@ -590,6 +633,7 @@ async fn execute_delay(
                 .unwrap_or(now),
         );
         guard.snooze_target = Some(target);
+        guard.capability.snooze_target = Some(target);
         target
     };
 
@@ -597,7 +641,10 @@ async fn execute_delay(
         start_at: target,
         force: false,
     };
-    client.move_entry(&task.id, &body).await?;
+    let operation_id = guard.capability.id.as_str();
+    client
+        .move_entry(&task.id, &body, Some(operation_id))
+        .await?;
     Ok(Presentation::WorkTransition(WorkTransition {
         kind: WorkTransitionKind::Delay,
         reference: format!("#{}", task.display_id),

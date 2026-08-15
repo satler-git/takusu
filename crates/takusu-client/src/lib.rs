@@ -716,16 +716,19 @@ impl Client {
         &self,
         task_id: &str,
         body: &MoveEntry,
+        operation_id: Option<&str>,
     ) -> Result<MoveEntryResponse, ClientError> {
-        let resp = self
+        let mut req = self
             .request(
                 reqwest::Method::PATCH,
                 &format!("/api/schedule/entries/{}", url_encode(task_id)),
             )
             .await
-            .json(body)
-            .send()
-            .await?;
+            .json(body);
+        if let Some(op_id) = operation_id {
+            req = req.header("Idempotency-Key", op_id);
+        }
+        let resp = req.send().await?;
         let resp = Self::handle_response(resp).await?;
         Ok(resp.json().await?)
     }
