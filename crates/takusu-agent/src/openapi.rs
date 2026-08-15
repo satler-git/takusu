@@ -17,7 +17,7 @@ use aide::openapi::{
 };
 use aide::operation::{OperationInput, OperationOutput, set_body};
 use axum::body::Body;
-use axum::extract::{FromRequest, Json, Path, Request};
+use axum::extract::{FromRequest, Json, Path, Query, Request};
 use axum::http::header::CONTENT_TYPE;
 use axum::response::{IntoResponse, NoContent, Response};
 use indexmap::IndexMap;
@@ -27,6 +27,7 @@ use serde::{Deserialize, Serialize};
 use crate::Presentation;
 use crate::ToolStatsSnapshot;
 use crate::capability::{ActionCapability, CapabilityRequest};
+use crate::notification::{StartTimeNotificationList, StartTimeNotificationRequest};
 use crate::transport::{
     API_VERSION, ApprovalDecisionRequest, ApprovalResultDto, CapabilitiesResponse,
     CreateSessionRequest, CreateSessionResponse, EditTurnRequest, HealthResponse, PlannerEvent,
@@ -298,6 +299,12 @@ async fn mint_capability_schema(
         input_path: crate::capability::InputPath::ScreenCapability,
         expires_at: jiff::Timestamp::now(),
         one_shot: true,
+        task_id: "stub".to_string(),
+        snooze_minutes: None,
+        quantity_done: None,
+        note: None,
+        scheduled_at: None,
+        request: None,
     })
 }
 
@@ -311,6 +318,15 @@ async fn authorize_action_schema(
     })
 }
 
+/// Schema-only stub for `GET /agent/v1/notifications/start-time`.
+async fn start_time_notifications_schema(
+    Query(_request): Query<StartTimeNotificationRequest>,
+) -> Json<Versioned<StartTimeNotificationList>> {
+    versioned(StartTimeNotificationList {
+        notifications: vec![],
+    })
+}
+
 fn build_api_router(open_api: &mut OpenApi) -> axum::Router {
     ApiRouter::new()
         .api_route("/agent/v1/health", api::get(health))
@@ -318,6 +334,10 @@ fn build_api_router(open_api: &mut OpenApi) -> axum::Router {
         .api_route("/agent/v1/capabilities", api::get(capabilities))
         .api_route("/agent/v1/capabilities", api::post(mint_capability_schema))
         .api_route("/agent/v1/actions", api::post(authorize_action_schema))
+        .api_route(
+            "/agent/v1/notifications/start-time",
+            api::get(start_time_notifications_schema),
+        )
         .api_route("/agent/v1/settings", api::put(update_settings))
         .api_route("/agent/v1/sessions", api::post(create_session))
         .api_route("/agent/v1/sessions/resume", api::post(resume_session))

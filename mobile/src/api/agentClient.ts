@@ -9,6 +9,7 @@ import type {
   PlannerStateEvent,
   Presentation,
   ProposalDecision,
+  StartTimeNotificationList,
   TurnEvent,
   UserInputAnswer,
 } from './agentTypes';
@@ -493,6 +494,27 @@ export class AgentClient {
   async quickAction(request: CapabilityRequest): Promise<Presentation> {
     const capability = await this.mintCapability(request);
     return this.authorizeAction(capability);
+  }
+
+  /// Fetch the next start-time notifications with embedded action capabilities (WI-4).
+  async getStartTimeNotifications(
+    limit = 10,
+    deviceId = 'mobile',
+    tz?: string,
+  ): Promise<StartTimeNotificationList['notifications']> {
+    let url = `/api/agent/v1/notifications/start-time?limit=${limit}&device_id=${encodeURIComponent(deviceId)}`;
+    if (tz) {
+      url += `&tz=${encodeURIComponent(tz)}`;
+    }
+    const response = await this.request<
+      StartTimeNotificationList & {
+        version?: number;
+      }
+    >('GET', url);
+    return response.notifications.map((n) => ({
+      ...n,
+      check_in: decodePresentation(n.check_in),
+    }));
   }
 
   /// Subscribe to the `/events` SSE stream and call `onEvent` for every

@@ -7338,6 +7338,61 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/agent/v1/notifications/start-time': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: {
+          /** @description Device identifier bound into the issued capabilities. */
+          device_id?: string;
+          /** @description Maximum number of upcoming start-time notifications to return. */
+          limit?: number;
+          /**
+           * @description IANA or fixed-offset time zone used to format wall-clock times in
+           *     notification bodies. Defaults to UTC.
+           */
+          tz?: string;
+        };
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              version: number;
+            } & components['schemas']['StartTimeNotificationList'];
+          };
+        };
+        /** @description Default error body returned by agent endpoints. */
+        default: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['ErrorResponse'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/agent/v1/settings': {
     parameters: {
       query?: never;
@@ -9508,6 +9563,12 @@ export interface components {
     };
     /** @description A single quick action on a check-in or card. */
     Action: {
+      /**
+       * @description The server-issued one-shot capability for this action, if it is an
+       *     immediate capability-authorized action. `Panel` and `Approval` actions
+       *     do not carry a capability.
+       */
+      capability?: components['schemas']['ActionCapability'] | null;
       id: string;
       kind: components['schemas']['ActionKind'];
       label: string;
@@ -9520,7 +9581,38 @@ export interface components {
       expires_at: string;
       id: string;
       input_path: components['schemas']['InputPath'];
+      /** @description Note to attach with progress, present for `progress` capabilities. */
+      note?: string | null;
       one_shot: boolean;
+      /**
+       * Format: int64
+       * @description Quantity completed, present for `progress` capabilities.
+       */
+      quantity_done?: number | null;
+      /**
+       * @description The original request the capability was minted from.
+       *
+       *     Included so a client can return the capability unchanged across server
+       *     restarts, when the in-memory `CapabilityStore` is empty. The server
+       *     ignores this field during authorization; all authoritative parameters
+       *     live as top-level fields on the capability itself.
+       */
+      request?: components['schemas']['CapabilityRequest'] | null;
+      /**
+       * @description The scheduled delivery time for notification capabilities (WI-4).
+       *
+       *     When present, the server derives a longer expiry that covers the
+       *     scheduled time plus a short grace period, so the action remains usable
+       *     when the notification fires while the app is not in the foreground.
+       */
+      scheduled_at?: string | null;
+      /**
+       * Format: int64
+       * @description Snooze duration in minutes, present for `delay` capabilities.
+       */
+      snooze_minutes?: number | null;
+      /** @description The task this capability is authorized to act on. */
+      task_id: string;
     };
     /** @description One labelled group of actions. Never empty. */
     ActionGroup: {
@@ -9564,6 +9656,14 @@ export interface components {
       note?: string | null;
       /** Format: int64 */
       quantity_done?: number | null;
+      /**
+       * @description The scheduled delivery time for notification capabilities (WI-4).
+       *
+       *     When present, the server derives a longer expiry that covers the
+       *     scheduled time plus a short grace period, so the action remains usable
+       *     when the notification fires while the app is not in the foreground.
+       */
+      scheduled_at?: string | null;
       /** Format: int64 */
       snooze_minutes?: number | null;
       task_id: string;
@@ -9897,6 +9997,47 @@ export interface components {
     SseEvent:
       | components['schemas']['TurnEvent']
       | components['schemas']['TtsBlockEvent'];
+    /** @description A local notification to post at a task's start time. */
+    StartTimeNotification: {
+      /** @description Wall-clock body for the notification. */
+      body: string;
+      /** @description The `CheckInCard` presentation rendered for this task. */
+      check_in: components['schemas']['Presentation'];
+      /** @description When the notification should be delivered. */
+      scheduled_at: string;
+      task_id: string;
+      /** @description Wall-clock title for the notification. */
+      title: string;
+    };
+    /**
+     * @description Response body for the start-time notification endpoint.
+     *
+     *     `Versioned<Vec<_>>` cannot be flattened by serde, so the list is wrapped in
+     *     a struct.
+     */
+    StartTimeNotificationList: {
+      notifications: components['schemas']['StartTimeNotification'][];
+    };
+    /** @description Request body for the start-time notification endpoint. */
+    StartTimeNotificationRequest: {
+      /**
+       * @description Device identifier bound into the issued capabilities.
+       * @default mobile
+       */
+      device_id: string;
+      /**
+       * Format: uint
+       * @description Maximum number of upcoming start-time notifications to return.
+       * @default 10
+       */
+      limit: number;
+      /**
+       * @description IANA or fixed-offset time zone used to format wall-clock times in
+       *     notification bodies. Defaults to UTC.
+       * @default null
+       */
+      tz: string | null;
+    };
     /**
      * @description Target kind for a proposed or applied change.
      * @enum {string}
