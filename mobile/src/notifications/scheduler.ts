@@ -8,6 +8,8 @@
 import * as Notifications from 'expo-notifications';
 import type { TaskRow, ScheduleEntry } from '@/src/api/types';
 import { parseSchedule } from '@/src/api/types';
+import type { AgentClient } from '@/src/api/agentClient';
+import type { StartTimeNotification } from '@/src/api/agentTypes';
 import { type NotificationSettings, minutesToTime } from './settings';
 import { CHANNELS } from './channels';
 import { CATEGORY_TASK_IN_PROGRESS, CATEGORY_TASK_START } from './categories';
@@ -24,6 +26,8 @@ export interface ScheduleData {
   schedule: ScheduleEntry[];
   settings: NotificationSettings;
   tz?: string;
+  /** Agent client for start-time check-in notifications (WI-4). */
+  agentClient?: AgentClient;
 }
 
 const wallClockFormatterCache = new Map<string, Intl.DateTimeFormat | null>();
@@ -198,6 +202,32 @@ async function scheduleNextOccurrence(
 }
 
 // Schedule a one-time notification at a specific date
+async function scheduleCheckInNotification(
+  date: Date,
+  notification: StartTimeNotification,
+  title: string,
+  color: string,
+): Promise<void> {
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title,
+      body: notification.body,
+      data: {
+        taskId: notification.task_id,
+        scheduledAt: notification.scheduled_at,
+        check_in: notification.check_in,
+      },
+      color,
+      categoryIdentifier: CATEGORY_TASK_START,
+    },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.DATE,
+      date,
+      channelId: CHANNELS.taskReminders,
+    },
+  });
+}
+
 async function scheduleAt(
   channelId: string,
   date: Date,
@@ -278,40 +308,68 @@ export async function rescheduleNotifications(
     .sort((a, b) => a.entry.start_at.localeCompare(b.entry.start_at))
     .slice(0, MAX_SCHEDULED_PER_TYPE);
 
-  for (const { task, entry, startDate } of upcomingTasks) {
-    const startTime = formatTimeInZone(entry.start_at, tz);
+  if (
+    data.agentClient &&
+    (settings.preStartReminder || settings.startOverdue)
+  ) {
+    // WI-4: use agent-issued start-time check-in cards with capabilities.
+    const checkIns = await data.agentClient.getStartTimeNotifications(
+      MAX_SCHEDULED_PER_TYPE,
+      'mobile',
+      data.tz,
+    );
+    for (const n of checkIns) {
+      const startDate = new Date(n.scheduled_at);
+      if (settings.preStartReminder) {
+        const reminderDate = new Date(
+          startDate.getTime() - settings.preStartReminderMinutes * 60 * 1000,
+        );
+        if (isFuture(reminderDate)) {
+          await scheduleCheckInNotification(
+            reminderDate,
+            n,
+            'タスク開始直前',
+            color,
+          );
+        }
+      }
+      if (settings.startOverdue && isFuture(startDate)) {
+        await scheduleCheckInNotification(startDate, n, n.title, color);
+      }
+    }
+  } else {
+    // Fallback (legacy): schedule plain start-time reminders without capabilities.
+    for (const { task, entry, startDate } of upcomingTasks) {
+      const startTime = formatTimeInZone(entry.start_at, tz);
 
-    // Pre-start reminder (#256: attach CATEGORY_TASK_START so the user can
-    // start the task early from the reminder notification, not just from the
-    // start-overdue one)
-    if (settings.preStartReminder) {
-      const reminderDate = new Date(
-        startDate.getTime() - settings.preStartReminderMinutes * 60 * 1000,
-      );
-      if (isFuture(reminderDate)) {
+      if (settings.preStartReminder) {
+        const reminderDate = new Date(
+          startDate.getTime() - settings.preStartReminderMinutes * 60 * 1000,
+        );
+        if (isFuture(reminderDate)) {
+          await scheduleAt(
+            CHANNELS.taskReminders,
+            reminderDate,
+            'タスク開始直前',
+            `「${task.title}」が${settings.preStartReminderMinutes}分後の${startTime}に開始します`,
+            { url: `/task/${task.id}`, taskId: task.id },
+            color,
+            CATEGORY_TASK_START,
+          );
+        }
+      }
+
+      if (settings.startOverdue) {
         await scheduleAt(
           CHANNELS.taskReminders,
-          reminderDate,
-          'タスク開始直前',
-          `「${task.title}」が${settings.preStartReminderMinutes}分後の${startTime}に開始します`,
+          startDate,
+          'タスク開始時間',
+          `「${task.title}」の開始時間です (${startTime})`,
           { url: `/task/${task.id}`, taskId: task.id },
           color,
           CATEGORY_TASK_START,
         );
       }
-    }
-
-    // Start overdue
-    if (settings.startOverdue) {
-      await scheduleAt(
-        CHANNELS.taskReminders,
-        startDate,
-        'タスク開始時間',
-        `「${task.title}」の開始時間です (${startTime})`,
-        { url: `/task/${task.id}`, taskId: task.id },
-        color,
-        CATEGORY_TASK_START,
-      );
     }
   }
 
@@ -474,7 +532,8 @@ export async function rescheduleFromRaw(
   scheduleJson: string | null,
   settings: NotificationSettings,
   tz?: string,
+  agentClient?: AgentClient,
 ): Promise<void> {
   const schedule = scheduleJson ? parseSchedule(scheduleJson) : [];
-  await rescheduleNotifications({ tasks, schedule, settings, tz });
+  await rescheduleNotifications({ tasks, schedule, settings, tz, agentClient });
 }

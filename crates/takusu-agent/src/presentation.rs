@@ -285,6 +285,11 @@ pub struct Action {
     pub id: String,
     pub label: String,
     pub kind: ActionKind,
+    /// The server-issued one-shot capability for this action, if it is an
+    /// immediate capability-authorized action. `Panel` and `Approval` actions
+    /// do not carry a capability.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capability: Option<crate::capability::ActionCapability>,
 }
 
 /// One labelled group of actions. Never empty.
@@ -656,6 +661,7 @@ mod tests {
             id: format!("id-{label}").to_string(),
             label: label.to_string(),
             kind: ActionKind::Immediate,
+            capability: None,
         }
     }
 

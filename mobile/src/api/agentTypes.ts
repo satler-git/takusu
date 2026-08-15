@@ -122,6 +122,8 @@ export interface Action {
   id: string;
   label: string;
   kind: ActionKind;
+  /** The server-issued one-shot capability, present for immediate notification actions. */
+  capability?: ActionCapability;
 }
 
 export interface ActionGroup {
@@ -288,6 +290,8 @@ export interface ActionCapability {
   input_path: InputPath;
   expires_at: string;
   one_shot: boolean;
+  /** The original request, included for offline/notification authorization. */
+  request?: CapabilityRequest;
 }
 
 export interface CapabilityRequest {
@@ -297,4 +301,25 @@ export interface CapabilityRequest {
   snooze_minutes?: number;
   quantity_done?: number;
   note?: string;
+  /** ISO 8601 timestamp for which the notification capability should remain valid. */
+  scheduled_at?: string;
+  /** ISO 8601 original start time captured when a snooze capability is minted. */
+  snooze_original_start?: string;
+  /** ISO 8601 pre-computed snooze target (original + snooze_minutes). */
+  snooze_target?: string;
+}
+
+/** A start-time notification returned by the agent, ready to be scheduled locally. */
+export interface StartTimeNotification {
+  task_id: string;
+  title: string;
+  body: string;
+  /** ISO 8601 delivery time. */
+  scheduled_at: string;
+  check_in: Presentation;
+}
+
+/** Response body for the start-time notification endpoint (Versioned flattens it). */
+export interface StartTimeNotificationList {
+  notifications: StartTimeNotification[];
 }

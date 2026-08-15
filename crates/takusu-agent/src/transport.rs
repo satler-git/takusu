@@ -27,6 +27,7 @@ use crate::capability::{
     ActionCapability, CapabilityRequest, CapabilityStore, InputPath, QuickAction,
 };
 use crate::llm::{LlmClient, build_llm_client};
+use crate::notification::StartTimeNotificationRequest;
 use crate::{
     AgentConfig, AgentError, AgentSession, ApprovalRequest, ApprovalResult, InvalidArgsError,
     ToolError, TurnEvent, TurnResult, UserInputAnswer, UserInputProvider, UserInputQuestion,
@@ -657,6 +658,7 @@ pub fn router(state: Arc<AgentApiState>) -> Router {
     Router::new()
         .route("/health", get(health))
         .route("/events", get(planner_events))
+        .route("/notifications/start-time", get(start_time_notifications))
         .route("/capabilities", get(capabilities))
         .route("/capabilities", post(mint_capability))
         .route("/actions", post(authorize_action))
@@ -774,19 +776,7 @@ async fn authorize_action(
     if body.version != API_VERSION {
         return StatusCode::BAD_REQUEST.into_response();
     }
-    let record = match state.capability_store.get(&body.value.id).await {
-        Some(record) => record,
-        None => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({
-                    "version": API_VERSION,
-                    "error": "capability not found",
-                })),
-            )
-                .into_response();
-        }
-    };
+    let record = state.capability_store.get_or_insert(&body.value).await;
     match crate::capability::authorize_action(&state.planner_client, record, &body.value).await {
         Ok((presentation, action)) => {
             let kinds = AgentApiState::state_changed_kinds_for_action(action);
@@ -798,6 +788,29 @@ async fn authorize_action(
             .into_response()
         }
         Err(e) => agent_error(e.into()),
+    }
+}
+
+async fn start_time_notifications(
+    State(state): State<Arc<AgentApiState>>,
+    headers: HeaderMap,
+    axum::extract::Query(request): axum::extract::Query<StartTimeNotificationRequest>,
+) -> Response {
+    if let Err(status) = auth_token(&state, &headers).await {
+        return status.into_response();
+    }
+    match crate::notification::evaluate_start_time_notifications(
+        &state.planner_client,
+        &request,
+    )
+    .await
+    {
+        Ok(list) => Json(Versioned {
+            version: API_VERSION,
+            value: list,
+        })
+        .into_response(),
+        Err(e) => agent_error(e),
     }
 }
 

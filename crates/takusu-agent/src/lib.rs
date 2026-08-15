@@ -19,6 +19,8 @@ pub use transport::ResumeSessionRequest as SessionSnapshot;
 pub mod tts_queue;
 pub mod user_input;
 
+pub(crate) mod notification;
+
 pub(crate) mod approval;
 pub(crate) mod habit_steps;
 pub(crate) mod history;
