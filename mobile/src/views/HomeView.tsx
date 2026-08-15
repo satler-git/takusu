@@ -664,8 +664,9 @@ export function HomeView() {
       schedule.length > 0 ? JSON.stringify(schedule) : null,
       notifications,
       serverTz,
+      agentClient,
     ).catch((e) => logError('通知の再スケジュール', e));
-  }, [tasks, schedule, notifications, serverTz]);
+  }, [tasks, schedule, notifications, serverTz, agentClient]);
 
   const scheduleMap = useMemo(() => {
     const m = new Map<string, ScheduleEntry>();

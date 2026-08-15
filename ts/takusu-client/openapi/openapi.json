@@ -9611,6 +9611,84 @@
         }
       }
     },
+    "/agent/v1/notifications/start-time": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "device_id",
+            "description": "Device identifier bound into the issued capabilities.",
+            "schema": {
+              "description": "Device identifier bound into the issued capabilities.",
+              "type": "string",
+              "default": "mobile"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "description": "Maximum number of upcoming start-time notifications to return.",
+            "schema": {
+              "description": "Maximum number of upcoming start-time notifications to return.",
+              "type": "integer",
+              "format": "uint",
+              "default": 10,
+              "minimum": 0
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "tz",
+            "description": "IANA or fixed-offset time zone used to format wall-clock times in\nnotification bodies. Defaults to UTC.",
+            "schema": {
+              "description": "IANA or fixed-offset time zone used to format wall-clock times in\nnotification bodies. Defaults to UTC.",
+              "type": "string",
+              "default": null
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "version": {
+                          "type": "integer",
+                          "maximum": 255,
+                          "minimum": 0
+                        }
+                      },
+                      "required": ["version"]
+                    },
+                    {
+                      "$ref": "#/components/schemas/StartTimeNotificationList"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Default error body returned by agent endpoints.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/agent/v1/settings": {
       "put": {
         "requestBody": {
@@ -13761,6 +13839,17 @@
         "description": "A single quick action on a check-in or card.",
         "type": "object",
         "properties": {
+          "capability": {
+            "description": "The server-issued one-shot capability for this action, if it is an\nimmediate capability-authorized action. `Panel` and `Approval` actions\ndo not carry a capability.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActionCapability"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "id": {
             "type": "string"
           },
@@ -13795,8 +13884,41 @@
           "input_path": {
             "$ref": "#/components/schemas/InputPath"
           },
+          "note": {
+            "description": "Note to attach with progress, present for `progress` capabilities.",
+            "type": ["string", "null"]
+          },
           "one_shot": {
             "type": "boolean"
+          },
+          "quantity_done": {
+            "description": "Quantity completed, present for `progress` capabilities.",
+            "type": ["integer", "null"],
+            "format": "int64"
+          },
+          "request": {
+            "description": "The original request the capability was minted from.\n\nIncluded so a client can return the capability unchanged across server\nrestarts, when the in-memory `CapabilityStore` is empty. The server\nignores this field during authorization; all authoritative parameters\nlive as top-level fields on the capability itself.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CapabilityRequest"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "scheduled_at": {
+            "description": "The scheduled delivery time for notification capabilities (WI-4).\n\nWhen present, the server derives a longer expiry that covers the\nscheduled time plus a short grace period, so the action remains usable\nwhen the notification fires while the app is not in the foreground.",
+            "type": ["string", "null"]
+          },
+          "snooze_minutes": {
+            "description": "Snooze duration in minutes, present for `delay` capabilities.",
+            "type": ["integer", "null"],
+            "format": "int64"
+          },
+          "task_id": {
+            "description": "The task this capability is authorized to act on.",
+            "type": "string"
           }
         },
         "required": [
@@ -13805,7 +13927,8 @@
           "action",
           "input_path",
           "expires_at",
-          "one_shot"
+          "one_shot",
+          "task_id"
         ]
       },
       "ActionGroup": {
@@ -13939,6 +14062,10 @@
           "quantity_done": {
             "type": ["integer", "null"],
             "format": "int64"
+          },
+          "scheduled_at": {
+            "description": "The scheduled delivery time for notification capabilities (WI-4).\n\nWhen present, the server derives a longer expiry that covers the\nscheduled time plus a short grace period, so the action remains usable\nwhen the notification fires while the app is not in the foreground.",
+            "type": ["string", "null"]
           },
           "snooze_minutes": {
             "type": ["integer", "null"],
@@ -14678,6 +14805,72 @@
             "$ref": "#/components/schemas/TtsBlockEvent"
           }
         ]
+      },
+      "StartTimeNotification": {
+        "description": "A local notification to post at a task's start time.",
+        "type": "object",
+        "properties": {
+          "body": {
+            "description": "Wall-clock body for the notification.",
+            "type": "string"
+          },
+          "check_in": {
+            "description": "The `CheckInCard` presentation rendered for this task.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Presentation"
+              }
+            ]
+          },
+          "scheduled_at": {
+            "description": "When the notification should be delivered.",
+            "type": "string"
+          },
+          "task_id": {
+            "type": "string"
+          },
+          "title": {
+            "description": "Wall-clock title for the notification.",
+            "type": "string"
+          }
+        },
+        "required": ["task_id", "title", "body", "scheduled_at", "check_in"]
+      },
+      "StartTimeNotificationList": {
+        "description": "Response body for the start-time notification endpoint.\n\n`Versioned<Vec<_>>` cannot be flattened by serde, so the list is wrapped in\na struct.",
+        "type": "object",
+        "properties": {
+          "notifications": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StartTimeNotification"
+            }
+          }
+        },
+        "required": ["notifications"]
+      },
+      "StartTimeNotificationRequest": {
+        "description": "Request body for the start-time notification endpoint.",
+        "type": "object",
+        "properties": {
+          "device_id": {
+            "description": "Device identifier bound into the issued capabilities.",
+            "type": "string",
+            "default": "mobile"
+          },
+          "limit": {
+            "description": "Maximum number of upcoming start-time notifications to return.",
+            "type": "integer",
+            "format": "uint",
+            "default": 10,
+            "minimum": 0
+          },
+          "tz": {
+            "description": "IANA or fixed-offset time zone used to format wall-clock times in\nnotification bodies. Defaults to UTC.",
+            "type": ["string", "null"],
+            "default": null
+          }
+        }
       },
       "TargetKind": {
         "description": "Target kind for a proposed or applied change.",

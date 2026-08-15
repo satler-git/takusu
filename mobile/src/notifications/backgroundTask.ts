@@ -10,8 +10,15 @@ import * as Notifications from 'expo-notifications';
 import * as Sentry from '@sentry/react-native';
 import { loadSettings } from '@/src/api/settingsStore';
 import { ensureLocalServer, waitForLocalServerReady } from '@/src/api/server';
+import { AgentClient } from '@/src/api/agentClient';
 import { handleActionButtonResponse, NOOP_HAPTIC } from './actionHandler';
-import { ACTION_DONE, ACTION_CANCEL, ACTION_START } from './categories';
+import {
+  ACTION_DONE,
+  ACTION_CANCEL,
+  ACTION_START,
+  ACTION_SNOOZE,
+  ACTION_RESCHEDULE,
+} from './categories';
 
 export const BACKGROUND_NOTIFICATION_TASK = 'takusu-notification-action-task';
 
@@ -31,7 +38,9 @@ function isKnownAction(actionId: string): boolean {
   return (
     actionId === ACTION_DONE ||
     actionId === ACTION_CANCEL ||
-    actionId === ACTION_START
+    actionId === ACTION_START ||
+    actionId === ACTION_SNOOZE ||
+    actionId === ACTION_RESCHEDULE
   );
 }
 
@@ -51,8 +60,11 @@ TaskManager.defineTask<Notifications.NotificationTaskPayload>(
         rootToken: settings.workersToken,
       });
       await waitForLocalServerReady(client);
+      const agentBaseUrl = client.baseUrl ?? settings.workersUrl;
+      const agentClient = new AgentClient(agentBaseUrl, settings.workersToken);
       await handleActionButtonResponse(data, {
         client,
+        agentClient,
         inProgressNotifications: settings.notifications.inProgress,
         haptic: NOOP_HAPTIC,
       });
