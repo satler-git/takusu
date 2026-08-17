@@ -1211,6 +1211,10 @@ pub struct SyncSettingsResponse {
     pub has_client_secret: bool,
     #[serde(default)]
     pub has_refresh_token: bool,
+    pub reminder_minutes: Option<i64>,
+    pub color_id: Option<i64>,
+    pub visibility: Option<String>,
+    pub transparency: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1253,6 +1257,18 @@ pub struct UpdateSyncSettings {
     pub client_secret: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub refresh_token: Option<String>,
+    /// `None` = do not update, `Some(None)` = clear, `Some(Some(v))` = set value.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reminder_minutes: Option<Option<i64>>,
+    /// `None` = do not update, `Some(None)` = clear, `Some(Some(v))` = set value.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color_id: Option<Option<i64>>,
+    /// `None` = do not update, `Some(None)` = clear, `Some(Some(v))` = set value.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub visibility: Option<Option<String>>,
+    /// `None` = do not update, `Some(None)` = clear, `Some(Some(v))` = set value.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transparency: Option<Option<String>>,
 }
 
 // ── Settings response (client-only; UpdateSettings is shared) ──

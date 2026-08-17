@@ -48,6 +48,14 @@ pub struct SyncEntry {
     pub description: Option<String>,
     pub start: String,
     pub end: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reminder_minutes: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color_id: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub visibility: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transparency: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -209,6 +217,27 @@ impl Client {
         });
         if let Some(desc) = &entry.description {
             body["description"] = serde_json::Value::String(desc.clone());
+        }
+        if let Some(minutes) = entry.reminder_minutes.filter(|&m| m > 0) {
+            body["reminders"] = serde_json::json!({
+                "useDefault": false,
+                "overrides": [
+                    { "method": "popup", "minutes": minutes }
+                ]
+            });
+        }
+        if let Some(color_id) = entry.color_id.filter(|&c| (1..=11).contains(&c)) {
+            body["colorId"] = serde_json::Value::String(color_id.to_string());
+        }
+        if let Some(visibility) = &entry.visibility
+            && matches!(visibility.as_str(), "default" | "public" | "private" | "confidential")
+        {
+            body["visibility"] = serde_json::Value::String(visibility.clone());
+        }
+        if let Some(transparency) = &entry.transparency
+            && matches!(transparency.as_str(), "opaque" | "transparent")
+        {
+            body["transparency"] = serde_json::Value::String(transparency.clone());
         }
         body
     }
@@ -892,6 +921,147 @@ mod tests {
             }
         }
         buf
+    }
+
+    #[test]
+    fn event_body_includes_reminders_when_set() {
+        let client = Client {
+            http: reqwest::Client::new(),
+            client_id: "client".to_string(),
+            client_secret: "secret".to_string(),
+            refresh_token: "refresh".to_string(),
+            calendar_id: "primary".to_string(),
+            token_url: GOOGLE_TOKEN_URL.to_string(),
+            batch_url: GOOGLE_BATCH_URL.to_string(),
+        };
+        let entry = SyncEntry {
+            task_id: "t1".to_string(),
+            summary: "task".to_string(),
+            description: None,
+            start: "2025-06-01T10:00:00Z".to_string(),
+            end: "2025-06-01T11:00:00Z".to_string(),
+            reminder_minutes: Some(15),
+            color_id: None,
+            visibility: None,
+            transparency: None,
+        };
+        let body = client.event_body(&entry);
+        assert_eq!(body["reminders"]["useDefault"], false);
+        assert_eq!(body["reminders"]["overrides"][0]["method"], "popup");
+        assert_eq!(body["reminders"]["overrides"][0]["minutes"], 15);
+    }
+
+    #[test]
+    fn event_body_omits_reminders_when_not_set() {
+        let client = Client {
+            http: reqwest::Client::new(),
+            client_id: "client".to_string(),
+            client_secret: "secret".to_string(),
+            refresh_token: "refresh".to_string(),
+            calendar_id: "primary".to_string(),
+            token_url: GOOGLE_TOKEN_URL.to_string(),
+            batch_url: GOOGLE_BATCH_URL.to_string(),
+        };
+        let entry = SyncEntry {
+            task_id: "t1".to_string(),
+            summary: "task".to_string(),
+            description: None,
+            start: "2025-06-01T10:00:00Z".to_string(),
+            end: "2025-06-01T11:00:00Z".to_string(),
+            reminder_minutes: None,
+            color_id: None,
+            visibility: None,
+            transparency: None,
+        };
+        let body = client.event_body(&entry);
+        assert!(body["reminders"].is_null());
+    }
+
+    #[test]
+    fn event_body_omits_reminders_when_zero_or_negative() {
+        let client = Client {
+            http: reqwest::Client::new(),
+            client_id: "client".to_string(),
+            client_secret: "secret".to_string(),
+            refresh_token: "refresh".to_string(),
+            calendar_id: "primary".to_string(),
+            token_url: GOOGLE_TOKEN_URL.to_string(),
+            batch_url: GOOGLE_BATCH_URL.to_string(),
+        };
+        for minutes in [0, -5] {
+            let entry = SyncEntry {
+                task_id: "t1".to_string(),
+                summary: "task".to_string(),
+                description: None,
+                start: "2025-06-01T10:00:00Z".to_string(),
+                end: "2025-06-01T11:00:00Z".to_string(),
+                reminder_minutes: Some(minutes),
+                color_id: None,
+                visibility: None,
+                transparency: None,
+            };
+            let body = client.event_body(&entry);
+            assert!(
+                body["reminders"].is_null(),
+                "reminders should be omitted for {minutes}"
+            );
+        }
+    }
+
+    #[test]
+    fn event_body_includes_color_visibility_transparency() {
+        let client = Client {
+            http: reqwest::Client::new(),
+            client_id: "client".to_string(),
+            client_secret: "secret".to_string(),
+            refresh_token: "refresh".to_string(),
+            calendar_id: "primary".to_string(),
+            token_url: GOOGLE_TOKEN_URL.to_string(),
+            batch_url: GOOGLE_BATCH_URL.to_string(),
+        };
+        let entry = SyncEntry {
+            task_id: "t1".to_string(),
+            summary: "task".to_string(),
+            description: None,
+            start: "2025-06-01T10:00:00Z".to_string(),
+            end: "2025-06-01T11:00:00Z".to_string(),
+            reminder_minutes: None,
+            color_id: Some(5),
+            visibility: Some("private".to_string()),
+            transparency: Some("transparent".to_string()),
+        };
+        let body = client.event_body(&entry);
+        assert_eq!(body["colorId"], "5");
+        assert_eq!(body["visibility"], "private");
+        assert_eq!(body["transparency"], "transparent");
+    }
+
+    #[test]
+    fn event_body_ignores_invalid_common_settings() {
+        let client = Client {
+            http: reqwest::Client::new(),
+            client_id: "client".to_string(),
+            client_secret: "secret".to_string(),
+            refresh_token: "refresh".to_string(),
+            calendar_id: "primary".to_string(),
+            token_url: GOOGLE_TOKEN_URL.to_string(),
+            batch_url: GOOGLE_BATCH_URL.to_string(),
+        };
+        let entry = SyncEntry {
+            task_id: "t1".to_string(),
+            summary: "task".to_string(),
+            description: None,
+            start: "2025-06-01T10:00:00Z".to_string(),
+            end: "2025-06-01T11:00:00Z".to_string(),
+            reminder_minutes: None,
+            color_id: Some(12),
+            visibility: Some("invalid".to_string()),
+            transparency: Some("unknown".to_string()),
+        };
+        let body = client.event_body(&entry);
+        assert!(body["colorId"].is_null());
+        assert!(body["visibility"].is_null());
+        assert!(body["transparency"].is_null());
     }
 
     fn parse_content_length(headers: &[u8]) -> usize {

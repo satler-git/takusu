@@ -62,6 +62,8 @@ const MIGRATION_026: &str = include_str!("../migrations/026_work_sessions.sql");
 const MIGRATION_027: &str = include_str!("../migrations/027_horizon.sql");
 const MIGRATION_028: &str = include_str!("../migrations/028_task_comments.sql");
 const MIGRATION_029: &str = include_str!("../migrations/029_task_note_comments.sql");
+const MIGRATION_030: &str = include_str!("../migrations/030_gcal_reminder_minutes.sql");
+const MIGRATION_031: &str = include_str!("../migrations/031_gcal_event_defaults.sql");
 
 mod work_session;
 
@@ -476,6 +478,29 @@ impl SqliteStorage {
             let mut tx = pool.begin().await?;
             sqlx::raw_sql(MIGRATION_029).execute(&mut *tx).await?;
             tx.commit().await?;
+        }
+
+        // Migration 030 adds google_cal_settings.reminder_minutes (#1470).
+        // SQLite has no IF NOT EXISTS for ADD COLUMN, so guard by column check.
+        let has_reminder_minutes: bool = sqlx::query_scalar(
+            "SELECT COUNT(*) > 0 FROM pragma_table_info('google_cal_settings') WHERE name = 'reminder_minutes'",
+        )
+        .fetch_one(&pool)
+        .await?;
+        if !has_reminder_minutes {
+            sqlx::raw_sql(MIGRATION_030).execute(&pool).await?;
+        }
+
+        // Migration 031 adds google_cal_settings.color_id, visibility, and
+        // transparency (#1470). SQLite has no IF NOT EXISTS for ADD COLUMN,
+        // so guard by the color_id column.
+        let has_color_id: bool = sqlx::query_scalar(
+            "SELECT COUNT(*) > 0 FROM pragma_table_info('google_cal_settings') WHERE name = 'color_id'",
+        )
+        .fetch_one(&pool)
+        .await?;
+        if !has_color_id {
+            sqlx::raw_sql(MIGRATION_031).execute(&pool).await?;
         }
 
         Ok(Self { pool, jwt_secret })
@@ -1556,6 +1581,10 @@ impl Storage for SqliteStorage {
             client_id: String::new(),
             client_secret: String::new(),
             refresh_token: None,
+            reminder_minutes: None,
+            color_id: None,
+            visibility: None,
+            transparency: None,
             created_at: takusu_types::Timestamp::default(),
             updated_at: takusu_types::Timestamp::default(),
         }))
@@ -1583,15 +1612,23 @@ impl Storage for SqliteStorage {
             .refresh_token
             .clone()
             .or_else(|| existing.refresh_token.clone());
+        let reminder_minutes = body.reminder_minutes.as_ref().map_or(existing.reminder_minutes, |x| *x);
+        let color_id = body.color_id.as_ref().map_or(existing.color_id, |x| *x);
+        let visibility = body.visibility.as_ref().map_or(existing.visibility.clone(), |x| x.clone());
+        let transparency = body.transparency.as_ref().map_or(existing.transparency.clone(), |x| x.clone());
 
         sqlx::query(
-            "INSERT INTO google_cal_settings (id, enabled, calendar_id, client_id, client_secret, refresh_token, created_at, updated_at) VALUES ('active', ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), strftime('%Y-%m-%dT%H:%M:%SZ', 'now')) ON CONFLICT(id) DO UPDATE SET enabled=excluded.enabled, calendar_id=excluded.calendar_id, client_id=excluded.client_id, client_secret=excluded.client_secret, refresh_token=excluded.refresh_token, updated_at=strftime('%Y-%m-%dT%H:%M:%SZ', 'now')"
+            "INSERT INTO google_cal_settings (id, enabled, calendar_id, client_id, client_secret, refresh_token, reminder_minutes, color_id, visibility, transparency, created_at, updated_at) VALUES ('active', ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), strftime('%Y-%m-%dT%H:%M:%SZ', 'now')) ON CONFLICT(id) DO UPDATE SET enabled=excluded.enabled, calendar_id=excluded.calendar_id, client_id=excluded.client_id, client_secret=excluded.client_secret, refresh_token=excluded.refresh_token, reminder_minutes=excluded.reminder_minutes, color_id=excluded.color_id, visibility=excluded.visibility, transparency=excluded.transparency, updated_at=strftime('%Y-%m-%dT%H:%M:%SZ', 'now')"
         )
         .bind(enabled)
         .bind(&calendar_id)
         .bind(&client_id)
         .bind(&client_secret)
         .bind(&refresh_token)
+        .bind(reminder_minutes)
+        .bind(color_id)
+        .bind(&visibility)
+        .bind(&transparency)
         .execute(&self.pool)
         .await
         .map_err(map_err)?;

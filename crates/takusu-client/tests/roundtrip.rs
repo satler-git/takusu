@@ -376,11 +376,19 @@ fn sync_settings_response_deserialization() {
         "calendar_id": "primary",
         "client_id": "client-123",
         "has_client_secret": true,
-        "has_refresh_token": false
+        "has_refresh_token": false,
+        "reminder_minutes": 15,
+        "color_id": 5,
+        "visibility": "private",
+        "transparency": "transparent"
     });
     let resp: SyncSettingsResponse = serde_json::from_value(json).unwrap();
     assert!(resp.enabled);
     assert!(!resp.has_refresh_token);
+    assert_eq!(resp.reminder_minutes, Some(15));
+    assert_eq!(resp.color_id, Some(5));
+    assert_eq!(resp.visibility, Some("private".to_string()));
+    assert_eq!(resp.transparency, Some("transparent".to_string()));
 }
 
 #[test]
@@ -391,11 +399,40 @@ fn update_sync_settings_serialization() {
         client_id: None,
         client_secret: None,
         refresh_token: None,
+        reminder_minutes: Some(Some(15)),
+        color_id: Some(Some(5)),
+        visibility: Some(Some("private".to_string())),
+        transparency: Some(Some("transparent".to_string())),
     };
 
     let json = serde_json::to_value(&uss).unwrap();
     assert_eq!(json["enabled"], true);
+    assert_eq!(json["reminder_minutes"], 15);
+    assert_eq!(json["color_id"], 5);
+    assert_eq!(json["visibility"], "private");
+    assert_eq!(json["transparency"], "transparent");
     assert!(!json.as_object().unwrap().contains_key("client_id"));
+}
+
+#[test]
+fn update_sync_settings_clears_field_with_null() {
+    let uss = UpdateSyncSettings {
+        enabled: None,
+        calendar_id: None,
+        client_id: None,
+        client_secret: None,
+        refresh_token: None,
+        reminder_minutes: Some(None),
+        color_id: Some(None),
+        visibility: Some(None),
+        transparency: Some(None),
+    };
+
+    let json = serde_json::to_value(&uss).unwrap();
+    assert_eq!(json["reminder_minutes"], serde_json::Value::Null);
+    assert_eq!(json["color_id"], serde_json::Value::Null);
+    assert_eq!(json["visibility"], serde_json::Value::Null);
+    assert_eq!(json["transparency"], serde_json::Value::Null);
 }
 
 #[test]
