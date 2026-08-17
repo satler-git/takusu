@@ -7,7 +7,6 @@ import {
   useMemo,
   type ReactNode,
 } from 'react';
-import { Appearance } from 'react-native';
 import Constants from 'expo-constants';
 import { TakusuClient } from './client';
 import { AgentClient, type AgentUpdateSettings } from './agentClient';
@@ -28,6 +27,7 @@ import {
   saveTheme,
   saveUndoSteps,
   saveNotificationSettings,
+  systemInitialTheme,
   type PersistedSettings,
   type NotificationSettings,
 } from './settingsStore';
@@ -128,10 +128,6 @@ async function buildAgentUpdateSettings(): Promise<AgentUpdateSettings> {
     }
   }
   return body;
-}
-
-function systemInitialTheme(): AppTheme {
-  return Appearance.getColorScheme() === 'dark' ? 'dark' : 'light';
 }
 
 export function ServerProvider({ children }: { children: ReactNode }) {

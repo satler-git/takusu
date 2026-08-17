@@ -21,9 +21,11 @@ jest.mock('@/src/notifications/settings', () => ({
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
+import { Appearance } from 'react-native';
 import { loadNotificationSettings } from '@/src/notifications/settings';
 import {
   loadSettings,
+  loadTheme,
   loadWelcomeShownAt,
   parseTtsProviders,
   saveWelcomeShownAt,
@@ -31,12 +33,14 @@ import {
 
 const asyncStorageGetItem = AsyncStorage.getItem as jest.Mock;
 const asyncStorageSetItem = AsyncStorage.setItem as jest.Mock;
+const asyncStorageRemoveItem = AsyncStorage.removeItem as jest.Mock;
 const secureStoreGetItemAsync = SecureStore.getItemAsync as jest.Mock;
 const loadNotificationSettingsMock = loadNotificationSettings as jest.Mock;
 
 beforeEach(() => {
   asyncStorageGetItem.mockReset();
   asyncStorageSetItem.mockReset();
+  asyncStorageRemoveItem.mockReset();
   secureStoreGetItemAsync.mockReset();
   loadNotificationSettingsMock.mockReset();
   loadNotificationSettingsMock.mockResolvedValue({});
@@ -168,6 +172,43 @@ describe('loadSettings migration', () => {
       'https://legacy.example.com/v1',
     );
     expect(settings.llmModels[0]?.selectedModel).toBe('model');
+  });
+});
+
+describe('loadTheme', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('returns the stored theme', async () => {
+    mockStorage({ 'takusu.theme': 'dark' });
+    expect(await loadTheme()).toBe('dark');
+  });
+
+  it('migrates legacy darkMode true to dark and removes the old key', async () => {
+    mockStorage({ 'takusu.darkMode': 'true' });
+    expect(await loadTheme()).toBe('dark');
+    expect(asyncStorageSetItem).toHaveBeenCalledWith('takusu.theme', 'dark');
+    expect(asyncStorageRemoveItem).toHaveBeenCalledWith('takusu.darkMode');
+  });
+
+  it('migrates legacy darkMode false to light and removes the old key', async () => {
+    mockStorage({ 'takusu.darkMode': 'false' });
+    expect(await loadTheme()).toBe('light');
+    expect(asyncStorageSetItem).toHaveBeenCalledWith('takusu.theme', 'light');
+    expect(asyncStorageRemoveItem).toHaveBeenCalledWith('takusu.darkMode');
+  });
+
+  it('falls back to the system dark color scheme', async () => {
+    mockStorage({});
+    jest.spyOn(Appearance, 'getColorScheme').mockReturnValue('dark');
+    expect(await loadTheme()).toBe('dark');
+  });
+
+  it('falls back to light when the system is light', async () => {
+    mockStorage({});
+    jest.spyOn(Appearance, 'getColorScheme').mockReturnValue('light');
+    expect(await loadTheme()).toBe('light');
   });
 });
 

@@ -4,7 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { PaperProvider, MD3DarkTheme, MD3LightTheme } from 'react-native-paper';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { useEffect, useRef, useCallback, useState } from 'react';
+import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import * as Notifications from 'expo-notifications';
 import { router } from 'expo-router';
 import * as Sentry from '@sentry/react-native';
@@ -34,6 +34,7 @@ import { TopToastProvider } from '@/src/components/TopToast';
 import {
   setupNotificationCategories,
   ensureNotificationPermissions,
+  notificationColorForTheme,
 } from '@/src/notifications';
 import { handleActionButtonResponse } from '@/src/notifications/actionHandler';
 
@@ -138,6 +139,7 @@ function ThemedApp() {
     notifications,
     error: serverError,
   } = useServer();
+  const iconColor = useMemo(() => notificationColorForTheme(theme), [theme]);
   const MAX_PROCESSED_RESPONSE_IDS = 50;
 
   const [showWelcome, setShowWelcome] = useState(false);
@@ -242,6 +244,7 @@ function ThemedApp() {
         agentClient,
         inProgressNotifications: notifications.inProgress,
         haptic,
+        color: iconColor,
         onReschedule: (taskId) => {
           router.push({
             pathname: '/agent',
@@ -267,7 +270,13 @@ function ThemedApp() {
         }
       }
     },
-    [client, workersToken, notifications.inProgress, lastNotificationResponse],
+    [
+      client,
+      workersToken,
+      notifications.inProgress,
+      lastNotificationResponse,
+      iconColor,
+    ],
   );
 
   // Drain queued action responses once `client` becomes available (#353).
@@ -285,6 +294,7 @@ function ThemedApp() {
     notifications.inProgress,
     lastNotificationResponse,
     processResponse,
+    iconColor,
   ]);
 
   // Handle notification responses (body tap and action buttons) from both

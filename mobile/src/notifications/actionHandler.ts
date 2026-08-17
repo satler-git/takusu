@@ -43,6 +43,8 @@ export interface ActionHandlerOptions {
   agentClient?: AgentClient;
   inProgressNotifications: boolean;
   haptic?: ActionHandlerHaptic;
+  /** Notification icon color for the active theme (#1469). */
+  color?: string;
   /** Called for RESCHEDULE when the app is already in the foreground. */
   onReschedule?: (taskId: string) => void;
 }
@@ -60,7 +62,7 @@ function logActionError(
   console.warn('Notification action failed', { action, taskId, err });
 }
 
-// Process a notification action button (START / DONE / CANCEL).
+// Process a notification action button (START / SNOOZE / RESCHEDULE / DONE / CANCEL).
 // Returns true if the response was a recognized action button, false otherwise.
 export async function handleActionButtonResponse(
   response: Notifications.NotificationResponse,
@@ -71,6 +73,7 @@ export async function handleActionButtonResponse(
     agentClient,
     inProgressNotifications,
     haptic = defaultHaptic,
+    color,
   } = options;
   const actionId = response.actionIdentifier;
 
@@ -95,6 +98,7 @@ export async function handleActionButtonResponse(
           notificationTaskId,
           inProgressNotifications,
           haptic,
+          color,
         );
       }
       return true;
@@ -135,7 +139,7 @@ export async function handleActionButtonResponse(
       await cancelScheduledStartNotifications(notificationTaskId);
       if (inProgressNotifications && actionId === ACTION_START) {
         const task = await client.getTask(notificationTaskId);
-        await postInProgressNotification(task);
+        await postInProgressNotification(task, color);
       } else if (actionId === ACTION_SNOOZE) {
         // Snoozed; the agent moved the task and the scheduler will pick up the new time.
         await cancelScheduledTaskNotifications(notificationTaskId);
@@ -158,7 +162,7 @@ export async function handleActionButtonResponse(
     try {
       await client.updateTask(taskId, { status: newStatus });
       await Promise.all([
-        postResultNotification(taskId, taskTitle, newStatus),
+        postResultNotification(taskId, taskTitle, newStatus, color),
         dismissInProgressNotification(taskId),
         dismissTaskNotifications(taskId),
         cancelScheduledTaskNotifications(taskId),
@@ -177,6 +181,7 @@ async function handleLegacyStart(
   taskId: string,
   inProgressNotifications: boolean,
   haptic: ActionHandlerHaptic,
+  color?: string,
 ): Promise<boolean> {
   haptic.medium();
   try {
@@ -185,7 +190,7 @@ async function handleLegacyStart(
     await cancelScheduledStartNotifications(taskId);
     if (inProgressNotifications) {
       const task = await client.getTask(taskId);
-      await postInProgressNotification(task);
+      await postInProgressNotification(task, color);
     }
   } catch (err) {
     logActionError(ACTION_START, taskId, err);

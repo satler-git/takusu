@@ -32,3 +32,4 @@ export {
   cancelScheduledTaskNotifications,
   cancelScheduledStartNotifications,
 } from './scheduler';
+export { notificationColorForTheme } from './theme';

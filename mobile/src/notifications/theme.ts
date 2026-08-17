@@ -5,17 +5,14 @@
 // theme's brand color so the notification icon matches the active app icon
 // theme (light/dark/catppuccin/aura-soft-dark).
 
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { loadTheme } from '@/src/api/settingsStore';
 import {
-  APP_THEMES,
   type AppTheme,
   COLORS,
   DARK_COLORS,
   CATPPUCCIN_COLORS,
   AURA_SOFT_DARK_COLORS,
 } from '@/src/theme';
-
-const THEME_KEY = 'takusu.theme';
 
 export function notificationColorForTheme(theme: AppTheme): string {
   switch (theme) {
@@ -30,11 +27,8 @@ export function notificationColorForTheme(theme: AppTheme): string {
   }
 }
 
-export async function getNotificationIconColor(): Promise<string> {
-  const stored = await AsyncStorage.getItem(THEME_KEY);
-  const theme =
-    stored && APP_THEMES.includes(stored as AppTheme)
-      ? (stored as AppTheme)
-      : 'light';
-  return notificationColorForTheme(theme);
+export async function getNotificationIconColor(
+  theme?: AppTheme,
+): Promise<string> {
+  return notificationColorForTheme(theme ?? (await loadTheme()));
 }
