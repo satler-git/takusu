@@ -34,6 +34,10 @@ pub struct GoogleCalSettingsOutput {
     pub client_id: String,
     pub has_client_secret: bool,
     pub has_refresh_token: bool,
+    pub reminder_minutes: Option<i64>,
+    pub color_id: Option<i64>,
+    pub visibility: Option<String>,
+    pub transparency: Option<String>,
 }
 
 /// Response for `POST /api/sync/oauth/url`.
@@ -67,6 +71,10 @@ impl super::TakusuApp {
             client_id: row.client_id,
             has_client_secret: !row.client_secret.is_empty(),
             has_refresh_token: row.refresh_token.is_some(),
+            reminder_minutes: row.reminder_minutes,
+            color_id: row.color_id,
+            visibility: row.visibility.clone(),
+            transparency: row.transparency.clone(),
         })
     }
 
@@ -74,6 +82,30 @@ impl super::TakusuApp {
         &self,
         body: &UpdateGoogleCalSettings,
     ) -> Result<GoogleCalSettingsOutput, AppError> {
+        if let Some(Some(m)) = body.reminder_minutes && m < 0 {
+            return Err(AppError::BadRequest(BadRequestKind::Other(
+                "reminder_minutes must be non-negative".into(),
+            )));
+        }
+        if let Some(Some(c)) = body.color_id && !(1..=11).contains(&c) {
+            return Err(AppError::BadRequest(BadRequestKind::Other(
+                "color_id must be between 1 and 11".into(),
+            )));
+        }
+        if let Some(Some(v)) = &body.visibility
+            && !matches!(v.as_str(), "default" | "public" | "private" | "confidential")
+        {
+            return Err(AppError::BadRequest(BadRequestKind::Other(
+                "visibility must be one of: default, public, private, confidential".into(),
+            )));
+        }
+        if let Some(Some(t)) = &body.transparency
+            && !matches!(t.as_str(), "opaque" | "transparent")
+        {
+            return Err(AppError::BadRequest(BadRequestKind::Other(
+                "transparency must be either opaque or transparent".into(),
+            )));
+        }
         let row = self
             .storage
             .update_gcal_settings(body)
@@ -85,6 +117,10 @@ impl super::TakusuApp {
             client_id: row.client_id,
             has_client_secret: !row.client_secret.is_empty(),
             has_refresh_token: row.refresh_token.is_some(),
+            reminder_minutes: row.reminder_minutes,
+            color_id: row.color_id,
+            visibility: row.visibility.clone(),
+            transparency: row.transparency.clone(),
         })
     }
 
@@ -128,6 +164,10 @@ impl super::TakusuApp {
                 client_id: None,
                 client_secret: None,
                 refresh_token: Some(tokens.refresh_token),
+                reminder_minutes: None,
+                color_id: None,
+                visibility: None,
+                transparency: None,
             })
             .await
             .map_err(storage_to_app)?;
@@ -147,12 +187,29 @@ impl super::TakusuApp {
             .get_gcal_settings()
             .await
             .map_err(|e| e.to_string())?;
-        let (refresh_token, client_id, client_secret, calendar_id) = match &settings {
+        let (
+            refresh_token,
+            client_id,
+            client_secret,
+            calendar_id,
+            reminder_minutes,
+            color_id,
+            visibility,
+            transparency,
+        ) = match &settings {
             s if s.enabled && s.refresh_token.is_some() => (
                 s.refresh_token.clone().unwrap(),
                 s.client_id.clone(),
                 s.client_secret.clone(),
                 s.calendar_id.clone(),
+                s.reminder_minutes.filter(|&m| m > 0),
+                s.color_id.filter(|&c| (1..=11).contains(&c)),
+                s.visibility.clone().filter(|v| {
+                    matches!(v.as_str(), "default" | "public" | "private" | "confidential")
+                }),
+                s.transparency.clone().filter(|t| {
+                    matches!(t.as_str(), "opaque" | "transparent")
+                }),
             ),
             _ => return Ok(()),
         };
@@ -205,6 +262,10 @@ impl super::TakusuApp {
                             description,
                             start: e.start_at.to_string(),
                             end: e.end_at.to_string(),
+                            reminder_minutes,
+                            color_id,
+                            visibility: visibility.clone(),
+                            transparency: transparency.clone(),
                         }
                     })
                     .collect();

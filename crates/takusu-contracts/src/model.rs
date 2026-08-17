@@ -637,6 +637,17 @@ pub struct GoogleCalSettingsRow {
     pub client_id: String,
     pub client_secret: String,
     pub refresh_token: Option<String>,
+    /// Google Calendar イベントの共通リマインダー時間（分）。
+    /// `None` または `0` の場合はリマインダーを設定しない。
+    pub reminder_minutes: Option<i64>,
+    /// Google Calendar イベントの共通の色 ID（1〜11）。
+    pub color_id: Option<i64>,
+    /// Google Calendar イベントの共通の公開範囲。
+    /// `default`, `public`, `private`, `confidential` のいずれか。
+    pub visibility: Option<String>,
+    /// Google Calendar イベントの共通の予定/空き状態。
+    /// `opaque` または `transparent`。
+    pub transparency: Option<String>,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
 }
@@ -653,6 +664,18 @@ pub struct UpdateGoogleCalSettings {
     pub client_secret: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub refresh_token: Option<String>,
+    /// `None` = 更新しない、`Some(None)` = クリア、`Some(Some(v))` = 値を設定。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reminder_minutes: Option<Option<i64>>,
+    /// `None` = 更新しない、`Some(None)` = クリア、`Some(Some(v))` = 値を設定。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color_id: Option<Option<i64>>,
+    /// `None` = 更新しない、`Some(None)` = クリア、`Some(Some(v))` = 値を設定。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub visibility: Option<Option<String>>,
+    /// `None` = 更新しない、`Some(None)` = クリア、`Some(Some(v))` = 値を設定。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transparency: Option<Option<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]

@@ -485,6 +485,10 @@ export function SettingsDetailView({
   const [gcalClientId, setGcalClientId] = useState('');
   const [gcalClientSecret, setGcalClientSecret] = useState('');
   const [gcalRefreshToken, setGcalRefreshToken] = useState('');
+  const [gcalReminderMinutes, setGcalReminderMinutes] = useState('');
+  const [gcalColorId, setGcalColorId] = useState('');
+  const [gcalVisibility, setGcalVisibility] = useState('');
+  const [gcalTransparency, setGcalTransparency] = useState('');
   const [gcalLoading, setGcalLoading] = useState(false);
   const [oauthLoading, setOauthLoading] = useState(false);
   const [syncLoading, setSyncLoading] = useState(false);
@@ -562,6 +566,18 @@ export function SettingsDetailView({
       setGcalCalendarId(s.calendar_id);
       setGcalClientId(s.client_id);
       setGcalClientSecret('');
+      setGcalReminderMinutes(
+        s.reminder_minutes !== null && s.reminder_minutes !== undefined
+          ? String(s.reminder_minutes)
+          : '',
+      );
+      setGcalColorId(
+        s.color_id !== null && s.color_id !== undefined
+          ? String(s.color_id)
+          : '',
+      );
+      setGcalVisibility(s.visibility ?? '');
+      setGcalTransparency(s.transparency ?? '');
     } catch {
       // settings may not exist yet
       setGcalSettings(null);
@@ -743,15 +759,78 @@ export function SettingsDetailView({
 
   async function saveGcalSettings() {
     if (!client) return;
+
+    let reminderMinutes: number | undefined;
+    const reminderTrimmed = gcalReminderMinutes.trim();
+    if (reminderTrimmed !== '') {
+      const parsed = parseInt(reminderTrimmed, 10);
+      if (String(parsed) !== reminderTrimmed || parsed < 0) {
+        void showError(
+          'リマインダー時間は0以上の整数を入力してください',
+          'エラー',
+        );
+        return;
+      }
+      reminderMinutes = parsed;
+    }
+
+    let colorId: number | undefined;
+    const colorIdTrimmed = gcalColorId.trim();
+    if (colorIdTrimmed !== '') {
+      const parsed = parseInt(colorIdTrimmed, 10);
+      if (String(parsed) !== colorIdTrimmed || parsed < 1 || parsed > 11) {
+        void showError('色 ID は 1〜11 の整数を入力してください', 'エラー');
+        return;
+      }
+      colorId = parsed;
+    }
+
+    const visibility = gcalVisibility.trim() || undefined;
+    if (
+      visibility &&
+      !['default', 'public', 'private', 'confidential'].includes(visibility)
+    ) {
+      void showError(
+        '公開範囲は default / public / private / confidential のいずれかを入力してください',
+        'エラー',
+      );
+      return;
+    }
+
+    const transparency = gcalTransparency.trim() || undefined;
+    if (transparency && !['opaque', 'transparent'].includes(transparency)) {
+      void showError(
+        '予定/空き状態は opaque / transparent のいずれかを入力してください',
+        'エラー',
+      );
+      return;
+    }
+
     try {
       const s = await client.updateGcalSettings({
         enabled: gcalEnabled,
         calendar_id: gcalCalendarId || undefined,
         client_id: gcalClientId || undefined,
         client_secret: gcalClientSecret || undefined,
+        reminder_minutes: reminderMinutes ?? null,
+        color_id: colorId ?? null,
+        visibility: visibility ?? null,
+        transparency: transparency ?? null,
       });
       setGcalSettings(s);
       setGcalClientSecret('');
+      setGcalReminderMinutes(
+        s.reminder_minutes !== null && s.reminder_minutes !== undefined
+          ? String(s.reminder_minutes)
+          : '',
+      );
+      setGcalColorId(
+        s.color_id !== null && s.color_id !== undefined
+          ? String(s.color_id)
+          : '',
+      );
+      setGcalVisibility(s.visibility ?? '');
+      setGcalTransparency(s.transparency ?? '');
       haptic.success();
     } catch (e) {
       void showError(e, 'エラー');
@@ -1864,6 +1943,92 @@ export function SettingsDetailView({
                   autoCapitalize="none"
                   autoCorrect={false}
                 />
+              </View>
+
+              <View style={styles.field}>
+                <Text style={[styles.label, { color: colors.gray }]}>
+                  リマインダー時間（分）
+                </Text>
+                <TextInput
+                  style={[
+                    styles.input,
+                    { borderColor: colors.separator, color: colors.black },
+                  ]}
+                  value={gcalReminderMinutes}
+                  onChangeText={setGcalReminderMinutes}
+                  placeholder="15"
+                  placeholderTextColor={colors.gray}
+                  keyboardType="numeric"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                <Text style={[styles.helpText, { color: colors.gray }]}>
+                  空欄にすると未設定（Google Calendarのデフォルト）になります
+                </Text>
+              </View>
+
+              <View style={styles.field}>
+                <Text style={[styles.label, { color: colors.gray }]}>
+                  色 ID（1〜11）
+                </Text>
+                <TextInput
+                  style={[
+                    styles.input,
+                    { borderColor: colors.separator, color: colors.black },
+                  ]}
+                  value={gcalColorId}
+                  onChangeText={setGcalColorId}
+                  placeholder="5"
+                  placeholderTextColor={colors.gray}
+                  keyboardType="numeric"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                <Text style={[styles.helpText, { color: colors.gray }]}>
+                  空欄にすると未設定（Google Calendarのデフォルト）になります
+                </Text>
+              </View>
+
+              <View style={styles.field}>
+                <Text style={[styles.label, { color: colors.gray }]}>
+                  公開範囲
+                </Text>
+                <TextInput
+                  style={[
+                    styles.input,
+                    { borderColor: colors.separator, color: colors.black },
+                  ]}
+                  value={gcalVisibility}
+                  onChangeText={setGcalVisibility}
+                  placeholder="default"
+                  placeholderTextColor={colors.gray}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                <Text style={[styles.helpText, { color: colors.gray }]}>
+                  default / public / private / confidential（空欄で未設定）
+                </Text>
+              </View>
+
+              <View style={styles.field}>
+                <Text style={[styles.label, { color: colors.gray }]}>
+                  予定/空き状態
+                </Text>
+                <TextInput
+                  style={[
+                    styles.input,
+                    { borderColor: colors.separator, color: colors.black },
+                  ]}
+                  value={gcalTransparency}
+                  onChangeText={setGcalTransparency}
+                  placeholder="opaque"
+                  placeholderTextColor={colors.gray}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                <Text style={[styles.helpText, { color: colors.gray }]}>
+                  opaque / transparent（空欄で未設定）
+                </Text>
               </View>
 
               <PressableScale

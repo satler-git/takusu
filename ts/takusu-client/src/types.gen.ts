@@ -8673,9 +8673,15 @@ export interface components {
     GoogleCalSettingsOutput: {
       calendar_id: string;
       client_id: string;
+      /** Format: int64 */
+      color_id?: number | null;
       enabled: boolean;
       has_client_secret: boolean;
       has_refresh_token: boolean;
+      /** Format: int64 */
+      reminder_minutes?: number | null;
+      transparency?: string | null;
+      visibility?: string | null;
     };
     /**
      * @description Habit detail response: the habit row plus its steps (#95). Used by
@@ -9426,8 +9432,22 @@ export interface components {
       calendar_id?: string | null;
       client_id?: string | null;
       client_secret?: string | null;
+      /**
+       * Format: int64
+       * @description `None` = 更新しない、`Some(None)` = クリア、`Some(Some(v))` = 値を設定。
+       */
+      color_id?: number | null;
       enabled?: boolean | null;
       refresh_token?: string | null;
+      /**
+       * Format: int64
+       * @description `None` = 更新しない、`Some(None)` = クリア、`Some(Some(v))` = 値を設定。
+       */
+      reminder_minutes?: number | null;
+      /** @description `None` = 更新しない、`Some(None)` = クリア、`Some(Some(v))` = 値を設定。 */
+      transparency?: string | null;
+      /** @description `None` = 更新しない、`Some(None)` = クリア、`Some(Some(v))` = 値を設定。 */
+      visibility?: string | null;
     };
     UpdateHabit: {
       abandonability?: components['schemas']['Abandonability'] | null;

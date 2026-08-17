@@ -1004,6 +1004,18 @@ struct SyncSetupArgs {
     #[arg(long)]
     refresh_token: Option<String>,
 
+    #[arg(long)]
+    reminder_minutes: Option<i64>,
+
+    #[arg(long)]
+    color_id: Option<i64>,
+
+    #[arg(long)]
+    visibility: Option<String>,
+
+    #[arg(long)]
+    transparency: Option<String>,
+
     #[arg(long, help = "Do not prompt for missing values")]
     no_ask: bool,
 }
@@ -2379,10 +2391,23 @@ async fn run_sync(app: &TakusuApp, cmd: SyncCommands) -> Result<(), AppError> {
             println!("  client_id:        {}", settings.client_id);
             println!("  has_client_secret: {}", settings.has_client_secret);
             println!("  has_refresh_token:  {}", settings.has_refresh_token);
+            print_optional_i64("reminder_minutes", settings.reminder_minutes);
+            print_optional_i64("color_id", settings.color_id);
+            print_optional_str("visibility", settings.visibility);
+            print_optional_str("transparency", settings.transparency);
         }
         SyncCommands::Setup(args) => {
-            let (enabled, calendar_id, client_id, client_secret, refresh_token) = if !args.no_ask
-                && is_interactive()
+            let (
+                enabled,
+                calendar_id,
+                client_id,
+                client_secret,
+                refresh_token,
+                reminder_minutes,
+                color_id,
+                visibility,
+                transparency,
+            ) = if !args.no_ask && is_interactive()
             {
                 let settings = app.get_gcal_settings().await?;
                 let enabled = match args.enabled {
@@ -2405,12 +2430,43 @@ async fn run_sync(app: &TakusuApp, cmd: SyncCommands) -> Result<(), AppError> {
                     Some(v) => Some(v),
                     None => prompt_secret_optional("refresh_token", settings.has_refresh_token)?,
                 };
+                let reminder_minutes = match args.reminder_minutes {
+                    Some(v) => Some(v),
+                    None => prompt_optional_i64(
+                        "reminder_minutes",
+                        settings.reminder_minutes,
+                    )?,
+                };
+                let color_id = match args.color_id {
+                    Some(v) => Some(v),
+                    None => prompt_optional_i64("color_id", settings.color_id)?,
+                };
+                let visibility = match args.visibility {
+                    Some(v) => Some(v),
+                    None => prompt_optional_str(
+                        "visibility",
+                        &settings.visibility,
+                        &["default", "public", "private", "confidential"],
+                    )?,
+                };
+                let transparency = match args.transparency {
+                    Some(v) => Some(v),
+                    None => prompt_optional_str(
+                        "transparency",
+                        &settings.transparency,
+                        &["opaque", "transparent"],
+                    )?,
+                };
                 (
                     enabled,
                     calendar_id,
                     client_id,
                     client_secret,
                     refresh_token,
+                    reminder_minutes,
+                    color_id,
+                    visibility,
+                    transparency,
                 )
             } else {
                 (
@@ -2419,6 +2475,10 @@ async fn run_sync(app: &TakusuApp, cmd: SyncCommands) -> Result<(), AppError> {
                     args.client_id,
                     args.client_secret,
                     args.refresh_token,
+                    args.reminder_minutes,
+                    args.color_id,
+                    args.visibility,
+                    args.transparency,
                 )
             };
             let body = takusu_contracts::UpdateGoogleCalSettings {
@@ -2427,6 +2487,10 @@ async fn run_sync(app: &TakusuApp, cmd: SyncCommands) -> Result<(), AppError> {
                 client_id,
                 client_secret,
                 refresh_token,
+                reminder_minutes: reminder_minutes.map(Some),
+                color_id: color_id.map(Some),
+                visibility: visibility.map(Some),
+                transparency: transparency.map(Some),
             };
             let settings = app.update_gcal_settings(&body).await?;
             println!("Sync settings updated:");
@@ -2434,6 +2498,10 @@ async fn run_sync(app: &TakusuApp, cmd: SyncCommands) -> Result<(), AppError> {
             println!("  calendar_id:      {}", settings.calendar_id);
             println!("  has_client_secret: {}", settings.has_client_secret);
             println!("  has_refresh_token:  {}", settings.has_refresh_token);
+            print_optional_i64("reminder_minutes", settings.reminder_minutes);
+            print_optional_i64("color_id", settings.color_id);
+            print_optional_str("visibility", settings.visibility);
+            print_optional_str("transparency", settings.transparency);
         }
         SyncCommands::Login(args) => {
             oauth_login(
@@ -2551,6 +2619,34 @@ fn prompt_optional(label: &str, current: &str) -> Result<Option<String>, AppErro
     })
 }
 
+fn prompt_optional_str(
+    label: &str,
+    current: &Option<String>,
+    allowed: &[&str],
+) -> Result<Option<String>, AppError> {
+    let display = current.as_deref().unwrap_or("(not set)");
+    let allowed_list = allowed.join(" / ");
+    print!("{label} [{display}] ({allowed_list}, empty=keep): ");
+    io::stdout()
+        .flush()
+        .map_err(|e| AppError::Internal(format!("failed to flush stdout: {e}")))?;
+    let mut buf = String::new();
+    io::stdin()
+        .read_line(&mut buf)
+        .map_err(|e| AppError::Internal(format!("failed to read line: {e}")))?;
+    let trimmed = buf.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    if !allowed.contains(&trimmed) {
+        return Err(AppError::BadRequest(BadRequestKind::Other(format!(
+            "{label} must be one of: {}",
+            allowed_list
+        ))));
+    }
+    Ok(Some(trimmed.to_string()))
+}
+
 fn prompt_bool(label: &str, current: bool) -> Result<Option<bool>, AppError> {
     loop {
         print!("{label} [{current}] (true/false/yes/no/1/0, empty=keep): ");
@@ -2571,6 +2667,47 @@ fn prompt_bool(label: &str, current: bool) -> Result<Option<bool>, AppError> {
             _ => eprintln!("invalid input; enter true/false/yes/no/1/0 or leave empty"),
         }
     }
+}
+
+fn print_optional_i64(label: &str, value: Option<i64>) {
+    match value {
+        Some(v) => println!("  {label}: {v}"),
+        None => println!("  {label}: (not set)"),
+    }
+}
+
+fn print_optional_str(label: &str, value: Option<String>) {
+    match value {
+        Some(v) => println!("  {label}: {v}"),
+        None => println!("  {label}: (not set)"),
+    }
+}
+
+fn prompt_optional_i64(label: &str, current: Option<i64>) -> Result<Option<i64>, AppError> {
+    let display = match current {
+        Some(v) => v.to_string(),
+        None => "(not set)".to_string(),
+    };
+    print!("{label} [{display}]: ");
+    io::stdout()
+        .flush()
+        .map_err(|e| AppError::Internal(format!("failed to flush stdout: {e}")))?;
+    let mut buf = String::new();
+    io::stdin()
+        .read_line(&mut buf)
+        .map_err(|e| AppError::Internal(format!("failed to read line: {e}")))?;
+    let trimmed = buf.trim();
+    Ok(if trimmed.is_empty() {
+        None
+    } else {
+        Some(
+            trimmed
+                .parse::<i64>()
+                .map_err(|_| AppError::BadRequest(BadRequestKind::Other(
+                    format!("{label} must be an integer"),
+                )))?,
+        )
+    })
 }
 
 fn prompt_secret_optional(label: &str, current_set: bool) -> Result<Option<String>, AppError> {
@@ -2663,6 +2800,10 @@ async fn oauth_login(
         client_id: Some(client_id.clone()),
         client_secret: client_secret_opt,
         refresh_token: None,
+        reminder_minutes: None,
+        color_id: None,
+        visibility: None,
+        transparency: None,
     })
     .await?;
 

@@ -11656,6 +11656,10 @@
           "client_id": {
             "type": "string"
           },
+          "color_id": {
+            "type": ["integer", "null"],
+            "format": "int64"
+          },
           "enabled": {
             "type": "boolean"
           },
@@ -11664,6 +11668,16 @@
           },
           "has_refresh_token": {
             "type": "boolean"
+          },
+          "reminder_minutes": {
+            "type": ["integer", "null"],
+            "format": "int64"
+          },
+          "transparency": {
+            "type": ["string", "null"]
+          },
+          "visibility": {
+            "type": ["string", "null"]
           }
         },
         "required": [
@@ -13417,10 +13431,28 @@
           "client_secret": {
             "type": ["string", "null"]
           },
+          "color_id": {
+            "description": "`None` = 更新しない、`Some(None)` = クリア、`Some(Some(v))` = 値を設定。",
+            "type": ["integer", "null"],
+            "format": "int64"
+          },
           "enabled": {
             "type": ["boolean", "null"]
           },
           "refresh_token": {
+            "type": ["string", "null"]
+          },
+          "reminder_minutes": {
+            "description": "`None` = 更新しない、`Some(None)` = クリア、`Some(Some(v))` = 値を設定。",
+            "type": ["integer", "null"],
+            "format": "int64"
+          },
+          "transparency": {
+            "description": "`None` = 更新しない、`Some(None)` = クリア、`Some(Some(v))` = 値を設定。",
+            "type": ["string", "null"]
+          },
+          "visibility": {
+            "description": "`None` = 更新しない、`Some(None)` = クリア、`Some(Some(v))` = 値を設定。",
             "type": ["string", "null"]
           }
         }
