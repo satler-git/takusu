@@ -74,6 +74,7 @@ import {
   dismissTaskNotifications,
   cancelScheduledTaskNotifications,
   cancelScheduledStartNotifications,
+  notificationColorForTheme,
 } from '@/src/notifications';
 
 const STATUS_LABELS: Record<TaskStatus, string> = {
@@ -650,6 +651,7 @@ export function TaskDetailView() {
   const colors = useColors();
   const { theme } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+  const iconColor = useMemo(() => notificationColorForTheme(theme), [theme]);
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
   const [descExpanded, setDescExpanded] = useState(false);
@@ -1137,9 +1139,10 @@ export function TaskDetailView() {
     );
     dismissTaskNotifications(task.id).catch((e) => logError('通知の消去', e));
     if (notifications.inProgress) {
-      postInProgressNotification({ ...task, status: 'in_progress' }).catch(
-        (e) => logError('通知の投稿', e),
-      );
+      postInProgressNotification(
+        { ...task, status: 'in_progress' },
+        iconColor,
+      ).catch((e) => logError('通知の投稿', e));
     }
     await refresh();
 

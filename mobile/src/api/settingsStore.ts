@@ -4,6 +4,7 @@
 
 import * as SecureStore from 'expo-secure-store';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Appearance } from 'react-native';
 import { type AppTheme, APP_THEMES } from '@/src/theme';
 import {
   type NotificationSettings,
@@ -105,6 +106,37 @@ function isValidTheme(value: string | null): value is AppTheme {
 const LEGACY_DARK_MODE_KEY = 'takusu.darkMode';
 const LEGACY_ACTIVE_LLM_PROVIDER_KEY = 'takusu.agent.activeLlmProvider';
 
+export function systemInitialTheme(): AppTheme {
+  return Appearance.getColorScheme() === 'dark' ? 'dark' : 'light';
+}
+
+// Resolve the active app theme from persisted storage, falling back to the
+// system color scheme. This is the source of truth used by both the UI and
+// notification icon tinting.
+export async function loadTheme(): Promise<AppTheme> {
+  const themeStr = await AsyncStorage.getItem(KEYS.theme);
+  if (isValidTheme(themeStr)) {
+    return themeStr;
+  }
+
+  const darkModeStr = await AsyncStorage.getItem(LEGACY_DARK_MODE_KEY);
+  if (darkModeStr != null) {
+    // Migrate legacy darkMode boolean to theme string and remove the old key.
+    const theme = darkModeStr === 'true' ? 'dark' : 'light';
+    try {
+      await Promise.all([
+        saveTheme(theme),
+        AsyncStorage.removeItem(LEGACY_DARK_MODE_KEY),
+      ]);
+    } catch {
+      // ignore migration cleanup failures
+    }
+    return theme;
+  }
+
+  return systemInitialTheme();
+}
+
 export function newId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 }
@@ -168,8 +200,7 @@ export async function loadSettings(): Promise<PersistedSettings> {
   const [
     workersUrl,
     workersToken,
-    themeStr,
-    darkModeStr,
+    theme,
     undoStepsStr,
     agentSessionHistoryCountStr,
     notifications,
@@ -182,8 +213,7 @@ export async function loadSettings(): Promise<PersistedSettings> {
   ] = await Promise.all([
     SecureStore.getItemAsync(KEYS.workersUrl),
     SecureStore.getItemAsync(KEYS.workersToken),
-    AsyncStorage.getItem(KEYS.theme),
-    AsyncStorage.getItem(LEGACY_DARK_MODE_KEY),
+    loadTheme(),
     AsyncStorage.getItem(KEYS.undoSteps),
     AsyncStorage.getItem(KEYS.agentSessionHistoryCount),
     loadNotificationSettings(),
@@ -198,19 +228,6 @@ export async function loadSettings(): Promise<PersistedSettings> {
   const parsedSessionCount = agentSessionHistoryCountStr
     ? parseInt(agentSessionHistoryCountStr, 10)
     : NaN;
-
-  let theme: AppTheme;
-  if (isValidTheme(themeStr)) {
-    theme = themeStr;
-  } else if (darkModeStr !== null) {
-    // Migrate legacy darkMode boolean to theme string.
-    theme = darkModeStr === 'true' ? 'dark' : 'light';
-    saveTheme(theme).catch(() => {
-      // ignore migration write failures
-    });
-  } else {
-    theme = 'light';
-  }
 
   const parsedLlmModels = parseJsonArray<LlmModelSettings>(llmModelsStr);
   const rawLlmProviders = parseJsonArray<unknown>(llmProvidersStr);

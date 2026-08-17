@@ -114,10 +114,13 @@ describe('handleActionButtonResponse', () => {
     expect(dismissTaskNotifications).toHaveBeenCalledWith('task-1');
     expect(cancelScheduledStartNotifications).toHaveBeenCalledWith('task-1');
     expect(mockGetTask).toHaveBeenCalledWith('task-1');
-    expect(postInProgressNotification).toHaveBeenCalledWith({
-      id: 'task-1',
-      title: 'テストタスク',
-    });
+    expect(postInProgressNotification).toHaveBeenCalledWith(
+      {
+        id: 'task-1',
+        title: 'テストタスク',
+      },
+      undefined,
+    );
   });
 
   it('handles START action without posting in-progress notification when disabled', async () => {
@@ -182,6 +185,7 @@ describe('handleActionButtonResponse', () => {
       'task-1',
       'テストタスク',
       'completed',
+      undefined,
     );
     expect(dismissInProgressNotification).toHaveBeenCalledWith('task-1');
     expect(dismissTaskNotifications).toHaveBeenCalledWith('task-1');
@@ -204,6 +208,7 @@ describe('handleActionButtonResponse', () => {
       'task-1',
       'テストタスク',
       'skipped',
+      undefined,
     );
   });
 
@@ -225,6 +230,7 @@ describe('handleActionButtonResponse', () => {
       'task-1',
       'タスク',
       'completed',
+      undefined,
     );
   });
 });

@@ -255,6 +255,7 @@ async function scheduleAt(
 
 export async function rescheduleNotifications(
   data: ScheduleData,
+  color?: string,
 ): Promise<void> {
   const { tasks, schedule, settings, tz } = data;
 
@@ -265,7 +266,7 @@ export async function rescheduleNotifications(
 
   // Cancel all previously scheduled notifications, then reschedule
   await Notifications.cancelAllScheduledNotificationsAsync();
-  const color = await getNotificationIconColor();
+  const iconColor = color ?? (await getNotificationIconColor());
 
   const scheduleMap = new Map<string, ScheduleEntry>();
   for (const e of schedule) scheduleMap.set(e.task_id, e);
@@ -286,7 +287,7 @@ export async function rescheduleNotifications(
       title,
       body,
       { url: '/' },
-      color,
+      iconColor,
     );
   }
 
@@ -332,12 +333,12 @@ export async function rescheduleNotifications(
             reminderDate,
             n,
             'タスク開始直前',
-            color,
+            iconColor,
           );
         }
       }
       if (settings.startOverdue && isFuture(startDate)) {
-        await scheduleCheckInNotification(startDate, n, n.title, color);
+        await scheduleCheckInNotification(startDate, n, n.title, iconColor);
       }
     }
   } else {
@@ -356,7 +357,7 @@ export async function rescheduleNotifications(
             'タスク開始直前',
             `「${task.title}」が${settings.preStartReminderMinutes}分後の${startTime}に開始します`,
             { url: `/task/${task.id}`, taskId: task.id },
-            color,
+            iconColor,
             CATEGORY_TASK_START,
           );
         }
@@ -369,7 +370,7 @@ export async function rescheduleNotifications(
           'タスク開始時間',
           `「${task.title}」の開始時間です (${startTime})`,
           { url: `/task/${task.id}`, taskId: task.id },
-          color,
+          iconColor,
           CATEGORY_TASK_START,
         );
       }
@@ -400,7 +401,7 @@ export async function rescheduleNotifications(
         'タスク終了時間',
         `「${task.title}」の終了時間です (${endTime})`,
         { url: `/task/${task.id}`, taskId: task.id },
-        color,
+        iconColor,
       );
     }
   }
@@ -419,7 +420,7 @@ export async function rescheduleNotifications(
         '未スケジュールのタスクがあります',
         `${idleCount}個のタスクが${settings.unscheduledIdleHours}時間以上放置されています`,
         { url: '/' },
-        color,
+        iconColor,
         tz,
       );
     }
@@ -428,14 +429,17 @@ export async function rescheduleNotifications(
 
 // ── In-progress notification (#5) — posted immediately, not scheduled ──
 
-export async function postInProgressNotification(task: TaskRow): Promise<void> {
-  const color = await getNotificationIconColor();
+export async function postInProgressNotification(
+  task: TaskRow,
+  color?: string,
+): Promise<void> {
+  const iconColor = color ?? (await getNotificationIconColor());
   await Notifications.scheduleNotificationAsync({
     content: {
       title: `実行中: ${task.title}`,
       body: 'タップして詳細を表示',
       data: { url: `/task/${task.id}`, taskId: task.id },
-      color,
+      color: iconColor,
       categoryIdentifier: CATEGORY_TASK_IN_PROGRESS,
       // Keep the in-progress notification visible on tap and prevent swipe dismissal
       // so the user can use the DONE/CANCEL actions while the task is running (#416).
@@ -467,15 +471,16 @@ export async function postResultNotification(
   taskId: string,
   taskTitle: string,
   status: 'completed' | 'skipped',
+  color?: string,
 ): Promise<void> {
   const label = status === 'completed' ? '完了' : 'スキップ';
-  const color = await getNotificationIconColor();
+  const iconColor = color ?? (await getNotificationIconColor());
   await Notifications.scheduleNotificationAsync({
     content: {
       title: `タスクを${label}しました`,
       body: `「${taskTitle}」を${label}しました`,
       data: { url: `/task/${taskId}`, taskId },
-      color,
+      color: iconColor,
     },
     trigger: { channelId: CHANNELS.taskInProgress },
   });
@@ -536,7 +541,11 @@ export async function rescheduleFromRaw(
   settings: NotificationSettings,
   tz?: string,
   agentClient?: AgentClient,
+  color?: string,
 ): Promise<void> {
   const schedule = scheduleJson ? parseSchedule(scheduleJson) : [];
-  await rescheduleNotifications({ tasks, schedule, settings, tz, agentClient });
+  await rescheduleNotifications(
+    { tasks, schedule, settings, tz, agentClient },
+    color,
+  );
 }

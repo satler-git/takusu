@@ -70,6 +70,7 @@ import { useScheduleOperation } from '@/src/hooks/useScheduleOperation';
 import {
   rescheduleFromRaw,
   postInProgressNotification,
+  notificationColorForTheme,
   dismissInProgressNotification,
   dismissTaskNotifications,
   cancelScheduledTaskNotifications,
@@ -317,11 +318,13 @@ const makeStyles = (colors: ColorSet) =>
   });
 
 export function HomeView() {
-  const { client, notifications, workersUrl, workersToken } = useServer();
+  const { client, notifications, workersUrl, workersToken, theme } =
+    useServer();
   const router = useRouter();
   const colors = useColors();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const insets = useSafeAreaInsets();
+  const iconColor = useMemo(() => notificationColorForTheme(theme), [theme]);
 
   const [tasks, setTasks] = useState<TaskRow[]>([]);
   const [schedule, setSchedule] = useState<ScheduleEntry[]>([]);
@@ -661,9 +664,11 @@ export function HomeView() {
     }, [refresh]),
   );
 
-  // Reschedule notifications when tasks, schedule, or notification
-  // settings change. This is separate from refresh() to avoid triggering a
-  // full server refetch when only notification settings are toggled.
+  // Reschedule notifications when tasks, schedule, notification settings,
+  // or icon color change. Theme changes the notification icon tint, so stale
+  // scheduled notifications must be recreated with the new color (#1469).
+  // This is separate from refresh() to avoid triggering a full server refetch
+  // when only notification settings are toggled.
   useEffect(() => {
     if (tasks.length === 0) return;
     rescheduleFromRaw(
@@ -672,8 +677,9 @@ export function HomeView() {
       notifications,
       serverTz,
       agentClient,
+      iconColor,
     ).catch((e) => logError('通知の再スケジュール', e));
-  }, [tasks, schedule, notifications, serverTz, agentClient]);
+  }, [tasks, schedule, notifications, serverTz, agentClient, iconColor]);
 
   const scheduleMap = useMemo(() => {
     const m = new Map<string, ScheduleEntry>();
@@ -1232,7 +1238,7 @@ export function HomeView() {
       }
       // Post in-progress notification when starting via swipe (#312)
       if (newStatus === 'in_progress' && currentNotifications.inProgress) {
-        postInProgressNotification(task).catch((e) =>
+        postInProgressNotification(task, iconColor).catch((e) =>
           logError('通知の投稿', e),
         );
       }
@@ -1278,7 +1284,7 @@ export function HomeView() {
               return;
             }
             if (undoNotifications.inProgress) {
-              postInProgressNotification(task).catch((e) =>
+              postInProgressNotification(task, iconColor).catch((e) =>
                 logError('通知の投稿', e),
               );
             }
@@ -1318,7 +1324,7 @@ export function HomeView() {
               makeProgressOperationId(),
             );
             if (redoNotifications.inProgress) {
-              postInProgressNotification(task).catch((e) =>
+              postInProgressNotification(task, iconColor).catch((e) =>
                 logError('通知の投稿', e),
               );
             }
@@ -1350,7 +1356,7 @@ export function HomeView() {
       });
       await refreshRef.current();
     },
-    [openProgressSheet],
+    [openProgressSheet, iconColor],
   );
 
   const markComplete = useCallback(async (task: TaskRow) => {
@@ -1669,9 +1675,10 @@ export function HomeView() {
         );
         const currentNotifications = notificationsRef.current;
         if (currentNotifications.inProgress) {
-          postInProgressNotification({ ...next, status: 'in_progress' }).catch(
-            (e) => logError('通知の投稿', e),
-          );
+          postInProgressNotification(
+            { ...next, status: 'in_progress' },
+            iconColor,
+          ).catch((e) => logError('通知の投稿', e));
         }
       } else {
         await currentClient.createWorkSession({ title: '作業' }, operationId);
@@ -1681,7 +1688,7 @@ export function HomeView() {
       return;
     }
     await refreshRef.current();
-  }, [findNextTask, openProgressSheet]);
+  }, [findNextTask, openProgressSheet, iconColor]);
 
   const handleStartDoneSlide = useCallback(async () => {
     const currentClient = clientRef.current;

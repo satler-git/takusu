@@ -12,6 +12,7 @@ import { loadSettings } from '@/src/api/settingsStore';
 import { ensureLocalServer, waitForLocalServerReady } from '@/src/api/server';
 import { AgentClient } from '@/src/api/agentClient';
 import { handleActionButtonResponse, NOOP_HAPTIC } from './actionHandler';
+import { notificationColorForTheme } from './theme';
 import {
   ACTION_DONE,
   ACTION_CANCEL,
@@ -67,6 +68,7 @@ TaskManager.defineTask<Notifications.NotificationTaskPayload>(
         agentClient,
         inProgressNotifications: settings.notifications.inProgress,
         haptic: NOOP_HAPTIC,
+        color: notificationColorForTheme(settings.theme),
       });
     } catch (err) {
       Sentry.withScope((scope) => {

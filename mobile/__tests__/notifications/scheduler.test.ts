@@ -6,12 +6,16 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
   removeItem: jest.fn(),
 }));
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Appearance } from 'react-native';
 import { rescheduleNotifications } from '@/src/notifications/scheduler';
 import type { ScheduleData } from '@/src/notifications/scheduler';
 import type { TaskRow, ScheduleEntry } from '@/src/api/types';
 import type { NotificationSettings } from '@/src/notifications/settings';
+import { COLORS, DARK_COLORS } from '@/src/theme';
 
 const scheduled: Array<Record<string, unknown>> = [];
+const asyncStorageGetItem = AsyncStorage.getItem as jest.Mock;
 
 jest.mock('expo-notifications', () => ({
   cancelAllScheduledNotificationsAsync: jest.fn().mockResolvedValue(undefined),
@@ -28,10 +32,14 @@ describe('rescheduleNotifications', () => {
   beforeEach(() => {
     jest.useFakeTimers({ now: new Date('2026-07-23T10:00:00Z').getTime() });
     scheduled.length = 0;
+    asyncStorageGetItem.mockReset();
+    asyncStorageGetItem.mockResolvedValue(null);
+    jest.spyOn(Appearance, 'getColorScheme').mockReturnValue(null);
   });
 
   afterEach(() => {
     jest.useRealTimers();
+    jest.restoreAllMocks();
   });
 
   const baseTask: Omit<
@@ -463,5 +471,45 @@ describe('rescheduleNotifications', () => {
     expect(summary).toBeDefined();
     const target = (summary!.trigger as { date: Date }).date;
     expect(target.toISOString()).toBe('2026-03-09T06:30:00.000Z');
+  });
+
+  it('tints notification icons with the active theme color', async () => {
+    asyncStorageGetItem.mockImplementation((key: string) =>
+      Promise.resolve(key === 'takusu.theme' ? 'dark' : null),
+    );
+    jest.spyOn(Appearance, 'getColorScheme').mockReturnValue(null);
+
+    const data: ScheduleData = {
+      tasks: [],
+      schedule: [],
+      settings: { ...settings, morningBriefing: true },
+    };
+    await rescheduleNotifications(data);
+
+    const summary = scheduled.find((r) =>
+      (r.content as { title?: string }).title?.includes('おはようございます'),
+    );
+    expect(summary).toBeDefined();
+    expect((summary!.content as { color: string }).color).toBe(
+      DARK_COLORS.brandLight,
+    );
+  });
+
+  it('falls back to the system color scheme when no theme is stored', async () => {
+    asyncStorageGetItem.mockResolvedValue(null);
+    jest.spyOn(Appearance, 'getColorScheme').mockReturnValue('light');
+
+    const data: ScheduleData = {
+      tasks: [],
+      schedule: [],
+      settings: { ...settings, morningBriefing: true },
+    };
+    await rescheduleNotifications(data);
+
+    const summary = scheduled.find((r) =>
+      (r.content as { title?: string }).title?.includes('おはようございます'),
+    );
+    expect(summary).toBeDefined();
+    expect((summary!.content as { color: string }).color).toBe(COLORS.brand);
   });
 });
