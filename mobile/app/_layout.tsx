@@ -12,7 +12,8 @@ import { ServerProvider, useServer } from '@/src/api/ServerProvider';
 import { VoiceProvider } from '@/src/api/VoiceContext';
 import { AgentClient } from '@/src/api/agentClient';
 import { setRecordingChangeListener } from '@/src/utils/voice';
-import { FloatingVoiceButton } from '@/src/components/FloatingVoiceButton';
+import { SurfaceProvider } from '@/src/api/SurfaceContext';
+import { ResidentAgentButton } from '@/src/components/ResidentAgentButton';
 import { installGlobalErrorHandler } from '@/src/api/installGlobalErrorHandler';
 import {
   ThemeProvider,
@@ -341,7 +342,9 @@ function ThemedApp() {
             <Stack.Screen name="tasks" />
           </Stack>
           <UndoRedoToast />
-          <FloatingVoiceButton />
+          <SurfaceProvider>
+            <ResidentAgentButton />
+          </SurfaceProvider>
           {showWelcome && welcomeTheme !== null && (
             <WelcomeScreen
               theme={welcomeTheme}
