@@ -7782,6 +7782,251 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/agent/v1/surface': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              version: number;
+            } & components['schemas']['SurfaceSnapshot'];
+          };
+        };
+        /** @description Default error body returned by agent endpoints. */
+        default: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['ErrorResponse'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/agent/v1/surface/events': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description Server-Sent Events stream */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/event-stream': components['schemas']['SurfaceEvent'];
+          };
+        };
+        /** @description Default error body returned by agent endpoints. */
+        default: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['ErrorResponse'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/agent/v1/surface/commands': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          'application/json': {
+            version: number;
+          } & components['schemas']['SurfaceCommandRequest'];
+        };
+      };
+      responses: {
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              version: number;
+            } & components['schemas']['SurfaceCommandResponse'];
+          };
+        };
+        /** @description Failed to parse the request body as JSON */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Expected request with `Content-Type: application/json` */
+        415: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Failed to deserialize the JSON body into the target type */
+        422: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Default error body returned by agent endpoints. */
+        default: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['ErrorResponse'];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/agent/v1/surface/audio': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          'application/json': {
+            version: number;
+          } & components['schemas']['SurfaceAudioRequest'];
+        };
+      };
+      responses: {
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              version: number;
+            } & components['schemas']['SurfaceSnapshot'];
+          };
+        };
+        /** @description Failed to parse the request body as JSON */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Expected request with `Content-Type: application/json` */
+        415: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Failed to deserialize the JSON body into the target type */
+        422: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Default error body returned by agent endpoints. */
+        default: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['ErrorResponse'];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/agent/v1/sessions/{id}/turns/{turn_index}/edit/stream': {
     parameters: {
       query?: never;
@@ -9665,6 +9910,12 @@ export interface components {
       id: string;
       schedule_dirty: boolean;
     };
+    /** @enum {string} */
+    AudioCallback:
+      | 'listening'
+      | 'transcribing'
+      | 'speaking'
+      | 'playback_finished';
     CapabilitiesResponse: {
       approvals: boolean;
       audio_input: boolean;
@@ -10062,6 +10313,69 @@ export interface components {
        */
       tz: string | null;
     };
+    /** @enum {string} */
+    StateScope: 'user' | 'session' | 'device' | 'ephemeral';
+    SurfaceAudioRequest: {
+      callback: components['schemas']['AudioCallback'];
+      /**
+       * Format: uint64
+       * @default null
+       */
+      operation_id: number | null;
+    };
+    /** @enum {string} */
+    SurfaceCommand:
+      | 'confirm-recording'
+      | 'open-panel'
+      | 'stop-tts'
+      | 'open-approval'
+      | 'show-recovery';
+    SurfaceCommandRequest: {
+      command: components['schemas']['SurfaceCommand'];
+      /**
+       * Format: uint64
+       * @default null
+       */
+      operation_id: number | null;
+    };
+    SurfaceCommandResponse: {
+      accepted: boolean;
+      command: components['schemas']['SurfaceCommand'];
+      reason?: string | null;
+      snapshot: components['schemas']['SurfaceSnapshot'];
+    };
+    SurfaceEvent:
+      | ({
+          /** @constant */
+          type: 'snapshot';
+        } & components['schemas']['SurfaceSnapshot'])
+      | ({
+          /** @constant */
+          type: 'state_changed';
+        } & components['schemas']['SurfaceSnapshot']);
+    SurfaceSnapshot: {
+      error?: string | null;
+      /**
+       * Format: uint64
+       * @description Identifies the current device-local turn or audio operation. A late
+       *     callback for an older operation is ignored by the state machine.
+       */
+      operation_id?: number | null;
+      /** Format: uint64 */
+      revision: number;
+      scope: components['schemas']['StateScope'];
+      state: components['schemas']['SurfaceState'];
+    };
+    /** @enum {string} */
+    SurfaceState:
+      | 'idle'
+      | 'listening'
+      | 'transcribing'
+      | 'thinking'
+      | 'waiting_for_user'
+      | 'waiting_for_approval'
+      | 'speaking'
+      | 'error';
     /**
      * @description Target kind for a proposed or applied change.
      * @enum {string}

@@ -50,6 +50,52 @@ export interface AgentTurnResult {
   presentation?: Presentation | null;
 }
 
+// ── Shared surface state (WI-5) ──────────────────────────────────────────
+
+export type StateScope = 'user' | 'session' | 'device' | 'ephemeral';
+export type SurfaceState =
+  | 'idle'
+  | 'listening'
+  | 'transcribing'
+  | 'thinking'
+  | 'waiting_for_user'
+  | 'waiting_for_approval'
+  | 'speaking'
+  | 'error';
+
+export interface SurfaceSnapshot {
+  /** Surface state is owned by the local device, not by a user session. */
+  scope: StateScope;
+  state: SurfaceState;
+  revision: number;
+  operation_id?: number;
+  error?: string | null;
+}
+
+export type SurfaceEvent =
+  | ({ type: 'snapshot' } & SurfaceSnapshot)
+  | ({ type: 'state_changed' } & SurfaceSnapshot);
+
+export type SurfaceCommand =
+  | 'confirm-recording'
+  | 'open-panel'
+  | 'stop-tts'
+  | 'open-approval'
+  | 'show-recovery';
+
+export interface SurfaceCommandResponse {
+  command: SurfaceCommand;
+  accepted: boolean;
+  reason?: string | null;
+  snapshot: SurfaceSnapshot;
+}
+
+export type SurfaceAudioCallback =
+  | 'listening'
+  | 'transcribing'
+  | 'speaking'
+  | 'playback_finished';
+
 export interface UserInputQuestion {
   text: string;
   for: string;
@@ -195,6 +241,135 @@ export function decodePresentation(raw: unknown): Presentation {
     default:
       return { type: 'text', text: fallback };
   }
+}
+
+const SURFACE_STATES: readonly SurfaceState[] = [
+  'idle',
+  'listening',
+  'transcribing',
+  'thinking',
+  'waiting_for_user',
+  'waiting_for_approval',
+  'speaking',
+  'error',
+];
+
+const STATE_SCOPES: readonly StateScope[] = [
+  'user',
+  'session',
+  'device',
+  'ephemeral',
+];
+
+const SURFACE_COMMANDS: readonly SurfaceCommand[] = [
+  'confirm-recording',
+  'open-panel',
+  'stop-tts',
+  'open-approval',
+  'show-recovery',
+];
+
+function isSurfaceState(value: unknown): value is SurfaceState {
+  return (
+    typeof value === 'string' && SURFACE_STATES.includes(value as SurfaceState)
+  );
+}
+
+function isStateScope(value: unknown): value is StateScope {
+  return (
+    typeof value === 'string' && STATE_SCOPES.includes(value as StateScope)
+  );
+}
+
+function isSurfaceCommand(value: unknown): value is SurfaceCommand {
+  return (
+    typeof value === 'string' &&
+    SURFACE_COMMANDS.includes(value as SurfaceCommand)
+  );
+}
+
+function decodeSurfaceSnapshotValue(raw: unknown): SurfaceSnapshot | undefined {
+  if (!isObject(raw)) {
+    return undefined;
+  }
+  const scope = raw.scope;
+  const state = raw.state;
+  const revision = raw.revision;
+  if (
+    !isStateScope(scope) ||
+    !isSurfaceState(state) ||
+    typeof revision !== 'number' ||
+    !Number.isSafeInteger(revision) ||
+    revision < 0
+  ) {
+    return undefined;
+  }
+  const operationId = raw.operation_id;
+  if (
+    operationId !== undefined &&
+    operationId !== null &&
+    (typeof operationId !== 'number' ||
+      !Number.isSafeInteger(operationId) ||
+      operationId < 1)
+  ) {
+    return undefined;
+  }
+  const error = raw.error;
+  if (error !== undefined && error !== null && typeof error !== 'string') {
+    return undefined;
+  }
+  return {
+    scope,
+    state,
+    revision,
+    ...(operationId !== undefined &&
+      operationId !== null && { operation_id: operationId }),
+    ...(error !== undefined && error !== null && { error }),
+  };
+}
+
+export function decodeSurfaceSnapshot(raw: unknown): SurfaceSnapshot {
+  const snapshot = decodeSurfaceSnapshotValue(raw);
+  if (snapshot === undefined) {
+    throw new Error('Invalid surface snapshot');
+  }
+  return snapshot;
+}
+
+export function decodeSurfaceEvent(raw: unknown): SurfaceEvent | undefined {
+  if (!isObject(raw)) {
+    return undefined;
+  }
+  const type = raw.type;
+  if (type !== 'snapshot' && type !== 'state_changed') {
+    return undefined;
+  }
+  const snapshot = decodeSurfaceSnapshotValue(raw);
+  return snapshot === undefined ? undefined : { type, ...snapshot };
+}
+
+export function decodeSurfaceCommandResponse(
+  raw: unknown,
+): SurfaceCommandResponse {
+  if (!isObject(raw)) {
+    throw new Error('Invalid surface command response');
+  }
+  const command = raw.command;
+  const accepted = raw.accepted;
+  const reason = raw.reason;
+  if (
+    !isSurfaceCommand(command) ||
+    typeof accepted !== 'boolean' ||
+    (reason !== undefined && reason !== null && typeof reason !== 'string')
+  ) {
+    throw new Error('Invalid surface command response');
+  }
+  return {
+    command,
+    accepted,
+    ...(reason !== undefined && { reason }),
+    snapshot: decodeSurfaceSnapshot(raw.snapshot),
+  };
 }
 
 function isObject(v: unknown): v is Record<string, unknown> {

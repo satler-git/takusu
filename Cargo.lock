@@ -5308,6 +5308,7 @@ dependencies = [
  "clap",
  "config",
  "futures-util",
+ "http-body-util",
  "indexmap",
  "insta",
  "inventory",

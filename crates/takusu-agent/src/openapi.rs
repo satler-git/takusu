@@ -28,12 +28,13 @@ use crate::Presentation;
 use crate::ToolStatsSnapshot;
 use crate::capability::{ActionCapability, CapabilityRequest};
 use crate::notification::{StartTimeNotificationList, StartTimeNotificationRequest};
+use crate::surface::{SurfaceCommandResponse, SurfaceEvent, SurfaceSnapshot};
 use crate::transport::{
     API_VERSION, ApprovalDecisionRequest, ApprovalResultDto, CapabilitiesResponse,
     CreateSessionRequest, CreateSessionResponse, EditTurnRequest, HealthResponse, PlannerEvent,
-    ResumeSessionRequest, ResumeSessionResponse, RevertRequest, SseEvent, TurnRequest,
-    TurnResultDto, UpdateAgentSettings, UpdateSessionSettings, UserInputResolutionRequest,
-    Versioned,
+    ResumeSessionRequest, ResumeSessionResponse, RevertRequest, SseEvent, SurfaceAudioRequest,
+    SurfaceCommandRequest, TurnRequest, TurnResultDto, UpdateAgentSettings, UpdateSessionSettings,
+    UserInputResolutionRequest, Versioned,
 };
 
 /// Generic `{ "ok": true }` body used by several agent endpoints.
@@ -237,6 +238,31 @@ async fn events_stream() -> SseStream<PlannerEvent> {
     SseStream::default()
 }
 
+async fn surface_snapshot() -> Json<Versioned<SurfaceSnapshot>> {
+    versioned(SurfaceSnapshot::default())
+}
+
+async fn surface_events() -> SseStream<SurfaceEvent> {
+    SseStream::default()
+}
+
+async fn surface_command(
+    Json(body): Json<Versioned<SurfaceCommandRequest>>,
+) -> Json<Versioned<SurfaceCommandResponse>> {
+    versioned(SurfaceCommandResponse {
+        command: body.value.command,
+        accepted: false,
+        reason: Some("schema stub".into()),
+        snapshot: SurfaceSnapshot::default(),
+    })
+}
+
+async fn surface_audio(
+    Json(_body): Json<Versioned<SurfaceAudioRequest>>,
+) -> Json<Versioned<SurfaceSnapshot>> {
+    versioned(SurfaceSnapshot::default())
+}
+
 async fn revert_turn(
     Path((_id, _turn_index)): Path<(String, usize)>,
     Json(_): Json<Versioned<RevertRequest>>,
@@ -347,6 +373,10 @@ fn build_api_router(open_api: &mut OpenApi) -> axum::Router {
             "/agent/v1/sessions/{id}/turns/stream",
             api::post(run_turn_stream),
         )
+        .api_route("/agent/v1/surface", api::get(surface_snapshot))
+        .api_route("/agent/v1/surface/events", api::get(surface_events))
+        .api_route("/agent/v1/surface/commands", api::post(surface_command))
+        .api_route("/agent/v1/surface/audio", api::post(surface_audio))
         .api_route(
             "/agent/v1/sessions/{id}/turns/{turn_index}/edit/stream",
             api::post(edit_turn_stream),
@@ -408,6 +438,10 @@ mod tests {
         let paths = &spec.paths.unwrap().paths;
         assert!(paths.contains_key("/agent/v1/health"));
         assert!(paths.contains_key("/agent/v1/events"));
+        assert!(paths.contains_key("/agent/v1/surface"));
+        assert!(paths.contains_key("/agent/v1/surface/events"));
+        assert!(paths.contains_key("/agent/v1/surface/commands"));
+        assert!(paths.contains_key("/agent/v1/surface/audio"));
         assert!(paths.contains_key("/agent/v1/sessions"));
         assert!(paths.contains_key("/agent/v1/sessions/{id}/turns/stream"));
     }

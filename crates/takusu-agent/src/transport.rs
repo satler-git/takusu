@@ -28,6 +28,7 @@ use crate::capability::{
 };
 use crate::llm::{LlmClient, build_llm_client};
 use crate::notification::StartTimeNotificationRequest;
+use crate::surface::{AudioCallback, SurfaceCommand, SurfaceEvent, SurfaceStateMachine};
 use crate::{
     AgentConfig, AgentError, AgentSession, ApprovalRequest, ApprovalResult, InvalidArgsError,
     ToolError, TurnEvent, TurnResult, UserInputAnswer, UserInputProvider, UserInputQuestion,
@@ -160,6 +161,8 @@ pub struct AgentApiState {
     pub(crate) capability_store: CapabilityStore,
     planner_client: Client,
     planner_state_tx: broadcast::Sender<PlannerEvent>,
+    /// Device-scoped surface state shared by every local surface.
+    surface: SurfaceStateMachine,
 }
 
 impl AgentApiState {
@@ -196,11 +199,17 @@ impl AgentApiState {
             capability_store: CapabilityStore::new(),
             planner_client,
             planner_state_tx,
+            surface: SurfaceStateMachine::new(),
         }
     }
 
     fn session(&self, id: &str) -> Option<Arc<AgentSession>> {
         self.sessions.lock().ok()?.get(id).cloned()
+    }
+
+    /// Returns the device-scoped state shared by all local surfaces.
+    pub fn surface(&self) -> &SurfaceStateMachine {
+        &self.surface
     }
 
     /// Broadcast a planner-state change to all connected event subscribers.
@@ -245,6 +254,19 @@ impl AgentApiState {
             | QuickAction::Complete => vec!["tasks".to_string()],
             QuickAction::Delay => vec!["schedule".to_string()],
         }
+    }
+
+    fn apply_cached_turn_to_surface(&self, owner: &str, result: &TurnResultDto) {
+        let operation_id = self.surface.begin_operation(Some(owner.to_string()));
+        let turn = TurnResult {
+            text: result.text.clone(),
+            changes: result.changes.clone(),
+            schedule_dirty: result.schedule_dirty,
+            approval_request: result.approval_request.clone(),
+            presentation: result.presentation.clone(),
+        };
+        self.surface
+            .apply_turn_event_for(operation_id, &TurnEvent::Done(Box::new(turn)));
     }
 }
 
@@ -554,6 +576,20 @@ pub struct EditTurnRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct SurfaceCommandRequest {
+    pub command: SurfaceCommand,
+    #[serde(default)]
+    pub operation_id: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct SurfaceAudioRequest {
+    pub callback: AudioCallback,
+    #[serde(default)]
+    pub operation_id: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct RevertRequest {
     pub after_user: bool,
 }
@@ -667,6 +703,10 @@ pub fn router(state: Arc<AgentApiState>) -> Router {
         .route("/sessions/resume", post(resume_session))
         .route("/sessions/{id}/turns", post(run_turn))
         .route("/sessions/{id}/turns/stream", post(run_turn_stream))
+        .route("/surface", get(surface_snapshot))
+        .route("/surface/events", get(surface_events))
+        .route("/surface/commands", post(surface_command))
+        .route("/surface/audio", post(surface_audio))
         .route(
             "/sessions/{id}/turns/{turn_index}/edit/stream",
             post(edit_turn_stream),
@@ -722,6 +762,95 @@ async fn planner_events(State(state): State<Arc<AgentApiState>>, headers: Header
     Sse::new(stream)
         .keep_alive(KeepAlive::default())
         .into_response()
+}
+
+async fn surface_snapshot(State(state): State<Arc<AgentApiState>>, headers: HeaderMap) -> Response {
+    if let Err(status) = auth_token(&state, &headers).await {
+        return status.into_response();
+    }
+    Json(Versioned {
+        version: API_VERSION,
+        value: state.surface.snapshot(),
+    })
+    .into_response()
+}
+
+/// Server-sent stream of device-scoped surface state.
+///
+/// The current snapshot is sent before the live broadcast so a reconnecting
+/// surface can recover without depending on an event that it may have missed.
+async fn surface_events(State(state): State<Arc<AgentApiState>>, headers: HeaderMap) -> Response {
+    if let Err(status) = auth_token(&state, &headers).await {
+        return status.into_response();
+    }
+    let surface = state.surface.clone();
+    let receiver = surface.subscribe();
+    let initial = surface.snapshot();
+    let initial = futures_util::stream::once(std::future::ready(Ok::<_, Infallible>(
+        Event::default().data(
+            serde_json::to_string(&SurfaceEvent::Snapshot(initial))
+                .expect("surface snapshot should always serialize"),
+        ),
+    )));
+    let changes = BroadcastStream::new(receiver).filter_map(move |result| {
+        let surface = surface.clone();
+        std::future::ready(match result {
+            Ok(event) => serde_json::to_string(&event)
+                .ok()
+                .map(|json| Ok::<_, Infallible>(Event::default().data(json))),
+            // A lagged receiver must resynchronize instead of silently
+            // continuing with a state that may be missing revisions.
+            Err(_) => serde_json::to_string(&SurfaceEvent::Snapshot(surface.snapshot()))
+                .ok()
+                .map(|json| Ok::<_, Infallible>(Event::default().data(json))),
+        })
+    });
+    Sse::new(initial.chain(changes))
+        .keep_alive(KeepAlive::default())
+        .into_response()
+}
+
+async fn surface_command(
+    State(state): State<Arc<AgentApiState>>,
+    headers: HeaderMap,
+    Json(body): Json<Versioned<SurfaceCommandRequest>>,
+) -> Response {
+    if let Err(status) = auth_token(&state, &headers).await {
+        return status.into_response();
+    }
+    if body.version != API_VERSION {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    Json(Versioned {
+        version: API_VERSION,
+        value: state
+            .surface
+            .command_for(body.value.operation_id, body.value.command),
+    })
+    .into_response()
+}
+
+async fn surface_audio(
+    State(state): State<Arc<AgentApiState>>,
+    headers: HeaderMap,
+    Json(body): Json<Versioned<SurfaceAudioRequest>>,
+) -> Response {
+    if let Err(status) = auth_token(&state, &headers).await {
+        return status.into_response();
+    }
+    if body.version != API_VERSION {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    Json(Versioned {
+        version: API_VERSION,
+        value: match body.value.operation_id {
+            Some(operation_id) => state
+                .surface
+                .apply_audio_callback_for(operation_id, body.value.callback),
+            None => state.surface.apply_audio_callback(body.value.callback),
+        },
+    })
+    .into_response()
 }
 
 async fn capabilities(State(state): State<Arc<AgentApiState>>, headers: HeaderMap) -> Response {
@@ -985,6 +1114,7 @@ async fn resume_session(
         return agent_error(e);
     }
 
+    let has_pending_approval = body.value.pending_approval.is_some();
     if let Some(approval) = body.value.pending_approval
         && let Err(e) = session.set_pending_approval(approval)
     {
@@ -1019,6 +1149,11 @@ async fn resume_session(
         return StatusCode::CONFLICT.into_response();
     }
     sessions.insert(session_id.clone(), session);
+    drop(sessions);
+    if has_pending_approval {
+        let operation_id = state.surface.begin_operation(Some(session_id.clone()));
+        state.surface.set_waiting_for_approval(operation_id);
+    }
     tracing::info!(session_id = %session_id, history_len, "agent session resumed");
     Json(Versioned {
         version: API_VERSION,
@@ -1048,18 +1183,29 @@ async fn run_turn(
         && let Ok(results) = state.turn_results.lock()
         && let Some(result) = results.get(&(id.clone(), key.clone(), "turn"))
     {
+        state.apply_cached_turn_to_surface(&id, result);
         return Json(Versioned {
             version: API_VERSION,
             value: result.clone(),
         })
         .into_response();
     }
+    let operation_id = state.surface.begin_operation(Some(id.clone()));
+    state
+        .surface
+        .apply_turn_event_for(operation_id, &TurnEvent::Thinking(String::new()));
     let result = match session.run_turn(&body.value.text).await {
         Ok(result) => {
+            state
+                .surface
+                .apply_turn_event_for(operation_id, &TurnEvent::Done(Box::new(result.clone())));
             tracing::info!(session_id = %id, text_len = result.text.len(), changes = result.changes.len(), schedule_dirty = result.schedule_dirty, "agent turn completed");
             TurnResultDto::from(result)
         }
         Err(error) => {
+            state
+                .surface
+                .apply_turn_event_for(operation_id, &TurnEvent::Error(error.to_string()));
             tracing::error!(session_id = %id, error = %error, "agent turn failed");
             return agent_error(error);
         }
@@ -1144,6 +1290,7 @@ async fn run_turn_stream(
         && let Ok(results) = state.turn_results.lock()
         && let Some(result) = results.get(&(id.clone(), key.clone(), "turn"))
     {
+        state.apply_cached_turn_to_surface(&id, result);
         let cached = TurnResult {
             text: result.text.clone(),
             changes: result.changes.clone(),
@@ -1160,6 +1307,10 @@ async fn run_turn_stream(
             .keep_alive(KeepAlive::default())
             .into_response();
     }
+    let operation_id = state.surface.begin_operation(Some(id.clone()));
+    state
+        .surface
+        .apply_turn_event_for(operation_id, &TurnEvent::Thinking(String::new()));
     let text = body.value.text.clone();
     let (tx, rx) = unbounded_channel::<StreamEvent>();
     let tx_closed = tx.clone();
@@ -1169,14 +1320,21 @@ async fn run_turn_stream(
     let state2 = Arc::clone(&state);
     tokio::spawn(async move {
         tokio::select! {
-            _ = tx_closed.closed() => {}
+            _ = tx_closed.closed() => {
+                state2.surface.finish_operation(operation_id);
+            }
             result = session2.run_turn_stream(&text, |event| {
+                state2.surface.apply_turn_event_for(operation_id, &event);
                 let _ = tx.send(StreamEvent::Turn(event));
             }, |block| {
                 let _ = tx.send(StreamEvent::TtsBlock(block));
             }) => {
                 match result {
                     Ok(result) => {
+                        state2.surface.apply_turn_event_for(
+                            operation_id,
+                            &TurnEvent::Done(Box::new(result.clone())),
+                        );
                         tracing::info!(session_id = %id2, text_len = result.text.len(), changes = result.changes.len(), schedule_dirty = result.schedule_dirty, "agent turn stream completed");
                         let kinds = AgentApiState::state_changed_kinds_for_turn(
                             &result.changes,
@@ -1192,6 +1350,10 @@ async fn run_turn_stream(
                         }
                     }
                     Err(error) => {
+                        state2.surface.apply_turn_event_for(
+                            operation_id,
+                            &TurnEvent::Error(error.to_string()),
+                        );
                         tracing::error!(session_id = %id2, error = %error, "agent turn stream failed");
                         let _ = tx.send(StreamEvent::Turn(TurnEvent::Error(error.to_string())));
                     }
@@ -1229,6 +1391,7 @@ async fn edit_turn_stream(
         && let Ok(results) = state.turn_results.lock()
         && let Some(result) = results.get(&(id.clone(), key.clone(), "edit"))
     {
+        state.apply_cached_turn_to_surface(&id, result);
         let cached = TurnResult {
             text: result.text.clone(),
             changes: result.changes.clone(),
@@ -1245,6 +1408,10 @@ async fn edit_turn_stream(
             .keep_alive(KeepAlive::default())
             .into_response();
     }
+    let operation_id = state.surface.begin_operation(Some(id.clone()));
+    state
+        .surface
+        .apply_turn_event_for(operation_id, &TurnEvent::Thinking(String::new()));
     let text = body.value.text.clone();
     let (tx, rx) = unbounded_channel::<StreamEvent>();
     let tx_closed = tx.clone();
@@ -1254,14 +1421,21 @@ async fn edit_turn_stream(
     let state2 = Arc::clone(&state);
     tokio::spawn(async move {
         tokio::select! {
-            _ = tx_closed.closed() => {}
+            _ = tx_closed.closed() => {
+                state2.surface.finish_operation(operation_id);
+            }
             result = session2.edit_turn_stream(turn_index, &text, |event| {
+                state2.surface.apply_turn_event_for(operation_id, &event);
                 let _ = tx.send(StreamEvent::Turn(event));
             }, |block| {
                 let _ = tx.send(StreamEvent::TtsBlock(block));
             }) => {
                 match result {
                     Ok(result) => {
+                        state2.surface.apply_turn_event_for(
+                            operation_id,
+                            &TurnEvent::Done(Box::new(result.clone())),
+                        );
                         tracing::info!(session_id = %id2, turn_index, text_len = result.text.len(), changes = result.changes.len(), schedule_dirty = result.schedule_dirty, "agent edit turn stream completed");
                         let kinds = AgentApiState::state_changed_kinds_for_turn(
                             &result.changes,
@@ -1277,6 +1451,10 @@ async fn edit_turn_stream(
                         }
                     }
                     Err(error) => {
+                        state2.surface.apply_turn_event_for(
+                            operation_id,
+                            &TurnEvent::Error(error.to_string()),
+                        );
                         tracing::error!(session_id = %id2, turn_index, error = %error, "agent edit turn stream failed");
                         let _ = tx.send(StreamEvent::Turn(TurnEvent::Error(error.to_string())));
                     }
@@ -1401,6 +1579,7 @@ async fn resolve_approval(
     if let Ok(results) = state.approval_results.lock()
         && let Some(result) = results.get(&(id.clone(), key.clone()))
     {
+        state.surface.finish_approval_if_owner(&id);
         return Json(Versioned {
             version: API_VERSION,
             value: result.clone(),
@@ -1423,6 +1602,7 @@ async fn resolve_approval(
             return agent_error(error);
         }
     };
+    state.surface.finish_approval_if_owner(&id);
     if let Ok(mut results) = state.approval_results.lock() {
         results.insert((id, key), result.clone());
     }
@@ -1494,6 +1674,7 @@ async fn delete_session(
     match state.sessions.lock() {
         Ok(mut sessions) => {
             if sessions.remove(&id).is_some() {
+                state.surface.finish_if_owner(&id);
                 tracing::info!(session_id = %id, "agent session deleted");
                 StatusCode::NO_CONTENT.into_response()
             } else {
@@ -1579,10 +1760,11 @@ mod tests {
     use axum::Json;
     use axum::extract::State;
     use axum::http::{HeaderMap, StatusCode, header::AUTHORIZATION};
+    use http_body_util::BodyExt;
     use tokio::sync::RwLock;
 
     use super::*;
-    use crate::ToolRegistry;
+    use crate::{SurfaceState, ToolRegistry};
 
     struct StubFactory;
 
@@ -2147,6 +2329,10 @@ mod tests {
         let res =
             resume_session(State(state.clone()), auth_headers("test-token"), Json(body)).await;
         assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(
+            state.surface.snapshot().state,
+            SurfaceState::WaitingForApproval
+        );
 
         let pending = get_approval(
             State(state),
@@ -2160,6 +2346,130 @@ mod tests {
             .unwrap();
         let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(value["id"].as_str(), Some("session-pa-approval-1"));
+    }
+
+    #[tokio::test]
+    async fn surface_snapshot_returns_device_scoped_idle_state() {
+        let state = make_state("test-token");
+        let response = surface_snapshot(State(state), auth_headers("test-token")).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(body["version"], API_VERSION);
+        assert_eq!(body["scope"], "device");
+        assert_eq!(body["state"], "idle");
+        assert_eq!(body["revision"], 0);
+    }
+
+    #[tokio::test]
+    async fn surface_command_and_audio_routes_share_one_snapshot() {
+        let state = make_state("test-token");
+        let mut events = state.surface.subscribe();
+
+        let audio_body = Versioned {
+            version: API_VERSION,
+            value: SurfaceAudioRequest {
+                callback: AudioCallback::Listening,
+                operation_id: None,
+            },
+        };
+        let response = surface_audio(
+            State(state.clone()),
+            auth_headers("test-token"),
+            Json(audio_body),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(state.surface.snapshot().state, SurfaceState::Listening);
+
+        let command_body = Versioned {
+            version: API_VERSION,
+            value: SurfaceCommandRequest {
+                command: SurfaceCommand::ConfirmRecording,
+                operation_id: None,
+            },
+        };
+        let response =
+            surface_command(State(state), auth_headers("test-token"), Json(command_body)).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(body["accepted"], true);
+        assert_eq!(body["snapshot"]["state"], "transcribing");
+
+        let first = events.try_recv().unwrap();
+        let second = events.try_recv().unwrap();
+        assert!(
+            matches!(first, SurfaceEvent::StateChanged(snapshot) if snapshot.state == SurfaceState::Listening)
+        );
+        assert!(
+            matches!(second, SurfaceEvent::StateChanged(snapshot) if snapshot.state == SurfaceState::Transcribing)
+        );
+    }
+
+    #[tokio::test]
+    async fn surface_events_start_with_snapshot_and_reconnect_at_current_revision() {
+        fn sse_json(bytes: &[u8]) -> serde_json::Value {
+            let text = String::from_utf8(bytes.to_vec()).unwrap();
+            let data = text.trim().strip_prefix("data: ").expect("SSE data prefix");
+            serde_json::from_str(data).unwrap()
+        }
+
+        let state = make_state("test-token");
+        let mut body = surface_events(State(state.clone()), auth_headers("test-token"))
+            .await
+            .into_body();
+        let first = tokio::time::timeout(Duration::from_secs(1), body.frame())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap()
+            .into_data()
+            .unwrap();
+        let first = sse_json(&first);
+        assert_eq!(first["type"], "snapshot");
+        assert_eq!(first["state"], "idle");
+
+        state.surface.apply_audio_callback(AudioCallback::Listening);
+        let second = tokio::time::timeout(Duration::from_secs(1), body.frame())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap()
+            .into_data()
+            .unwrap();
+        let second = sse_json(&second);
+        assert_eq!(second["type"], "state_changed");
+        assert_eq!(second["state"], "listening");
+
+        let mut reconnect = surface_events(State(state), auth_headers("test-token"))
+            .await
+            .into_body();
+        let snapshot = tokio::time::timeout(Duration::from_secs(1), reconnect.frame())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap()
+            .into_data()
+            .unwrap();
+        let snapshot = sse_json(&snapshot);
+        assert_eq!(snapshot["type"], "snapshot");
+        assert_eq!(snapshot["state"], "listening");
+        assert_eq!(snapshot["revision"], 1);
+    }
+
+    #[tokio::test]
+    async fn surface_events_require_auth_and_accept_valid_token() {
+        let state = make_state("test-token");
+        let response = surface_events(State(state.clone()), HeaderMap::new()).await;
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+        let response = surface_events(State(state), auth_headers("test-token")).await;
+        assert_eq!(response.status(), StatusCode::OK);
     }
 
     #[tokio::test]
