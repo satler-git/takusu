@@ -2907,10 +2907,19 @@ impl Storage for D1Storage {
             .refresh_token
             .clone()
             .or_else(|| existing.refresh_token.clone());
-        let reminder_minutes = body.reminder_minutes.as_ref().map_or(existing.reminder_minutes, |x| *x);
+        let reminder_minutes = body
+            .reminder_minutes
+            .as_ref()
+            .map_or(existing.reminder_minutes, |x| *x);
         let color_id = body.color_id.as_ref().map_or(existing.color_id, |x| *x);
-        let visibility = body.visibility.as_ref().map_or(existing.visibility.clone(), |x| x.clone());
-        let transparency = body.transparency.as_ref().map_or(existing.transparency.clone(), |x| x.clone());
+        let visibility = body
+            .visibility
+            .as_ref()
+            .map_or(existing.visibility.clone(), |x| x.clone());
+        let transparency = body
+            .transparency
+            .as_ref()
+            .map_or(existing.transparency.clone(), |x| x.clone());
         let stmt = self.db.prepare(
             "INSERT INTO google_cal_settings (id, enabled, calendar_id, client_id, client_secret, refresh_token, reminder_minutes, color_id, visibility, transparency, created_at, updated_at) VALUES ('active', ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), strftime('%Y-%m-%dT%H:%M:%SZ', 'now')) ON CONFLICT(id) DO UPDATE SET enabled=excluded.enabled, calendar_id=excluded.calendar_id, client_id=excluded.client_id, client_secret=excluded.client_secret, refresh_token=excluded.refresh_token, reminder_minutes=excluded.reminder_minutes, color_id=excluded.color_id, visibility=excluded.visibility, transparency=excluded.transparency, updated_at=strftime('%Y-%m-%dT%H:%M:%SZ', 'now')",
         );

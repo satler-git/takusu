@@ -33,18 +33,25 @@ pub async fn get_settings(_req: worker::Request, env: Env) -> Result<Response, W
 pub async fn update_settings(mut req: worker::Request, env: Env) -> Result<Response, WorkerError> {
     let body: UpdateGoogleCalSettings = parse_json(&mut req).await?;
 
-    if let Some(Some(m)) = body.reminder_minutes && m < 0 {
+    if let Some(Some(m)) = body.reminder_minutes
+        && m < 0
+    {
         return Err(WorkerError::BadRequest(
             "reminder_minutes must be non-negative".into(),
         ));
     }
-    if let Some(Some(c)) = body.color_id && !(1..=11).contains(&c) {
+    if let Some(Some(c)) = body.color_id
+        && !(1..=11).contains(&c)
+    {
         return Err(WorkerError::BadRequest(
             "color_id must be between 1 and 11".into(),
         ));
     }
     if let Some(Some(v)) = &body.visibility
-        && !matches!(v.as_str(), "default" | "public" | "private" | "confidential")
+        && !matches!(
+            v.as_str(),
+            "default" | "public" | "private" | "confidential"
+        )
     {
         return Err(WorkerError::BadRequest(
             "visibility must be one of: default, public, private, confidential".into(),

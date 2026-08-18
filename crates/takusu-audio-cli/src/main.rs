@@ -38,15 +38,15 @@ enum Commands {
         /// Path to WAV audio file
         audio: PathBuf,
 
-        /// Path to Sherpa-ONNX model directory (omit to download SenseVoice on first run)
+        /// Path to Sherpa-ONNX model directory (omit to download on first run)
         #[arg(long)]
         sherpa_model_dir: Option<PathBuf>,
 
-        /// Sherpa-ONNX model family (sense-voice or funasr-nano)
+        /// Sherpa-ONNX model family
         #[arg(long, value_enum, default_value = "sense-voice")]
         sherpa_model: SherpaOnnxModel,
 
-        /// SenseVoice language (auto, zh, en, ja, ko)
+        /// Language hint (auto, zh, en, ja, ko, etc.)
         #[arg(long, default_value = "auto")]
         sherpa_language: String,
 
@@ -61,6 +61,10 @@ enum Commands {
         /// ONNX provider for Sherpa-ONNX (cpu, cuda, coreml)
         #[arg(long, value_enum, default_value = "cpu")]
         sherpa_provider: ExecutionProvider,
+
+        /// Use streaming (chunked) transcription; defaults to true for nemotron-ja
+        #[arg(long)]
+        streaming: Option<bool>,
     },
 
     /// Record from microphone and transcribe with Sherpa-ONNX (Press Enter to stop)
@@ -73,15 +77,15 @@ enum Commands {
         #[arg(long, default_value_t = 120.0)]
         max_duration: f64,
 
-        /// Path to Sherpa-ONNX model directory (omit to download SenseVoice on first run)
+        /// Path to Sherpa-ONNX model directory (omit to download on first run)
         #[arg(long)]
         sherpa_model_dir: Option<PathBuf>,
 
-        /// Sherpa-ONNX model family (sense-voice or funasr-nano)
+        /// Sherpa-ONNX model family
         #[arg(long, value_enum, default_value = "sense-voice")]
         sherpa_model: SherpaOnnxModel,
 
-        /// SenseVoice language (auto, zh, en, ja, ko)
+        /// Language hint (auto, zh, en, ja, ko, etc.)
         #[arg(long, default_value = "auto")]
         sherpa_language: String,
 
@@ -96,6 +100,10 @@ enum Commands {
         /// ONNX provider for Sherpa-ONNX (cpu, cuda, coreml)
         #[arg(long, value_enum, default_value = "cpu")]
         sherpa_provider: ExecutionProvider,
+
+        /// Use streaming (chunked) transcription (default: true)
+        #[arg(long)]
+        streaming: Option<bool>,
     },
 
     #[cfg(feature = "hush")]
@@ -164,6 +172,7 @@ async fn main() {
             sherpa_use_itn,
             sherpa_num_threads,
             sherpa_provider,
+            streaming,
         } => {
             let samples = read_wav(&audio).unwrap_or_else(|e| {
                 eprintln!("Failed to read WAV: {e}");
@@ -175,13 +184,19 @@ async fn main() {
                 backend: SttBackend::Sherpa,
                 model: sherpa_model,
                 model_dir: sherpa_model_dir,
-                language: sherpa_language,
+                language: sherpa_language.clone(),
                 use_itn: sherpa_use_itn,
                 num_threads: sherpa_num_threads,
                 provider: sherpa_provider,
                 sample_rate: SHERPA_SAMPLE_RATE as i32,
             };
-            let text = transcribe(&samples, stt_config).await;
+
+            let use_streaming = streaming.unwrap_or_else(|| stt_config.default_streaming());
+            let text = if use_streaming {
+                transcribe_streaming(&samples, stt_config, &sherpa_language, true).await
+            } else {
+                transcribe_offline(&samples, stt_config).await
+            };
             println!("{text}");
         }
 
@@ -194,6 +209,7 @@ async fn main() {
             sherpa_use_itn,
             sherpa_num_threads,
             sherpa_provider,
+            streaming,
         } => {
             let config = takusu_audio::RecordConfig {
                 max_duration: Duration::from_secs_f64(max_duration),
@@ -228,13 +244,19 @@ async fn main() {
                 backend: SttBackend::Sherpa,
                 model: sherpa_model,
                 model_dir: sherpa_model_dir,
-                language: sherpa_language,
+                language: sherpa_language.clone(),
                 use_itn: sherpa_use_itn,
                 num_threads: sherpa_num_threads,
                 provider: sherpa_provider,
                 sample_rate: SHERPA_SAMPLE_RATE as i32,
             };
-            let text = transcribe(&samples, stt_config).await;
+
+            let use_streaming = streaming.unwrap_or(true);
+            let text = if use_streaming {
+                transcribe_streaming(&samples, stt_config, &sherpa_language, true).await
+            } else {
+                transcribe_offline(&samples, stt_config).await
+            };
             println!("{text}");
         }
 
@@ -302,7 +324,7 @@ async fn main() {
     }
 }
 
-async fn transcribe(samples: &[f32], stt_config: SttRuntimeConfig) -> String {
+async fn transcribe_offline(samples: &[f32], stt_config: SttRuntimeConfig) -> String {
     #[cfg(not(feature = "sherpa"))]
     {
         let _ = (samples, stt_config);
@@ -345,6 +367,76 @@ async fn transcribe(samples: &[f32], stt_config: SttRuntimeConfig) -> String {
         .await
         .unwrap_or_else(|e| {
             eprintln!("Transcription task failed: {e}");
+            std::process::exit(1)
+        })
+    }
+}
+
+async fn transcribe_streaming(
+    samples: &[f32],
+    stt_config: SttRuntimeConfig,
+    language: &str,
+    print_partial: bool,
+) -> String {
+    #[cfg(not(feature = "sherpa"))]
+    {
+        let _ = (samples, stt_config, language, print_partial);
+        eprintln!("Sherpa-ONNX backend requires the 'sherpa' feature at compile time");
+        std::process::exit(1);
+    }
+
+    #[cfg(feature = "sherpa")]
+    {
+        let samples = samples.to_vec();
+        let language = language.to_string();
+        tokio::task::spawn_blocking(move || {
+            let handle = tokio::runtime::Handle::try_current().unwrap_or_else(|e| {
+                eprintln!("No tokio runtime: {e}");
+                std::process::exit(1)
+            });
+
+            eprintln!("Loading Sherpa-ONNX model...");
+            let start = std::time::Instant::now();
+            let asr = stt_config.build_streaming().unwrap_or_else(|e| {
+                eprintln!("Sherpa-ONNX model error: {e}");
+                std::process::exit(1);
+            });
+            eprintln!("Model loaded in {:.1}s.", start.elapsed().as_secs_f64());
+
+            eprintln!("Transcribing (streaming)...");
+            let start = std::time::Instant::now();
+            let mut stream = handle
+                .block_on(asr.start_stream(&language))
+                .unwrap_or_else(|e| {
+                    eprintln!("Sherpa-ONNX stream error: {e}");
+                    std::process::exit(1)
+                });
+
+            let chunk_size = (SHERPA_SAMPLE_RATE as usize * 160) / 1000;
+            let mut last = String::new();
+            for chunk in samples.chunks(chunk_size) {
+                stream.accept_waveform(chunk);
+                if print_partial {
+                    let text = stream.text();
+                    if !text.is_empty() && text != last {
+                        eprintln!("> {text}");
+                        last = text;
+                    }
+                }
+            }
+
+            let text = tokio::runtime::Handle::current()
+                .block_on(stream.finish())
+                .unwrap_or_else(|e| {
+                    eprintln!("Sherpa-ONNX transcription error: {e}");
+                    std::process::exit(1)
+                });
+            eprintln!("Done in {:.1}s.", start.elapsed().as_secs_f64());
+            text
+        })
+        .await
+        .unwrap_or_else(|e| {
+            eprintln!("Streaming transcription task failed: {e}");
             std::process::exit(1)
         })
     }

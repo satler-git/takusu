@@ -5,17 +5,18 @@
 //! It is not exposed as an LLM tool.
 
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use takusu_audio::play::{PcmFormat, PlayError, StreamedAudioFormat, play_stream};
 use takusu_audio::{
-    CartesiaSonic, CartesiaSonicConfig, FishAudio, FishAudioConfig, RecordConfig, SpeechToText,
-    TextToSpeech, TtsBackend, TtsOptions, TtsRequest, TtsStream, normalize_for_tts, record,
+    CartesiaSonic, CartesiaSonicConfig, FishAudio, FishAudioConfig, RecordConfig,
+    StreamingRecorder, StreamingSpeechToText, TextToSpeech, TtsBackend, TtsOptions, TtsRequest,
+    TtsStream, normalize_for_tts,
 };
 use thiserror::Error;
 
-use crate::{AgentError, AgentSession};
+use crate::{AgentError, AgentSession, TurnEvent};
 
 #[derive(Debug, Error)]
 pub enum AudioError {
@@ -34,6 +35,8 @@ pub enum AudioError {
     /// A `Mutex` / `RwLock` guard was poisoned by a panic while held.
     #[error("lock poisoned: {0}")]
     Lock(String),
+    #[error("{0}")]
+    Other(String),
 }
 
 // Generic `From` so audio call sites can write `.read()?` / `.lock()?`
@@ -60,9 +63,9 @@ pub use crate::audio_config::{AudioConfig, SttConfig, TtsConfig};
 
 /// Application-level audio adapter. Owns the agent session and the audio clients.
 pub struct AudioAdapter {
-    session: AgentSession,
+    session: Arc<AgentSession>,
     last_audio: AudioConfig,
-    stt: Arc<dyn SpeechToText>,
+    stt: Arc<dyn StreamingSpeechToText>,
     tts: Arc<dyn TextToSpeech>,
     tts_voice_id: String,
     tts_speed: Option<f32>,
@@ -71,7 +74,7 @@ pub struct AudioAdapter {
 
 impl AudioAdapter {
     /// Create an audio adapter from an existing agent session.
-    pub async fn new(session: AgentSession) -> Result<Self, AudioError> {
+    pub async fn new(session: Arc<AgentSession>) -> Result<Self, AudioError> {
         let audio = {
             let config = session.config.read()?;
             config.audio.clone()
@@ -89,23 +92,102 @@ impl AudioAdapter {
     }
 
     /// Run the push-to-talk loop until interrupted or an unrecoverable error occurs.
-    pub async fn run(&mut self, no_tts: bool) -> Result<(), AgentError> {
+    ///
+    /// `on_event` receives streaming ASR transcripts (`TurnEvent::AsrText`) and
+    /// the assistant turn events produced by `run_turn_stream`.
+    pub async fn run<E>(
+        &mut self,
+        no_tts: bool,
+        yes: bool,
+        mut on_event: E,
+    ) -> Result<(), AgentError>
+    where
+        E: FnMut(TurnEvent) + Send,
+    {
+        // Single background thread that reads "Enter" from stdin and routes it
+        // to the currently active recording's stop channel. This avoids spawning
+        // a new thread per turn and prevents multiple readers from competing for
+        // the same stdin bytes.
+        let current_stop: Arc<Mutex<Option<tokio::sync::mpsc::Sender<()>>>> =
+            Arc::new(Mutex::new(None));
+        let current_stop_c = Arc::clone(&current_stop);
+        let _stop_thread = tokio::task::spawn_blocking(move || {
+            let mut line = String::new();
+            loop {
+                line.clear();
+                let _ = std::io::stdin().read_line(&mut line);
+                if let Some(tx) = current_stop_c
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .as_ref()
+                {
+                    let _ = tx.blocking_send(());
+                }
+            }
+        });
+
         loop {
             self.reconfigure_if_needed().await?;
 
-            let samples = record_with_timeout(Duration::from_secs(60)).await?;
-            if samples.is_empty() {
-                continue;
+            let language = self.last_audio.stt.language.clone();
+            let mut asr_stream = self
+                .stt
+                .start_stream(&language)
+                .await
+                .map_err(|e| AgentError::Audio(AudioError::Transcribe(e.to_string())))?;
+
+            let (stop_tx, mut stop_rx) = tokio::sync::mpsc::channel(1);
+            *current_stop.lock().unwrap_or_else(|e| e.into_inner()) = Some(stop_tx);
+
+            let (recorder, mut chunk_rx) = StreamingRecorder::start(RecordConfig {
+                max_duration: Duration::from_secs(60),
+                ..Default::default()
+            })
+            .map_err(|e| AgentError::Audio(AudioError::Record(e.to_string())))?;
+
+            let mut last_text = String::new();
+            let mut recording = true;
+
+            while recording {
+                tokio::select! {
+                    chunk = chunk_rx.recv() => {
+                        match chunk {
+                            Some(chunk) => {
+                                asr_stream.accept_waveform(&chunk);
+                                let text = asr_stream.text();
+                                if text != last_text {
+                                    last_text = text.clone();
+                                    on_event(TurnEvent::AsrText(text));
+                                }
+                            }
+                            None => {
+                                recording = false;
+                            }
+                        }
+                    }
+                    _ = stop_rx.recv() => {
+                        recorder.stop();
+                        recording = false;
+                    }
+                }
             }
 
-            let text =
-                transcribe_with_timeout(Arc::clone(&self.stt), &samples, Duration::from_secs(120))
-                    .await?;
+            *current_stop.lock().unwrap_or_else(|e| e.into_inner()) = None;
+
+            recorder
+                .join()
+                .map_err(|e| AgentError::Audio(AudioError::Record(e.to_string())))?;
+
+            let text = asr_stream
+                .finish()
+                .await
+                .map_err(|e| AgentError::Audio(AudioError::Transcribe(e.to_string())))?;
             if text.trim().is_empty() {
                 continue;
             }
 
-            eprintln!("> {text}");
+            // Emit the final ASR transcript before the assistant turn.
+            on_event(TurnEvent::AsrText(text.clone()));
 
             let (tts_tx, tts_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
             let (audio_tx, mut audio_rx) = tokio::sync::mpsc::channel::<TtsStream>(3);
@@ -165,15 +247,11 @@ impl AudioAdapter {
 
             let result = match self
                 .session
-                .run_turn_stream(
-                    &text,
-                    |_event| {},
-                    |block| {
-                        if !no_tts_this_turn {
-                            let _ = tts_tx.send(block);
-                        }
-                    },
-                )
+                .run_turn_stream(&text, &mut on_event, |block| {
+                    if !no_tts_this_turn {
+                        let _ = tts_tx.send(block);
+                    }
+                })
                 .await
             {
                 Ok(result) => result,
@@ -193,13 +271,30 @@ impl AudioAdapter {
             play_result
                 .map_err(|e| AudioError::Play(format!("tts player task panicked: {e}")))??;
 
-            println!("{}", result.text);
             if !result.changes.is_empty() {
                 match serde_json::to_string_pretty(&result.changes) {
                     Ok(changes) => eprintln!("{changes}"),
                     Err(e) => eprintln!("changes: {e}"),
                 }
             }
+
+            if let Some(approval) = result.approval_request.as_ref() {
+                if yes {
+                    let res = self
+                        .session
+                        .resolve_approval(&approval.id, true, None)
+                        .await
+                        .map_err(|e| AudioError::Other(e.to_string()))?;
+                    if res.approved {
+                        eprintln!("approved {} change(s)", res.changes.len());
+                    } else {
+                        eprintln!("denied");
+                    }
+                } else {
+                    eprintln!("approval required; re-run with --yes to auto-approve");
+                }
+            }
+
             if result.schedule_dirty {
                 eprintln!("schedule dirty: true");
             }
@@ -228,7 +323,7 @@ impl AudioAdapter {
         audio: &AudioConfig,
     ) -> Result<
         (
-            Arc<dyn SpeechToText>,
+            Arc<dyn StreamingSpeechToText>,
             Arc<dyn TextToSpeech>,
             String,
             Option<f32>,
@@ -261,7 +356,7 @@ impl AudioAdapter {
     }
 }
 
-fn build_stt(config: &SttConfig) -> Result<Arc<dyn SpeechToText>, AudioError> {
+fn build_stt(config: &SttConfig) -> Result<Arc<dyn StreamingSpeechToText>, AudioError> {
     let runtime_config = takusu_audio::SttRuntimeConfig {
         backend: config.backend,
         model: config.model,
@@ -277,7 +372,7 @@ fn build_stt(config: &SttConfig) -> Result<Arc<dyn SpeechToText>, AudioError> {
         sample_rate: config.sample_rate,
     };
     runtime_config
-        .build()
+        .build_streaming()
         .map_err(|e| AudioError::Transcribe(e.to_string()))
 }
 
@@ -340,42 +435,6 @@ fn build_tts(config: &TtsConfig, api_sample_rate: u32) -> TtsBuildResult {
         // generic tokio-based AudioAdapter used on desktop.
         TtsBackend::Android => Err(AudioError::UnsupportedBackend("android".to_string())),
     }
-}
-
-async fn record_with_timeout(timeout: Duration) -> Result<Vec<f32>, AudioError> {
-    let samples = tokio::task::spawn_blocking(move || {
-        let config = RecordConfig {
-            max_duration: timeout,
-            ..Default::default()
-        };
-        record(&config)
-    })
-    .await
-    .map_err(|e| AudioError::Record(format!("record task failed: {e}")))?
-    .map_err(|e| AudioError::Record(e.to_string()))?;
-
-    Ok(samples)
-}
-
-async fn transcribe_with_timeout(
-    stt: Arc<dyn SpeechToText>,
-    samples: &[f32],
-    timeout: Duration,
-) -> Result<String, AudioError> {
-    let samples = samples.to_vec();
-    tokio::time::timeout(
-        timeout,
-        tokio::task::spawn_blocking(move || {
-            let handle = tokio::runtime::Handle::try_current()
-                .map_err(|e| AudioError::Transcribe(e.to_string()))?;
-            handle
-                .block_on(stt.transcribe(&samples))
-                .map_err(|e| AudioError::Transcribe(e.to_string()))
-        }),
-    )
-    .await
-    .map_err(|_| AudioError::Timeout)?
-    .map_err(|e| AudioError::Transcribe(format!("transcribe task failed: {e}")))?
 }
 
 async fn synthesize_stream_with_timeout(

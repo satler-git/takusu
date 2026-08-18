@@ -5,9 +5,9 @@ use std::sync::{
 };
 
 use takusu_audio::{
-    CartesiaOutputFormat, CartesiaSonic, CartesiaSonicConfig, FishAudio, FishAudioConfig, Hush,
-    SherpaOnnxAsr, SherpaOnnxAsrConfig, SherpaOnnxModel, SpeechToText, SttError, TextToSpeech,
-    TtsOptions, TtsRequest, normalize_for_tts,
+    CartesiaOutputFormat, CartesiaSonic, CartesiaSonicConfig, ExecutionProvider, FishAudio,
+    FishAudioConfig, Hush, SHERPA_SAMPLE_RATE, SherpaOnnxModel, StreamingSpeechToText, SttError,
+    SttRuntimeConfig, TextToSpeech, TtsOptions, TtsRequest, normalize_for_tts,
 };
 use tokio::runtime::{Builder, Runtime};
 
@@ -30,7 +30,8 @@ use crate::TakusuError;
 #[derive(uniffi::Object)]
 pub struct MobileAudio {
     hush: Mutex<Option<Hush>>,
-    stt: Mutex<Option<Arc<SherpaOnnxAsr>>>,
+    stt: Mutex<Option<Arc<dyn StreamingSpeechToText>>>,
+    stt_model: Mutex<String>,
     tts: Option<Arc<dyn TextToSpeech>>,
     runtime: Mutex<Option<Arc<Runtime>>>,
     runtime_shutdown: AtomicBool,
@@ -154,6 +155,7 @@ impl MobileAudio {
         Ok(Self {
             hush: Mutex::new(None),
             stt: Mutex::new(None),
+            stt_model: Mutex::new("sherpa-sense-voice-int8".to_string()),
             tts,
             runtime: Mutex::new(None),
             runtime_shutdown: AtomicBool::new(false),
@@ -182,6 +184,14 @@ impl MobileAudio {
             }
         }
         Ok(())
+    }
+
+    pub fn set_asr_model(&self, asr_model: String) {
+        let mut guard = self
+            .stt_model
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        *guard = asr_model;
     }
 
     pub fn transcribe_pcm(&self, samples: Vec<i16>) -> Result<String, TakusuError> {
@@ -217,31 +227,51 @@ impl MobileAudio {
         })?;
         drop(hush_guard);
 
-        // Load the STT model once, then release the mutex before the runtime
-        // block_on call so a panic in transcribe() cannot poison the stt lock.
+        let asr_model = self
+            .stt_model
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .clone();
+        let (model, model_dir) = self.parse_asr_model(&asr_model)?;
+
+        // Load the STT model once, then release the mutex so a panic in
+        // transcription cannot poison the stt lock. If the selected model
+        // changes, the cached model is discarded.
         let stt = {
-            let mut stt_guard = self.stt.lock().unwrap_or_else(|error| error.into_inner());
-            if stt_guard.is_none() {
-                let stt = SherpaOnnxAsr::from_config(&SherpaOnnxAsrConfig {
-                    model: SherpaOnnxModel::SenseVoice,
-                    model_dir: self.model_dir.join("sherpa-sense-voice-int8"),
-                    sample_rate: 16_000,
-                    language: Some(self.language.clone()),
+            let mut stt_guard = self.stt.lock().unwrap_or_else(|error| {
+                let mut guard = error.into_inner();
+                guard.take();
+                guard
+            });
+            let should_reload = stt_guard
+                .as_ref()
+                .map(|_| !model_dir.exists())
+                .unwrap_or(true);
+            if should_reload {
+                let stt_config = SttRuntimeConfig {
+                    backend: takusu_audio::SttBackend::Sherpa,
+                    model,
+                    model_dir: Some(model_dir),
+                    language: self.language.clone(),
                     use_itn: true,
-                    ..Default::default()
-                })
-                .map_err(|error: SttError| TakusuError::Audio {
-                    detail: format!("failed to load SenseVoice: {error}"),
-                })?;
-                *stt_guard = Some(Arc::new(stt));
+                    num_threads: 2,
+                    provider: ExecutionProvider::Cpu,
+                    sample_rate: SHERPA_SAMPLE_RATE as i32,
+                };
+                let stt =
+                    stt_config
+                        .build_streaming()
+                        .map_err(|error: SttError| TakusuError::Audio {
+                            detail: format!("failed to load {asr_model}: {error}"),
+                        })?;
+                *stt_guard = Some(stt);
             }
             stt_guard.as_ref().unwrap().clone()
         };
-        let runtime = self.ensure_runtime()?;
-        runtime
-            .block_on(stt.transcribe(&enhanced))
+
+        stt.transcribe_sync(&enhanced)
             .map_err(|error| TakusuError::Audio {
-                detail: format!("SenseVoice inference failed: {error}"),
+                detail: format!("{asr_model} inference failed: {error}"),
             })
     }
 
@@ -298,6 +328,30 @@ impl MobileAudio {
 
     pub fn is_muted(&self) -> bool {
         self.mute.load(Ordering::Relaxed)
+    }
+}
+
+impl MobileAudio {
+    fn parse_asr_model(&self, asr_model: &str) -> Result<(SherpaOnnxModel, PathBuf), TakusuError> {
+        let (model, id) = match asr_model {
+            "sense-voice" | "sherpa-sense-voice-int8" => {
+                (SherpaOnnxModel::SenseVoice, "sherpa-sense-voice-int8")
+            }
+            "parakeet-ctc-ja" | "sherpa-parakeet-ctc-ja-0.6b" => (
+                SherpaOnnxModel::ParakeetJaCtc,
+                "sherpa-parakeet-ctc-ja-0.6b",
+            ),
+            "nemotron-ja" | "sherpa-nemotron-ja-0.6b" => (
+                SherpaOnnxModel::NemotronMultilingual,
+                "sherpa-nemotron-ja-0.6b",
+            ),
+            _ => {
+                return Err(TakusuError::Audio {
+                    detail: format!("unsupported asr model: {asr_model}"),
+                });
+            }
+        };
+        Ok((model, self.model_dir.join(id)))
     }
 }
 

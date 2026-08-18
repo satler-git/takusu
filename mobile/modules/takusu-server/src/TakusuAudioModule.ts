@@ -4,6 +4,7 @@ export interface AudioOptions {
   provider: string;
   modelDir: string;
   model: string;
+  asrModel: string;
   apiKey: string;
   voiceId: string;
   language: string;

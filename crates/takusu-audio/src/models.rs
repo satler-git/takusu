@@ -17,6 +17,8 @@ use thiserror::Error;
 
 const HUSH_URL: &str = "https://huggingface.co/weya-ai/hush/resolve/main/onnx/advanced_dfnet16k_model_best_onnx.tar.gz";
 const SHERPA_SENSE_VOICE_URL: &str = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17.tar.bz2";
+const SHERPA_PARAKEET_CTC_JA_URL: &str = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet-tdt_ctc-0.6b-ja-35000-int8.tar.bz2";
+const SHERPA_NEMOTRON_JA_URL: &str = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-560ms-int8-2026-06-11.tar.bz2";
 
 /// Archive compression used by a model bundle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -53,19 +55,44 @@ pub struct ModelSpec {
     pub expected_files: &'static [&'static str],
 }
 
-const ALL_MODELS: [ModelSpec; 2] = [
-    ModelSpec {
-        id: "hush",
-        url: HUSH_URL,
-        format: ArchiveFormat::TarGz,
-        expected_files: &["enc.onnx", "erb_dec.onnx", "df_dec.onnx"],
-    },
-    ModelSpec {
-        id: "sherpa-sense-voice-int8",
-        url: SHERPA_SENSE_VOICE_URL,
-        format: ArchiveFormat::TarBz2,
-        expected_files: &["tokens.txt", "model.int8.onnx"],
-    },
+const HUSH_SPEC: ModelSpec = ModelSpec {
+    id: "hush",
+    url: HUSH_URL,
+    format: ArchiveFormat::TarGz,
+    expected_files: &["enc.onnx", "erb_dec.onnx", "df_dec.onnx"],
+};
+
+const SHERPA_SENSE_VOICE_SPEC: ModelSpec = ModelSpec {
+    id: "sherpa-sense-voice-int8",
+    url: SHERPA_SENSE_VOICE_URL,
+    format: ArchiveFormat::TarBz2,
+    expected_files: &["tokens.txt", "model.int8.onnx"],
+};
+
+const SHERPA_PARAKEET_CTC_JA_SPEC: ModelSpec = ModelSpec {
+    id: "sherpa-parakeet-ctc-ja-0.6b",
+    url: SHERPA_PARAKEET_CTC_JA_URL,
+    format: ArchiveFormat::TarBz2,
+    expected_files: &["model.int8.onnx", "tokens.txt"],
+};
+
+const SHERPA_NEMOTRON_JA_SPEC: ModelSpec = ModelSpec {
+    id: "sherpa-nemotron-ja-0.6b",
+    url: SHERPA_NEMOTRON_JA_URL,
+    format: ArchiveFormat::TarBz2,
+    expected_files: &[
+        "encoder.int8.onnx",
+        "decoder.int8.onnx",
+        "joiner.int8.onnx",
+        "tokens.txt",
+    ],
+};
+
+const ALL_MODELS: [ModelSpec; 4] = [
+    HUSH_SPEC,
+    SHERPA_SENSE_VOICE_SPEC,
+    SHERPA_PARAKEET_CTC_JA_SPEC,
+    SHERPA_NEMOTRON_JA_SPEC,
 ];
 
 /// Known downloadable models.
@@ -74,12 +101,22 @@ pub struct ModelRegistry;
 impl ModelRegistry {
     /// Hush denoiser (DeepFilterNet3 ONNX, ~8 MB).
     pub const fn hush() -> ModelSpec {
-        ALL_MODELS[0]
+        HUSH_SPEC
     }
 
     /// Sherpa-ONNX SenseVoice int8 ASR (~160 MB).
     pub const fn sherpa_sense_voice() -> ModelSpec {
-        ALL_MODELS[1]
+        SHERPA_SENSE_VOICE_SPEC
+    }
+
+    /// Sherpa-ONNX NeMo Parakeet TDT CTC for Japanese (~...).
+    pub const fn sherpa_parakeet_ja() -> ModelSpec {
+        SHERPA_PARAKEET_CTC_JA_SPEC
+    }
+
+    /// Sherpa-ONNX Nemotron multilingual streaming transducer (~...).
+    pub const fn sherpa_nemotron_ja() -> ModelSpec {
+        SHERPA_NEMOTRON_JA_SPEC
     }
 
     /// All known models.

@@ -89,6 +89,7 @@ enum Message {
     ToolCall(String),
     ToolResult(String, bool),
     Info(String),
+    AsrText(String),
 }
 
 enum ReplMode {
@@ -478,6 +479,19 @@ fn draw(frame: &mut Frame, state: &mut ReplState, textarea: &mut TuiTextArea, sp
                     Style::default().fg(Color::DarkGray),
                 ));
             }
+            Message::AsrText(text) => {
+                let style = Style::default().fg(Color::DarkGray);
+                for (i, l) in text.lines().enumerate() {
+                    if i == 0 {
+                        lines.push(Line::from(vec![
+                            Span::styled("you ", style.add_modifier(Modifier::BOLD)),
+                            Span::styled(l.to_string(), style),
+                        ]));
+                    } else {
+                        lines.push(Line::styled(format!("     {l}"), style));
+                    }
+                }
+            }
         }
     }
 
@@ -572,6 +586,15 @@ fn approval_lines(approval: &ApprovalRequest, lines: &mut Vec<Line>) {
     ));
 }
 
+async fn start_voice_input(state: &mut ReplState) -> Action {
+    // TODO: integrate with AudioAdapter::run_with_events for streaming ASR once the audio backend is ready.
+    // For now, this is a placeholder; the AsrText display path is wired in handle_turn_event.
+    state.messages.push(Message::Info(
+        "voice input (F2) is not yet implemented".into(),
+    ));
+    Action::Continue
+}
+
 async fn handle_key(
     key: KeyEvent,
     session: &Arc<tokio::sync::Mutex<AgentSession>>,
@@ -598,6 +621,11 @@ async fn handle_key(
                 || (key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL))
             {
                 return Action::Exit;
+            }
+
+            // voice input placeholder
+            if key.code == KeyCode::F(2) {
+                return start_voice_input(state).await;
             }
 
             // history navigation
@@ -1019,23 +1047,51 @@ async fn set_session_permission(
     Ok(())
 }
 
+fn commit_asr_message(state: &mut ReplState) {
+    if let Some(idx) = state
+        .messages
+        .iter()
+        .position(|m| matches!(m, Message::AsrText(_)))
+        && let Message::AsrText(text) = state.messages.remove(idx)
+        && !text.is_empty()
+    {
+        state.messages.insert(idx, Message::User(text));
+    }
+}
+
 fn handle_turn_event(ev: ReplEvent, state: &mut ReplState) {
     match ev {
+        ReplEvent::Turn(TurnEvent::AsrText(text)) => {
+            if let Some(idx) = state
+                .messages
+                .iter()
+                .position(|m| matches!(m, Message::AsrText(_)))
+            {
+                state.messages[idx] = Message::AsrText(text);
+            } else {
+                state.messages.push(Message::AsrText(text));
+            }
+        }
         ReplEvent::Turn(TurnEvent::Text(delta)) => {
+            commit_asr_message(state);
             state.thinking = false;
             state.pending_text.push_str(&delta);
         }
         ReplEvent::Turn(TurnEvent::Thinking(_)) => {
+            commit_asr_message(state);
             state.thinking = true;
         }
         ReplEvent::Turn(TurnEvent::ToolCall { name, .. }) => {
+            commit_asr_message(state);
             state.thinking = false;
             state.messages.push(Message::ToolCall(name));
         }
         ReplEvent::Turn(TurnEvent::ToolResult { name, is_error, .. }) => {
+            commit_asr_message(state);
             state.messages.push(Message::ToolResult(name, is_error));
         }
         ReplEvent::Done(result) => {
+            commit_asr_message(state);
             state.thinking = false;
             if !state.pending_text.is_empty() {
                 state
@@ -1069,11 +1125,12 @@ fn handle_turn_event(ev: ReplEvent, state: &mut ReplState) {
                 }
             }
         }
-        ReplEvent::Turn(TurnEvent::Error(_)) | ReplEvent::Turn(TurnEvent::Done(_)) => {}
         ReplEvent::Error(e) => {
+            commit_asr_message(state);
             state.thinking = false;
             state.pending_text.clear();
             state.messages.push(Message::Info(format!("error: {e}")));
         }
+        _ => {}
     }
 }

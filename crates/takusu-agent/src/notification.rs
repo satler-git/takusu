@@ -9,9 +9,7 @@ use jiff::Timestamp as JiffTimestamp;
 use takusu_client::{Client, ScheduleEntry, TaskQuery, TaskRow};
 use takusu_types::{TaskStatus, TaskStatusFilter};
 
-use crate::capability::{
-    ActionCapability, CapabilityRequest, InputPath, mint_capability,
-};
+use crate::capability::{ActionCapability, CapabilityRequest, InputPath, mint_capability};
 use crate::presentation::{Action, ActionGroup, ActionKind, CheckInCard, Presentation};
 use crate::tool::{InvalidArgsError, ToolError};
 
@@ -119,13 +117,7 @@ pub async fn evaluate_start_time_notifications(
         let start_cap = mint_start_capability(&request.device_id, &task.id, entry.start_at)?;
         let snooze_cap = mint_snooze_capability(&request.device_id, &task.id, entry.start_at)?;
 
-        let check_in = build_check_in(
-            &question,
-            &start_cap,
-            &snooze_cap,
-            &task.id,
-            &task.title,
-        )?;
+        let check_in = build_check_in(&question, &start_cap, &snooze_cap, &task.id, &task.title)?;
 
         notifications.push(StartTimeNotification {
             task_id: task.id.clone(),
@@ -275,8 +267,7 @@ mod tests {
             value: list,
         };
         let json = serde_json::to_string(&versioned).expect("must serialize");
-        let parsed: serde_json::Value =
-            serde_json::from_str(&json).expect("must parse");
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect("must parse");
         assert_eq!(parsed["version"], 1);
         assert!(parsed["notifications"].is_array());
     }

@@ -1983,6 +1983,11 @@ export function AgentView({
         const msg = current[index];
         const next = { ...msg };
         switch (event.type) {
+          case 'AsrText':
+            // Streaming ASR transcript; kept for forward compatibility.
+            // Mobile voice input currently transcribes locally before the
+            // turn, so no AsrText events are expected from the stream yet.
+            break;
           case 'Thinking':
             next.thinking = (next.thinking ?? '') + event.data;
             next.segments = appendSegment(next.segments ?? [], {

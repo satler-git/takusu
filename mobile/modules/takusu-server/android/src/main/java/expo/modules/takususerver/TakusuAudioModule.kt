@@ -30,6 +30,8 @@ class AudioOptions : Record {
 
     @Field val model: String = ""
 
+    @Field val asrModel: String = "sherpa-sense-voice-int8"
+
     @Field val apiKey: String = ""
 
     @Field val voiceId: String = ""
@@ -580,17 +582,20 @@ class TakusuAudioModule : Module() {
                 File(context.noBackupFilesDir, "takusu/models").absolutePath
             }
         return try {
-            MobileAudio(
-                modelDir,
-                options.provider,
-                apiKey,
-                options.model,
-                options.voiceId,
-                options.language,
-                options.sampleRate.toUInt(),
-                options.speed.toFloat(),
-                options.mute,
-            )
+            val audio =
+                MobileAudio(
+                    modelDir,
+                    options.provider,
+                    apiKey,
+                    options.model,
+                    options.voiceId,
+                    options.language,
+                    options.sampleRate.toUInt(),
+                    options.speed.toFloat(),
+                    options.mute,
+                )
+            audio.setAsrModel(options.asrModel)
+            audio
         } catch (error: Exception) {
             throw CodedException(
                 "ERR_AUDIO_CONFIG",
