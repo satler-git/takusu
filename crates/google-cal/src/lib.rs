@@ -230,7 +230,10 @@ impl Client {
             body["colorId"] = serde_json::Value::String(color_id.to_string());
         }
         if let Some(visibility) = &entry.visibility
-            && matches!(visibility.as_str(), "default" | "public" | "private" | "confidential")
+            && matches!(
+                visibility.as_str(),
+                "default" | "public" | "private" | "confidential"
+            )
         {
             body["visibility"] = serde_json::Value::String(visibility.clone());
         }

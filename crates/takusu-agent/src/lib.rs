@@ -206,6 +206,8 @@ fn truncate_scalars(s: &str, cap: usize) -> String {
 #[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
 #[serde(tag = "type", content = "data")]
 pub enum TurnEvent {
+    /// Partial or final ASR transcript captured while the user is speaking.
+    AsrText(String),
     Thinking(String),
     Text(String),
     ToolCall {

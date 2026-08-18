@@ -82,8 +82,7 @@ impl<T: schemars::JsonSchema> schemars::JsonSchema for NonEmptyVec<T> {
             "minItems": 1,
             "items": generator.subschema_for::<T>().to_value(),
         });
-        schemars::Schema::try_from(value)
-            .expect("NonEmptyVec schema is a valid JSON Schema")
+        schemars::Schema::try_from(value).expect("NonEmptyVec schema is a valid JSON Schema")
     }
 }
 

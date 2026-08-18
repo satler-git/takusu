@@ -799,11 +799,8 @@ async fn start_time_notifications(
     if let Err(status) = auth_token(&state, &headers).await {
         return status.into_response();
     }
-    match crate::notification::evaluate_start_time_notifications(
-        &state.planner_client,
-        &request,
-    )
-    .await
+    match crate::notification::evaluate_start_time_notifications(&state.planner_client, &request)
+        .await
     {
         Ok(list) => Json(Versioned {
             version: API_VERSION,

@@ -27,6 +27,7 @@ pub struct AgentRunArgs {
     pub plain: bool,
     pub continue_session: bool,
     pub new_session: bool,
+    pub voice: bool,
 }
 
 pub async fn run(args: AgentRunArgs) -> Result<(), AppError> {
@@ -39,6 +40,30 @@ pub async fn run(args: AgentRunArgs) -> Result<(), AppError> {
 
     let client = Client::new(&config.server.url, &config.server.token);
     let plain = args.plain || !atty::is(atty::Stream::Stdout);
+
+    if args.voice {
+        let client = client.clone();
+        let mut session = takusu_agent::runner::build_session(&config, client)
+            .map_err(|e| AppError::Internal(format!("failed to build agent session: {e}")))?;
+        apply_permissions_and_resume(
+            &mut session,
+            &session_permissions,
+            args.new_session || !args.continue_session,
+        )?;
+        let session = Arc::new(session);
+        let mut output = String::new();
+        let mut last_asr = false;
+        let result = takusu_agent::runner::run_audio(
+            Arc::clone(&session),
+            false,
+            args.yes,
+            |event| emit_stream_event(event, true, &mut output, &mut last_asr),
+        )
+        .await
+        .map_err(agent_err);
+        save_session_snapshot(&session)?;
+        return result;
+    }
 
     if let Some(text) = args.text {
         let mut session = takusu_agent::runner::build_session_with_provider(
@@ -216,14 +241,18 @@ async fn run_text(
     let stream = !plain && tty;
 
     let mut output = String::new();
+    let mut last_asr = false;
     let result = session
         .run_turn_stream(
             text,
-            |event| emit_stream_event(event, stream, &mut output),
+            |event| emit_stream_event(event, stream, &mut output, &mut last_asr),
             |_block| {},
         )
         .await
         .map_err(agent_err)?;
+    if stream && last_asr {
+        eprintln!();
+    }
     if stream && !output.is_empty() && !output.ends_with('\n') {
         println!();
     } else if !stream && !result.text.is_empty() {
@@ -282,17 +311,36 @@ async fn run_text(
     Ok(())
 }
 
-fn emit_stream_event(event: TurnEvent, stream: bool, output: &mut String) {
+fn emit_stream_event(event: TurnEvent, stream: bool, output: &mut String, last_asr: &mut bool) {
     if !stream {
         return;
     }
     match event {
+        TurnEvent::AsrText(text) => {
+            eprint!("\r[ASR] {text}");
+            let _ = io::stderr().flush();
+            *last_asr = true;
+        }
+        TurnEvent::Thinking(_) => {
+            if *last_asr {
+                eprintln!();
+                *last_asr = false;
+            }
+        }
         TurnEvent::Text(delta) => {
+            if *last_asr {
+                eprintln!();
+                *last_asr = false;
+            }
             output.push_str(&delta);
             print!("{delta}");
             let _ = io::stdout().flush();
         }
         TurnEvent::ToolCall { name, .. } => {
+            if *last_asr {
+                eprintln!();
+                *last_asr = false;
+            }
             if !output.is_empty() && !output.ends_with('\n') {
                 println!();
                 output.push('\n');
@@ -303,6 +351,10 @@ fn emit_stream_event(event: TurnEvent, stream: bool, output: &mut String) {
             output.push('\n');
         }
         TurnEvent::ToolResult { name, is_error, .. } => {
+            if *last_asr {
+                eprintln!();
+                *last_asr = false;
+            }
             let status = if is_error { "error" } else { "ok" };
             println!("  [tool result] {name}: {status}");
             output.push_str("  [tool result] ");

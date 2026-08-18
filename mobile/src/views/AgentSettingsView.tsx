@@ -31,17 +31,34 @@ import {
   type LlmProvider,
   type TtsProviderSettings,
 } from '@/src/api/settingsStore';
+import {
+  DEFAULT_ASR_MODEL,
+  loadAsrModel,
+  saveAsrModel,
+} from '@/src/utils/voice';
 import { LlmModelEditor } from '@/src/components/settings/LlmModelEditor';
 import { TtsProviderEditor } from '@/src/components/settings/TtsProviderEditor';
+
+const ASR_MODELS = [
+  'sherpa-sense-voice-int8',
+  'sherpa-parakeet-ctc-ja-0.6b',
+  'sherpa-nemotron-ja-0.6b',
+] as const;
+
+type AsrModelId = (typeof ASR_MODELS)[number];
 
 const MODEL_SIZES: Record<string, string> = {
   hush: '約8 MB',
   'sherpa-sense-voice-int8': '約160 MB',
+  'sherpa-parakeet-ctc-ja-0.6b': '約470 MB',
+  'sherpa-nemotron-ja-0.6b': '約470 MB',
 };
 
 const MODEL_NAMES: Record<string, string> = {
   hush: 'Hushノイズ除去',
   'sherpa-sense-voice-int8': 'SenseVoice音声認識',
+  'sherpa-parakeet-ctc-ja-0.6b': 'Parakeet 日本語 CTC',
+  'sherpa-nemotron-ja-0.6b': 'Nemotron ストリーミング',
 };
 
 function modelButtonLabel(
@@ -206,6 +223,7 @@ export function AgentSettingsView() {
   const [downloadingModels, setDownloadingModels] = useState<
     Record<string, boolean>
   >({});
+  const [asrModel, setAsrModel] = useState<AsrModelId>(DEFAULT_ASR_MODEL);
 
   useEffect(() => {
     let cancelled = false;
@@ -254,8 +272,8 @@ export function AgentSettingsView() {
 
   useEffect(() => {
     let cancelled = false;
-    loadSettings()
-      .then((settings) => {
+    Promise.all([loadSettings(), loadAsrModel()])
+      .then(([settings, loadedAsrModel]) => {
         if (cancelled) return;
         setLlmProviders(settings.llmProviders);
         setLlmModels(settings.llmModels);
@@ -263,6 +281,7 @@ export function AgentSettingsView() {
         setTtsProviders(settings.ttsProviders);
         setActiveTts(settings.activeTtsProvider || null);
         setSessionHistoryCount(settings.agentSessionHistoryCount);
+        setAsrModel(loadedAsrModel as AsrModelId);
       })
       .catch((e) => {
         void showError(e, '読み込み失敗');
@@ -831,22 +850,41 @@ export function AgentSettingsView() {
           )}
         </Text>
       </Pressable>
-      <Pressable
-        onPress={() => promptModelDownload('sherpa-sense-voice-int8')}
-        disabled={
-          cachedModels['sherpa-sense-voice-int8'] ||
-          downloadingModels['sherpa-sense-voice-int8']
-        }
-        style={styles.secondary}
-      >
-        <Text style={{ color: colors.black }}>
-          {modelButtonLabel(
-            'sherpa-sense-voice-int8',
-            cachedModels['sherpa-sense-voice-int8'] ?? false,
-            downloadingModels['sherpa-sense-voice-int8'] ?? false,
-          )}
-        </Text>
-      </Pressable>
+      {ASR_MODELS.map((id) => (
+        <Pressable
+          key={id}
+          onPress={() => promptModelDownload(id)}
+          disabled={cachedModels[id] || downloadingModels[id]}
+          style={styles.secondary}
+        >
+          <Text style={{ color: colors.black }}>
+            {modelButtonLabel(
+              id,
+              cachedModels[id] ?? false,
+              downloadingModels[id] ?? false,
+            )}
+          </Text>
+        </Pressable>
+      ))}
+
+      <Text style={[styles.heading, { color: colors.black }]}>
+        音声認識モデル
+      </Text>
+      {ASR_MODELS.map((id) => (
+        <Pressable
+          key={id}
+          onPress={() => {
+            setAsrModel(id);
+            void saveAsrModel(id);
+          }}
+          style={styles.secondary}
+        >
+          <Text style={{ color: colors.black }}>
+            {asrModel === id ? '● ' : '○ '}
+            {MODEL_NAMES[id]}
+          </Text>
+        </Pressable>
+      ))}
 
       <Text style={[styles.heading, { color: colors.black }]}>
         TTS Provider

@@ -44,8 +44,16 @@ pub async fn run_text(session: &AgentSession, text: &str) -> Result<TurnResult, 
 }
 
 #[cfg(feature = "audio-device")]
-pub async fn run_audio(session: AgentSession, no_tts: bool) -> Result<(), AgentError> {
+pub async fn run_audio<E>(
+    session: Arc<AgentSession>,
+    no_tts: bool,
+    yes: bool,
+    on_event: E,
+) -> Result<(), AgentError>
+where
+    E: FnMut(crate::TurnEvent) + Send,
+{
     use crate::audio::AudioAdapter;
     let mut adapter = AudioAdapter::new(session).await?;
-    adapter.run(no_tts).await
+    adapter.run(no_tts, yes, on_event).await
 }

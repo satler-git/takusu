@@ -363,7 +363,9 @@ pub fn mint_capability(request: CapabilityRequest, input_path: InputPath) -> Act
         // For notification capabilities the user may not act immediately
         // when the notification fires, so keep the capability valid through
         // the scheduled time plus a short grace period.
-        let target = scheduled.0.checked_add(jiff::Span::new().minutes(NOTIFICATION_GRACE_MINUTES));
+        let target = scheduled
+            .0
+            .checked_add(jiff::Span::new().minutes(NOTIFICATION_GRACE_MINUTES));
         target.unwrap_or(now)
     } else {
         now.checked_add(jiff::Span::new().minutes(CAPABILITY_TTL_MINUTES))
@@ -423,7 +425,9 @@ pub async fn authorize_action(
 
     // Replay a previously consumed result. Allow the client to omit the
     // server-computed `snooze_target` on retry.
-    if let Some(ref g) = guard && g.consumed {
+    if let Some(ref g) = guard
+        && g.consumed
+    {
         if normalized_capability(capability, &g.capability) != g.capability {
             return Err(CapabilityError::Mismatch);
         }

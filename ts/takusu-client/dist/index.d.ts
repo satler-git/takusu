@@ -1739,6 +1739,10 @@ interface components$1 {
         TurnEvent: {
             data: string;
             /** @constant */
+            type: 'AsrText';
+        } | {
+            data: string;
+            /** @constant */
             type: 'Thinking';
         } | {
             data: string;

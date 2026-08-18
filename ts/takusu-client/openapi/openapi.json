@@ -15014,6 +15014,20 @@
         "description": "Events emitted while a streaming turn is in progress.",
         "oneOf": [
           {
+            "description": "Partial or final ASR transcript captured while the user is speaking.",
+            "type": "object",
+            "properties": {
+              "data": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "const": "AsrText"
+              }
+            },
+            "required": ["type", "data"]
+          },
+          {
             "type": "object",
             "properties": {
               "data": {

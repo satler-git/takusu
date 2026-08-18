@@ -9,7 +9,7 @@ repository.workspace = true
 default = ["record"]
 record = ["dep:cpal", "dep:tokio"]
 hush = ["dep:ort", "dep:realfft", "dep:num-complex", "dep:ndarray"]
-sherpa = ["dep:sherpa-onnx"]
+sherpa = ["dep:sherpa-onnx", "dep:tokio"]
 clap = ["dep:clap"]
 
 [lints.rust]

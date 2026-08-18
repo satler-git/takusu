@@ -10111,6 +10111,11 @@ export interface components {
       | {
           data: string;
           /** @constant */
+          type: 'AsrText';
+        }
+      | {
+          data: string;
+          /** @constant */
           type: 'Thinking';
         }
       | {

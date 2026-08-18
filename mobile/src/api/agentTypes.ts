@@ -574,6 +574,7 @@ function decodeClarification(
 }
 
 export type TurnEvent =
+  | { type: 'AsrText'; data: string }
   | { type: 'Thinking'; data: string }
   | { type: 'Text'; data: string }
   | {

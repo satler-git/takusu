@@ -1,10 +1,24 @@
 import { PermissionsAndroid } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   loadSettings,
   loadAgentApiKey,
   loadTtsMuted,
 } from '@/src/api/settingsStore';
 import TakusuAudioModule from '../../modules/takusu-server/src/TakusuAudioModule';
+
+const ASR_MODEL_KEY = 'takusu.agent.asrModel';
+
+export const DEFAULT_ASR_MODEL = 'sherpa-sense-voice-int8';
+
+export async function loadAsrModel(): Promise<string> {
+  const value = await AsyncStorage.getItem(ASR_MODEL_KEY);
+  return value ?? DEFAULT_ASR_MODEL;
+}
+
+export async function saveAsrModel(model: string): Promise<void> {
+  await AsyncStorage.setItem(ASR_MODEL_KEY, model);
+}
 
 let configurePromise: Promise<void> | null = null;
 let lastConfigKey = '';
@@ -37,25 +51,27 @@ export function setRecordingChangeListener(
 }
 
 async function doConfigure(): Promise<void> {
-  const settings = await loadSettings();
+  const [settings, asrModel, muted] = await Promise.all([
+    loadSettings(),
+    loadAsrModel(),
+    loadTtsMuted(),
+  ]);
   const provider = settings.ttsProviders.find(
     (p) => p.id === settings.activeTtsProvider,
   );
   if (!provider) {
     throw new Error('TTS provider is not configured');
   }
-  const [apiKey, muted] = await Promise.all([
-    loadAgentApiKey('tts', provider.id),
-    loadTtsMuted(),
-  ]);
+  const apiKey = await loadAgentApiKey('tts', provider.id);
   // Use a hash of the API key so key-only changes trigger reconfiguration
   // without keeping the raw key in the cache key.
-  const configKey = `${provider.id}:${provider.provider}:${provider.model ?? ''}:${provider.voiceId}:${provider.language}:${provider.sampleRate}:${provider.speed}:${hashString(apiKey)}:${muted ? '1' : '0'}`;
+  const configKey = `${provider.id}:${provider.provider}:${provider.model ?? ''}:${provider.voiceId}:${provider.language}:${provider.sampleRate}:${provider.speed}:${hashString(apiKey)}:${asrModel}:${muted ? '1' : '0'}`;
   if (configKey === lastConfigKey) return;
   await TakusuAudioModule.configure({
     provider: provider.provider,
     modelDir: '',
     model: provider.model ?? '',
+    asrModel,
     apiKey,
     voiceId: provider.voiceId,
     language: provider.language,
