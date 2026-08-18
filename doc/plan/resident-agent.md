@@ -621,6 +621,8 @@ Fix the shared layer first; both platform surfaces stay thin and land together.
 Implement the surface state machine contract: derive states from `TurnEvent`s and audio callbacks,
 expose an SSE state stream + snapshot, and accept surface commands (confirm-recording, open-panel,
 stop-tts, open-approval, show-recovery). All surfaces of one device render this single state.
+The device-local snapshot carries a monotonic revision and operation id; a new operation supersedes
+older turn/audio callbacks, and an SSE subscriber receives the current snapshot before live events.
 Codify the state-ownership scoping (user / session / device / ephemeral) in the transport types so
 later WIs cannot accidentally share device-scoped state across devices.
 

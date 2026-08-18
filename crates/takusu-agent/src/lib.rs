@@ -11,6 +11,7 @@ pub mod openapi;
 pub mod permissions;
 pub mod presentation;
 pub mod runner;
+pub mod surface;
 pub mod tool;
 pub mod tool_stats;
 pub mod tools;
@@ -30,6 +31,10 @@ pub use presentation::{
     Action, ActionGroup, ActionKind, CheckInCard, FocusedQuestion, NonEmptyVec, Presentation,
     ProgressSummary, ScheduleAlert, ScheduleAlertKind, ScheduleEntry, ScheduleSummary,
     TaskAuthority, TaskCard, WorkState, WorkTransition, WorkTransitionKind,
+};
+pub use surface::{
+    AudioCallback, AudioEvent, StateScope, SurfaceCommand, SurfaceCommandResponse, SurfaceEvent,
+    SurfaceSnapshot, SurfaceState, SurfaceStateMachine,
 };
 pub use tts_queue::TtsQueue;
 
