@@ -10,10 +10,20 @@ import type {
   Presentation,
   ProposalDecision,
   StartTimeNotificationList,
+  SurfaceAudioCallback,
+  SurfaceCommand,
+  SurfaceCommandResponse,
+  SurfaceEvent,
+  SurfaceSnapshot,
   TurnEvent,
   UserInputAnswer,
 } from './agentTypes';
-import { decodePresentation } from './agentTypes';
+import {
+  decodePresentation,
+  decodeSurfaceCommandResponse,
+  decodeSurfaceEvent,
+  decodeSurfaceSnapshot,
+} from './agentTypes';
 import type { HabitPreviewRequest, HabitPreviewTask } from './types';
 import type { PermissionsMap } from './settingsStore';
 
@@ -110,6 +120,8 @@ export class AbortError extends Error {
     this.name = 'AbortError';
   }
 }
+
+type SseDecodeResult<T> = { type: 'event'; event: T } | { type: 'reconnect' };
 
 export interface AgentLlmSettings {
   base_url: string;
@@ -478,6 +490,226 @@ export class AgentClient {
     );
   }
 
+  private subscribeSse<T>(
+    path: string,
+    decode: (raw: unknown) => SseDecodeResult<T> | undefined,
+    onEvent: (event: T) => void,
+    onConnect?: () => void,
+  ): () => void {
+    const url = `${this.baseUrl}${path}`;
+    let unsubscribed = false;
+    let permanentlyFailed = false;
+    let currentXhr: XMLHttpRequest | null = null;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    const baseDelay = 1000;
+    const maxDelay = 30000;
+    const backoff = 1.5;
+    const stableConnectionMs = 5000;
+    let nextDelay = baseDelay;
+    let connectionStartedAt = 0;
+
+    const isAuthError = (status: number): boolean =>
+      status === 401 || status === 403;
+
+    const stop = () => {
+      permanentlyFailed = true;
+      if (retryTimer !== null) {
+        clearTimeout(retryTimer);
+        retryTimer = null;
+      }
+    };
+
+    const scheduleReconnect = () => {
+      if (unsubscribed || permanentlyFailed || retryTimer !== null) {
+        return;
+      }
+      retryTimer = setTimeout(() => {
+        retryTimer = null;
+        nextDelay = Math.min(maxDelay, nextDelay * backoff);
+        connect();
+      }, nextDelay);
+    };
+
+    const maybeResetBackoff = () => {
+      if (
+        connectionStartedAt !== 0 &&
+        Date.now() - connectionStartedAt >= stableConnectionMs
+      ) {
+        nextDelay = baseDelay;
+      }
+    };
+
+    const handleBlock = (block: string) => {
+      const payload = parseSseBlock(block);
+      if (payload === undefined || payload === '[DONE]') {
+        return;
+      }
+      try {
+        const decision = decode(JSON.parse(payload) as unknown);
+        if (decision?.type === 'reconnect') {
+          currentXhr?.abort();
+          scheduleReconnect();
+        } else if (decision?.type === 'event') {
+          onEvent(decision.event);
+        }
+      } catch {
+        // Ignore malformed SSE data.
+      }
+    };
+
+    const connect = () => {
+      if (unsubscribed || permanentlyFailed) {
+        return;
+      }
+      onConnect?.();
+      const xhr = new XMLHttpRequest();
+      currentXhr = xhr;
+      connectionStartedAt = Date.now();
+      const sseBuffer = new SseBuffer();
+      xhr.open('GET', url);
+      xhr.setRequestHeader('Authorization', `Bearer ${this.token}`);
+      xhr.setRequestHeader('Accept', 'text/event-stream');
+
+      xhr.onprogress = () => {
+        if (unsubscribed || xhr.status >= 400) {
+          return;
+        }
+        maybeResetBackoff();
+        sseBuffer.feed(xhr.responseText ?? '');
+        for (const block of sseBuffer.takeBlocks()) {
+          handleBlock(block);
+        }
+      };
+
+      xhr.onload = () => {
+        if (unsubscribed) {
+          return;
+        }
+        if (isAuthError(xhr.status)) {
+          stop();
+          return;
+        }
+        if (xhr.status >= 400) {
+          scheduleReconnect();
+          return;
+        }
+        maybeResetBackoff();
+        sseBuffer.feed(xhr.responseText ?? '');
+        for (const block of sseBuffer.takeBlocks()) {
+          handleBlock(block);
+        }
+        const tail = sseBuffer.tail().trim();
+        if (tail.length > 0) {
+          handleBlock(tail);
+        }
+        scheduleReconnect();
+      };
+
+      xhr.onerror = () => {
+        if (unsubscribed || permanentlyFailed) {
+          return;
+        }
+        if (isAuthError(xhr.status)) {
+          stop();
+          return;
+        }
+        scheduleReconnect();
+      };
+
+      xhr.onabort = () => {
+        // Clean unsubscribe or an intentional reconnect; neither needs a second timer.
+      };
+
+      xhr.send();
+    };
+
+    connect();
+
+    return () => {
+      unsubscribed = true;
+      if (retryTimer !== null) {
+        clearTimeout(retryTimer);
+        retryTimer = null;
+      }
+      currentXhr?.abort();
+    };
+  }
+
+  async getSurfaceSnapshot(): Promise<SurfaceSnapshot> {
+    const response = await this.request<SurfaceSnapshot & { version?: number }>(
+      'GET',
+      '/api/agent/v1/surface',
+    );
+    return decodeSurfaceSnapshot(response);
+  }
+
+  async sendSurfaceCommand(
+    command: SurfaceCommand,
+    operationId?: number,
+  ): Promise<SurfaceCommandResponse> {
+    const response = await this.request<
+      SurfaceCommandResponse & { version?: number }
+    >('POST', '/api/agent/v1/surface/commands', {
+      version: 1,
+      command,
+      ...(operationId !== undefined && { operation_id: operationId }),
+    });
+    return decodeSurfaceCommandResponse(response);
+  }
+
+  async reportSurfaceAudio(
+    callback: SurfaceAudioCallback,
+    operationId?: number,
+  ): Promise<SurfaceSnapshot> {
+    const response = await this.request<SurfaceSnapshot & { version?: number }>(
+      'POST',
+      '/api/agent/v1/surface/audio',
+      {
+        version: 1,
+        callback,
+        ...(operationId !== undefined && { operation_id: operationId }),
+      },
+    );
+    return decodeSurfaceSnapshot(response);
+  }
+
+  /// Subscribe to the device-scoped surface state. The server sends a snapshot
+  /// first and does the same after every reconnect, so a surface does not need
+  /// to coordinate a separate snapshot request with its stream.
+  subscribeSurface(onEvent: (event: SurfaceEvent) => void): () => void {
+    let lastRevision: number | undefined;
+    return this.subscribeSse(
+      '/api/agent/v1/surface/events',
+      (raw): SseDecodeResult<SurfaceEvent> | undefined => {
+        const event = decodeSurfaceEvent(raw);
+        if (event === undefined) {
+          return undefined;
+        }
+        if (event.type === 'snapshot') {
+          if (lastRevision !== undefined && event.revision < lastRevision) {
+            return undefined;
+          }
+          lastRevision = event.revision;
+          return { type: 'event', event };
+        }
+        if (lastRevision !== undefined) {
+          if (event.revision <= lastRevision) {
+            return undefined;
+          }
+          if (event.revision > lastRevision + 1) {
+            return { type: 'reconnect' };
+          }
+        }
+        lastRevision = event.revision;
+        return { type: 'event', event };
+      },
+      onEvent,
+      () => {
+        lastRevision = undefined;
+      },
+    );
+  }
+
   async updateSettings(settings: AgentUpdateSettings): Promise<void> {
     await this.request<{ version: number; ok: boolean }>(
       'PUT',
@@ -540,145 +772,31 @@ export class AgentClient {
     }));
   }
 
-  /// Subscribe to the `/events` SSE stream and call `onEvent` for every
-  /// `PlannerStateChanged` broadcast from the server (WI-3). The stream
-  /// reconnects after transient network or server errors, but stops on auth
-  /// failures. Returns an unsubscribe function.
+  /// Subscribe to planner state changes (WI-3). Authentication failures stop
+  /// the stream; transient failures use the shared reconnect implementation.
   subscribeEvents(onEvent: (event: PlannerStateEvent) => void): () => void {
-    const url = `${this.baseUrl}/api/agent/v1/events`;
-    let unsubscribed = false;
-    let permanentlyFailed = false;
-    let currentXhr: XMLHttpRequest | null = null;
-    let retryTimer: ReturnType<typeof setTimeout> | null = null;
-    const baseDelay = 1000;
-    const maxDelay = 30000;
-    const backoff = 1.5;
-    let nextDelay = baseDelay;
-
-    const isAuthError = (status: number): boolean =>
-      status === 401 || status === 403;
-
-    const stop = () => {
-      permanentlyFailed = true;
-      if (retryTimer !== null) {
-        clearTimeout(retryTimer);
-        retryTimer = null;
-      }
-    };
-
-    const handleBlock = (block: string) => {
-      const payload = parseSseBlock(block);
-      if (payload === undefined) {
-        return;
-      }
-      try {
-        const parsed: unknown = JSON.parse(payload);
+    return this.subscribeSse(
+      '/api/agent/v1/events',
+      (raw): SseDecodeResult<PlannerStateEvent> | undefined => {
+        if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+          return undefined;
+        }
+        const event = raw as Record<string, unknown>;
         if (
-          typeof parsed === 'object' &&
-          parsed !== null &&
-          !Array.isArray(parsed)
+          event.type !== 'state_changed' ||
+          typeof event.changed_at !== 'string' ||
+          typeof event.source !== 'string' ||
+          !Array.isArray(event.kinds) ||
+          !event.kinds.every((kind) => typeof kind === 'string')
         ) {
-          const obj = parsed as Record<string, unknown>;
-          if (
-            obj.type === 'state_changed' &&
-            typeof obj.changed_at === 'string' &&
-            typeof obj.source === 'string' &&
-            Array.isArray(obj.kinds) &&
-            obj.kinds.every((k) => typeof k === 'string')
-          ) {
-            nextDelay = baseDelay;
-            onEvent(parsed as PlannerStateEvent);
-          }
+          return undefined;
         }
-      } catch {
-        // Ignore malformed SSE data.
-      }
-    };
-
-    const scheduleReconnect = () => {
-      if (unsubscribed || permanentlyFailed) {
-        return;
-      }
-      retryTimer = setTimeout(() => {
-        nextDelay = Math.min(maxDelay, nextDelay * backoff);
-        connect();
-      }, nextDelay);
-    };
-
-    const connect = () => {
-      if (unsubscribed || permanentlyFailed) {
-        return;
-      }
-      const xhr = new XMLHttpRequest();
-      currentXhr = xhr;
-      const sseBuffer = new SseBuffer();
-      xhr.open('GET', url);
-      xhr.setRequestHeader('Authorization', `Bearer ${this.token}`);
-      xhr.setRequestHeader('Accept', 'text/event-stream');
-
-      xhr.onprogress = () => {
-        if (unsubscribed) {
-          return;
-        }
-        if (xhr.status >= 400) {
-          return;
-        }
-        sseBuffer.feed(xhr.responseText ?? '');
-        for (const block of sseBuffer.takeBlocks()) {
-          handleBlock(block);
-        }
-      };
-
-      xhr.onload = () => {
-        if (unsubscribed) {
-          return;
-        }
-        if (isAuthError(xhr.status)) {
-          stop();
-          return;
-        }
-        if (xhr.status >= 400) {
-          scheduleReconnect();
-          return;
-        }
-        sseBuffer.feed(xhr.responseText ?? '');
-        for (const block of sseBuffer.takeBlocks()) {
-          handleBlock(block);
-        }
-        const tail = sseBuffer.tail().trim();
-        if (tail.length > 0) {
-          handleBlock(tail);
-        }
-        scheduleReconnect();
-      };
-
-      xhr.onerror = () => {
-        if (unsubscribed || permanentlyFailed) {
-          return;
-        }
-        if (isAuthError(xhr.status)) {
-          stop();
-          return;
-        }
-        scheduleReconnect();
-      };
-
-      xhr.onabort = () => {
-        // Clean unsubscribe; do not reconnect.
-      };
-
-      xhr.send();
-    };
-
-    connect();
-
-    return () => {
-      unsubscribed = true;
-      if (retryTimer !== null) {
-        clearTimeout(retryTimer);
-        retryTimer = null;
-      }
-      currentXhr?.abort();
-    };
+        return {
+          type: 'event',
+          event: event as unknown as PlannerStateEvent,
+        };
+      },
+      onEvent,
+    );
   }
 }

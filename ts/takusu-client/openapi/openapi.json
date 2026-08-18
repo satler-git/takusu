@@ -10153,6 +10153,265 @@
         }
       }
     },
+    "/agent/v1/surface": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "version": {
+                          "type": "integer",
+                          "maximum": 255,
+                          "minimum": 0
+                        }
+                      },
+                      "required": ["version"]
+                    },
+                    {
+                      "$ref": "#/components/schemas/SurfaceSnapshot"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Default error body returned by agent endpoints.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agent/v1/surface/events": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Server-Sent Events stream",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/SurfaceEvent"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Default error body returned by agent endpoints.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agent/v1/surface/commands": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "version": {
+                        "type": "integer",
+                        "maximum": 255,
+                        "minimum": 0
+                      }
+                    },
+                    "required": ["version"]
+                  },
+                  {
+                    "$ref": "#/components/schemas/SurfaceCommandRequest"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "version": {
+                          "type": "integer",
+                          "maximum": 255,
+                          "minimum": 0
+                        }
+                      },
+                      "required": ["version"]
+                    },
+                    {
+                      "$ref": "#/components/schemas/SurfaceCommandResponse"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Failed to parse the request body as JSON",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Expected request with `Content-Type: application/json`",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Failed to deserialize the JSON body into the target type",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Default error body returned by agent endpoints.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agent/v1/surface/audio": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "version": {
+                        "type": "integer",
+                        "maximum": 255,
+                        "minimum": 0
+                      }
+                    },
+                    "required": ["version"]
+                  },
+                  {
+                    "$ref": "#/components/schemas/SurfaceAudioRequest"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "version": {
+                          "type": "integer",
+                          "maximum": 255,
+                          "minimum": 0
+                        }
+                      },
+                      "required": ["version"]
+                    },
+                    {
+                      "$ref": "#/components/schemas/SurfaceSnapshot"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Failed to parse the request body as JSON",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Expected request with `Content-Type: application/json`",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Failed to deserialize the JSON body into the target type",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Default error body returned by agent endpoints.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/agent/v1/sessions/{id}/turns/{turn_index}/edit/stream": {
       "post": {
         "requestBody": {
@@ -14064,6 +14323,10 @@
         },
         "required": ["id", "approved", "changes", "schedule_dirty"]
       },
+      "AudioCallback": {
+        "type": "string",
+        "enum": ["listening", "transcribing", "speaking", "playback_finished"]
+      },
       "CapabilitiesResponse": {
         "type": "object",
         "properties": {
@@ -14912,6 +15175,141 @@
             "default": null
           }
         }
+      },
+      "StateScope": {
+        "type": "string",
+        "enum": ["user", "session", "device", "ephemeral"]
+      },
+      "SurfaceAudioRequest": {
+        "type": "object",
+        "properties": {
+          "callback": {
+            "$ref": "#/components/schemas/AudioCallback"
+          },
+          "operation_id": {
+            "type": ["integer", "null"],
+            "format": "uint64",
+            "default": null,
+            "minimum": 0
+          }
+        },
+        "required": ["callback"]
+      },
+      "SurfaceCommand": {
+        "type": "string",
+        "enum": [
+          "confirm-recording",
+          "open-panel",
+          "stop-tts",
+          "open-approval",
+          "show-recovery"
+        ]
+      },
+      "SurfaceCommandRequest": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "$ref": "#/components/schemas/SurfaceCommand"
+          },
+          "operation_id": {
+            "type": ["integer", "null"],
+            "format": "uint64",
+            "default": null,
+            "minimum": 0
+          }
+        },
+        "required": ["command"]
+      },
+      "SurfaceCommandResponse": {
+        "type": "object",
+        "properties": {
+          "accepted": {
+            "type": "boolean"
+          },
+          "command": {
+            "$ref": "#/components/schemas/SurfaceCommand"
+          },
+          "reason": {
+            "type": ["string", "null"]
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/SurfaceSnapshot"
+          }
+        },
+        "required": ["command", "accepted", "snapshot"]
+      },
+      "SurfaceEvent": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "snapshot"
+              }
+            },
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SurfaceSnapshot"
+              }
+            ],
+            "required": ["type"]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "state_changed"
+              }
+            },
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SurfaceSnapshot"
+              }
+            ],
+            "required": ["type"]
+          }
+        ]
+      },
+      "SurfaceSnapshot": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": ["string", "null"]
+          },
+          "operation_id": {
+            "description": "Identifies the current device-local turn or audio operation. A late\ncallback for an older operation is ignored by the state machine.",
+            "type": ["integer", "null"],
+            "format": "uint64",
+            "minimum": 0
+          },
+          "revision": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "scope": {
+            "$ref": "#/components/schemas/StateScope"
+          },
+          "state": {
+            "$ref": "#/components/schemas/SurfaceState"
+          }
+        },
+        "required": ["scope", "state", "revision"]
+      },
+      "SurfaceState": {
+        "type": "string",
+        "enum": [
+          "idle",
+          "listening",
+          "transcribing",
+          "thinking",
+          "waiting_for_user",
+          "waiting_for_approval",
+          "speaking",
+          "error"
+        ]
       },
       "TargetKind": {
         "description": "Target kind for a proposed or applied change.",
