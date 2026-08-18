@@ -1327,6 +1327,8 @@ interface components$1 {
             id: string;
             schedule_dirty: boolean;
         };
+        /** @enum {string} */
+        AudioCallback: 'listening' | 'transcribing' | 'speaking' | 'playback_finished';
         CapabilitiesResponse: {
             approvals: boolean;
             audio_input: boolean;
@@ -1691,6 +1693,54 @@ interface components$1 {
              */
             tz: string | null;
         };
+        /** @enum {string} */
+        StateScope: 'user' | 'session' | 'device' | 'ephemeral';
+        SurfaceAudioRequest: {
+            callback: components$1['schemas']['AudioCallback'];
+            /**
+             * Format: uint64
+             * @default null
+             */
+            operation_id: number | null;
+        };
+        /** @enum {string} */
+        SurfaceCommand: 'confirm-recording' | 'open-panel' | 'stop-tts' | 'open-approval' | 'show-recovery';
+        SurfaceCommandRequest: {
+            command: components$1['schemas']['SurfaceCommand'];
+            /**
+             * Format: uint64
+             * @default null
+             */
+            operation_id: number | null;
+        };
+        SurfaceCommandResponse: {
+            accepted: boolean;
+            command: components$1['schemas']['SurfaceCommand'];
+            reason?: string | null;
+            snapshot: components$1['schemas']['SurfaceSnapshot'];
+        };
+        SurfaceEvent: ({
+            /** @constant */
+            type: 'snapshot';
+        } & components$1['schemas']['SurfaceSnapshot']) | ({
+            /** @constant */
+            type: 'state_changed';
+        } & components$1['schemas']['SurfaceSnapshot']);
+        SurfaceSnapshot: {
+            error?: string | null;
+            /**
+             * Format: uint64
+             * @description Identifies the current device-local turn or audio operation. A late
+             *     callback for an older operation is ignored by the state machine.
+             */
+            operation_id?: number | null;
+            /** Format: uint64 */
+            revision: number;
+            scope: components$1['schemas']['StateScope'];
+            state: components$1['schemas']['SurfaceState'];
+        };
+        /** @enum {string} */
+        SurfaceState: 'idle' | 'listening' | 'transcribing' | 'thinking' | 'waiting_for_user' | 'waiting_for_approval' | 'speaking' | 'error';
         /**
          * @description Target kind for a proposed or applied change.
          * @enum {string}
