@@ -159,17 +159,35 @@ export function ServerProvider({ children }: { children: ReactNode }) {
 
       const agentConfigJson = JSON.stringify(await buildAgentUpdateSettings());
 
-      const client = ensureLocalServer({
-        workersUrl: finalUrl,
-        rootToken: finalToken,
-        agentConfigJson,
-      });
-
-      // The native module starts the server in a spawned task and returns
-      // before axum is actually accepting requests. Wait for the first
-      // successful health check so callers never receive a client pointing
-      // to a server that is not yet ready (#1135).
-      await waitForLocalServerReady(client, { signal });
+      // Retry starting the local server a few times. A background WorkManager
+      // worker may have just stopped its temporary server, and the tokio
+      // runtime (with its TcpListener) can take a moment to fully release the
+      // port on a cold start triggered by a notification tap.
+      const client = await (async (): Promise<TakusuClient> => {
+        const maxAttempts = 10;
+        const delayMs = 200;
+        let lastError: unknown = null;
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+          if (signal?.aborted) {
+            throw new Error('aborted');
+          }
+          try {
+            const c = ensureLocalServer({
+              workersUrl: finalUrl,
+              rootToken: finalToken,
+              agentConfigJson,
+            });
+            await waitForLocalServerReady(c, { signal });
+            return c;
+          } catch (e) {
+            lastError = e;
+            if (attempt < maxAttempts - 1) {
+              await new Promise((resolve) => setTimeout(resolve, delayMs));
+            }
+          }
+        }
+        throw lastError ?? new Error('Local server did not start');
+      })();
 
       // Persist credentials for the home screen widget so the
       // WorkManager worker can start the local server independently.

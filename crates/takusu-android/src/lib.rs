@@ -5,6 +5,7 @@ mod log_buffer;
 mod model;
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, Mutex, Weak};
 
 use tokio::runtime::{Builder, Runtime};
@@ -57,13 +58,23 @@ pub enum ServerStatus {
 /// twice then fails with "Address already in use". This registry makes the
 /// port the single source of truth: `start` is idempotent per port, and only
 /// the instance that actually owns the runtime shuts it down on `stop`.
-static REGISTRY: LazyLock<Mutex<HashMap<u16, Weak<Runtime>>>> =
+///
+/// Each entry also tracks a `stopping` flag so that a runtime that has been
+/// asked to shut down is not reused while its `TcpListener` is still being
+/// torn down asynchronously.
+struct ServerEntry {
+    weak: Weak<Runtime>,
+    stopping: AtomicBool,
+}
+
+static REGISTRY: LazyLock<Mutex<HashMap<u16, ServerEntry>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
 #[derive(uniffi::Object)]
 pub struct TakusuServer {
     runtime: Mutex<Option<Arc<Runtime>>>,
     port: Mutex<u16>,
+    is_owner: Mutex<bool>,
 }
 
 impl Default for TakusuServer {
@@ -79,6 +90,7 @@ impl TakusuServer {
         Self {
             runtime: Mutex::new(None),
             port: Mutex::new(0),
+            is_owner: Mutex::new(false),
         }
     }
 
@@ -118,16 +130,30 @@ impl TakusuServer {
         // use". The caller does not own this instance's runtime, but it records
         // the port so that status() reports the live server as running and a
         // later stop() is an idempotent no-op that cannot tear down the owner.
+        //
+        // If the registry entry is marked as stopping (another instance already
+        // called stop()) or the Weak pointer is dead, remove the stale entry and
+        // bind a fresh runtime. If we do reuse a live runtime, keep its Arc in
+        // our own `runtime` field so this instance holds the server alive.
         {
             let mut registry = REGISTRY.lock().unwrap_or_else(|e| e.into_inner());
-            registry.retain(|_, w| w.strong_count() > 0);
-            if registry.get(&port).is_some_and(|w| w.strong_count() > 0) {
+            registry.retain(|_, entry| {
+                !entry.stopping.load(Ordering::SeqCst) && entry.weak.strong_count() > 0
+            });
+            if let Some(entry) = registry.get(&port)
+                && !entry.stopping.load(Ordering::SeqCst)
+                && let Some(runtime) = entry.weak.upgrade()
+            {
                 *self.port.lock().unwrap_or_else(|e| e.into_inner()) = port;
+                *runtime_guard = Some(runtime);
+                *self.is_owner.lock().unwrap_or_else(|e| e.into_inner()) = false;
                 tracing::info!(
                     "takusu-local already running on port {port}; reusing existing server"
                 );
                 return Ok(());
             }
+            // Stale or stopping entry; remove it so we can bind a fresh runtime.
+            registry.remove(&port);
         }
 
         if workers_url.is_empty() {
@@ -236,16 +262,22 @@ impl TakusuServer {
         // entry and binds; the second re-check sees the entry and reuses.
         let (listener, actual_port) = {
             let mut registry = REGISTRY.lock().unwrap_or_else(|e| e.into_inner());
-            registry.retain(|_, w| w.strong_count() > 0);
-            if registry.get(&port).is_some_and(|w| w.strong_count() > 0) {
+            registry.retain(|_, w| !w.stopping.load(Ordering::SeqCst) && w.weak.strong_count() > 0);
+            if let Some(entry) = registry.get(&port)
+                && !entry.stopping.load(Ordering::SeqCst)
+                && let Some(runtime) = entry.weak.upgrade()
+            {
                 // Another instance registered while we were building the
                 // router. Reuse it instead of binding.
                 *self.port.lock().unwrap_or_else(|e| e.into_inner()) = port;
+                *runtime_guard = Some(runtime);
+                *self.is_owner.lock().unwrap_or_else(|e| e.into_inner()) = false;
                 tracing::info!(
                     "takusu-local already running on port {port}; reusing existing server"
                 );
                 return Ok(());
             }
+            registry.remove(&port);
             let listener = runtime
                 .block_on(async { TcpListener::bind(&bind_addr).await })
                 .map_err(|e| {
@@ -254,11 +286,18 @@ impl TakusuServer {
                     TakusuError::Server { detail }
                 })?;
             let actual_port = listener.local_addr().map(|a| a.port()).unwrap_or(port);
-            registry.insert(actual_port, Arc::downgrade(&runtime));
+            registry.insert(
+                actual_port,
+                ServerEntry {
+                    weak: Arc::downgrade(&runtime),
+                    stopping: AtomicBool::new(false),
+                },
+            );
             (listener, actual_port)
         };
 
         *self.port.lock().unwrap_or_else(|e| e.into_inner()) = actual_port;
+        *self.is_owner.lock().unwrap_or_else(|e| e.into_inner()) = true;
 
         tracing::info!("takusu-local listening on 127.0.0.1:{actual_port} (workers storage)");
 
@@ -291,27 +330,32 @@ impl TakusuServer {
         let arc = runtime_guard.take();
         let owned = arc.is_some();
         let port = *self.port.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(arc) = &arc {
-            // Only deregister if this instance is the one that registered the
-            // port. Instances that reused an existing server never registered,
-            // so they cannot tear down another instance's server.
+        let is_owner = *self.is_owner.lock().unwrap_or_else(|e| e.into_inner());
+        if is_owner {
+            // Mark the registry entry as stopping so other instances do not
+            // adopt this runtime while its TcpListener is being torn down.
             let mut registry = REGISTRY.lock().unwrap_or_else(|e| e.into_inner());
-            if let Some(weak) = registry.get(&port)
-                && weak
-                    .upgrade()
-                    .is_none_or(|reg_runtime| Arc::ptr_eq(&reg_runtime, arc))
-            {
-                registry.remove(&port);
+            if let Some(entry) = registry.get(&port) {
+                entry.stopping.store(true, Ordering::SeqCst);
             }
+            // The spawned axum task may be aborted before it can remove the
+            // registry entry (especially when we drop the runtime
+            // synchronously below), so deregister now.
+            registry.remove(&port);
         }
+        *self.is_owner.lock().unwrap_or_else(|e| e.into_inner()) = false;
         *self.port.lock().unwrap_or_else(|e| e.into_inner()) = 0;
         // If another caller still holds a clone of the runtime, let that task
         // finish; the runtime will be dropped once the last clone is released.
+        // When we are the last owner, drop the runtime synchronously so the
+        // TcpListener is released immediately. This avoids races where the
+        // foreground module tries to bind the port while the runtime is still
+        // being torn down in the background.
         drop(runtime_guard);
         if let Some(arc) = arc
             && let Ok(runtime) = Arc::try_unwrap(arc)
         {
-            runtime.shutdown_background();
+            drop(runtime);
         }
         if owned || port != 0 {
             Ok(())
@@ -332,11 +376,13 @@ impl TakusuServer {
             return ServerStatus::Stopped;
         }
         let registry = REGISTRY.lock().unwrap_or_else(|e| e.into_inner());
-        if registry.get(&port).is_some_and(|w| w.strong_count() > 0) {
-            ServerStatus::Running { port }
-        } else {
-            ServerStatus::Stopped
+        if let Some(entry) = registry.get(&port)
+            && !entry.stopping.load(Ordering::SeqCst)
+            && entry.weak.strong_count() > 0
+        {
+            return ServerStatus::Running { port };
         }
+        ServerStatus::Stopped
     }
 }
 
@@ -359,6 +405,22 @@ fn clear_logs() {
 #[uniffi::export]
 fn push_log(line: String) {
     log_buffer::push_log(line);
+}
+
+/// Global server status independent of any `TakusuServer` instance.
+///
+/// The Kotlin `TakusuServerModule` uses this when its own `server` reference
+/// is null (for example when a WorkManager worker started the server directly
+/// through `uniffi.takusu_android.TakusuServer`).
+#[uniffi::export]
+fn global_server_status() -> ServerStatus {
+    let registry = REGISTRY.lock().unwrap_or_else(|e| e.into_inner());
+    for (port, entry) in registry.iter() {
+        if !entry.stopping.load(Ordering::SeqCst) && entry.weak.strong_count() > 0 {
+            return ServerStatus::Running { port: *port };
+        }
+    }
+    ServerStatus::Stopped
 }
 
 #[cfg(test)]
@@ -451,5 +513,23 @@ mod tests {
         }
         let registry = REGISTRY.lock().unwrap_or_else(|e| e.into_inner());
         assert!(!registry.contains_key(&port));
+    }
+
+    #[test]
+    fn stopping_runtime_is_not_reused() {
+        let port = free_port();
+        let owner = TakusuServer::new();
+        start(&owner, port).expect("first bind should succeed");
+
+        // Stop the owner. A fresh start must bind a new runtime rather than
+        // adopt the registry entry while the old runtime is still being torn
+        // down and its TcpListener is closing.
+        owner.stop().expect("owner stop should succeed");
+        assert!(matches!(owner.status(), ServerStatus::Stopped));
+
+        let fresh = TakusuServer::new();
+        start(&fresh, port).expect("fresh bind should succeed after stop");
+        assert!(matches!(fresh.status(), ServerStatus::Running { port: p } if p == port));
+        fresh.stop().expect("fresh stop should succeed");
     }
 }
