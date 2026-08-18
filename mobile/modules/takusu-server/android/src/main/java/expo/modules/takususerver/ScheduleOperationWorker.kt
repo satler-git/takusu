@@ -116,6 +116,10 @@ class ScheduleOperationWorker(
                         it.destroy()
                     } catch (_: Exception) {
                     }
+                    // Give the runtime a moment to fully drop its TcpListener
+                    // and release the port before the foreground module tries
+                    // to bind it again after a notification tap.
+                    delay(100)
                 }
             }
         }

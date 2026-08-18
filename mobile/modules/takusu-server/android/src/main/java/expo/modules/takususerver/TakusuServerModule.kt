@@ -90,7 +90,14 @@ class TakusuServerModule : Module() {
                             is ServerStatus.Stopped -> mapOf("running" to false, "port" to 0)
                         }
                     } else {
-                        mapOf("running" to false, "port" to 0)
+                        // A WorkManager worker may have started the server
+                        // directly through `uniffi.takusu_android.TakusuServer`,
+                        // so the module's `server` field can be null while the
+                        // Rust registry still reports a live server.
+                        when (val result = uniffi.takusu_android.globalServerStatus()) {
+                            is ServerStatus.Running -> mapOf("running" to true, "port" to result.port.toInt())
+                            is ServerStatus.Stopped -> mapOf("running" to false, "port" to 0)
+                        }
                     }
                 } catch (e: Exception) {
                     mapOf("running" to false, "port" to 0)

@@ -10,6 +10,7 @@ import * as Notifications from 'expo-notifications';
 import * as Sentry from '@sentry/react-native';
 import { loadSettings } from '@/src/api/settingsStore';
 import { ensureLocalServer, waitForLocalServerReady } from '@/src/api/server';
+import { TakusuClient } from '@/src/api/client';
 import { AgentClient } from '@/src/api/agentClient';
 import { handleActionButtonResponse, NOOP_HAPTIC } from './actionHandler';
 import { notificationColorForTheme } from './theme';
@@ -56,11 +57,27 @@ TaskManager.defineTask<Notifications.NotificationTaskPayload>(
     if (!settings.workersUrl || !settings.workersToken) return;
 
     try {
-      const client = ensureLocalServer({
-        workersUrl: settings.workersUrl,
-        rootToken: settings.workersToken,
-      });
-      await waitForLocalServerReady(client);
+      const client = await (async (): Promise<TakusuClient> => {
+        const maxAttempts = 10;
+        const delayMs = 200;
+        let lastError: unknown = null;
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+          try {
+            const c = ensureLocalServer({
+              workersUrl: settings.workersUrl,
+              rootToken: settings.workersToken,
+            });
+            await waitForLocalServerReady(c);
+            return c;
+          } catch (e) {
+            lastError = e;
+            if (attempt < maxAttempts - 1) {
+              await new Promise((resolve) => setTimeout(resolve, delayMs));
+            }
+          }
+        }
+        throw lastError ?? new Error('Local server did not start');
+      })();
       const agentBaseUrl = client.baseUrl ?? settings.workersUrl;
       const agentClient = new AgentClient(agentBaseUrl, settings.workersToken);
       await handleActionButtonResponse(data, {
