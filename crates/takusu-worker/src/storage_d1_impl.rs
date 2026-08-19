@@ -5,15 +5,16 @@ use takusu_contracts::storage::StorageResult;
 use takusu_contracts::validate::validate_task_datetimes;
 use takusu_contracts::{
     AttachWorkSession, CommentRow, ConvertWorkSession, CreateHabit, CreateHabitScheduledSpan,
-    CreateMemory, CreateSkill, CreateTask, GoogleCalEventRow, GoogleCalSettingsRow, HabitRow,
-    HabitScheduledSpanRow, HabitStepEstimateInput, HabitStepInput, HabitStepRow,
-    MemoryInjectionQuery, MemoryInjectionResult, MemoryQuery, MemoryRow, MoveEntryResponse,
-    ProgressEventRow, RecordWorkSessionProgress, SaveScheduleRequest, ScheduleRow, SettingsRow,
-    SimilarTaskQuery, SimilarTaskRow, SkillRow, SplitResult, SplitTask, StartWorkSession, Storage,
-    StorageError, TaskProgress, TaskQuery, TaskRow, TokenCreateResponse, TokenRow,
-    UpdateGoogleCalSettings, UpdateHabit, UpdateMemory, UpdateSettings, UpdateSkill, UpdateTask,
-    WorkSessionProgressResult, WorkSessionRow,
+    CreateMemory, CreateSkill, CreateTask, EstimatorStateRow, GoogleCalEventRow,
+    GoogleCalSettingsRow, HabitRow, HabitScheduledSpanRow, HabitStepEstimateInput, HabitStepInput,
+    HabitStepRow, MemoryInjectionQuery, MemoryInjectionResult, MemoryQuery, MemoryRow,
+    MoveEntryResponse, ProgressEventRow, RecordWorkSessionProgress, SaveScheduleRequest,
+    ScheduleRow, SettingsRow, SimilarTaskQuery, SimilarTaskRow, SkillRow, SplitResult, SplitTask,
+    StartWorkSession, Storage, StorageError, TaskProgress, TaskQuery, TaskRow, TokenCreateResponse,
+    TokenRow, UpdateGoogleCalSettings, UpdateHabit, UpdateMemory, UpdateSettings, UpdateSkill,
+    UpdateTask, WorkSessionProgressResult, WorkSessionRow,
 };
+use takusu_types::estimator::effective_distribution;
 use takusu_types::jwt::{DEFAULT_TOKEN_TTL_SECONDS, generate_token_jwt};
 use takusu_types::{
     CommentAuthor, DependencyList, EnumLabel, Minutes, Quantity, TaskStatus, TaskStatusFilter,
@@ -1737,6 +1738,37 @@ impl Storage for D1Storage {
                 "UPDATE tasks SET status = 'in_progress', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?1",
             );
             stmts.push(update.bind(&[JsValue::from_str(full)]).map_err(d1_err)?);
+            if let Some(task) = linked_task.as_ref()
+                && !task.fixed
+            {
+                let task_kind_prior = if task.sigma_minutes > 0 {
+                    None
+                } else {
+                    load_task_kind_prior(&self.db, task).await?
+                };
+                let distribution = effective_distribution(
+                    task.avg_minutes as f64,
+                    task.sigma_minutes as f64,
+                    task_kind_prior,
+                );
+                stmts.push(
+                    self.db
+                        .prepare(
+                            "INSERT OR IGNORE INTO estimator_state (task_id, revision, mean_minutes, sigma_minutes, source) VALUES (?1, 0, ?2, ?3, ?4)",
+                        )
+                        .bind(&[
+                            JsValue::from_str(full),
+                            JsValue::from_f64(distribution.mu),
+                            JsValue::from_f64(distribution.sigma),
+                            JsValue::from_str(if task.sigma_minutes > 0 {
+                                "task"
+                            } else {
+                                "fallback"
+                            }),
+                        ])
+                        .map_err(d1_err)?,
+                );
+            }
         }
 
         if let Err(e) = self.db.batch(stmts).await {
@@ -2004,19 +2036,22 @@ impl Storage for D1Storage {
                 let quantity_done = effective_total.unwrap_or(task_before.quantity_done);
                 let delta_quantity = quantity_done.get() - task_before.quantity_done.get();
 
-                let (new_avg, new_sigma) = if delta_quantity > 0 && total_active_minutes > 0 {
-                    compute_updated_estimate(
+                let (new_avg, new_sigma) = if total_active_minutes > 0 && !task_before.fixed {
+                    let quantity_fraction = effective_total
+                        .map(|total| quantity_done.get() as f64 / total.get() as f64)
+                        .unwrap_or(1.0)
+                        .clamp(f64::EPSILON, 1.0);
+                    let mutation = estimator_observation(
                         &self.db,
-                        &task_id,
-                        task_before.avg_minutes,
-                        task_before.sigma_minutes,
-                        effective_total.map(|q| q.get()),
+                        &task_before,
                         total_active_minutes,
-                        delta_quantity,
+                        quantity_fraction,
+                        now_ts,
+                        "completion",
                     )
-                    .await?
-                } else if effective_total.is_none() && total_active_minutes > 0 {
-                    (total_active_minutes, task_before.sigma_minutes)
+                    .await?;
+                    stmts.extend(mutation.statements);
+                    (mutation.avg_minutes, mutation.sigma_minutes)
                 } else {
                     (task_before.avg_minutes, task_before.sigma_minutes)
                 };
@@ -2209,6 +2244,7 @@ impl Storage for D1Storage {
                 task: linked_task,
                 event: None,
                 suggests_completion,
+                estimator: None,
             };
             if let Some(op_id) = operation_id {
                 record_progress_operation(&self.db, op_id, &request_hash, &result).await?;
@@ -2288,6 +2324,7 @@ impl Storage for D1Storage {
 
         let mut result_task: Option<TaskRow> = None;
         let mut suggests_completion = false;
+        let mut estimator_result = None;
 
         if let Some(ref task) = linked_task {
             let task_id = task.id.clone();
@@ -2308,19 +2345,45 @@ impl Storage for D1Storage {
 
             let mut new_avg = task.avg_minutes;
             let mut new_sigma = task.sigma_minutes;
-            if task_delta > 0 && active_minutes > 0 {
-                let (avg, sigma) = compute_updated_estimate(
-                    &self.db,
-                    &task_id,
-                    task.avg_minutes,
-                    task.sigma_minutes,
-                    task.quantity_total.map(|q| q.get()),
-                    active_minutes,
-                    task_delta,
+            if task_delta > 0
+                && active_minutes > 0
+                && let Some(total) = task.quantity_total
+                && !task.fixed
+            {
+                let session_stmt = self.db.prepare(format!(
+                    "SELECT {WORK_SESSION_COLS} FROM work_sessions WHERE task_id = ?1 ORDER BY started_at ASC",
+                ));
+                let sessions: Vec<WorkSessionRow> = d1_all(
+                    &session_stmt
+                        .bind(&[JsValue::from_str(&task_id)])
+                        .map_err(d1_err)?,
                 )
                 .await?;
-                new_avg = avg;
-                new_sigma = sigma;
+                let total_active_minutes = sessions.iter().map(session_minutes).sum::<i64>();
+                if total_active_minutes > 0 {
+                    let mutation = estimator_observation(
+                        &self.db,
+                        task,
+                        total_active_minutes,
+                        (new_done.get() as f64 / total.get() as f64).min(1.0),
+                        takusu_types::Timestamp::now(),
+                        "progress",
+                    )
+                    .await?;
+                    estimator_result = Some(mutation.result);
+                    new_avg = mutation.avg_minutes;
+                    new_sigma = mutation.sigma_minutes;
+                    stmts.extend(mutation.statements);
+                }
+            } else if task_delta < 0
+                && !task.fixed
+                && let Some(mutation) =
+                    compensate_last_estimator_observation(&self.db, task).await?
+            {
+                estimator_result = Some(mutation.result);
+                new_avg = mutation.avg_minutes;
+                new_sigma = mutation.sigma_minutes;
+                stmts.extend(mutation.statements);
             }
 
             let new_status = if task.status == TaskStatus::Completed {
@@ -2382,6 +2445,7 @@ impl Storage for D1Storage {
             task: result_task,
             event: Some(event),
             suggests_completion,
+            estimator: estimator_result,
         };
         if let Some(op_id) = operation_id {
             record_progress_operation(&self.db, op_id, &request_hash, &result).await?;
@@ -2574,24 +2638,8 @@ impl Storage for D1Storage {
         let quantity_total = session.quantity_total.filter(|q| *q != 0);
         let quantity_unit = session.quantity_unit.as_deref();
         let fixed = body.fixed.unwrap_or(true);
-        // Estimate from the session's progress observations, weighting each by
-        // the quantity it accomplished (#1419). Falls back to the raw session
-        // duration when there is no quantity total or no positive observation.
-        let event_stmt = self.db.prepare(
-            "SELECT id, work_session_id, task_id, at, quantity_done, delta_quantity, active_minutes, note FROM progress_events WHERE work_session_id = ?1 AND delta_quantity > 0 AND active_minutes > 0 ORDER BY id ASC",
-        );
-        let events: Vec<takusu_contracts::ProgressEventRow> =
-            d1_all(&event_stmt.bind(&[JsValue::from_str(id)]).map_err(d1_err)?).await?;
-        let observations: Vec<(i64, i64)> = events
-            .iter()
-            .map(|e| (e.active_minutes, e.delta_quantity.unwrap_or(1).max(1)))
-            .collect();
-        let (avg_minutes, sigma_minutes) =
-            takusu_types::weighted_estimate(&observations, quantity_total.map(|q| q.get()))
-                .unwrap_or((
-                    active_minutes,
-                    takusu_types::Minutes(active_minutes).to_slots().0.max(1),
-                ));
+        let avg_minutes = active_minutes.max(1);
+        let sigma_minutes = 0;
         let completed_at = if status == TaskStatus::Completed {
             Some(now_ts)
         } else {
@@ -2669,7 +2717,14 @@ impl Storage for D1Storage {
 
         self.db.batch(stmts).await.map_err(d1_err)?;
 
-        let task = select_one_task(&self.db, &task_id).await?;
+        let mut task = select_one_task(&self.db, &task_id).await?;
+        if !task.fixed && active_minutes > 0 {
+            let mutation =
+                estimator_observation(&self.db, &task, active_minutes, 1.0, now_ts, "completion")
+                    .await?;
+            self.db.batch(mutation.statements).await.map_err(d1_err)?;
+            task = select_one_task(&self.db, &task_id).await?;
+        }
 
         if let Some(op_id) = operation_id {
             record_progress_operation(&self.db, op_id, &request_hash, &task).await?;
@@ -2703,6 +2758,11 @@ impl Storage for D1Storage {
 
         let open_session = sessions.iter().find(|s| s.ended_at.is_none()).cloned();
         let total_active_minutes = sessions.iter().map(session_minutes).sum();
+        let estimator = if task.fixed {
+            None
+        } else {
+            Some(estimator_state(&self.db, &task).await?)
+        };
 
         Ok(TaskProgress {
             task,
@@ -2710,7 +2770,17 @@ impl Storage for D1Storage {
             sessions,
             events,
             total_active_minutes,
+            estimator,
         })
+    }
+
+    async fn get_estimator_state(&self, id: &str) -> StorageResult<Option<EstimatorStateRow>> {
+        let task_id = resolve_task_id(&self.db, id).await?;
+        let task = select_one_task(&self.db, &task_id).await?;
+        if task.fixed {
+            return Ok(None);
+        }
+        Ok(Some(estimator_state(&self.db, &task).await?))
     }
 
     async fn split_task(
