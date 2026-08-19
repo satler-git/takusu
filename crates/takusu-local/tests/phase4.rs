@@ -25,7 +25,7 @@ use takusu_contracts::{
     UpdateTask, storage::StorageResult,
 };
 use takusu_local::router::router;
-use takusu_local::state::AppState;
+use takusu_local::state::{AppState, build_agent_state};
 use takusu_local_lib::TokenClaims;
 use takusu_local_lib::app::TakusuApp;
 use takusu_local_lib::generate_root_jwt;
@@ -57,7 +57,8 @@ impl Counters {
 fn make_state(storage: Arc<dyn Storage>) -> AppState {
     let token_cache = Arc::new(TokenCache::with_default_ttl());
     let app = Arc::new(TakusuApp::new(storage, token_cache));
-    AppState::new(app, Arc::new(RwLock::new(Arc::from(ROOT_TOKEN.as_str()))))
+    let agent = build_agent_state(ROOT_TOKEN.as_str(), "");
+    AppState::new(app, Arc::new(RwLock::new(Arc::from(ROOT_TOKEN.as_str()))), agent)
 }
 
 fn counting_storage(counters: Arc<Counters>) -> Arc<dyn Storage> {

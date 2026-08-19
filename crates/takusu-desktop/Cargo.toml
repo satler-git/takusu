@@ -1,0 +1,33 @@
+[package]
+name = "takusu-desktop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "takusu-desktop"
+path = "src/main.rs"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+jiff = { workspace = true }
+futures-util = { version = "0.3" }
+tokio = { workspace = true, features = ["rt-multi-thread", "sync", "time"] }
+reqwest = { workspace = true, features = ["json", "stream"] }
+eventsource-stream = "0.2"
+tracing = { workspace = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+takusu-agent = { workspace = true, default-features = false }
+dirs = "6"
+toml = "0.8"
+
+# Linux desktop tray + notifications (WI-7). Both are tokio-native.
+[target.'cfg(target_os = "linux")'.dependencies]
+ksni = { version = "0.3", default-features = false, features = ["tokio"] }
+zbus = { version = "5", default-features = false, features = ["tokio"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt", "macros"] }

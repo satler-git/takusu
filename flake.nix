@@ -275,6 +275,21 @@
             SHERPA_ONNX_LIB_DIR = "${sherpaOnnxLinuxX64Shared}/lib";
           };
 
+          takusu-desktop = craneLib.buildPackage {
+            inherit src cargoArtifacts;
+            strictDeps = true;
+            pname = "takusu-desktop";
+            cargoExtraArgs = "-p takusu-desktop";
+            doCheck = false;
+            nativeBuildInputs = with pkgs; [
+              pkg-config
+              libclang
+            ];
+            buildInputs = [ ];
+            LIBCLANG_PATH = "${pkgs.libclang.lib}/lib";
+            meta.mainProgram = "takusu-desktop";
+          };
+
           # Shared @takusu/client package built in Nix (pure tsup build, no
           # file: deps). Output is package.json + dist/ so it can be dropped
           # into node_modules/@takusu/client for the web frontend build.
@@ -720,6 +735,7 @@
                 takusu-cli
                 takusu-local
                 takusu-web
+                takusu-desktop
                 takusu-android-libs
                 takusu-android-libs-emulator
                 uniffi-bindgen

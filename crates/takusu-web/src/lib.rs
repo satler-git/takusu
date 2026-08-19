@@ -12,7 +12,7 @@ use axum::routing::get;
 use config::Settings;
 use embed::Assets;
 use takusu_contracts::Storage;
-use takusu_local::state::AppState;
+use takusu_local::state::{AppState, build_agent_state};
 use takusu_local_lib::app::TakusuApp;
 use takusu_local_lib::config::{LocalConfig, StorageKind};
 #[cfg(feature = "sqlite")]
@@ -72,7 +72,13 @@ async fn build_storage(
 /// enters a token: the frontend fetches `/bootstrap` once on load and uses the
 /// returned token for all `/api` calls. `run` enforces a loopback bind so the
 /// unauthenticated `/bootstrap` token is never exposed off-machine.
-pub async fn build_router(settings: &Settings) -> Result<Router, Box<dyn std::error::Error>> {
+///
+/// `local_url` is the address the server will actually listen on; it is passed
+/// to the agent state so in-process agent routes can call the local API.
+pub async fn build_router(
+    settings: &Settings,
+    local_url: &str,
+) -> Result<Router, Box<dyn std::error::Error>> {
     let storage = build_storage(&settings.local, &settings.workers_token).await?;
     let token_cache = Arc::new(TokenCache::with_default_ttl());
     let app = Arc::new(TakusuApp::new(storage, token_cache));
@@ -80,7 +86,12 @@ pub async fn build_router(settings: &Settings) -> Result<Router, Box<dyn std::er
     // Issue a root token the localhost frontend can use for `/api` calls.
     let token = app.create_token(Some("takusu-web")).await?.token;
 
-    let state = AppState::new(app, Arc::new(RwLock::new(Arc::from(token.as_str()))));
+    let agent = build_agent_state(token.as_str(), local_url);
+    let state = AppState::new(
+        app,
+        Arc::new(RwLock::new(Arc::from(token.as_str()))),
+        agent,
+    );
 
     let api = takusu_local::router::router(state);
 
@@ -106,9 +117,13 @@ pub async fn run(bind_override: Option<String>) -> Result<(), Box<dyn std::error
     let bind_addr = bind_override.unwrap_or_else(|| settings.local.bind_addr().to_string());
     ensure_loopback(&bind_addr)?;
 
-    let router = build_router(&settings).await?;
-
+    // Bind first so the actual local URL is known before building the router.
     let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
+    let port = listener.local_addr()?.port();
+    let local_url = format!("http://127.0.0.1:{port}");
+
+    let router = build_router(&settings, &local_url).await?;
+
     tracing::info!("takusu-web listening on http://{bind_addr}");
     axum::serve(listener, router).await?;
     Ok(())

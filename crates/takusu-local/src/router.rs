@@ -238,9 +238,14 @@ pub fn router(state: AppState) -> Router {
         auth::auth_middleware,
     ));
 
+    // Agent routes for the desktop resident daemon (WI-7). They live under
+    // `/api/agent/v1/` and use the in-process `AgentApiState`.
+    let agent_router = takusu_agent::transport::router(state.agent.clone());
+
     Router::new()
         .route("/health", get(health))
         .nest("/api", api)
+        .nest_service("/api/agent/v1", agent_router)
         .with_state(state)
         .layer(Extension(Arc::new(open_api)))
         .layer(SentryHttpLayer::new().enable_transaction())

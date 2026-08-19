@@ -10,7 +10,6 @@ use std::sync::{Arc, LazyLock, Mutex, Weak};
 use tokio::runtime::{Builder, Runtime};
 use tokio::sync::RwLock;
 
-use axum::Router;
 use takusu_agent::tools::takusu::{TimeZoneCache, register_tools};
 use takusu_agent::transport::{AgentApiState, ApiUserInputProvider};
 use takusu_agent::{AgentConfig, AgentSession, ToolRegistry};
@@ -168,14 +167,13 @@ impl TakusuServer {
 
         let storage: Arc<dyn Storage> = Arc::new(WorkersStorage::new_with_client(
             http_client,
-            workers_url,
+            workers_url.clone(),
             root_token.clone(),
         ));
         let token_cache = Arc::new(TokenCache::with_default_ttl());
         let app = Arc::new(TakusuApp::new(storage, token_cache));
         let shared_token: Arc<RwLock<Arc<str>>> =
             Arc::new(RwLock::new(Arc::from(root_token.as_str())));
-        let state = AppState::new(app, Arc::clone(&shared_token));
 
         // Agent sessions run in the same process as the planner server. The
         // factory creates a fresh session for each authenticated Mobile
@@ -217,15 +215,15 @@ impl TakusuServer {
             }
         });
         let agent_state = Arc::new(AgentApiState::new_with_token(
-            shared_token,
+            Arc::clone(&shared_token),
             agent_factory,
             user_input_provider,
             agent_config,
         ));
-        let app_router = router(state).merge(Router::new().nest(
-            "/api/agent/v1",
-            takusu_agent::transport::router(agent_state),
-        ));
+        // Use the same agent state for both the local API and the agent routes
+        // so the server does not construct two separate planner clients.
+        let state = AppState::new(app, Arc::clone(&shared_token), Arc::clone(&agent_state));
+        let app_router = router(state);
 
         let bind_addr = format!("127.0.0.1:{port}");
         // The check → bind → register sequence must be atomic across all
