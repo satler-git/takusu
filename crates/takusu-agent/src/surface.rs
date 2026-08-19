@@ -468,6 +468,8 @@ impl SurfaceStateMachine {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use super::*;
     use crate::{ApprovalRequest, TurnResult};
 
@@ -694,33 +696,37 @@ mod tests {
         assert_eq!(machine.snapshot().state, SurfaceState::Idle);
     }
 
-    #[test]
-    fn concurrent_callbacks_keep_broadcast_revisions_monotonic() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn concurrent_callbacks_keep_broadcast_revisions_monotonic() {
         let machine = SurfaceStateMachine::new();
         let mut events = machine.subscribe();
         let first = machine.clone();
         let second = machine.clone();
-        let barrier = std::sync::Arc::new(std::sync::Barrier::new(3));
+        let barrier = Arc::new(tokio::sync::Barrier::new(3));
         let first_barrier = barrier.clone();
-        let first_thread = std::thread::spawn(move || {
-            first_barrier.wait();
+        let first_task = tokio::spawn(async move {
+            first_barrier.wait().await;
             first.apply_audio_callback(AudioCallback::Listening);
         });
         let second_barrier = barrier.clone();
-        let second_thread = std::thread::spawn(move || {
-            second_barrier.wait();
+        let second_task = tokio::spawn(async move {
+            second_barrier.wait().await;
             second.apply_audio_callback(AudioCallback::Transcribing);
         });
-        barrier.wait();
-        first_thread.join().unwrap();
-        second_thread.join().unwrap();
+        barrier.wait().await;
+        let _ = tokio::try_join!(first_task, second_task);
 
-        let revisions: Vec<_> = (0..2)
-            .map(|_| match events.try_recv().unwrap() {
-                SurfaceEvent::StateChanged(snapshot) => snapshot.revision,
-                SurfaceEvent::Snapshot(_) => panic!("subscription does not emit snapshots"),
-            })
-            .collect();
+        let mut revisions = Vec::new();
+        while revisions.len() < 2 {
+            match tokio::time::timeout(Duration::from_secs(2), events.recv())
+                .await
+                .unwrap_or_else(|_| panic!("timed out waiting for broadcast event"))
+            {
+                Ok(SurfaceEvent::StateChanged(snapshot)) => revisions.push(snapshot.revision),
+                Ok(SurfaceEvent::Snapshot(_)) => panic!("subscription does not emit snapshots"),
+                Err(e) => panic!("expected two broadcast events, got {e:?}"),
+            }
+        }
         assert_eq!(revisions, vec![1, 2]);
     }
 }

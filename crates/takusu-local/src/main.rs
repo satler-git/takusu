@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use takusu_contracts::Storage;
 use takusu_local::router::router;
-use takusu_local::state::AppState;
+use takusu_local::state::{AppState, build_agent_state};
 use takusu_local_lib::app::TakusuApp;
 use takusu_local_lib::config::LocalConfig;
 #[cfg(feature = "sqlite")]
@@ -72,7 +72,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     return Err("TAKUSU_WORKERS_TOKEN (or TAKUSU_ROOT_TOKEN) is required for the workers backend".into());
                 }
                 tracing::info!("storage backend: workers ({workers_url})");
-                Arc::new(WorkersStorage::new_with(workers_url, workers_token.clone()))
+                Arc::new(WorkersStorage::new_with(workers_url.clone(), workers_token.clone()))
             }
         };
 
@@ -89,15 +89,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         let token_cache = Arc::new(TokenCache::with_default_ttl());
         let app = Arc::new(TakusuApp::new(storage, token_cache));
+
+        // Bind before constructing the agent state so the in-process agent
+        // routes call the actual local URL rather than an empty workers URL.
+        let bind_addr = cfg.bind_addr().to_string();
+        let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
+        let port = listener.local_addr()?.port();
+        let local_url = format!("http://127.0.0.1:{port}");
+        tracing::info!("listening on {bind_addr}");
+
+        let root_token: Arc<str> = Arc::from(root_token.into_boxed_str());
+        let agent = build_agent_state(root_token.clone(), &local_url);
         let state = AppState::new(
             app,
-            Arc::new(RwLock::new(Arc::from(root_token.into_boxed_str()))),
+            Arc::new(RwLock::new(root_token)),
+            agent,
         );
-        let bind_addr = cfg.bind_addr().to_string();
         let app_router = router(state);
-
-        let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
-        tracing::info!("listening on {bind_addr}");
 
         axum::serve(listener, app_router).await?;
 

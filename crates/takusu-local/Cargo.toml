@@ -18,6 +18,7 @@ sqlite = ["dep:sqlx", "takusu-local-lib/sqlite"]
 
 [dependencies]
 takusu-local-lib = { workspace = true, default-features = false }
+takusu-agent = { workspace = true, default-features = false }
 takusu-types.workspace = true
 takusu-search.workspace = true
 takusu-contracts.workspace = true
