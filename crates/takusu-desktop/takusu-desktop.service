@@ -1,0 +1,12 @@
+[Unit]
+Description=takusu resident desktop daemon
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/takusu-desktop
+Restart=on-failure
+Environment="RUST_LOG=info,takusu_desktop=debug"
+
+[Install]
+WantedBy=default.target

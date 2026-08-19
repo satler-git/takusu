@@ -4,7 +4,7 @@ use std::time::Duration;
 use axum::serve;
 use takusu_client::Client;
 use takusu_local::router::router;
-use takusu_local::state::AppState;
+use takusu_local::state::{AppState, build_agent_state};
 use takusu_local_lib::app::TakusuApp;
 use takusu_local_lib::error::AppError;
 use tokio::net::TcpListener;
@@ -19,10 +19,10 @@ pub struct LocalServer {
 pub async fn start_in_process(app: Arc<TakusuApp>) -> Result<LocalServer, AppError> {
     let resp = app.create_token(None).await?;
     let token = resp.token;
-    let state = AppState::new(
-        app,
-        Arc::new(tokio::sync::RwLock::new(Arc::from(token.as_str()))),
-    );
+    let shared_token = Arc::new(tokio::sync::RwLock::new(Arc::from(token.as_str())));
+
+    // Bind before constructing the agent state so the local URL is known and
+    // agent routes talk to the same in-process server.
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .map_err(|e| AppError::Internal(format!("failed to bind local server: {e}")))?;
@@ -30,6 +30,10 @@ pub async fn start_in_process(app: Arc<TakusuApp>) -> Result<LocalServer, AppErr
         .local_addr()
         .map_err(|e| AppError::Internal(format!("failed to get local addr: {e}")))?
         .port();
+    let url = format!("http://127.0.0.1:{port}");
+
+    let agent = build_agent_state(token.as_str(), &url);
+    let state = AppState::new(app, Arc::clone(&shared_token), agent);
     let (tx, rx) = oneshot::channel();
     let server = serve(listener, router(state)).with_graceful_shutdown(async {
         let _ = rx.await;
@@ -40,7 +44,6 @@ pub async fn start_in_process(app: Arc<TakusuApp>) -> Result<LocalServer, AppErr
         }
     });
 
-    let url = format!("http://127.0.0.1:{port}");
     wait_for_ready(&url, &token).await?;
 
     Ok(LocalServer {

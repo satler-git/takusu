@@ -6,7 +6,7 @@ use sqlx::SqlitePool;
 use std::sync::Arc;
 use std::sync::LazyLock;
 use takusu_local::router::router as build_router;
-use takusu_local::state::AppState;
+use takusu_local::state::{AppState, build_agent_state};
 use takusu_local_lib::app::TakusuApp;
 use takusu_local_lib::config::LocalConfig;
 use takusu_local_lib::storage_sqlite::SqliteStorage;
@@ -34,7 +34,12 @@ async fn setup() -> (AppState, SqlitePool) {
     let pool = storage.pool().clone();
     let token_cache = Arc::new(TokenCache::with_default_ttl());
     let app = Arc::new(TakusuApp::new(Arc::new(storage), token_cache));
-    let state = AppState::new(app, Arc::new(RwLock::new(Arc::from(root_token()))));
+    let agent = build_agent_state(root_token(), "");
+    let state = AppState::new(
+        app,
+        Arc::new(RwLock::new(Arc::from(root_token()))),
+        agent,
+    );
     (state, pool)
 }
 
