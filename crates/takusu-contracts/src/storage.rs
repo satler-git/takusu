@@ -185,6 +185,10 @@ pub trait Storage: Send + Sync + 'static {
         operation_id: Option<&str>,
     ) -> StorageResult<TaskRow>;
     async fn get_task_progress(&self, id: &str) -> StorageResult<TaskProgress>;
+    async fn get_estimator_state(&self, task_id: &str) -> StorageResult<Option<EstimatorStateRow>> {
+        let _ = task_id;
+        Ok(None)
+    }
     async fn split_task(
         &self,
         id: &str,

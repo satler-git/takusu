@@ -11871,6 +11871,49 @@
         },
         "required": ["id", "title"]
       },
+      "EstimatorBand": {
+        "type": "string",
+        "enum": ["usual", "attention", "replan"]
+      },
+      "EstimatorResult": {
+        "type": "object",
+        "properties": {
+          "band": {
+            "$ref": "#/components/schemas/EstimatorBand"
+          },
+          "next_crossing_time": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Timestamp"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "observation_id": {
+            "type": "string"
+          },
+          "prior_shift_z": {
+            "type": ["number", "null"],
+            "format": "double"
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "survival_probability": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "required": [
+          "band",
+          "revision",
+          "survival_probability",
+          "observation_id"
+        ]
+      },
       "GenerateSchedule": {
         "description": "Request body for `POST /api/schedule/generate`.",
         "type": "object",
@@ -14033,6 +14076,16 @@
       "WorkSessionProgressResult": {
         "type": "object",
         "properties": {
+          "estimator": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EstimatorResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "event": {
             "description": "The recorded event, or `None` when the reported quantity_done has not\nchanged (no-op).",
             "anyOf": [
