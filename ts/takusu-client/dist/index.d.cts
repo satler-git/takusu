@@ -326,6 +326,19 @@ interface components$1 {
             id: string;
             title: string;
         };
+        /** @enum {string} */
+        EstimatorBand: 'usual' | 'attention' | 'replan';
+        EstimatorResult: {
+            band: components$1['schemas']['EstimatorBand'];
+            next_crossing_time?: components$1['schemas']['Timestamp'] | null;
+            observation_id: string;
+            /** Format: double */
+            prior_shift_z?: number | null;
+            /** Format: int64 */
+            revision: number;
+            /** Format: double */
+            survival_probability: number;
+        };
         /** @description Request body for `POST /api/schedule/generate`. */
         GenerateSchedule: {
             /** @default recommended */
@@ -1210,6 +1223,7 @@ interface components$1 {
             task_id?: string | null;
         };
         WorkSessionProgressResult: {
+            estimator?: components$1['schemas']['EstimatorResult'] | null;
             /**
              * @description The recorded event, or `None` when the reported quantity_done has not
              *     changed (no-op).

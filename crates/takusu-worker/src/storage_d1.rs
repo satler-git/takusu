@@ -8,10 +8,14 @@
 
 use takusu_contracts::storage::StorageResult;
 use takusu_contracts::{
-    HabitRow, HabitStepRow, MemoryKindCounts, MemoryRow, ScheduleRow, SettingsRow, SkillRow,
-    StorageError, TaskRow,
+    EstimatorBand, EstimatorResult, EstimatorStateRow, HabitRow, HabitStepRow, MemoryKindCounts,
+    MemoryRow, ScheduleRow, SettingsRow, SkillRow, StorageError, TaskRow,
 };
-use takusu_types::{Quantity, parse_timezone};
+use takusu_types::estimator::{
+    DurationDistribution, InterventionBand, effective_distribution, next_crossing_time,
+    progress_posterior, survival_probability,
+};
+use takusu_types::{Quantity, Timestamp, parse_timezone};
 use wasm_bindgen::JsValue;
 use worker::D1Database;
 
@@ -500,6 +504,276 @@ pub(super) async fn filter_rows_with_query(
 
 // ── Progress helpers ────────────────────────────────────────────────────
 
+pub(super) struct EstimatorMutation {
+    pub(super) result: EstimatorResult,
+    pub(super) avg_minutes: i64,
+    pub(super) sigma_minutes: i64,
+    pub(super) statements: Vec<worker::D1PreparedStatement>,
+}
+
+fn estimator_band(band: InterventionBand) -> EstimatorBand {
+    match band {
+        InterventionBand::Usual => EstimatorBand::Usual,
+        InterventionBand::Attention => EstimatorBand::Attention,
+        InterventionBand::Replan => EstimatorBand::Replan,
+    }
+}
+
+pub(super) async fn load_task_kind_prior(
+    database: &D1Database,
+    task: &TaskRow,
+) -> StorageResult<Option<DurationDistribution>> {
+    let kind = task.habit_id.as_deref().unwrap_or("default");
+    let row: Option<(f64, f64)> = d1_first(
+        &database
+            .prepare(
+                "SELECT mean_minutes, sigma_minutes FROM estimator_task_priors WHERE kind = ?1",
+            )
+            .bind(&[JsValue::from_str(kind)])
+            .map_err(d1_err)?,
+    )
+    .await?;
+    Ok(row.map(|(mu, sigma)| DurationDistribution::new(mu, sigma)))
+}
+
+pub(super) async fn estimator_state(
+    database: &D1Database,
+    task: &TaskRow,
+) -> StorageResult<EstimatorStateRow> {
+    let state: Option<EstimatorStateRow> = d1_first(
+        &database
+            .prepare(
+                "SELECT task_id, revision, mean_minutes, sigma_minutes, source, updated_at FROM estimator_state WHERE task_id = ?1",
+            )
+            .bind(&[JsValue::from_str(&task.id)])
+            .map_err(d1_err)?,
+    )
+    .await?;
+    if let Some(state) = state {
+        return Ok(state);
+    }
+    let task_kind_prior = if task.sigma_minutes > 0 {
+        None
+    } else {
+        load_task_kind_prior(database, task).await?
+    };
+    let distribution = effective_distribution(
+        task.avg_minutes as f64,
+        task.sigma_minutes as f64,
+        task_kind_prior,
+    );
+    Ok(EstimatorStateRow {
+        task_id: task.id.clone(),
+        revision: 0,
+        mean_minutes: distribution.mu,
+        sigma_minutes: distribution.sigma,
+        source: if task.sigma_minutes > 0 {
+            "task".into()
+        } else if task_kind_prior.is_some() {
+            "task_kind_prior".into()
+        } else {
+            "fallback".into()
+        },
+        updated_at: task.updated_at,
+    })
+}
+
+pub(super) async fn estimator_observation(
+    database: &D1Database,
+    task: &TaskRow,
+    active_minutes: i64,
+    quantity_fraction: f64,
+    now: Timestamp,
+    kind: &str,
+) -> StorageResult<EstimatorMutation> {
+    if task.fixed {
+        return Err(StorageError::BadRequest(
+            "fixed tasks do not have estimator observations".into(),
+        ));
+    }
+    let existing: Option<EstimatorStateRow> = d1_first(
+        &database
+            .prepare(
+                "SELECT task_id, revision, mean_minutes, sigma_minutes, source, updated_at FROM estimator_state WHERE task_id = ?1",
+            )
+            .bind(&[JsValue::from_str(&task.id)])
+            .map_err(d1_err)?,
+    )
+    .await?;
+    let state = if let Some(state) = existing.clone() {
+        state
+    } else {
+        let task_kind_prior = if task.sigma_minutes > 0 {
+            None
+        } else {
+            load_task_kind_prior(database, task).await?
+        };
+        let distribution = effective_distribution(
+            task.avg_minutes as f64,
+            task.sigma_minutes as f64,
+            task_kind_prior,
+        );
+        EstimatorStateRow {
+            task_id: task.id.clone(),
+            revision: 0,
+            mean_minutes: distribution.mu,
+            sigma_minutes: distribution.sigma,
+            source: if task.sigma_minutes > 0 {
+                "task".into()
+            } else if task_kind_prior.is_some() {
+                "task_kind_prior".into()
+            } else {
+                "fallback".into()
+            },
+            updated_at: task.updated_at,
+        }
+    };
+    let prior = DurationDistribution::new(state.mean_minutes, state.sigma_minutes);
+    let posterior = progress_posterior(prior, active_minutes.max(0) as f64, quantity_fraction)
+        .map_err(|e| StorageError::BadRequest(e.to_string()))?;
+    let revision = state.revision + 1;
+    let observation_id = uuid::Uuid::now_v7().to_string();
+    let mut statements = Vec::new();
+    if existing.is_none() {
+        statements.push(
+            database
+                .prepare(
+                    "INSERT OR IGNORE INTO estimator_state (task_id, revision, mean_minutes, sigma_minutes, source) VALUES (?1, 0, ?2, ?3, ?4)",
+                )
+                .bind(&[
+                    JsValue::from_str(&task.id),
+                    JsValue::from_f64(prior.mu),
+                    JsValue::from_f64(prior.sigma),
+                    JsValue::from_str(&state.source),
+                ])
+                .map_err(d1_err)?,
+        );
+    }
+    statements.push(
+        database
+            .prepare(
+                "INSERT INTO estimator_observations (id, task_id, revision, kind, active_minutes, quantity_fraction, projection_minutes, prior_mean_minutes, prior_sigma_minutes, posterior_mean_minutes, posterior_sigma_minutes) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            )
+            .bind(&[
+                JsValue::from_str(&observation_id),
+                JsValue::from_str(&task.id),
+                JsValue::from_f64(revision as f64),
+                JsValue::from_str(kind),
+                JsValue::from_f64(active_minutes.max(0) as f64),
+                JsValue::from_f64(quantity_fraction),
+                JsValue::from_f64(posterior.projection_minutes),
+                JsValue::from_f64(prior.mu),
+                JsValue::from_f64(prior.sigma),
+                JsValue::from_f64(posterior.posterior.mu),
+                JsValue::from_f64(posterior.posterior.sigma),
+            ])
+            .map_err(d1_err)?,
+    );
+    statements.push(
+        database
+            .prepare(
+                "UPDATE estimator_state SET revision = ?1, mean_minutes = ?2, sigma_minutes = ?3, source = 'observation', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE task_id = ?4",
+            )
+            .bind(&[
+                JsValue::from_f64(revision as f64),
+                JsValue::from_f64(posterior.posterior.mu),
+                JsValue::from_f64(posterior.posterior.sigma),
+                JsValue::from_str(&task.id),
+            ])
+            .map_err(d1_err)?,
+    );
+
+    let crossing_delay = next_crossing_time(posterior.posterior, active_minutes.max(0) as f64, 0.0);
+    let next_crossing_time = crossing_delay.and_then(|delay| {
+        let seconds = (delay * 60.0).ceil();
+        (seconds.is_finite() && seconds >= 0.0)
+            .then(|| Timestamp::from_second(now.as_second().saturating_add(seconds as i64)))
+            .flatten()
+    });
+    Ok(EstimatorMutation {
+        result: EstimatorResult {
+            band: estimator_band(posterior.band),
+            revision,
+            next_crossing_time,
+            survival_probability: survival_probability(
+                posterior.posterior,
+                active_minutes.max(0) as f64,
+            ),
+            prior_shift_z: Some(posterior.prior_shift_z),
+            observation_id,
+        },
+        avg_minutes: posterior.posterior.mean_minutes().round() as i64,
+        sigma_minutes: posterior.posterior.stddev_minutes().round() as i64,
+        statements,
+    })
+}
+
+pub(super) async fn compensate_last_estimator_observation(
+    database: &D1Database,
+    task: &TaskRow,
+) -> StorageResult<Option<EstimatorMutation>> {
+    let latest: Option<(String, String, f64, f64)> = d1_first(
+        &database
+            .prepare(
+                "SELECT id, kind, prior_mean_minutes, prior_sigma_minutes FROM estimator_observations WHERE task_id = ?1 ORDER BY revision DESC LIMIT 1",
+            )
+            .bind(&[JsValue::from_str(&task.id)])
+            .map_err(d1_err)?,
+    )
+    .await?;
+    let Some((compensates_id, kind, target_mu, target_sigma)) = latest else {
+        return Ok(None);
+    };
+    if kind == "compensation" {
+        return Ok(None);
+    }
+    let state = estimator_state(database, task).await?;
+    let target = DurationDistribution::new(target_mu, target_sigma);
+    let revision = state.revision + 1;
+    let observation_id = uuid::Uuid::now_v7().to_string();
+    let statements = vec![
+        database
+            .prepare(
+                "INSERT INTO estimator_observations (id, task_id, revision, kind, active_minutes, prior_mean_minutes, prior_sigma_minutes, posterior_mean_minutes, posterior_sigma_minutes, compensates_observation_id) VALUES (?1, ?2, ?3, 'compensation', 0, ?4, ?5, ?6, ?7, ?8)",
+            )
+            .bind(&[
+                JsValue::from_str(&observation_id),
+                JsValue::from_str(&task.id),
+                JsValue::from_f64(revision as f64),
+                JsValue::from_f64(state.mean_minutes),
+                JsValue::from_f64(state.sigma_minutes),
+                JsValue::from_f64(target.mu),
+                JsValue::from_f64(target.sigma),
+                JsValue::from_str(&compensates_id),
+            ])
+            .map_err(d1_err)?,
+        database
+            .prepare(
+                "UPDATE estimator_state SET revision = ?1, mean_minutes = ?2, sigma_minutes = ?3, source = 'compensation', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE task_id = ?4",
+            )
+            .bind(&[
+                JsValue::from_f64(revision as f64),
+                JsValue::from_f64(target.mu),
+                JsValue::from_f64(target.sigma),
+                JsValue::from_str(&task.id),
+            ])
+            .map_err(d1_err)?,
+    ];
+    Ok(Some(EstimatorMutation {
+        result: EstimatorResult {
+            band: EstimatorBand::Usual,
+            revision,
+            next_crossing_time: None,
+            survival_probability: survival_probability(target, 0.0),
+            prior_shift_z: None,
+            observation_id,
+        },
+        avg_minutes: target.mean_minutes().round() as i64,
+        sigma_minutes: target.stddev_minutes().round() as i64,
+        statements,
+    }))
+}
+
 pub(super) fn now_seconds() -> i64 {
     (worker::Date::now().as_millis() / 1000) as i64
 }
@@ -528,36 +802,6 @@ pub(super) fn session_minutes(session: &takusu_contracts::WorkSessionRow) -> i64
             ((now - start) / 60).max(1)
         }
     }
-}
-
-pub(super) async fn compute_updated_estimate(
-    database: &D1Database,
-    task_id: &str,
-    avg_minutes: i64,
-    sigma_minutes: i64,
-    quantity_total: Option<i64>,
-    active_minutes: i64,
-    delta_quantity: i64,
-) -> StorageResult<(i64, i64)> {
-    let stmt = database.prepare(
-        "SELECT id, work_session_id, task_id, at, quantity_done, delta_quantity, active_minutes, note FROM progress_events WHERE task_id = ?1 AND delta_quantity > 0 AND active_minutes > 0 ORDER BY id ASC",
-    );
-    let events: Vec<takusu_contracts::ProgressEventRow> =
-        d1_all(&stmt.bind(&[JsValue::from_str(task_id)]).map_err(d1_err)?).await?;
-
-    let observations: Vec<(i64, i64)> = events
-        .iter()
-        .map(|e| (e.active_minutes, e.delta_quantity.unwrap_or(1).max(1)))
-        .collect();
-
-    Ok(takusu_types::estimate_progress(
-        avg_minutes,
-        sigma_minutes,
-        quantity_total,
-        active_minutes,
-        delta_quantity,
-        &observations,
-    ))
 }
 
 // ── Progress idempotency ────────────────────────────────────────────────

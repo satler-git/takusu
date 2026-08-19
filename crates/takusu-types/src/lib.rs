@@ -2,6 +2,7 @@ pub mod abandonability;
 pub mod date;
 pub mod duration_seconds;
 pub mod enum_label;
+pub mod estimator;
 pub mod id_ref;
 pub mod json_string;
 pub mod jwt;
@@ -143,6 +144,7 @@ pub const MAX_ESTIMATE_MINUTES: f64 = 24.0 * 60.0;
 ///
 /// Returns `None` when there is no usable `quantity_total` or no positive
 /// observation. With a single usable observation the sigma is `0`.
+#[deprecated(note = "use estimator::progress_posterior for duration-distribution estimates")]
 pub fn weighted_estimate(
     observations: &[(i64, i64)],
     quantity_total: Option<i64>,
@@ -197,6 +199,8 @@ pub fn weighted_estimate(
 ///
 /// Returns the original estimate when there is no usable `quantity_total` or
 /// no positive progress in this observation.
+#[deprecated(note = "use estimator::progress_posterior for duration-distribution estimates")]
+#[allow(deprecated)]
 pub fn estimate_progress(
     avg_minutes: i64,
     sigma_minutes: i64,
@@ -409,6 +413,7 @@ pub fn url_encode(s: &str) -> String {
 }
 
 #[cfg(test)]
+#[allow(deprecated)]
 mod tests {
     use super::*;
     use crate::date::now_timestamp;

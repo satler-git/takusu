@@ -9,14 +9,14 @@ use serde::de::DeserializeOwned;
 use serde_json::json;
 use takusu_contracts::{
     ApplyHabitEstimateRequest, AttachWorkSession, CommentRow, ConvertWorkSession, CreateHabit,
-    CreateHabitScheduledSpan, CreateMemory, CreateSkill, CreateTask, GoogleCalEventRow,
-    GoogleCalSettingsRow, HabitRow, HabitScheduledSpanRow, HabitStepEstimateInput, HabitStepInput,
-    HabitStepRow, MemoryInjectionQuery, MemoryInjectionResult, MemoryQuery, MemoryRow,
-    RecordWorkSessionProgress, SaveScheduleRequest, ScheduleRow, SettingsRow, SimilarTaskQuery,
-    SimilarTaskRow, SkillRow, SplitResult, SplitTask, StartWorkSession, Storage, StorageError,
-    TaskProgress, TaskQuery, TaskRow, TokenCreateResponse, TokenRow, UpdateGoogleCalSettings,
-    UpdateHabit, UpdateMemory, UpdateSettings, UpdateSkill, UpdateTask, WorkSessionProgressResult,
-    WorkSessionRow, storage::StorageResult,
+    CreateHabitScheduledSpan, CreateMemory, CreateSkill, CreateTask, EstimatorStateRow,
+    GoogleCalEventRow, GoogleCalSettingsRow, HabitRow, HabitScheduledSpanRow,
+    HabitStepEstimateInput, HabitStepInput, HabitStepRow, MemoryInjectionQuery,
+    MemoryInjectionResult, MemoryQuery, MemoryRow, RecordWorkSessionProgress, SaveScheduleRequest,
+    ScheduleRow, SettingsRow, SimilarTaskQuery, SimilarTaskRow, SkillRow, SplitResult, SplitTask,
+    StartWorkSession, Storage, StorageError, TaskProgress, TaskQuery, TaskRow, TokenCreateResponse,
+    TokenRow, UpdateGoogleCalSettings, UpdateHabit, UpdateMemory, UpdateSettings, UpdateSkill,
+    UpdateTask, WorkSessionProgressResult, WorkSessionRow, storage::StorageResult,
 };
 use takusu_types::CommentAuthor;
 use takusu_types::EnumLabel;
@@ -1128,6 +1128,10 @@ impl Storage for WorkersStorage {
             None,
         )
         .await
+    }
+
+    async fn get_estimator_state(&self, id: &str) -> StorageResult<Option<EstimatorStateRow>> {
+        Ok(self.get_task_progress(id).await?.estimator)
     }
 
     async fn split_task(
