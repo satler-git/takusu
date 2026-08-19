@@ -1036,6 +1036,37 @@ pub struct AttachWorkSession {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum EstimatorBand {
+    Usual,
+    Attention,
+    Replan,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+pub struct EstimatorStateRow {
+    pub task_id: String,
+    pub revision: i64,
+    pub mean_minutes: f64,
+    pub sigma_minutes: f64,
+    pub source: String,
+    pub updated_at: Timestamp,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct EstimatorResult {
+    pub band: EstimatorBand,
+    pub revision: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_crossing_time: Option<Timestamp>,
+    pub survival_probability: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prior_shift_z: Option<f64>,
+    pub observation_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct WorkSessionProgressResult {
     pub work_session: WorkSessionRow,
     pub task: Option<TaskRow>,
@@ -1045,6 +1076,8 @@ pub struct WorkSessionProgressResult {
     /// True when the reported quantity_done reaches or exceeds the task total.
     #[serde(default)]
     pub suggests_completion: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub estimator: Option<EstimatorResult>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
@@ -1054,6 +1087,8 @@ pub struct TaskProgress {
     pub sessions: Vec<WorkSessionRow>,
     pub events: Vec<ProgressEventRow>,
     pub total_active_minutes: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub estimator: Option<EstimatorStateRow>,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, schemars::JsonSchema)]

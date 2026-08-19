@@ -5,9 +5,13 @@
 //! and the helpers used by task lifecycle code in `super`.
 
 use takusu_contracts::{
-    AttachWorkSession, ConvertWorkSession, ProgressEventRow, RecordWorkSessionProgress,
-    StartWorkSession, StorageError, TaskProgress, TaskRow, WorkSessionProgressResult,
-    WorkSessionRow, storage::StorageResult,
+    AttachWorkSession, ConvertWorkSession, EstimatorBand, EstimatorResult, EstimatorStateRow,
+    ProgressEventRow, RecordWorkSessionProgress, StartWorkSession, StorageError, TaskProgress,
+    TaskRow, WorkSessionProgressResult, WorkSessionRow, storage::StorageResult,
+};
+use takusu_types::estimator::{
+    DurationDistribution, InterventionBand, effective_distribution, next_crossing_time,
+    progress_posterior, survival_probability,
 };
 use takusu_types::{Quantity, TaskStatus, Timestamp};
 
@@ -20,7 +24,6 @@ const SELECT_OPEN_WORK_SESSION_BY_TASK: &str = "SELECT id, task_id, title, note,
 
 const SELECT_PROGRESS_EVENT_BY_ID: &str = "SELECT id, work_session_id, task_id, at, quantity_done, delta_quantity, active_minutes, note FROM progress_events WHERE id = ?";
 const SELECT_PROGRESS_EVENTS_BY_TASK: &str = "SELECT id, work_session_id, task_id, at, quantity_done, delta_quantity, active_minutes, note FROM progress_events WHERE task_id = ? ORDER BY at ASC, id ASC";
-const SELECT_PROGRESS_EVENTS_BY_SESSION: &str = "SELECT id, work_session_id, task_id, at, quantity_done, delta_quantity, active_minutes, note FROM progress_events WHERE work_session_id = ? ORDER BY at ASC, id ASC";
 const LAST_PROGRESS_EVENT: &str = "SELECT id, work_session_id, task_id, at, quantity_done, delta_quantity, active_minutes, note FROM progress_events WHERE work_session_id = ? ORDER BY at DESC, id DESC LIMIT 1";
 
 /// Close any open work session for `task_id` so active time is not left
@@ -52,42 +55,248 @@ pub(crate) fn session_minutes(session: &WorkSessionRow) -> i64 {
     }
 }
 
-/// Compute updated avg_minutes / sigma_minutes from a new positive progress
-/// observation. See doc/proposal.typ WI-9 for the estimate-update formula.
-pub(crate) async fn compute_updated_estimate<'c, E>(
+async fn load_task_kind_prior<'c, E>(
     executor: E,
-    task_id: &str,
-    avg_minutes: i64,
-    sigma_minutes: i64,
-    quantity_total: Option<i64>,
-    active_minutes: i64,
-    delta_quantity: i64,
-) -> StorageResult<(i64, i64)>
+    task: &TaskRow,
+) -> StorageResult<Option<DurationDistribution>>
 where
     E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
 {
-    // Collect all positive progress observations for this task.
-    let events: Vec<ProgressEventRow> = sqlx::query_as(
-        "SELECT id, work_session_id, task_id, at, quantity_done, delta_quantity, active_minutes, note FROM progress_events WHERE task_id = ? AND delta_quantity > 0 AND active_minutes > 0 ORDER BY id ASC",
+    let kind = task.habit_id.as_deref().unwrap_or("default");
+    let prior: Option<(f64, f64)> = sqlx::query_as(
+        "SELECT mean_minutes, sigma_minutes FROM estimator_task_priors WHERE kind = ?",
     )
-    .bind(task_id)
-    .fetch_all(executor)
+    .bind(kind)
+    .fetch_optional(executor)
+    .await
+    .map_err(map_err)?;
+    Ok(prior.map(|(mu, sigma)| DurationDistribution::new(mu, sigma)))
+}
+
+async fn ensure_estimator_state(
+    tx: &mut sqlx::SqliteConnection,
+    task: &TaskRow,
+) -> StorageResult<EstimatorStateRow> {
+    let task_kind_prior = if task.sigma_minutes > 0 {
+        None
+    } else {
+        load_task_kind_prior(&mut *tx, task).await?
+    };
+    let source = if task.sigma_minutes > 0 {
+        "task"
+    } else if task_kind_prior.is_some() {
+        "task_kind_prior"
+    } else {
+        "fallback"
+    };
+    let distribution = effective_distribution(
+        task.avg_minutes as f64,
+        task.sigma_minutes as f64,
+        task_kind_prior,
+    );
+    sqlx::query(
+        "INSERT OR IGNORE INTO estimator_state (task_id, revision, mean_minutes, sigma_minutes, source) VALUES (?, 0, ?, ?, ?)",
+    )
+    .bind(&task.id)
+    .bind(distribution.mu)
+    .bind(distribution.sigma)
+    .bind(source)
+    .execute(&mut *tx)
+    .await
+    .map_err(map_err)?;
+    sqlx::query_as::<_, EstimatorStateRow>(
+        "SELECT task_id, revision, mean_minutes, sigma_minutes, source, updated_at FROM estimator_state WHERE task_id = ?",
+    )
+    .bind(&task.id)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(map_err)
+}
+
+fn estimator_band(band: InterventionBand) -> EstimatorBand {
+    match band {
+        InterventionBand::Usual => EstimatorBand::Usual,
+        InterventionBand::Attention => EstimatorBand::Attention,
+        InterventionBand::Replan => EstimatorBand::Replan,
+    }
+}
+
+fn crossing_timestamp(now: Timestamp, crossing_delay_minutes: Option<f64>) -> Option<Timestamp> {
+    let delay_seconds = (crossing_delay_minutes? * 60.0).ceil();
+    if !delay_seconds.is_finite() || delay_seconds < 0.0 {
+        return None;
+    }
+    now.to_jiff()
+        .checked_add(jiff::Span::new().seconds(delay_seconds as i64))
+        .ok()
+        .map(Timestamp::from)
+}
+
+async fn record_estimator_observation(
+    tx: &mut sqlx::SqliteConnection,
+    task: &TaskRow,
+    active_minutes: i64,
+    quantity_fraction: f64,
+    now: Timestamp,
+    kind: &str,
+) -> StorageResult<EstimatorResult> {
+    if task.fixed {
+        return Err(StorageError::BadRequest(
+            "fixed tasks do not have estimator observations".into(),
+        ));
+    }
+    let state = ensure_estimator_state(tx, task).await?;
+    let prior = DurationDistribution::new(state.mean_minutes, state.sigma_minutes);
+    let posterior = progress_posterior(prior, active_minutes.max(0) as f64, quantity_fraction)
+        .map_err(|e| StorageError::BadRequest(e.to_string()))?;
+    let revision = state.revision + 1;
+    let observation_id = uuid::Uuid::now_v7().to_string();
+    sqlx::query(
+        "INSERT INTO estimator_observations (id, task_id, revision, kind, active_minutes, quantity_fraction, projection_minutes, prior_mean_minutes, prior_sigma_minutes, posterior_mean_minutes, posterior_sigma_minutes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(&observation_id)
+    .bind(&task.id)
+    .bind(revision)
+    .bind(kind)
+    .bind(active_minutes.max(0) as f64)
+    .bind(quantity_fraction)
+    .bind(posterior.projection_minutes)
+    .bind(prior.mu)
+    .bind(prior.sigma)
+    .bind(posterior.posterior.mu)
+    .bind(posterior.posterior.sigma)
+    .execute(&mut *tx)
     .await
     .map_err(map_err)?;
 
-    let observations: Vec<(i64, i64)> = events
-        .iter()
-        .map(|e| (e.active_minutes, e.delta_quantity.unwrap_or(1).max(1)))
-        .collect();
+    sqlx::query(
+        "UPDATE estimator_state SET revision = ?, mean_minutes = ?, sigma_minutes = ?, source = 'observation', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE task_id = ?",
+    )
+    .bind(revision)
+    .bind(posterior.posterior.mu)
+    .bind(posterior.posterior.sigma)
+    .bind(&task.id)
+    .execute(&mut *tx)
+    .await
+    .map_err(map_err)?;
 
-    Ok(takusu_types::estimate_progress(
-        avg_minutes,
-        sigma_minutes,
-        quantity_total,
-        active_minutes,
-        delta_quantity,
-        &observations,
-    ))
+    let crossing_delay = next_crossing_time(posterior.posterior, active_minutes.max(0) as f64, 0.0);
+    let result = EstimatorResult {
+        band: estimator_band(posterior.band),
+        revision,
+        next_crossing_time: crossing_timestamp(now, crossing_delay),
+        survival_probability: survival_probability(
+            posterior.posterior,
+            active_minutes.max(0) as f64,
+        ),
+        prior_shift_z: Some(posterior.prior_shift_z),
+        observation_id,
+    };
+    Ok(result)
+}
+
+async fn compensate_last_estimator_observation(
+    tx: &mut sqlx::SqliteConnection,
+    task: &TaskRow,
+) -> StorageResult<Option<(EstimatorResult, i64, i64)>> {
+    let latest: Option<(String, String, f64, f64)> = sqlx::query_as(
+        "SELECT id, kind, prior_mean_minutes, prior_sigma_minutes FROM estimator_observations WHERE task_id = ? ORDER BY revision DESC LIMIT 1",
+    )
+    .bind(&task.id)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(map_err)?;
+    let Some((compensates_id, kind, target_mu, target_sigma)) = latest else {
+        return Ok(None);
+    };
+    if kind == "compensation" {
+        return Ok(None);
+    }
+    let state = ensure_estimator_state(tx, task).await?;
+    let target = DurationDistribution::new(target_mu, target_sigma);
+    let revision = state.revision + 1;
+    let observation_id = uuid::Uuid::now_v7().to_string();
+    sqlx::query(
+        "INSERT INTO estimator_observations (id, task_id, revision, kind, active_minutes, prior_mean_minutes, prior_sigma_minutes, posterior_mean_minutes, posterior_sigma_minutes, compensates_observation_id) VALUES (?, ?, ?, 'compensation', 0, ?, ?, ?, ?, ?)",
+    )
+    .bind(&observation_id)
+    .bind(&task.id)
+    .bind(revision)
+    .bind(state.mean_minutes)
+    .bind(state.sigma_minutes)
+    .bind(target.mu)
+    .bind(target.sigma)
+    .bind(&compensates_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(map_err)?;
+    sqlx::query(
+        "UPDATE estimator_state SET revision = ?, mean_minutes = ?, sigma_minutes = ?, source = 'compensation', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE task_id = ?",
+    )
+    .bind(revision)
+    .bind(target.mu)
+    .bind(target.sigma)
+    .bind(&task.id)
+    .execute(&mut *tx)
+    .await
+    .map_err(map_err)?;
+    let result = EstimatorResult {
+        band: EstimatorBand::Usual,
+        revision,
+        next_crossing_time: None,
+        survival_probability: survival_probability(target, 0.0),
+        prior_shift_z: None,
+        observation_id,
+    };
+    Ok(Some((
+        result,
+        target.mean_minutes().round() as i64,
+        target.stddev_minutes().round() as i64,
+    )))
+}
+
+async fn read_estimator_state(
+    storage: &super::SqliteStorage,
+    task: &TaskRow,
+) -> StorageResult<EstimatorStateRow> {
+    let state = sqlx::query_as::<_, EstimatorStateRow>(
+        "SELECT task_id, revision, mean_minutes, sigma_minutes, source, updated_at FROM estimator_state WHERE task_id = ?",
+    )
+    .bind(&task.id)
+    .fetch_optional(storage.pool())
+    .await
+    .map_err(map_err)?;
+    if let Some(state) = state {
+        return Ok(state);
+    }
+    let kind = task.habit_id.as_deref().unwrap_or("default");
+    let prior: Option<(f64, f64)> = sqlx::query_as(
+        "SELECT mean_minutes, sigma_minutes FROM estimator_task_priors WHERE kind = ?",
+    )
+    .bind(kind)
+    .fetch_optional(storage.pool())
+    .await
+    .map_err(map_err)?;
+    let task_kind_prior = prior.map(|(mu, sigma)| DurationDistribution::new(mu, sigma));
+    let distribution = effective_distribution(
+        task.avg_minutes as f64,
+        task.sigma_minutes as f64,
+        task_kind_prior,
+    );
+    Ok(EstimatorStateRow {
+        task_id: task.id.clone(),
+        revision: 0,
+        mean_minutes: distribution.mu,
+        sigma_minutes: distribution.sigma,
+        source: if task.sigma_minutes > 0 {
+            "task".into()
+        } else if task_kind_prior.is_some() {
+            "task_kind_prior".into()
+        } else {
+            "fallback".into()
+        },
+        updated_at: task.updated_at,
+    })
 }
 
 /// Split the unfinished remainder off a task that is being completed with only
@@ -260,6 +469,11 @@ pub(crate) async fn start_work_session(
             .await
             .map_err(map_err)?;
     }
+    if let Some(task) = linked_task.as_ref()
+        && !task.fixed
+    {
+        ensure_estimator_state(&mut tx, task).await?;
+    }
 
     let session: WorkSessionRow = sqlx::query_as::<_, WorkSessionRow>(SELECT_WORK_SESSION_BY_ID)
         .bind(&id)
@@ -418,19 +632,26 @@ pub(crate) async fn complete_work_session(
             let quantity_done = task.quantity_total.unwrap_or(task.quantity_done);
             let delta_quantity = quantity_done.get() - task.quantity_done.get();
 
-            let (new_avg, new_sigma) = if delta_quantity > 0 && total_active_minutes > 0 {
-                compute_updated_estimate(
-                    &mut *tx,
-                    task_id,
-                    task.avg_minutes,
-                    task.sigma_minutes,
-                    task.quantity_total.map(|q| q.get()),
+            let (new_avg, new_sigma) = if total_active_minutes > 0 && !task.fixed {
+                let quantity_fraction = task
+                    .quantity_total
+                    .map(|total| quantity_done.get() as f64 / total.get() as f64)
+                    .unwrap_or(1.0)
+                    .clamp(f64::EPSILON, 1.0);
+                record_estimator_observation(
+                    &mut tx,
+                    &task,
                     total_active_minutes,
-                    delta_quantity,
+                    quantity_fraction,
+                    now_ts,
+                    "completion",
                 )
-                .await?
-            } else if task.quantity_total.is_none() && total_active_minutes > 0 {
-                (total_active_minutes, task.sigma_minutes)
+                .await?;
+                let state = ensure_estimator_state(&mut tx, &task).await?;
+                (
+                    state.mean_minutes.round() as i64,
+                    state.sigma_minutes.round() as i64,
+                )
             } else {
                 (task.avg_minutes, task.sigma_minutes)
             };
@@ -597,6 +818,7 @@ pub(crate) async fn record_work_session_progress(
             task: linked_task,
             event: None,
             suggests_completion,
+            estimator: None,
         };
         if let Some(op_id) = operation_id {
             super::SqliteStorage::record_progress_operation(
@@ -666,6 +888,7 @@ pub(crate) async fn record_work_session_progress(
 
     let mut result_task: Option<TaskRow> = None;
     let mut suggests_completion = false;
+    let mut estimator_result = None;
 
     if let Some(ref task) = linked_task {
         let task_id = task.id.clone();
@@ -686,17 +909,41 @@ pub(crate) async fn record_work_session_progress(
 
         let mut new_avg = task.avg_minutes;
         let mut new_sigma = task.sigma_minutes;
-        if task_delta > 0 && active_minutes > 0 {
-            let (avg, sigma) = compute_updated_estimate(
-                &mut *tx,
-                &task_id,
-                task.avg_minutes,
-                task.sigma_minutes,
-                task.quantity_total.map(|q| q.get()),
-                active_minutes,
-                task_delta,
-            )
-            .await?;
+        if task_delta > 0
+            && active_minutes > 0
+            && let Some(total) = task.quantity_total
+            && !task.fixed
+        {
+            let sessions: Vec<WorkSessionRow> =
+                sqlx::query_as::<_, WorkSessionRow>(SELECT_WORK_SESSIONS_BY_TASK)
+                    .bind(&task_id)
+                    .fetch_all(&mut *tx)
+                    .await
+                    .map_err(map_err)?;
+            let total_active_minutes = sessions.iter().map(session_minutes).sum::<i64>();
+            if total_active_minutes > 0 {
+                let quantity_fraction = new_done.get() as f64 / total.get() as f64;
+                estimator_result = Some(
+                    record_estimator_observation(
+                        &mut tx,
+                        task,
+                        total_active_minutes,
+                        quantity_fraction.min(1.0),
+                        Timestamp::now(),
+                        "progress",
+                    )
+                    .await?,
+                );
+                let state = ensure_estimator_state(&mut tx, task).await?;
+                new_avg = state.mean_minutes.round() as i64;
+                new_sigma = state.sigma_minutes.round() as i64;
+            }
+        } else if task_delta < 0
+            && !task.fixed
+            && let Some((result, avg, sigma)) =
+                compensate_last_estimator_observation(&mut tx, task).await?
+        {
+            estimator_result = Some(result);
             new_avg = avg;
             new_sigma = sigma;
         }
@@ -750,6 +997,7 @@ pub(crate) async fn record_work_session_progress(
         task: result_task,
         event: Some(event),
         suggests_completion,
+        estimator: estimator_result,
     };
     if let Some(op_id) = operation_id {
         super::SqliteStorage::record_progress_operation(&mut *tx, op_id, &request_hash, &result)
@@ -945,26 +1193,8 @@ pub(crate) async fn convert_work_session(
     let quantity_total = session.quantity_total.filter(|q| *q != 0);
     let quantity_unit = session.quantity_unit.as_deref();
     let fixed = body.fixed.unwrap_or(true);
-    // Estimate from the session's progress observations, weighting each by
-    // the quantity it accomplished (#1419). Falls back to the raw session
-    // duration when there is no quantity total or no positive observation.
-    let observations: Vec<(i64, i64)> =
-        sqlx::query_as::<_, ProgressEventRow>(SELECT_PROGRESS_EVENTS_BY_SESSION)
-            .bind(id)
-            .fetch_all(&mut *tx)
-            .await
-            .map_err(map_err)?
-            .iter()
-            .filter(|e| e.active_minutes > 0 && e.delta_quantity.unwrap_or(0) > 0)
-            .map(|e| (e.active_minutes, e.delta_quantity.unwrap_or(1).max(1)))
-            .collect();
-    let (avg_minutes, sigma_minutes) =
-        takusu_types::weighted_estimate(&observations, quantity_total.map(|q| q.get())).unwrap_or(
-            (
-                active_minutes,
-                takusu_types::Minutes(active_minutes).to_slots().0.max(1),
-            ),
-        );
+    let avg_minutes = active_minutes.max(1);
+    let sigma_minutes = 0;
     let completed_at = if status == TaskStatus::Completed {
         Some(now_ts)
     } else {
@@ -1025,12 +1255,32 @@ pub(crate) async fn convert_work_session(
         .await
         .map_err(map_err)?;
 
+    if !task.fixed && active_minutes > 0 {
+        record_estimator_observation(&mut tx, &task, active_minutes, 1.0, now_ts, "completion")
+            .await?;
+    }
+
     if let Some(op_id) = operation_id {
         super::SqliteStorage::record_progress_operation(&mut *tx, op_id, &request_hash, &task)
             .await?;
     }
     tx.commit().await.map_err(map_err)?;
     Ok(task)
+}
+
+pub(crate) async fn get_estimator_state(
+    storage: &super::SqliteStorage,
+    id: &str,
+) -> StorageResult<Option<EstimatorStateRow>> {
+    let task = sqlx::query_as::<_, TaskRow>(SELECT_TASK_BY_ID)
+        .bind(resolve_task_id(storage.pool(), id).await?)
+        .fetch_one(storage.pool())
+        .await
+        .map_err(map_err)?;
+    if task.fixed {
+        return Ok(None);
+    }
+    Ok(Some(read_estimator_state(storage, &task).await?))
 }
 
 pub(crate) async fn get_task_progress(
@@ -1064,11 +1314,18 @@ pub(crate) async fn get_task_progress(
     let open_session = sessions.iter().find(|s| s.ended_at.is_none()).cloned();
     let total_active_minutes = sessions.iter().map(session_minutes).sum();
 
+    let estimator = if task.fixed {
+        None
+    } else {
+        Some(read_estimator_state(storage, &task).await?)
+    };
+
     Ok(TaskProgress {
         task,
         open_session,
         sessions,
         events,
         total_active_minutes,
+        estimator,
     })
 }

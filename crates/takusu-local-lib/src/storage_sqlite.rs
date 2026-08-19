@@ -4,14 +4,14 @@ use sqlx::SqlitePool;
 use sqlx::sqlite::SqlitePoolOptions;
 use takusu_contracts::{
     AttachWorkSession, CommentRow, ConvertWorkSession, CreateHabit, CreateHabitScheduledSpan,
-    CreateMemory, CreateSkill, CreateTask, GoogleCalEventRow, GoogleCalSettingsRow, HabitRow,
-    HabitScheduledSpanRow, HabitStepEstimateInput, HabitStepInput, HabitStepRow,
-    MemoryInjectionQuery, MemoryInjectionResult, MemoryKindCounts, MemoryQuery, MemoryRow,
-    MoveEntryResponse, RecordWorkSessionProgress, SaveScheduleRequest, ScheduleEntry, ScheduleRow,
-    SettingsRow, SimilarTaskQuery, SimilarTaskRow, SkillRow, SplitResult, SplitTask, StartWorkSession,
-    Storage, StorageError, TaskProgress, TaskQuery, TaskRow, TokenCreateResponse, TokenRow,
-    UpdateGoogleCalSettings, UpdateHabit, UpdateMemory, UpdateSettings, UpdateSkill, UpdateTask,
-    WorkSessionProgressResult, WorkSessionRow, storage::StorageResult,
+    CreateMemory, CreateSkill, CreateTask, EstimatorStateRow, GoogleCalEventRow,
+    GoogleCalSettingsRow, HabitRow, HabitScheduledSpanRow, HabitStepEstimateInput, HabitStepInput,
+    HabitStepRow, MemoryInjectionQuery, MemoryInjectionResult, MemoryKindCounts, MemoryQuery,
+    MemoryRow, MoveEntryResponse, RecordWorkSessionProgress, SaveScheduleRequest, ScheduleEntry,
+    ScheduleRow, SettingsRow, SimilarTaskQuery, SimilarTaskRow, SkillRow, SplitResult, SplitTask,
+    StartWorkSession, Storage, StorageError, TaskProgress, TaskQuery, TaskRow, TokenCreateResponse,
+    TokenRow, UpdateGoogleCalSettings, UpdateHabit, UpdateMemory, UpdateSettings, UpdateSkill,
+    UpdateTask, WorkSessionProgressResult, WorkSessionRow, storage::StorageResult,
 };
 use takusu_search::search::{EvalContext, filter_tasks};
 use takusu_types::Minutes;
@@ -64,6 +64,7 @@ const MIGRATION_028: &str = include_str!("../migrations/028_task_comments.sql");
 const MIGRATION_029: &str = include_str!("../migrations/029_task_note_comments.sql");
 const MIGRATION_030: &str = include_str!("../migrations/030_gcal_reminder_minutes.sql");
 const MIGRATION_031: &str = include_str!("../migrations/031_gcal_event_defaults.sql");
+const MIGRATION_032: &str = include_str!("../migrations/032_estimator_state.sql");
 
 mod work_session;
 
@@ -502,6 +503,8 @@ impl SqliteStorage {
         if !has_color_id {
             sqlx::raw_sql(MIGRATION_031).execute(&pool).await?;
         }
+
+        sqlx::raw_sql(MIGRATION_032).execute(&pool).await?;
 
         Ok(Self { pool, jwt_secret })
     }
@@ -1612,10 +1615,19 @@ impl Storage for SqliteStorage {
             .refresh_token
             .clone()
             .or_else(|| existing.refresh_token.clone());
-        let reminder_minutes = body.reminder_minutes.as_ref().map_or(existing.reminder_minutes, |x| *x);
+        let reminder_minutes = body
+            .reminder_minutes
+            .as_ref()
+            .map_or(existing.reminder_minutes, |x| *x);
         let color_id = body.color_id.as_ref().map_or(existing.color_id, |x| *x);
-        let visibility = body.visibility.as_ref().map_or(existing.visibility.clone(), |x| x.clone());
-        let transparency = body.transparency.as_ref().map_or(existing.transparency.clone(), |x| x.clone());
+        let visibility = body
+            .visibility
+            .as_ref()
+            .map_or(existing.visibility.clone(), |x| x.clone());
+        let transparency = body
+            .transparency
+            .as_ref()
+            .map_or(existing.transparency.clone(), |x| x.clone());
 
         sqlx::query(
             "INSERT INTO google_cal_settings (id, enabled, calendar_id, client_id, client_secret, refresh_token, reminder_minutes, color_id, visibility, transparency, created_at, updated_at) VALUES ('active', ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), strftime('%Y-%m-%dT%H:%M:%SZ', 'now')) ON CONFLICT(id) DO UPDATE SET enabled=excluded.enabled, calendar_id=excluded.calendar_id, client_id=excluded.client_id, client_secret=excluded.client_secret, refresh_token=excluded.refresh_token, reminder_minutes=excluded.reminder_minutes, color_id=excluded.color_id, visibility=excluded.visibility, transparency=excluded.transparency, updated_at=strftime('%Y-%m-%dT%H:%M:%SZ', 'now')"
@@ -2204,6 +2216,10 @@ impl Storage for SqliteStorage {
 
     async fn get_task_progress(&self, id: &str) -> StorageResult<TaskProgress> {
         work_session::get_task_progress(self, id).await
+    }
+
+    async fn get_estimator_state(&self, task_id: &str) -> StorageResult<Option<EstimatorStateRow>> {
+        work_session::get_estimator_state(self, task_id).await
     }
 
     async fn split_task(
@@ -2941,32 +2957,100 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn compute_updated_estimate_rejects_non_positive_delta() {
-        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
-        sqlx::query(
-            "CREATE TABLE progress_events (
-                id TEXT PRIMARY KEY,
-                work_session_id TEXT NOT NULL,
-                task_id TEXT,
-                at TEXT NOT NULL,
-                quantity_done INTEGER,
-                delta_quantity INTEGER,
-                active_minutes INTEGER NOT NULL,
-                note TEXT
-            )",
+    async fn progress_persists_estimator_revision_in_the_same_transaction() {
+        let cfg = LocalConfig {
+            db: "sqlite::memory:".into(),
+            jwt_secret: "test-secret".into(),
+            ..Default::default()
+        };
+        let storage = SqliteStorage::init(&cfg).await.unwrap();
+        let now = Timestamp::now();
+        let task = storage
+            .create_task(&CreateTask {
+                title: "estimate me".into(),
+                description: None,
+                start_at: None,
+                end_at: Timestamp::from_second(now.as_second() + 3600).unwrap(),
+                avg_minutes: 60,
+                sigma_minutes: Some(20),
+                depends: None,
+                parallelizable: None,
+                allows_parallel: None,
+                abandonability: None,
+                ical_uid: None,
+                habit_id: None,
+                fixed: Some(false),
+                habit_step_id: None,
+                quantity_total: Some(Quantity::new(10).unwrap()),
+                quantity_done: None,
+                quantity_unit: Some("items".into()),
+                original_quantity_total: None,
+            })
+            .await
+            .unwrap();
+        let session = storage
+            .start_work_session(
+                &StartWorkSession {
+                    task_id: Some(task.id.clone()),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        sqlx::query("UPDATE work_sessions SET started_at = ? WHERE id = ?")
+            .bind(Timestamp::from_second(now.as_second() - 1800).unwrap())
+            .bind(&session.id)
+            .execute(storage.pool())
+            .await
+            .unwrap();
+
+        let result = storage
+            .record_work_session_progress(
+                &session.id,
+                &RecordWorkSessionProgress {
+                    quantity_done: Quantity::new(5).unwrap(),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(result.estimator.as_ref().unwrap().revision, 1);
+        let state = storage
+            .get_estimator_state(&task.id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(state.revision, 1);
+        let observations: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM estimator_observations WHERE task_id = ?")
+                .bind(&task.id)
+                .fetch_one(storage.pool())
+                .await
+                .unwrap();
+        assert_eq!(observations, 1);
+
+        let correction = storage
+            .record_work_session_progress(
+                &session.id,
+                &RecordWorkSessionProgress {
+                    quantity_done: Quantity::new(4).unwrap(),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(correction.estimator.as_ref().unwrap().revision, 2);
+        let compensation: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM estimator_observations WHERE task_id = ? AND compensates_observation_id IS NOT NULL",
         )
-        .execute(&pool)
+        .bind(&task.id)
+        .fetch_one(storage.pool())
         .await
         .unwrap();
-
-        // Non-positive delta must not panic; return the original estimate unchanged.
-        let result =
-            work_session::compute_updated_estimate(&pool, "task-1", 60, 10, Some(10), 30, 0).await;
-        assert_eq!(result.unwrap(), (60, 10));
-
-        let result =
-            work_session::compute_updated_estimate(&pool, "task-1", 60, 10, Some(10), 30, -5).await;
-        assert_eq!(result.unwrap(), (60, 10));
+        assert_eq!(compensation, 1);
     }
 
     /// Minimal `TaskRow` for `validate_task_update` unit tests. Only the
