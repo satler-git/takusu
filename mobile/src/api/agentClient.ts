@@ -5,6 +5,8 @@ import type {
   AgentTurnResult,
   ApprovalRequest,
   ApprovalResult,
+  EventEvaluationResult,
+  EventLedgerRow,
   CapabilityRequest,
   PlannerStateEvent,
   Presentation,
@@ -749,6 +751,44 @@ export class AgentClient {
   async quickAction(request: CapabilityRequest): Promise<Presentation> {
     const capability = await this.mintCapability(request);
     return this.authorizeAction(capability);
+  }
+
+  async evaluatePlannerEvents(
+    deviceId = 'mobile',
+  ): Promise<EventEvaluationResult> {
+    return this.request<EventEvaluationResult>('POST', '/api/events/evaluate', {
+      device_id: deviceId,
+    });
+  }
+
+  async listPlannerEvents(deviceId = 'mobile'): Promise<EventLedgerRow[]> {
+    return this.request<EventLedgerRow[]>(
+      'GET',
+      `/api/events?device_id=${encodeURIComponent(deviceId)}`,
+    );
+  }
+
+  async claimPlannerEvent(
+    eventId: string,
+    deviceId = 'mobile',
+  ): Promise<boolean> {
+    const result = await this.request<{ claimed: boolean }>(
+      'POST',
+      `/api/events/${encodeURIComponent(eventId)}/claim`,
+      { device_id: deviceId },
+    );
+    return result.claimed;
+  }
+
+  async updatePlannerEventState(
+    eventId: string,
+    state: EventLedgerRow['delivery_state'],
+  ): Promise<EventLedgerRow> {
+    return this.request<EventLedgerRow>(
+      'PUT',
+      `/api/events/${encodeURIComponent(eventId)}/state`,
+      state,
+    );
   }
 
   /// Fetch the next start-time notifications with embedded action capabilities (WI-4).

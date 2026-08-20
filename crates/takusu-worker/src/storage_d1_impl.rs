@@ -5,14 +5,15 @@ use takusu_contracts::storage::StorageResult;
 use takusu_contracts::validate::validate_task_datetimes;
 use takusu_contracts::{
     AttachWorkSession, CommentRow, ConvertWorkSession, CreateHabit, CreateHabitScheduledSpan,
-    CreateMemory, CreateSkill, CreateTask, EstimatorStateRow, GoogleCalEventRow,
-    GoogleCalSettingsRow, HabitRow, HabitScheduledSpanRow, HabitStepEstimateInput, HabitStepInput,
-    HabitStepRow, MemoryInjectionQuery, MemoryInjectionResult, MemoryQuery, MemoryRow,
-    MoveEntryResponse, ProgressEventRow, RecordWorkSessionProgress, SaveScheduleRequest,
-    ScheduleRow, SettingsRow, SimilarTaskQuery, SimilarTaskRow, SkillRow, SplitResult, SplitTask,
-    StartWorkSession, Storage, StorageError, TaskProgress, TaskQuery, TaskRow, TokenCreateResponse,
-    TokenRow, UpdateGoogleCalSettings, UpdateHabit, UpdateMemory, UpdateSettings, UpdateSkill,
-    UpdateTask, WorkSessionProgressResult, WorkSessionRow,
+    CreateMemory, CreateSkill, CreateTask, EstimatorStateRow, EvaluationInputs, EventDeliveryState,
+    EventLedgerInsert, EventLedgerRow, GoogleCalEventRow, GoogleCalSettingsRow, HabitRow,
+    HabitScheduledSpanRow, HabitStepEstimateInput, HabitStepInput, HabitStepRow,
+    MemoryInjectionQuery, MemoryInjectionResult, MemoryQuery, MemoryRow, MoveEntryResponse,
+    ProgressEventRow, RecordWorkSessionProgress, SaveScheduleRequest, ScheduleRow, SettingsRow,
+    SimilarTaskQuery, SimilarTaskRow, SkillRow, SplitResult, SplitTask, StartWorkSession, Storage,
+    StorageError, TaskProgress, TaskQuery, TaskRow, TokenCreateResponse, TokenRow,
+    UpdateGoogleCalSettings, UpdateHabit, UpdateMemory, UpdateSettings, UpdateSkill, UpdateTask,
+    WorkSessionProgressResult, WorkSessionRow,
 };
 use takusu_types::estimator::effective_distribution;
 use takusu_types::jwt::{DEFAULT_TOKEN_TTL_SECONDS, generate_token_jwt};
@@ -23,6 +24,32 @@ use takusu_types::{
 use wasm_bindgen::JsValue;
 
 use super::storage_d1::*;
+
+fn valid_event_transition(from: EventDeliveryState, to: EventDeliveryState) -> bool {
+    from == to
+        || matches!(
+            (from, to),
+            (
+                EventDeliveryState::PendingDelivery,
+                EventDeliveryState::Delivered
+            ) | (
+                EventDeliveryState::PendingDelivery,
+                EventDeliveryState::DeferredQuietHours
+            ) | (
+                EventDeliveryState::DeferredQuietHours,
+                EventDeliveryState::Delivered
+            ) | (
+                EventDeliveryState::Delivered,
+                EventDeliveryState::Acknowledged
+            ) | (EventDeliveryState::Delivered, EventDeliveryState::Ignored)
+                | (EventDeliveryState::Delivered, EventDeliveryState::Resolved)
+                | (
+                    EventDeliveryState::Acknowledged,
+                    EventDeliveryState::Resolved
+                )
+                | (EventDeliveryState::Ignored, EventDeliveryState::Resolved)
+        )
+}
 
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
@@ -1056,6 +1083,11 @@ impl Storage for D1Storage {
                 .map_err(d1_err)?;
             stmts.push(stmt);
         }
+        stmts.push(
+            self.db.prepare(
+                "UPDATE schedule_revisions SET revision = revision + 1 WHERE id = 'active'",
+            ),
+        );
         self.db.batch(stmts).await.map_err(d1_err)?;
         let stmt = self.db.prepare(
             "SELECT id, created_at, updated_at, schedule, horizon_task_ids FROM schedules WHERE id = 'active'",
@@ -1067,8 +1099,13 @@ impl Storage for D1Storage {
     }
 
     async fn clear_schedule(&self) -> StorageResult<()> {
-        let stmt = self.db.prepare("DELETE FROM schedules WHERE id = 'active'");
-        stmt.run().await.map_err(d1_err)?;
+        let stmts = vec![
+            self.db.prepare("DELETE FROM schedules WHERE id = 'active'"),
+            self.db.prepare(
+                "UPDATE schedule_revisions SET revision = revision + 1 WHERE id = 'active'",
+            ),
+        ];
+        self.db.batch(stmts).await.map_err(d1_err)?;
         Ok(())
     }
 
@@ -2781,6 +2818,218 @@ impl Storage for D1Storage {
             return Ok(None);
         }
         Ok(Some(estimator_state(&self.db, &task).await?))
+    }
+
+    async fn get_evaluation_inputs(&self) -> StorageResult<EvaluationInputs> {
+        let tasks = self.list_tasks(&TaskQuery::default()).await?;
+        let schedule = self.get_schedule().await?;
+        let ledger = self.list_event_ledger(None).await?;
+        let schedule_revision = self.get_schedule_revision().await?;
+
+        let progress = batch_evaluation_progress(&self.db, &tasks).await?;
+
+        Ok(EvaluationInputs {
+            schedule_revision,
+            tasks,
+            schedule: schedule
+                .map(|row| row.schedule.as_inner().clone())
+                .unwrap_or_default(),
+            progress,
+            ledger,
+        })
+    }
+
+    async fn get_schedule_revision(&self) -> StorageResult<i64> {
+        #[derive(serde::Deserialize)]
+        struct RevisionRow {
+            revision: i64,
+        }
+        let stmt = self
+            .db
+            .prepare("SELECT revision FROM schedule_revisions WHERE id = 'active'");
+        Ok(d1_first::<RevisionRow>(&stmt)
+            .await?
+            .map(|row| row.revision)
+            .unwrap_or(0))
+    }
+
+    async fn list_event_ledger(
+        &self,
+        device_id: Option<&str>,
+    ) -> StorageResult<Vec<EventLedgerRow>> {
+        let sql = match device_id {
+            Some(_) => {
+                "SELECT id, kind, task_id, presentation, urgency, schedule_revision, distribution_revision, observation_kind, delivery_state, created_at, delivered_at FROM event_ledger e WHERE NOT EXISTS (SELECT 1 FROM event_delivery_claims c WHERE c.event_id = e.id AND c.device_id = ?1 AND datetime(c.claimed_at) > datetime('now', '-10 minutes')) ORDER BY e.created_at, e.id"
+            }
+            None => {
+                "SELECT id, kind, task_id, presentation, urgency, schedule_revision, distribution_revision, observation_kind, delivery_state, created_at, delivered_at FROM event_ledger ORDER BY created_at, id"
+            }
+        };
+        let stmt = self.db.prepare(sql);
+        let stmt = match device_id {
+            Some(device_id) => stmt.bind(&[JsValue::from_str(device_id)]).map_err(d1_err)?,
+            None => stmt,
+        };
+        d1_all(&stmt).await
+    }
+
+    async fn insert_event_ledger(
+        &self,
+        event: &EventLedgerInsert,
+    ) -> StorageResult<EventLedgerRow> {
+        let insert = self
+            .db
+            .prepare("INSERT OR IGNORE INTO event_ledger (id, kind, task_id, presentation, urgency, schedule_revision, distribution_revision, observation_kind, delivery_state, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'pending_delivery', strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))")
+            .bind(&[
+                JsValue::from_str(&event.id),
+                JsValue::from_str(&event.kind),
+                event
+                    .task_id
+                    .as_deref()
+                    .map(JsValue::from_str)
+                    .unwrap_or(JsValue::NULL),
+                JsValue::from_str(&event.presentation),
+                JsValue::from_str(&event.urgency),
+                JsValue::from_f64(event.schedule_revision as f64),
+                event
+                    .distribution_revision
+                    .map(|value| JsValue::from_f64(value as f64))
+                    .unwrap_or(JsValue::NULL),
+                JsValue::from_str(&event.observation_kind),
+            ])
+            .map_err(d1_err)?;
+        insert.run().await.map_err(d1_err)?;
+        self.db
+            .prepare("SELECT id, kind, task_id, presentation, urgency, schedule_revision, distribution_revision, observation_kind, delivery_state, created_at, delivered_at FROM event_ledger WHERE id = ?1")
+            .bind(&[JsValue::from_str(&event.id)])
+            .map_err(d1_err)?
+            .first_t()
+            .await?
+            .ok_or_else(|| StorageError::Internal("event ledger row missing after insert".into()))
+    }
+
+    async fn commit_event_evaluation(
+        &self,
+        schedule_revision: i64,
+        events: &[EventLedgerInsert],
+    ) -> StorageResult<()> {
+        let current = self.get_schedule_revision().await?;
+        if current != schedule_revision {
+            return Err(StorageError::Conflict("schedule revision changed".into()));
+        }
+
+        if events.is_empty() {
+            return Ok(());
+        }
+
+        let sql = "INSERT OR IGNORE INTO event_ledger (id, kind, task_id, presentation, urgency, schedule_revision, distribution_revision, observation_kind, delivery_state, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'pending_delivery', strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))";
+        let mut stmts = Vec::with_capacity(events.len());
+        for event in events {
+            let stmt = self
+                .db
+                .prepare(sql)
+                .bind(&[
+                    JsValue::from_str(&event.id),
+                    JsValue::from_str(&event.kind),
+                    event
+                        .task_id
+                        .as_deref()
+                        .map(JsValue::from_str)
+                        .unwrap_or(JsValue::NULL),
+                    JsValue::from_str(&event.presentation),
+                    JsValue::from_str(&event.urgency),
+                    JsValue::from_f64(event.schedule_revision as f64),
+                    event
+                        .distribution_revision
+                        .map(|value| JsValue::from_f64(value as f64))
+                        .unwrap_or(JsValue::NULL),
+                    JsValue::from_str(&event.observation_kind),
+                ])
+                .map_err(d1_err)?;
+            stmts.push(stmt);
+        }
+
+        self.db.batch(stmts).await.map_err(d1_err)?;
+        Ok(())
+    }
+
+    async fn claim_event_delivery(&self, device_id: &str, event_id: &str) -> StorageResult<bool> {
+        let existing: Option<IdRow> = d1_first(
+            &self
+                .db
+                .prepare("SELECT id FROM event_ledger WHERE id = ?1")
+                .bind(&[JsValue::from_str(event_id)])
+                .map_err(d1_err)?,
+        )
+        .await?;
+        if existing.is_none() {
+            return Err(not_found(format!("event {event_id} not found")));
+        }
+        let result = self
+            .db
+            .prepare("INSERT INTO event_delivery_claims (event_id, device_id, claimed_at) VALUES (?1, ?2, strftime('%Y-%m-%dT%H:%M:%SZ', 'now')) ON CONFLICT(event_id, device_id) DO UPDATE SET claimed_at = excluded.claimed_at WHERE datetime(event_delivery_claims.claimed_at) <= datetime('now', '-10 minutes')")
+            .bind(&[JsValue::from_str(event_id), JsValue::from_str(device_id)])
+            .map_err(d1_err)?
+            .run()
+            .await
+            .map_err(d1_err)?;
+        Ok(result
+            .meta()
+            .map_err(d1_err)?
+            .and_then(|meta| meta.rows_written)
+            .unwrap_or(0)
+            > 0)
+    }
+
+    async fn update_event_delivery_state(
+        &self,
+        event_id: &str,
+        state: EventDeliveryState,
+    ) -> StorageResult<EventLedgerRow> {
+        let current: EventLedgerRow = self
+            .db
+            .prepare("SELECT id, kind, task_id, presentation, urgency, schedule_revision, distribution_revision, observation_kind, delivery_state, created_at, delivered_at FROM event_ledger WHERE id = ?1")
+            .bind(&[JsValue::from_str(event_id)])
+            .map_err(d1_err)?
+            .first_t()
+            .await?
+            .ok_or_else(|| not_found(format!("event {event_id} not found")))?;
+        if !valid_event_transition(current.delivery_state, state) {
+            return Err(StorageError::Conflict(format!(
+                "cannot transition event {event_id} from {} to {state}",
+                current.delivery_state
+            )));
+        }
+        let updated = self
+            .db
+            .prepare("UPDATE event_ledger SET delivery_state = ?1, delivered_at = CASE WHEN ?1 = 'delivered' THEN COALESCE(delivered_at, strftime('%Y-%m-%dT%H:%M:%SZ', 'now')) ELSE delivered_at END WHERE id = ?2 AND delivery_state = ?3")
+            .bind(&[
+                JsValue::from_str(state.as_str()),
+                JsValue::from_str(event_id),
+                JsValue::from_str(current.delivery_state.as_str()),
+            ])
+            .map_err(d1_err)?
+            .run()
+            .await
+            .map_err(d1_err)?;
+        if updated
+            .meta()
+            .map_err(d1_err)?
+            .and_then(|meta| meta.rows_written)
+            .unwrap_or(0)
+            == 0
+        {
+            return Err(StorageError::Conflict(format!(
+                "event {event_id} changed during delivery update"
+            )));
+        }
+        self.db
+            .prepare("SELECT id, kind, task_id, presentation, urgency, schedule_revision, distribution_revision, observation_kind, delivery_state, created_at, delivered_at FROM event_ledger WHERE id = ?1")
+            .bind(&[JsValue::from_str(event_id)])
+            .map_err(d1_err)?
+            .first_t()
+            .await?
+            .ok_or_else(|| StorageError::Internal("event ledger row missing after update".into()))
     }
 
     async fn split_task(

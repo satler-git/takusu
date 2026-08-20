@@ -11,6 +11,7 @@ sqlite = ["dep:sqlx", "takusu-contracts/sqlx"]
 
 [dependencies]
 takusu-core = { workspace = true, features = ["jemalloc"] }
+takusu-agent = { workspace = true, default-features = false }
 takusu-ical.workspace = true
 takusu-habit.workspace = true
 takusu-contracts.workspace = true

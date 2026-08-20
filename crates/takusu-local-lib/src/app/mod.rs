@@ -13,6 +13,7 @@ use crate::token_cache::TokenCache;
 use crate::validate::{Validate, parse_settings_timezone};
 
 mod dependency;
+mod events;
 mod gcal;
 mod habit;
 mod habit_sync;

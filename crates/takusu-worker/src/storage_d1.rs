@@ -6,16 +6,19 @@
 //! idempotency, work-session cleanup, estimate recomputation, etc.) lives here
 //! so that handler modules stay as thin parse → validate → serialize wrappers.
 
+use std::collections::HashMap;
+
 use takusu_contracts::storage::StorageResult;
 use takusu_contracts::{
-    EstimatorBand, EstimatorResult, EstimatorStateRow, HabitRow, HabitStepRow, MemoryKindCounts,
-    MemoryRow, ScheduleRow, SettingsRow, SkillRow, StorageError, TaskRow,
+    EstimatorBand, EstimatorResult, EstimatorStateRow, EvaluationEstimator, EvaluationTaskProgress,
+    HabitRow, HabitStepRow, MemoryKindCounts, MemoryRow, ProgressEventRow, ScheduleRow,
+    SettingsRow, SkillRow, StorageError, TaskRow,
 };
 use takusu_types::estimator::{
     DurationDistribution, InterventionBand, effective_distribution, next_crossing_time,
     progress_posterior, survival_probability,
 };
-use takusu_types::{Quantity, Timestamp, parse_timezone};
+use takusu_types::{Quantity, TaskStatus, Timestamp, parse_timezone};
 use wasm_bindgen::JsValue;
 use worker::D1Database;
 
@@ -536,6 +539,39 @@ pub(super) async fn load_task_kind_prior(
     Ok(row.map(|(mu, sigma)| DurationDistribution::new(mu, sigma)))
 }
 
+/// Load task-kind priors for several kinds in one query.
+pub(super) async fn load_task_kind_priors(
+    database: &D1Database,
+    kinds: &[&str],
+) -> StorageResult<HashMap<String, DurationDistribution>> {
+    if kinds.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let placeholders = kinds.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+    let sql = format!(
+        "SELECT kind, mean_minutes, sigma_minutes FROM estimator_task_priors WHERE kind IN ({placeholders})"
+    );
+    let bindings: Vec<JsValue> = kinds.iter().map(|k| JsValue::from_str(k)).collect();
+    let stmt = database.prepare(sql).bind(&bindings).map_err(d1_err)?;
+
+    #[derive(serde::Deserialize)]
+    struct PriorRow {
+        kind: String,
+        mean_minutes: f64,
+        sigma_minutes: f64,
+    }
+    let rows: Vec<PriorRow> = d1_all(&stmt).await?;
+    let mut map = HashMap::with_capacity(rows.len());
+    for row in rows {
+        map.insert(
+            row.kind,
+            DurationDistribution::new(row.mean_minutes, row.sigma_minutes),
+        );
+    }
+    Ok(map)
+}
+
 pub(super) async fn estimator_state(
     database: &D1Database,
     task: &TaskRow,
@@ -576,6 +612,120 @@ pub(super) async fn estimator_state(
         },
         updated_at: task.updated_at,
     })
+}
+
+/// Fetch progress for multiple in-progress tasks in a fixed number of queries.
+///
+/// Progress events, estimator state, and task-kind priors are loaded with one
+/// query each and grouped in memory, avoiding the previous N+1 round-trips.
+pub(super) async fn batch_evaluation_progress(
+    database: &D1Database,
+    tasks: &[TaskRow],
+) -> StorageResult<Vec<EvaluationTaskProgress>> {
+    let in_progress: Vec<&TaskRow> = tasks
+        .iter()
+        .filter(|t| t.status == TaskStatus::InProgress)
+        .collect();
+    if in_progress.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let ids: Vec<&str> = in_progress.iter().map(|t| t.id.as_str()).collect();
+    let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+
+    // 1. Sum active minutes from progress events.
+    let events_sql = format!(
+        "SELECT {PROGRESS_EVENT_COLS} FROM progress_events WHERE task_id IN ({placeholders}) ORDER BY task_id, id"
+    );
+    let event_bindings: Vec<JsValue> = ids.iter().map(|id| JsValue::from_str(id)).collect();
+    let events: Vec<ProgressEventRow> = d1_all(
+        &database
+            .prepare(events_sql)
+            .bind(&event_bindings)
+            .map_err(d1_err)?,
+    )
+    .await?;
+
+    let mut active_minutes_by_task: HashMap<String, i64> = HashMap::new();
+    for event in events {
+        if let Some(task_id) = event.task_id.as_ref() {
+            *active_minutes_by_task.entry(task_id.clone()).or_default() += event.active_minutes;
+        }
+    }
+
+    // 2. Estimator state for all in-progress tasks.
+    let state_sql = format!(
+        "SELECT task_id, revision, mean_minutes, sigma_minutes, source, updated_at FROM estimator_state WHERE task_id IN ({placeholders})"
+    );
+    let state_bindings: Vec<JsValue> = ids.iter().map(|id| JsValue::from_str(id)).collect();
+    let states: Vec<EstimatorStateRow> = d1_all(
+        &database
+            .prepare(state_sql)
+            .bind(&state_bindings)
+            .map_err(d1_err)?,
+    )
+    .await?;
+
+    let mut state_by_task: HashMap<String, EstimatorStateRow> = HashMap::new();
+    for state in states {
+        state_by_task.insert(state.task_id.clone(), state);
+    }
+
+    // 3. Task-kind priors needed for fallback distributions.
+    let mut fallback_kinds: Vec<&str> = Vec::new();
+    for task in &in_progress {
+        if state_by_task.contains_key(&task.id) {
+            continue;
+        }
+        if task.sigma_minutes > 0 {
+            continue;
+        }
+        let kind = task.habit_id.as_deref().unwrap_or("default");
+        if !fallback_kinds.contains(&kind) {
+            fallback_kinds.push(kind);
+        }
+    }
+    let prior_by_kind = load_task_kind_priors(database, &fallback_kinds).await?;
+
+    // 4. Build the per-task progress view.
+    let mut result = Vec::with_capacity(in_progress.len());
+    for task in in_progress {
+        let total_active_minutes = active_minutes_by_task.get(&task.id).copied().unwrap_or(0);
+
+        let estimator = if task.fixed {
+            None
+        } else if let Some(state) = state_by_task.get(&task.id) {
+            Some(EvaluationEstimator {
+                revision: state.revision,
+                mean_minutes: state.mean_minutes,
+                sigma_minutes: state.sigma_minutes,
+            })
+        } else {
+            let task_kind_prior = if task.sigma_minutes > 0 {
+                None
+            } else {
+                let kind = task.habit_id.as_deref().unwrap_or("default");
+                prior_by_kind.get(kind).copied()
+            };
+            let distribution = effective_distribution(
+                task.avg_minutes as f64,
+                task.sigma_minutes as f64,
+                task_kind_prior,
+            );
+            Some(EvaluationEstimator {
+                revision: 0,
+                mean_minutes: distribution.mu,
+                sigma_minutes: distribution.sigma,
+            })
+        };
+
+        result.push(EvaluationTaskProgress {
+            task_id: task.id.clone(),
+            total_active_minutes,
+            estimator,
+        });
+    }
+    Ok(result)
 }
 
 pub(super) async fn estimator_observation(
