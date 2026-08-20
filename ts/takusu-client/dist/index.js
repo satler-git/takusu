@@ -407,6 +407,10 @@ var TakusuClient = class {
   async updateWorkersConfig(body) {
     return this.request("PUT", "/api/workers/config", body);
   }
+  // ── Planner evaluation snapshot (WI-10) ──
+  async getEvaluationSnapshot() {
+    return this.request("GET", "/api/events/snapshot");
+  }
 };
 export {
   ApiError,

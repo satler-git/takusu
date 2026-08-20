@@ -9577,6 +9577,117 @@
         }
       }
     },
+    "/events/snapshot": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Raw inputs for one consistent planner-event evaluation.\n\nThe storage backend collects these in a single atomic read (or as close to\natomic as the backend supports) so the pure evaluator receives a coherent\nsnapshot. The caller still supplies `now`, gap classification, and coverage.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvaluationInputs"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/events/evaluate": {
       "post": {
         "requestBody": {
@@ -12027,6 +12138,116 @@
           }
         }
       },
+      "CoverageConfirmationRow": {
+        "description": "A recorded coverage confirmation (WI-10).\n\nConfirms that a local period was covered: the user (or an intake/capture\nflow) stated what happened during that interval.",
+        "type": "object",
+        "properties": {
+          "calendar_health": {
+            "type": "string"
+          },
+          "created_at": {
+            "$ref": "#/components/schemas/Timestamp"
+          },
+          "end_at": {
+            "$ref": "#/components/schemas/Timestamp"
+          },
+          "id": {
+            "type": "string"
+          },
+          "operation_id": {
+            "type": ["string", "null"]
+          },
+          "schedule_revision": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "settled_at": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Timestamp"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "type": "string"
+          },
+          "start_at": {
+            "$ref": "#/components/schemas/Timestamp"
+          },
+          "timezone": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "start_at",
+          "end_at",
+          "timezone",
+          "source",
+          "schedule_revision",
+          "calendar_health",
+          "created_at"
+        ]
+      },
+      "CoverageEvaluation": {
+        "description": "Coverage data assembled for one planner evaluation (WI-10).",
+        "type": "object",
+        "properties": {
+          "confirmations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CoverageConfirmationRow"
+            }
+          },
+          "schedule_revision": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "state": {
+            "$ref": "#/components/schemas/CoverageState"
+          },
+          "unsettled_intervals": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UnsettledIntervalRow"
+            }
+          }
+        },
+        "required": [
+          "state",
+          "confirmations",
+          "unsettled_intervals",
+          "schedule_revision"
+        ]
+      },
+      "CoverageState": {
+        "description": "Coverage trust state consumed by the resident agent (WI-10).\n\nPrecedence is `bootstrap -> stale -> today-covered -> trusted`. A stale\nstate triggers a settlement prompt; today-covered makes the current task\nauthoritative; trusted is reached by a target-period procedure.",
+        "oneOf": [
+          {
+            "description": "No coverage confirmation has been recorded.",
+            "type": "string",
+            "const": "bootstrap"
+          },
+          {
+            "description": "Coverage for today has been confirmed.",
+            "type": "string",
+            "const": "today_covered"
+          },
+          {
+            "description": "The coverage record is trusted for the target period.",
+            "type": "string",
+            "const": "trusted"
+          },
+          {
+            "description": "The coverage is stale: unresolved interval, expired confirmation, or\nstale calendar sync.",
+            "type": "string",
+            "const": "stale"
+          }
+        ]
+      },
       "CreateComment": {
         "description": "Request body for creating a task comment (WI-1).\n\nContains only `content`. `author` is deliberately absent: it is assigned by\nthe server based on which endpoint is used (public `/tasks/:id/comments` →\n`user`, `/tasks/:id/comments/agent` → `agent`), so ordinary clients cannot\nimpersonate the agent or system (invariant 2).",
         "type": "object",
@@ -12850,6 +13071,104 @@
             "default": ""
           }
         }
+      },
+      "EvaluationEstimator": {
+        "description": "Estimator distribution snapshot for a single task.",
+        "type": "object",
+        "properties": {
+          "mean_minutes": {
+            "type": "number",
+            "format": "double"
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "sigma_minutes": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "required": ["revision", "mean_minutes", "sigma_minutes"]
+      },
+      "EvaluationInputs": {
+        "description": "Raw inputs for one consistent planner-event evaluation.\n\nThe storage backend collects these in a single atomic read (or as close to\natomic as the backend supports) so the pure evaluator receives a coherent\nsnapshot. The caller still supplies `now`, gap classification, and coverage.",
+        "type": "object",
+        "properties": {
+          "coverage": {
+            "description": "Coverage trust state for the current evaluation (WI-10).",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CoverageEvaluation"
+              }
+            ],
+            "default": {
+              "confirmations": [],
+              "schedule_revision": 0,
+              "state": "bootstrap",
+              "unsettled_intervals": []
+            }
+          },
+          "ledger": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventLedgerRow"
+            }
+          },
+          "progress": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EvaluationTaskProgress"
+            }
+          },
+          "schedule": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScheduleEntry"
+            }
+          },
+          "schedule_revision": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "tasks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskRow"
+            }
+          }
+        },
+        "required": [
+          "schedule_revision",
+          "tasks",
+          "schedule",
+          "progress",
+          "ledger"
+        ]
+      },
+      "EvaluationTaskProgress": {
+        "description": "Per-task progress for evaluation. Only in-progress tasks are included; the\nestimator is pre-computed by the storage layer so callers do not have to\nre-derive the fallback distribution.",
+        "type": "object",
+        "properties": {
+          "estimator": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EvaluationEstimator"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "task_id": {
+            "type": "string"
+          },
+          "total_active_minutes": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "required": ["task_id", "total_active_minutes"]
       },
       "EventDeliveryState": {
         "description": "Delivery state persisted by the resident event ledger (WI-9).",
@@ -14799,6 +15118,51 @@
         "type": "string",
         "enum": ["read-write", "root"]
       },
+      "UnsettledIntervalRow": {
+        "description": "An unresolved elapsed-time interval that needs settlement (WI-10 / WI-18).",
+        "type": "object",
+        "properties": {
+          "classification": {
+            "type": "string"
+          },
+          "created_at": {
+            "$ref": "#/components/schemas/Timestamp"
+          },
+          "end_at": {
+            "$ref": "#/components/schemas/Timestamp"
+          },
+          "id": {
+            "type": "string"
+          },
+          "operation_id": {
+            "type": ["string", "null"]
+          },
+          "settled_at": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Timestamp"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "type": "string"
+          },
+          "start_at": {
+            "$ref": "#/components/schemas/Timestamp"
+          }
+        },
+        "required": [
+          "id",
+          "start_at",
+          "end_at",
+          "classification",
+          "source",
+          "created_at"
+        ]
+      },
       "UpdateGoogleCalSettings": {
         "type": "object",
         "properties": {
@@ -16233,6 +16597,22 @@
           }
         }
       },
+      "SettlementPrompt": {
+        "description": "Settlement prompt shown ahead of the current task when coverage is stale.\n\nMirrors a one-round-trip check-in so the same action rendering code can\nhandle it.",
+        "type": "object",
+        "properties": {
+          "act": {
+            "$ref": "#/components/schemas/ActionGroup"
+          },
+          "question": {
+            "type": "string"
+          },
+          "shift": {
+            "$ref": "#/components/schemas/ActionGroup"
+          }
+        },
+        "required": ["question", "act", "shift"]
+      },
       "SseEvent": {
         "description": "A server-sent event payload emitted by the agent turn streams.",
         "anyOf": [
@@ -16480,6 +16860,17 @@
           },
           "reference": {
             "type": "string"
+          },
+          "settlement": {
+            "description": "Settlement prompt shown before this task when coverage is stale (WI-10).",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SettlementPrompt"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "start_at": {
             "type": ["string", "null"]

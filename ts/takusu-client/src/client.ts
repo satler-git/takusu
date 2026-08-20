@@ -46,6 +46,7 @@ import type {
   Completion,
   CommentRow,
   CreateComment,
+  EvaluationInputs,
 } from './types';
 
 export class ApiError extends Error {
@@ -547,5 +548,10 @@ export class TakusuClient {
     token: string;
   }): Promise<{ ok: boolean }> {
     return this.request('PUT', '/api/workers/config', body);
+  }
+
+  // ── Planner evaluation snapshot (WI-10) ──
+  async getEvaluationSnapshot(): Promise<EvaluationInputs> {
+    return this.request('GET', '/api/events/snapshot');
   }
 }

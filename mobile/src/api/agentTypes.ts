@@ -112,6 +112,45 @@ export interface UserInputAnswer {
 export type TaskAuthority = 'candidate' | 'today_covered';
 export type WorkState = 'not_started' | 'in_progress' | 'overdue';
 
+export type CoverageState = 'bootstrap' | 'today_covered' | 'trusted' | 'stale';
+
+export interface CoverageEvaluation {
+  state: CoverageState;
+  confirmations: CoverageConfirmation[];
+  unsettled_intervals: UnsettledInterval[];
+  schedule_revision: number;
+}
+
+export interface CoverageConfirmation {
+  id: string;
+  start_at: string;
+  end_at: string;
+  timezone: string;
+  source: string;
+  schedule_revision: number;
+  calendar_health: string;
+  created_at: string;
+  settled_at?: string | null;
+  operation_id?: string | null;
+}
+
+export interface UnsettledInterval {
+  id: string;
+  start_at: string;
+  end_at: string;
+  classification: string;
+  source: string;
+  created_at: string;
+  settled_at?: string | null;
+  operation_id?: string | null;
+}
+
+export interface SettlementPrompt {
+  question: string;
+  act: ActionGroup;
+  shift: ActionGroup;
+}
+
 export interface TaskCard {
   title: string;
   reference: string;
@@ -120,6 +159,7 @@ export interface TaskCard {
   work_state: WorkState;
   authority: TaskAuthority;
   next_task?: string;
+  settlement?: SettlementPrompt;
 }
 
 export type WorkTransitionKind =
@@ -481,6 +521,9 @@ function decodeCurrentTask(
   const startAt = strField(obj, 'start_at');
   const endAt = strField(obj, 'end_at');
   const nextTask = strField(obj, 'next_task');
+  const settlement = isObject(obj.settlement)
+    ? decodeSettlement(obj.settlement)
+    : undefined;
   return {
     type: 'current_task',
     title,
@@ -490,7 +533,22 @@ function decodeCurrentTask(
     ...(startAt !== undefined && { start_at: startAt }),
     ...(endAt !== undefined && { end_at: endAt }),
     ...(nextTask !== undefined && { next_task: nextTask }),
+    ...(settlement !== undefined && { settlement }),
   } as Presentation;
+}
+
+function decodeSettlement(v: unknown): SettlementPrompt | undefined {
+  if (!isObject(v)) {
+    return undefined;
+  }
+  const o = v as Record<string, unknown>;
+  const question = strField(o, 'question');
+  const act = isObject(o.act) ? decodeActionGroup(o.act) : undefined;
+  const shift = isObject(o.shift) ? decodeActionGroup(o.shift) : undefined;
+  if (question === undefined || act === undefined || shift === undefined) {
+    return undefined;
+  }
+  return { question, act, shift };
 }
 
 function decodeWorkTransition(

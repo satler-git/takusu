@@ -3,10 +3,11 @@ use axum::Json;
 use axum::extract::{Path, Query, State};
 use serde::{Deserialize, Serialize};
 use takusu_contracts::{
-    EventDeliveryState, EventLedgerInsert, EventLedgerRow, ScheduleRevisionResponse,
+    CoverageEvaluation, EvaluationInputs, EventDeliveryState, EventLedgerInsert, EventLedgerRow,
+    ScheduleRevisionResponse,
 };
 use takusu_local_lib::TokenClaims;
-use takusu_local_lib::error::AppError;
+use takusu_local_lib::error::{AppError, BadRequestKind};
 
 use crate::error::HttpError;
 use crate::state::AppState;
@@ -45,6 +46,39 @@ pub async fn revision(
     Ok(Json(ScheduleRevisionResponse {
         revision: state.app.get_schedule_revision().await?,
     }))
+}
+
+pub async fn snapshot(
+    State(state): State<AppState>,
+) -> Result<Json<EvaluationInputs>, HttpError> {
+    let mut inputs = state.app.get_evaluation_inputs().await?;
+    let settings = state.app.get_settings().await?;
+    let tz = takusu_types::parse_timezone(&settings.tz)
+        .map_err(|e| HttpError::from(AppError::BadRequest(BadRequestKind::InvalidTime(format!("invalid timezone: {e}")))))?;
+    let now = takusu_types::now_timestamp()
+        .map_err(|e| HttpError::from(AppError::Internal(e)))?;
+    let (target_start, target_end) = target_period_for(&tz).map_err(HttpError::from)?;
+    let state = takusu_agent::coverage::compute_coverage(
+        &inputs.coverage,
+        now.into(),
+        target_start,
+        target_end,
+    );
+    inputs.coverage = CoverageEvaluation {
+        state,
+        ..inputs.coverage
+    };
+    Ok(Json(inputs))
+}
+
+fn target_period_for(
+    tz: &jiff::tz::TimeZone,
+) -> Result<(takusu_types::Timestamp, takusu_types::Timestamp), AppError> {
+    let start = takusu_types::parse_date_expression("today", tz, false)
+        .map_err(|e| AppError::Internal(format!("day start: {e}")))?;
+    let end = takusu_types::parse_date_expression("today", tz, true)
+        .map_err(|e| AppError::Internal(format!("day end: {e}")))?;
+    Ok((takusu_types::Timestamp(start), takusu_types::Timestamp(end)))
 }
 
 pub async fn evaluate_events(
