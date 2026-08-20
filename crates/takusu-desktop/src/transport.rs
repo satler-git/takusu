@@ -9,8 +9,10 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
 use futures_util::Stream;
+use takusu_agent::capability::{ActionCapability, CapabilityRequest, InputPath, mint_capability};
+use takusu_agent::events::EvaluationResult;
 use takusu_agent::{SurfaceCommand, SurfaceCommandResponse, SurfaceEvent, SurfaceSnapshot};
-use takusu_agent::capability::ActionCapability;
+use takusu_contracts::{EventDeliveryState, EventLedgerRow};
 
 use crate::state::DesktopError;
 
@@ -30,7 +32,11 @@ pub trait DesktopTransport: Send + Sync {
     /// Server-sent surface events.
     fn surface_events(
         &self,
-    ) -> Pin<Box<dyn Future<Output = Result<BoxStream<'static, SurfaceEvent>, DesktopError>> + Send + '_>>;
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<BoxStream<'static, SurfaceEvent>, DesktopError>> + Send + '_,
+        >,
+    >;
 
     /// Forward a surface command (e.g. open panel, stop TTS).
     fn send_command(
@@ -43,6 +49,33 @@ pub trait DesktopTransport: Send + Sync {
         &self,
         capability: &ActionCapability,
     ) -> Pin<Box<dyn Future<Output = Result<(), DesktopError>> + Send + '_>>;
+
+    fn evaluate_planner_events(
+        &self,
+        device_id: &str,
+    ) -> Pin<Box<dyn Future<Output = Result<EvaluationResult, DesktopError>> + Send + '_>>;
+
+    fn list_planner_events(
+        &self,
+        device_id: &str,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<EventLedgerRow>, DesktopError>> + Send + '_>>;
+
+    fn claim_planner_event(
+        &self,
+        event_id: &str,
+        device_id: &str,
+    ) -> Pin<Box<dyn Future<Output = Result<bool, DesktopError>> + Send + '_>>;
+
+    fn update_planner_event_state(
+        &self,
+        event_id: &str,
+        state: EventDeliveryState,
+    ) -> Pin<Box<dyn Future<Output = Result<EventLedgerRow, DesktopError>> + Send + '_>>;
+
+    fn mint_action_capability(
+        &self,
+        request: &CapabilityRequest,
+    ) -> Pin<Box<dyn Future<Output = Result<ActionCapability, DesktopError>> + Send + '_>>;
 }
 
 /// Mock transport that replays a scripted sequence of `SurfaceEvent`s.
@@ -77,11 +110,17 @@ impl MockTransport {
     }
 
     pub fn commands(&self) -> Vec<SurfaceCommand> {
-        self.commands.lock().unwrap_or_else(|e| e.into_inner()).clone()
+        self.commands
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     pub fn authorized(&self) -> Vec<String> {
-        self.authorized.lock().unwrap_or_else(|e| e.into_inner()).clone()
+        self.authorized
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 }
 
@@ -89,15 +128,26 @@ impl DesktopTransport for MockTransport {
     fn surface_snapshot(
         &self,
     ) -> Pin<Box<dyn Future<Output = Result<SurfaceSnapshot, DesktopError>> + Send + '_>> {
-        let snapshot = self.snapshot.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        let snapshot = self
+            .snapshot
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
         Box::pin(async move { Ok(snapshot) })
     }
 
     fn surface_events(
         &self,
-    ) -> Pin<Box<dyn Future<Output = Result<BoxStream<'static, SurfaceEvent>, DesktopError>> + Send + '_>>
-    {
-        let events = self.events.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<BoxStream<'static, SurfaceEvent>, DesktopError>> + Send + '_,
+        >,
+    > {
+        let events = self
+            .events
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
         Box::pin(async move {
             let stream = futures_util::stream::iter(events);
             Ok(Box::pin(stream) as BoxStream<'static, SurfaceEvent>)
@@ -107,7 +157,8 @@ impl DesktopTransport for MockTransport {
     fn send_command(
         &self,
         command: SurfaceCommand,
-    ) -> Pin<Box<dyn Future<Output = Result<SurfaceCommandResponse, DesktopError>> + Send + '_>> {
+    ) -> Pin<Box<dyn Future<Output = Result<SurfaceCommandResponse, DesktopError>> + Send + '_>>
+    {
         if let Ok(mut guard) = self.commands.lock() {
             guard.push(command);
         }
@@ -132,5 +183,52 @@ impl DesktopTransport for MockTransport {
             guard.push(capability.id.clone());
         }
         Box::pin(async move { Ok(()) })
+    }
+
+    fn evaluate_planner_events(
+        &self,
+        _device_id: &str,
+    ) -> Pin<Box<dyn Future<Output = Result<EvaluationResult, DesktopError>> + Send + '_>> {
+        Box::pin(async {
+            Ok(EvaluationResult {
+                due_events: Vec::new(),
+                next_eval_at: None,
+            })
+        })
+    }
+
+    fn list_planner_events(
+        &self,
+        _device_id: &str,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<EventLedgerRow>, DesktopError>> + Send + '_>> {
+        Box::pin(async { Ok(Vec::new()) })
+    }
+
+    fn claim_planner_event(
+        &self,
+        _event_id: &str,
+        _device_id: &str,
+    ) -> Pin<Box<dyn Future<Output = Result<bool, DesktopError>> + Send + '_>> {
+        Box::pin(async { Ok(true) })
+    }
+
+    fn update_planner_event_state(
+        &self,
+        _event_id: &str,
+        _state: EventDeliveryState,
+    ) -> Pin<Box<dyn Future<Output = Result<EventLedgerRow, DesktopError>> + Send + '_>> {
+        Box::pin(async {
+            Err(DesktopError::Transport(
+                "mock event state is not persisted".into(),
+            ))
+        })
+    }
+
+    fn mint_action_capability(
+        &self,
+        request: &CapabilityRequest,
+    ) -> Pin<Box<dyn Future<Output = Result<ActionCapability, DesktopError>> + Send + '_>> {
+        let capability = mint_capability(request.clone(), InputPath::NotificationCapability);
+        Box::pin(async move { Ok(capability) })
     }
 }

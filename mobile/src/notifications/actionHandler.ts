@@ -1,4 +1,4 @@
-// Notification action button handler (START / SNOOZE / RESCHEDULE / DONE / CANCEL).
+// Notification action button handler (START / RESCHEDULE / DONE / CANCEL).
 // Used both in the foreground UI and in the background notification task.
 
 import * as Linking from 'expo-linking';
@@ -13,7 +13,6 @@ import {
   ACTION_DONE,
   ACTION_CANCEL,
   ACTION_START,
-  ACTION_SNOOZE,
   ACTION_RESCHEDULE,
 } from './categories';
 import {
@@ -39,7 +38,7 @@ export const NOOP_HAPTIC: ActionHandlerHaptic = {
 
 export interface ActionHandlerOptions {
   client: TakusuClient;
-  /** Agent client for capability-authorized start/snooze actions (WI-4). */
+  /** Agent client for capability-authorized start actions (WI-4). */
   agentClient?: AgentClient;
   inProgressNotifications: boolean;
   haptic?: ActionHandlerHaptic;
@@ -62,7 +61,7 @@ function logActionError(
   console.warn('Notification action failed', { action, taskId, err });
 }
 
-// Process a notification action button (START / SNOOZE / RESCHEDULE / DONE / CANCEL).
+// Process a notification action button (START / RESCHEDULE / DONE / CANCEL).
 // Returns true if the response was a recognized action button, false otherwise.
 export async function handleActionButtonResponse(
   response: Notifications.NotificationResponse,
@@ -81,13 +80,10 @@ export async function handleActionButtonResponse(
   const checkIn = parseCheckIn(data);
   const notificationTaskId =
     typeof data?.taskId === 'string' ? data.taskId : undefined;
+  const eventId = typeof data?.eventId === 'string' ? data.eventId : undefined;
 
-  // Handle START / SNOOZE / RESCHEDULE actions from the start-time check-in card (WI-4)
-  if (
-    actionId === ACTION_START ||
-    actionId === ACTION_SNOOZE ||
-    actionId === ACTION_RESCHEDULE
-  ) {
+  // Handle START / RESCHEDULE actions from the start-time check-in card (WI-4)
+  if (actionId === ACTION_START || actionId === ACTION_RESCHEDULE) {
     if (!notificationTaskId) return true;
 
     // Legacy fallback for pre-WI-4 start reminders that carry only a task id.
@@ -126,23 +122,15 @@ export async function handleActionButtonResponse(
 
     haptic.medium();
     try {
-      if (
-        actionId === ACTION_SNOOZE &&
-        capabilityAction.capability.snooze_minutes != null
-      ) {
-        capabilityAction.capability.snooze_target = new Date(
-          Date.now() + capabilityAction.capability.snooze_minutes * 60_000,
-        ).toISOString();
-      }
       await agentClient.authorizeAction(capabilityAction.capability);
+      if (eventId) {
+        await agentClient.updatePlannerEventState(eventId, 'resolved');
+      }
       await dismissTaskNotifications(notificationTaskId);
       await cancelScheduledStartNotifications(notificationTaskId);
       if (inProgressNotifications && actionId === ACTION_START) {
         const task = await client.getTask(notificationTaskId);
         await postInProgressNotification(task, color);
-      } else if (actionId === ACTION_SNOOZE) {
-        // Snoozed; the agent moved the task and the scheduler will pick up the new time.
-        await cancelScheduledTaskNotifications(notificationTaskId);
       }
     } catch (err) {
       logActionError(actionId, notificationTaskId, err);
@@ -211,11 +199,6 @@ function findActionByCategoryId(checkIn: CheckInCard, actionId: string) {
   // so label changes (i18n, design) do not break the handler.
   if (actionId === ACTION_START) {
     return checkIn.act.actions.find(
-      (a) => a.kind === 'immediate' && a.capability,
-    );
-  }
-  if (actionId === ACTION_SNOOZE) {
-    return checkIn.shift.actions.find(
       (a) => a.kind === 'immediate' && a.capability,
     );
   }

@@ -9,7 +9,10 @@ pub const REPLAN_SHIFT: f64 = 2.0;
 pub const LIKELIHOOD_NOISE_C: f64 = 1.0;
 pub const DEFAULT_FALLBACK_MEAN_MINUTES: f64 = 30.0;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
 pub enum InterventionBand {
     Usual,
     Attention,
@@ -25,7 +28,9 @@ impl InterventionBand {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize, schemars::JsonSchema,
+)]
 pub struct DurationDistribution {
     pub mu: f64,
     pub sigma: f64,

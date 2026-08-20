@@ -127,10 +127,7 @@ pub async fn show(
     // Hints: urgency 1 (normal) and desktop-entry for icon association.
     let mut hints: HashMap<&str, zbus::zvariant::Value<'static>> = HashMap::new();
     hints.insert("urgency", zbus::zvariant::Value::U8(1));
-    hints.insert(
-        "desktop-entry",
-        zbus::zvariant::Value::Str("takusu".into()),
-    );
+    hints.insert("desktop-entry", zbus::zvariant::Value::Str("takusu".into()));
 
     let action_refs: Vec<&str> = action_pairs.iter().map(|s| s.as_str()).collect();
 
@@ -170,6 +167,14 @@ pub async fn route_notification_action(
         };
         if let Some(cap) = cap {
             transport.authorize_action(&cap).await?;
+            if let Some(event_id) = cap.event_id.as_deref() {
+                transport
+                    .update_planner_event_state(
+                        event_id,
+                        takusu_contracts::EventDeliveryState::Resolved,
+                    )
+                    .await?;
+            }
         } else {
             tracing::warn!(notification_id, action_key, "unknown notification action");
         }
@@ -194,13 +199,9 @@ pub async fn run_action_listener(
         let args = signal
             .args()
             .map_err(|e| DesktopError::Notification(e.to_string()))?;
-        if let Err(e) = route_notification_action(
-            &state,
-            transport.as_ref(),
-            *args.id(),
-            args.action_key(),
-        )
-        .await
+        if let Err(e) =
+            route_notification_action(&state, transport.as_ref(), *args.id(), args.action_key())
+                .await
         {
             tracing::warn!(error=%e, notification_id=args.id(), action_key=args.action_key(), "failed to route notification action");
         }

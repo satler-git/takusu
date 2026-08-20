@@ -1,6 +1,6 @@
 // Background notification task for Android action buttons.
 //
-// When a notification action button (START / DONE / CANCEL) is tapped while the
+// When a notification action button (START / RESCHEDULE / DONE / CANCEL) is tapped while the
 // app is not in the foreground, expo-notifications (SDK 56+) can run a JS task
 // in the background. This task starts the local takusu server if needed and
 // performs the same action that the foreground UI would.
@@ -18,7 +18,6 @@ import {
   ACTION_DONE,
   ACTION_CANCEL,
   ACTION_START,
-  ACTION_SNOOZE,
   ACTION_RESCHEDULE,
 } from './categories';
 
@@ -41,7 +40,6 @@ function isKnownAction(actionId: string): boolean {
     actionId === ACTION_DONE ||
     actionId === ACTION_CANCEL ||
     actionId === ACTION_START ||
-    actionId === ACTION_SNOOZE ||
     actionId === ACTION_RESCHEDULE
   );
 }

@@ -218,6 +218,25 @@ fn build_api_router(open_api: &mut OpenApi) -> Router<AppState> {
         .api_route("/memory/{id}", api::get(handlers::memory::get_memory))
         .api_route("/memory/{id}", api::patch(handlers::memory::update_memory))
         .api_route("/memory/{id}", api::delete(handlers::memory::delete_memory))
+        .api_route("/events", api::get(handlers::events::list_events))
+        .api_route("/events", api::post(handlers::events::insert_event))
+        .api_route("/events/revision", api::get(handlers::events::revision))
+        .api_route(
+            "/events/evaluate",
+            api::post(handlers::events::evaluate_events),
+        )
+        .api_route(
+            "/events/{event_id}/claim",
+            api::post(handlers::events::claim_event),
+        )
+        .api_route(
+            "/events/{event_id}/acknowledge",
+            api::post(handlers::events::acknowledge_event),
+        )
+        .api_route(
+            "/events/{event_id}/state",
+            api::put(handlers::events::update_event_state),
+        )
         .api_route(
             "/workers/health",
             api::get(handlers::settings::workers_health),

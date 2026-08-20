@@ -495,6 +495,132 @@ pub struct ScheduleEntry {
 /// `ScheduleRow.schedule` (#1252).
 pub type ScheduleData = JsonString<Vec<ScheduleEntry>>;
 
+/// Delivery state persisted by the resident event ledger (WI-9).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum EventDeliveryState {
+    PendingDelivery,
+    Delivered,
+    DeferredQuietHours,
+    Acknowledged,
+    Ignored,
+    Resolved,
+}
+
+impl EventDeliveryState {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::PendingDelivery => "pending_delivery",
+            Self::Delivered => "delivered",
+            Self::DeferredQuietHours => "deferred_quiet_hours",
+            Self::Acknowledged => "acknowledged",
+            Self::Ignored => "ignored",
+            Self::Resolved => "resolved",
+        }
+    }
+}
+
+impl std::fmt::Display for EventDeliveryState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl TryFrom<String> for EventDeliveryState {
+    type Error = String;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        value.parse()
+    }
+}
+
+impl std::str::FromStr for EventDeliveryState {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "pending_delivery" => Ok(Self::PendingDelivery),
+            "delivered" => Ok(Self::Delivered),
+            "deferred_quiet_hours" => Ok(Self::DeferredQuietHours),
+            "acknowledged" => Ok(Self::Acknowledged),
+            "ignored" => Ok(Self::Ignored),
+            "resolved" => Ok(Self::Resolved),
+            _ => Err(format!("unknown event delivery state: {value}")),
+        }
+    }
+}
+
+/// Storage representation of an immutable planner event.
+///
+/// Presentation and action templates remain JSON strings at this boundary so
+/// `takusu-contracts` does not depend on `takusu-agent`.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+pub struct EventLedgerRow {
+    pub id: String,
+    pub kind: String,
+    pub task_id: Option<String>,
+    pub presentation: String,
+    pub urgency: String,
+    pub schedule_revision: i64,
+    pub distribution_revision: Option<i64>,
+    pub observation_kind: String,
+    #[cfg_attr(feature = "sqlx", sqlx(try_from = "String"))]
+    pub delivery_state: EventDeliveryState,
+    pub created_at: Timestamp,
+    pub delivered_at: Option<Timestamp>,
+}
+
+/// Values written when an evaluator commits a newly discovered event.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct EventLedgerInsert {
+    pub id: String,
+    pub kind: String,
+    pub task_id: Option<String>,
+    pub presentation: String,
+    pub urgency: String,
+    pub schedule_revision: i64,
+    pub distribution_revision: Option<i64>,
+    pub observation_kind: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ScheduleRevisionResponse {
+    pub revision: i64,
+}
+
+/// Raw inputs for one consistent planner-event evaluation.
+///
+/// The storage backend collects these in a single atomic read (or as close to
+/// atomic as the backend supports) so the pure evaluator receives a coherent
+/// snapshot. The caller still supplies `now`, gap classification, and coverage.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct EvaluationInputs {
+    pub schedule_revision: i64,
+    pub tasks: Vec<TaskRow>,
+    pub schedule: Vec<ScheduleEntry>,
+    pub progress: Vec<EvaluationTaskProgress>,
+    pub ledger: Vec<EventLedgerRow>,
+}
+
+/// Per-task progress for evaluation. Only in-progress tasks are included; the
+/// estimator is pre-computed by the storage layer so callers do not have to
+/// re-derive the fallback distribution.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct EvaluationTaskProgress {
+    pub task_id: String,
+    pub total_active_minutes: i64,
+    pub estimator: Option<EvaluationEstimator>,
+}
+
+/// Estimator distribution snapshot for a single task.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct EvaluationEstimator {
+    pub revision: i64,
+    pub mean_minutes: f64,
+    pub sigma_minutes: f64,
+}
+
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SaveScheduleRequest {
     pub entries: Vec<ScheduleEntry>,
