@@ -230,6 +230,15 @@ function WorkSessionCardImpl({
       Math.max(0, (-startSign * translateX.value) / REVEAL_THRESHOLD),
     ),
   }));
+  // The pause action panel is always rendered behind the card. Hide it
+  // completely at rest so the red background doesn't bleed through the
+  // rounded right edge. Fade it in as the card slides toward the end.
+  const actionPanelStyle = useAnimatedStyle(() => ({
+    opacity: Math.min(
+      1,
+      Math.max(0, (-startSign * translateX.value) / ACTION_BUTTON_WIDTH),
+    ),
+  }));
 
   const elapsed = now - new Date(session.started_at).getTime();
   const total = session.quantity_total ?? 0;
@@ -268,8 +277,8 @@ function WorkSessionCardImpl({
       >
         <Ionicons name="checkmark" size={28} color={colors.white} />
       </Reanimated.View>
-      <View
-        style={[styles.actionPanel, { width: PANEL_WIDTH }]}
+      <Reanimated.View
+        style={[styles.actionPanel, { width: PANEL_WIDTH }, actionPanelStyle]}
         pointerEvents={actionsRevealed ? 'auto' : 'none'}
       >
         <Pressable
@@ -291,7 +300,7 @@ function WorkSessionCardImpl({
         >
           <Ionicons name="pause" size={24} color={colors.white} />
         </Pressable>
-      </View>
+      </Reanimated.View>
       <GestureDetector gesture={pan}>
         <Reanimated.View
           style={[
