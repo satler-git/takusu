@@ -34,8 +34,10 @@ before acting.
   mobile `npm run lint`, `npx tsc --noEmit`, `npm run fmt:check`).
 - **Write the commit**: After finishing work, run `jj describe`. Commit messages
   are present tense, lowercase first word, no trailing period.
-- **Rebase before push**: Never rewrite `main`. Before pushing, run
-  `jj git fetch && jj rebase -r @ -d main`. Push with
+- **Rebase before push**: Never rewrite `main` or the target branch. Before
+  pushing, find the PR's target branch (default `main`; use `resident-agent` or
+  another branch if the PR targets it) and run
+  `jj git fetch && jj rebase -r @ -d <target-branch>`. Push with
   `jj git push --change @`.
 
 ## Detailed guidance

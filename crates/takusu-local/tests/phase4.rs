@@ -18,11 +18,11 @@ use axum::routing::get;
 use http_body_util::BodyExt;
 use serde_json::json;
 use takusu_contracts::{
-    CommentRow, CreateHabit, CreateHabitScheduledSpan, CreateTask, GoogleCalEventRow,
-    GoogleCalSettingsRow, HabitRow, HabitScheduledSpanRow, HabitStepInput, HabitStepRow,
-    SaveScheduleRequest, ScheduleRow, SettingsRow, Storage, StorageError, TaskQuery, TaskRow,
-    TokenCreateResponse, TokenRow, UpdateGoogleCalSettings, UpdateHabit, UpdateSettings,
-    UpdateTask, storage::StorageResult,
+    CommentRow, CreateHabit, CreateHabitScheduledSpan, CreateTask, EvaluationInputs,
+    EventLedgerInsert, GoogleCalEventRow, GoogleCalSettingsRow, HabitRow, HabitScheduledSpanRow,
+    HabitStepInput, HabitStepRow, SaveScheduleRequest, ScheduleRow, SettingsRow, Storage,
+    StorageError, TaskQuery, TaskRow, TokenCreateResponse, TokenRow, UpdateGoogleCalSettings,
+    UpdateHabit, UpdateSettings, UpdateTask, storage::StorageResult,
 };
 use takusu_local::router::router;
 use takusu_local::state::{AppState, build_agent_state};
@@ -58,7 +58,11 @@ fn make_state(storage: Arc<dyn Storage>) -> AppState {
     let token_cache = Arc::new(TokenCache::with_default_ttl());
     let app = Arc::new(TakusuApp::new(storage, token_cache));
     let agent = build_agent_state(ROOT_TOKEN.as_str(), "");
-    AppState::new(app, Arc::new(RwLock::new(Arc::from(ROOT_TOKEN.as_str()))), agent)
+    AppState::new(
+        app,
+        Arc::new(RwLock::new(Arc::from(ROOT_TOKEN.as_str()))),
+        agent,
+    )
 }
 
 fn counting_storage(counters: Arc<Counters>) -> Arc<dyn Storage> {
@@ -372,6 +376,16 @@ impl Storage for CountingStorage {
         _operation_id: Option<&str>,
     ) -> StorageResult<TaskRow> {
         Err(StorageError::Internal("n/a".into()))
+    }
+    async fn get_evaluation_inputs(&self) -> StorageResult<EvaluationInputs> {
+        Ok(EvaluationInputs::default())
+    }
+    async fn commit_event_evaluation(
+        &self,
+        _schedule_revision: i64,
+        _events: &[EventLedgerInsert],
+    ) -> StorageResult<()> {
+        Ok(())
     }
     async fn get_task_progress(&self, _id: &str) -> StorageResult<takusu_contracts::TaskProgress> {
         Err(StorageError::Internal("n/a".into()))

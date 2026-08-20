@@ -21,6 +21,7 @@ eventsource-stream = "0.2"
 tracing = { workspace = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 takusu-agent = { workspace = true, default-features = false }
+takusu-contracts = { workspace = true }
 dirs = "6"
 toml = "0.8"
 

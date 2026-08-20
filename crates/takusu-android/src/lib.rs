@@ -44,6 +44,61 @@ pub enum ServerStatus {
     Running { port: u16 },
 }
 
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct EventEvaluationResult {
+    pub due_event_ids: Vec<String>,
+    pub next_eval_at_millis: Option<i64>,
+}
+
+#[uniffi::export]
+pub fn evaluate_and_commit_events(
+    workers_url: String,
+    root_token: String,
+    device_id: String,
+) -> Result<EventEvaluationResult, TakusuError> {
+    if workers_url.trim().is_empty() || root_token.is_empty() {
+        return Err(TakusuError::InvalidConfig {
+            detail: "workers_url and root_token are required".into(),
+        });
+    }
+    let runtime = Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|error| TakusuError::Server {
+            detail: format!("failed to create evaluator runtime: {error}"),
+        })?;
+    let result = runtime.block_on(async move {
+        let http_client =
+            takusu_client::default_http_client(None).map_err(|error| TakusuError::Server {
+                detail: format!("failed to build evaluator HTTP client: {error}"),
+            })?;
+        let storage: Arc<dyn Storage> = Arc::new(WorkersStorage::new_with_client(
+            http_client,
+            workers_url,
+            root_token,
+        ));
+        let app = TakusuApp::new(storage, Arc::new(TokenCache::with_default_ttl()));
+        let evaluation = app
+            .evaluate_and_commit_events(&device_id)
+            .await
+            .map_err(|error| TakusuError::Server {
+                detail: format!("event evaluation failed: {error}"),
+            })?;
+        Ok::<_, TakusuError>(EventEvaluationResult {
+            due_event_ids: evaluation
+                .due_events
+                .into_iter()
+                .map(|event| event.id)
+                .collect(),
+            next_eval_at_millis: evaluation
+                .next_eval_at
+                .map(|timestamp| timestamp.as_second().saturating_mul(1_000)),
+        })
+    });
+    runtime.shutdown_background();
+    result
+}
+
 /// Embedded takusu server for Android.
 ///
 /// Spawns an axum server on localhost that serves the full takusu-local REST API.

@@ -1,6 +1,7 @@
 package expo.modules.takusualarms
 
 import android.app.AlarmManager
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -49,6 +50,39 @@ class TakusuAlarmsModule : Module() {
                 }
                 true
             }
+
+            AsyncFunction("scheduleEvaluatorAlarm") {
+                triggerAtMillis: Double,
+                workersUrl: String,
+                rootToken: String,
+                deviceId: String,
+                ->
+                val context =
+                    appContext.reactContext
+                        ?: throw CodedException(
+                            "ERR_NO_CONTEXT",
+                            "Android context is unavailable",
+                            null,
+                        )
+                scheduleEvaluatorAlarm(
+                    context,
+                    triggerAtMillis.toLong(),
+                    workersUrl,
+                    rootToken,
+                    deviceId,
+                )
+            }
+
+            AsyncFunction("cancelEvaluatorAlarm") {
+                val context =
+                    appContext.reactContext
+                        ?: throw CodedException(
+                            "ERR_NO_CONTEXT",
+                            "Android context is unavailable",
+                            null,
+                        )
+                cancelEvaluatorAlarm(context)
+            }
         }
 
     private fun canScheduleExactAlarms(context: Context): Boolean =
@@ -58,4 +92,60 @@ class TakusuAlarmsModule : Module() {
         } else {
             true
         }
+
+    private fun pendingIntent(
+        context: Context,
+        workersUrl: String = "",
+        rootToken: String = "",
+        deviceId: String = TakusuEvaluatorAlarmReceiver.DEFAULT_DEVICE_ID,
+    ): PendingIntent {
+        val intent =
+            Intent(context, TakusuEvaluatorAlarmReceiver::class.java).apply {
+                action = TakusuEvaluatorAlarmReceiver.ACTION_EVALUATE
+                putExtra(TakusuEvaluatorAlarmReceiver.EXTRA_WORKERS_URL, workersUrl)
+                putExtra(TakusuEvaluatorAlarmReceiver.EXTRA_ROOT_TOKEN, rootToken)
+                putExtra(TakusuEvaluatorAlarmReceiver.EXTRA_DEVICE_ID, deviceId)
+            }
+        return PendingIntent.getBroadcast(
+            context,
+            TakusuEvaluatorAlarmReceiver.REQUEST_CODE,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+    }
+
+    private fun scheduleEvaluatorAlarm(
+        context: Context,
+        triggerAtMillis: Long,
+        workersUrl: String,
+        rootToken: String,
+        deviceId: String,
+    ): Boolean {
+        val alarmManager =
+            context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
+                ?: return false
+        val pending = pendingIntent(context, workersUrl, rootToken, deviceId)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && alarmManager.canScheduleExactAlarms()) {
+            alarmManager.setExactAndAllowWhileIdle(
+                AlarmManager.RTC_WAKEUP,
+                triggerAtMillis,
+                pending,
+            )
+        } else {
+            alarmManager.setAndAllowWhileIdle(
+                AlarmManager.RTC_WAKEUP,
+                triggerAtMillis,
+                pending,
+            )
+        }
+        return true
+    }
+
+    private fun cancelEvaluatorAlarm(context: Context): Boolean {
+        val alarmManager =
+            context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
+                ?: return false
+        alarmManager.cancel(pendingIntent(context))
+        return true
+    }
 }

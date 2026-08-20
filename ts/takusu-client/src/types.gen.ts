@@ -6970,6 +6970,723 @@ export interface paths {
     };
     trace?: never;
   };
+  '/events': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: {
+          device_id?: string;
+        };
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['EventLedgerRow'][];
+          };
+        };
+        /** @description Error */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        500: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+      };
+    };
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      /** @description Values written when an evaluator commits a newly discovered event. */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['EventLedgerInsert'];
+        };
+      };
+      responses: {
+        /**
+         * @description Storage representation of an immutable planner event.
+         *
+         *     Presentation and action templates remain JSON strings at this boundary so
+         *     `takusu-contracts` does not depend on `takusu-agent`.
+         */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['EventLedgerRow'];
+          };
+        };
+        /** @description Error */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Expected request with `Content-Type: application/json` */
+        415: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Failed to deserialize the JSON body into the target type */
+        422: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Error */
+        500: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/events/revision': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['ScheduleRevisionResponse'];
+          };
+        };
+        /** @description Error */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        500: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/events/evaluate': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['EvaluateEventsRequest'];
+        };
+      };
+      responses: {
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['EventEvaluationResponse'];
+          };
+        };
+        /** @description Error */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Expected request with `Content-Type: application/json` */
+        415: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Failed to deserialize the JSON body into the target type */
+        422: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Error */
+        500: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/events/{event_id}/claim': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['ClaimEventRequest'];
+        };
+      };
+      responses: {
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['ClaimEventResponse'];
+          };
+        };
+        /** @description Error */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Expected request with `Content-Type: application/json` */
+        415: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Failed to deserialize the JSON body into the target type */
+        422: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Error */
+        500: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/events/{event_id}/acknowledge': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /**
+         * @description Storage representation of an immutable planner event.
+         *
+         *     Presentation and action templates remain JSON strings at this boundary so
+         *     `takusu-contracts` does not depend on `takusu-agent`.
+         */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['EventLedgerRow'];
+          };
+        };
+        /** @description Error */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        500: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/events/{event_id}/state': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      /** @description Delivery state persisted by the resident event ledger (WI-9). */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['EventDeliveryState'];
+        };
+      };
+      responses: {
+        /**
+         * @description Storage representation of an immutable planner event.
+         *
+         *     Presentation and action templates remain JSON strings at this boundary so
+         *     `takusu-contracts` does not depend on `takusu-agent`.
+         */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['EventLedgerRow'];
+          };
+        };
+        /** @description Error */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Expected request with `Content-Type: application/json` */
+        415: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Failed to deserialize the JSON body into the target type */
+        422: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Error */
+        500: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+      };
+    };
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/workers/health': {
     parameters: {
       query?: never;
@@ -8590,6 +9307,12 @@ export interface components {
     AttachWorkSession: {
       task_id: string;
     };
+    ClaimEventRequest: {
+      device_id: string;
+    };
+    ClaimEventResponse: {
+      claimed: boolean;
+    };
     /**
      * @description Author of a task comment (`task_comments` table, WI-1).
      *
@@ -8916,6 +9639,62 @@ export interface components {
       revision: number;
       /** Format: double */
       survival_probability: number;
+    };
+    EvaluateEventsRequest: {
+      /** @default  */
+      device_id: string;
+    };
+    /**
+     * @description Delivery state persisted by the resident event ledger (WI-9).
+     * @enum {string}
+     */
+    EventDeliveryState:
+      | 'pending_delivery'
+      | 'delivered'
+      | 'deferred_quiet_hours'
+      | 'acknowledged'
+      | 'ignored'
+      | 'resolved';
+    EventEvaluationResponse: {
+      due_events: unknown[];
+      next_eval_at?: string | null;
+    };
+    /** @description Values written when an evaluator commits a newly discovered event. */
+    EventLedgerInsert: {
+      /** Format: int64 */
+      distribution_revision?: number | null;
+      id: string;
+      kind: string;
+      observation_kind: string;
+      presentation: string;
+      /** Format: int64 */
+      schedule_revision: number;
+      task_id?: string | null;
+      urgency: string;
+    };
+    /**
+     * @description Storage representation of an immutable planner event.
+     *
+     *     Presentation and action templates remain JSON strings at this boundary so
+     *     `takusu-contracts` does not depend on `takusu-agent`.
+     */
+    EventLedgerRow: {
+      created_at: components['schemas']['Timestamp'];
+      delivered_at?: components['schemas']['Timestamp'] | null;
+      delivery_state: components['schemas']['EventDeliveryState'];
+      /** Format: int64 */
+      distribution_revision?: number | null;
+      id: string;
+      kind: string;
+      observation_kind: string;
+      presentation: string;
+      /** Format: int64 */
+      schedule_revision: number;
+      task_id?: string | null;
+      urgency: string;
+    };
+    EventListQuery: {
+      device_id?: string | null;
     };
     /** @description Request body for `POST /api/schedule/generate`. */
     GenerateSchedule: {
@@ -9409,6 +10188,10 @@ export interface components {
       unscheduled_task_ids: string[];
       /** @default [] */
       warnings: string[];
+    };
+    ScheduleRevisionResponse: {
+      /** Format: int64 */
+      revision: number;
     };
     ScheduleRow: {
       created_at: components['schemas']['Timestamp'];
@@ -9940,6 +10723,7 @@ export interface components {
     CapabilityRequest: {
       action: string;
       device_id: string;
+      event_id?: string | null;
       note?: string | null;
       /** Format: int64 */
       quantity_done?: number | null;

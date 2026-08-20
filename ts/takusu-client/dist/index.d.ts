@@ -12,6 +12,12 @@ interface components$1 {
         AttachWorkSession: {
             task_id: string;
         };
+        ClaimEventRequest: {
+            device_id: string;
+        };
+        ClaimEventResponse: {
+            claimed: boolean;
+        };
         /**
          * @description Author of a task comment (`task_comments` table, WI-1).
          *
@@ -338,6 +344,56 @@ interface components$1 {
             revision: number;
             /** Format: double */
             survival_probability: number;
+        };
+        EvaluateEventsRequest: {
+            /** @default  */
+            device_id: string;
+        };
+        /**
+         * @description Delivery state persisted by the resident event ledger (WI-9).
+         * @enum {string}
+         */
+        EventDeliveryState: 'pending_delivery' | 'delivered' | 'deferred_quiet_hours' | 'acknowledged' | 'ignored' | 'resolved';
+        EventEvaluationResponse: {
+            due_events: unknown[];
+            next_eval_at?: string | null;
+        };
+        /** @description Values written when an evaluator commits a newly discovered event. */
+        EventLedgerInsert: {
+            /** Format: int64 */
+            distribution_revision?: number | null;
+            id: string;
+            kind: string;
+            observation_kind: string;
+            presentation: string;
+            /** Format: int64 */
+            schedule_revision: number;
+            task_id?: string | null;
+            urgency: string;
+        };
+        /**
+         * @description Storage representation of an immutable planner event.
+         *
+         *     Presentation and action templates remain JSON strings at this boundary so
+         *     `takusu-contracts` does not depend on `takusu-agent`.
+         */
+        EventLedgerRow: {
+            created_at: components$1['schemas']['Timestamp'];
+            delivered_at?: components$1['schemas']['Timestamp'] | null;
+            delivery_state: components$1['schemas']['EventDeliveryState'];
+            /** Format: int64 */
+            distribution_revision?: number | null;
+            id: string;
+            kind: string;
+            observation_kind: string;
+            presentation: string;
+            /** Format: int64 */
+            schedule_revision: number;
+            task_id?: string | null;
+            urgency: string;
+        };
+        EventListQuery: {
+            device_id?: string | null;
         };
         /** @description Request body for `POST /api/schedule/generate`. */
         GenerateSchedule: {
@@ -831,6 +887,10 @@ interface components$1 {
             unscheduled_task_ids: string[];
             /** @default [] */
             warnings: string[];
+        };
+        ScheduleRevisionResponse: {
+            /** Format: int64 */
+            revision: number;
         };
         ScheduleRow: {
             created_at: components$1['schemas']['Timestamp'];
@@ -1353,6 +1413,7 @@ interface components$1 {
         CapabilityRequest: {
             action: string;
             device_id: string;
+            event_id?: string | null;
             note?: string | null;
             /** Format: int64 */
             quantity_done?: number | null;

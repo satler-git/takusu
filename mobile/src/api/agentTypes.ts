@@ -444,6 +444,7 @@ function decodeCapabilityRequest(v: unknown): CapabilityRequest | undefined {
   if (taskId === undefined || action === undefined || deviceId === undefined) {
     return undefined;
   }
+  const eventId = strField(o, 'event_id');
   const snoozeMinutes = numField(o, 'snooze_minutes');
   const snoozeTarget = strField(o, 'snooze_target');
   const quantityDone = numField(o, 'quantity_done');
@@ -453,6 +454,7 @@ function decodeCapabilityRequest(v: unknown): CapabilityRequest | undefined {
     task_id: taskId,
     action,
     device_id: deviceId,
+    ...(eventId !== undefined && { event_id: eventId }),
     ...(snoozeMinutes !== undefined && { snooze_minutes: snoozeMinutes }),
     ...(snoozeTarget !== undefined && { snooze_target: snoozeTarget }),
     ...(quantityDone !== undefined && { quantity_done: quantityDone }),
@@ -836,6 +838,7 @@ export interface CapabilityRequest {
   task_id: string;
   action: QuickAction;
   device_id: string;
+  event_id?: string;
   snooze_minutes?: number;
   /** ISO 8601 target `start_at` for `delay` capabilities, computed client-side or on first tap. */
   snooze_target?: string;
@@ -853,6 +856,33 @@ export interface StartTimeNotification {
   /** ISO 8601 delivery time. */
   scheduled_at: string;
   check_in: Presentation;
+}
+
+/** Immutable event-ledger row replayed to a device (WI-9). */
+export interface EventLedgerRow {
+  id: string;
+  kind: string;
+  task_id?: string | null;
+  /** JSON-encoded typed Presentation kept immutable by the server. */
+  presentation: string;
+  urgency: string;
+  schedule_revision: number;
+  distribution_revision?: number | null;
+  observation_kind: string;
+  delivery_state:
+    | 'pending_delivery'
+    | 'delivered'
+    | 'deferred_quiet_hours'
+    | 'acknowledged'
+    | 'ignored'
+    | 'resolved';
+  created_at: string;
+  delivered_at?: string | null;
+}
+
+export interface EventEvaluationResult {
+  due_events: unknown[];
+  next_eval_at?: string | null;
 }
 
 /** Response body for the start-time notification endpoint (Versioned flattens it). */

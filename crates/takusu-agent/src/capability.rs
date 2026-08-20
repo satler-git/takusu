@@ -143,6 +143,8 @@ pub struct CapabilityRequest {
     pub action: String,
     pub device_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub event_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub snooze_minutes: Option<i64>,
     /// Target `start_at` for `delay` capabilities (WI-4).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -320,6 +322,7 @@ impl CapabilityStore {
                 task_id: capability.task_id.clone(),
                 action: capability.action.clone(),
                 device_id: capability.device_id.clone(),
+                event_id: capability.event_id.clone(),
                 snooze_minutes: capability.snooze_minutes,
                 snooze_target: capability.snooze_target,
                 quantity_done: capability.quantity_done,
@@ -363,7 +366,9 @@ pub fn mint_capability(request: CapabilityRequest, input_path: InputPath) -> Act
         // For notification capabilities the user may not act immediately
         // when the notification fires, so keep the capability valid through
         // the scheduled time plus a short grace period.
-        let target = scheduled.0.checked_add(jiff::Span::new().minutes(NOTIFICATION_GRACE_MINUTES));
+        let target = scheduled
+            .0
+            .checked_add(jiff::Span::new().minutes(NOTIFICATION_GRACE_MINUTES));
         target.unwrap_or(now)
     } else {
         now.checked_add(jiff::Span::new().minutes(CAPABILITY_TTL_MINUTES))
@@ -371,7 +376,7 @@ pub fn mint_capability(request: CapabilityRequest, input_path: InputPath) -> Act
     };
     ActionCapability {
         id,
-        event_id: None,
+        event_id: request.event_id.clone(),
         device_id: request.device_id.clone(),
         action: request.action.clone(),
         input_path,
@@ -423,7 +428,9 @@ pub async fn authorize_action(
 
     // Replay a previously consumed result. Allow the client to omit the
     // server-computed `snooze_target` on retry.
-    if let Some(ref g) = guard && g.consumed {
+    if let Some(ref g) = guard
+        && g.consumed
+    {
         if normalized_capability(capability, &g.capability) != g.capability {
             return Err(CapabilityError::Mismatch);
         }
@@ -464,6 +471,7 @@ pub async fn authorize_action(
         && (request.task_id != capability.task_id
             || request.action != capability.action
             || request.device_id != capability.device_id
+            || request.event_id != capability.event_id
             || request.snooze_minutes != capability.snooze_minutes
             || request.quantity_done != capability.quantity_done
             || request.note != capability.note
@@ -487,6 +495,7 @@ pub async fn authorize_action(
                 task_id: capability.task_id.clone(),
                 action: capability.action.clone(),
                 device_id: capability.device_id.clone(),
+                event_id: capability.event_id.clone(),
                 snooze_minutes: capability.snooze_minutes,
                 snooze_target: capability.snooze_target,
                 quantity_done: capability.quantity_done,

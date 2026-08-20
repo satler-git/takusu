@@ -678,8 +678,20 @@ export function HomeView() {
       serverTz,
       agentClient,
       iconColor,
+      workersUrl && workersToken
+        ? { workersUrl, rootToken: workersToken, deviceId: 'mobile' }
+        : undefined,
     ).catch((e) => logError('通知の再スケジュール', e));
-  }, [tasks, schedule, notifications, serverTz, agentClient, iconColor]);
+  }, [
+    tasks,
+    schedule,
+    notifications,
+    serverTz,
+    agentClient,
+    iconColor,
+    workersUrl,
+    workersToken,
+  ]);
 
   const scheduleMap = useMemo(() => {
     const m = new Map<string, ScheduleEntry>();

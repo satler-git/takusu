@@ -1,5 +1,6 @@
 pub mod comment;
 pub mod common;
+pub mod events;
 pub mod habit;
 pub mod memory;
 pub mod schedule;
