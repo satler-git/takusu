@@ -221,6 +221,7 @@ fn build_api_router(open_api: &mut OpenApi) -> Router<AppState> {
         .api_route("/events", api::get(handlers::events::list_events))
         .api_route("/events", api::post(handlers::events::insert_event))
         .api_route("/events/revision", api::get(handlers::events::revision))
+        .api_route("/events/snapshot", api::get(handlers::events::snapshot))
         .api_route(
             "/events/evaluate",
             api::post(handlers::events::evaluate_events),
