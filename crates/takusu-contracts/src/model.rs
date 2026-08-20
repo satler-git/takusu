@@ -550,6 +550,136 @@ impl std::str::FromStr for EventDeliveryState {
     }
 }
 
+/// Coverage trust state consumed by the resident agent (WI-10).
+///
+/// Precedence is `bootstrap -> stale -> today-covered -> trusted`. A stale
+/// state triggers a settlement prompt; today-covered makes the current task
+/// authoritative; trusted is reached by a target-period procedure.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "sqlx", derive(sqlx::Type))]
+pub enum CoverageState {
+    /// No coverage confirmation has been recorded.
+    #[default]
+    Bootstrap,
+    /// Coverage for today has been confirmed.
+    TodayCovered,
+    /// The coverage record is trusted for the target period.
+    Trusted,
+    /// The coverage is stale: unresolved interval, expired confirmation, or
+    /// stale calendar sync.
+    Stale,
+}
+
+impl CoverageState {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Bootstrap => "bootstrap",
+            Self::TodayCovered => "today_covered",
+            Self::Trusted => "trusted",
+            Self::Stale => "stale",
+        }
+    }
+}
+
+impl std::fmt::Display for CoverageState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl TryFrom<String> for CoverageState {
+    type Error = String;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        value.parse()
+    }
+}
+
+impl std::str::FromStr for CoverageState {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "bootstrap" => Ok(Self::Bootstrap),
+            "today_covered" => Ok(Self::TodayCovered),
+            "trusted" => Ok(Self::Trusted),
+            "stale" => Ok(Self::Stale),
+            _ => Err(format!("unknown coverage state: {value}")),
+        }
+    }
+}
+
+/// A recorded coverage confirmation (WI-10).
+///
+/// Confirms that a local period was covered: the user (or an intake/capture
+/// flow) stated what happened during that interval.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+pub struct CoverageConfirmationRow {
+    pub id: String,
+    pub start_at: Timestamp,
+    pub end_at: Timestamp,
+    pub timezone: String,
+    pub source: String,
+    pub schedule_revision: i64,
+    pub calendar_health: String,
+    pub created_at: Timestamp,
+    pub settled_at: Option<Timestamp>,
+    pub operation_id: Option<String>,
+}
+
+/// An unresolved elapsed-time interval that needs settlement (WI-10 / WI-18).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+pub struct UnsettledIntervalRow {
+    pub id: String,
+    pub start_at: Timestamp,
+    pub end_at: Timestamp,
+    pub classification: String,
+    pub source: String,
+    pub created_at: Timestamp,
+    pub settled_at: Option<Timestamp>,
+    pub operation_id: Option<String>,
+}
+
+/// Coverage data assembled for one planner evaluation (WI-10).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct CoverageEvaluation {
+    pub state: CoverageState,
+    pub confirmations: Vec<CoverageConfirmationRow>,
+    pub unsettled_intervals: Vec<UnsettledIntervalRow>,
+    pub schedule_revision: i64,
+}
+
+/// Request body for recording a coverage confirmation (WI-10).
+#[derive(Debug, Default, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct CreateCoverageConfirmation {
+    pub start_at: Timestamp,
+    pub end_at: Timestamp,
+    pub timezone: String,
+    #[serde(default)]
+    pub source: String,
+    pub schedule_revision: i64,
+    #[serde(default)]
+    pub calendar_health: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub operation_id: Option<String>,
+}
+
+/// Request body for recording an unsettled interval (WI-10 / WI-18).
+#[derive(Debug, Default, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct CreateUnsettledInterval {
+    pub start_at: Timestamp,
+    pub end_at: Timestamp,
+    #[serde(default)]
+    pub classification: String,
+    #[serde(default)]
+    pub source: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub operation_id: Option<String>,
+}
+
 /// Storage representation of an immutable planner event.
 ///
 /// Presentation and action templates remain JSON strings at this boundary so
@@ -601,6 +731,9 @@ pub struct EvaluationInputs {
     pub schedule: Vec<ScheduleEntry>,
     pub progress: Vec<EvaluationTaskProgress>,
     pub ledger: Vec<EventLedgerRow>,
+    /// Coverage trust state for the current evaluation (WI-10).
+    #[serde(default)]
+    pub coverage: CoverageEvaluation,
 }
 
 /// Per-task progress for evaluation. Only in-progress tasks are included; the
