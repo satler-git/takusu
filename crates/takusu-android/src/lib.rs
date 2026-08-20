@@ -375,11 +375,27 @@ impl TakusuServer {
         if port == 0 {
             return ServerStatus::Stopped;
         }
-        let registry = REGISTRY.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(entry) = registry.get(&port)
-            && !entry.stopping.load(Ordering::SeqCst)
-            && entry.weak.strong_count() > 0
+        // Check the registry first, but do not hold the lock while we later
+        // lock `self.runtime`; `start()` and `stop()` take the runtime lock
+        // first and then the registry lock, so acquiring them in reverse order
+        // here can deadlock. The registry guard is dropped at the end of this
+        // block, before the runtime lock is taken.
         {
+            let registry = REGISTRY.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(entry) = registry.get(&port)
+                && !entry.stopping.load(Ordering::SeqCst)
+                && entry.weak.strong_count() > 0
+            {
+                return ServerStatus::Running { port };
+            }
+        }
+        // The registry entry may be removed before the Runtime is dropped (or
+        // while a reuser is still holding an Arc). As long as this instance's
+        // own Arc is still alive, the TcpListener is bound and the server is
+        // usable, so report Running. This keeps foreground callers from seeing
+        // a stale "stopped" status while they still hold the runtime.
+        let runtime_guard = self.runtime.lock().unwrap_or_else(|e| e.into_inner());
+        if runtime_guard.is_some() {
             return ServerStatus::Running { port };
         }
         ServerStatus::Stopped
@@ -513,6 +529,26 @@ mod tests {
         }
         let registry = REGISTRY.lock().unwrap_or_else(|e| e.into_inner());
         assert!(!registry.contains_key(&port));
+    }
+
+    #[test]
+    fn reuser_reports_running_after_owner_stops() {
+        let port = free_port();
+        let owner = TakusuServer::new();
+        let reuser = TakusuServer::new();
+
+        start(&owner, port).expect("owner bind should succeed");
+        start(&reuser, port).expect("reuser should adopt running server");
+
+        // When the owner stops it removes the registry entry and drops its Arc.
+        // The reuser still holds an Arc, so the runtime is still alive and its
+        // status() must still report Running (using its own runtime field).
+        owner.stop().expect("owner stop should succeed");
+        assert!(matches!(reuser.status(), ServerStatus::Running { port: p } if p == port));
+
+        // Only after the reuser also drops its Arc does the server stop.
+        reuser.stop().expect("reuser stop should succeed");
+        assert!(matches!(reuser.status(), ServerStatus::Stopped));
     }
 
     #[test]

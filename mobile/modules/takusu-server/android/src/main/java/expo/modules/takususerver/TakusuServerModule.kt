@@ -49,18 +49,34 @@ class TakusuServerModule : Module() {
 
             Function("start") { options: StartOptions ->
                 try {
-                    if (server != null) {
-                        throw CodedException("ERR_ALREADY_RUNNING", "Server already running", null)
+                    // If we already hold a live server reference (e.g. a worker
+                    // started it and we adopted it), just report success. If the
+                    // reference is stale -- the Kotlin object is non-null but the
+                    // underlying runtime has stopped -- clear it and start fresh,
+                    // otherwise the stale `server != null` check would throw
+                    // ERR_ALREADY_RUNNING and the caller can never recover.
+                    if (server?.status() is ServerStatus.Running) {
+                        true
+                    } else {
+                        if (server != null) {
+                            try {
+                                server?.stop()
+                            } catch (_: Exception) {
+                                // ignore stale stop
+                            }
+                            server = null
+                        }
+
+                        val instance = TakusuServer()
+                        instance.startWithAgentConfig(
+                            options.port.toUShort(),
+                            options.workersUrl,
+                            options.rootToken,
+                            options.agentConfigJson,
+                        )
+                        server = instance
+                        true
                     }
-                    val instance = TakusuServer()
-                    instance.startWithAgentConfig(
-                        options.port.toUShort(),
-                        options.workersUrl,
-                        options.rootToken,
-                        options.agentConfigJson,
-                    )
-                    server = instance
-                    true
                 } catch (e: CodedException) {
                     throw e
                 } catch (e: Exception) {

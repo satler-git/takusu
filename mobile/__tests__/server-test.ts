@@ -22,13 +22,21 @@ describe('ensureLocalServer', () => {
     jest.clearAllMocks();
   });
 
-  it('reuses a running server and returns a client for the reported port', () => {
-    mockedModule.status.mockReturnValue({ running: true, port: 4242 });
+  it('adopts a running server and returns a client for the reported port', () => {
+    mockedModule.status
+      .mockReturnValueOnce({ running: true, port: 4242 })
+      .mockReturnValueOnce({ running: true, port: 4242 });
     const client = ensureLocalServer({
       workersUrl: 'https://example.com',
       rootToken: 'token',
     });
-    expect(mockedModule.start).not.toHaveBeenCalled();
+    expect(mockedModule.start).toHaveBeenCalledWith(
+      expect.objectContaining({
+        port: 4242,
+        workersUrl: 'https://example.com',
+        rootToken: 'token',
+      }),
+    );
     expect((client as any).baseUrl).toBe('http://127.0.0.1:4242');
   });
 
