@@ -189,6 +189,81 @@ pub trait Storage: Send + Sync + 'static {
         let _ = task_id;
         Ok(None)
     }
+
+    // ── Planner event ledger (WI-9) ─────────────────────────
+    /// Return the monotonic active-schedule revision used in event IDs.
+    async fn get_schedule_revision(&self) -> StorageResult<i64> {
+        Ok(0)
+    }
+
+    /// Read all inputs for a consistent planner-event evaluation in one
+    /// backend call. The result must be a snapshot as atomic as the backend
+    /// allows: the schedule revision, task list, active schedule, event
+    /// ledger, and per-task progress must all come from the same logical
+    /// point-in-time.
+    async fn get_evaluation_inputs(&self) -> StorageResult<crate::model::EvaluationInputs>;
+
+    /// List immutable ledger rows in creation order. `device_id` filters rows
+    /// that have already been claimed by that device when provided.
+    async fn list_event_ledger(
+        &self,
+        device_id: Option<&str>,
+    ) -> StorageResult<Vec<EventLedgerRow>> {
+        let _ = device_id;
+        Ok(Vec::new())
+    }
+
+    /// Insert an event idempotently after the caller has validated its
+    /// snapshot. Implementations must not replace an existing payload.
+    async fn insert_event_ledger(
+        &self,
+        event: &EventLedgerInsert,
+    ) -> StorageResult<EventLedgerRow> {
+        let _ = event;
+        Err(StorageError::Internal(
+            "event ledger is not supported".into(),
+        ))
+    }
+
+    /// Atomically commit the result of one planner evaluation. Implementations
+    /// should verify that `schedule_revision` still matches the active schedule
+    /// and insert all `events` in a single backend transaction (or as close to
+    /// one as the backend supports). The default implementation checks the
+    /// revision and falls back to inserting events one by one.
+    async fn commit_event_evaluation(
+        &self,
+        schedule_revision: i64,
+        events: &[EventLedgerInsert],
+    ) -> StorageResult<()> {
+        if self.get_schedule_revision().await? != schedule_revision {
+            return Err(StorageError::Conflict("schedule revision changed".into()));
+        }
+        for event in events {
+            self.insert_event_ledger(event).await?;
+        }
+        Ok(())
+    }
+
+    /// Claim delivery for one device. Repeating the same claim is a no-op.
+    async fn claim_event_delivery(&self, device_id: &str, event_id: &str) -> StorageResult<bool> {
+        let _ = (device_id, event_id);
+        Err(StorageError::Internal(
+            "event ledger is not supported".into(),
+        ))
+    }
+
+    /// Transition delivery state without changing the immutable event payload.
+    async fn update_event_delivery_state(
+        &self,
+        event_id: &str,
+        state: EventDeliveryState,
+    ) -> StorageResult<EventLedgerRow> {
+        let _ = (event_id, state);
+        Err(StorageError::Internal(
+            "event ledger is not supported".into(),
+        ))
+    }
+
     async fn split_task(
         &self,
         id: &str,

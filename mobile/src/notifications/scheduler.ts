@@ -15,11 +15,18 @@ import { CHANNELS } from './channels';
 import { CATEGORY_TASK_IN_PROGRESS, CATEGORY_TASK_START } from './categories';
 import { dateKey, todayDateKey } from '@/src/utils/dateKey';
 import { getNotificationIconColor } from './theme';
+import { replayPlannerEvents } from './eventReplay';
 
 // Android has a ~64 notification limit for scheduled notifications.
 // We limit per-task notification batches (pre-start, start-overdue, end-time)
 // so the total stays under the platform limit.
 const MAX_SCHEDULED_PER_TYPE = 15;
+
+export interface AlarmEvaluationConfig {
+  workersUrl: string;
+  rootToken: string;
+  deviceId: string;
+}
 
 export interface ScheduleData {
   tasks: TaskRow[];
@@ -28,6 +35,7 @@ export interface ScheduleData {
   tz?: string;
   /** Agent client for start-time check-in notifications (WI-4). */
   agentClient?: AgentClient;
+  alarmEvaluation?: AlarmEvaluationConfig;
 }
 
 const wallClockFormatterCache = new Map<string, Intl.DateTimeFormat | null>();
@@ -267,6 +275,14 @@ export async function rescheduleNotifications(
   // Cancel all previously scheduled notifications, then reschedule
   await Notifications.cancelAllScheduledNotificationsAsync();
   const iconColor = color ?? (await getNotificationIconColor());
+
+  if (data.agentClient) {
+    try {
+      await replayPlannerEvents(data.agentClient, data.alarmEvaluation);
+    } catch (error) {
+      console.warn('Planner event replay failed', error);
+    }
+  }
 
   const scheduleMap = new Map<string, ScheduleEntry>();
   for (const e of schedule) scheduleMap.set(e.task_id, e);
@@ -542,10 +558,11 @@ export async function rescheduleFromRaw(
   tz?: string,
   agentClient?: AgentClient,
   color?: string,
+  alarmEvaluation?: AlarmEvaluationConfig,
 ): Promise<void> {
   const schedule = scheduleJson ? parseSchedule(scheduleJson) : [];
   await rescheduleNotifications(
-    { tasks, schedule, settings, tz, agentClient },
+    { tasks, schedule, settings, tz, agentClient, alarmEvaluation },
     color,
   );
 }

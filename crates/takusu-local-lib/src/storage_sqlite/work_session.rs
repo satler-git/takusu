@@ -6,8 +6,9 @@
 
 use takusu_contracts::{
     AttachWorkSession, ConvertWorkSession, EstimatorBand, EstimatorResult, EstimatorStateRow,
-    ProgressEventRow, RecordWorkSessionProgress, StartWorkSession, StorageError, TaskProgress,
-    TaskRow, WorkSessionProgressResult, WorkSessionRow, storage::StorageResult,
+    EvaluationEstimator, EvaluationTaskProgress, ProgressEventRow, RecordWorkSessionProgress,
+    StartWorkSession, StorageError, TaskProgress, TaskRow, WorkSessionProgressResult,
+    WorkSessionRow, storage::StorageResult,
 };
 use takusu_types::estimator::{
     DurationDistribution, InterventionBand, effective_distribution, next_crossing_time,
@@ -1328,4 +1329,90 @@ pub(crate) async fn get_task_progress(
         total_active_minutes,
         estimator,
     })
+}
+
+/// Fetch progress for multiple tasks in a fixed number of queries.
+///
+/// Returns one [`EvaluationTaskProgress`] per supplied task. Progress events,
+/// estimator state, and task-kind priors are loaded with one query each, then
+/// grouped in memory. This avoids the N+1 `get_task_progress` round-trips
+/// inside the snapshot transaction.
+pub(crate) async fn batch_evaluation_progress(
+    conn: &mut sqlx::SqliteConnection,
+    tasks: &[TaskRow],
+) -> StorageResult<Vec<EvaluationTaskProgress>> {
+    if tasks.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let ids: Vec<String> = tasks.iter().map(|t| t.id.clone()).collect();
+    let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+
+    let events_sql = format!(
+        "SELECT id, work_session_id, task_id, at, quantity_done, delta_quantity, active_minutes, note FROM progress_events WHERE task_id IN ({placeholders}) ORDER BY task_id, at ASC, id ASC"
+    );
+    let mut events_q =
+        sqlx::query_as::<_, ProgressEventRow>(sqlx::AssertSqlSafe(events_sql.as_str()));
+    for id in &ids {
+        events_q = events_q.bind(id);
+    }
+    let events: Vec<ProgressEventRow> = events_q.fetch_all(&mut *conn).await.map_err(map_err)?;
+
+    let state_sql = format!(
+        "SELECT task_id, revision, mean_minutes, sigma_minutes, source, updated_at FROM estimator_state WHERE task_id IN ({placeholders})"
+    );
+    let mut state_q =
+        sqlx::query_as::<_, EstimatorStateRow>(sqlx::AssertSqlSafe(state_sql.as_str()));
+    for id in &ids {
+        state_q = state_q.bind(id);
+    }
+    let states: Vec<EstimatorStateRow> = state_q.fetch_all(&mut *conn).await.map_err(map_err)?;
+
+    let mut state_by_task: std::collections::HashMap<String, EstimatorStateRow> =
+        std::collections::HashMap::new();
+    for state in states {
+        state_by_task.insert(state.task_id.clone(), state);
+    }
+
+    let mut active_minutes_by_task: std::collections::HashMap<String, i64> =
+        std::collections::HashMap::new();
+    for event in events {
+        if let Some(task_id) = event.task_id.as_ref() {
+            *active_minutes_by_task.entry(task_id.clone()).or_default() += event.active_minutes;
+        }
+    }
+
+    let mut result = Vec::with_capacity(tasks.len());
+    for task in tasks {
+        let total_active_minutes = active_minutes_by_task.get(&task.id).copied().unwrap_or(0);
+
+        let estimator = if task.fixed {
+            None
+        } else if let Some(state) = state_by_task.get(&task.id) {
+            Some(EvaluationEstimator {
+                revision: state.revision,
+                mean_minutes: state.mean_minutes,
+                sigma_minutes: state.sigma_minutes,
+            })
+        } else {
+            let task_kind_prior = load_task_kind_prior(&mut *conn, task).await?;
+            let distribution = effective_distribution(
+                task.avg_minutes as f64,
+                task.sigma_minutes as f64,
+                task_kind_prior,
+            );
+            Some(EvaluationEstimator {
+                revision: 0,
+                mean_minutes: distribution.mu,
+                sigma_minutes: distribution.sigma,
+            })
+        };
+
+        result.push(EvaluationTaskProgress {
+            task_id: task.id.clone(),
+            total_active_minutes,
+            estimator,
+        });
+    }
+    Ok(result)
 }

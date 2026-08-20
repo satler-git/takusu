@@ -4,14 +4,15 @@ use sqlx::SqlitePool;
 use sqlx::sqlite::SqlitePoolOptions;
 use takusu_contracts::{
     AttachWorkSession, CommentRow, ConvertWorkSession, CreateHabit, CreateHabitScheduledSpan,
-    CreateMemory, CreateSkill, CreateTask, EstimatorStateRow, GoogleCalEventRow,
-    GoogleCalSettingsRow, HabitRow, HabitScheduledSpanRow, HabitStepEstimateInput, HabitStepInput,
-    HabitStepRow, MemoryInjectionQuery, MemoryInjectionResult, MemoryKindCounts, MemoryQuery,
-    MemoryRow, MoveEntryResponse, RecordWorkSessionProgress, SaveScheduleRequest, ScheduleEntry,
-    ScheduleRow, SettingsRow, SimilarTaskQuery, SimilarTaskRow, SkillRow, SplitResult, SplitTask,
-    StartWorkSession, Storage, StorageError, TaskProgress, TaskQuery, TaskRow, TokenCreateResponse,
-    TokenRow, UpdateGoogleCalSettings, UpdateHabit, UpdateMemory, UpdateSettings, UpdateSkill,
-    UpdateTask, WorkSessionProgressResult, WorkSessionRow, storage::StorageResult,
+    CreateMemory, CreateSkill, CreateTask, EstimatorStateRow, EvaluationInputs, EventDeliveryState,
+    EventLedgerInsert, EventLedgerRow, GoogleCalEventRow, GoogleCalSettingsRow, HabitRow,
+    HabitScheduledSpanRow, HabitStepEstimateInput, HabitStepInput, HabitStepRow,
+    MemoryInjectionQuery, MemoryInjectionResult, MemoryKindCounts, MemoryQuery, MemoryRow,
+    MoveEntryResponse, RecordWorkSessionProgress, SaveScheduleRequest, ScheduleEntry, ScheduleRow,
+    SettingsRow, SimilarTaskQuery, SimilarTaskRow, SkillRow, SplitResult, SplitTask, StartWorkSession,
+    Storage, StorageError, TaskProgress, TaskQuery, TaskRow, TokenCreateResponse, TokenRow,
+    UpdateGoogleCalSettings, UpdateHabit, UpdateMemory, UpdateSettings, UpdateSkill, UpdateTask,
+    WorkSessionProgressResult, WorkSessionRow, storage::StorageResult,
 };
 use takusu_search::search::{EvalContext, filter_tasks};
 use takusu_types::Minutes;
@@ -65,6 +66,7 @@ const MIGRATION_029: &str = include_str!("../migrations/029_task_note_comments.s
 const MIGRATION_030: &str = include_str!("../migrations/030_gcal_reminder_minutes.sql");
 const MIGRATION_031: &str = include_str!("../migrations/031_gcal_event_defaults.sql");
 const MIGRATION_032: &str = include_str!("../migrations/032_estimator_state.sql");
+const MIGRATION_033: &str = include_str!("../migrations/033_event_ledger.sql");
 
 mod work_session;
 
@@ -505,6 +507,7 @@ impl SqliteStorage {
         }
 
         sqlx::raw_sql(MIGRATION_032).execute(&pool).await?;
+        sqlx::raw_sql(MIGRATION_033).execute(&pool).await?;
 
         Ok(Self { pool, jwt_secret })
     }
@@ -534,6 +537,35 @@ fn extract_db_path(db_url: &str) -> Option<String> {
 
 pub(crate) fn map_err(e: sqlx::Error) -> StorageError {
     StorageError::Internal(e.to_string())
+}
+
+const EVENT_LEDGER_SELECT_ORDERED: &str = "SELECT id, kind, task_id, presentation, urgency, schedule_revision, distribution_revision, observation_kind, delivery_state, created_at, delivered_at FROM event_ledger ORDER BY created_at, id";
+const EVENT_LEDGER_SELECT_BY_ID: &str = "SELECT id, kind, task_id, presentation, urgency, schedule_revision, distribution_revision, observation_kind, delivery_state, created_at, delivered_at FROM event_ledger WHERE id = ?";
+
+fn valid_event_transition(from: EventDeliveryState, to: EventDeliveryState) -> bool {
+    from == to
+        || matches!(
+            (from, to),
+            (
+                EventDeliveryState::PendingDelivery,
+                EventDeliveryState::Delivered
+            ) | (
+                EventDeliveryState::PendingDelivery,
+                EventDeliveryState::DeferredQuietHours
+            ) | (
+                EventDeliveryState::DeferredQuietHours,
+                EventDeliveryState::Delivered
+            ) | (
+                EventDeliveryState::Delivered,
+                EventDeliveryState::Acknowledged
+            ) | (EventDeliveryState::Delivered, EventDeliveryState::Ignored)
+                | (EventDeliveryState::Delivered, EventDeliveryState::Resolved)
+                | (
+                    EventDeliveryState::Acknowledged,
+                    EventDeliveryState::Resolved
+                )
+                | (EventDeliveryState::Ignored, EventDeliveryState::Resolved)
+        )
 }
 
 #[async_trait]
@@ -1452,6 +1484,10 @@ impl Storage for SqliteStorage {
             .await
             .map_err(map_err)?;
         }
+        sqlx::query("UPDATE schedule_revisions SET revision = revision + 1 WHERE id = 'active'")
+            .execute(&mut *tx)
+            .await
+            .map_err(map_err)?;
         tx.commit().await.map_err(map_err)?;
         sqlx::query_as::<_, ScheduleRow>("SELECT * FROM schedules WHERE id = 'active'")
             .fetch_one(&self.pool)
@@ -1460,11 +1496,16 @@ impl Storage for SqliteStorage {
     }
 
     async fn clear_schedule(&self) -> StorageResult<()> {
+        let mut tx = self.pool.begin().await.map_err(map_err)?;
         sqlx::query("DELETE FROM schedules WHERE id = 'active'")
-            .execute(&self.pool)
+            .execute(&mut *tx)
             .await
             .map_err(map_err)?;
-        Ok(())
+        sqlx::query("UPDATE schedule_revisions SET revision = revision + 1 WHERE id = 'active'")
+            .execute(&mut *tx)
+            .await
+            .map_err(map_err)?;
+        tx.commit().await.map_err(map_err)
     }
 
     async fn create_token(&self, label: Option<&str>) -> StorageResult<TokenCreateResponse> {
@@ -1615,19 +1656,10 @@ impl Storage for SqliteStorage {
             .refresh_token
             .clone()
             .or_else(|| existing.refresh_token.clone());
-        let reminder_minutes = body
-            .reminder_minutes
-            .as_ref()
-            .map_or(existing.reminder_minutes, |x| *x);
+        let reminder_minutes = body.reminder_minutes.as_ref().map_or(existing.reminder_minutes, |x| *x);
         let color_id = body.color_id.as_ref().map_or(existing.color_id, |x| *x);
-        let visibility = body
-            .visibility
-            .as_ref()
-            .map_or(existing.visibility.clone(), |x| x.clone());
-        let transparency = body
-            .transparency
-            .as_ref()
-            .map_or(existing.transparency.clone(), |x| x.clone());
+        let visibility = body.visibility.as_ref().map_or(existing.visibility.clone(), |x| x.clone());
+        let transparency = body.transparency.as_ref().map_or(existing.transparency.clone(), |x| x.clone());
 
         sqlx::query(
             "INSERT INTO google_cal_settings (id, enabled, calendar_id, client_id, client_secret, refresh_token, reminder_minutes, color_id, visibility, transparency, created_at, updated_at) VALUES ('active', ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), strftime('%Y-%m-%dT%H:%M:%SZ', 'now')) ON CONFLICT(id) DO UPDATE SET enabled=excluded.enabled, calendar_id=excluded.calendar_id, client_id=excluded.client_id, client_secret=excluded.client_secret, refresh_token=excluded.refresh_token, reminder_minutes=excluded.reminder_minutes, color_id=excluded.color_id, visibility=excluded.visibility, transparency=excluded.transparency, updated_at=strftime('%Y-%m-%dT%H:%M:%SZ', 'now')"
@@ -2222,6 +2254,182 @@ impl Storage for SqliteStorage {
         work_session::get_estimator_state(self, task_id).await
     }
 
+    async fn get_schedule_revision(&self) -> StorageResult<i64> {
+        sqlx::query_scalar("SELECT revision FROM schedule_revisions WHERE id = 'active'")
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(map_err)
+            .map(|value| value.unwrap_or(0))
+    }
+
+    async fn list_event_ledger(
+        &self,
+        device_id: Option<&str>,
+    ) -> StorageResult<Vec<EventLedgerRow>> {
+        match device_id {
+            Some(device_id) => sqlx::query_as::<_, EventLedgerRow>(
+                "SELECT id, kind, task_id, presentation, urgency, schedule_revision, distribution_revision, observation_kind, delivery_state, created_at, delivered_at FROM event_ledger e WHERE NOT EXISTS (SELECT 1 FROM event_delivery_claims c WHERE c.event_id = e.id AND c.device_id = ? AND datetime(c.claimed_at) > datetime('now', '-10 minutes')) ORDER BY e.created_at, e.id"
+            )
+            .bind(device_id)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(map_err),
+            None => sqlx::query_as::<_, EventLedgerRow>(EVENT_LEDGER_SELECT_ORDERED)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(map_err),
+        }
+    }
+
+    async fn insert_event_ledger(
+        &self,
+        event: &EventLedgerInsert,
+    ) -> StorageResult<EventLedgerRow> {
+        let mut tx = self.pool.begin().await.map_err(map_err)?;
+        sqlx::query(
+            "INSERT OR IGNORE INTO event_ledger (id, kind, task_id, presentation, urgency, schedule_revision, distribution_revision, observation_kind, delivery_state, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending_delivery', ?)",
+        )
+        .bind(&event.id)
+        .bind(&event.kind)
+        .bind(&event.task_id)
+        .bind(&event.presentation)
+        .bind(&event.urgency)
+        .bind(event.schedule_revision)
+        .bind(event.distribution_revision)
+        .bind(&event.observation_kind)
+        .bind(takusu_types::now_rfc3339())
+        .execute(&mut *tx)
+        .await
+        .map_err(map_err)?;
+        let row = sqlx::query_as::<_, EventLedgerRow>(EVENT_LEDGER_SELECT_BY_ID)
+            .bind(&event.id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(map_err)?;
+        tx.commit().await.map_err(map_err)?;
+        Ok(row)
+    }
+
+    async fn commit_event_evaluation(
+        &self,
+        schedule_revision: i64,
+        events: &[EventLedgerInsert],
+    ) -> StorageResult<()> {
+        let mut tx = self.pool.begin().await.map_err(map_err)?;
+
+        let current: i64 =
+            sqlx::query_scalar("SELECT revision FROM schedule_revisions WHERE id = 'active'")
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(map_err)?
+                .unwrap_or(0);
+        if current != schedule_revision {
+            return Err(StorageError::Conflict("schedule revision changed".into()));
+        }
+
+        if events.is_empty() {
+            tx.commit().await.map_err(map_err)?;
+            return Ok(());
+        }
+
+        let now = takusu_types::now_rfc3339();
+        let mut sql = String::from(
+            "INSERT OR IGNORE INTO event_ledger (id, kind, task_id, presentation, urgency, schedule_revision, distribution_revision, observation_kind, delivery_state, created_at) VALUES ",
+        );
+        let values: Vec<&str> = (0..events.len())
+            .map(|_| "(?, ?, ?, ?, ?, ?, ?, ?, 'pending_delivery', ?)")
+            .collect();
+        sql.push_str(&values.join(", "));
+
+        let mut query = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()));
+        for event in events {
+            query = query
+                .bind(&event.id)
+                .bind(&event.kind)
+                .bind(&event.task_id)
+                .bind(&event.presentation)
+                .bind(&event.urgency)
+                .bind(event.schedule_revision)
+                .bind(event.distribution_revision)
+                .bind(&event.observation_kind)
+                .bind(&now);
+        }
+
+        query.execute(&mut *tx).await.map_err(map_err)?;
+        tx.commit().await.map_err(map_err)?;
+        Ok(())
+    }
+
+    async fn claim_event_delivery(&self, device_id: &str, event_id: &str) -> StorageResult<bool> {
+        let mut tx = self.pool.begin().await.map_err(map_err)?;
+        let exists: Option<String> = sqlx::query_scalar("SELECT id FROM event_ledger WHERE id = ?")
+            .bind(event_id)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(map_err)?;
+        if exists.is_none() {
+            return Err(StorageError::NotFound(format!(
+                "event {event_id} not found"
+            )));
+        }
+        let result = sqlx::query(
+            "INSERT INTO event_delivery_claims (event_id, device_id, claimed_at) VALUES (?, ?, ?) ON CONFLICT(event_id, device_id) DO UPDATE SET claimed_at = excluded.claimed_at WHERE datetime(event_delivery_claims.claimed_at) <= datetime('now', '-10 minutes')",
+        )
+        .bind(event_id)
+        .bind(device_id)
+        .bind(takusu_types::now_rfc3339())
+        .execute(&mut *tx)
+        .await
+        .map_err(map_err)?;
+        tx.commit().await.map_err(map_err)?;
+        Ok(result.rows_affected() == 1)
+    }
+
+    async fn update_event_delivery_state(
+        &self,
+        event_id: &str,
+        state: EventDeliveryState,
+    ) -> StorageResult<EventLedgerRow> {
+        let now = takusu_types::now_rfc3339();
+        let mut tx = self.pool.begin().await.map_err(map_err)?;
+        let current: EventLedgerRow =
+            sqlx::query_as::<_, EventLedgerRow>(EVENT_LEDGER_SELECT_BY_ID)
+                .bind(event_id)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(map_err)?
+                .ok_or_else(|| StorageError::NotFound(format!("event {event_id} not found")))?;
+        if !valid_event_transition(current.delivery_state, state) {
+            return Err(StorageError::Conflict(format!(
+                "cannot transition event {event_id} from {} to {state}",
+                current.delivery_state
+            )));
+        }
+        let updated = sqlx::query(
+            "UPDATE event_ledger SET delivery_state = ?, delivered_at = CASE WHEN ? = 'delivered' THEN COALESCE(delivered_at, ?) ELSE delivered_at END WHERE id = ? AND delivery_state = ?",
+        )
+        .bind(state.as_str())
+        .bind(state.as_str())
+        .bind(now)
+        .bind(event_id)
+        .bind(current.delivery_state.as_str())
+        .execute(&mut *tx)
+        .await
+        .map_err(map_err)?;
+        if updated.rows_affected() == 0 {
+            return Err(StorageError::Conflict(format!(
+                "event {event_id} changed during delivery update"
+            )));
+        }
+        let updated = sqlx::query_as::<_, EventLedgerRow>(EVENT_LEDGER_SELECT_BY_ID)
+            .bind(event_id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(map_err)?;
+        tx.commit().await.map_err(map_err)?;
+        Ok(updated)
+    }
+
     async fn split_task(
         &self,
         id: &str,
@@ -2399,6 +2607,54 @@ impl Storage for SqliteStorage {
             Some(Ok(response)) => Some(response),
             Some(Err(e)) => return Err(e),
             None => None,
+        })
+    }
+
+    async fn get_evaluation_inputs(&self) -> StorageResult<EvaluationInputs> {
+        let mut tx = self.pool.begin().await.map_err(map_err)?;
+
+        let schedule_revision: i64 =
+            sqlx::query_scalar("SELECT revision FROM schedule_revisions WHERE id = 'active'")
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(map_err)?
+                .unwrap_or(0);
+
+        let tasks: Vec<TaskRow> = sqlx::query_as::<_, TaskRow>(sqlx::AssertSqlSafe(SELECT_TASKS))
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(map_err)?;
+
+        let schedule_row: Option<ScheduleRow> =
+            sqlx::query_as::<_, ScheduleRow>("SELECT * FROM schedules WHERE id = 'active'")
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(map_err)?;
+        let schedule = schedule_row
+            .map(|row| row.schedule.as_inner().clone())
+            .unwrap_or_default();
+
+        let ledger: Vec<EventLedgerRow> =
+            sqlx::query_as::<_, EventLedgerRow>(EVENT_LEDGER_SELECT_ORDERED)
+                .fetch_all(&mut *tx)
+                .await
+                .map_err(map_err)?;
+
+        let in_progress: Vec<TaskRow> = tasks
+            .iter()
+            .filter(|t| t.status == TaskStatus::InProgress)
+            .cloned()
+            .collect();
+        let progress = work_session::batch_evaluation_progress(&mut tx, &in_progress).await?;
+
+        tx.commit().await.map_err(map_err)?;
+
+        Ok(EvaluationInputs {
+            schedule_revision,
+            tasks,
+            schedule,
+            progress,
+            ledger,
         })
     }
 
@@ -2953,6 +3209,68 @@ mod tests {
         assert_eq!(
             enabled, 1,
             "foreign keys should be enabled for every connection"
+        );
+    }
+
+    #[tokio::test]
+    async fn event_ledger_is_idempotent_and_claims_are_per_device() {
+        let cfg = LocalConfig {
+            db: "sqlite::memory:".into(),
+            jwt_secret: "test-secret".into(),
+            ..Default::default()
+        };
+        let storage = SqliteStorage::init(&cfg).await.unwrap();
+        let event = EventLedgerInsert {
+            id: "planner:test:event".into(),
+            kind: "task_start_time_reached".into(),
+            task_id: None,
+            presentation: "{\"type\":\"text\",\"text\":\"開始\"}".into(),
+            urgency: "normal".into(),
+            schedule_revision: 1,
+            distribution_revision: None,
+            observation_kind: "start_time".into(),
+        };
+        let first = storage.insert_event_ledger(&event).await.unwrap();
+        let mut conflicting = event.clone();
+        conflicting.presentation = "{\"type\":\"text\",\"text\":\"変更\"}".into();
+        let replay = storage.insert_event_ledger(&conflicting).await.unwrap();
+        assert_eq!(first.presentation, replay.presentation);
+        assert!(
+            storage
+                .claim_event_delivery("mobile", &event.id)
+                .await
+                .unwrap()
+        );
+        assert!(
+            !storage
+                .claim_event_delivery("mobile", &event.id)
+                .await
+                .unwrap()
+        );
+        assert!(
+            storage
+                .claim_event_delivery("desktop", &event.id)
+                .await
+                .unwrap()
+        );
+        let delivered = storage
+            .update_event_delivery_state(&event.id, EventDeliveryState::Delivered)
+            .await
+            .unwrap();
+        assert_eq!(delivered.delivery_state, EventDeliveryState::Delivered);
+        let acknowledged = storage
+            .update_event_delivery_state(&event.id, EventDeliveryState::Acknowledged)
+            .await
+            .unwrap();
+        assert_eq!(
+            acknowledged.delivery_state,
+            EventDeliveryState::Acknowledged
+        );
+        assert!(
+            storage
+                .update_event_delivery_state(&event.id, EventDeliveryState::PendingDelivery)
+                .await
+                .is_err()
         );
     }
 

@@ -180,6 +180,19 @@ async fn dispatch(req: Request, env: Env) -> Result<Response, crate::error::Work
         (Method::Get, ["memory", id]) => handlers::memory::get(req, env, id).await,
         (Method::Patch, ["memory", id]) => handlers::memory::update(req, env, id).await,
         (Method::Delete, ["memory", id]) => handlers::memory::delete(req, env, id).await,
+        (Method::Get, ["events"]) => handlers::events::list(req, env).await,
+        (Method::Post, ["events"]) => handlers::events::insert(req, env).await,
+        (Method::Post, ["events", "commit"]) => handlers::events::commit(req, env).await,
+        (Method::Get, ["events", "revision"]) => handlers::events::revision(req, env).await,
+        (Method::Get, ["events", "snapshot"]) => handlers::events::snapshot(req, env).await,
+        (Method::Post, ["events", "evaluate"]) => handlers::events::evaluate(req, env).await,
+        (Method::Post, ["events", id, "claim"]) => handlers::events::claim(req, env, id).await,
+        (Method::Post, ["events", id, "acknowledge"]) => {
+            handlers::events::acknowledge(req, env, id).await
+        }
+        (Method::Put, ["events", id, "state"]) => {
+            handlers::events::update_state(req, env, id).await
+        }
         (Method::Get, ["sync", "settings"]) => handlers::sync::get_settings(req, env).await,
         (Method::Put, ["sync", "settings"]) => handlers::sync::update_settings(req, env).await,
         (Method::Get, ["sync", "mappings"]) => handlers::sync::list_mappings(req, env).await,

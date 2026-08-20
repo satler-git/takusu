@@ -5,6 +5,7 @@ pub mod bundled_skills;
 pub mod capability;
 pub(crate) mod change_executor;
 pub(crate) mod compact;
+pub mod events;
 pub mod llm;
 #[cfg(feature = "openapi")]
 pub mod openapi;

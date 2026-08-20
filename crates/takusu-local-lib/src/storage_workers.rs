@@ -10,13 +10,14 @@ use serde_json::json;
 use takusu_contracts::{
     ApplyHabitEstimateRequest, AttachWorkSession, CommentRow, ConvertWorkSession, CreateHabit,
     CreateHabitScheduledSpan, CreateMemory, CreateSkill, CreateTask, EstimatorStateRow,
-    GoogleCalEventRow, GoogleCalSettingsRow, HabitRow, HabitScheduledSpanRow,
-    HabitStepEstimateInput, HabitStepInput, HabitStepRow, MemoryInjectionQuery,
-    MemoryInjectionResult, MemoryQuery, MemoryRow, RecordWorkSessionProgress, SaveScheduleRequest,
-    ScheduleRow, SettingsRow, SimilarTaskQuery, SimilarTaskRow, SkillRow, SplitResult, SplitTask,
-    StartWorkSession, Storage, StorageError, TaskProgress, TaskQuery, TaskRow, TokenCreateResponse,
-    TokenRow, UpdateGoogleCalSettings, UpdateHabit, UpdateMemory, UpdateSettings, UpdateSkill,
-    UpdateTask, WorkSessionProgressResult, WorkSessionRow, storage::StorageResult,
+    EvaluationInputs, EventDeliveryState, EventLedgerInsert, EventLedgerRow, GoogleCalEventRow,
+    GoogleCalSettingsRow, HabitRow, HabitScheduledSpanRow, HabitStepEstimateInput, HabitStepInput,
+    HabitStepRow, MemoryInjectionQuery, MemoryInjectionResult, MemoryQuery, MemoryRow,
+    RecordWorkSessionProgress, SaveScheduleRequest, ScheduleRow, SettingsRow, SimilarTaskQuery,
+    SimilarTaskRow, SkillRow, SplitResult, SplitTask, StartWorkSession, Storage, StorageError,
+    TaskProgress, TaskQuery, TaskRow, TokenCreateResponse, TokenRow, UpdateGoogleCalSettings,
+    UpdateHabit, UpdateMemory, UpdateSettings, UpdateSkill, UpdateTask, WorkSessionProgressResult,
+    WorkSessionRow, storage::StorageResult,
 };
 use takusu_types::CommentAuthor;
 use takusu_types::EnumLabel;
@@ -55,6 +56,10 @@ mod paths {
     pub const TASKS_SIMILAR: &str = "/api/tasks/similar";
     pub const AUTH_VERIFY: &str = "/api/auth/verify";
     pub const HEALTH: &str = "/health";
+    pub const EVENTS: &str = "/api/events";
+    pub const EVENTS_COMMIT: &str = "/api/events/commit";
+    pub const EVENTS_REVISION: &str = "/api/events/revision";
+    pub const EVENTS_SNAPSHOT: &str = "/api/events/snapshot";
 
     // Parameterised paths.  `url_encode` is applied to every user-supplied
     // segment so callers never need to remember it.
@@ -130,6 +135,12 @@ mod paths {
             "/api/memory/{}?observed_revision={observed_revision}",
             url_encode(id)
         )
+    }
+    pub fn event_claim_path(id: &str) -> String {
+        format!("/api/events/{}/claim", url_encode(id))
+    }
+    pub fn event_state_path(id: &str) -> String {
+        format!("/api/events/{}/state", url_encode(id))
     }
 }
 
@@ -1132,6 +1143,101 @@ impl Storage for WorkersStorage {
 
     async fn get_estimator_state(&self, id: &str) -> StorageResult<Option<EstimatorStateRow>> {
         Ok(self.get_task_progress(id).await?.estimator)
+    }
+
+    async fn get_schedule_revision(&self) -> StorageResult<i64> {
+        let response: takusu_contracts::ScheduleRevisionResponse = self
+            .send_json(
+                reqwest::Method::GET,
+                paths::EVENTS_REVISION,
+                RequestBody::None,
+                None,
+            )
+            .await?;
+        Ok(response.revision)
+    }
+
+    async fn get_evaluation_inputs(&self) -> StorageResult<EvaluationInputs> {
+        self.send_json(
+            reqwest::Method::GET,
+            paths::EVENTS_SNAPSHOT,
+            RequestBody::None,
+            None,
+        )
+        .await
+    }
+
+    async fn list_event_ledger(
+        &self,
+        device_id: Option<&str>,
+    ) -> StorageResult<Vec<EventLedgerRow>> {
+        let path = match device_id {
+            Some(device_id) => format!("{}?device_id={}", paths::EVENTS, url_encode(device_id)),
+            None => paths::EVENTS.to_string(),
+        };
+        self.send_json(reqwest::Method::GET, &path, RequestBody::None, None)
+            .await
+    }
+
+    async fn insert_event_ledger(
+        &self,
+        event: &EventLedgerInsert,
+    ) -> StorageResult<EventLedgerRow> {
+        self.send_json(
+            reqwest::Method::POST,
+            paths::EVENTS,
+            RequestBody::json(event)?,
+            None,
+        )
+        .await
+    }
+
+    async fn commit_event_evaluation(
+        &self,
+        schedule_revision: i64,
+        events: &[EventLedgerInsert],
+    ) -> StorageResult<()> {
+        let body = serde_json::json!({
+            "schedule_revision": schedule_revision,
+            "events": events,
+        });
+        self.send_empty(
+            reqwest::Method::POST,
+            paths::EVENTS_COMMIT,
+            RequestBody::json(&body)?,
+            None,
+        )
+        .await
+    }
+
+    async fn claim_event_delivery(&self, device_id: &str, event_id: &str) -> StorageResult<bool> {
+        let body = serde_json::json!({ "device_id": device_id });
+        let response: serde_json::Value = self
+            .send_json(
+                reqwest::Method::POST,
+                &paths::event_claim_path(event_id),
+                RequestBody::json(&body)?,
+                None,
+            )
+            .await?;
+        Ok(response
+            .get("claimed")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false))
+    }
+
+    async fn update_event_delivery_state(
+        &self,
+        event_id: &str,
+        state: EventDeliveryState,
+    ) -> StorageResult<EventLedgerRow> {
+        self.send_json(
+            reqwest::Method::PUT,
+            &paths::event_state_path(event_id),
+            RequestBody::json(&state)?,
+            None,
+        )
+        .await
     }
 
     async fn split_task(

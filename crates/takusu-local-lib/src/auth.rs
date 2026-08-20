@@ -39,10 +39,10 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use takusu_contracts::Storage;
     use takusu_contracts::{
-        CreateHabit, CreateHabitScheduledSpan, CreateTask, GoogleCalEventRow, GoogleCalSettingsRow,
-        HabitRow, HabitScheduledSpanRow, SaveScheduleRequest, ScheduleRow, SettingsRow, TaskQuery,
-        TaskRow, TokenCreateResponse, TokenRow, UpdateGoogleCalSettings, UpdateHabit,
-        UpdateSettings, UpdateTask,
+        CreateHabit, CreateHabitScheduledSpan, CreateTask, EvaluationInputs, GoogleCalEventRow,
+        GoogleCalSettingsRow, HabitRow, HabitScheduledSpanRow, SaveScheduleRequest, ScheduleRow,
+        SettingsRow, TaskQuery, TaskRow, TokenCreateResponse, TokenRow, UpdateGoogleCalSettings,
+        UpdateHabit, UpdateSettings, UpdateTask,
     };
     use takusu_types::{DEFAULT_AUD, DEFAULT_ISS};
 
@@ -438,6 +438,18 @@ mod tests {
             _: Option<&str>,
         ) -> Result<takusu_contracts::TaskRow, takusu_contracts::StorageError> {
             unimplemented()
+        }
+        async fn get_evaluation_inputs(
+            &self,
+        ) -> Result<EvaluationInputs, takusu_contracts::StorageError> {
+            unimplemented()
+        }
+        async fn commit_event_evaluation(
+            &self,
+            _: i64,
+            _: &[takusu_contracts::EventLedgerInsert],
+        ) -> Result<(), takusu_contracts::StorageError> {
+            Ok(())
         }
         async fn get_task_progress(
             &self,
