@@ -9,6 +9,7 @@
 use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
+use takusu_client::CoverageEvaluation;
 use takusu_types::TaskStatus;
 use takusu_types::Timestamp;
 use takusu_types::estimator::{
@@ -23,18 +24,6 @@ use crate::presentation::{
 pub const NON_START_GRACE_MINUTES: i64 = 15;
 /// Minimum duration of an unclassified gap before a capture check-in.
 pub const UNCLASSIFIED_GAP_THRESHOLD_MINUTES: i64 = 30;
-
-/// Coverage state consumed by event presentation policy.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-#[derive(Default)]
-pub enum CoverageState {
-    #[default]
-    Bootstrap,
-    TodayCovered,
-    Trusted,
-    Stale,
-}
 
 /// A task projection needed by the evaluator.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -120,7 +109,7 @@ pub struct EvaluationSnapshot {
     /// Tasks that the planner could not place during generation.
     #[serde(default)]
     pub unplaced_task_ids: Vec<String>,
-    pub coverage: CoverageState,
+    pub coverage: CoverageEvaluation,
     pub ledger: LedgerView,
     #[serde(default)]
     pub sleep_impact: Option<SleepImpact>,

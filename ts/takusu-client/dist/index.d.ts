@@ -61,6 +61,41 @@ interface components$1 {
             title?: string | null;
         };
         /**
+         * @description A recorded coverage confirmation (WI-10).
+         *
+         *     Confirms that a local period was covered: the user (or an intake/capture
+         *     flow) stated what happened during that interval.
+         */
+        CoverageConfirmationRow: {
+            calendar_health: string;
+            created_at: components$1['schemas']['Timestamp'];
+            end_at: components$1['schemas']['Timestamp'];
+            id: string;
+            operation_id?: string | null;
+            /** Format: int64 */
+            schedule_revision: number;
+            settled_at?: components$1['schemas']['Timestamp'] | null;
+            source: string;
+            start_at: components$1['schemas']['Timestamp'];
+            timezone: string;
+        };
+        /** @description Coverage data assembled for one planner evaluation (WI-10). */
+        CoverageEvaluation: {
+            confirmations: components$1['schemas']['CoverageConfirmationRow'][];
+            /** Format: int64 */
+            schedule_revision: number;
+            state: components$1['schemas']['CoverageState'];
+            unsettled_intervals: components$1['schemas']['UnsettledIntervalRow'][];
+        };
+        /**
+         * @description Coverage trust state consumed by the resident agent (WI-10).
+         *
+         *     Precedence is `bootstrap -> stale -> today-covered -> trusted`. A stale
+         *     state triggers a settlement prompt; today-covered makes the current task
+         *     authoritative; trusted is reached by a target-period procedure.
+         */
+        CoverageState: 'bootstrap' | 'today_covered' | 'trusted' | 'stale';
+        /**
          * @description Request body for creating a task comment (WI-1).
          *
          *     Contains only `content`. `author` is deliberately absent: it is assigned by
@@ -348,6 +383,51 @@ interface components$1 {
         EvaluateEventsRequest: {
             /** @default  */
             device_id: string;
+        };
+        /** @description Estimator distribution snapshot for a single task. */
+        EvaluationEstimator: {
+            /** Format: double */
+            mean_minutes: number;
+            /** Format: int64 */
+            revision: number;
+            /** Format: double */
+            sigma_minutes: number;
+        };
+        /**
+         * @description Raw inputs for one consistent planner-event evaluation.
+         *
+         *     The storage backend collects these in a single atomic read (or as close to
+         *     atomic as the backend supports) so the pure evaluator receives a coherent
+         *     snapshot. The caller still supplies `now`, gap classification, and coverage.
+         */
+        EvaluationInputs: {
+            /**
+             * @description Coverage trust state for the current evaluation (WI-10).
+             * @default {
+             *       "confirmations": [],
+             *       "schedule_revision": 0,
+             *       "state": "bootstrap",
+             *       "unsettled_intervals": []
+             *     }
+             */
+            coverage: components$1['schemas']['CoverageEvaluation'];
+            ledger: components$1['schemas']['EventLedgerRow'][];
+            progress: components$1['schemas']['EvaluationTaskProgress'][];
+            schedule: components$1['schemas']['ScheduleEntry'][];
+            /** Format: int64 */
+            schedule_revision: number;
+            tasks: components$1['schemas']['TaskRow'][];
+        };
+        /**
+         * @description Per-task progress for evaluation. Only in-progress tasks are included; the
+         *     estimator is pre-computed by the storage layer so callers do not have to
+         *     re-derive the fallback distribution.
+         */
+        EvaluationTaskProgress: {
+            estimator?: components$1['schemas']['EvaluationEstimator'] | null;
+            task_id: string;
+            /** Format: int64 */
+            total_active_minutes: number;
         };
         /**
          * @description Delivery state persisted by the resident event ledger (WI-9).
@@ -1163,6 +1243,17 @@ interface components$1 {
         };
         /** @enum {string} */
         TokenScope: 'read-write' | 'root';
+        /** @description An unresolved elapsed-time interval that needs settlement (WI-10 / WI-18). */
+        UnsettledIntervalRow: {
+            classification: string;
+            created_at: components$1['schemas']['Timestamp'];
+            end_at: components$1['schemas']['Timestamp'];
+            id: string;
+            operation_id?: string | null;
+            settled_at?: components$1['schemas']['Timestamp'] | null;
+            source: string;
+            start_at: components$1['schemas']['Timestamp'];
+        };
         UpdateGoogleCalSettings: {
             calendar_id?: string | null;
             client_id?: string | null;
@@ -1317,658 +1408,6 @@ interface components$1 {
         WorkersConfigUpdateResponse: {
             ok: boolean;
         };
-        /** @description A single quick action on a check-in or card. */
-        Action: {
-            /**
-             * @description The server-issued one-shot capability for this action, if it is an
-             *     immediate capability-authorized action. `Panel` and `Approval` actions
-             *     do not carry a capability.
-             */
-            capability?: components$1['schemas']['ActionCapability'] | null;
-            id: string;
-            kind: components$1['schemas']['ActionKind'];
-            label: string;
-        };
-        /** @description A server-issued, one-shot action capability. */
-        ActionCapability: {
-            action: string;
-            device_id: string;
-            event_id?: string | null;
-            expires_at: string;
-            id: string;
-            input_path: components$1['schemas']['InputPath'];
-            /** @description Note to attach with progress, present for `progress` capabilities. */
-            note?: string | null;
-            one_shot: boolean;
-            /**
-             * Format: int64
-             * @description Quantity completed, present for `progress` capabilities.
-             */
-            quantity_done?: number | null;
-            /**
-             * @description The original request the capability was minted from.
-             *
-             *     Included so a client can return the capability unchanged across server
-             *     restarts, when the in-memory `CapabilityStore` is empty. The server
-             *     ignores this field during authorization; all authoritative parameters
-             *     live as top-level fields on the capability itself.
-             */
-            request?: components$1['schemas']['CapabilityRequest'] | null;
-            /**
-             * @description The scheduled delivery time for notification capabilities (WI-4).
-             *
-             *     When present, the server derives a longer expiry that covers the
-             *     scheduled time plus a short grace period, so the action remains usable
-             *     when the notification fires while the app is not in the foreground.
-             */
-            scheduled_at?: string | null;
-            /**
-             * Format: int64
-             * @description Snooze duration in minutes, present for `delay` capabilities.
-             */
-            snooze_minutes?: number | null;
-            /** @description Target `start_at` for `delay` capabilities, computed client-side or on first tap (WI-4). */
-            snooze_target?: string | null;
-            /** @description The task this capability is authorized to act on. */
-            task_id: string;
-        };
-        /** @description One labelled group of actions. Never empty. */
-        ActionGroup: {
-            actions: components$1['schemas']['NonEmptyVecAction'];
-            title: string;
-        };
-        /**
-         * @description Kind of a quick action.
-         * @enum {string}
-         */
-        ActionKind: 'immediate' | 'approval' | 'panel';
-        ApprovalDecisionRequest: {
-            approve: boolean;
-            idempotency_key?: string | null;
-            proposals?: components$1['schemas']['ProposalDecision'][] | null;
-        };
-        ApprovalRequest: {
-            changes: components$1['schemas']['ProposedChange'][];
-            expires_at: string;
-            id: string;
-            inferred_fields: components$1['schemas']['InferredField'][];
-            warnings: string[];
-            why: string;
-        };
-        ApprovalResultDto: {
-            approved: boolean;
-            changes: components$1['schemas']['ChangeReceipt'][];
-            id: string;
-            schedule_dirty: boolean;
-        };
-        /** @enum {string} */
-        AudioCallback: 'listening' | 'transcribing' | 'speaking' | 'playback_finished';
-        CapabilitiesResponse: {
-            approvals: boolean;
-            audio_input: boolean;
-            tts: boolean;
-            user_input: boolean;
-        };
-        /** @description Request to mint a quick-action capability. */
-        CapabilityRequest: {
-            action: string;
-            device_id: string;
-            event_id?: string | null;
-            note?: string | null;
-            /** Format: int64 */
-            quantity_done?: number | null;
-            /**
-             * @description The scheduled delivery time for notification capabilities (WI-4).
-             *
-             *     When present, the server derives a longer expiry that covers the
-             *     scheduled time plus a short grace period, so the action remains usable
-             *     when the notification fires while the app is not in the foreground.
-             */
-            scheduled_at?: string | null;
-            /** Format: int64 */
-            snooze_minutes?: number | null;
-            /** @description Target `start_at` for `delay` capabilities (WI-4). */
-            snooze_target?: string | null;
-            task_id: string;
-        };
-        /**
-         * @description Operation kind for a proposed or applied change.
-         * @enum {string}
-         */
-        ChangeOperation: 'create' | 'update' | 'delete' | 'generate' | 'reschedule' | 'move' | 'start' | 'pause' | 'progress' | 'complete' | 'split' | 'create_scheduled_span' | 'delete_scheduled_span';
-        /** @description Flattened target fields inside `ChangeReceipt`. */
-        ChangeReceipt: {
-            after?: unknown;
-            before?: unknown;
-            inferred_fields?: unknown;
-            operation: components$1['schemas']['ChangeOperation'];
-            target_id: string;
-            /** Format: int64 */
-            target_revision?: number | null;
-            target_type: components$1['schemas']['TargetKind'];
-        };
-        /**
-         * @description A one-round-trip check-in that always offers 「行動」 and 「ズラす」.
-         *
-         *     The non-empty wrapper on both action groups makes a card without either
-         *     group unrepresentable, which enforces the product invariant that every
-         *     proactive contact offers both options.
-         */
-        CheckInCard: {
-            /** @description 「行動」 group. */
-            act: components$1['schemas']['ActionGroup'];
-            question: string;
-            /** @description 「ズラす」 group. */
-            shift: components$1['schemas']['ActionGroup'];
-        };
-        CreateSessionRequest: {
-            /** @default null */
-            permissions: components$1['schemas']['Permissions'] | null;
-        };
-        CreateSessionResponse: {
-            session_id: string;
-        };
-        EditTurnRequest: {
-            idempotency_key?: string | null;
-            text: string;
-        };
-        /** @description Default error body returned by agent endpoints. */
-        ErrorResponse: {
-            error: string;
-            /** Format: uint8 */
-            version: number;
-        };
-        /** @description A focused clarification question instead of a full interview. */
-        FocusedQuestion: {
-            choices?: string[];
-            message: string;
-        };
-        HealthResponse: {
-            ok: boolean;
-        };
-        HistoryMessage: {
-            content: string;
-            /** @constant */
-            role: 'system';
-        } | {
-            content: string;
-            /** @constant */
-            role: 'user';
-        } | {
-            /** @default null */
-            content: string | null;
-            /** @constant */
-            role: 'assistant';
-            /** @default [] */
-            tool_calls: components$1['schemas']['HistoryToolCall'][];
-        } | {
-            content: string;
-            /** @default false */
-            is_error: boolean;
-            /** @constant */
-            role: 'tool';
-            tool_call_id: string;
-        };
-        HistoryToolCall: {
-            /** @default {} */
-            arguments: unknown;
-            id: string;
-            name: string;
-        };
-        InferredField: {
-            /** @description Name of the inferred field. */
-            field: string;
-            /** @description Reason the field was inferred. */
-            reason: string;
-            /** @description Inferred value for the field. */
-            value: unknown;
-        };
-        /**
-         * @description Trusted input path for an action. The server, not the client, decides the
-         *     path based on how the capability was issued.
-         * @enum {string}
-         */
-        InputPath: 'screen_capability' | 'notification_capability' | 'explicit_voice_session' | 'ambient_wake_word' | 'plain_text';
-        /**
-         * @description Identifies which LLM backend implementation to build.
-         *
-         *     Currently only `OpenAICompatible` exists — OpenAI, OpenRouter, and custom
-         *     OpenAI-compatible endpoints are all served by [`OpenAIClient`]. The enum
-         *     is kept as a single variant so that future non-OpenAI-compatible providers
-         *     (e.g. Anthropic native, Gemini) can be added without touching the dispatch
-         *     sites that call [`build_llm_client`].
-         *
-         *     The legacy `openai`, `openrouter`, and `custom` values (from the previous
-         *     three-variant enum) are accepted as aliases during deserialization so that
-         *     existing `agent.toml` files and persisted mobile settings keep working.
-         *     They all map to `OpenAICompatible`. Serialization always emits
-         *     `openai_compatible`.
-         * @enum {string}
-         */
-        LlmProviderKind: 'openai_compatible';
-        NonEmptyVecAction: components$1['schemas']['Action'][];
-        /** @description Generic `{ "ok": true }` body used by several agent endpoints. */
-        OkResponse: {
-            ok: boolean;
-        };
-        /**
-         * @description A task completion that deviated beyond 1σ, awaiting a single check-in
-         *     question on the next turn. The user's answer is stored as a task comment.
-         *
-         *     This is the "next-turn prompt note" delivery mechanism for the overrun
-         *     check-in (WI-3); the resident-agent event channel is future work.
-         */
-        PendingCheckIn: {
-            /** Format: int64 */
-            actual_minutes: number;
-            /** Format: int64 */
-            avg_minutes: number;
-            /**
-             * @description Whether the overrun check-in has ever been surfaced in a system prompt.
-             *
-             *     A check-in is only treated as answered when a comment is recorded for
-             *     the task *after* it has been delivered; comments added before delivery
-             *     (e.g. an unrelated note) do not clear it.
-             * @default false
-             */
-            delivered: boolean;
-            /** Format: int64 */
-            display_id: number;
-            /** Format: int64 */
-            sigma_minutes: number;
-            task_id: string;
-            title: string;
-        };
-        /**
-         * @description Permission map for auto-approving proposed changes.
-         *
-         *     Serialized as a flat map of `"target:operation"` -> bool so that mobile
-         *     clients can send it directly without wrapping it in an `allow` field.
-         *     Internally the keys are typed (`PermissionKey`) to prevent typos and avoid
-         *     per-lookup string allocation.
-         */
-        Permissions: {
-            [key: string]: boolean;
-        };
-        /**
-         * @description Lightweight event broadcast on the agent transport so surfaces can refresh
-         *     when planner state changes (WI-3). Slow subscribers can lag behind up to the
-         *     channel capacity; a new subscriber starts from the next event after it
-         *     connects, so clients should still refresh once on mount.
-         */
-        PlannerEvent: {
-            /** @constant */
-            type: 'state_changed';
-        } & components$1['schemas']['PlannerStateChanged'];
-        /** @description A planner-state change notification. */
-        PlannerStateChanged: {
-            changed_at: string;
-            /**
-             * @description What categories of state may have changed. Clients use this as a hint
-             *     when they can refresh selectively; a full refresh is always safe.
-             */
-            kinds: string[];
-            source: string;
-        };
-        /**
-         * @description The typed presentation payload carried on a turn result or event.
-         *
-         *     Wire form is internally tagged by `type`; unknown tags decode as
-         *     [`Presentation::Text`].
-         */
-        Presentation: ({
-            /** @constant */
-            type: 'current_task';
-        } & components$1['schemas']['TaskCard']) | ({
-            /** @constant */
-            type: 'work_transition';
-        } & components$1['schemas']['WorkTransition']) | ({
-            /** @constant */
-            type: 'schedule_summary';
-        } & components$1['schemas']['ScheduleSummary']) | ({
-            /** @constant */
-            type: 'progress_summary';
-        } & components$1['schemas']['ProgressSummary']) | ({
-            /** @constant */
-            type: 'schedule_alert';
-        } & components$1['schemas']['ScheduleAlert']) | ({
-            /** @constant */
-            type: 'check_in';
-        } & components$1['schemas']['CheckInCard']) | ({
-            /** @constant */
-            type: 'change_proposal';
-        } & components$1['schemas']['ApprovalRequest']) | ({
-            /** @constant */
-            type: 'clarification';
-        } & components$1['schemas']['FocusedQuestion']) | {
-            text: string;
-            /** @constant */
-            type: 'text';
-        };
-        /** @description Aggregated progress counts from a task read. */
-        ProgressSummary: {
-            /** Format: uint */
-            done: number;
-            /** Format: uint */
-            in_progress: number;
-            /** Format: uint */
-            scheduled: number;
-        };
-        ProposalDecision: {
-            approve: boolean;
-            proposal_id: string;
-        };
-        ProposedChange: {
-            after?: unknown;
-            arguments?: unknown;
-            before?: unknown;
-            description: string;
-            observed_updated_at?: string | null;
-            operation: components$1['schemas']['ChangeOperation'];
-            proposal_id?: string | null;
-            target_label: string;
-        };
-        ResumeSessionRequest: {
-            /** @default null */
-            compaction_summary: string | null;
-            /** @default [] */
-            history: components$1['schemas']['HistoryMessage'][];
-            /**
-             * @description Memory ids already injected into the system context, so a resumed
-             *     session does not re-inject them (WI-4 / #1003).
-             * @default []
-             */
-            injected_memory_ids: string[];
-            /** @default null */
-            pending_approval: components$1['schemas']['ApprovalRequest'] | null;
-            /**
-             * @description Pending overrun check-ins awaiting an answer (WI-3). Restored so the
-             *     check-in is not lost across CLI save/resume.
-             * @default []
-             */
-            pending_check_ins: components$1['schemas']['PendingCheckIn'][];
-            /** @default null */
-            permissions: components$1['schemas']['Permissions'] | null;
-            /** @default null */
-            schedule_dirty: boolean | null;
-            /** @default null */
-            session_id: string | null;
-        };
-        ResumeSessionResponse: {
-            session_id: string;
-        };
-        RevertRequest: {
-            after_user: boolean;
-        };
-        /** @description A planner error surfaced to the user (never a check-in). */
-        ScheduleAlert: {
-            kind: components$1['schemas']['ScheduleAlertKind'];
-            message: string;
-        };
-        /**
-         * @description Kind of a schedule alert.
-         * @enum {string}
-         */
-        ScheduleAlertKind: 'conflict' | 'overdue' | 'generation_failure';
-        /** @description Concise summary of the active schedule. */
-        ScheduleSummary: {
-            entries?: {
-                end_at?: string;
-                reference: string;
-                start_at?: string;
-                title: string;
-            }[];
-            next?: {
-                end_at?: string;
-                reference: string;
-                start_at?: string;
-                title: string;
-            } | null;
-        };
-        /** @description A server-sent event payload emitted by the agent turn streams. */
-        SseEvent: components$1['schemas']['TurnEvent'] | components$1['schemas']['TtsBlockEvent'];
-        /** @description A local notification to post at a task's start time. */
-        StartTimeNotification: {
-            /** @description Wall-clock body for the notification. */
-            body: string;
-            /** @description The `CheckInCard` presentation rendered for this task. */
-            check_in: components$1['schemas']['Presentation'];
-            /** @description When the notification should be delivered. */
-            scheduled_at: string;
-            task_id: string;
-            /** @description Wall-clock title for the notification. */
-            title: string;
-        };
-        /**
-         * @description Response body for the start-time notification endpoint.
-         *
-         *     `Versioned<Vec<_>>` cannot be flattened by serde, so the list is wrapped in
-         *     a struct.
-         */
-        StartTimeNotificationList: {
-            notifications: components$1['schemas']['StartTimeNotification'][];
-        };
-        /** @description Request body for the start-time notification endpoint. */
-        StartTimeNotificationRequest: {
-            /**
-             * @description Device identifier bound into the issued capabilities.
-             * @default mobile
-             */
-            device_id: string;
-            /**
-             * Format: uint
-             * @description Maximum number of upcoming start-time notifications to return.
-             * @default 10
-             */
-            limit: number;
-            /**
-             * @description IANA or fixed-offset time zone used to format wall-clock times in
-             *     notification bodies. Defaults to UTC.
-             * @default null
-             */
-            tz: string | null;
-        };
-        /** @enum {string} */
-        StateScope: 'user' | 'session' | 'device' | 'ephemeral';
-        SurfaceAudioRequest: {
-            callback: components$1['schemas']['AudioCallback'];
-            /**
-             * Format: uint64
-             * @default null
-             */
-            operation_id: number | null;
-        };
-        /** @enum {string} */
-        SurfaceCommand: 'confirm-recording' | 'open-panel' | 'stop-tts' | 'open-approval' | 'show-recovery';
-        SurfaceCommandRequest: {
-            command: components$1['schemas']['SurfaceCommand'];
-            /**
-             * Format: uint64
-             * @default null
-             */
-            operation_id: number | null;
-        };
-        SurfaceCommandResponse: {
-            accepted: boolean;
-            command: components$1['schemas']['SurfaceCommand'];
-            reason?: string | null;
-            snapshot: components$1['schemas']['SurfaceSnapshot'];
-        };
-        SurfaceEvent: ({
-            /** @constant */
-            type: 'snapshot';
-        } & components$1['schemas']['SurfaceSnapshot']) | ({
-            /** @constant */
-            type: 'state_changed';
-        } & components$1['schemas']['SurfaceSnapshot']);
-        SurfaceSnapshot: {
-            error?: string | null;
-            /**
-             * Format: uint64
-             * @description Identifies the current device-local turn or audio operation. A late
-             *     callback for an older operation is ignored by the state machine.
-             */
-            operation_id?: number | null;
-            /** Format: uint64 */
-            revision: number;
-            scope: components$1['schemas']['StateScope'];
-            state: components$1['schemas']['SurfaceState'];
-        };
-        /** @enum {string} */
-        SurfaceState: 'idle' | 'listening' | 'transcribing' | 'thinking' | 'waiting_for_user' | 'waiting_for_approval' | 'speaking' | 'error';
-        /**
-         * @description Target kind for a proposed or applied change.
-         * @enum {string}
-         */
-        TargetKind: 'task' | 'habit' | 'skill' | 'memory' | 'schedule' | 'comment';
-        /**
-         * @description Coverage authority attached to a current-task card.
-         *
-         *     Until WI-10 derives it from observed coverage state, cards default to
-         *     [`TaskAuthority::Candidate`] (the safe side of the coverage invariant).
-         */
-        TaskAuthority: 'candidate' | 'today_covered';
-        /** @description Current + next task card with quick actions. */
-        TaskCard: {
-            authority: components$1['schemas']['TaskAuthority'];
-            end_at?: string | null;
-            next_task?: string | null;
-            reference: string;
-            start_at?: string | null;
-            title: string;
-            work_state: components$1['schemas']['WorkState'];
-        };
-        ToolStat: {
-            /** Format: uint64 */
-            count: number;
-            /** Format: uint64 */
-            error_count: number;
-            last_used?: string | null;
-        };
-        ToolStatsSnapshot: {
-            tools: {
-                [key: string]: components$1['schemas']['ToolStat'];
-            };
-        };
-        /**
-         * @description TTS backend identifier.
-         * @enum {string}
-         */
-        TtsBackend: 'cartesia' | 'android' | 'fish';
-        /** @description A TTS block event emitted by the agent turn streams. */
-        TtsBlockEvent: {
-            data: string;
-            type: string;
-        };
-        /** @description Events emitted while a streaming turn is in progress. */
-        TurnEvent: {
-            data: string;
-            /** @constant */
-            type: 'Thinking';
-        } | {
-            data: string;
-            /** @constant */
-            type: 'Text';
-        } | {
-            data: {
-                arguments: unknown;
-                call_id: string;
-                name: string;
-            };
-            /** @constant */
-            type: 'ToolCall';
-        } | {
-            data: {
-                call_id: string;
-                content: string;
-                is_error: boolean;
-                name: string;
-            };
-            /** @constant */
-            type: 'ToolResult';
-        } | {
-            data: string;
-            /** @constant */
-            type: 'Error';
-        } | {
-            data: components$1['schemas']['TurnResult'];
-            /** @constant */
-            type: 'Done';
-        };
-        TurnRequest: {
-            idempotency_key?: string | null;
-            text: string;
-        };
-        TurnResult: {
-            approval_request?: components$1['schemas']['ApprovalRequest'] | null;
-            changes: components$1['schemas']['ChangeReceipt'][];
-            /**
-             * @description Typed presentation derived from the turn's tool results (WI-1). `None`
-             *     when no tool result maps to a presentation kind.
-             */
-            presentation?: components$1['schemas']['Presentation'] | null;
-            schedule_dirty: boolean;
-            text: string;
-        };
-        TurnResultDto: {
-            approval_request?: components$1['schemas']['ApprovalRequest'] | null;
-            changes: components$1['schemas']['ChangeReceipt'][];
-            presentation?: components$1['schemas']['Presentation'] | null;
-            schedule_dirty: boolean;
-            text: string;
-        };
-        UpdateAgentAudioSettings: {
-            tts?: components$1['schemas']['UpdateAgentTtsSettings'] | null;
-        };
-        UpdateAgentLlmSettings: {
-            api_key?: string | null;
-            base_url?: string | null;
-            model?: string | null;
-            permissions?: components$1['schemas']['Permissions'] | null;
-            provider?: components$1['schemas']['LlmProviderKind'] | null;
-        };
-        UpdateAgentSettings: {
-            audio?: components$1['schemas']['UpdateAgentAudioSettings'] | null;
-            llm?: components$1['schemas']['UpdateAgentLlmSettings'] | null;
-        };
-        UpdateAgentTtsSettings: {
-            api_key?: string | null;
-            backend?: components$1['schemas']['TtsBackend'] | null;
-            language?: string | null;
-            model?: string | null;
-            /** Format: uint32 */
-            sample_rate?: number | null;
-            /** Format: float */
-            speed?: number | null;
-            voice_id?: string | null;
-        };
-        UpdateSessionSettings: {
-            /** @default null */
-            permissions: components$1['schemas']['Permissions'] | null;
-        };
-        /** @description A user-supplied correction for one `UserInputQuestion`. */
-        UserInputAnswer: {
-            /** @description The corrected text. */
-            text: string;
-        };
-        UserInputResolutionRequest: {
-            answers: components$1['schemas']['UserInputAnswer'][];
-        };
-        /**
-         * @description State of a task's work session shown on a card.
-         * @enum {string}
-         */
-        WorkState: 'not_started' | 'in_progress' | 'overdue';
-        /** @description Result of a start / pause / progress / complete / delay / split mutation. */
-        WorkTransition: {
-            /** @description Human-readable detail (e.g. new quantity, total active minutes). */
-            detail?: string;
-            kind: components$1['schemas']['WorkTransitionKind'];
-            reference: string;
-            title: string;
-        };
-        /** @description Kind of a recorded work transition. */
-        WorkTransitionKind: ('start' | 'pause' | 'progress' | 'complete' | 'split') | 'delay';
     };
     responses: never;
     parameters: never;
@@ -2025,6 +1464,9 @@ type SplitResult = S['SplitResult'];
 type CommentRow = S['CommentRow'];
 type CreateComment = S['CreateComment'];
 type CommentAuthor = S['CommentAuthor'];
+type EvaluationInputs = S['EvaluationInputs'];
+type CoverageState = S['CoverageState'];
+type CoverageEvaluation = S['CoverageEvaluation'];
 type SyncTriggerResponse = S['SyncTriggerResponse'];
 type OAuthCallbackResponse = S['OAuthCallbackResponse'];
 type WindowMode = S['WindowMode'];
@@ -2036,10 +1478,6 @@ type GoogleCalSettings = S['GoogleCalSettingsOutput'];
 type DeleteAllGcalResponse = S['DeleteAllGcalResult'];
 type GoogleCalEventMapping = S['GoogleCalEventRow'];
 type UpdateGoogleCalSettings = S['UpdateGoogleCalSettings'];
-type AgentTurnResult = S['TurnResultDto'];
-type ApprovalResult = S['ApprovalResultDto'];
-type ChangeOperation = S['ChangeOperation'];
-type TargetKind = S['TargetKind'];
 declare function parseDepends(depends: string): string[];
 declare function parseDependsOn(dependsOn: string): string[];
 declare const WINDOW_MODE_DAY: "day";
@@ -2126,6 +1564,7 @@ declare class TakusuClient {
     }): Promise<{
         ok: boolean;
     }>;
+    getEvaluationSnapshot(): Promise<EvaluationInputs>;
 }
 
-export { type AgentTurnResult, ApiError, type ApprovalResult, type AttachWorkSession, type ChangeOperation, type CommentAuthor, type CommentRow, type Completion, type ConvertWorkSession, type CreateComment, type CreateHabit, type CreateHabitScheduledSpan, type CreateSkill, type CreateTask, type DeleteAllGcalFailure, type DeleteAllGcalResponse, type DependencyAnalysisResponse, type DependencyNode, type GenerateSchedule, type GoogleCalEventMapping, type GoogleCalSettings, type HabitDetail, type HabitEstimateRequest, type HabitEstimateResult, type HabitEstimateSample, type HabitEstimateStep, type HabitPreviewRequest, type HabitPreviewTask, type HabitRow, type HabitScheduledSpanRow, type HabitStepInput, type HabitStepRow, type IcalImportResult, type MoveEntryRequest, type MoveEntryResponse, type OAuthCallbackResponse, type ProgressEventRow, type RecordWorkSessionProgress, type RedundantDependency, type RescheduleRequest, type ScheduleEntry, type ScheduleRow, type SettingsRow, type SkillRow, type SplitResult, type SplitTask, type StartWorkSession, type SyncTriggerResponse, TakusuClient, type TargetKind, type TaskQuery, type TaskRow, type TaskStatus, type TokenCreateResponse, type TokenRow, type UpdateGoogleCalSettings, type UpdateHabit, type UpdateSettings, type UpdateSkill, type UpdateTask, WINDOW_MODE_DAY, WINDOW_MODE_PERIOD, type WindowMode, type WorkSessionProgressResult, type WorkSessionRow, type components, parseDepends, parseDependsOn, parseHorizonTaskIds, parseSchedule };
+export { ApiError, type AttachWorkSession, type CommentAuthor, type CommentRow, type Completion, type ConvertWorkSession, type CoverageEvaluation, type CoverageState, type CreateComment, type CreateHabit, type CreateHabitScheduledSpan, type CreateSkill, type CreateTask, type DeleteAllGcalFailure, type DeleteAllGcalResponse, type DependencyAnalysisResponse, type DependencyNode, type EvaluationInputs, type GenerateSchedule, type GoogleCalEventMapping, type GoogleCalSettings, type HabitDetail, type HabitEstimateRequest, type HabitEstimateResult, type HabitEstimateSample, type HabitEstimateStep, type HabitPreviewRequest, type HabitPreviewTask, type HabitRow, type HabitScheduledSpanRow, type HabitStepInput, type HabitStepRow, type IcalImportResult, type MoveEntryRequest, type MoveEntryResponse, type OAuthCallbackResponse, type ProgressEventRow, type RecordWorkSessionProgress, type RedundantDependency, type RescheduleRequest, type ScheduleEntry, type ScheduleRow, type SettingsRow, type SkillRow, type SplitResult, type SplitTask, type StartWorkSession, type SyncTriggerResponse, TakusuClient, type TaskQuery, type TaskRow, type TaskStatus, type TokenCreateResponse, type TokenRow, type UpdateGoogleCalSettings, type UpdateHabit, type UpdateSettings, type UpdateSkill, type UpdateTask, WINDOW_MODE_DAY, WINDOW_MODE_PERIOD, type WindowMode, type WorkSessionProgressResult, type WorkSessionRow, type components, parseDepends, parseDependsOn, parseHorizonTaskIds, parseSchedule };

@@ -27,6 +27,7 @@ import { AgentClient } from '@/src/api/agentClient';
 import type {
   TaskCard as TaskCardPresentation,
   WorkState,
+  CoverageState,
 } from '@/src/api/agentTypes';
 import { showError, logError } from '@/src/api/errors';
 import type {
@@ -34,6 +35,7 @@ import type {
   TaskStatus,
   ScheduleEntry,
   WorkSessionRow,
+  EvaluationInputs,
 } from '@/src/api/types';
 import {
   parseDepends,
@@ -392,6 +394,8 @@ export function HomeView() {
   const [compactPanelMode, setCompactPanelMode] = useState<
     'complete' | 'delay' | 'progress'
   >('complete');
+  const [evaluationSnapshot, setEvaluationSnapshot] =
+    useState<EvaluationInputs | null>(null);
   const startDoneButtonY = useSharedValue(0);
   const startDoneButtonPressed = useSharedValue(0);
   const listRef = useRef<FlatList<ListItem>>(null);
@@ -495,7 +499,7 @@ export function HomeView() {
     if (!client) return;
     setRefreshing(true);
     try {
-      const [taskList, sessionList, sched, habitList, settings] =
+      const [taskList, sessionList, sched, habitList, settings, snapshot] =
         await Promise.all([
           client.listTasks({ q: searchQueryRef.current }),
           client.listWorkSessions().catch((e) => {
@@ -511,6 +515,10 @@ export function HomeView() {
             return [] as HabitRow[];
           }),
           client.getSettings().catch(() => null),
+          client.getEvaluationSnapshot().catch((e) => {
+            logError('評価スナップショット取得', e);
+            return null;
+          }),
         ]);
       setTasks(taskList);
       setOpenWorkSessions(
@@ -522,6 +530,7 @@ export function HomeView() {
       setHorizonTaskIds(parseHorizonTaskIds(sched?.horizon_task_ids));
       setHabits(habitList);
       setServerTz(settings?.tz);
+      setEvaluationSnapshot(snapshot);
       // Push a fresh snapshot to the home screen widget so it shows
       // current data immediately (without waiting for WorkManager).
       // The native side separates the in-progress task as `doing` and keeps
@@ -549,6 +558,13 @@ export function HomeView() {
           authority: 'candidate' | 'today_covered';
         } | null = null;
 
+        const coverageState: CoverageState =
+          snapshot?.coverage?.state ?? 'bootstrap';
+        const taskAuthority: 'candidate' | 'today_covered' =
+          coverageState === 'today_covered' || coverageState === 'trusted'
+            ? ('today_covered' as const)
+            : ('candidate' as const);
+
         for (const t of taskList) {
           if (t.status === 'pending') {
             unscheduledCount++;
@@ -563,13 +579,8 @@ export function HomeView() {
               endAt,
               abandonability: t.abandonability,
               fixed: t.fixed,
-              // WI-2: authority is now derived from the task state.
-              // coverage/settlement/capabilities remain placeholder for
-              // WI-10/WI-18/WI-4.
-              authority:
-                t.status === 'in_progress'
-                  ? ('today_covered' as const)
-                  : ('candidate' as const),
+              // WI-10: authority is now derived from coverage state.
+              authority: taskAuthority,
             };
             if (t.status === 'in_progress' && doing == null) {
               doing = task;
@@ -585,16 +596,20 @@ export function HomeView() {
           return ta - tb;
         });
 
-        const coverage =
-          doing?.authority === 'today_covered' ? 'today_covered' : 'bootstrap';
+        const settlement =
+          coverageState === 'stale'
+            ? snapshot?.coverage?.unsettled_intervals?.[0]
+              ? `${snapshot.coverage.unsettled_intervals[0].start_at}〜${snapshot.coverage.unsettled_intervals[0].end_at} の未確定時間を整理してください`
+              : 'カバレッジが古くなっています。今日の予定を確認してください'
+            : null;
 
         const scheme = Constants.expoConfig?.scheme;
         TakusuWidgetModule.saveSnapshot({
           doing,
           upcoming: scheduled,
           unscheduledCount,
-          coverage,
-          settlement: null,
+          coverage: coverageState,
+          settlement,
           capabilities: [],
           serverTz,
           scheme: Array.isArray(scheme) ? scheme[0] : scheme,
@@ -975,18 +990,54 @@ export function HomeView() {
       habitDisplayId !== undefined
         ? `h${habitDisplayId}#${currentTask.display_id}`
         : `#${currentTask.display_id}`;
+
+    const coverageState: CoverageState =
+      evaluationSnapshot?.coverage?.state ?? 'bootstrap';
+    const authority: 'candidate' | 'today_covered' =
+      coverageState === 'today_covered' || coverageState === 'trusted'
+        ? 'today_covered'
+        : 'candidate';
+
+    const firstUnsettled =
+      evaluationSnapshot?.coverage?.unsettled_intervals?.[0];
+    const settlement =
+      coverageState === 'stale' && firstUnsettled
+        ? {
+            question: `${firstUnsettled.start_at}〜${firstUnsettled.end_at} の未確定時間を整理してください`,
+            act: {
+              title: '行動',
+              actions: [
+                {
+                  id: 'settle-start',
+                  label: 'この時間で作業',
+                  kind: 'immediate' as const,
+                },
+              ],
+            },
+            shift: {
+              title: 'ズラす',
+              actions: [
+                {
+                  id: 'settle-ignore',
+                  label: '無視',
+                  kind: 'immediate' as const,
+                },
+              ],
+            },
+          }
+        : undefined;
+
     return {
       title: currentTask.title,
       reference,
       start_at: startAt,
       end_at: endAt,
       work_state: workState,
-      // WI-2: authority is derived from the actual task state. Coverage is not
-      // tracked yet, so use "today_covered" only while in progress.
-      authority:
-        currentTask.status === 'in_progress' ? 'today_covered' : 'candidate',
+      // WI-10: authority and settlement are derived from coverage state.
+      authority,
+      settlement,
     };
-  }, [currentTask, currentTaskSchedule, habitDisplayIdMap]);
+  }, [currentTask, currentTaskSchedule, habitDisplayIdMap, evaluationSnapshot]);
 
   // Whether there are any past tasks to show the toggle (#920)
   // #254: completed/skipped は end_at に関わらず過去扱い。
@@ -2337,6 +2388,11 @@ export function HomeView() {
               onComplete={() => openCompactPanel('complete')}
               onDelay={() => openCompactPanel('delay')}
               onConsult={handleConsult}
+              onSettle={(actionId) => {
+                // WI-10: settlement handling is wired to the compact panel.
+                // The actual capability invocation is implemented in WI-18.
+                console.log('settlement action:', actionId);
+              }}
             />
           ) : null}
           {hasPast ? (

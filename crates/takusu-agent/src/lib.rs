@@ -5,6 +5,7 @@ pub mod bundled_skills;
 pub mod capability;
 pub(crate) mod change_executor;
 pub(crate) mod compact;
+pub mod coverage;
 pub mod events;
 pub mod llm;
 #[cfg(feature = "openapi")]
@@ -31,8 +32,9 @@ pub use permissions::{PermissionKey, PermissionKeyParseError, Permissions};
 pub use presentation::{
     Action, ActionGroup, ActionKind, CheckInCard, FocusedQuestion, NonEmptyVec, Presentation,
     ProgressSummary, ScheduleAlert, ScheduleAlertKind, ScheduleEntry, ScheduleSummary,
-    TaskAuthority, TaskCard, WorkState, WorkTransition, WorkTransitionKind,
+    SettlementPrompt, TaskAuthority, TaskCard, WorkState, WorkTransition, WorkTransitionKind,
 };
+pub use takusu_client::{CoverageEvaluation, CoverageState};
 pub use surface::{
     AudioCallback, AudioEvent, StateScope, SurfaceCommand, SurfaceCommandResponse, SurfaceEvent,
     SurfaceSnapshot, SurfaceState, SurfaceStateMachine,

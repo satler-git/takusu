@@ -288,6 +288,25 @@
               }
             }
           },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
           "415": {
             "description": "Expected request with `Content-Type: application/json`",
             "content": {
@@ -304,25 +323,6 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": ["message"]
                 }
               }
             }
@@ -433,6 +433,25 @@
               }
             }
           },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
           "415": {
             "description": "Expected request with `Content-Type: application/json`",
             "content": {
@@ -449,25 +468,6 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": ["message"]
                 }
               }
             }
@@ -1180,6 +1180,25 @@
               }
             }
           },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
           "415": {
             "description": "Expected request with `Content-Type: application/json`",
             "content": {
@@ -1196,25 +1215,6 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": ["message"]
                 }
               }
             }
@@ -1421,6 +1421,25 @@
               }
             }
           },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
           "415": {
             "description": "Expected request with `Content-Type: application/json`",
             "content": {
@@ -1437,25 +1456,6 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": ["message"]
                 }
               }
             }
@@ -1562,6 +1562,25 @@
               }
             }
           },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
           "415": {
             "description": "Expected request with `Content-Type: application/json`",
             "content": {
@@ -1578,25 +1597,6 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": ["message"]
                 }
               }
             }
@@ -1816,6 +1816,25 @@
               }
             }
           },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
           "415": {
             "description": "Expected request with `Content-Type: application/json`",
             "content": {
@@ -1832,25 +1851,6 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": ["message"]
                 }
               }
             }
@@ -1958,6 +1958,25 @@
               }
             }
           },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
           "415": {
             "description": "Expected request with `Content-Type: application/json`",
             "content": {
@@ -1974,25 +1993,6 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": ["message"]
                 }
               }
             }
@@ -2325,6 +2325,25 @@
               }
             }
           },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
           "415": {
             "description": "Expected request with `Content-Type: application/json`",
             "content": {
@@ -2341,25 +2360,6 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": ["message"]
                 }
               }
             }
@@ -2799,6 +2799,25 @@
               }
             }
           },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
           "415": {
             "description": "Expected request with `Content-Type: application/json`",
             "content": {
@@ -2815,25 +2834,6 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": ["message"]
                 }
               }
             }
@@ -2940,6 +2940,25 @@
               }
             }
           },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
           "415": {
             "description": "Expected request with `Content-Type: application/json`",
             "content": {
@@ -2956,25 +2975,6 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": ["message"]
                 }
               }
             }
@@ -3081,6 +3081,25 @@
               }
             }
           },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
           "415": {
             "description": "Expected request with `Content-Type: application/json`",
             "content": {
@@ -3097,25 +3116,6 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": ["message"]
                 }
               }
             }
@@ -3334,6 +3334,25 @@
               }
             }
           },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
           "415": {
             "description": "Expected request with `Content-Type: application/json`",
             "content": {
@@ -3350,25 +3369,6 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": ["message"]
                 }
               }
             }
@@ -3479,6 +3479,25 @@
               }
             }
           },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
           "415": {
             "description": "Expected request with `Content-Type: application/json`",
             "content": {
@@ -3495,25 +3514,6 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": ["message"]
                 }
               }
             }
@@ -3624,6 +3624,25 @@
               }
             }
           },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
           "415": {
             "description": "Expected request with `Content-Type: application/json`",
             "content": {
@@ -3640,25 +3659,6 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": ["message"]
                 }
               }
             }
@@ -4102,6 +4102,25 @@
               }
             }
           },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
           "415": {
             "description": "Expected request with `Content-Type: application/json`",
             "content": {
@@ -4118,25 +4137,6 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": ["message"]
                 }
               }
             }
@@ -4343,6 +4343,25 @@
               }
             }
           },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
           "415": {
             "description": "Expected request with `Content-Type: application/json`",
             "content": {
@@ -4359,25 +4378,6 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": ["message"]
                 }
               }
             }
@@ -4485,6 +4485,25 @@
               }
             }
           },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
           "415": {
             "description": "Expected request with `Content-Type: application/json`",
             "content": {
@@ -4501,25 +4520,6 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": ["message"]
                 }
               }
             }
@@ -4738,6 +4738,25 @@
               }
             }
           },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
           "415": {
             "description": "Expected request with `Content-Type: application/json`",
             "content": {
@@ -4754,25 +4773,6 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": ["message"]
                 }
               }
             }
@@ -5101,6 +5101,25 @@
               }
             }
           },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
           "415": {
             "description": "Expected request with `Content-Type: application/json`",
             "content": {
@@ -5117,25 +5136,6 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": ["message"]
                 }
               }
             }
@@ -5567,6 +5567,25 @@
               }
             }
           },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
           "415": {
             "description": "Expected request with `Content-Type: application/json`",
             "content": {
@@ -5583,25 +5602,6 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": ["message"]
                 }
               }
             }
@@ -5709,6 +5709,25 @@
               }
             }
           },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
           "415": {
             "description": "Expected request with `Content-Type: application/json`",
             "content": {
@@ -5725,25 +5744,6 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": ["message"]
                 }
               }
             }
@@ -5850,6 +5850,25 @@
               }
             }
           },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
           "415": {
             "description": "Expected request with `Content-Type: application/json`",
             "content": {
@@ -5866,25 +5885,6 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": ["message"]
                 }
               }
             }
@@ -5992,6 +5992,25 @@
               }
             }
           },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
           "415": {
             "description": "Expected request with `Content-Type: application/json`",
             "content": {
@@ -6008,25 +6027,6 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": ["message"]
                 }
               }
             }
@@ -6134,6 +6134,25 @@
               }
             }
           },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
           "415": {
             "description": "Expected request with `Content-Type: application/json`",
             "content": {
@@ -6150,25 +6169,6 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": ["message"]
                 }
               }
             }
@@ -6387,6 +6387,25 @@
               }
             }
           },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
           "415": {
             "description": "Expected request with `Content-Type: application/json`",
             "content": {
@@ -6403,25 +6422,6 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": ["message"]
                 }
               }
             }
@@ -6741,6 +6741,25 @@
               }
             }
           },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
           "415": {
             "description": "Expected request with `Content-Type: application/json`",
             "content": {
@@ -6757,25 +6776,6 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": ["message"]
                 }
               }
             }
@@ -6882,6 +6882,25 @@
               }
             }
           },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
           "415": {
             "description": "Expected request with `Content-Type: application/json`",
             "content": {
@@ -6898,25 +6917,6 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": ["message"]
                 }
               }
             }
@@ -7023,6 +7023,25 @@
               }
             }
           },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
           "415": {
             "description": "Expected request with `Content-Type: application/json`",
             "content": {
@@ -7039,25 +7058,6 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": ["message"]
                 }
               }
             }
@@ -7609,6 +7609,25 @@
               }
             }
           },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
           "415": {
             "description": "Expected request with `Content-Type: application/json`",
             "content": {
@@ -7625,25 +7644,6 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": ["message"]
                 }
               }
             }
@@ -7750,6 +7750,25 @@
               }
             }
           },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
           "415": {
             "description": "Expected request with `Content-Type: application/json`",
             "content": {
@@ -7766,25 +7785,6 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": ["message"]
                 }
               }
             }
@@ -8003,6 +8003,25 @@
               }
             }
           },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
           "415": {
             "description": "Expected request with `Content-Type: application/json`",
             "content": {
@@ -8019,25 +8038,6 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": ["message"]
                 }
               }
             }
@@ -8355,6 +8355,25 @@
               }
             }
           },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
           "415": {
             "description": "Expected request with `Content-Type: application/json`",
             "content": {
@@ -8371,25 +8390,6 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": ["message"]
                 }
               }
             }
@@ -8496,6 +8496,25 @@
               }
             }
           },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
           "415": {
             "description": "Expected request with `Content-Type: application/json`",
             "content": {
@@ -8512,25 +8531,6 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": ["message"]
                 }
               }
             }
@@ -8796,6 +8796,25 @@
               }
             }
           },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
           "415": {
             "description": "Expected request with `Content-Type: application/json`",
             "content": {
@@ -8812,25 +8831,6 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": ["message"]
                 }
               }
             }
@@ -9160,6 +9160,25 @@
               }
             }
           },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
           "415": {
             "description": "Expected request with `Content-Type: application/json`",
             "content": {
@@ -9176,25 +9195,6 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": ["message"]
                 }
               }
             }
@@ -9424,6 +9424,25 @@
               }
             }
           },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
           "415": {
             "description": "Expected request with `Content-Type: application/json`",
             "content": {
@@ -9440,6 +9459,98 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/events/revision": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleRevisionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
                 }
               }
             }
@@ -9466,15 +9577,15 @@
         }
       }
     },
-    "/events/revision": {
+    "/events/snapshot": {
       "get": {
         "responses": {
           "200": {
-            "description": "",
+            "description": "Raw inputs for one consistent planner-event evaluation.\n\nThe storage backend collects these in a single atomic read (or as close to\natomic as the backend supports) so the pure evaluator receives a coherent\nsnapshot. The caller still supplies `now`, gap classification, and coverage.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ScheduleRevisionResponse"
+                  "$ref": "#/components/schemas/EvaluationInputs"
                 }
               }
             }
@@ -9676,6 +9787,25 @@
               }
             }
           },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
           "415": {
             "description": "Expected request with `Content-Type: application/json`",
             "content": {
@@ -9692,25 +9822,6 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": ["message"]
                 }
               }
             }
@@ -9817,6 +9928,25 @@
               }
             }
           },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
           "415": {
             "description": "Expected request with `Content-Type: application/json`",
             "content": {
@@ -9833,25 +9963,6 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": ["message"]
                 }
               }
             }
@@ -10070,6 +10181,25 @@
               }
             }
           },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
           "415": {
             "description": "Expected request with `Content-Type: application/json`",
             "content": {
@@ -10086,25 +10216,6 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$schema": "https://json-schema.org/draft/2020-12/schema",
-                  "title": "ErrorMessage",
-                  "description": "JSON body returned by all error responses.",
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": ["message"]
                 }
               }
             }
@@ -10216,1695 +10327,6 @@
                     }
                   },
                   "required": ["message"]
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/agent/v1/health": {
-      "get": {
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "allOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "version": {
-                          "type": "integer",
-                          "maximum": 255,
-                          "minimum": 0
-                        }
-                      },
-                      "required": ["version"]
-                    },
-                    {
-                      "$ref": "#/components/schemas/HealthResponse"
-                    }
-                  ]
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Default error body returned by agent endpoints.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/agent/v1/events": {
-      "get": {
-        "responses": {
-          "200": {
-            "description": "Lightweight event broadcast on the agent transport so surfaces can refresh\nwhen planner state changes (WI-3). Slow subscribers can lag behind up to the\nchannel capacity; a new subscriber starts from the next event after it\nconnects, so clients should still refresh once on mount.",
-            "content": {
-              "text/event-stream": {
-                "schema": {
-                  "$ref": "#/components/schemas/PlannerEvent"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Default error body returned by agent endpoints.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/agent/v1/capabilities": {
-      "get": {
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "allOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "version": {
-                          "type": "integer",
-                          "maximum": 255,
-                          "minimum": 0
-                        }
-                      },
-                      "required": ["version"]
-                    },
-                    {
-                      "$ref": "#/components/schemas/CapabilitiesResponse"
-                    }
-                  ]
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Default error body returned by agent endpoints.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "type": "object",
-                    "properties": {
-                      "version": {
-                        "type": "integer",
-                        "maximum": 255,
-                        "minimum": 0
-                      }
-                    },
-                    "required": ["version"]
-                  },
-                  {
-                    "$ref": "#/components/schemas/CapabilityRequest"
-                  }
-                ]
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "allOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "version": {
-                          "type": "integer",
-                          "maximum": 255,
-                          "minimum": 0
-                        }
-                      },
-                      "required": ["version"]
-                    },
-                    {
-                      "$ref": "#/components/schemas/ActionCapability"
-                    }
-                  ]
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Failed to parse the request body as JSON",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "415": {
-            "description": "Expected request with `Content-Type: application/json`",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Failed to deserialize the JSON body into the target type",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Default error body returned by agent endpoints.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/agent/v1/actions": {
-      "post": {
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "type": "object",
-                    "properties": {
-                      "version": {
-                        "type": "integer",
-                        "maximum": 255,
-                        "minimum": 0
-                      }
-                    },
-                    "required": ["version"]
-                  },
-                  {
-                    "$ref": "#/components/schemas/ActionCapability"
-                  }
-                ]
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "allOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "version": {
-                          "type": "integer",
-                          "maximum": 255,
-                          "minimum": 0
-                        }
-                      },
-                      "required": ["version"]
-                    },
-                    {
-                      "$ref": "#/components/schemas/Presentation"
-                    }
-                  ]
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Failed to parse the request body as JSON",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "415": {
-            "description": "Expected request with `Content-Type: application/json`",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Failed to deserialize the JSON body into the target type",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Default error body returned by agent endpoints.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/agent/v1/notifications/start-time": {
-      "get": {
-        "parameters": [
-          {
-            "in": "query",
-            "name": "device_id",
-            "description": "Device identifier bound into the issued capabilities.",
-            "schema": {
-              "description": "Device identifier bound into the issued capabilities.",
-              "type": "string",
-              "default": "mobile"
-            },
-            "style": "form"
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "description": "Maximum number of upcoming start-time notifications to return.",
-            "schema": {
-              "description": "Maximum number of upcoming start-time notifications to return.",
-              "type": "integer",
-              "format": "uint",
-              "default": 10,
-              "minimum": 0
-            },
-            "style": "form"
-          },
-          {
-            "in": "query",
-            "name": "tz",
-            "description": "IANA or fixed-offset time zone used to format wall-clock times in\nnotification bodies. Defaults to UTC.",
-            "schema": {
-              "description": "IANA or fixed-offset time zone used to format wall-clock times in\nnotification bodies. Defaults to UTC.",
-              "type": "string",
-              "default": null
-            },
-            "style": "form"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "allOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "version": {
-                          "type": "integer",
-                          "maximum": 255,
-                          "minimum": 0
-                        }
-                      },
-                      "required": ["version"]
-                    },
-                    {
-                      "$ref": "#/components/schemas/StartTimeNotificationList"
-                    }
-                  ]
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Default error body returned by agent endpoints.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/agent/v1/settings": {
-      "put": {
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "type": "object",
-                    "properties": {
-                      "version": {
-                        "type": "integer",
-                        "maximum": 255,
-                        "minimum": 0
-                      }
-                    },
-                    "required": ["version"]
-                  },
-                  {
-                    "$ref": "#/components/schemas/UpdateAgentSettings"
-                  }
-                ]
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "allOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "version": {
-                          "type": "integer",
-                          "maximum": 255,
-                          "minimum": 0
-                        }
-                      },
-                      "required": ["version"]
-                    },
-                    {
-                      "$ref": "#/components/schemas/OkResponse"
-                    }
-                  ]
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Failed to parse the request body as JSON",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "415": {
-            "description": "Expected request with `Content-Type: application/json`",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Failed to deserialize the JSON body into the target type",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Default error body returned by agent endpoints.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/agent/v1/sessions": {
-      "post": {
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "type": "object",
-                    "properties": {
-                      "version": {
-                        "type": "integer",
-                        "maximum": 255,
-                        "minimum": 0
-                      }
-                    },
-                    "required": ["version"]
-                  },
-                  {
-                    "$ref": "#/components/schemas/CreateSessionRequest"
-                  }
-                ]
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "allOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "version": {
-                          "type": "integer",
-                          "maximum": 255,
-                          "minimum": 0
-                        }
-                      },
-                      "required": ["version"]
-                    },
-                    {
-                      "$ref": "#/components/schemas/CreateSessionResponse"
-                    }
-                  ]
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Failed to parse the request body as JSON",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "415": {
-            "description": "Expected request with `Content-Type: application/json`",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Failed to deserialize the JSON body into the target type",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Default error body returned by agent endpoints.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/agent/v1/sessions/resume": {
-      "post": {
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "type": "object",
-                    "properties": {
-                      "version": {
-                        "type": "integer",
-                        "maximum": 255,
-                        "minimum": 0
-                      }
-                    },
-                    "required": ["version"]
-                  },
-                  {
-                    "$ref": "#/components/schemas/ResumeSessionRequest"
-                  }
-                ]
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "allOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "version": {
-                          "type": "integer",
-                          "maximum": 255,
-                          "minimum": 0
-                        }
-                      },
-                      "required": ["version"]
-                    },
-                    {
-                      "$ref": "#/components/schemas/ResumeSessionResponse"
-                    }
-                  ]
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Failed to parse the request body as JSON",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "415": {
-            "description": "Expected request with `Content-Type: application/json`",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Failed to deserialize the JSON body into the target type",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Default error body returned by agent endpoints.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/agent/v1/sessions/{id}/turns": {
-      "post": {
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "type": "object",
-                    "properties": {
-                      "version": {
-                        "type": "integer",
-                        "maximum": 255,
-                        "minimum": 0
-                      }
-                    },
-                    "required": ["version"]
-                  },
-                  {
-                    "$ref": "#/components/schemas/TurnRequest"
-                  }
-                ]
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "allOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "version": {
-                          "type": "integer",
-                          "maximum": 255,
-                          "minimum": 0
-                        }
-                      },
-                      "required": ["version"]
-                    },
-                    {
-                      "$ref": "#/components/schemas/TurnResultDto"
-                    }
-                  ]
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Failed to parse the request body as JSON",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "415": {
-            "description": "Expected request with `Content-Type: application/json`",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Failed to deserialize the JSON body into the target type",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Default error body returned by agent endpoints.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/agent/v1/sessions/{id}/turns/stream": {
-      "post": {
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "type": "object",
-                    "properties": {
-                      "version": {
-                        "type": "integer",
-                        "maximum": 255,
-                        "minimum": 0
-                      }
-                    },
-                    "required": ["version"]
-                  },
-                  {
-                    "$ref": "#/components/schemas/TurnRequest"
-                  }
-                ]
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "A server-sent event payload emitted by the agent turn streams.",
-            "content": {
-              "text/event-stream": {
-                "schema": {
-                  "$ref": "#/components/schemas/SseEvent"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Failed to parse the request body as JSON",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "415": {
-            "description": "Expected request with `Content-Type: application/json`",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Failed to deserialize the JSON body into the target type",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Default error body returned by agent endpoints.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/agent/v1/surface": {
-      "get": {
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "allOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "version": {
-                          "type": "integer",
-                          "maximum": 255,
-                          "minimum": 0
-                        }
-                      },
-                      "required": ["version"]
-                    },
-                    {
-                      "$ref": "#/components/schemas/SurfaceSnapshot"
-                    }
-                  ]
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Default error body returned by agent endpoints.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/agent/v1/surface/events": {
-      "get": {
-        "responses": {
-          "200": {
-            "description": "Server-Sent Events stream",
-            "content": {
-              "text/event-stream": {
-                "schema": {
-                  "$ref": "#/components/schemas/SurfaceEvent"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Default error body returned by agent endpoints.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/agent/v1/surface/commands": {
-      "post": {
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "type": "object",
-                    "properties": {
-                      "version": {
-                        "type": "integer",
-                        "maximum": 255,
-                        "minimum": 0
-                      }
-                    },
-                    "required": ["version"]
-                  },
-                  {
-                    "$ref": "#/components/schemas/SurfaceCommandRequest"
-                  }
-                ]
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "allOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "version": {
-                          "type": "integer",
-                          "maximum": 255,
-                          "minimum": 0
-                        }
-                      },
-                      "required": ["version"]
-                    },
-                    {
-                      "$ref": "#/components/schemas/SurfaceCommandResponse"
-                    }
-                  ]
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Failed to parse the request body as JSON",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "415": {
-            "description": "Expected request with `Content-Type: application/json`",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Failed to deserialize the JSON body into the target type",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Default error body returned by agent endpoints.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/agent/v1/surface/audio": {
-      "post": {
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "type": "object",
-                    "properties": {
-                      "version": {
-                        "type": "integer",
-                        "maximum": 255,
-                        "minimum": 0
-                      }
-                    },
-                    "required": ["version"]
-                  },
-                  {
-                    "$ref": "#/components/schemas/SurfaceAudioRequest"
-                  }
-                ]
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "allOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "version": {
-                          "type": "integer",
-                          "maximum": 255,
-                          "minimum": 0
-                        }
-                      },
-                      "required": ["version"]
-                    },
-                    {
-                      "$ref": "#/components/schemas/SurfaceSnapshot"
-                    }
-                  ]
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Failed to parse the request body as JSON",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "415": {
-            "description": "Expected request with `Content-Type: application/json`",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Failed to deserialize the JSON body into the target type",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Default error body returned by agent endpoints.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/agent/v1/sessions/{id}/turns/{turn_index}/edit/stream": {
-      "post": {
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "type": "object",
-                    "properties": {
-                      "version": {
-                        "type": "integer",
-                        "maximum": 255,
-                        "minimum": 0
-                      }
-                    },
-                    "required": ["version"]
-                  },
-                  {
-                    "$ref": "#/components/schemas/EditTurnRequest"
-                  }
-                ]
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "A server-sent event payload emitted by the agent turn streams.",
-            "content": {
-              "text/event-stream": {
-                "schema": {
-                  "$ref": "#/components/schemas/SseEvent"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Failed to parse the request body as JSON",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "415": {
-            "description": "Expected request with `Content-Type: application/json`",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Failed to deserialize the JSON body into the target type",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Default error body returned by agent endpoints.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/agent/v1/sessions/{id}/turns/{turn_index}/revert": {
-      "post": {
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "type": "object",
-                    "properties": {
-                      "version": {
-                        "type": "integer",
-                        "maximum": 255,
-                        "minimum": 0
-                      }
-                    },
-                    "required": ["version"]
-                  },
-                  {
-                    "$ref": "#/components/schemas/RevertRequest"
-                  }
-                ]
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "allOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "version": {
-                          "type": "integer",
-                          "maximum": 255,
-                          "minimum": 0
-                        }
-                      },
-                      "required": ["version"]
-                    },
-                    {
-                      "$ref": "#/components/schemas/OkResponse"
-                    }
-                  ]
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Failed to parse the request body as JSON",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "415": {
-            "description": "Expected request with `Content-Type: application/json`",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Failed to deserialize the JSON body into the target type",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Default error body returned by agent endpoints.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/agent/v1/sessions/{id}/settings": {
-      "put": {
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "type": "object",
-                    "properties": {
-                      "version": {
-                        "type": "integer",
-                        "maximum": 255,
-                        "minimum": 0
-                      }
-                    },
-                    "required": ["version"]
-                  },
-                  {
-                    "$ref": "#/components/schemas/UpdateSessionSettings"
-                  }
-                ]
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "allOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "version": {
-                          "type": "integer",
-                          "maximum": 255,
-                          "minimum": 0
-                        }
-                      },
-                      "required": ["version"]
-                    },
-                    {
-                      "$ref": "#/components/schemas/OkResponse"
-                    }
-                  ]
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Failed to parse the request body as JSON",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "415": {
-            "description": "Expected request with `Content-Type: application/json`",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Failed to deserialize the JSON body into the target type",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Default error body returned by agent endpoints.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/agent/v1/sessions/{id}/approval": {
-      "get": {
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "allOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "version": {
-                          "type": "integer",
-                          "maximum": 255,
-                          "minimum": 0
-                        }
-                      },
-                      "required": ["version"]
-                    },
-                    {
-                      "anyOf": [
-                        {
-                          "$ref": "#/components/schemas/ApprovalRequest"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    }
-                  ]
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Default error body returned by agent endpoints.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/agent/v1/sessions/{id}/approvals/{approval_id}": {
-      "post": {
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "type": "object",
-                    "properties": {
-                      "version": {
-                        "type": "integer",
-                        "maximum": 255,
-                        "minimum": 0
-                      }
-                    },
-                    "required": ["version"]
-                  },
-                  {
-                    "$ref": "#/components/schemas/ApprovalDecisionRequest"
-                  }
-                ]
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "allOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "version": {
-                          "type": "integer",
-                          "maximum": 255,
-                          "minimum": 0
-                        }
-                      },
-                      "required": ["version"]
-                    },
-                    {
-                      "$ref": "#/components/schemas/ApprovalResultDto"
-                    }
-                  ]
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Failed to parse the request body as JSON",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "415": {
-            "description": "Expected request with `Content-Type: application/json`",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Failed to deserialize the JSON body into the target type",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Default error body returned by agent endpoints.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/agent/v1/sessions/{id}/tool-calls/{call_id}/user-input": {
-      "post": {
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "type": "object",
-                    "properties": {
-                      "version": {
-                        "type": "integer",
-                        "maximum": 255,
-                        "minimum": 0
-                      }
-                    },
-                    "required": ["version"]
-                  },
-                  {
-                    "$ref": "#/components/schemas/UserInputResolutionRequest"
-                  }
-                ]
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "allOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "version": {
-                          "type": "integer",
-                          "maximum": 255,
-                          "minimum": 0
-                        }
-                      },
-                      "required": ["version"]
-                    },
-                    {
-                      "$ref": "#/components/schemas/OkResponse"
-                    }
-                  ]
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Failed to parse the request body as JSON",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "415": {
-            "description": "Expected request with `Content-Type: application/json`",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Failed to deserialize the JSON body into the target type",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Default error body returned by agent endpoints.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/agent/v1/sessions/{id}": {
-      "delete": {
-        "responses": {
-          "204": {
-            "description": "no content"
-          },
-          "default": {
-            "description": "Default error body returned by agent endpoints.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/agent/v1/stats/tools": {
-      "get": {
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "allOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "version": {
-                          "type": "integer",
-                          "maximum": 255,
-                          "minimum": 0
-                        }
-                      },
-                      "required": ["version"]
-                    },
-                    {
-                      "$ref": "#/components/schemas/ToolStatsSnapshot"
-                    }
-                  ]
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Default error body returned by agent endpoints.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "responses": {
-          "204": {
-            "description": "no content"
-          },
-          "default": {
-            "description": "Default error body returned by agent endpoints.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -12026,6 +10448,116 @@
             "type": ["string", "null"]
           }
         }
+      },
+      "CoverageConfirmationRow": {
+        "description": "A recorded coverage confirmation (WI-10).\n\nConfirms that a local period was covered: the user (or an intake/capture\nflow) stated what happened during that interval.",
+        "type": "object",
+        "properties": {
+          "calendar_health": {
+            "type": "string"
+          },
+          "created_at": {
+            "$ref": "#/components/schemas/Timestamp"
+          },
+          "end_at": {
+            "$ref": "#/components/schemas/Timestamp"
+          },
+          "id": {
+            "type": "string"
+          },
+          "operation_id": {
+            "type": ["string", "null"]
+          },
+          "schedule_revision": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "settled_at": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Timestamp"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "type": "string"
+          },
+          "start_at": {
+            "$ref": "#/components/schemas/Timestamp"
+          },
+          "timezone": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "start_at",
+          "end_at",
+          "timezone",
+          "source",
+          "schedule_revision",
+          "calendar_health",
+          "created_at"
+        ]
+      },
+      "CoverageEvaluation": {
+        "description": "Coverage data assembled for one planner evaluation (WI-10).",
+        "type": "object",
+        "properties": {
+          "confirmations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CoverageConfirmationRow"
+            }
+          },
+          "schedule_revision": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "state": {
+            "$ref": "#/components/schemas/CoverageState"
+          },
+          "unsettled_intervals": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UnsettledIntervalRow"
+            }
+          }
+        },
+        "required": [
+          "state",
+          "confirmations",
+          "unsettled_intervals",
+          "schedule_revision"
+        ]
+      },
+      "CoverageState": {
+        "description": "Coverage trust state consumed by the resident agent (WI-10).\n\nPrecedence is `bootstrap -> stale -> today-covered -> trusted`. A stale\nstate triggers a settlement prompt; today-covered makes the current task\nauthoritative; trusted is reached by a target-period procedure.",
+        "oneOf": [
+          {
+            "description": "No coverage confirmation has been recorded.",
+            "type": "string",
+            "const": "bootstrap"
+          },
+          {
+            "description": "Coverage for today has been confirmed.",
+            "type": "string",
+            "const": "today_covered"
+          },
+          {
+            "description": "The coverage record is trusted for the target period.",
+            "type": "string",
+            "const": "trusted"
+          },
+          {
+            "description": "The coverage is stale: unresolved interval, expired confirmation, or\nstale calendar sync.",
+            "type": "string",
+            "const": "stale"
+          }
+        ]
       },
       "CreateComment": {
         "description": "Request body for creating a task comment (WI-1).\n\nContains only `content`. `author` is deliberately absent: it is assigned by\nthe server based on which endpoint is used (public `/tasks/:id/comments` →\n`user`, `/tasks/:id/comments/agent` → `agent`), so ordinary clients cannot\nimpersonate the agent or system (invariant 2).",
@@ -12850,6 +11382,104 @@
             "default": ""
           }
         }
+      },
+      "EvaluationEstimator": {
+        "description": "Estimator distribution snapshot for a single task.",
+        "type": "object",
+        "properties": {
+          "mean_minutes": {
+            "type": "number",
+            "format": "double"
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "sigma_minutes": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "required": ["revision", "mean_minutes", "sigma_minutes"]
+      },
+      "EvaluationInputs": {
+        "description": "Raw inputs for one consistent planner-event evaluation.\n\nThe storage backend collects these in a single atomic read (or as close to\natomic as the backend supports) so the pure evaluator receives a coherent\nsnapshot. The caller still supplies `now`, gap classification, and coverage.",
+        "type": "object",
+        "properties": {
+          "coverage": {
+            "description": "Coverage trust state for the current evaluation (WI-10).",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CoverageEvaluation"
+              }
+            ],
+            "default": {
+              "confirmations": [],
+              "schedule_revision": 0,
+              "state": "bootstrap",
+              "unsettled_intervals": []
+            }
+          },
+          "ledger": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventLedgerRow"
+            }
+          },
+          "progress": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EvaluationTaskProgress"
+            }
+          },
+          "schedule": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScheduleEntry"
+            }
+          },
+          "schedule_revision": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "tasks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskRow"
+            }
+          }
+        },
+        "required": [
+          "schedule_revision",
+          "tasks",
+          "schedule",
+          "progress",
+          "ledger"
+        ]
+      },
+      "EvaluationTaskProgress": {
+        "description": "Per-task progress for evaluation. Only in-progress tasks are included; the\nestimator is pre-computed by the storage layer so callers do not have to\nre-derive the fallback distribution.",
+        "type": "object",
+        "properties": {
+          "estimator": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EvaluationEstimator"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "task_id": {
+            "type": "string"
+          },
+          "total_active_minutes": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "required": ["task_id", "total_active_minutes"]
       },
       "EventDeliveryState": {
         "description": "Delivery state persisted by the resident event ledger (WI-9).",
@@ -14344,7 +12974,7 @@
             ],
             "default": {
               "metric": "dice",
-              "score": 0
+              "score": 0.0
             }
           },
           "task_id": {
@@ -14798,6 +13428,51 @@
       "TokenScope": {
         "type": "string",
         "enum": ["read-write", "root"]
+      },
+      "UnsettledIntervalRow": {
+        "description": "An unresolved elapsed-time interval that needs settlement (WI-10 / WI-18).",
+        "type": "object",
+        "properties": {
+          "classification": {
+            "type": "string"
+          },
+          "created_at": {
+            "$ref": "#/components/schemas/Timestamp"
+          },
+          "end_at": {
+            "$ref": "#/components/schemas/Timestamp"
+          },
+          "id": {
+            "type": "string"
+          },
+          "operation_id": {
+            "type": ["string", "null"]
+          },
+          "settled_at": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Timestamp"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "type": "string"
+          },
+          "start_at": {
+            "$ref": "#/components/schemas/Timestamp"
+          }
+        },
+        "required": [
+          "id",
+          "start_at",
+          "end_at",
+          "classification",
+          "source",
+          "created_at"
+        ]
       },
       "UpdateGoogleCalSettings": {
         "type": "object",
@@ -15256,1676 +13931,6 @@
           }
         },
         "required": ["ok"]
-      },
-      "Action": {
-        "description": "A single quick action on a check-in or card.",
-        "type": "object",
-        "properties": {
-          "capability": {
-            "description": "The server-issued one-shot capability for this action, if it is an\nimmediate capability-authorized action. `Panel` and `Approval` actions\ndo not carry a capability.",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ActionCapability"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "id": {
-            "type": "string"
-          },
-          "kind": {
-            "$ref": "#/components/schemas/ActionKind"
-          },
-          "label": {
-            "type": "string"
-          }
-        },
-        "required": ["id", "label", "kind"]
-      },
-      "ActionCapability": {
-        "description": "A server-issued, one-shot action capability.",
-        "type": "object",
-        "properties": {
-          "action": {
-            "type": "string"
-          },
-          "device_id": {
-            "type": "string"
-          },
-          "event_id": {
-            "type": ["string", "null"]
-          },
-          "expires_at": {
-            "type": "string"
-          },
-          "id": {
-            "type": "string"
-          },
-          "input_path": {
-            "$ref": "#/components/schemas/InputPath"
-          },
-          "note": {
-            "description": "Note to attach with progress, present for `progress` capabilities.",
-            "type": ["string", "null"]
-          },
-          "one_shot": {
-            "type": "boolean"
-          },
-          "quantity_done": {
-            "description": "Quantity completed, present for `progress` capabilities.",
-            "type": ["integer", "null"],
-            "format": "int64"
-          },
-          "request": {
-            "description": "The original request the capability was minted from.\n\nIncluded so a client can return the capability unchanged across server\nrestarts, when the in-memory `CapabilityStore` is empty. The server\nignores this field during authorization; all authoritative parameters\nlive as top-level fields on the capability itself.",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/CapabilityRequest"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "scheduled_at": {
-            "description": "The scheduled delivery time for notification capabilities (WI-4).\n\nWhen present, the server derives a longer expiry that covers the\nscheduled time plus a short grace period, so the action remains usable\nwhen the notification fires while the app is not in the foreground.",
-            "type": ["string", "null"]
-          },
-          "snooze_minutes": {
-            "description": "Snooze duration in minutes, present for `delay` capabilities.",
-            "type": ["integer", "null"],
-            "format": "int64"
-          },
-          "snooze_target": {
-            "description": "Target `start_at` for `delay` capabilities, computed client-side or on first tap (WI-4).",
-            "type": ["string", "null"]
-          },
-          "task_id": {
-            "description": "The task this capability is authorized to act on.",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "device_id",
-          "action",
-          "input_path",
-          "expires_at",
-          "one_shot",
-          "task_id"
-        ]
-      },
-      "ActionGroup": {
-        "description": "One labelled group of actions. Never empty.",
-        "type": "object",
-        "properties": {
-          "actions": {
-            "$ref": "#/components/schemas/NonEmptyVecAction"
-          },
-          "title": {
-            "type": "string"
-          }
-        },
-        "required": ["title", "actions"]
-      },
-      "ActionKind": {
-        "description": "Kind of a quick action.",
-        "type": "string",
-        "enum": ["immediate", "approval", "panel"]
-      },
-      "ApprovalDecisionRequest": {
-        "type": "object",
-        "properties": {
-          "approve": {
-            "type": "boolean"
-          },
-          "idempotency_key": {
-            "type": ["string", "null"]
-          },
-          "proposals": {
-            "type": ["array", "null"],
-            "items": {
-              "$ref": "#/components/schemas/ProposalDecision"
-            }
-          }
-        },
-        "required": ["approve"]
-      },
-      "ApprovalRequest": {
-        "type": "object",
-        "properties": {
-          "changes": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ProposedChange"
-            }
-          },
-          "expires_at": {
-            "type": "string"
-          },
-          "id": {
-            "type": "string"
-          },
-          "inferred_fields": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/InferredField"
-            }
-          },
-          "warnings": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "why": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "why",
-          "changes",
-          "inferred_fields",
-          "warnings",
-          "expires_at"
-        ]
-      },
-      "ApprovalResultDto": {
-        "type": "object",
-        "properties": {
-          "approved": {
-            "type": "boolean"
-          },
-          "changes": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ChangeReceipt"
-            }
-          },
-          "id": {
-            "type": "string"
-          },
-          "schedule_dirty": {
-            "type": "boolean"
-          }
-        },
-        "required": ["id", "approved", "changes", "schedule_dirty"]
-      },
-      "AudioCallback": {
-        "type": "string",
-        "enum": ["listening", "transcribing", "speaking", "playback_finished"]
-      },
-      "CapabilitiesResponse": {
-        "type": "object",
-        "properties": {
-          "approvals": {
-            "type": "boolean"
-          },
-          "audio_input": {
-            "type": "boolean"
-          },
-          "tts": {
-            "type": "boolean"
-          },
-          "user_input": {
-            "type": "boolean"
-          }
-        },
-        "required": ["audio_input", "tts", "approvals", "user_input"]
-      },
-      "CapabilityRequest": {
-        "description": "Request to mint a quick-action capability.",
-        "type": "object",
-        "properties": {
-          "action": {
-            "type": "string"
-          },
-          "device_id": {
-            "type": "string"
-          },
-          "event_id": {
-            "type": ["string", "null"]
-          },
-          "note": {
-            "type": ["string", "null"]
-          },
-          "quantity_done": {
-            "type": ["integer", "null"],
-            "format": "int64"
-          },
-          "scheduled_at": {
-            "description": "The scheduled delivery time for notification capabilities (WI-4).\n\nWhen present, the server derives a longer expiry that covers the\nscheduled time plus a short grace period, so the action remains usable\nwhen the notification fires while the app is not in the foreground.",
-            "type": ["string", "null"]
-          },
-          "snooze_minutes": {
-            "type": ["integer", "null"],
-            "format": "int64"
-          },
-          "snooze_target": {
-            "description": "Target `start_at` for `delay` capabilities (WI-4).",
-            "type": ["string", "null"]
-          },
-          "task_id": {
-            "type": "string"
-          }
-        },
-        "required": ["task_id", "action", "device_id"]
-      },
-      "ChangeOperation": {
-        "description": "Operation kind for a proposed or applied change.",
-        "type": "string",
-        "enum": [
-          "create",
-          "update",
-          "delete",
-          "generate",
-          "reschedule",
-          "move",
-          "start",
-          "pause",
-          "progress",
-          "complete",
-          "split",
-          "create_scheduled_span",
-          "delete_scheduled_span"
-        ]
-      },
-      "ChangeReceipt": {
-        "description": "Flattened target fields inside `ChangeReceipt`.",
-        "type": "object",
-        "properties": {
-          "after": true,
-          "before": true,
-          "inferred_fields": true,
-          "operation": {
-            "$ref": "#/components/schemas/ChangeOperation"
-          },
-          "target_id": {
-            "type": "string"
-          },
-          "target_revision": {
-            "type": ["integer", "null"],
-            "format": "int64"
-          },
-          "target_type": {
-            "$ref": "#/components/schemas/TargetKind"
-          }
-        },
-        "required": ["operation", "target_type", "target_id"]
-      },
-      "CheckInCard": {
-        "description": "A one-round-trip check-in that always offers 「行動」 and 「ズラす」.\n\nThe non-empty wrapper on both action groups makes a card without either\ngroup unrepresentable, which enforces the product invariant that every\nproactive contact offers both options.",
-        "type": "object",
-        "properties": {
-          "act": {
-            "description": "「行動」 group.",
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/ActionGroup"
-              }
-            ]
-          },
-          "question": {
-            "type": "string"
-          },
-          "shift": {
-            "description": "「ズラす」 group.",
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/ActionGroup"
-              }
-            ]
-          }
-        },
-        "required": ["question", "act", "shift"]
-      },
-      "CreateSessionRequest": {
-        "type": "object",
-        "properties": {
-          "permissions": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Permissions"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          }
-        }
-      },
-      "CreateSessionResponse": {
-        "type": "object",
-        "properties": {
-          "session_id": {
-            "type": "string"
-          }
-        },
-        "required": ["session_id"]
-      },
-      "EditTurnRequest": {
-        "type": "object",
-        "properties": {
-          "idempotency_key": {
-            "type": ["string", "null"]
-          },
-          "text": {
-            "type": "string"
-          }
-        },
-        "required": ["text"]
-      },
-      "ErrorResponse": {
-        "description": "Default error body returned by agent endpoints.",
-        "type": "object",
-        "properties": {
-          "error": {
-            "type": "string"
-          },
-          "version": {
-            "type": "integer",
-            "format": "uint8",
-            "maximum": 255,
-            "minimum": 0
-          }
-        },
-        "required": ["version", "error"]
-      },
-      "FocusedQuestion": {
-        "description": "A focused clarification question instead of a full interview.",
-        "type": "object",
-        "properties": {
-          "choices": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "message": {
-            "type": "string"
-          }
-        },
-        "required": ["message"]
-      },
-      "HealthResponse": {
-        "type": "object",
-        "properties": {
-          "ok": {
-            "type": "boolean"
-          }
-        },
-        "required": ["ok"]
-      },
-      "HistoryMessage": {
-        "oneOf": [
-          {
-            "type": "object",
-            "properties": {
-              "content": {
-                "type": "string"
-              },
-              "role": {
-                "type": "string",
-                "const": "system"
-              }
-            },
-            "required": ["role", "content"]
-          },
-          {
-            "type": "object",
-            "properties": {
-              "content": {
-                "type": "string"
-              },
-              "role": {
-                "type": "string",
-                "const": "user"
-              }
-            },
-            "required": ["role", "content"]
-          },
-          {
-            "type": "object",
-            "properties": {
-              "content": {
-                "type": ["string", "null"],
-                "default": null
-              },
-              "role": {
-                "type": "string",
-                "const": "assistant"
-              },
-              "tool_calls": {
-                "type": "array",
-                "default": [],
-                "items": {
-                  "$ref": "#/components/schemas/HistoryToolCall"
-                }
-              }
-            },
-            "required": ["role"]
-          },
-          {
-            "type": "object",
-            "properties": {
-              "content": {
-                "type": "string"
-              },
-              "is_error": {
-                "type": "boolean",
-                "default": false
-              },
-              "role": {
-                "type": "string",
-                "const": "tool"
-              },
-              "tool_call_id": {
-                "type": "string"
-              }
-            },
-            "required": ["role", "tool_call_id", "content"]
-          }
-        ]
-      },
-      "HistoryToolCall": {
-        "type": "object",
-        "properties": {
-          "arguments": {
-            "default": {}
-          },
-          "id": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          }
-        },
-        "required": ["id", "name"]
-      },
-      "InferredField": {
-        "type": "object",
-        "properties": {
-          "field": {
-            "description": "Name of the inferred field.",
-            "type": "string"
-          },
-          "reason": {
-            "description": "Reason the field was inferred.",
-            "type": "string"
-          },
-          "value": {
-            "description": "Inferred value for the field."
-          }
-        },
-        "additionalProperties": false,
-        "required": ["field", "value", "reason"]
-      },
-      "InputPath": {
-        "description": "Trusted input path for an action. The server, not the client, decides the\npath based on how the capability was issued.",
-        "type": "string",
-        "enum": [
-          "screen_capability",
-          "notification_capability",
-          "explicit_voice_session",
-          "ambient_wake_word",
-          "plain_text"
-        ]
-      },
-      "LlmProviderKind": {
-        "description": "Identifies which LLM backend implementation to build.\n\nCurrently only `OpenAICompatible` exists — OpenAI, OpenRouter, and custom\nOpenAI-compatible endpoints are all served by [`OpenAIClient`]. The enum\nis kept as a single variant so that future non-OpenAI-compatible providers\n(e.g. Anthropic native, Gemini) can be added without touching the dispatch\nsites that call [`build_llm_client`].\n\nThe legacy `openai`, `openrouter`, and `custom` values (from the previous\nthree-variant enum) are accepted as aliases during deserialization so that\nexisting `agent.toml` files and persisted mobile settings keep working.\nThey all map to `OpenAICompatible`. Serialization always emits\n`openai_compatible`.",
-        "type": "string",
-        "enum": ["openai_compatible"]
-      },
-      "NonEmptyVecAction": {
-        "type": "array",
-        "items": {
-          "$ref": "#/components/schemas/Action"
-        },
-        "minItems": 1
-      },
-      "OkResponse": {
-        "description": "Generic `{ \"ok\": true }` body used by several agent endpoints.",
-        "type": "object",
-        "properties": {
-          "ok": {
-            "type": "boolean"
-          }
-        },
-        "required": ["ok"]
-      },
-      "PendingCheckIn": {
-        "description": "A task completion that deviated beyond 1σ, awaiting a single check-in\nquestion on the next turn. The user's answer is stored as a task comment.\n\nThis is the \"next-turn prompt note\" delivery mechanism for the overrun\ncheck-in (WI-3); the resident-agent event channel is future work.",
-        "type": "object",
-        "properties": {
-          "actual_minutes": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "avg_minutes": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "delivered": {
-            "description": "Whether the overrun check-in has ever been surfaced in a system prompt.\n\nA check-in is only treated as answered when a comment is recorded for\nthe task *after* it has been delivered; comments added before delivery\n(e.g. an unrelated note) do not clear it.",
-            "type": "boolean",
-            "default": false
-          },
-          "display_id": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "sigma_minutes": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "task_id": {
-            "type": "string"
-          },
-          "title": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "task_id",
-          "display_id",
-          "title",
-          "avg_minutes",
-          "actual_minutes",
-          "sigma_minutes"
-        ]
-      },
-      "Permissions": {
-        "description": "Permission map for auto-approving proposed changes.\n\nSerialized as a flat map of `\"target:operation\"` -> bool so that mobile\nclients can send it directly without wrapping it in an `allow` field.\nInternally the keys are typed (`PermissionKey`) to prevent typos and avoid\nper-lookup string allocation.",
-        "type": "object",
-        "additionalProperties": {
-          "type": "boolean"
-        }
-      },
-      "PlannerEvent": {
-        "description": "Lightweight event broadcast on the agent transport so surfaces can refresh\nwhen planner state changes (WI-3). Slow subscribers can lag behind up to the\nchannel capacity; a new subscriber starts from the next event after it\nconnects, so clients should still refresh once on mount.",
-        "oneOf": [
-          {
-            "type": "object",
-            "properties": {
-              "type": {
-                "type": "string",
-                "const": "state_changed"
-              }
-            },
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/PlannerStateChanged"
-              }
-            ],
-            "required": ["type"]
-          }
-        ]
-      },
-      "PlannerStateChanged": {
-        "description": "A planner-state change notification.",
-        "type": "object",
-        "properties": {
-          "changed_at": {
-            "type": "string"
-          },
-          "kinds": {
-            "description": "What categories of state may have changed. Clients use this as a hint\nwhen they can refresh selectively; a full refresh is always safe.",
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "source": {
-            "type": "string"
-          }
-        },
-        "required": ["changed_at", "source", "kinds"]
-      },
-      "Presentation": {
-        "description": "The typed presentation payload carried on a turn result or event.\n\nWire form is internally tagged by `type`; unknown tags decode as\n[`Presentation::Text`].",
-        "oneOf": [
-          {
-            "description": "Current + next task with quick actions.",
-            "type": "object",
-            "properties": {
-              "type": {
-                "type": "string",
-                "const": "current_task"
-              }
-            },
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/TaskCard"
-              }
-            ],
-            "required": ["type"]
-          },
-          {
-            "description": "Start / pause / progress / complete / delay / split result.",
-            "type": "object",
-            "properties": {
-              "type": {
-                "type": "string",
-                "const": "work_transition"
-              }
-            },
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/WorkTransition"
-              }
-            ],
-            "required": ["type"]
-          },
-          {
-            "description": "Schedule read summary.",
-            "type": "object",
-            "properties": {
-              "type": {
-                "type": "string",
-                "const": "schedule_summary"
-              }
-            },
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/ScheduleSummary"
-              }
-            ],
-            "required": ["type"]
-          },
-          {
-            "description": "Task-count read summary.",
-            "type": "object",
-            "properties": {
-              "type": {
-                "type": "string",
-                "const": "progress_summary"
-              }
-            },
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/ProgressSummary"
-              }
-            ],
-            "required": ["type"]
-          },
-          {
-            "description": "Conflict / overdue / generation failure.",
-            "type": "object",
-            "properties": {
-              "type": {
-                "type": "string",
-                "const": "schedule_alert"
-              }
-            },
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/ScheduleAlert"
-              }
-            ],
-            "required": ["type"]
-          },
-          {
-            "description": "One-round-trip check-in with 行動 + ズラす.",
-            "type": "object",
-            "properties": {
-              "type": {
-                "type": "string",
-                "const": "check_in"
-              }
-            },
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/CheckInCard"
-              }
-            ],
-            "required": ["type"]
-          },
-          {
-            "description": "An approval request, rendered from the existing type.",
-            "type": "object",
-            "properties": {
-              "type": {
-                "type": "string",
-                "const": "change_proposal"
-              }
-            },
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/ApprovalRequest"
-              }
-            ],
-            "required": ["type"]
-          },
-          {
-            "description": "A focused clarification.",
-            "type": "object",
-            "properties": {
-              "type": {
-                "type": "string",
-                "const": "clarification"
-              }
-            },
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/FocusedQuestion"
-              }
-            ],
-            "required": ["type"]
-          },
-          {
-            "description": "Free-form fallback text.\n\nRepresented as a struct variant so internally-tagged serialization works\n(serde cannot tag a primitive newtype like `Text(String)`), and so an\nunknown tag can degrade to `Text { text }`.",
-            "type": "object",
-            "properties": {
-              "text": {
-                "type": "string"
-              },
-              "type": {
-                "type": "string",
-                "const": "text"
-              }
-            },
-            "required": ["type", "text"]
-          }
-        ]
-      },
-      "ProgressSummary": {
-        "description": "Aggregated progress counts from a task read.",
-        "type": "object",
-        "properties": {
-          "done": {
-            "type": "integer",
-            "format": "uint",
-            "minimum": 0
-          },
-          "in_progress": {
-            "type": "integer",
-            "format": "uint",
-            "minimum": 0
-          },
-          "scheduled": {
-            "type": "integer",
-            "format": "uint",
-            "minimum": 0
-          }
-        },
-        "required": ["done", "in_progress", "scheduled"]
-      },
-      "ProposalDecision": {
-        "type": "object",
-        "properties": {
-          "approve": {
-            "type": "boolean"
-          },
-          "proposal_id": {
-            "type": "string"
-          }
-        },
-        "required": ["proposal_id", "approve"]
-      },
-      "ProposedChange": {
-        "type": "object",
-        "properties": {
-          "after": true,
-          "arguments": true,
-          "before": true,
-          "description": {
-            "type": "string"
-          },
-          "observed_updated_at": {
-            "type": ["string", "null"]
-          },
-          "operation": {
-            "$ref": "#/components/schemas/ChangeOperation"
-          },
-          "proposal_id": {
-            "type": ["string", "null"]
-          },
-          "target_label": {
-            "type": "string"
-          }
-        },
-        "required": ["operation", "target_label", "description"]
-      },
-      "ResumeSessionRequest": {
-        "type": "object",
-        "properties": {
-          "compaction_summary": {
-            "type": ["string", "null"],
-            "default": null
-          },
-          "history": {
-            "type": "array",
-            "default": [],
-            "items": {
-              "$ref": "#/components/schemas/HistoryMessage"
-            }
-          },
-          "injected_memory_ids": {
-            "description": "Memory ids already injected into the system context, so a resumed\nsession does not re-inject them (WI-4 / #1003).",
-            "type": "array",
-            "default": [],
-            "items": {
-              "type": "string"
-            }
-          },
-          "pending_approval": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ApprovalRequest"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "pending_check_ins": {
-            "description": "Pending overrun check-ins awaiting an answer (WI-3). Restored so the\ncheck-in is not lost across CLI save/resume.",
-            "type": "array",
-            "default": [],
-            "items": {
-              "$ref": "#/components/schemas/PendingCheckIn"
-            }
-          },
-          "permissions": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Permissions"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "schedule_dirty": {
-            "type": ["boolean", "null"],
-            "default": null
-          },
-          "session_id": {
-            "type": ["string", "null"],
-            "default": null
-          }
-        }
-      },
-      "ResumeSessionResponse": {
-        "type": "object",
-        "properties": {
-          "session_id": {
-            "type": "string"
-          }
-        },
-        "required": ["session_id"]
-      },
-      "RevertRequest": {
-        "type": "object",
-        "properties": {
-          "after_user": {
-            "type": "boolean"
-          }
-        },
-        "required": ["after_user"]
-      },
-      "ScheduleAlert": {
-        "description": "A planner error surfaced to the user (never a check-in).",
-        "type": "object",
-        "properties": {
-          "kind": {
-            "$ref": "#/components/schemas/ScheduleAlertKind"
-          },
-          "message": {
-            "type": "string"
-          }
-        },
-        "required": ["kind", "message"]
-      },
-      "ScheduleAlertKind": {
-        "description": "Kind of a schedule alert.",
-        "type": "string",
-        "enum": ["conflict", "overdue", "generation_failure"]
-      },
-      "ScheduleSummary": {
-        "description": "Concise summary of the active schedule.",
-        "type": "object",
-        "properties": {
-          "entries": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "end_at": {
-                  "type": "string"
-                },
-                "reference": {
-                  "type": "string"
-                },
-                "start_at": {
-                  "type": "string"
-                },
-                "title": {
-                  "type": "string"
-                }
-              },
-              "required": ["reference", "title"]
-            }
-          },
-          "next": {
-            "type": ["object", "null"],
-            "properties": {
-              "end_at": {
-                "type": "string"
-              },
-              "reference": {
-                "type": "string"
-              },
-              "start_at": {
-                "type": "string"
-              },
-              "title": {
-                "type": "string"
-              }
-            },
-            "required": ["reference", "title"]
-          }
-        }
-      },
-      "SseEvent": {
-        "description": "A server-sent event payload emitted by the agent turn streams.",
-        "anyOf": [
-          {
-            "$ref": "#/components/schemas/TurnEvent"
-          },
-          {
-            "$ref": "#/components/schemas/TtsBlockEvent"
-          }
-        ]
-      },
-      "StartTimeNotification": {
-        "description": "A local notification to post at a task's start time.",
-        "type": "object",
-        "properties": {
-          "body": {
-            "description": "Wall-clock body for the notification.",
-            "type": "string"
-          },
-          "check_in": {
-            "description": "The `CheckInCard` presentation rendered for this task.",
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/Presentation"
-              }
-            ]
-          },
-          "scheduled_at": {
-            "description": "When the notification should be delivered.",
-            "type": "string"
-          },
-          "task_id": {
-            "type": "string"
-          },
-          "title": {
-            "description": "Wall-clock title for the notification.",
-            "type": "string"
-          }
-        },
-        "required": ["task_id", "title", "body", "scheduled_at", "check_in"]
-      },
-      "StartTimeNotificationList": {
-        "description": "Response body for the start-time notification endpoint.\n\n`Versioned<Vec<_>>` cannot be flattened by serde, so the list is wrapped in\na struct.",
-        "type": "object",
-        "properties": {
-          "notifications": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/StartTimeNotification"
-            }
-          }
-        },
-        "required": ["notifications"]
-      },
-      "StartTimeNotificationRequest": {
-        "description": "Request body for the start-time notification endpoint.",
-        "type": "object",
-        "properties": {
-          "device_id": {
-            "description": "Device identifier bound into the issued capabilities.",
-            "type": "string",
-            "default": "mobile"
-          },
-          "limit": {
-            "description": "Maximum number of upcoming start-time notifications to return.",
-            "type": "integer",
-            "format": "uint",
-            "default": 10,
-            "minimum": 0
-          },
-          "tz": {
-            "description": "IANA or fixed-offset time zone used to format wall-clock times in\nnotification bodies. Defaults to UTC.",
-            "type": ["string", "null"],
-            "default": null
-          }
-        }
-      },
-      "StateScope": {
-        "type": "string",
-        "enum": ["user", "session", "device", "ephemeral"]
-      },
-      "SurfaceAudioRequest": {
-        "type": "object",
-        "properties": {
-          "callback": {
-            "$ref": "#/components/schemas/AudioCallback"
-          },
-          "operation_id": {
-            "type": ["integer", "null"],
-            "format": "uint64",
-            "default": null,
-            "minimum": 0
-          }
-        },
-        "required": ["callback"]
-      },
-      "SurfaceCommand": {
-        "type": "string",
-        "enum": [
-          "confirm-recording",
-          "open-panel",
-          "stop-tts",
-          "open-approval",
-          "show-recovery"
-        ]
-      },
-      "SurfaceCommandRequest": {
-        "type": "object",
-        "properties": {
-          "command": {
-            "$ref": "#/components/schemas/SurfaceCommand"
-          },
-          "operation_id": {
-            "type": ["integer", "null"],
-            "format": "uint64",
-            "default": null,
-            "minimum": 0
-          }
-        },
-        "required": ["command"]
-      },
-      "SurfaceCommandResponse": {
-        "type": "object",
-        "properties": {
-          "accepted": {
-            "type": "boolean"
-          },
-          "command": {
-            "$ref": "#/components/schemas/SurfaceCommand"
-          },
-          "reason": {
-            "type": ["string", "null"]
-          },
-          "snapshot": {
-            "$ref": "#/components/schemas/SurfaceSnapshot"
-          }
-        },
-        "required": ["command", "accepted", "snapshot"]
-      },
-      "SurfaceEvent": {
-        "oneOf": [
-          {
-            "type": "object",
-            "properties": {
-              "type": {
-                "type": "string",
-                "const": "snapshot"
-              }
-            },
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/SurfaceSnapshot"
-              }
-            ],
-            "required": ["type"]
-          },
-          {
-            "type": "object",
-            "properties": {
-              "type": {
-                "type": "string",
-                "const": "state_changed"
-              }
-            },
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/SurfaceSnapshot"
-              }
-            ],
-            "required": ["type"]
-          }
-        ]
-      },
-      "SurfaceSnapshot": {
-        "type": "object",
-        "properties": {
-          "error": {
-            "type": ["string", "null"]
-          },
-          "operation_id": {
-            "description": "Identifies the current device-local turn or audio operation. A late\ncallback for an older operation is ignored by the state machine.",
-            "type": ["integer", "null"],
-            "format": "uint64",
-            "minimum": 0
-          },
-          "revision": {
-            "type": "integer",
-            "format": "uint64",
-            "minimum": 0
-          },
-          "scope": {
-            "$ref": "#/components/schemas/StateScope"
-          },
-          "state": {
-            "$ref": "#/components/schemas/SurfaceState"
-          }
-        },
-        "required": ["scope", "state", "revision"]
-      },
-      "SurfaceState": {
-        "type": "string",
-        "enum": [
-          "idle",
-          "listening",
-          "transcribing",
-          "thinking",
-          "waiting_for_user",
-          "waiting_for_approval",
-          "speaking",
-          "error"
-        ]
-      },
-      "TargetKind": {
-        "description": "Target kind for a proposed or applied change.",
-        "type": "string",
-        "enum": ["task", "habit", "skill", "memory", "schedule", "comment"]
-      },
-      "TaskAuthority": {
-        "description": "Coverage authority attached to a current-task card.\n\nUntil WI-10 derives it from observed coverage state, cards default to\n[`TaskAuthority::Candidate`] (the safe side of the coverage invariant).",
-        "oneOf": [
-          {
-            "description": "Present as a candidate for the user to accept (bootstrap).",
-            "type": "string",
-            "const": "candidate"
-          },
-          {
-            "description": "Authoritative 「今やること」 because today is covered.",
-            "type": "string",
-            "const": "today_covered"
-          }
-        ]
-      },
-      "TaskCard": {
-        "description": "Current + next task card with quick actions.",
-        "type": "object",
-        "properties": {
-          "authority": {
-            "$ref": "#/components/schemas/TaskAuthority"
-          },
-          "end_at": {
-            "type": ["string", "null"]
-          },
-          "next_task": {
-            "type": ["string", "null"]
-          },
-          "reference": {
-            "type": "string"
-          },
-          "start_at": {
-            "type": ["string", "null"]
-          },
-          "title": {
-            "type": "string"
-          },
-          "work_state": {
-            "$ref": "#/components/schemas/WorkState"
-          }
-        },
-        "required": ["title", "reference", "work_state", "authority"]
-      },
-      "ToolStat": {
-        "type": "object",
-        "properties": {
-          "count": {
-            "type": "integer",
-            "format": "uint64",
-            "minimum": 0
-          },
-          "error_count": {
-            "type": "integer",
-            "format": "uint64",
-            "minimum": 0
-          },
-          "last_used": {
-            "type": ["string", "null"]
-          }
-        },
-        "required": ["count", "error_count"]
-      },
-      "ToolStatsSnapshot": {
-        "type": "object",
-        "properties": {
-          "tools": {
-            "type": "object",
-            "additionalProperties": {
-              "$ref": "#/components/schemas/ToolStat"
-            }
-          }
-        },
-        "required": ["tools"]
-      },
-      "TtsBackend": {
-        "description": "TTS backend identifier.",
-        "type": "string",
-        "enum": ["cartesia", "android", "fish"]
-      },
-      "TtsBlockEvent": {
-        "description": "A TTS block event emitted by the agent turn streams.",
-        "type": "object",
-        "properties": {
-          "data": {
-            "type": "string"
-          },
-          "type": {
-            "type": "string"
-          }
-        },
-        "required": ["type", "data"]
-      },
-      "TurnEvent": {
-        "description": "Events emitted while a streaming turn is in progress.",
-        "oneOf": [
-          {
-            "type": "object",
-            "properties": {
-              "data": {
-                "type": "string"
-              },
-              "type": {
-                "type": "string",
-                "const": "Thinking"
-              }
-            },
-            "required": ["type", "data"]
-          },
-          {
-            "type": "object",
-            "properties": {
-              "data": {
-                "type": "string"
-              },
-              "type": {
-                "type": "string",
-                "const": "Text"
-              }
-            },
-            "required": ["type", "data"]
-          },
-          {
-            "type": "object",
-            "properties": {
-              "data": {
-                "type": "object",
-                "properties": {
-                  "arguments": true,
-                  "call_id": {
-                    "type": "string"
-                  },
-                  "name": {
-                    "type": "string"
-                  }
-                },
-                "required": ["name", "call_id", "arguments"]
-              },
-              "type": {
-                "type": "string",
-                "const": "ToolCall"
-              }
-            },
-            "required": ["type", "data"]
-          },
-          {
-            "type": "object",
-            "properties": {
-              "data": {
-                "type": "object",
-                "properties": {
-                  "call_id": {
-                    "type": "string"
-                  },
-                  "content": {
-                    "type": "string"
-                  },
-                  "is_error": {
-                    "type": "boolean"
-                  },
-                  "name": {
-                    "type": "string"
-                  }
-                },
-                "required": ["name", "call_id", "content", "is_error"]
-              },
-              "type": {
-                "type": "string",
-                "const": "ToolResult"
-              }
-            },
-            "required": ["type", "data"]
-          },
-          {
-            "type": "object",
-            "properties": {
-              "data": {
-                "type": "string"
-              },
-              "type": {
-                "type": "string",
-                "const": "Error"
-              }
-            },
-            "required": ["type", "data"]
-          },
-          {
-            "type": "object",
-            "properties": {
-              "data": {
-                "$ref": "#/components/schemas/TurnResult"
-              },
-              "type": {
-                "type": "string",
-                "const": "Done"
-              }
-            },
-            "required": ["type", "data"]
-          }
-        ]
-      },
-      "TurnRequest": {
-        "type": "object",
-        "properties": {
-          "idempotency_key": {
-            "type": ["string", "null"]
-          },
-          "text": {
-            "type": "string"
-          }
-        },
-        "required": ["text"]
-      },
-      "TurnResult": {
-        "type": "object",
-        "properties": {
-          "approval_request": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ApprovalRequest"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "changes": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ChangeReceipt"
-            }
-          },
-          "presentation": {
-            "description": "Typed presentation derived from the turn's tool results (WI-1). `None`\nwhen no tool result maps to a presentation kind.",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Presentation"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "schedule_dirty": {
-            "type": "boolean"
-          },
-          "text": {
-            "type": "string"
-          }
-        },
-        "required": ["text", "changes", "schedule_dirty"]
-      },
-      "TurnResultDto": {
-        "type": "object",
-        "properties": {
-          "approval_request": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ApprovalRequest"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "changes": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ChangeReceipt"
-            }
-          },
-          "presentation": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Presentation"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "schedule_dirty": {
-            "type": "boolean"
-          },
-          "text": {
-            "type": "string"
-          }
-        },
-        "required": ["text", "changes", "schedule_dirty"]
-      },
-      "UpdateAgentAudioSettings": {
-        "type": "object",
-        "properties": {
-          "tts": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/UpdateAgentTtsSettings"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        }
-      },
-      "UpdateAgentLlmSettings": {
-        "type": "object",
-        "properties": {
-          "api_key": {
-            "type": ["string", "null"]
-          },
-          "base_url": {
-            "type": ["string", "null"]
-          },
-          "model": {
-            "type": ["string", "null"]
-          },
-          "permissions": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Permissions"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "provider": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/LlmProviderKind"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        }
-      },
-      "UpdateAgentSettings": {
-        "type": "object",
-        "properties": {
-          "audio": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/UpdateAgentAudioSettings"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "llm": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/UpdateAgentLlmSettings"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        }
-      },
-      "UpdateAgentTtsSettings": {
-        "type": "object",
-        "properties": {
-          "api_key": {
-            "type": ["string", "null"]
-          },
-          "backend": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/TtsBackend"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "language": {
-            "type": ["string", "null"]
-          },
-          "model": {
-            "type": ["string", "null"]
-          },
-          "sample_rate": {
-            "type": ["integer", "null"],
-            "format": "uint32",
-            "minimum": 0
-          },
-          "speed": {
-            "type": ["number", "null"],
-            "format": "float"
-          },
-          "voice_id": {
-            "type": ["string", "null"]
-          }
-        }
-      },
-      "UpdateSessionSettings": {
-        "type": "object",
-        "properties": {
-          "permissions": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Permissions"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          }
-        }
-      },
-      "UserInputAnswer": {
-        "description": "A user-supplied correction for one `UserInputQuestion`.",
-        "type": "object",
-        "properties": {
-          "text": {
-            "description": "The corrected text.",
-            "type": "string"
-          }
-        },
-        "required": ["text"]
-      },
-      "UserInputResolutionRequest": {
-        "type": "object",
-        "properties": {
-          "answers": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/UserInputAnswer"
-            }
-          }
-        },
-        "required": ["answers"]
-      },
-      "WorkState": {
-        "description": "State of a task's work session shown on a card.",
-        "type": "string",
-        "enum": ["not_started", "in_progress", "overdue"]
-      },
-      "WorkTransition": {
-        "description": "Result of a start / pause / progress / complete / delay / split mutation.",
-        "type": "object",
-        "properties": {
-          "detail": {
-            "description": "Human-readable detail (e.g. new quantity, total active minutes).",
-            "type": "string"
-          },
-          "kind": {
-            "$ref": "#/components/schemas/WorkTransitionKind"
-          },
-          "reference": {
-            "type": "string"
-          },
-          "title": {
-            "type": "string"
-          }
-        },
-        "required": ["kind", "reference", "title"]
-      },
-      "WorkTransitionKind": {
-        "description": "Kind of a recorded work transition.",
-        "oneOf": [
-          {
-            "type": "string",
-            "enum": ["start", "pause", "progress", "complete", "split"]
-          },
-          {
-            "description": "Reserved for the WI-2 delay / Snooze quick action (「延期」). No\n`ChangeOperation` or tool emits it yet, so it is currently not reachable\nfrom `from_tool_output`; it is kept now so the WI-2 capability and wire\nshape do not change the contract.",
-            "type": "string",
-            "const": "delay"
-          }
-        ]
       }
     }
   }

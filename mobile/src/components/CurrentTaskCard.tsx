@@ -15,6 +15,7 @@ interface CurrentTaskCardProps {
   onComplete: () => void;
   onDelay: () => void;
   onConsult: () => void;
+  onSettle?: (actionId: string) => void;
 }
 
 function formatTimeWindow(startAt?: string, endAt?: string): string {
@@ -133,6 +134,7 @@ function CurrentTaskCardImpl({
   onComplete,
   onDelay,
   onConsult,
+  onSettle,
 }: CurrentTaskCardProps) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
@@ -190,6 +192,44 @@ function CurrentTaskCardImpl({
       )}
     </PressableScale>
   );
+
+  if (card.settlement) {
+    const { settlement } = card;
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <View style={styles.meta}>
+            <Text style={styles.reference}>未確定時間の整理</Text>
+            <Text style={styles.title}>{settlement.question}</Text>
+          </View>
+          <View style={styles.badges}>
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>settlement</Text>
+            </View>
+          </View>
+        </View>
+        <View style={styles.actions}>
+          {settlement.act.actions.map((action) =>
+            actionButton(
+              action.label,
+              'play',
+              () => {
+                haptic.light();
+                onSettle?.(action.id);
+              },
+              { primary: true },
+            ),
+          )}
+          {settlement.shift.actions.map((action) =>
+            actionButton(action.label, 'time-outline', () => {
+              haptic.light();
+              onSettle?.(action.id);
+            }),
+          )}
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>

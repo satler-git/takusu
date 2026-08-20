@@ -2,9 +2,10 @@
 
 use std::collections::HashMap;
 
+use takusu_agent::coverage::{bootstrap_evaluation, compute_coverage};
 use takusu_agent::events::{
-    CoverageState, EvaluationGap, EvaluationScheduleEntry, EvaluationSnapshot, EvaluationTask,
-    EvaluationWork, GapKind, LedgerView, PlannerEvent, evaluate_events,
+    EvaluationGap, EvaluationScheduleEntry, EvaluationSnapshot, EvaluationTask, EvaluationWork,
+    GapKind, LedgerView, PlannerEvent, evaluate_events,
 };
 use takusu_contracts::{EvaluationInputs, EventDeliveryState, EventLedgerInsert, EventLedgerRow};
 use takusu_types::TaskStatus;
@@ -21,6 +22,10 @@ impl TakusuApp {
             .map_err(storage_to_app)
     }
 
+    pub async fn get_evaluation_inputs(&self) -> Result<EvaluationInputs, AppError> {
+        self.storage.get_evaluation_inputs().await.map_err(storage_to_app)
+    }
+
     /// Evaluate one consistent planner snapshot and persist newly discovered
     /// deterministic events. The caller is the resident authority; arbitration
     /// decides which device may call this method in the multi-device phase.
@@ -35,6 +40,7 @@ impl TakusuApp {
             schedule: raw_schedule,
             progress,
             ledger,
+            coverage,
         } = self
             .storage
             .get_evaluation_inputs()
@@ -104,6 +110,22 @@ impl TakusuApp {
 
         let tz = self.server_timezone().await?;
         let gaps = schedule_gaps(&schedule_entries, now, &tz)?;
+
+        let target_start = takusu_types::Timestamp(
+            takusu_types::parse_date_expression("today", &tz, false)
+                .map_err(|error| AppError::Internal(format!("day start: {error}")))?,
+        );
+        let target_end = takusu_types::Timestamp(
+            takusu_types::parse_date_expression("today", &tz, true)
+                .map_err(|error| AppError::Internal(format!("day end: {error}")))?,
+        );
+
+        let mut coverage = coverage;
+        if coverage.confirmations.is_empty() && coverage.unsettled_intervals.is_empty() {
+            coverage = bootstrap_evaluation(schedule_revision);
+        }
+        coverage.state = compute_coverage(&coverage, now, target_start, target_end);
+
         let snapshot = EvaluationSnapshot {
             schedule_revision,
             now,
@@ -112,10 +134,7 @@ impl TakusuApp {
             work,
             gaps,
             unplaced_task_ids: Vec::new(),
-            // WI-10 supplies the structured coverage computation. Until then,
-            // bootstrap is the safe authority and prompts intake rather than
-            // asserting that a current task is authoritative.
-            coverage: CoverageState::Bootstrap,
+            coverage,
             ledger: LedgerView {
                 committed_event_ids: ledger.into_iter().map(|row| row.id).collect(),
             },

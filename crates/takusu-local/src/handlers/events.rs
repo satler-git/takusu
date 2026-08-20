@@ -3,7 +3,8 @@ use axum::Json;
 use axum::extract::{Path, Query, State};
 use serde::{Deserialize, Serialize};
 use takusu_contracts::{
-    EventDeliveryState, EventLedgerInsert, EventLedgerRow, ScheduleRevisionResponse,
+    EvaluationInputs, EventDeliveryState, EventLedgerInsert, EventLedgerRow,
+    ScheduleRevisionResponse,
 };
 use takusu_local_lib::TokenClaims;
 use takusu_local_lib::error::AppError;
@@ -45,6 +46,12 @@ pub async fn revision(
     Ok(Json(ScheduleRevisionResponse {
         revision: state.app.get_schedule_revision().await?,
     }))
+}
+
+pub async fn snapshot(
+    State(state): State<AppState>,
+) -> Result<Json<EvaluationInputs>, HttpError> {
+    Ok(Json(state.app.get_evaluation_inputs().await?))
 }
 
 pub async fn evaluate_events(
