@@ -107,6 +107,9 @@ const makeStyles = (colors: ColorSet) =>
       flexDirection: 'row',
       alignItems: 'center',
       gap: 5,
+      // Do not let the row compress the label out of view on narrow screens;
+      // the actions wrap instead (#phase1).
+      flexShrink: 0,
     },
     primaryAction: {
       backgroundColor: colors.brand,
@@ -171,6 +174,8 @@ function CurrentTaskCardImpl({
       ]}
       onPress={onPress}
       disabled={disabled || isLoading}
+      accessibilityRole="button"
+      accessibilityLabel={label}
     >
       {icon && (
         <Ionicons
@@ -179,7 +184,11 @@ function CurrentTaskCardImpl({
           color={primary ? colors.onBrand : colors.textOnCard}
         />
       )}
-      <Text style={[styles.actionText, primary && styles.primaryActionText]}>
+      <Text
+        style={[styles.actionText, primary && styles.primaryActionText]}
+        numberOfLines={1}
+        ellipsizeMode="tail"
+      >
         {label}
       </Text>
       {isLoading && (
