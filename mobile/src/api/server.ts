@@ -18,10 +18,11 @@ export interface EnsureLocalServerOptions {
 
 function isAlreadyRunningError(err: unknown): boolean {
   const message = err instanceof Error ? err.message : String(err);
+  // With the current native layer, start() returns success when the server is
+  // already running, so these are only safety nets for stale exceptions.
   return (
     message.includes('already running') ||
-    message.includes('ERR_ALREADY_RUNNING') ||
-    message.includes('Address already in use')
+    message.includes('ERR_ALREADY_RUNNING')
   );
 }
 
@@ -135,13 +136,12 @@ export function ensureLocalServer(
     agentConfigJson,
   } = options;
 
+  // Always call start(), even when status() reports running. A background
+  // worker may own the Runtime; the foreground module must adopt it so this
+  // process holds an Arc and the server stays alive after the worker stops.
   const status = TakusuServerModule.status();
-  if (status.running) {
-    return new TakusuClient(`http://127.0.0.1:${status.port}`, rootToken);
-  }
-
   const startOptions: StartOptions = {
-    port,
+    port: status.running && status.port > 0 ? status.port : port,
     workersUrl,
     rootToken,
   };
