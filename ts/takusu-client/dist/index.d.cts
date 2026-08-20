@@ -61,6 +61,41 @@ interface components$1 {
             title?: string | null;
         };
         /**
+         * @description A recorded coverage confirmation (WI-10).
+         *
+         *     Confirms that a local period was covered: the user (or an intake/capture
+         *     flow) stated what happened during that interval.
+         */
+        CoverageConfirmationRow: {
+            calendar_health: string;
+            created_at: components$1['schemas']['Timestamp'];
+            end_at: components$1['schemas']['Timestamp'];
+            id: string;
+            operation_id?: string | null;
+            /** Format: int64 */
+            schedule_revision: number;
+            settled_at?: components$1['schemas']['Timestamp'] | null;
+            source: string;
+            start_at: components$1['schemas']['Timestamp'];
+            timezone: string;
+        };
+        /** @description Coverage data assembled for one planner evaluation (WI-10). */
+        CoverageEvaluation: {
+            confirmations: components$1['schemas']['CoverageConfirmationRow'][];
+            /** Format: int64 */
+            schedule_revision: number;
+            state: components$1['schemas']['CoverageState'];
+            unsettled_intervals: components$1['schemas']['UnsettledIntervalRow'][];
+        };
+        /**
+         * @description Coverage trust state consumed by the resident agent (WI-10).
+         *
+         *     Precedence is `bootstrap -> stale -> today-covered -> trusted`. A stale
+         *     state triggers a settlement prompt; today-covered makes the current task
+         *     authoritative; trusted is reached by a target-period procedure.
+         */
+        CoverageState: 'bootstrap' | 'today_covered' | 'trusted' | 'stale';
+        /**
          * @description Request body for creating a task comment (WI-1).
          *
          *     Contains only `content`. `author` is deliberately absent: it is assigned by
@@ -348,6 +383,51 @@ interface components$1 {
         EvaluateEventsRequest: {
             /** @default  */
             device_id: string;
+        };
+        /** @description Estimator distribution snapshot for a single task. */
+        EvaluationEstimator: {
+            /** Format: double */
+            mean_minutes: number;
+            /** Format: int64 */
+            revision: number;
+            /** Format: double */
+            sigma_minutes: number;
+        };
+        /**
+         * @description Raw inputs for one consistent planner-event evaluation.
+         *
+         *     The storage backend collects these in a single atomic read (or as close to
+         *     atomic as the backend supports) so the pure evaluator receives a coherent
+         *     snapshot. The caller still supplies `now`, gap classification, and coverage.
+         */
+        EvaluationInputs: {
+            /**
+             * @description Coverage trust state for the current evaluation (WI-10).
+             * @default {
+             *       "confirmations": [],
+             *       "schedule_revision": 0,
+             *       "state": "bootstrap",
+             *       "unsettled_intervals": []
+             *     }
+             */
+            coverage: components$1['schemas']['CoverageEvaluation'];
+            ledger: components$1['schemas']['EventLedgerRow'][];
+            progress: components$1['schemas']['EvaluationTaskProgress'][];
+            schedule: components$1['schemas']['ScheduleEntry'][];
+            /** Format: int64 */
+            schedule_revision: number;
+            tasks: components$1['schemas']['TaskRow'][];
+        };
+        /**
+         * @description Per-task progress for evaluation. Only in-progress tasks are included; the
+         *     estimator is pre-computed by the storage layer so callers do not have to
+         *     re-derive the fallback distribution.
+         */
+        EvaluationTaskProgress: {
+            estimator?: components$1['schemas']['EvaluationEstimator'] | null;
+            task_id: string;
+            /** Format: int64 */
+            total_active_minutes: number;
         };
         /**
          * @description Delivery state persisted by the resident event ledger (WI-9).
@@ -1163,6 +1243,17 @@ interface components$1 {
         };
         /** @enum {string} */
         TokenScope: 'read-write' | 'root';
+        /** @description An unresolved elapsed-time interval that needs settlement (WI-10 / WI-18). */
+        UnsettledIntervalRow: {
+            classification: string;
+            created_at: components$1['schemas']['Timestamp'];
+            end_at: components$1['schemas']['Timestamp'];
+            id: string;
+            operation_id?: string | null;
+            settled_at?: components$1['schemas']['Timestamp'] | null;
+            source: string;
+            start_at: components$1['schemas']['Timestamp'];
+        };
         UpdateGoogleCalSettings: {
             calendar_id?: string | null;
             client_id?: string | null;
@@ -1725,6 +1816,17 @@ interface components$1 {
                 title: string;
             } | null;
         };
+        /**
+         * @description Settlement prompt shown ahead of the current task when coverage is stale.
+         *
+         *     Mirrors a one-round-trip check-in so the same action rendering code can
+         *     handle it.
+         */
+        SettlementPrompt: {
+            act: components$1['schemas']['ActionGroup'];
+            question: string;
+            shift: components$1['schemas']['ActionGroup'];
+        };
         /** @description A server-sent event payload emitted by the agent turn streams. */
         SseEvent: components$1['schemas']['TurnEvent'] | components$1['schemas']['TtsBlockEvent'];
         /** @description A local notification to post at a task's start time. */
@@ -1834,6 +1936,8 @@ interface components$1 {
             end_at?: string | null;
             next_task?: string | null;
             reference: string;
+            /** @description Settlement prompt shown before this task when coverage is stale (WI-10). */
+            settlement?: components$1['schemas']['SettlementPrompt'] | null;
             start_at?: string | null;
             title: string;
             work_state: components$1['schemas']['WorkState'];
@@ -2025,6 +2129,13 @@ type SplitResult = S['SplitResult'];
 type CommentRow = S['CommentRow'];
 type CreateComment = S['CreateComment'];
 type CommentAuthor = S['CommentAuthor'];
+type EvaluationInputs = S['EvaluationInputs'];
+type CoverageState = S['CoverageState'];
+type CoverageEvaluation = S['CoverageEvaluation'];
+type AgentTurnResult = S['TurnResultDto'];
+type ApprovalResult = S['ApprovalResultDto'];
+type ChangeOperation = S['ChangeOperation'];
+type TargetKind = S['TargetKind'];
 type SyncTriggerResponse = S['SyncTriggerResponse'];
 type OAuthCallbackResponse = S['OAuthCallbackResponse'];
 type WindowMode = S['WindowMode'];
@@ -2036,10 +2147,6 @@ type GoogleCalSettings = S['GoogleCalSettingsOutput'];
 type DeleteAllGcalResponse = S['DeleteAllGcalResult'];
 type GoogleCalEventMapping = S['GoogleCalEventRow'];
 type UpdateGoogleCalSettings = S['UpdateGoogleCalSettings'];
-type AgentTurnResult = S['TurnResultDto'];
-type ApprovalResult = S['ApprovalResultDto'];
-type ChangeOperation = S['ChangeOperation'];
-type TargetKind = S['TargetKind'];
 declare function parseDepends(depends: string): string[];
 declare function parseDependsOn(dependsOn: string): string[];
 declare const WINDOW_MODE_DAY: "day";
@@ -2126,6 +2233,7 @@ declare class TakusuClient {
     }): Promise<{
         ok: boolean;
     }>;
+    getEvaluationSnapshot(): Promise<EvaluationInputs>;
 }
 
-export { type AgentTurnResult, ApiError, type ApprovalResult, type AttachWorkSession, type ChangeOperation, type CommentAuthor, type CommentRow, type Completion, type ConvertWorkSession, type CreateComment, type CreateHabit, type CreateHabitScheduledSpan, type CreateSkill, type CreateTask, type DeleteAllGcalFailure, type DeleteAllGcalResponse, type DependencyAnalysisResponse, type DependencyNode, type GenerateSchedule, type GoogleCalEventMapping, type GoogleCalSettings, type HabitDetail, type HabitEstimateRequest, type HabitEstimateResult, type HabitEstimateSample, type HabitEstimateStep, type HabitPreviewRequest, type HabitPreviewTask, type HabitRow, type HabitScheduledSpanRow, type HabitStepInput, type HabitStepRow, type IcalImportResult, type MoveEntryRequest, type MoveEntryResponse, type OAuthCallbackResponse, type ProgressEventRow, type RecordWorkSessionProgress, type RedundantDependency, type RescheduleRequest, type ScheduleEntry, type ScheduleRow, type SettingsRow, type SkillRow, type SplitResult, type SplitTask, type StartWorkSession, type SyncTriggerResponse, TakusuClient, type TargetKind, type TaskQuery, type TaskRow, type TaskStatus, type TokenCreateResponse, type TokenRow, type UpdateGoogleCalSettings, type UpdateHabit, type UpdateSettings, type UpdateSkill, type UpdateTask, WINDOW_MODE_DAY, WINDOW_MODE_PERIOD, type WindowMode, type WorkSessionProgressResult, type WorkSessionRow, type components, parseDepends, parseDependsOn, parseHorizonTaskIds, parseSchedule };
+export { type AgentTurnResult, ApiError, type ApprovalResult, type AttachWorkSession, type ChangeOperation, type CommentAuthor, type CommentRow, type Completion, type ConvertWorkSession, type CoverageEvaluation, type CoverageState, type CreateComment, type CreateHabit, type CreateHabitScheduledSpan, type CreateSkill, type CreateTask, type DeleteAllGcalFailure, type DeleteAllGcalResponse, type DependencyAnalysisResponse, type DependencyNode, type EvaluationInputs, type GenerateSchedule, type GoogleCalEventMapping, type GoogleCalSettings, type HabitDetail, type HabitEstimateRequest, type HabitEstimateResult, type HabitEstimateSample, type HabitEstimateStep, type HabitPreviewRequest, type HabitPreviewTask, type HabitRow, type HabitScheduledSpanRow, type HabitStepInput, type HabitStepRow, type IcalImportResult, type MoveEntryRequest, type MoveEntryResponse, type OAuthCallbackResponse, type ProgressEventRow, type RecordWorkSessionProgress, type RedundantDependency, type RescheduleRequest, type ScheduleEntry, type ScheduleRow, type SettingsRow, type SkillRow, type SplitResult, type SplitTask, type StartWorkSession, type SyncTriggerResponse, TakusuClient, type TargetKind, type TaskQuery, type TaskRow, type TaskStatus, type TokenCreateResponse, type TokenRow, type UpdateGoogleCalSettings, type UpdateHabit, type UpdateSettings, type UpdateSkill, type UpdateTask, WINDOW_MODE_DAY, WINDOW_MODE_PERIOD, type WindowMode, type WorkSessionProgressResult, type WorkSessionRow, type components, parseDepends, parseDependsOn, parseHorizonTaskIds, parseSchedule };

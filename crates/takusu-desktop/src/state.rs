@@ -40,7 +40,12 @@ impl ViewModel {
     /// Human-readable title for the tray tooltip / notification header.
     pub fn title(&self) -> String {
         match &self.presentation {
-            Some(Presentation::CurrentTask(card)) => format!("今: {}", card.title),
+            Some(Presentation::CurrentTask(card)) => {
+                if let Some(settlement) = &card.settlement {
+                    return format!("未確定: {}", settlement.question);
+                }
+                format!("今: {}", card.title)
+            }
             Some(Presentation::CheckIn(card)) => card.question.clone(),
             Some(Presentation::ScheduleAlert(alert)) => alert.message.clone(),
             _ => format!("takusu — {}", state_label(self.snapshot.state)),
@@ -117,13 +122,21 @@ impl DesktopState {
             Err(e) => e.into_inner(),
         };
         let mut out = Vec::new();
-        if let Some(Presentation::CurrentTask(_card)) = &guard.presentation {
-            // For the mock, the current task card can expose start/delay/progress/complete.
-            // Real quick-action capabilities come from the transport's `mint_capability`.
-            out.push(("開始".into(), None));
-            out.push(("10分ずらす".into(), None));
-            out.push(("進捗".into(), None));
-            out.push(("完了".into(), None));
+        if let Some(Presentation::CurrentTask(card)) = &guard.presentation {
+            if let Some(settlement) = &card.settlement {
+                for g in [&settlement.act, &settlement.shift] {
+                    for a in g.actions.as_slice() {
+                        out.push((a.label.clone(), a.capability.clone()));
+                    }
+                }
+            } else {
+                // For the mock, the current task card can expose start/delay/progress/complete.
+                // Real quick-action capabilities come from the transport's `mint_capability`.
+                out.push(("開始".into(), None));
+                out.push(("10分ずらす".into(), None));
+                out.push(("進捗".into(), None));
+                out.push(("完了".into(), None));
+            }
         }
         if let Some(Presentation::CheckIn(card)) = &guard.presentation {
             for g in [&card.act, &card.shift] {

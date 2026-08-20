@@ -9,6 +9,7 @@
 use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
+use takusu_client::{CoverageEvaluation, CoverageState};
 use takusu_types::TaskStatus;
 use takusu_types::Timestamp;
 use takusu_types::estimator::{
@@ -16,25 +17,15 @@ use takusu_types::estimator::{
 };
 
 use crate::presentation::{
-    Action, ActionGroup, ActionKind, CheckInCard, NonEmptyVec, Presentation,
+    Action, ActionGroup, ActionKind, CheckInCard, NonEmptyVec, Presentation, SettlementPrompt,
+    TaskCard, WorkState,
 };
+use crate::coverage::task_authority;
 
 /// Grace period before a missed start becomes a sync check-in.
 pub const NON_START_GRACE_MINUTES: i64 = 15;
 /// Minimum duration of an unclassified gap before a capture check-in.
 pub const UNCLASSIFIED_GAP_THRESHOLD_MINUTES: i64 = 30;
-
-/// Coverage state consumed by event presentation policy.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-#[derive(Default)]
-pub enum CoverageState {
-    #[default]
-    Bootstrap,
-    TodayCovered,
-    Trusted,
-    Stale,
-}
 
 /// A task projection needed by the evaluator.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -120,7 +111,7 @@ pub struct EvaluationSnapshot {
     /// Tasks that the planner could not place during generation.
     #[serde(default)]
     pub unplaced_task_ids: Vec<String>,
-    pub coverage: CoverageState,
+    pub coverage: CoverageEvaluation,
     pub ledger: LedgerView,
     #[serde(default)]
     pub sleep_impact: Option<SleepImpact>,
@@ -138,6 +129,8 @@ pub enum PlannerEventKind {
     CarriedOverIncomplete,
     ScheduleGenerationFailure,
     SleepImpact,
+    /// The current task card with coverage authority and optional settlement prompt.
+    CurrentTask,
 }
 
 impl PlannerEventKind {
@@ -151,6 +144,7 @@ impl PlannerEventKind {
             Self::CarriedOverIncomplete => "carried_over_incomplete",
             Self::ScheduleGenerationFailure => "schedule_generation_failure",
             Self::SleepImpact => "sleep_impact",
+            Self::CurrentTask => "current_task",
         }
     }
 }
@@ -398,6 +392,11 @@ pub fn evaluate_events(snapshot: &EvaluationSnapshot) -> EvaluationResult {
     }
 
     events.sort_by(|left, right| left.id.cmp(&right.id));
+
+    if let Some(event) = current_task_event(snapshot) {
+        push_if_new(&mut events, &snapshot.ledger, event);
+    }
+
     EvaluationResult {
         due_events: events,
         next_eval_at,
@@ -674,6 +673,110 @@ fn add_seconds(timestamp: Timestamp, seconds: f64) -> Timestamp {
     Timestamp::from_second(timestamp.as_second().saturating_add(seconds)).unwrap_or(timestamp)
 }
 
+fn current_task_event(snapshot: &EvaluationSnapshot) -> Option<PlannerEvent> {
+    // Pick the current task: in-progress first, then the earliest scheduled
+    // task whose interval contains `now`, then the earliest scheduled task.
+    let candidate = snapshot
+        .tasks
+        .iter()
+        .filter(|t| !is_terminal(t.status))
+        .min_by_key(|t| {
+            let priority = match t.status {
+                TaskStatus::InProgress => 0,
+                _ if t.scheduled_at.is_some_and(|s| s <= snapshot.now) => 1,
+                _ => 2,
+            };
+            (priority, t.scheduled_at.unwrap_or(snapshot.now))
+        })?;
+
+    let authority = task_authority(snapshot.coverage.state);
+    let settlement = build_settlement(snapshot);
+
+    let work_state = if candidate.status == TaskStatus::InProgress {
+        WorkState::InProgress
+    } else if candidate.deadline_at < snapshot.now {
+        WorkState::Overdue
+    } else {
+        WorkState::NotStarted
+    };
+
+    let start_at = candidate
+        .scheduled_at
+        .map(|t| t.to_string())
+        .or_else(|| Some(snapshot.now.to_string()));
+    let end_at = Some(candidate.deadline_at.to_string());
+
+    let id = event_id(
+        PlannerEventKind::CurrentTask,
+        Some(&candidate.id),
+        snapshot.schedule_revision,
+        None,
+        snapshot.now,
+        "current",
+    );
+
+    let presentation = Presentation::CurrentTask(TaskCard {
+        title: candidate.title.clone(),
+        reference: format!("#{}", candidate.display_id),
+        start_at,
+        end_at,
+        work_state,
+        authority,
+        next_task: None,
+        settlement,
+    });
+
+    Some(PlannerEvent {
+        id,
+        kind: PlannerEventKind::CurrentTask,
+        task_ref: Some(TaskRef {
+            task_id: candidate.id.clone(),
+            display_id: candidate.display_id,
+        }),
+        band: None,
+        presentation,
+        urgency: Urgency::Normal,
+        schedule_revision: snapshot.schedule_revision,
+        distribution_revision: None,
+        due_at: snapshot.now,
+    })
+}
+
+fn build_settlement(snapshot: &EvaluationSnapshot) -> Option<SettlementPrompt> {
+    if snapshot.coverage.state != CoverageState::Stale {
+        return None;
+    }
+    let interval = snapshot.coverage.unsettled_intervals.first()?;
+    let start = interval.start_at.to_string();
+    let end = interval.end_at.to_string();
+    let question = format!("{start}〜{end} の未確定時間を整理してください");
+    let act = ActionGroup {
+        title: "行動".into(),
+        actions: NonEmptyVec::new(vec![Action {
+            id: "settle-start".into(),
+            label: "この時間で作業".into(),
+            kind: ActionKind::Immediate,
+            capability: None,
+        }])
+        .expect("one action is non-empty"),
+    };
+    let shift = ActionGroup {
+        title: "ズラす".into(),
+        actions: NonEmptyVec::new(vec![Action {
+            id: "settle-ignore".into(),
+            label: "後で決める".into(),
+            kind: ActionKind::Panel,
+            capability: None,
+        }])
+        .expect("one action is non-empty"),
+    };
+    Some(SettlementPrompt {
+        question,
+        act,
+        shift,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -712,10 +815,14 @@ mod tests {
             .tasks
             .push(task("task-1", 9_000, TaskStatus::Scheduled));
         let result = evaluate_events(&snapshot);
-        assert_eq!(result.due_events.len(), 1);
+        assert_eq!(result.due_events.len(), 2);
         assert!(result.due_events.iter().any(|event| {
             event.kind == PlannerEventKind::TaskStartTimeReached
                 && matches!(event.presentation, Presentation::CheckIn(_))
+        }));
+        assert!(result.due_events.iter().any(|event| {
+            event.kind == PlannerEventKind::CurrentTask
+                && matches!(event.presentation, Presentation::CurrentTask(_))
         }));
         let repeated = evaluate_events(&snapshot);
         assert_eq!(

@@ -3,16 +3,18 @@ use jiff::tz::TimeZone;
 use sqlx::SqlitePool;
 use sqlx::sqlite::SqlitePoolOptions;
 use takusu_contracts::{
-    AttachWorkSession, CommentRow, ConvertWorkSession, CreateHabit, CreateHabitScheduledSpan,
-    CreateMemory, CreateSkill, CreateTask, EstimatorStateRow, EvaluationInputs, EventDeliveryState,
-    EventLedgerInsert, EventLedgerRow, GoogleCalEventRow, GoogleCalSettingsRow, HabitRow,
-    HabitScheduledSpanRow, HabitStepEstimateInput, HabitStepInput, HabitStepRow,
+    AttachWorkSession, CommentRow, ConvertWorkSession, CoverageConfirmationRow, CoverageEvaluation,
+    CoverageState, CreateCoverageConfirmation, CreateHabit, CreateHabitScheduledSpan, CreateMemory,
+    CreateSkill, CreateTask, CreateUnsettledInterval, EstimatorStateRow, EvaluationInputs,
+    EventDeliveryState, EventLedgerInsert, EventLedgerRow, GoogleCalEventRow, GoogleCalSettingsRow,
+    HabitRow, HabitScheduledSpanRow, HabitStepEstimateInput, HabitStepInput, HabitStepRow,
     MemoryInjectionQuery, MemoryInjectionResult, MemoryKindCounts, MemoryQuery, MemoryRow,
     MoveEntryResponse, RecordWorkSessionProgress, SaveScheduleRequest, ScheduleEntry, ScheduleRow,
     SettingsRow, SimilarTaskQuery, SimilarTaskRow, SkillRow, SplitResult, SplitTask,
     StartWorkSession, Storage, StorageError, TaskProgress, TaskQuery, TaskRow, TokenCreateResponse,
-    TokenRow, UpdateGoogleCalSettings, UpdateHabit, UpdateMemory, UpdateSettings, UpdateSkill,
-    UpdateTask, WorkSessionProgressResult, WorkSessionRow, storage::StorageResult,
+    TokenRow, UnsettledIntervalRow, UpdateGoogleCalSettings, UpdateHabit, UpdateMemory,
+    UpdateSettings, UpdateSkill, UpdateTask, WorkSessionProgressResult, WorkSessionRow,
+    storage::StorageResult,
 };
 use takusu_search::search::{EvalContext, filter_tasks};
 use takusu_types::Minutes;
@@ -67,6 +69,7 @@ const MIGRATION_030: &str = include_str!("../migrations/030_gcal_reminder_minute
 const MIGRATION_031: &str = include_str!("../migrations/031_gcal_event_defaults.sql");
 const MIGRATION_032: &str = include_str!("../migrations/032_estimator_state.sql");
 const MIGRATION_033: &str = include_str!("../migrations/033_event_ledger.sql");
+const MIGRATION_034: &str = include_str!("../migrations/034_coverage.sql");
 
 mod work_session;
 
@@ -508,6 +511,7 @@ impl SqliteStorage {
 
         sqlx::raw_sql(MIGRATION_032).execute(&pool).await?;
         sqlx::raw_sql(MIGRATION_033).execute(&pool).await?;
+        sqlx::raw_sql(MIGRATION_034).execute(&pool).await?;
 
         Ok(Self { pool, jwt_secret })
     }
@@ -2656,6 +2660,8 @@ impl Storage for SqliteStorage {
             .collect();
         let progress = work_session::batch_evaluation_progress(&mut tx, &in_progress).await?;
 
+        let coverage = self.get_coverage_evaluation_in_tx(&mut tx).await?;
+
         tx.commit().await.map_err(map_err)?;
 
         Ok(EvaluationInputs {
@@ -2664,7 +2670,106 @@ impl Storage for SqliteStorage {
             schedule,
             progress,
             ledger,
+            coverage,
         })
+    }
+
+    async fn get_coverage_evaluation(&self) -> StorageResult<CoverageEvaluation> {
+        let mut tx = self.pool.begin().await.map_err(map_err)?;
+        let coverage = self.get_coverage_evaluation_in_tx(&mut tx).await?;
+        tx.commit().await.map_err(map_err)?;
+        Ok(coverage)
+    }
+
+    async fn create_coverage_confirmation(
+        &self,
+        body: &CreateCoverageConfirmation,
+    ) -> StorageResult<CoverageConfirmationRow> {
+        let mut tx = self.pool.begin().await.map_err(map_err)?;
+        let id = uuid::Uuid::now_v7().to_string();
+        let now = takusu_types::now_rfc3339();
+        sqlx::query(
+            "INSERT INTO coverage_confirmations (id, start_at, end_at, timezone, source, schedule_revision, calendar_health, created_at, operation_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(&id)
+        .bind(body.start_at)
+        .bind(body.end_at)
+        .bind(&body.timezone)
+        .bind(&body.source)
+        .bind(body.schedule_revision)
+        .bind(&body.calendar_health)
+        .bind(&now)
+        .bind(body.operation_id.as_deref())
+        .execute(&mut *tx)
+        .await
+        .map_err(map_err)?;
+        let row: CoverageConfirmationRow = sqlx::query_as::<_, CoverageConfirmationRow>(
+            "SELECT id, start_at, end_at, timezone, source, schedule_revision, calendar_health, created_at, settled_at, operation_id FROM coverage_confirmations WHERE id = ?",
+        )
+        .bind(&id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(map_err)?;
+        tx.commit().await.map_err(map_err)?;
+        Ok(row)
+    }
+
+    async fn create_unsettled_interval(
+        &self,
+        body: &CreateUnsettledInterval,
+    ) -> StorageResult<UnsettledIntervalRow> {
+        let mut tx = self.pool.begin().await.map_err(map_err)?;
+        let id = uuid::Uuid::now_v7().to_string();
+        let now = takusu_types::now_rfc3339();
+        sqlx::query(
+            "INSERT INTO unsettled_intervals (id, start_at, end_at, classification, source, created_at, operation_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(&id)
+        .bind(body.start_at)
+        .bind(body.end_at)
+        .bind(&body.classification)
+        .bind(&body.source)
+        .bind(&now)
+        .bind(body.operation_id.as_deref())
+        .execute(&mut *tx)
+        .await
+        .map_err(map_err)?;
+        let row: UnsettledIntervalRow = sqlx::query_as::<_, UnsettledIntervalRow>(
+            "SELECT id, start_at, end_at, classification, source, created_at, settled_at, operation_id FROM unsettled_intervals WHERE id = ?",
+        )
+        .bind(&id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(map_err)?;
+        tx.commit().await.map_err(map_err)?;
+        Ok(row)
+    }
+
+    async fn settle_unsettled_interval(
+        &self,
+        id: &str,
+        operation_id: &str,
+    ) -> StorageResult<UnsettledIntervalRow> {
+        let mut tx = self.pool.begin().await.map_err(map_err)?;
+        let now = takusu_types::now_rfc3339();
+        sqlx::query(
+            "UPDATE unsettled_intervals SET settled_at = ?, operation_id = ? WHERE id = ?",
+        )
+        .bind(&now)
+        .bind(operation_id)
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .map_err(map_err)?;
+        let row: UnsettledIntervalRow = sqlx::query_as::<_, UnsettledIntervalRow>(
+            "SELECT id, start_at, end_at, classification, source, created_at, settled_at, operation_id FROM unsettled_intervals WHERE id = ?",
+        )
+        .bind(id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(map_err)?;
+        tx.commit().await.map_err(map_err)?;
+        Ok(row)
     }
 
     async fn record_move_idempotency(
@@ -2719,6 +2824,45 @@ async fn filter_rows_with_query(
 }
 
 impl SqliteStorage {
+    async fn get_coverage_evaluation_in_tx(
+        &self,
+        tx: &mut sqlx::SqliteConnection,
+    ) -> StorageResult<CoverageEvaluation> {
+        let confirmations: Vec<CoverageConfirmationRow> = sqlx::query_as::<_, CoverageConfirmationRow>(
+            "SELECT id, start_at, end_at, timezone, source, schedule_revision, calendar_health, created_at, settled_at, operation_id FROM coverage_confirmations ORDER BY created_at DESC",
+        )
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(map_err)?;
+
+        let unsettled: Vec<UnsettledIntervalRow> = sqlx::query_as::<_, UnsettledIntervalRow>(
+            "SELECT id, start_at, end_at, classification, source, created_at, settled_at, operation_id FROM unsettled_intervals WHERE settled_at IS NULL ORDER BY start_at",
+        )
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(map_err)?;
+
+        // Storage returns the raw coverage records. The canonical trust state
+        // is computed by `takusu_agent::coverage::compute_coverage` using the
+        // caller's `now` and target period, so storage intentionally does not
+        // pre-compute a state.
+        let state = CoverageState::Bootstrap;
+
+        let schedule_revision: i64 = sqlx::query_scalar::<_, i64>(
+            "SELECT COALESCE(MAX(schedule_revision), 0) FROM coverage_confirmations",
+        )
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(map_err)?;
+
+        Ok(CoverageEvaluation {
+            state,
+            confirmations,
+            unsettled_intervals: unsettled,
+            schedule_revision,
+        })
+    }
+
     async fn memory_counts(&self) -> StorageResult<MemoryKindCounts> {
         let rows: Vec<(String, i64)> = sqlx::query_as(
             "SELECT kind, COUNT(*) AS n FROM memories WHERE kind IN ('proper_noun', 'fact') GROUP BY kind",
@@ -3623,5 +3767,70 @@ mod tests {
             rejected.is_err(),
             "task_note should be rejected after migration"
         );
+    }
+
+    #[tokio::test]
+    async fn coverage_evaluation_round_trip() {
+        let cfg = LocalConfig {
+            db: "sqlite::memory:".into(),
+            jwt_secret: "test-secret".into(),
+            ..Default::default()
+        };
+        let storage = SqliteStorage::init(&cfg).await.unwrap();
+
+        let settings = UpdateSettings {
+            tz: Some("Asia/Tokyo".into()),
+            sleep_start: Some(takusu_types::TimeOfDay::new(22, 0).unwrap()),
+            sleep_end: Some(takusu_types::TimeOfDay::new(6, 0).unwrap()),
+            comfortable_minutes: None,
+            maximum_minutes: None,
+            solver: Some(takusu_types::Solver::Sa),
+            time_budget_ms: None,
+            seed: None,
+            warm_start: None,
+            plan_length_days: Some(14),
+        };
+        storage.update_settings(&settings).await.unwrap();
+
+        let today: takusu_types::Timestamp =
+            "2026-08-20T00:00:00+09:00".parse().unwrap();
+        let confirmation = CreateCoverageConfirmation {
+            start_at: today,
+            end_at: "2026-08-20T23:59:59+09:00".parse().unwrap(),
+            timezone: "Asia/Tokyo".into(),
+            source: "user".into(),
+            schedule_revision: 7,
+            calendar_health: "healthy".into(),
+            operation_id: Some("op-1".into()),
+        };
+        storage
+            .create_coverage_confirmation(&confirmation)
+            .await
+            .unwrap();
+
+        let interval = CreateUnsettledInterval {
+            start_at: "2026-08-20T12:00:00+09:00".parse().unwrap(),
+            end_at: "2026-08-20T12:30:00+09:00".parse().unwrap(),
+            classification: "unclassified".into(),
+            source: "calendar".into(),
+            operation_id: None,
+        };
+        let created = storage.create_unsettled_interval(&interval).await.unwrap();
+
+        let evaluation = storage.get_coverage_evaluation().await.unwrap();
+        // Storage returns the raw records; the canonical state is computed by
+        // `takusu_agent::coverage::compute_coverage` with the caller's `now`.
+        assert_eq!(evaluation.state, CoverageState::Bootstrap);
+        assert_eq!(evaluation.confirmations.len(), 1);
+        assert!(!evaluation.confirmations[0].id.is_empty());
+        assert_eq!(evaluation.unsettled_intervals.len(), 1);
+        assert_eq!(evaluation.unsettled_intervals[0].id, created.id);
+
+        storage
+            .settle_unsettled_interval(&created.id, "settled-op")
+            .await
+            .unwrap();
+        let after_settle = storage.get_coverage_evaluation().await.unwrap();
+        assert_eq!(after_settle.unsettled_intervals.len(), 0);
     }
 }

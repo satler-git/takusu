@@ -4,16 +4,17 @@ use async_trait::async_trait;
 use takusu_contracts::storage::StorageResult;
 use takusu_contracts::validate::validate_task_datetimes;
 use takusu_contracts::{
-    AttachWorkSession, CommentRow, ConvertWorkSession, CreateHabit, CreateHabitScheduledSpan,
-    CreateMemory, CreateSkill, CreateTask, EstimatorStateRow, EvaluationInputs, EventDeliveryState,
-    EventLedgerInsert, EventLedgerRow, GoogleCalEventRow, GoogleCalSettingsRow, HabitRow,
-    HabitScheduledSpanRow, HabitStepEstimateInput, HabitStepInput, HabitStepRow,
+    AttachWorkSession, CommentRow, ConvertWorkSession, CoverageConfirmationRow, CoverageEvaluation,
+    CoverageState, CreateCoverageConfirmation, CreateHabit, CreateHabitScheduledSpan, CreateMemory,
+    CreateSkill, CreateTask, CreateUnsettledInterval, EstimatorStateRow, EvaluationInputs,
+    EventDeliveryState, EventLedgerInsert, EventLedgerRow, GoogleCalEventRow, GoogleCalSettingsRow,
+    HabitRow, HabitScheduledSpanRow, HabitStepEstimateInput, HabitStepInput, HabitStepRow,
     MemoryInjectionQuery, MemoryInjectionResult, MemoryQuery, MemoryRow, MoveEntryResponse,
     ProgressEventRow, RecordWorkSessionProgress, SaveScheduleRequest, ScheduleRow, SettingsRow,
     SimilarTaskQuery, SimilarTaskRow, SkillRow, SplitResult, SplitTask, StartWorkSession, Storage,
     StorageError, TaskProgress, TaskQuery, TaskRow, TokenCreateResponse, TokenRow,
-    UpdateGoogleCalSettings, UpdateHabit, UpdateMemory, UpdateSettings, UpdateSkill, UpdateTask,
-    WorkSessionProgressResult, WorkSessionRow,
+    UnsettledIntervalRow, UpdateGoogleCalSettings, UpdateHabit, UpdateMemory, UpdateSettings,
+    UpdateSkill, UpdateTask, WorkSessionProgressResult, WorkSessionRow,
 };
 use takusu_types::estimator::effective_distribution;
 use takusu_types::jwt::{DEFAULT_TOKEN_TTL_SECONDS, generate_token_jwt};
@@ -2827,6 +2828,7 @@ impl Storage for D1Storage {
         let schedule_revision = self.get_schedule_revision().await?;
 
         let progress = batch_evaluation_progress(&self.db, &tasks).await?;
+        let coverage = self.get_coverage_evaluation().await?;
 
         Ok(EvaluationInputs {
             schedule_revision,
@@ -2836,7 +2838,126 @@ impl Storage for D1Storage {
                 .unwrap_or_default(),
             progress,
             ledger,
+            coverage,
         })
+    }
+
+    async fn get_coverage_evaluation(&self) -> StorageResult<CoverageEvaluation> {
+        let stmt = self.db.prepare(
+            "SELECT id, start_at, end_at, timezone, source, schedule_revision, calendar_health, created_at, settled_at, operation_id FROM coverage_confirmations ORDER BY created_at DESC",
+        );
+        let confirmations: Vec<CoverageConfirmationRow> = d1_all(&stmt).await?;
+
+        let stmt = self.db.prepare(
+            "SELECT id, start_at, end_at, classification, source, created_at, settled_at, operation_id FROM unsettled_intervals WHERE settled_at IS NULL ORDER BY start_at",
+        );
+        let unsettled: Vec<UnsettledIntervalRow> = d1_all(&stmt).await?;
+
+        let schedule_revision_stmt = self
+            .db
+            .prepare("SELECT COALESCE(MAX(schedule_revision), 0) AS value FROM coverage_confirmations");
+        let schedule_revision: i64 = d1_first::<serde_json::Value>(&schedule_revision_stmt)
+            .await?
+            .and_then(|v| v.get("value").and_then(|v| v.as_i64()))
+            .unwrap_or(0);
+
+        Ok(CoverageEvaluation {
+            state: CoverageState::Bootstrap,
+            confirmations,
+            unsettled_intervals: unsettled,
+            schedule_revision,
+        })
+    }
+
+    async fn create_coverage_confirmation(
+        &self,
+        body: &CreateCoverageConfirmation,
+    ) -> StorageResult<CoverageConfirmationRow> {
+        let id = uuid::Uuid::now_v7().to_string();
+        let stmt = self.db.prepare(
+            "INSERT INTO coverage_confirmations (id, start_at, end_at, timezone, source, schedule_revision, calendar_health, created_at, operation_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), ?8)",
+        );
+        stmt.bind(&[
+            JsValue::from_str(&id),
+            JsValue::from_str(&body.start_at.to_string()),
+            JsValue::from_str(&body.end_at.to_string()),
+            JsValue::from_str(&body.timezone),
+            JsValue::from_str(&body.source),
+            JsValue::from_f64(body.schedule_revision as f64),
+            JsValue::from_str(&body.calendar_health),
+            body.operation_id
+                .as_deref()
+                .map(JsValue::from_str)
+                .unwrap_or(JsValue::NULL),
+        ])
+        .map_err(d1_err)?
+        .run()
+        .await
+        .map_err(d1_err)?;
+
+        let stmt = self.db.prepare(
+            "SELECT id, start_at, end_at, timezone, source, schedule_revision, calendar_health, created_at, settled_at, operation_id FROM coverage_confirmations WHERE id = ?1",
+        );
+        let stmt = stmt.bind(&[JsValue::from_str(&id)]).map_err(d1_err)?;
+        d1_first::<CoverageConfirmationRow>(&stmt)
+            .await?
+            .ok_or_else(|| StorageError::NotFound("coverage confirmation not found".into()))
+    }
+
+    async fn create_unsettled_interval(
+        &self,
+        body: &CreateUnsettledInterval,
+    ) -> StorageResult<UnsettledIntervalRow> {
+        let id = uuid::Uuid::now_v7().to_string();
+        let stmt = self.db.prepare(
+            "INSERT INTO unsettled_intervals (id, start_at, end_at, classification, source, created_at, operation_id) VALUES (?1, ?2, ?3, ?4, ?5, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), ?6)",
+        );
+        stmt.bind(&[
+            JsValue::from_str(&id),
+            JsValue::from_str(&body.start_at.to_string()),
+            JsValue::from_str(&body.end_at.to_string()),
+            JsValue::from_str(&body.classification),
+            JsValue::from_str(&body.source),
+            body.operation_id
+                .as_deref()
+                .map(JsValue::from_str)
+                .unwrap_or(JsValue::NULL),
+        ])
+        .map_err(d1_err)?
+        .run()
+        .await
+        .map_err(d1_err)?;
+
+        let stmt = self.db.prepare(
+            "SELECT id, start_at, end_at, classification, source, created_at, settled_at, operation_id FROM unsettled_intervals WHERE id = ?1",
+        );
+        let stmt = stmt.bind(&[JsValue::from_str(&id)]).map_err(d1_err)?;
+        d1_first::<UnsettledIntervalRow>(&stmt)
+            .await?
+            .ok_or_else(|| StorageError::NotFound("unsettled interval not found".into()))
+    }
+
+    async fn settle_unsettled_interval(
+        &self,
+        id: &str,
+        operation_id: &str,
+    ) -> StorageResult<UnsettledIntervalRow> {
+        let stmt = self.db.prepare(
+            "UPDATE unsettled_intervals SET settled_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), operation_id = ?1 WHERE id = ?2",
+        );
+        stmt.bind(&[JsValue::from_str(operation_id), JsValue::from_str(id)])
+            .map_err(d1_err)?
+            .run()
+            .await
+            .map_err(d1_err)?;
+
+        let stmt = self.db.prepare(
+            "SELECT id, start_at, end_at, classification, source, created_at, settled_at, operation_id FROM unsettled_intervals WHERE id = ?1",
+        );
+        let stmt = stmt.bind(&[JsValue::from_str(id)]).map_err(d1_err)?;
+        d1_first::<UnsettledIntervalRow>(&stmt)
+            .await?
+            .ok_or_else(|| StorageError::NotFound("unsettled interval not found".into()))
     }
 
     async fn get_schedule_revision(&self) -> StorageResult<i64> {

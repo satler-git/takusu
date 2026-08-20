@@ -5,6 +5,7 @@ import { PressableScale } from '@/src/components/PressableScale';
 import { haptic } from '@/src/components/haptics';
 import { useTheme, type ColorSet } from '@/src/theme';
 import type { TaskCard, WorkState } from '@/src/api/agentTypes';
+import { formatTimeWindow } from '@/src/utils/time';
 
 interface CurrentTaskCardProps {
   card: TaskCard;
@@ -15,18 +16,7 @@ interface CurrentTaskCardProps {
   onComplete: () => void;
   onDelay: () => void;
   onConsult: () => void;
-}
-
-function formatTimeWindow(startAt?: string, endAt?: string): string {
-  if (!startAt && !endAt) return '予定なし';
-  const format = (s: string) =>
-    new Date(s).toLocaleTimeString('ja-JP', {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    });
-  if (startAt && endAt) return `${format(startAt)} – ${format(endAt)}`;
-  return startAt ? format(startAt) : endAt ? format(endAt) : '';
+  onSettle?: (actionId: string) => void;
 }
 
 function stateLabel(state: WorkState): string {
@@ -133,6 +123,7 @@ function CurrentTaskCardImpl({
   onComplete,
   onDelay,
   onConsult,
+  onSettle,
 }: CurrentTaskCardProps) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
@@ -190,6 +181,44 @@ function CurrentTaskCardImpl({
       )}
     </PressableScale>
   );
+
+  if (card.settlement) {
+    const { settlement } = card;
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <View style={styles.meta}>
+            <Text style={styles.reference}>未確定時間の整理</Text>
+            <Text style={styles.title}>{settlement.question}</Text>
+          </View>
+          <View style={styles.badges}>
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>未確定</Text>
+            </View>
+          </View>
+        </View>
+        <View style={styles.actions}>
+          {settlement.act.actions.map((action) =>
+            actionButton(
+              action.label,
+              'play',
+              () => {
+                haptic.light();
+                onSettle?.(action.id);
+              },
+              { primary: true },
+            ),
+          )}
+          {settlement.shift.actions.map((action) =>
+            actionButton(action.label, 'time-outline', () => {
+              haptic.light();
+              onSettle?.(action.id);
+            }),
+          )}
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>

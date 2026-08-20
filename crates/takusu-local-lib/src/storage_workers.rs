@@ -8,16 +8,17 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::json;
 use takusu_contracts::{
-    ApplyHabitEstimateRequest, AttachWorkSession, CommentRow, ConvertWorkSession, CreateHabit,
-    CreateHabitScheduledSpan, CreateMemory, CreateSkill, CreateTask, EstimatorStateRow,
-    EvaluationInputs, EventDeliveryState, EventLedgerInsert, EventLedgerRow, GoogleCalEventRow,
-    GoogleCalSettingsRow, HabitRow, HabitScheduledSpanRow, HabitStepEstimateInput, HabitStepInput,
-    HabitStepRow, MemoryInjectionQuery, MemoryInjectionResult, MemoryQuery, MemoryRow,
-    RecordWorkSessionProgress, SaveScheduleRequest, ScheduleRow, SettingsRow, SimilarTaskQuery,
-    SimilarTaskRow, SkillRow, SplitResult, SplitTask, StartWorkSession, Storage, StorageError,
-    TaskProgress, TaskQuery, TaskRow, TokenCreateResponse, TokenRow, UpdateGoogleCalSettings,
-    UpdateHabit, UpdateMemory, UpdateSettings, UpdateSkill, UpdateTask, WorkSessionProgressResult,
-    WorkSessionRow, storage::StorageResult,
+    ApplyHabitEstimateRequest, AttachWorkSession, CommentRow, ConvertWorkSession,
+    CoverageConfirmationRow, CoverageEvaluation, CreateCoverageConfirmation, CreateHabit,
+    CreateHabitScheduledSpan, CreateMemory, CreateSkill, CreateTask, CreateUnsettledInterval,
+    EstimatorStateRow, EvaluationInputs, EventDeliveryState, EventLedgerInsert, EventLedgerRow,
+    GoogleCalEventRow, GoogleCalSettingsRow, HabitRow, HabitScheduledSpanRow, HabitStepEstimateInput,
+    HabitStepInput, HabitStepRow, MemoryInjectionQuery, MemoryInjectionResult, MemoryQuery,
+    MemoryRow, RecordWorkSessionProgress, SaveScheduleRequest, ScheduleRow, SettingsRow,
+    SimilarTaskQuery, SimilarTaskRow, SkillRow, SplitResult, SplitTask, StartWorkSession, Storage,
+    StorageError, TaskProgress, TaskQuery, TaskRow, TokenCreateResponse, TokenRow,
+    UnsettledIntervalRow, UpdateGoogleCalSettings, UpdateHabit, UpdateMemory, UpdateSettings,
+    UpdateSkill, UpdateTask, WorkSessionProgressResult, WorkSessionRow, storage::StorageResult,
 };
 use takusu_types::CommentAuthor;
 use takusu_types::EnumLabel;
@@ -1238,6 +1239,42 @@ impl Storage for WorkersStorage {
             None,
         )
         .await
+    }
+
+    async fn get_coverage_evaluation(&self) -> StorageResult<CoverageEvaluation> {
+        // The worker snapshot already includes coverage; this standalone call is
+        // not exposed over HTTP yet, so callers should use get_evaluation_inputs.
+        Err(StorageError::Internal(
+            "standalone coverage evaluation is not supported over workers".into(),
+        ))
+    }
+
+    async fn create_coverage_confirmation(
+        &self,
+        _body: &CreateCoverageConfirmation,
+    ) -> StorageResult<CoverageConfirmationRow> {
+        Err(StorageError::Internal(
+            "coverage confirmations are not supported over workers".into(),
+        ))
+    }
+
+    async fn create_unsettled_interval(
+        &self,
+        _body: &CreateUnsettledInterval,
+    ) -> StorageResult<UnsettledIntervalRow> {
+        Err(StorageError::Internal(
+            "unsettled intervals are not supported over workers".into(),
+        ))
+    }
+
+    async fn settle_unsettled_interval(
+        &self,
+        _id: &str,
+        _operation_id: &str,
+    ) -> StorageResult<UnsettledIntervalRow> {
+        Err(StorageError::Internal(
+            "unsettled intervals are not supported over workers".into(),
+        ))
     }
 
     async fn split_task(
