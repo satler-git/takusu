@@ -108,6 +108,17 @@ pub enum WorkState {
     Overdue,
 }
 
+/// Settlement prompt shown ahead of the current task when coverage is stale.
+///
+/// Mirrors a one-round-trip check-in so the same action rendering code can
+/// handle it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct SettlementPrompt {
+    pub question: String,
+    pub act: ActionGroup,
+    pub shift: ActionGroup,
+}
+
 /// Current + next task card with quick actions.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct TaskCard {
@@ -121,6 +132,9 @@ pub struct TaskCard {
     pub authority: TaskAuthority,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub next_task: Option<String>,
+    /// Settlement prompt shown before this task when coverage is stale (WI-10).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub settlement: Option<SettlementPrompt>,
 }
 
 /// Kind of a recorded work transition.
@@ -404,6 +418,12 @@ impl Presentation {
     pub fn voice_template(&self) -> String {
         match self {
             Presentation::CurrentTask(card) => {
+                if let Some(settlement) = &card.settlement {
+                    return format!(
+                        "{} どうしますか。行動するか、ずらすかを選んでください",
+                        settlement.question
+                    );
+                }
                 let action = if card.work_state == WorkState::InProgress {
                     "作業中"
                 } else if card.work_state == WorkState::Overdue {
@@ -951,11 +971,33 @@ mod tests {
             work_state: WorkState::NotStarted,
             authority: TaskAuthority::Candidate,
             next_task: None,
+            settlement: None,
         };
         assert_eq!(
             Presentation::CurrentTask(card).voice_template(),
             "今やるのは「レポート」（候補） 未着手です。09:00～10:00"
         );
+    }
+
+    #[test]
+    fn current_task_with_settlement_prompt_leads_with_settlement() {
+        let card = TaskCard {
+            title: "レポート".into(),
+            reference: "#7".into(),
+            start_at: Some("09:00".into()),
+            end_at: Some("10:00".into()),
+            work_state: WorkState::NotStarted,
+            authority: TaskAuthority::Candidate,
+            next_task: None,
+            settlement: Some(SettlementPrompt {
+                question: "09:00〜09:30 の未確定時間を整理してください".into(),
+                act: ActionGroup::new("行動", vec![action("この時間で作業")]).unwrap(),
+                shift: ActionGroup::new("ズラす", vec![action("無視")]).unwrap(),
+            }),
+        };
+        let template = Presentation::CurrentTask(card).voice_template();
+        assert!(template.contains("未確定時間"));
+        assert!(template.contains("どうしますか"));
     }
 
     // ── version-tolerant round trips ──────────────────────────────────

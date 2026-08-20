@@ -288,6 +288,46 @@ pub trait Storage: Send + Sync + 'static {
         Ok(())
     }
 
+    // ── Coverage trust state (WI-10) ──────────────────────────────────────
+    /// Read the coverage confirmation and unsettled-interval state used by
+    /// planner-event evaluation. Backends should return the most recent
+    /// confirmation for the current local day and any unsettled intervals that
+    /// have not been resolved.
+    async fn get_coverage_evaluation(&self) -> StorageResult<CoverageEvaluation> {
+        Ok(CoverageEvaluation::default())
+    }
+
+    /// Record a coverage confirmation (e.g. after an intake or capture flow).
+    async fn create_coverage_confirmation(
+        &self,
+        _body: &CreateCoverageConfirmation,
+    ) -> StorageResult<CoverageConfirmationRow> {
+        Err(StorageError::Internal(
+            "coverage confirmations are not supported".into(),
+        ))
+    }
+
+    /// Record an unsettled interval to be settled later (WI-18).
+    async fn create_unsettled_interval(
+        &self,
+        _body: &CreateUnsettledInterval,
+    ) -> StorageResult<UnsettledIntervalRow> {
+        Err(StorageError::Internal(
+            "unsettled intervals are not supported".into(),
+        ))
+    }
+
+    /// Mark an unsettled interval as settled by a stable operation ID.
+    async fn settle_unsettled_interval(
+        &self,
+        _id: &str,
+        _operation_id: &str,
+    ) -> StorageResult<UnsettledIntervalRow> {
+        Err(StorageError::Internal(
+            "unsettled intervals are not supported".into(),
+        ))
+    }
+
     // ── Schedule move idempotency (WI-4) ─────────────────────────────────
     /// Check whether a `move_entry` response for the same `operation_id` and
     /// `request_hash` has already been persisted. Default backends that do not
