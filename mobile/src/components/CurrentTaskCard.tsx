@@ -121,6 +121,9 @@ const makeStyles = (colors: ColorSet) =>
       fontSize: 13,
       fontWeight: '600',
       color: colors.textOnCard,
+      // The Text inside PressableScale must shrink so numberOfLines does not
+      // collapse the label to zero width and hide it entirely.
+      flexShrink: 1,
     },
     primaryActionText: {
       color: colors.onBrand,
