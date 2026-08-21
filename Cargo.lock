@@ -8676,6 +8676,7 @@ dependencies = [
  "takusu-contracts",
  "takusu-local",
  "takusu-local-lib",
+ "takusu-types",
  "thiserror 2.0.20",
  "tokio",
  "tracing",

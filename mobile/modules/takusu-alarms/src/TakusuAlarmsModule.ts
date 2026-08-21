@@ -8,6 +8,7 @@ export interface TakusuAlarmsModuleType {
     workersUrl: string,
     rootToken: string,
     deviceId: string,
+    localUrl: string,
   ): Promise<boolean>;
   cancelEvaluatorAlarm(): Promise<boolean>;
 }
