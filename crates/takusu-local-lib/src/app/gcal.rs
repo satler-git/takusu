@@ -82,18 +82,25 @@ impl super::TakusuApp {
         &self,
         body: &UpdateGoogleCalSettings,
     ) -> Result<GoogleCalSettingsOutput, AppError> {
-        if let Some(Some(m)) = body.reminder_minutes && m < 0 {
+        if let Some(Some(m)) = body.reminder_minutes
+            && m < 0
+        {
             return Err(AppError::BadRequest(BadRequestKind::Other(
                 "reminder_minutes must be non-negative".into(),
             )));
         }
-        if let Some(Some(c)) = body.color_id && !(1..=11).contains(&c) {
+        if let Some(Some(c)) = body.color_id
+            && !(1..=11).contains(&c)
+        {
             return Err(AppError::BadRequest(BadRequestKind::Other(
                 "color_id must be between 1 and 11".into(),
             )));
         }
         if let Some(Some(v)) = &body.visibility
-            && !matches!(v.as_str(), "default" | "public" | "private" | "confidential")
+            && !matches!(
+                v.as_str(),
+                "default" | "public" | "private" | "confidential"
+            )
         {
             return Err(AppError::BadRequest(BadRequestKind::Other(
                 "visibility must be one of: default, public, private, confidential".into(),
@@ -205,11 +212,14 @@ impl super::TakusuApp {
                 s.reminder_minutes.filter(|&m| m > 0),
                 s.color_id.filter(|&c| (1..=11).contains(&c)),
                 s.visibility.clone().filter(|v| {
-                    matches!(v.as_str(), "default" | "public" | "private" | "confidential")
+                    matches!(
+                        v.as_str(),
+                        "default" | "public" | "private" | "confidential"
+                    )
                 }),
-                s.transparency.clone().filter(|t| {
-                    matches!(t.as_str(), "opaque" | "transparent")
-                }),
+                s.transparency
+                    .clone()
+                    .filter(|t| matches!(t.as_str(), "opaque" | "transparent")),
             ),
             _ => return Ok(()),
         };

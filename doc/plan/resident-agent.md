@@ -138,8 +138,11 @@ The implementation must preserve these behaviors across all work items:
 ## Architecture
 
 ```text
-crates/takusu-core                     # existing; grows the estimator math
-└── src/estimator.rs            (new)  # duration-distribution posteriors + intervention bands (pure)
+crates/takusu-types                    # existing; grows the shared estimator math
+└── src/estimator.rs                   # duration-distribution posteriors + intervention bands (pure)
+
+crates/takusu-core                     # existing; compatibility facade re-exporting the estimator
+└── src/estimator.rs            (new)  # `pub use takusu_types::estimator::*;`
 
 crates/takusu-agent                    # existing; grows the shared resident core
 ├── src/presentation.rs         (new)  # typed presentation model + voice templates
@@ -182,10 +185,12 @@ mobile/                                # existing; grows resident surfaces
 
 Placement rules:
 
-- Duration-distribution math is pure and lives in `takusu-core`. Its public estimator API uses
-  minutes because work sessions and task rows use minutes; conversion to the planner's 5-minute
-  slots happens only at the planner boundary. The planner, evaluator, and tests share one
-  implementation.
+- Duration-distribution math is pure and lives in `takusu-types/src/estimator.rs` so it can be
+  shared by both the client and the server without introducing a `takusu-core` dependency in
+  `takusu-types`. `takusu-core/src/estimator.rs` is a compatibility facade that re-exports the
+  public API. The public estimator API uses minutes because work sessions and task rows use
+  minutes; conversion to the planner's 5-minute slots happens only at the planner boundary. The
+  planner, evaluator, and tests share one implementation.
 - Planner event evaluation must behave identically on both platforms and both alarm models, so it
   is a pure function in the shared Rust application layer:
   `(consistent snapshot, now, ledger view) → (due events, next_eval_at)`. The snapshot carries
@@ -337,8 +342,8 @@ Estimator model (v1) is fixed so that independent implementations agree:
   and recomputed on every revision bump. Unstarted tasks have no censored observation and therefore
   no crossing time; start delay belongs to sync events.
 - The tunable constants (`0.15`, `0.03`, the `z` thresholds, likelihood noise `c`, and the task-kind
-  fallback prior) live in one module (`takusu-core/estimator.rs`). The model shape and units are
-  not per-event-kind.
+  fallback prior) live in one module (`takusu-types/src/estimator.rs`, re-exported through
+  `takusu-core/src/estimator.rs`). The model shape and units are not per-event-kind.
 
 Rules:
 

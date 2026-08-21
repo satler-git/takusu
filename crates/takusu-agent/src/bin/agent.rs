@@ -1,6 +1,5 @@
 use clap::Parser;
 use std::process;
-use std::sync::Arc;
 use takusu_agent::AgentConfig;
 use takusu_client::Client;
 
@@ -14,10 +13,6 @@ struct Cli {
     /// Disable TTS in audio mode.
     #[arg(long)]
     no_tts: bool,
-
-    /// Auto-approve any pending changes without prompting.
-    #[arg(long)]
-    yes: bool,
 }
 
 #[tokio::main]
@@ -48,14 +43,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>>
     } else {
         #[cfg(feature = "audio-device")]
         {
-            takusu_agent::runner::run_audio(Arc::new(session), cli.no_tts, cli.yes, |event| {
-                match event {
-                    takusu_agent::TurnEvent::AsrText(text) => eprintln!("> {text}"),
-                    takusu_agent::TurnEvent::Text(delta) => print!("{delta}"),
-                    _ => {}
-                }
-            })
-            .await?;
+            takusu_agent::runner::run_audio(session, cli.no_tts).await?;
         }
         #[cfg(not(feature = "audio-device"))]
         {

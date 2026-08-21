@@ -520,9 +520,8 @@ impl super::TakusuApp {
             .map(|t| t.id)
             .map_err(storage_to_app)?;
 
-        let request_hash = operation_id.map(|_| {
-            crate::auth::hash_token(&format!("move:{full_task_id}:{new_start}:{force}"))
-        });
+        let request_hash = operation_id
+            .map(|_| crate::auth::hash_token(&format!("move:{full_task_id}:{new_start}:{force}")));
 
         // Check for a previously recorded response for this operation. A reused
         // idempotency key with a different target returns a conflict instead of

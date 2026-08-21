@@ -1889,7 +1889,12 @@ async fn run_schedule_verbs(
 
         ScheduleVerbs::Move(args) => {
             let result = app
-                .move_entry(&args.task_id, parse_dt(&args.start_at, tz)?, args.force, None)
+                .move_entry(
+                    &args.task_id,
+                    parse_dt(&args.start_at, tz)?,
+                    args.force,
+                    None,
+                )
                 .await?;
             println!("{}", serde_json::to_string_pretty(&result).unwrap());
         }
@@ -2407,8 +2412,7 @@ async fn run_sync(app: &TakusuApp, cmd: SyncCommands) -> Result<(), AppError> {
                 color_id,
                 visibility,
                 transparency,
-            ) = if !args.no_ask && is_interactive()
-            {
+            ) = if !args.no_ask && is_interactive() {
                 let settings = app.get_gcal_settings().await?;
                 let enabled = match args.enabled {
                     Some(v) => Some(v),
@@ -2432,10 +2436,7 @@ async fn run_sync(app: &TakusuApp, cmd: SyncCommands) -> Result<(), AppError> {
                 };
                 let reminder_minutes = match args.reminder_minutes {
                     Some(v) => Some(v),
-                    None => prompt_optional_i64(
-                        "reminder_minutes",
-                        settings.reminder_minutes,
-                    )?,
+                    None => prompt_optional_i64("reminder_minutes", settings.reminder_minutes)?,
                 };
                 let color_id = match args.color_id {
                     Some(v) => Some(v),
@@ -2700,13 +2701,9 @@ fn prompt_optional_i64(label: &str, current: Option<i64>) -> Result<Option<i64>,
     Ok(if trimmed.is_empty() {
         None
     } else {
-        Some(
-            trimmed
-                .parse::<i64>()
-                .map_err(|_| AppError::BadRequest(BadRequestKind::Other(
-                    format!("{label} must be an integer"),
-                )))?,
-        )
+        Some(trimmed.parse::<i64>().map_err(|_| {
+            AppError::BadRequest(BadRequestKind::Other(format!("{label} must be an integer")))
+        })?)
     })
 }
 
