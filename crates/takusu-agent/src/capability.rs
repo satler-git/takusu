@@ -115,6 +115,9 @@ pub struct ActionCapability {
     /// Quantity completed, present for `progress` capabilities.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quantity_done: Option<i64>,
+    /// Total quantity for the task/session, present for `progress` capabilities.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quantity_total: Option<i64>,
     /// Note to attach with progress, present for `progress` capabilities.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
@@ -160,6 +163,8 @@ pub struct CapabilityRequest {
     pub snooze_target: Option<Timestamp>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quantity_done: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quantity_total: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
     /// The scheduled delivery time for notification capabilities (WI-4).
@@ -335,6 +340,7 @@ impl CapabilityStore {
                 snooze_minutes: capability.snooze_minutes,
                 snooze_target: capability.snooze_target,
                 quantity_done: capability.quantity_done,
+                quantity_total: capability.quantity_total,
                 note: capability.note.clone(),
                 scheduled_at: capability.scheduled_at,
             });
@@ -401,6 +407,7 @@ pub fn mint_capability(
         snooze_minutes: request.snooze_minutes,
         snooze_target: request.snooze_target,
         quantity_done: request.quantity_done,
+        quantity_total: request.quantity_total,
         note: request.note.clone(),
         scheduled_at: request.scheduled_at,
         request: Some(request),
@@ -490,6 +497,7 @@ pub async fn authorize_action(
             || request.snooze_minutes != capability.snooze_minutes
             || request.snooze_target != capability.snooze_target
             || request.quantity_done != capability.quantity_done
+            || request.quantity_total != capability.quantity_total
             || request.note != capability.note
             || request.scheduled_at != capability.scheduled_at
             || request.input_path != Some(capability.input_path))
@@ -517,6 +525,7 @@ pub async fn authorize_action(
                 snooze_minutes: capability.snooze_minutes,
                 snooze_target: capability.snooze_target,
                 quantity_done: capability.quantity_done,
+                quantity_total: capability.quantity_total,
                 note: capability.note.clone(),
                 scheduled_at: capability.scheduled_at,
             }),
@@ -605,7 +614,7 @@ async fn execute_progress(
     let body = RecordWorkSessionProgress {
         quantity_done: quantity,
         note: capability.note.clone(),
-        quantity_total: None,
+        quantity_total: capability.quantity_total.map(Quantity::new).transpose()?,
     };
     client
         .record_work_session_progress(&open.id, &body, Some(operation_id))

@@ -8,9 +8,11 @@ use ksni::menu::{CheckmarkItem, StandardItem};
 #[cfg(target_os = "linux")]
 use ksni::{Icon, MenuItem, Tray, TrayMethods};
 use std::sync::Arc;
+use takusu_agent::SurfaceCommand;
 use takusu_agent::SurfaceState;
 
 use crate::config::Theme;
+use crate::presentation::{DesktopAction, execute_quick_action};
 use crate::state::DesktopState;
 use crate::transport::DesktopTransport;
 
@@ -117,6 +119,7 @@ impl Tray for TakusuTray {
             .unwrap_or_default()
     }
 
+    #[allow(clippy::collapsible_if)]
     fn menu(&self) -> Vec<MenuItem<Self>> {
         let mut items = Vec::new();
 
@@ -130,25 +133,11 @@ impl Tray for TakusuTray {
                 .into(),
             );
 
-            // Quick actions from the current presentation.
-            for (label, cap) in self.state.quick_actions() {
-                let activate: Box<dyn Fn(&mut Self) + Send> = match cap {
-                    Some(cap) => {
-                        let transport = Arc::clone(&self.transport);
-                        Box::new(move |_this| {
-                            tokio::spawn({
-                                let transport = Arc::clone(&transport);
-                                let cap = cap.clone();
-                                async move {
-                                    if let Err(e) = transport.authorize_action(&cap).await {
-                                        tracing::warn!(error=%e, capability_id=%cap.id, "failed to authorize tray action");
-                                    }
-                                }
-                            });
-                        })
-                    }
-                    None => Box::new(|_this| {}),
-                };
+            // Quick actions from the current desktop presentation.
+            for action in self.state.quick_actions() {
+                let transport = Arc::clone(&self.transport);
+                let label = quick_action_label(&action);
+                let activate = quick_action_activate(action, transport);
                 items.push(
                     StandardItem {
                         label,
@@ -162,28 +151,72 @@ impl Tray for TakusuTray {
             items.push(MenuItem::Separator);
         }
 
-        items.push(
-            StandardItem {
-                label: "開く".into(),
-                ..Default::default()
-            }
-            .into(),
-        );
+        // Open the compact panel / approval UI / recovery view.
+        {
+            let transport = Arc::clone(&self.transport);
+            let state = self.state.clone();
+            let activate = Box::new(move |_this: &mut Self| {
+                let state = state.clone();
+                let transport = Arc::clone(&transport);
+                tokio::spawn(async move {
+                    let command = match state
+                        .snapshot()
+                        .map(|v| v.state())
+                        .unwrap_or(SurfaceState::Idle)
+                    {
+                        SurfaceState::Listening => Some(SurfaceCommand::ConfirmRecording),
+                        SurfaceState::Thinking => Some(SurfaceCommand::OpenPanel),
+                        SurfaceState::Speaking => Some(SurfaceCommand::StopTts),
+                        SurfaceState::WaitingForApproval => Some(SurfaceCommand::OpenApproval),
+                        SurfaceState::Error => Some(SurfaceCommand::ShowRecovery),
+                        _ => None,
+                    };
 
-        items.push(
-            CheckmarkItem {
-                label: "通知を一時停止".into(),
-                checked: false,
-                ..Default::default()
-            }
-            .into(),
-        );
+                    if let Some(command) = command {
+                        if let Err(e) = transport.send_command(command).await {
+                            tracing::warn!(error=%e, command=?command, "tray open command failed");
+                        }
+                    }
+                });
+            });
+            items.push(
+                StandardItem {
+                    label: "開く".into(),
+                    activate,
+                    ..Default::default()
+                }
+                .into(),
+            );
+        }
+
+        {
+            let state = self.state.clone();
+            let checked = state.do_not_disturb();
+            let activate = Box::new(move |_this: &mut Self| {
+                let next = !state.do_not_disturb();
+                state.set_do_not_disturb(next);
+                tracing::info!(do_not_disturb = next, "toggled notification pause");
+            });
+            items.push(
+                CheckmarkItem {
+                    label: "通知を一時停止".into(),
+                    checked,
+                    activate,
+                    ..Default::default()
+                }
+                .into(),
+            );
+        }
 
         items.push(MenuItem::Separator);
 
         items.push(
             StandardItem {
                 label: "終了".into(),
+                activate: Box::new(|_this| {
+                    tracing::info!("tray quit requested");
+                    std::process::exit(0);
+                }),
                 ..Default::default()
             }
             .into(),
@@ -191,6 +224,34 @@ impl Tray for TakusuTray {
 
         items
     }
+}
+
+fn quick_action_label(action: &DesktopAction) -> String {
+    if action.label.is_empty() {
+        return "アクション".into();
+    }
+    action.label.clone()
+}
+
+#[cfg(target_os = "linux")]
+fn quick_action_activate(
+    action: DesktopAction,
+    transport: Arc<dyn DesktopTransport + Send + Sync>,
+) -> Box<dyn Fn(&mut TakusuTray) + Send> {
+    Box::new(move |_this: &mut TakusuTray| {
+        let transport = Arc::clone(&transport);
+        let action = action.clone();
+        tokio::spawn(async move {
+            if let Err(e) = execute_quick_action(transport.as_ref(), &action).await {
+                tracing::warn!(
+                    error = %e,
+                    action_id = %action.id,
+                    label = %action.label,
+                    "failed to execute quick action"
+                );
+            }
+        });
+    })
 }
 
 /// Opaque handle to the tray service.

@@ -329,6 +329,7 @@ async fn mint_capability_schema(
         snooze_minutes: None,
         snooze_target: None,
         quantity_done: None,
+        quantity_total: None,
         note: None,
         scheduled_at: None,
         request: None,

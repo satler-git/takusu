@@ -26,6 +26,7 @@ function makeClient(
 ): TakusuClient {
   return {
     recordWorkSessionProgress: jest.fn().mockResolvedValue({} as never),
+    createWorkSession: jest.fn().mockResolvedValue({} as never),
     ...overrides,
   } as unknown as TakusuClient;
 }
@@ -75,7 +76,6 @@ describe('restoreTaskAfterCompletion', () => {
   it('reopens a work session when restoring direct completion of in_progress', async () => {
     const client = makeClient({
       updateTask: jest.fn().mockResolvedValue({} as never),
-      createWorkSession: jest.fn().mockResolvedValue({} as never),
     });
 
     await restoreTaskAfterCompletion(client, 'task-1', 'in_progress', 3);
@@ -93,7 +93,6 @@ describe('restoreTaskAfterCompletion', () => {
   it('does not reopen a session when restoring a scheduled task', async () => {
     const client = makeClient({
       updateTask: jest.fn().mockResolvedValue({} as never),
-      createWorkSession: jest.fn().mockResolvedValue({} as never),
     });
 
     await restoreTaskAfterCompletion(client, 'task-1', 'scheduled', 3);

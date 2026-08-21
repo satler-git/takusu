@@ -8,11 +8,16 @@
 pub mod config;
 pub mod notify;
 pub mod popover;
+pub mod presentation;
 pub mod state;
 pub mod transport;
 pub mod tray;
 
 pub use config::{Config, Theme};
 pub use notify::DesktopNotification;
+pub use presentation::{
+    DesktopAction, DesktopPresentation, build_presentation, build_presentation_from_presentation,
+    presentation_to_notification,
+};
 pub use state::{DesktopError, DesktopState};
 pub use transport::{DesktopTransport, MockTransport};

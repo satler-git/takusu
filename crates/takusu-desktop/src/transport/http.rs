@@ -8,6 +8,7 @@
 
 use std::future::Future;
 use std::pin::Pin;
+use std::time::Duration;
 
 use eventsource_stream::{Event as SseEvent, Eventsource};
 use futures_util::{StreamExt, TryStreamExt};
@@ -15,7 +16,9 @@ use reqwest::header::{self, HeaderValue};
 use takusu_agent::capability::{ActionCapability, CapabilityRequest};
 use takusu_agent::events::EvaluationResult;
 use takusu_agent::transport::{API_VERSION, SurfaceCommandRequest, Versioned};
-use takusu_agent::{SurfaceCommand, SurfaceCommandResponse, SurfaceEvent, SurfaceSnapshot};
+use takusu_agent::{
+    Presentation, SurfaceCommand, SurfaceCommandResponse, SurfaceEvent, SurfaceSnapshot,
+};
 use takusu_contracts::{EventDeliveryState, EventLedgerRow};
 
 use crate::state::DesktopError;
@@ -25,14 +28,32 @@ use crate::transport::{BoxStream, DesktopTransport};
 #[derive(Debug, Clone)]
 pub struct HttpTransport {
     client: reqwest::Client,
+    sse_client: reqwest::Client,
     base_url: String,
     token: String,
 }
 
 impl HttpTransport {
     pub fn new(base_url: impl Into<String>, token: impl Into<String>) -> Self {
+        // Bound the HTTP client so a hung local host cannot stall the daemon
+        // indefinitely. The SSE long poll is not affected because it is a
+        // streaming response, but each request/response body must be received
+        // within a reasonable window.
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(30))
+            .connect_timeout(Duration::from_secs(10))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
+        // The SSE stream is a long-lived connection; a separate client with no
+        // request timeout keeps it open while the standard client still bounds
+        // regular calls.
+        let sse_client = reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(10))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
         Self {
-            client: reqwest::Client::new(),
+            client,
+            sse_client,
             base_url: base_url.into().trim_end_matches('/').to_string(),
             token: token.into(),
         }
@@ -81,7 +102,7 @@ impl DesktopTransport for HttpTransport {
         let this = self.clone();
         Box::pin(async move {
             let response = this
-                .client
+                .sse_client
                 .get(format!("{}/api/agent/v1/surface/events", this.base_url))
                 .header(header::AUTHORIZATION, this.bearer()?)
                 .send()
@@ -158,7 +179,7 @@ impl DesktopTransport for HttpTransport {
     fn authorize_action(
         &self,
         capability: &ActionCapability,
-    ) -> Pin<Box<dyn Future<Output = Result<(), DesktopError>> + Send + '_>> {
+    ) -> Pin<Box<dyn Future<Output = Result<Presentation, DesktopError>> + Send + '_>> {
         let this = self.clone();
         let capability = capability.clone();
         Box::pin(async move {
@@ -180,7 +201,11 @@ impl DesktopTransport for HttpTransport {
                     response.status()
                 )));
             }
-            Ok(())
+            response
+                .json::<Versioned<Presentation>>()
+                .await
+                .map(|v| v.value)
+                .map_err(|e| DesktopError::Transport(e.to_string()))
         })
     }
 

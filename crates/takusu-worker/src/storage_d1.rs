@@ -60,7 +60,9 @@ pub(super) const ALL_ESTIMATOR_PRIORS_SELECT: &str =
     "SELECT kind, mean_minutes, sigma_minutes FROM estimator_task_priors";
 
 pub(super) fn all_work_sessions_sql() -> String {
-    format!("SELECT {WORK_SESSION_COLS} FROM work_sessions WHERE task_id IN (SELECT id FROM tasks WHERE status = 'in_progress')")
+    format!(
+        "SELECT {WORK_SESSION_COLS} FROM work_sessions WHERE task_id IN (SELECT id FROM tasks WHERE status = 'in_progress')"
+    )
 }
 
 pub(super) fn evaluation_tasks_sql() -> String {

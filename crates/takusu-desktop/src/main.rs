@@ -8,15 +8,14 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use futures_util::StreamExt;
-use takusu_agent::capability::{CapabilityRequest, InputPath};
-use takusu_agent::presentation::ActionKind;
-use takusu_agent::{Presentation, SurfaceEvent, SurfaceSnapshot};
+use takusu_agent::{SurfaceCommand, SurfaceEvent, SurfaceSnapshot, SurfaceState};
 use takusu_contracts::EventDeliveryState;
 use tracing_subscriber::{EnvFilter, fmt};
 
 use takusu_desktop::config::Config;
 use takusu_desktop::notify::{self, NotificationState};
 use takusu_desktop::popover::{Popover, PopoverRequest};
+use takusu_desktop::presentation::{build_presentation, presentation_to_notification};
 use takusu_desktop::state::{DesktopError, DesktopState};
 use takusu_desktop::transport::{DesktopTransport, HttpTransport, MockTransport};
 use takusu_desktop::tray;
@@ -72,18 +71,26 @@ async fn run() -> Result<(), DesktopError> {
         }
     });
 
-    let popover = Popover::new();
+    let popover = Popover::new_with_transport(Arc::clone(&transport));
 
     let initial_next_eval_at =
-        replay_events(transport.as_ref(), &notification_state, &proxy).await?;
+        replay_events(transport.as_ref(), &state, &notification_state, &proxy).await?;
     let replay_transport = Arc::clone(&transport);
-    let replay_state = Arc::clone(&notification_state);
+    let replay_state = state.clone();
+    let replay_notification_state = Arc::clone(&notification_state);
     let replay_proxy = proxy.clone();
     tokio::spawn(async move {
         let mut next_eval_at = initial_next_eval_at;
         loop {
             tokio::time::sleep(eval_sleep_duration(next_eval_at)).await;
-            match replay_events(replay_transport.as_ref(), &replay_state, &replay_proxy).await {
+            match replay_events(
+                replay_transport.as_ref(),
+                &replay_state,
+                &replay_notification_state,
+                &replay_proxy,
+            )
+            .await
+            {
                 Ok(next) => next_eval_at = next,
                 Err(error) => {
                     tracing::warn!(error = %error, "planner event replay failed");
@@ -117,8 +124,6 @@ async fn run() -> Result<(), DesktopError> {
         &state,
         &popover,
         SurfaceEvent::Snapshot(snapshot),
-        &notification_state,
-        &proxy,
         transport.as_ref(),
     )
     .await?;
@@ -127,15 +132,7 @@ async fn run() -> Result<(), DesktopError> {
     loop {
         let mut events = transport.surface_events().await?;
         while let Some(event) = events.next().await {
-            apply_surface_event(
-                &state,
-                &popover,
-                event,
-                &notification_state,
-                &proxy,
-                transport.as_ref(),
-            )
-            .await?;
+            apply_surface_event(&state, &popover, event, transport.as_ref()).await?;
         }
         tracing::warn!("surface event stream ended; reconnecting in 5s");
         tokio::time::sleep(Duration::from_secs(5)).await;
@@ -159,6 +156,7 @@ fn eval_sleep_duration(next_eval_at: Option<jiff::Timestamp>) -> Duration {
 
 async fn replay_events(
     transport: &dyn DesktopTransport,
+    state: &DesktopState,
     notification_state: &std::sync::Mutex<NotificationState>,
     proxy: &notify::NotificationsProxy<'static>,
 ) -> Result<Option<jiff::Timestamp>, DesktopError> {
@@ -177,68 +175,18 @@ async fn replay_events(
         if !transport.claim_planner_event(&event.id, "desktop").await? {
             continue;
         }
-        let presentation: Presentation =
-            serde_json::from_str(&event.presentation).map_err(|error| {
-                DesktopError::Transport(format!("invalid event presentation: {error}"))
-            })?;
-        let mut actions = Vec::new();
-        if let Presentation::CheckIn(card) = &presentation
-            && let Some(task_id) = event.task_id.as_deref()
-        {
-            if matches!(
-                event.kind.as_str(),
-                "task_start_time_reached" | "task_non_start_continued"
-            ) {
-                let capability = transport
-                    .mint_action_capability(&CapabilityRequest {
-                        task_id: task_id.into(),
-                        action: "start".into(),
-                        device_id: "desktop".into(),
-                        input_path: Some(InputPath::NotificationCapability),
-                        event_id: Some(event.id.clone()),
-                        ..Default::default()
-                    })
-                    .await?;
-                if let Some(action) = card.act.actions.as_slice().first() {
-                    actions.push(notify::NotificationAction {
-                        key: action.id.clone(),
-                        label: action.label.clone(),
-                        capability: Some(capability),
-                    });
-                }
-            }
 
-            if let Some(action) = card
-                .shift
-                .actions
-                .as_slice()
-                .iter()
-                .find(|a| a.kind == ActionKind::Immediate)
-            {
-                let delay_capability = transport
-                    .mint_action_capability(&CapabilityRequest {
-                        task_id: task_id.into(),
-                        action: "delay".into(),
-                        device_id: "desktop".into(),
-                        input_path: Some(InputPath::NotificationCapability),
-                        event_id: Some(event.id.clone()),
-                        snooze_minutes: Some(10),
-                        ..Default::default()
-                    })
-                    .await?;
-                actions.push(notify::NotificationAction {
-                    key: action.id.clone(),
-                    label: action.label.clone(),
-                    capability: Some(delay_capability),
-                });
-            }
+        let desktop_presentation = build_presentation(transport, &event, "desktop").await?;
+
+        // Surface the current planner event in the tray and compact panel.
+        state.set_current_presentation(Some(desktop_presentation.clone()));
+
+        if state.do_not_disturb() {
+            tracing::info!(event_id = %event.id, "suppressed notification in do-not-disturb");
+            continue;
         }
-        let notification = notify::DesktopNotification {
-            id: 0,
-            title: "takusu".into(),
-            body: presentation.voice_template(),
-            actions,
-        };
+
+        let notification = presentation_to_notification(&desktop_presentation);
 
         match notify::show(proxy, notification_state, transport, &notification).await {
             Ok(_) => {
@@ -291,11 +239,9 @@ async fn apply_surface_event(
     state: &DesktopState,
     popover: &Popover,
     event: SurfaceEvent,
-    notification_state: &std::sync::Mutex<NotificationState>,
-    proxy: &notify::NotificationsProxy<'static>,
     transport: &dyn DesktopTransport,
 ) -> Result<(), DesktopError> {
-    // StateChanged carries a fresh snapshot and may trigger notifications.
+    // StateChanged carries a fresh snapshot and may trigger commands or UI.
     let changed = match &event {
         SurfaceEvent::StateChanged(s) => Some(s.clone()),
         SurfaceEvent::Snapshot(_) => None,
@@ -304,43 +250,65 @@ async fn apply_surface_event(
     state.update_surface(event);
 
     if let Some(snapshot) = changed {
-        let presentation = build_presentation(&snapshot);
-        state.set_presentation(presentation.clone());
+        let command = match snapshot.state {
+            SurfaceState::Thinking => Some(SurfaceCommand::OpenPanel),
+            SurfaceState::WaitingForApproval => Some(SurfaceCommand::OpenApproval),
+            SurfaceState::Error => Some(SurfaceCommand::ShowRecovery),
+            _ => None,
+        };
 
-        // Surface-driven notification for check-ins and alerts.
-        if let Some(notification) = presentation_to_notification(&presentation) {
-            let id = notify::show(proxy, notification_state, transport, &notification).await?;
-            tracing::info!(notification_id = id, "showed notification");
+        if let Some(command) = command {
+            match transport.send_command(command).await {
+                Ok(response) => {
+                    if !response.accepted {
+                        tracing::warn!(
+                            command = ?command,
+                            reason = ?response.reason,
+                            "surface command not accepted"
+                        );
+                    }
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        command = ?command,
+                        error = %error,
+                        "failed to send surface command"
+                    );
+                }
+            }
         }
 
-        // Open the panel when the state asks for it.
-        if matches!(snapshot.state, takusu_agent::SurfaceState::Thinking) {
-            popover.show(
-                state,
-                PopoverRequest {
-                    title: state
-                        .snapshot()
-                        .map(|v| v.title())
-                        .unwrap_or_else(|| "takusu".into()),
-                    detail: None,
-                },
-            );
-        }
+        // Keep the compact panel in sync with the surface state even when no
+        // explicit surface command was issued.
+        show_popover_for_state(state, popover, &snapshot);
     }
 
     Ok(())
 }
 
-/// Convert a surface snapshot into a presentation (placeholder).
-fn build_presentation(_snapshot: &SurfaceSnapshot) -> Option<Presentation> {
-    // In the full implementation this fetches `/api/agent/v1/surface` and the
-    // last turn result. For the scaffold, the presentation is empty.
-    None
-}
+fn show_popover_for_state(state: &DesktopState, popover: &Popover, snapshot: &SurfaceSnapshot) {
+    let title = state
+        .snapshot()
+        .map(|v| v.title())
+        .unwrap_or_else(|| "takusu".into());
+    let detail = state.snapshot().and_then(|v| v.detail());
 
-/// Build a desktop notification from a presentation.
-fn presentation_to_notification(
-    _presentation: &Option<Presentation>,
-) -> Option<notify::DesktopNotification> {
-    None
+    if matches!(
+        snapshot.state,
+        SurfaceState::Thinking
+            | SurfaceState::WaitingForApproval
+            | SurfaceState::Error
+            | SurfaceState::WaitingForUser
+    ) {
+        popover.show(
+            state,
+            PopoverRequest {
+                title,
+                detail: detail.or_else(|| snapshot.error.clone()),
+                actions: state.quick_actions(),
+            },
+        );
+    } else {
+        popover.hide();
+    }
 }
