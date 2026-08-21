@@ -27,6 +27,9 @@ use crate::presentation::{
 pub const NON_START_GRACE_MINUTES: i64 = 15;
 /// Minimum duration of an unclassified gap before a capture check-in.
 pub const UNCLASSIFIED_GAP_THRESHOLD_MINUTES: i64 = 30;
+/// Threshold before a scheduled-but-incomplete task is reported as carried over.
+/// Tasks whose scheduled start was more than 24 hours ago trigger a settlement prompt.
+pub const CARRIED_OVER_INCOMPLETE_THRESHOLD_SECONDS: i64 = 24 * 60 * 60;
 
 /// A task projection needed by the evaluator.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -250,9 +253,10 @@ pub fn evaluate_events(snapshot: &EvaluationSnapshot) -> EvaluationResult {
             continue;
         }
 
-        let band = work
-            .progress_band
-            .unwrap_or_else(|| work.distribution.band_at(work.active_minutes));
+        // The intervention band is always derived from the current distribution at the
+        // active elapsed time. `progress_band` only controls the observation-kind prefix
+        // used for the canonical event ID.
+        let band = work.distribution.band_at(work.active_minutes);
         if band.is_intervention() {
             push_if_new(
                 &mut events,
@@ -281,27 +285,49 @@ pub fn evaluate_events(snapshot: &EvaluationSnapshot) -> EvaluationResult {
             push_if_new(
                 &mut events,
                 &snapshot.ledger,
-                deadline_event(snapshot, task, predicted_end),
+                deadline_event(snapshot, task, work, predicted_end),
             );
         }
     }
 
     for gap in &snapshot.gaps {
-        if gap.kind != GapKind::Unclassified
-            || gap.start_at > snapshot.now
-            || gap.end_at <= snapshot.now
-        {
-            continue;
-        }
-        let threshold_at = add_minutes(gap.start_at, UNCLASSIFIED_GAP_THRESHOLD_MINUTES);
-        if threshold_at > snapshot.now {
-            next_eval_at = earlier(next_eval_at, threshold_at);
-        } else {
-            push_if_new(
-                &mut events,
-                &snapshot.ledger,
-                gap_event(snapshot, gap, threshold_at),
-            );
+        match gap.kind {
+            GapKind::Unclassified => {
+                if gap.start_at > snapshot.now {
+                    next_eval_at = earlier(next_eval_at, gap.start_at);
+                    continue;
+                }
+                if gap.end_at <= snapshot.now {
+                    continue;
+                }
+                let threshold_at = add_minutes(gap.start_at, UNCLASSIFIED_GAP_THRESHOLD_MINUTES);
+                if threshold_at > snapshot.now {
+                    next_eval_at = earlier(next_eval_at, threshold_at);
+                } else {
+                    push_if_new(
+                        &mut events,
+                        &snapshot.ledger,
+                        gap_event(snapshot, gap, threshold_at),
+                    );
+                }
+            }
+            GapKind::Routine => {
+                if gap.start_at > snapshot.now {
+                    next_eval_at = earlier(next_eval_at, gap.start_at);
+                    continue;
+                }
+                if gap.end_at <= snapshot.now {
+                    continue;
+                }
+                // At most one start-time cue per routine instance.
+                if let Some(event) = routine_start_event(snapshot, gap) {
+                    push_if_new(&mut events, &snapshot.ledger, event);
+                }
+            }
+            GapKind::FreeTime | GapKind::Buffer | GapKind::GenerationFailure => {
+                // Free time and buffer are intentional and require no contact.
+                // Generation failure is handled through `unplaced_task_ids` above.
+            }
         }
     }
 
@@ -334,17 +360,23 @@ pub fn evaluate_events(snapshot: &EvaluationSnapshot) -> EvaluationResult {
     }
 
     for task in &snapshot.tasks {
+        // The task must have a scheduled start that is both in the past and more than the
+        // carry-over threshold ago. The canonical boundary for the event is that scheduled
+        // start, which keeps the event ID stable as long as the schedule itself is unchanged.
+        let Some(scheduled_at) = task.scheduled_at else {
+            continue;
+        };
         if is_terminal(task.status)
-            || task.scheduled_at.is_none()
-            || task.scheduled_at >= Some(snapshot.now)
+            || scheduled_at >= snapshot.now
             || snapshot
                 .now
                 .as_second()
-                .saturating_sub(task.scheduled_at.unwrap().as_second())
-                < 24 * 60 * 60
+                .saturating_sub(scheduled_at.as_second())
+                < CARRIED_OVER_INCOMPLETE_THRESHOLD_SECONDS
         {
             continue;
         }
+        let carry_over_boundary = scheduled_at;
         push_if_new(
             &mut events,
             &snapshot.ledger,
@@ -358,7 +390,7 @@ pub fn evaluate_events(snapshot: &EvaluationSnapshot) -> EvaluationResult {
                     Some(&task.id),
                     snapshot.schedule_revision,
                     None,
-                    task.scheduled_at.unwrap_or(snapshot.now),
+                    carry_over_boundary,
                     "carry-over",
                 ),
                 Presentation::CheckIn(check_in(
@@ -522,6 +554,8 @@ fn distribution_event(
         InterventionBand::Replan => format!("「{}」のペースだと後ろが崩れそうです", task.title),
         InterventionBand::Usual => unreachable!("usual band is not an intervention"),
     };
+    // The observation-kind prefix shows whether the current distribution comes from a
+    // progress observation; the band suffix is the current distribution's band.
     let observation_kind = match (work.progress_band.is_some(), band) {
         (true, InterventionBand::Attention) => "progress:attention",
         (true, InterventionBand::Replan) => "progress:replan",
@@ -552,6 +586,55 @@ fn distribution_event(
     );
     event.distribution_revision = Some(work.distribution_revision);
     event
+}
+
+fn routine_start_event(
+    snapshot: &EvaluationSnapshot,
+    gap: &EvaluationGap,
+) -> Option<PlannerEvent> {
+    let identity = gap.identity.as_deref().unwrap_or("");
+    let (title, task_ref) = snapshot
+        .tasks
+        .iter()
+        .find(|t| t.id == identity)
+        .and_then(|task| {
+            if is_terminal(task.status) {
+                return None;
+            }
+            Some((task.title.clone(), Some(task_ref(task))))
+        })
+        .unwrap_or_else(|| {
+            let label = if identity.is_empty() {
+                "ルーティン"
+            } else {
+                identity
+            };
+            (label.into(), None)
+        });
+
+    let id = event_id(
+        PlannerEventKind::TaskStartTimeReached,
+        Some(identity),
+        snapshot.schedule_revision,
+        None,
+        gap.start_at,
+        "routine",
+    );
+
+    Some(simple_event(
+        snapshot,
+        PlannerEventKind::TaskStartTimeReached,
+        task_ref,
+        None,
+        id,
+        Presentation::CheckIn(check_in(
+            format!("「{}」の開始時刻です", title),
+            "着手",
+            "10分後にずらす",
+        )),
+        Urgency::Normal,
+        gap.start_at,
+    ))
 }
 
 fn gap_event(
@@ -586,9 +669,10 @@ fn gap_event(
 fn deadline_event(
     snapshot: &EvaluationSnapshot,
     task: &EvaluationTask,
+    work: &EvaluationWork,
     _predicted_end: Timestamp,
 ) -> PlannerEvent {
-    simple_event(
+    let mut event = simple_event(
         snapshot,
         PlannerEventKind::DeadlineViolation,
         Some(task_ref(task)),
@@ -597,7 +681,7 @@ fn deadline_event(
             PlannerEventKind::DeadlineViolation,
             Some(&task.id),
             snapshot.schedule_revision,
-            None,
+            Some(work.distribution_revision),
             task.deadline_at,
             "deadline",
         ),
@@ -608,7 +692,9 @@ fn deadline_event(
         )),
         Urgency::High,
         snapshot.now,
-    )
+    );
+    event.distribution_revision = Some(work.distribution_revision);
+    event
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -715,12 +801,16 @@ fn current_task_event(snapshot: &EvaluationSnapshot) -> Option<PlannerEvent> {
         .or_else(|| Some(snapshot.now.to_string()));
     let end_at = Some(candidate.deadline_at.to_string());
 
+    // The CurrentTask event ID must not vary with `now`; the canonical boundary is the
+    // task's scheduled start (or `now` when the task is unscheduled) so the ID is stable
+    // across evaluator ticks and does not generate duplicate ledger entries.
+    let current_task_boundary = candidate.scheduled_at.unwrap_or(snapshot.now);
     let id = event_id(
         PlannerEventKind::CurrentTask,
         Some(&candidate.id),
         snapshot.schedule_revision,
         None,
-        snapshot.now,
+        current_task_boundary,
         "current",
     );
 
@@ -962,5 +1052,145 @@ mod tests {
             "censored",
         );
         assert_ne!(a, b);
+    }
+
+    #[test]
+    fn current_task_event_id_is_stable_over_time() {
+        let mut snapshot = snapshot();
+        snapshot
+            .tasks
+            .push(task("task-1", 9_000, TaskStatus::Scheduled));
+        let first = evaluate_events(&snapshot);
+        let first_current = first
+            .due_events
+            .iter()
+            .find(|event| event.kind == PlannerEventKind::CurrentTask)
+            .cloned();
+
+        snapshot.now = timestamp(10_001);
+        let second = evaluate_events(&snapshot);
+        let second_current = second
+            .due_events
+            .iter()
+            .find(|event| event.kind == PlannerEventKind::CurrentTask)
+            .cloned();
+
+        assert!(first_current.is_some());
+        assert_eq!(first_current.unwrap().id, second_current.unwrap().id);
+    }
+
+    #[test]
+    fn distribution_overrun_uses_progress_observation_kind() {
+        let mut snapshot = snapshot();
+        snapshot.now = timestamp(10_000);
+        let mut task = task("task-1", 9_000, TaskStatus::InProgress);
+        task.deadline_at = timestamp(20_000);
+        snapshot.tasks.push(task);
+        snapshot.work.push(EvaluationWork {
+            task_id: "task-1".into(),
+            active_minutes: 80.0,
+            distribution: DurationDistribution::new(60.0, 10.0),
+            distribution_revision: 4,
+            // A previous progress observation created this distribution.
+            progress_band: Some(InterventionBand::Attention),
+            next_crossing_at: None,
+        });
+        let result = evaluate_events(&snapshot);
+        let overrun = result
+            .due_events
+            .into_iter()
+            .find(|event| event.kind == PlannerEventKind::DistributionOverrun)
+            .expect("distribution overrun should fire");
+        assert_eq!(overrun.band, Some(InterventionBand::Replan));
+        assert_eq!(overrun.distribution_revision, Some(4));
+        assert!(
+            overrun.id.contains("progress:replan"),
+            "progress observation should use the progress: prefix and the current band: {}",
+            overrun.id
+        );
+    }
+
+    #[test]
+    fn deadline_event_includes_distribution_revision() {
+        let mut snapshot = snapshot();
+        snapshot.now = timestamp(10_000);
+        let mut task = task("task-1", 9_000, TaskStatus::InProgress);
+        task.deadline_at = timestamp(10_100);
+        snapshot.tasks.push(task);
+        snapshot.work.push(EvaluationWork {
+            task_id: "task-1".into(),
+            active_minutes: 80.0,
+            distribution: DurationDistribution::new(60.0, 10.0),
+            distribution_revision: 7,
+            progress_band: None,
+            next_crossing_at: None,
+        });
+        let result = evaluate_events(&snapshot);
+        let deadline = result
+            .due_events
+            .into_iter()
+            .find(|event| event.kind == PlannerEventKind::DeadlineViolation)
+            .expect("deadline violation should fire");
+        assert_eq!(deadline.distribution_revision, Some(7));
+        assert!(deadline.id.contains(":d7:"), "deadline id should include distribution revision: {}", deadline.id);
+    }
+
+    #[test]
+    fn routine_gap_fires_start_time_cue() {
+        let mut snapshot = snapshot();
+        snapshot.now = timestamp(10_000);
+        snapshot.tasks.push(EvaluationTask {
+            id: "routine-1".into(),
+            display_id: 2,
+            title: "朝のルーティン".into(),
+            scheduled_at: None,
+            deadline_at: timestamp(20_000),
+            status: TaskStatus::Scheduled,
+            fixed: false,
+            quantity_total: None,
+            quantity_done: 0,
+        });
+        snapshot.gaps.push(EvaluationGap {
+            start_at: timestamp(9_000),
+            end_at: timestamp(20_000),
+            kind: GapKind::Routine,
+            identity: Some("routine-1".into()),
+        });
+        let result = evaluate_events(&snapshot);
+        assert_eq!(
+            result
+                .due_events
+                .iter()
+                .filter(|event| event.kind == PlannerEventKind::TaskStartTimeReached)
+                .count(),
+            1
+        );
+        assert!(result
+            .due_events
+            .iter()
+            .any(|event| event.kind == PlannerEventKind::TaskStartTimeReached
+                && event.id.contains("routine")));
+    }
+
+    #[test]
+    fn carried_over_honors_24h_threshold() {
+        let mut snapshot = snapshot();
+        snapshot.now = timestamp(100_000);
+        let mut overdue = task("overdue", 100_000 - 25 * 3_600, TaskStatus::Scheduled);
+        overdue.deadline_at = timestamp(200_000);
+        snapshot.tasks.push(overdue);
+
+        let mut recent = task("recent", 100_000 - 23 * 3_600, TaskStatus::Scheduled);
+        recent.deadline_at = timestamp(200_000);
+        snapshot.tasks.push(recent);
+
+        let result = evaluate_events(&snapshot);
+        let carried: Vec<_> = result
+            .due_events
+            .into_iter()
+            .filter(|event| event.kind == PlannerEventKind::CarriedOverIncomplete)
+            .collect();
+        assert_eq!(carried.len(), 1);
+        assert_eq!(carried[0].task_ref.as_ref().unwrap().task_id, "overdue");
     }
 }
