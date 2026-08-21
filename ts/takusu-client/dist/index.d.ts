@@ -106,6 +106,14 @@ interface components$1 {
         CreateComment: {
             content: string;
         };
+        /** @description Request body for registering a new device. */
+        CreateDevice: {
+            id: string;
+            name: string;
+            platform: components$1['schemas']['DevicePlatform'];
+            /** Format: int64 */
+            priority?: number | null;
+        };
         CreateHabit: {
             abandonability?: components$1['schemas']['Abandonability'] | null;
             allows_parallel?: boolean | null;
@@ -366,6 +374,26 @@ interface components$1 {
         DependencyNode: {
             id: string;
             title: string;
+        };
+        /**
+         * @description Platform kind for a registered device.
+         * @enum {string}
+         */
+        DevicePlatform: 'desktop' | 'android';
+        /** @description A registered device that may hold or contend for resident authority. */
+        DeviceRow: {
+            audio_service_running: boolean;
+            created_at: components$1['schemas']['Timestamp'];
+            evaluator_heartbeat_until?: components$1['schemas']['Timestamp'] | null;
+            evaluator_lease_until?: components$1['schemas']['Timestamp'] | null;
+            id: string;
+            name: string;
+            next_eval_at?: components$1['schemas']['Timestamp'] | null;
+            platform: components$1['schemas']['DevicePlatform'];
+            /** Format: int64 */
+            priority: number;
+            private_output_route: boolean;
+            updated_at: components$1['schemas']['Timestamp'];
         };
         /** @enum {string} */
         EstimatorBand: 'usual' | 'attention' | 'replan';
@@ -903,6 +931,17 @@ interface components$1 {
             /** @description Witness path `from → … → to` (endpoints included, length >= 3). */
             via: components$1['schemas']['DependencyNode'][];
         };
+        /** @description Request body for refreshing a desktop evaluator heartbeat. */
+        RefreshEvaluatorHeartbeat: {
+            device_id: string;
+            until: components$1['schemas']['Timestamp'];
+        };
+        /** @description Request body for reserving or renewing an Android evaluator lease. */
+        RefreshEvaluatorLease: {
+            device_id: string;
+            lease_until: components$1['schemas']['Timestamp'];
+            next_eval_at?: components$1['schemas']['Timestamp'] | null;
+        };
         /** @description Request body for `POST /api/schedule/reschedule`. */
         Reschedule: {
             from?: string | null;
@@ -913,6 +952,21 @@ interface components$1 {
             sleep: components$1['schemas']['SleepInput'];
             task_ids?: string[] | null;
             until?: string | null;
+        };
+        /** @description Result of resolving which device currently holds resident authority. */
+        ResidentAuthority: {
+            /**
+             * @description The resident device, or `None` when no device currently holds a valid
+             *     evaluator heartbeat or lease.
+             */
+            device_id?: string | null;
+            /** @description `true` when the requesting `candidate_id` is the resident authority. */
+            is_resident: boolean;
+            /**
+             * @description The next scheduled evaluation time advertised by the resident device,
+             *     when known.
+             */
+            next_eval_at?: components$1['schemas']['Timestamp'] | null;
         };
         SaveScheduleRequest: {
             entries: components$1['schemas']['ScheduleEntry'][];
@@ -988,6 +1042,11 @@ interface components$1 {
              */
             comfortable_minutes?: number | null;
             created_at: components$1['schemas']['Timestamp'];
+            /**
+             * @description デバイス優先度リスト。既定は desktop > android。
+             * @default ["desktop","android"]
+             */
+            device_priority: components$1['schemas']['JsonString'];
             id: string;
             /**
              * 459: 1 日の最大作業時間（分）。`None` または `0` の場合はデフォルトを使う。
@@ -1099,6 +1158,10 @@ interface components$1 {
          * @enum {string}
          */
         Solver: 'sa' | 'priority' | 'auto';
+        /** @description Current speech capability for a device. */
+        SpeechCapability: {
+            can_speak_proactively: boolean;
+        };
         SplitResult: {
             original: components$1['schemas']['TaskRow'];
             remainder: components$1['schemas']['TaskRow'];
@@ -1254,6 +1317,14 @@ interface components$1 {
             source: string;
             start_at: components$1['schemas']['Timestamp'];
         };
+        /** @description Request body for updating a registered device. */
+        UpdateDevice: {
+            audio_service_running?: boolean | null;
+            name?: string | null;
+            /** Format: int64 */
+            priority?: number | null;
+            private_output_route?: boolean | null;
+        };
         UpdateGoogleCalSettings: {
             calendar_id?: string | null;
             client_id?: string | null;
@@ -1304,6 +1375,8 @@ interface components$1 {
              * Format: int64
              */
             comfortable_minutes?: number | null;
+            /** @description デバイス優先度リスト。`None` の場合は更新しない。 */
+            device_priority?: string[] | null;
             /**
              * 459: 1 日の最大作業時間（分）。`None` または `0` の場合はデフォルトを使う。
              * Format: int64

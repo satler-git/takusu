@@ -13,6 +13,7 @@ use crate::token_cache::TokenCache;
 use crate::validate::{Validate, parse_settings_timezone};
 
 mod dependency;
+mod devices;
 mod events;
 mod gcal;
 mod habit;
@@ -41,6 +42,10 @@ fn default_settings_row() -> SettingsRow {
         seed: None,
         warm_start: false,
         plan_length_days: 14,
+        device_priority: takusu_types::JsonString::new(vec![
+            "desktop".to_string(),
+            "android".to_string(),
+        ]),
         created_at: takusu_types::Timestamp::default(),
         updated_at: takusu_types::Timestamp::default(),
     }

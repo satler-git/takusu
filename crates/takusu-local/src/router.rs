@@ -242,6 +242,27 @@ fn build_api_router(open_api: &mut OpenApi) -> Router<AppState> {
             "/workers/health",
             api::get(handlers::settings::workers_health),
         )
+        .api_route("/devices", api::post(handlers::device::create_device))
+        .api_route("/devices", api::get(handlers::device::list_devices))
+        .api_route("/devices/{id}", api::get(handlers::device::get_device))
+        .api_route("/devices/{id}", api::patch(handlers::device::update_device))
+        .api_route("/devices/{id}", api::delete(handlers::device::delete_device))
+        .api_route(
+            "/devices/{id}/heartbeat",
+            api::post(handlers::device::refresh_heartbeat),
+        )
+        .api_route(
+            "/devices/{id}/lease",
+            api::post(handlers::device::refresh_lease),
+        )
+        .api_route(
+            "/devices/{id}/resident",
+            api::get(handlers::device::resolve_resident_authority),
+        )
+        .api_route(
+            "/devices/{id}/speech",
+            api::get(handlers::device::get_speech_capability),
+        )
         // Serve the generated OpenAPI document. This route is not documented
         // in the spec itself (it uses `route`, not `api_route`).
         .route("/openapi.json", get(serve_openapi))

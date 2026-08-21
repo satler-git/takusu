@@ -51,6 +51,10 @@ async fn run() -> Result<(), DesktopError> {
             Arc::new(HttpTransport::new(&config.local_url, &config.token))
         };
 
+    // Register this host as the desktop device (WI-11). Re-registering is
+    // idempotent, so a daemon restart updates the name without clearing state.
+    transport.register_device("desktop").await?;
+
     // Start tray.
     let _tray = tray::spawn(state.clone(), Arc::clone(&transport)).await?;
 
@@ -85,6 +89,21 @@ async fn run() -> Result<(), DesktopError> {
                     tracing::warn!(error = %error, "planner event replay failed");
                     next_eval_at = None;
                 }
+            }
+        }
+    });
+
+    // Background heartbeat: the desktop remains the resident authority even
+    // between long planner sleeps, while the daemon is alive. `HttpTransport`
+    // refreshes with a 120s TTL, so a 60s interval leaves a comfortable margin.
+    let heartbeat_transport = Arc::clone(&transport);
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(60));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            interval.tick().await;
+            if let Err(error) = heartbeat_transport.refresh_evaluator_heartbeat("desktop").await {
+                tracing::warn!(error = %error, "desktop heartbeat failed");
             }
         }
     });
@@ -140,6 +159,10 @@ async fn replay_events(
     notification_state: &std::sync::Mutex<NotificationState>,
     proxy: &notify::NotificationsProxy<'static>,
 ) -> Result<Option<jiff::Timestamp>, DesktopError> {
+    // Keep the desktop evaluator heartbeat alive before each evaluation. The
+    // server resolves resident authority from the priority list and heartbeat
+    // TTL; only the resident device may commit events.
+    transport.refresh_evaluator_heartbeat("desktop").await?;
     let result = transport.evaluate_planner_events("desktop").await?;
     for event in transport.list_planner_events("desktop").await? {
         if !matches!(

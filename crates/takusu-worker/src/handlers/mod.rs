@@ -1,5 +1,6 @@
 pub mod auth;
 pub mod comments;
+pub mod devices;
 pub mod events;
 pub mod habits;
 pub mod health;

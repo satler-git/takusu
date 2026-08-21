@@ -146,10 +146,12 @@ pub(super) struct MemoryCountRow {
 const D1_BOOL_FIELDS: &[&str] = &[
     "active",
     "allows_parallel",
+    "audio_service_running",
     "built_in",
     "enabled",
     "fixed",
     "parallelizable",
+    "private_output_route",
     "user_edited",
     "warm_start",
 ];
