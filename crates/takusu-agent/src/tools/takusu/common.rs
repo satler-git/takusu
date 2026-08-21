@@ -3,6 +3,7 @@ use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::str::FromStr;
 use takusu_client::{Client, HabitDetail, HabitRow, HabitStepRow, TaskRow};
+use takusu_types::estimator::DurationDistribution;
 use takusu_types::{TaskStatus, TaskStatusFilter, Timestamp, parse_datetime_to_timestamp};
 
 use super::client_error;
@@ -297,6 +298,7 @@ pub(crate) struct TaskRef {
 pub(crate) struct TaskContext {
     task_refs: HashMap<String, TaskRef>,
     habit_display_ids: HashMap<String, i64>,
+    habits: HashMap<String, HabitRow>,
 }
 
 impl TaskContext {
@@ -304,6 +306,10 @@ impl TaskContext {
         let habit_display_ids: HashMap<String, i64> = habits
             .iter()
             .map(|habit| (habit.id.clone(), habit.display_id))
+            .collect();
+        let habits: HashMap<String, HabitRow> = habits
+            .iter()
+            .map(|habit| (habit.id.clone(), habit.clone()))
             .collect();
         let task_refs: HashMap<String, TaskRef> = tasks
             .iter()
@@ -322,7 +328,19 @@ impl TaskContext {
         Self {
             task_refs,
             habit_display_ids,
+            habits,
         }
+    }
+
+    /// Return the task-kind prior for the given task, if it is associated
+    /// with a habit that carries a duration distribution.
+    pub(crate) fn task_kind_prior(&self, task: &TaskRow) -> Option<DurationDistribution> {
+        let habit_id = task.habit_id.as_ref()?;
+        let habit = self.habits.get(habit_id)?;
+        Some(DurationDistribution::new(
+            habit.avg_minutes as f64,
+            habit.sigma_minutes as f64,
+        ))
     }
 
     pub(crate) fn ref_by_id(&self, id: &str) -> Option<&TaskRef> {

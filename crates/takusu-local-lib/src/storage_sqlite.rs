@@ -4136,4 +4136,185 @@ mod tests {
             &["android", "desktop"]
         );
     }
+
+    #[tokio::test]
+    async fn device_arbitration_transfers_resident_on_lease_expiration() {
+        let cfg = LocalConfig {
+            db: "sqlite::memory:".into(),
+            jwt_secret: "test-secret".into(),
+            ..Default::default()
+        };
+        let storage = SqliteStorage::init(&cfg).await.unwrap();
+
+        let desktop = CreateDevice {
+            id: "desktop-1".into(),
+            name: "desktop".into(),
+            platform: takusu_contracts::DevicePlatform::Desktop,
+            priority: None,
+        };
+        let android = CreateDevice {
+            id: "android-1".into(),
+            name: "android".into(),
+            platform: takusu_contracts::DevicePlatform::Android,
+            priority: None,
+        };
+        storage.register_device(&desktop).await.unwrap();
+        storage.register_device(&android).await.unwrap();
+
+        let future =
+            takusu_types::Timestamp::from_second(takusu_types::Timestamp::now().as_second() + 600)
+                .unwrap();
+
+        // Android holds the resident lease with a scheduled next eval.
+        storage
+            .refresh_evaluator_lease("android-1", future, Some(future))
+            .await
+            .unwrap();
+        let authority = storage
+            .resolve_resident_authority("android-1")
+            .await
+            .unwrap();
+        assert!(authority.is_resident);
+
+        // Desktop keeps a heartbeat alive past the Android lease.
+        let far_future =
+            takusu_types::Timestamp::from_second(takusu_types::Timestamp::now().as_second() + 1200)
+                .unwrap();
+        storage
+            .refresh_evaluator_heartbeat("desktop-1", far_future)
+            .await
+            .unwrap();
+
+        // When the Android lease expires, resident authority moves to desktop.
+        let past =
+            takusu_types::Timestamp::from_second(takusu_types::Timestamp::now().as_second() - 1)
+                .unwrap();
+        storage
+            .refresh_evaluator_lease("android-1", past, None)
+            .await
+            .unwrap();
+        let authority = storage
+            .resolve_resident_authority("desktop-1")
+            .await
+            .unwrap();
+        assert!(authority.is_resident);
+        assert_eq!(authority.device_id, Some("desktop-1".into()));
+
+        // Android now sees the desktop as the resident.
+        let authority = storage
+            .resolve_resident_authority("android-1")
+            .await
+            .unwrap();
+        assert!(!authority.is_resident);
+        assert_eq!(authority.device_id, Some("desktop-1".into()));
+    }
+
+    #[tokio::test]
+    async fn device_arbitration_partition_recovery_uses_earliest_created() {
+        let cfg = LocalConfig {
+            db: "sqlite::memory:".into(),
+            jwt_secret: "test-secret".into(),
+            ..Default::default()
+        };
+        let storage = SqliteStorage::init(&cfg).await.unwrap();
+
+        // Two desktops with the same priority simulate a split-brain partition.
+        let desktop_a = CreateDevice {
+            id: "desktop-a".into(),
+            name: "desktop-a".into(),
+            platform: takusu_contracts::DevicePlatform::Desktop,
+            priority: None,
+        };
+        let desktop_b = CreateDevice {
+            id: "desktop-b".into(),
+            name: "desktop-b".into(),
+            platform: takusu_contracts::DevicePlatform::Desktop,
+            priority: None,
+        };
+        storage.register_device(&desktop_a).await.unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        storage.register_device(&desktop_b).await.unwrap();
+
+        let future =
+            takusu_types::Timestamp::from_second(takusu_types::Timestamp::now().as_second() + 600)
+                .unwrap();
+
+        // Both sides of the partition refresh their heartbeat.
+        storage
+            .refresh_evaluator_heartbeat("desktop-a", future)
+            .await
+            .unwrap();
+        storage
+            .refresh_evaluator_heartbeat("desktop-b", future)
+            .await
+            .unwrap();
+
+        // The earliest registered device wins as resident.
+        let authority_a = storage
+            .resolve_resident_authority("desktop-a")
+            .await
+            .unwrap();
+        assert!(authority_a.is_resident);
+        assert_eq!(authority_a.device_id, Some("desktop-a".into()));
+
+        let authority_b = storage
+            .resolve_resident_authority("desktop-b")
+            .await
+            .unwrap();
+        assert!(!authority_b.is_resident);
+        assert_eq!(authority_b.device_id, Some("desktop-a".into()));
+
+        // When desktop-a's heartbeat expires, desktop-b takes over.
+        let past =
+            takusu_types::Timestamp::from_second(takusu_types::Timestamp::now().as_second() - 1)
+                .unwrap();
+        storage
+            .refresh_evaluator_heartbeat("desktop-a", past)
+            .await
+            .unwrap();
+        let authority_b = storage
+            .resolve_resident_authority("desktop-b")
+            .await
+            .unwrap();
+        assert!(authority_b.is_resident);
+        assert_eq!(authority_b.device_id, Some("desktop-b".into()));
+    }
+
+    #[tokio::test]
+    async fn event_delivery_can_be_deferred_during_quiet_hours() {
+        let cfg = LocalConfig {
+            db: "sqlite::memory:".into(),
+            jwt_secret: "test-secret".into(),
+            ..Default::default()
+        };
+        let storage = SqliteStorage::init(&cfg).await.unwrap();
+
+        let event = EventLedgerInsert {
+            id: "planner:quiet:event".into(),
+            kind: "task_start_time_reached".into(),
+            task_id: None,
+            presentation: "{}".into(),
+            urgency: "normal".into(),
+            schedule_revision: 1,
+            distribution_revision: Some(1),
+            observation_kind: "observation".into(),
+        };
+        let event = storage.insert_event_ledger(&event).await.unwrap();
+        assert_eq!(event.delivery_state, EventDeliveryState::PendingDelivery);
+
+        let deferred = storage
+            .update_event_delivery_state(&event.id, EventDeliveryState::DeferredQuietHours)
+            .await
+            .unwrap();
+        assert_eq!(
+            deferred.delivery_state,
+            EventDeliveryState::DeferredQuietHours
+        );
+
+        let delivered = storage
+            .update_event_delivery_state(&event.id, EventDeliveryState::Delivered)
+            .await
+            .unwrap();
+        assert_eq!(delivered.delivery_state, EventDeliveryState::Delivered);
+    }
 }

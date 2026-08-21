@@ -74,12 +74,13 @@ pub fn compute_coverage(
     target_end: Timestamp,
 ) -> CoverageState {
     // Unresolved intervals that overlap the target period and have already
-    // ended (or are in progress) make the coverage stale.
+    // started (whether ended or still in progress) make the coverage stale.
+    // Future unsettled intervals do not affect the current coverage decision.
     let unresolved = evaluation
         .unsettled_intervals
         .iter()
         .filter(|i| i.settled_at.is_none())
-        .any(|i| i.end_at > target_start && i.start_at < target_end && i.end_at <= now);
+        .any(|i| i.start_at <= now && i.start_at < target_end && i.end_at > target_start);
     if unresolved {
         return CoverageState::Stale;
     }
@@ -270,6 +271,68 @@ mod tests {
         );
         assert_eq!(state, CoverageState::Stale);
         assert_eq!(task_authority(state), TaskAuthority::Candidate);
+    }
+
+    #[test]
+    fn in_progress_unresolved_interval_makes_stale() {
+        let eval = CoverageEvaluation {
+            confirmations: vec![confirmation(
+                "2025-01-02T00:00:00Z",
+                "2025-01-02T23:59:59Z",
+                "target_period",
+                "ok",
+                "2025-01-02T08:00:00Z",
+            )],
+            unsettled_intervals: vec![UnsettledIntervalRow {
+                id: "u1".into(),
+                start_at: ts("2025-01-02T09:00:00Z"),
+                end_at: ts("2025-01-02T11:00:00Z"),
+                classification: "unclassified".into(),
+                source: "capture".into(),
+                created_at: ts("2025-01-02T09:05:00Z"),
+                settled_at: None,
+                operation_id: None,
+            }],
+            ..CoverageEvaluation::default()
+        };
+        let state = compute_coverage(
+            &eval,
+            ts("2025-01-02T10:00:00Z"),
+            ts("2025-01-02T00:00:00Z"),
+            ts("2025-01-02T23:59:59Z"),
+        );
+        assert_eq!(state, CoverageState::Stale);
+    }
+
+    #[test]
+    fn future_unresolved_interval_does_not_make_stale() {
+        let eval = CoverageEvaluation {
+            confirmations: vec![confirmation(
+                "2025-01-02T00:00:00Z",
+                "2025-01-02T23:59:59Z",
+                "target_period",
+                "ok",
+                "2025-01-02T08:00:00Z",
+            )],
+            unsettled_intervals: vec![UnsettledIntervalRow {
+                id: "u1".into(),
+                start_at: ts("2025-01-02T14:00:00Z"),
+                end_at: ts("2025-01-02T15:00:00Z"),
+                classification: "unclassified".into(),
+                source: "capture".into(),
+                created_at: ts("2025-01-02T09:05:00Z"),
+                settled_at: None,
+                operation_id: None,
+            }],
+            ..CoverageEvaluation::default()
+        };
+        let state = compute_coverage(
+            &eval,
+            ts("2025-01-02T10:00:00Z"),
+            ts("2025-01-02T00:00:00Z"),
+            ts("2025-01-02T23:59:59Z"),
+        );
+        assert_eq!(state, CoverageState::Trusted);
     }
 
     #[test]
