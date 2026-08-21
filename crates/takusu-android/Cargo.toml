@@ -20,6 +20,7 @@ takusu-audio = { path = "../takusu-audio", default-features = false, features = 
 takusu-client = { workspace = true }
 takusu-local-lib = { workspace = true }
 takusu-contracts = { workspace = true }
+takusu-types = { workspace = true }
 tokio = { workspace = true }
 axum = "0.8"
 thiserror = { workspace = true }

@@ -14,12 +14,13 @@ use tokio::sync::RwLock;
 use takusu_agent::tools::takusu::{TimeZoneCache, register_tools};
 use takusu_agent::transport::{AgentApiState, ApiUserInputProvider};
 use takusu_agent::{AgentConfig, AgentSession, ToolRegistry};
-use takusu_contracts::Storage;
+use takusu_contracts::{CreateDevice, DevicePlatform, RefreshEvaluatorLease, Storage};
 use takusu_local::router::router;
 use takusu_local::state::AppState;
 use takusu_local_lib::app::TakusuApp;
 use takusu_local_lib::storage_workers::WorkersStorage;
 use takusu_local_lib::token_cache::TokenCache;
+use takusu_types::Timestamp;
 use tokio::net::TcpListener;
 
 /// Error type for FFI
@@ -51,6 +52,15 @@ pub struct EventEvaluationResult {
     pub next_eval_at_millis: Option<i64>,
 }
 
+/// Grace period after the next scheduled exact alarm until the evaluator
+/// lease expires.
+const EVALUATOR_LEASE_GRACE_SECONDS: i64 = 60;
+
+/// Fallback evaluator lease duration when the evaluator cannot (yet) compute
+/// a `next_eval_at` boundary. This keeps the device as resident authority for
+/// a bounded window so the next alarm can reacquire the lease.
+const EVALUATOR_LEASE_FALLBACK_SECONDS: i64 = 3600;
+
 #[uniffi::export]
 pub fn evaluate_and_commit_events(
     workers_url: String,
@@ -79,12 +89,67 @@ pub fn evaluate_and_commit_events(
             root_token,
         ));
         let app = TakusuApp::new(storage, Arc::new(TokenCache::with_default_ttl()));
+        let now = Timestamp::now();
+
+        // Register this Android device (idempotent). If the device is already
+        // registered, the call updates the name/platform and leaves the lease
+        // fields untouched.
+        let body = CreateDevice {
+            id: device_id.clone(),
+            name: "Android".to_string(),
+            platform: DevicePlatform::Android,
+            priority: None,
+        };
+        app.register_device(&body)
+            .await
+            .map_err(|error| TakusuError::Server {
+                detail: format!("register device failed: {error}"),
+            })?;
+
+        // Refresh the evaluator lease with a provisional TTL so this device
+        // becomes a resident candidate before `evaluate_and_commit_events`
+        // checks `resolve_resident_authority`.
+        let fallback = Timestamp::from_second(now.as_second() + EVALUATOR_LEASE_FALLBACK_SECONDS)
+            .unwrap_or(now);
+        app.refresh_evaluator_lease(&RefreshEvaluatorLease {
+            device_id: device_id.clone(),
+            lease_until: fallback,
+            next_eval_at: None,
+        })
+        .await
+        .map_err(|error| TakusuError::Server {
+            detail: format!("refresh evaluator lease failed: {error}"),
+        })?;
+
         let evaluation = app
             .evaluate_and_commit_events(&device_id)
             .await
             .map_err(|error| TakusuError::Server {
                 detail: format!("event evaluation failed: {error}"),
             })?;
+
+        // Extend the lease to cover the next scheduled exact alarm plus grace.
+        // If the next boundary is beyond the fallback, this refresh supersedes
+        // the provisional lease.
+        if let Some(next_eval) = evaluation.next_eval_at {
+            let next_lease = next_eval.as_second() + EVALUATOR_LEASE_GRACE_SECONDS;
+            let lease_until = if next_lease > fallback.as_second() {
+                Timestamp::from_second(next_lease).unwrap_or(fallback)
+            } else {
+                fallback
+            };
+            if let Err(refresh_error) = app
+                .refresh_evaluator_lease(&RefreshEvaluatorLease {
+                    device_id,
+                    lease_until,
+                    next_eval_at: Some(next_eval),
+                })
+                .await
+            {
+                tracing::warn!("failed to refresh evaluator lease after commit: {refresh_error}");
+            }
+        }
+
         Ok::<_, TakusuError>(EventEvaluationResult {
             due_event_ids: evaluation
                 .due_events
