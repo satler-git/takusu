@@ -21,7 +21,7 @@ use takusu_types::estimator::effective_distribution;
 use takusu_types::jwt::{DEFAULT_TOKEN_TTL_SECONDS, generate_token_jwt};
 use takusu_types::{
     CommentAuthor, DependencyList, EnumLabel, Minutes, Quantity, TaskStatus, TaskStatusFilter,
-    Timestamp, TokenClaims, WindowMode,
+    Timestamp, TokenClaims, WindowMode, parse_timezone,
 };
 use wasm_bindgen::JsValue;
 
@@ -56,30 +56,26 @@ fn valid_event_transition(from: EventDeliveryState, to: EventDeliveryState) -> b
 /// Compute unclassified schedule gaps for the current local day, mirroring the
 /// SQLite application layer in `takusu_local_lib::app::events::schedule_gaps`.
 /// All schedule blanks are treated as unclassified gaps at the storage boundary.
-async fn schedule_gaps(db: &worker::D1Database) -> StorageResult<Vec<UnsettledIntervalRow>> {
-    let tz = get_timezone(db).await?;
+fn schedule_gaps_from_entries(
+    tz: &jiff::tz::TimeZone,
+    entries: &[ScheduleEntry],
+) -> StorageResult<Vec<UnsettledIntervalRow>> {
     let now = Timestamp::now();
-    let day_start: Timestamp = takusu_types::parse_date_expression("today", &tz, false)
-        .map_err(|e| StorageError::Internal(format!("day start: {e}")))?
-        .into();
-    let day_end: Timestamp = takusu_types::parse_date_expression("today", &tz, true)
-        .map_err(|e| StorageError::Internal(format!("day end: {e}")))?
-        .into();
+    let day_start_jiff = takusu_types::parse_date_expression("today", tz, false)
+        .map_err(|e| StorageError::Internal(format!("day start: {e}")))?;
+    let day_end_jiff = takusu_types::parse_date_expression("today", tz, true)
+        .map_err(|e| StorageError::Internal(format!("day end: {e}")))?;
+    let day_start = takusu_types::Timestamp::from_second(day_start_jiff.as_second())
+        .ok_or_else(|| StorageError::Internal("day start timestamp out of range".into()))?;
+    let day_end = takusu_types::Timestamp::from_second(day_end_jiff.as_second())
+        .ok_or_else(|| StorageError::Internal("day end timestamp out of range".into()))?;
 
-    let stmt = db.prepare(
-        "SELECT id, created_at, updated_at, schedule, horizon_task_ids FROM schedules WHERE id = 'active'",
-    );
-    let rows: Vec<ScheduleRow> = d1_all(&stmt).await?;
-    let mut entries: Vec<ScheduleEntry> = rows
-        .into_iter()
-        .next()
-        .map(|r| r.schedule.into_inner())
-        .unwrap_or_default();
-    entries.sort_by_key(|e| e.start_at);
+    let mut sorted = entries.to_vec();
+    sorted.sort_by_key(|e| e.start_at);
 
     let mut gaps = Vec::new();
 
-    if let Some(first) = entries.first() {
+    if let Some(first) = sorted.first() {
         if day_start < first.start_at {
             gaps.push(unsettled_gap_row(day_start, first.start_at));
         }
@@ -87,19 +83,36 @@ async fn schedule_gaps(db: &worker::D1Database) -> StorageResult<Vec<UnsettledIn
         gaps.push(unsettled_gap_row(day_start, day_end));
     }
 
-    for window in entries.windows(2) {
+    for window in sorted.windows(2) {
         if window[0].end_at < window[1].start_at {
             gaps.push(unsettled_gap_row(window[0].end_at, window[1].start_at));
         }
     }
 
-    if let Some(last) = entries.last() {
-        if last.end_at < day_end {
-            gaps.push(unsettled_gap_row(last.end_at, day_end));
-        }
+    if let Some(last) = sorted.last()
+        && last.end_at < day_end
+    {
+        gaps.push(unsettled_gap_row(last.end_at, day_end));
     }
 
     Ok(gaps)
+}
+
+fn build_coverage_evaluation(
+    schedule_revision: i64,
+    confirmations: Vec<CoverageConfirmationRow>,
+    unsettled: Vec<UnsettledIntervalRow>,
+    tz: &jiff::tz::TimeZone,
+    schedule: &[ScheduleEntry],
+) -> StorageResult<CoverageEvaluation> {
+    let unclassified_gaps = schedule_gaps_from_entries(tz, schedule)?;
+    Ok(CoverageEvaluation {
+        state: CoverageState::Bootstrap,
+        confirmations,
+        unsettled_intervals: unsettled,
+        unclassified_gaps,
+        schedule_revision,
+    })
 }
 
 fn unsettled_gap_row(start_at: Timestamp, end_at: Timestamp) -> UnsettledIntervalRow {
@@ -1121,9 +1134,7 @@ impl Storage for D1Storage {
     // ── Schedule ────────────────────────────────────────────────────────
 
     async fn get_schedule(&self) -> StorageResult<Option<ScheduleRow>> {
-        let stmt = self.db.prepare(
-            "SELECT id, created_at, updated_at, schedule, horizon_task_ids FROM schedules WHERE id = 'active'",
-        );
+        let stmt = self.db.prepare(SCHEDULE_SELECT);
         let rows: Vec<ScheduleRow> = d1_all(&stmt).await?;
         Ok(rows.into_iter().next())
     }
@@ -2893,20 +2904,68 @@ impl Storage for D1Storage {
     }
 
     async fn get_evaluation_inputs(&self) -> StorageResult<EvaluationInputs> {
-        let tasks = self.list_tasks(&TaskQuery::default()).await?;
-        let schedule = self.get_schedule().await?;
-        let ledger = self.list_event_ledger(None).await?;
-        let schedule_revision = self.get_schedule_revision().await?;
+        let stmts = vec![
+            self.db.prepare(evaluation_tasks_sql()),
+            self.db.prepare(SCHEDULE_SELECT),
+            self.db.prepare(EVENT_LEDGER_SELECT_ORDERED),
+            self.db.prepare(SCHEDULE_REVISION_SELECT),
+            self.db.prepare(all_work_sessions_sql()),
+            self.db.prepare(ALL_ESTIMATOR_STATE_SELECT),
+            self.db.prepare(ALL_ESTIMATOR_PRIORS_SELECT),
+            self.db.prepare(COVERAGE_CONFIRMATIONS_SELECT),
+            self.db.prepare(UNSETTLED_INTERVALS_SELECT),
+            self.db.prepare(SETTINGS_SELECT),
+        ];
 
-        let progress = batch_evaluation_progress(&self.db, &tasks).await?;
-        let coverage = self.get_coverage_evaluation().await?;
+        let results = d1_batch_results(&self.db, stmts).await?;
+        let [
+            tasks_raw,
+            schedule_raw,
+            ledger_raw,
+            revision_raw,
+            sessions_raw,
+            states_raw,
+            priors_raw,
+            confirmations_raw,
+            unsettled_raw,
+            settings_raw,
+        ] = results
+            .try_into()
+            .map_err(|_| StorageError::Internal("evaluation batch result count mismatch".into()))?;
+
+        let tasks: Vec<TaskRow> = d1_parse_all(tasks_raw)?;
+        let schedule: Vec<ScheduleEntry> = d1_parse_all::<ScheduleRow>(schedule_raw)?
+            .into_iter()
+            .next()
+            .map(|row| row.schedule.into_inner())
+            .unwrap_or_default();
+        let ledger: Vec<EventLedgerRow> = d1_parse_all(ledger_raw)?;
+        let schedule_revision: i64 = d1_parse_all::<RevisionRow>(revision_raw)?
+            .into_iter()
+            .next()
+            .map(|row| row.revision)
+            .unwrap_or(0);
+
+        let sessions: Vec<WorkSessionRow> = d1_parse_all(sessions_raw)?;
+        let states: Vec<EstimatorStateRow> = d1_parse_all(states_raw)?;
+        let priors = prior_map_from_rows(d1_parse_all::<PriorRow>(priors_raw)?);
+        let progress = build_evaluation_progress(&tasks, sessions, states, &priors);
+
+        let confirmations: Vec<CoverageConfirmationRow> = d1_parse_all(confirmations_raw)?;
+        let unsettled: Vec<UnsettledIntervalRow> = d1_parse_all(unsettled_raw)?;
+        let settings: Option<SettingsRow> = d1_parse_all(settings_raw)?.into_iter().next();
+        let tz = match settings {
+            Some(s) => parse_timezone(&s.tz)
+                .map_err(|e| StorageError::Internal(format!("stored timezone is invalid: {e}")))?,
+            None => jiff::tz::TimeZone::UTC,
+        };
+        let coverage =
+            build_coverage_evaluation(schedule_revision, confirmations, unsettled, &tz, &schedule)?;
 
         Ok(EvaluationInputs {
             schedule_revision,
             tasks,
-            schedule: schedule
-                .map(|row| row.schedule.as_inner().clone())
-                .unwrap_or_default(),
+            schedule,
             progress,
             ledger,
             coverage,
@@ -2914,26 +2973,45 @@ impl Storage for D1Storage {
     }
 
     async fn get_coverage_evaluation(&self) -> StorageResult<CoverageEvaluation> {
-        let stmt = self.db.prepare(
-            "SELECT id, start_at, end_at, timezone, source, schedule_revision, calendar_health, created_at, settled_at, operation_id FROM coverage_confirmations ORDER BY created_at DESC",
-        );
-        let confirmations: Vec<CoverageConfirmationRow> = d1_all(&stmt).await?;
+        let stmts = vec![
+            self.db.prepare(SETTINGS_SELECT),
+            self.db.prepare(SCHEDULE_SELECT),
+            self.db.prepare(SCHEDULE_REVISION_SELECT),
+            self.db.prepare(COVERAGE_CONFIRMATIONS_SELECT),
+            self.db.prepare(UNSETTLED_INTERVALS_SELECT),
+        ];
 
-        let stmt = self.db.prepare(
-            "SELECT id, start_at, end_at, classification, source, created_at, settled_at, operation_id FROM unsettled_intervals WHERE settled_at IS NULL ORDER BY start_at",
-        );
-        let unsettled: Vec<UnsettledIntervalRow> = d1_all(&stmt).await?;
+        let results = d1_batch_results(&self.db, stmts).await?;
+        let [
+            settings_raw,
+            schedule_raw,
+            revision_raw,
+            confirmations_raw,
+            unsettled_raw,
+        ] = results
+            .try_into()
+            .map_err(|_| StorageError::Internal("coverage batch result count mismatch".into()))?;
 
-        let unclassified_gaps = schedule_gaps(&self.db).await?;
-        let schedule_revision = self.get_schedule_revision().await?;
+        let settings: Option<SettingsRow> = d1_parse_all(settings_raw)?.into_iter().next();
+        let tz = match settings {
+            Some(s) => parse_timezone(&s.tz)
+                .map_err(|e| StorageError::Internal(format!("stored timezone is invalid: {e}")))?,
+            None => jiff::tz::TimeZone::UTC,
+        };
+        let schedule: Vec<ScheduleEntry> = d1_parse_all::<ScheduleRow>(schedule_raw)?
+            .into_iter()
+            .next()
+            .map(|row| row.schedule.into_inner())
+            .unwrap_or_default();
+        let schedule_revision: i64 = d1_parse_all::<RevisionRow>(revision_raw)?
+            .into_iter()
+            .next()
+            .map(|row| row.revision)
+            .unwrap_or(0);
+        let confirmations: Vec<CoverageConfirmationRow> = d1_parse_all(confirmations_raw)?;
+        let unsettled: Vec<UnsettledIntervalRow> = d1_parse_all(unsettled_raw)?;
 
-        Ok(CoverageEvaluation {
-            state: CoverageState::Bootstrap,
-            confirmations,
-            unsettled_intervals: unsettled,
-            unclassified_gaps,
-            schedule_revision,
-        })
+        build_coverage_evaluation(schedule_revision, confirmations, unsettled, &tz, &schedule)
     }
 
     async fn create_coverage_confirmation(
@@ -3028,13 +3106,7 @@ impl Storage for D1Storage {
     }
 
     async fn get_schedule_revision(&self) -> StorageResult<i64> {
-        #[derive(serde::Deserialize)]
-        struct RevisionRow {
-            revision: i64,
-        }
-        let stmt = self
-            .db
-            .prepare("SELECT revision FROM schedule_revisions WHERE id = 'active'");
+        let stmt = self.db.prepare(SCHEDULE_REVISION_SELECT);
         Ok(d1_first::<RevisionRow>(&stmt)
             .await?
             .map(|row| row.revision)
@@ -3049,9 +3121,7 @@ impl Storage for D1Storage {
             Some(_) => {
                 "SELECT id, kind, task_id, presentation, urgency, schedule_revision, distribution_revision, observation_kind, delivery_state, created_at, delivered_at FROM event_ledger e WHERE NOT EXISTS (SELECT 1 FROM event_delivery_claims c WHERE c.event_id = e.id AND c.device_id = ?1 AND datetime(c.claimed_at) > datetime('now', '-10 minutes')) ORDER BY e.created_at, e.id"
             }
-            None => {
-                "SELECT id, kind, task_id, presentation, urgency, schedule_revision, distribution_revision, observation_kind, delivery_state, created_at, delivered_at FROM event_ledger ORDER BY created_at, id"
-            }
+            None => EVENT_LEDGER_SELECT_ORDERED,
         };
         let stmt = self.db.prepare(sql);
         let stmt = match device_id {
