@@ -361,8 +361,17 @@ export function ResidentAgentButton({
         await sendCommand('stop-tts', current.operation_id);
         break;
       case 'thinking':
+        await sendCommand('open-panel', current.operation_id);
+        openAgent();
+        break;
       case 'waiting_for_approval':
+        await sendCommand('open-approval', current.operation_id);
+        openAgent();
+        break;
       case 'error':
+        await sendCommand('show-recovery', current.operation_id);
+        openAgent();
+        break;
       case 'waiting_for_user':
       case 'idle':
       case 'transcribing':
@@ -373,7 +382,7 @@ export function ResidentAgentButton({
   }, [openAgent, sendCommand]);
 
   // Release runs on the JS thread so it can use Date.now() and React state.
-  const release = useCallback(() => {
+  const release = useCallback(async () => {
     if (released.value) return;
     released.value = true;
     clearLongPressTimer();
@@ -401,7 +410,11 @@ export function ResidentAgentButton({
     }
     const elapsed = Date.now() - startTime.value;
     if (elapsed < LONG_PRESS_MS) {
-      handleTap();
+      try {
+        await handleTap();
+      } catch (e) {
+        console.error(e);
+      }
     }
     reset();
   }, [

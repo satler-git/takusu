@@ -194,44 +194,6 @@ function CurrentTaskCardImpl({
     </PressableScale>
   );
 
-  if (card.settlement) {
-    const { settlement } = card;
-    return (
-      <View style={styles.container}>
-        <View style={styles.header}>
-          <View style={styles.meta}>
-            <Text style={styles.reference}>未確定時間の整理</Text>
-            <Text style={styles.title}>{settlement.question}</Text>
-          </View>
-          <View style={styles.badges}>
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>未確定</Text>
-            </View>
-          </View>
-        </View>
-        <View style={styles.actions}>
-          {settlement.act.actions.map((action) =>
-            actionButton(
-              action.label,
-              'play',
-              () => {
-                haptic.light();
-                onSettle?.(action.id);
-              },
-              { primary: true },
-            ),
-          )}
-          {settlement.shift.actions.map((action) =>
-            actionButton(action.label, 'time-outline', () => {
-              haptic.light();
-              onSettle?.(action.id);
-            }),
-          )}
-        </View>
-      </View>
-    );
-  }
-
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -252,40 +214,65 @@ function CurrentTaskCardImpl({
           </View>
         </View>
       </View>
-      <View style={styles.actions}>
-        {actionButton(
-          isInProgress ? '一時停止' : '着手',
-          isInProgress ? 'pause' : 'play',
-          handleStartPause,
-          { primary: true, isLoading: loading },
-        )}
-        {actionButton(
-          '進捗',
-          'bar-chart-outline',
-          () => {
+      {card.settlement ? (
+        <>
+          <Text style={styles.title}>{card.settlement.question}</Text>
+          <View style={styles.actions}>
+            {card.settlement.act.actions.map((action) =>
+              actionButton(
+                action.label,
+                'play',
+                () => {
+                  haptic.light();
+                  onSettle?.(action.id);
+                },
+                { primary: true },
+              ),
+            )}
+            {card.settlement.shift.actions.map((action) =>
+              actionButton(action.label, 'time-outline', () => {
+                haptic.light();
+                onSettle?.(action.id);
+              }),
+            )}
+          </View>
+        </>
+      ) : (
+        <View style={styles.actions}>
+          {actionButton(
+            isInProgress ? '一時停止' : '着手',
+            isInProgress ? 'pause' : 'play',
+            handleStartPause,
+            { primary: true, isLoading: loading },
+          )}
+          {actionButton(
+            '進捗',
+            'bar-chart-outline',
+            () => {
+              haptic.light();
+              onProgress();
+            },
+            { disabled: !isInProgress },
+          )}
+          {actionButton(
+            '完了',
+            'checkmark',
+            () => {
+              haptic.light();
+              onComplete();
+            },
+            { disabled: !isInProgress },
+          )}
+          {actionButton('延期', 'time-outline', () => {
             haptic.light();
-            onProgress();
-          },
-          { disabled: !isInProgress },
-        )}
-        {actionButton(
-          '完了',
-          'checkmark',
-          () => {
+            onDelay();
+          })}
+          {actionButton('相談', 'chatbubble-outline', () => {
             haptic.light();
-            onComplete();
-          },
-          { disabled: !isInProgress },
-        )}
-        {actionButton('延期', 'time-outline', () => {
-          haptic.light();
-          onDelay();
-        })}
-        {actionButton('相談', 'chatbubble-outline', () => {
-          haptic.light();
-          onConsult();
-        })}
-      </View>
+            onConsult();
+          })}
+        </View>
+      )}
     </View>
   );
 }

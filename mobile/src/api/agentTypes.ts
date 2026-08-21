@@ -489,6 +489,7 @@ function decodeCapabilityRequest(v: unknown): CapabilityRequest | undefined {
   const snoozeMinutes = numField(o, 'snooze_minutes');
   const snoozeTarget = strField(o, 'snooze_target');
   const quantityDone = numField(o, 'quantity_done');
+  const quantityTotal = numField(o, 'quantity_total');
   const note = strField(o, 'note');
   const scheduledAt = strField(o, 'scheduled_at');
   return {
@@ -500,6 +501,7 @@ function decodeCapabilityRequest(v: unknown): CapabilityRequest | undefined {
     ...(snoozeMinutes !== undefined && { snooze_minutes: snoozeMinutes }),
     ...(snoozeTarget !== undefined && { snooze_target: snoozeTarget }),
     ...(quantityDone !== undefined && { quantity_done: quantityDone }),
+    ...(quantityTotal !== undefined && { quantity_total: quantityTotal }),
     ...(note !== undefined && { note }),
     ...(scheduledAt !== undefined && { scheduled_at: scheduledAt }),
   };
@@ -688,6 +690,7 @@ function decodeActionCapability(v: unknown): ActionCapability | undefined {
   const snoozeMinutes = numField(o, 'snooze_minutes');
   const snoozeTarget = strField(o, 'snooze_target');
   const quantityDone = numField(o, 'quantity_done');
+  const quantityTotal = numField(o, 'quantity_total');
   const note = strField(o, 'note');
   const scheduledAt = strField(o, 'scheduled_at');
   const request = isObject(o.request)
@@ -705,6 +708,7 @@ function decodeActionCapability(v: unknown): ActionCapability | undefined {
     ...(snoozeMinutes !== undefined && { snooze_minutes: snoozeMinutes }),
     ...(snoozeTarget !== undefined && { snooze_target: snoozeTarget }),
     ...(quantityDone !== undefined && { quantity_done: quantityDone }),
+    ...(quantityTotal !== undefined && { quantity_total: quantityTotal }),
     ...(note !== undefined && { note }),
     ...(scheduledAt !== undefined && { scheduled_at: scheduledAt }),
     ...(request !== undefined && { request }),
@@ -887,6 +891,8 @@ export interface ActionCapability {
   snooze_target?: string;
   /** Quantity completed, present for `progress` capabilities. */
   quantity_done?: number;
+  /** Total quantity, present for `progress` capabilities. */
+  quantity_total?: number;
   /** Note to attach with progress, present for `progress` capabilities. */
   note?: string;
   /** ISO 8601 scheduled delivery time for notification capabilities. */
@@ -906,6 +912,7 @@ export interface CapabilityRequest {
   /** ISO 8601 target `start_at` for `delay` capabilities, computed client-side or on first tap. */
   snooze_target?: string;
   quantity_done?: number;
+  quantity_total?: number;
   note?: string;
   /** ISO 8601 timestamp for which the notification capability should remain valid. */
   scheduled_at?: string;
