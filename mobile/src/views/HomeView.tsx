@@ -83,8 +83,7 @@ import {
   makeProgressOperationId,
   recordProgressWithTotal,
   findOpenWorkSessionForTask,
-  completeTaskWithOptionalWorkSession,
-  restoreTaskAfterCompletion,
+  findOptionalOpenWorkSessionForTask,
   type ProgressPayload,
 } from '@/src/utils/progress';
 import type { HabitRow } from '@/src/api/types';
@@ -397,6 +396,8 @@ export function HomeView() {
   >('complete');
   const [evaluationSnapshot, setEvaluationSnapshot] =
     useState<EvaluationInputs | null>(null);
+  const homeCoverageState = evaluationSnapshot?.coverage?.state ?? 'bootstrap';
+  const isBootstrap = homeCoverageState === 'bootstrap';
   const startDoneButtonY = useSharedValue(0);
   const startDoneButtonPressed = useSharedValue(0);
   const listRef = useRef<FlatList<ListItem>>(null);
@@ -420,6 +421,8 @@ export function HomeView() {
   notificationsRef.current = notifications;
   const clientRef = useRef(client);
   clientRef.current = client;
+  const agentClientRef = useRef(agentClient);
+  agentClientRef.current = agentClient;
   const openWorkSessionsRef = useRef(openWorkSessions);
   openWorkSessionsRef.current = openWorkSessions;
   const progressSessionRef = useRef(progressSession);
@@ -1190,6 +1193,31 @@ export function HomeView() {
     [agentClient, currentTask, quickActionLoading, refresh],
   );
 
+  // Generic capability-authorized action for any task. Prefer this over direct
+  // takusu-client calls for start/pause/progress/complete quick actions.
+  const runTaskAction = useCallback(
+    async (
+      taskId: string,
+      action: 'start' | 'pause' | 'progress' | 'complete',
+      extras?: {
+        quantity_done?: number;
+        quantity_total?: number;
+        note?: string;
+      },
+    ) => {
+      const ac = agentClientRef.current;
+      if (!ac) throw new Error('agent client not ready');
+      await ac.quickAction({
+        task_id: taskId,
+        action,
+        device_id: 'mobile',
+        input_path: 'screen_capability',
+        ...extras,
+      });
+    },
+    [],
+  );
+
   const openCompactPanel = useCallback(
     (mode: 'complete' | 'delay' | 'progress') => {
       haptic.light();
@@ -1210,6 +1238,18 @@ export function HomeView() {
       router.push('/agent');
     }
   }, [currentTask, router]);
+
+  const handleSettle = useCallback(
+    (actionId: string) => {
+      haptic.light();
+      if (actionId === 'settle-start') {
+        void runCurrentQuickAction('start');
+      } else if (actionId === 'settle-ignore') {
+        openCompactPanel('delay');
+      }
+    },
+    [runCurrentQuickAction, openCompactPanel],
+  );
 
   const handleCompactPanelSuccess = useCallback(async () => {
     await refresh();
@@ -1243,8 +1283,6 @@ export function HomeView() {
         actionLabel = 'start';
         errorLabel = 'タスクの開始に失敗';
       }
-      const operationId = makeProgressOperationId();
-      let startedSessionId: string | undefined;
       try {
         if (isInProgress) {
           const session = await findOpenWorkSessionForTask(
@@ -1257,26 +1295,16 @@ export function HomeView() {
             openProgressSheet(session, 'complete');
             return;
           }
-          await currentClient.completeWorkSession(session.id, operationId);
+          await runTaskAction(task.id, 'complete');
         } else if (isPending) {
           // Start and immediately complete so a pending task can be marked done
           // through a work session.
-          const session = await currentClient.createWorkSession(
-            { task_id: task.id },
-            operationId,
-          );
-          await currentClient.completeWorkSession(
-            session.id,
-            makeProgressOperationId(),
-          );
+          await runTaskAction(task.id, 'start');
+          await runTaskAction(task.id, 'complete');
         } else if (isDone) {
           await currentClient.updateTask(task.id, { status: newStatus });
         } else {
-          const session = await currentClient.createWorkSession(
-            { task_id: task.id },
-            operationId,
-          );
-          startedSessionId = session.id;
+          await runTaskAction(task.id, 'start');
         }
       } catch (e) {
         showError(e, errorLabel);
@@ -1319,11 +1347,11 @@ export function HomeView() {
           const undoNotifications = notificationsRef.current;
           if (newStatus === 'in_progress' && prevStatus === 'scheduled') {
             // undo start: close the work session and return to scheduled.
-            if (startedSessionId) {
-              await undoClient.pauseWorkSession(
-                startedSessionId,
-                makeProgressOperationId(),
-              );
+            try {
+              await runTaskAction(task.id, 'pause');
+            } catch (e) {
+              showError(e, '作業セッションの一時停止に失敗');
+              return;
             }
             if (undoNotifications.inProgress) {
               dismissInProgressNotification(task.id).catch((e) =>
@@ -1334,17 +1362,14 @@ export function HomeView() {
             newStatus === 'completed' &&
             prevStatus === 'in_progress'
           ) {
-            // undo complete: restore in_progress and previous quantity_done,
-            // and start a new work session so the task is ready to continue.
+            // undo complete: restore scheduled and previous quantity_done,
+            // then start a new work session so the task is ready to continue.
             await undoClient.updateTask(task.id, {
-              status: 'in_progress',
+              status: 'scheduled',
               quantity_done: originalQuantityDone,
             });
             try {
-              await undoClient.createWorkSession(
-                { task_id: task.id },
-                makeProgressOperationId(),
-              );
+              await runTaskAction(task.id, 'start');
             } catch (e) {
               showError(e, '作業セッションの再開に失敗');
               return;
@@ -1354,6 +1379,11 @@ export function HomeView() {
                 logError('通知の投稿', e),
               );
             }
+          } else if (newStatus === 'completed' && prevStatus === 'pending') {
+            await undoClient.updateTask(task.id, {
+              status: 'pending',
+              quantity_done: originalQuantityDone,
+            });
           } else if (
             newStatus === 'scheduled' &&
             (prevStatus === 'completed' || prevStatus === 'skipped')
@@ -1381,14 +1411,14 @@ export function HomeView() {
           await refreshRef.current();
         },
         redo: async () => {
-          const redoClient = clientRef.current;
-          if (!redoClient) return;
           const redoNotifications = notificationsRef.current;
           if (newStatus === 'in_progress' && prevStatus === 'scheduled') {
-            await redoClient.createWorkSession(
-              { task_id: task.id },
-              makeProgressOperationId(),
-            );
+            try {
+              await runTaskAction(task.id, 'start');
+            } catch (e) {
+              showError(e, 'タスクの再開に失敗');
+              return;
+            }
             if (redoNotifications.inProgress) {
               postInProgressNotification(task, iconColor).catch((e) =>
                 logError('通知の投稿', e),
@@ -1398,12 +1428,15 @@ export function HomeView() {
             newStatus === 'completed' &&
             (prevStatus === 'in_progress' || prevStatus === 'pending')
           ) {
-            // redo complete: update status and quantity_done without creating a
-            // duplicate progress event.
-            await redoClient.updateTask(task.id, {
-              status: 'completed',
-              quantity_done: total ?? originalQuantityDone,
-            });
+            try {
+              if (prevStatus === 'pending') {
+                await runTaskAction(task.id, 'start');
+              }
+              await runTaskAction(task.id, 'complete');
+            } catch (e) {
+              showError(e, 'タスクの再完了に失敗');
+              return;
+            }
             if (redoNotifications.inProgress) {
               dismissInProgressNotification(task.id).catch((e) =>
                 logError('通知の消去', e),
@@ -1413,8 +1446,12 @@ export function HomeView() {
             newStatus === 'scheduled' &&
             (prevStatus === 'completed' || prevStatus === 'skipped')
           ) {
+            const redoClient = clientRef.current;
+            if (!redoClient) return;
             await redoClient.updateTask(task.id, { status: 'scheduled' });
           } else {
+            const redoClient = clientRef.current;
+            if (!redoClient) return;
             await redoClient.updateTask(task.id, { status: newStatus });
           }
           await refreshRef.current();
@@ -1422,53 +1459,90 @@ export function HomeView() {
       });
       await refreshRef.current();
     },
-    [openProgressSheet, iconColor],
+    [openProgressSheet, iconColor, runTaskAction],
   );
 
-  const markComplete = useCallback(async (task: TaskRow) => {
-    const currentClient = clientRef.current;
-    if (!currentClient || task.status !== 'scheduled') return;
-    const prevStatus = task.status;
-    const prevQuantityDone = task.quantity_done;
-    const total = task.quantity_total;
-    try {
-      await completeTaskWithOptionalWorkSession(currentClient, task.id, {
-        operationId: makeProgressOperationId(),
-        quantityTotal: total,
-      });
-    } catch (e) {
-      showError(e, 'タスクの完了に失敗');
-      return;
-    }
-    dismissTaskNotifications(task.id).catch((e) => logError('通知の消去', e));
-    cancelScheduledTaskNotifications(task.id).catch((e) =>
-      logError('通知のキャンセル', e),
-    );
-    undoRedo.push({
-      description: `mark done: ${task.title}`,
-      undo: async () => {
-        const undoClient = clientRef.current;
-        if (!undoClient) return;
-        await restoreTaskAfterCompletion(
-          undoClient,
+  const markComplete = useCallback(
+    async (task: TaskRow) => {
+      const currentClient = clientRef.current;
+      const currentNotifications = notificationsRef.current;
+      if (
+        !currentClient ||
+        task.status === 'completed' ||
+        task.status === 'skipped'
+      )
+        return;
+      const prevStatus = task.status;
+      const prevQuantityDone = task.quantity_done;
+      const total = task.quantity_total;
+      let usedQuickAction = false;
+      try {
+        const openSession = await findOptionalOpenWorkSessionForTask(
+          currentClient,
           task.id,
-          prevStatus,
-          prevQuantityDone,
         );
-        await refreshRef.current();
-      },
-      redo: async () => {
-        const redoClient = clientRef.current;
-        if (!redoClient) return;
-        await completeTaskWithOptionalWorkSession(redoClient, task.id, {
-          operationId: makeProgressOperationId(),
-          quantityTotal: total,
-        });
-        await refreshRef.current();
-      },
-    });
-    await refreshRef.current();
-  }, []);
+        if (openSession && task.status === 'in_progress') {
+          await runTaskAction(task.id, 'complete');
+          usedQuickAction = true;
+        } else {
+          await currentClient.updateTask(task.id, {
+            status: 'completed',
+            quantity_done: total ?? prevQuantityDone,
+          });
+        }
+      } catch (e) {
+        showError(e, 'タスクの完了に失敗');
+        return;
+      }
+      dismissTaskNotifications(task.id).catch((e) => logError('通知の消去', e));
+      cancelScheduledTaskNotifications(task.id).catch((e) =>
+        logError('通知のキャンセル', e),
+      );
+      if (prevStatus === 'in_progress' && currentNotifications.inProgress) {
+        dismissInProgressNotification(task.id).catch((e) =>
+          logError('通知の消去', e),
+        );
+      }
+      undoRedo.push({
+        description: `mark done: ${task.title}`,
+        undo: async () => {
+          const undoClient = clientRef.current;
+          if (!undoClient) return;
+          await undoClient.updateTask(task.id, {
+            status: prevStatus,
+            quantity_done: prevQuantityDone,
+          });
+          await refreshRef.current();
+        },
+        redo: async () => {
+          if (usedQuickAction) {
+            try {
+              await runTaskAction(task.id, 'start');
+              await runTaskAction(task.id, 'complete');
+            } catch (e) {
+              showError(e, 'タスクの再完了に失敗');
+              return;
+            }
+          } else {
+            const redoClient = clientRef.current;
+            if (!redoClient) return;
+            try {
+              await redoClient.updateTask(task.id, {
+                status: 'completed',
+                quantity_done: total ?? prevQuantityDone,
+              });
+            } catch (e) {
+              showError(e, 'タスクの再完了に失敗');
+              return;
+            }
+          }
+          await refreshRef.current();
+        },
+      });
+      await refreshRef.current();
+    },
+    [runTaskAction],
+  );
 
   const markSkipped = useCallback(async (task: TaskRow) => {
     const currentClient = clientRef.current;
@@ -1549,16 +1623,22 @@ export function HomeView() {
     async (session: WorkSessionRow, payload: ProgressPayload) => {
       const currentClient = clientRef.current;
       if (!currentClient) return;
-      const recordOperationId = makeProgressOperationId();
-      const pauseOperationId = makeProgressOperationId();
       try {
-        // Record progress first, then pause. If pause fails after a successful
-        // record, the progress is retained and the session remains open; the
-        // user is shown the error and can retry pausing.
-        await recordProgressWithTotal(currentClient, session, payload, {
-          operationId: recordOperationId,
-        });
-        await currentClient.pauseWorkSession(session.id, pauseOperationId);
+        if (session.task_id) {
+          await runTaskAction(session.task_id, 'progress', {
+            quantity_done: payload.quantityDone,
+            quantity_total: payload.quantityTotal,
+            note: payload.note,
+          });
+          await runTaskAction(session.task_id, 'pause');
+        } else {
+          const recordOperationId = makeProgressOperationId();
+          const pauseOperationId = makeProgressOperationId();
+          await recordProgressWithTotal(currentClient, session, payload, {
+            operationId: recordOperationId,
+          });
+          await currentClient.pauseWorkSession(session.id, pauseOperationId);
+        }
         dismissInProgressNotification(session.task_id ?? '').catch((e) =>
           logError('通知の消去', e),
         );
@@ -1568,7 +1648,7 @@ export function HomeView() {
       }
       await refreshRef.current();
     },
-    [],
+    [runTaskAction],
   );
 
   const recordInProgress = useCallback(
@@ -1576,60 +1656,82 @@ export function HomeView() {
       const currentClient = clientRef.current;
       if (!currentClient) return;
       try {
-        await recordProgressWithTotal(currentClient, session, payload);
+        if (session.task_id) {
+          await runTaskAction(session.task_id, 'progress', {
+            quantity_done: payload.quantityDone,
+            quantity_total: payload.quantityTotal,
+            note: payload.note,
+          });
+        } else {
+          await recordProgressWithTotal(currentClient, session, payload);
+        }
       } catch (e) {
         showError(e, '進捗の記録に失敗');
         return;
       }
       await refreshRef.current();
     },
-    [],
+    [runTaskAction],
   );
 
   // Pause a session directly without recording progress (session card swipe).
-  const pauseSession = useCallback(async (session: WorkSessionRow) => {
-    const currentClient = clientRef.current;
-    if (!currentClient) return;
-    try {
-      await currentClient.pauseWorkSession(
-        session.id,
-        makeProgressOperationId(),
-      );
-      dismissInProgressNotification(session.task_id ?? '').catch((e) =>
-        logError('通知の消去', e),
-      );
-    } catch (e) {
-      showError(e, '作業セッションの一時停止に失敗');
-      return;
-    }
-    await refreshRef.current();
-  }, []);
-
-  const completeSession = useCallback(async (session: WorkSessionRow) => {
-    const currentClient = clientRef.current;
-    if (!currentClient) return;
-    try {
-      await currentClient.completeWorkSession(
-        session.id,
-        makeProgressOperationId(),
-      );
-      if (session.task_id) {
-        dismissTaskNotifications(session.task_id).catch((e) =>
+  const pauseSession = useCallback(
+    async (session: WorkSessionRow) => {
+      const currentClient = clientRef.current;
+      if (!currentClient) return;
+      try {
+        if (session.task_id) {
+          await runTaskAction(session.task_id, 'pause');
+        } else {
+          await currentClient.pauseWorkSession(
+            session.id,
+            makeProgressOperationId(),
+          );
+        }
+        dismissInProgressNotification(session.task_id ?? '').catch((e) =>
           logError('通知の消去', e),
         );
-        cancelScheduledTaskNotifications(session.task_id).catch((e) =>
-          logError('通知のキャンセル', e),
-        );
+      } catch (e) {
+        showError(e, '作業セッションの一時停止に失敗');
+        return;
       }
-      dismissInProgressNotification(session.task_id ?? '').catch((e) =>
-        logError('通知の消去', e),
-      );
-    } catch (e) {
-      showError(e, '作業セッションの完了に失敗');
-      return;
-    }
-    await refreshRef.current();
-  }, []);
+      await refreshRef.current();
+    },
+    [runTaskAction],
+  );
+
+  const completeSession = useCallback(
+    async (session: WorkSessionRow) => {
+      const currentClient = clientRef.current;
+      if (!currentClient) return;
+      try {
+        if (session.task_id) {
+          await runTaskAction(session.task_id, 'complete');
+        } else {
+          await currentClient.completeWorkSession(
+            session.id,
+            makeProgressOperationId(),
+          );
+        }
+        if (session.task_id) {
+          dismissTaskNotifications(session.task_id).catch((e) =>
+            logError('通知の消去', e),
+          );
+          cancelScheduledTaskNotifications(session.task_id).catch((e) =>
+            logError('通知のキャンセル', e),
+          );
+        }
+        dismissInProgressNotification(session.task_id ?? '').catch((e) =>
+          logError('通知の消去', e),
+        );
+      } catch (e) {
+        showError(e, '作業セッションの完了に失敗');
+        return;
+      }
+      await refreshRef.current();
+    },
+    [runTaskAction],
+  );
 
   // Record final progress then complete in one step (sheet "complete" mode).
   // If the record fails the session is left open and not completed.
@@ -1638,13 +1740,22 @@ export function HomeView() {
       const currentClient = clientRef.current;
       if (!currentClient) return;
       try {
-        await recordProgressWithTotal(currentClient, session, payload, {
-          operationId: makeProgressOperationId(),
-        });
-        await currentClient.completeWorkSession(
-          session.id,
-          makeProgressOperationId(),
-        );
+        if (session.task_id) {
+          await runTaskAction(session.task_id, 'progress', {
+            quantity_done: payload.quantityDone,
+            quantity_total: payload.quantityTotal,
+            note: payload.note,
+          });
+          await runTaskAction(session.task_id, 'complete');
+        } else {
+          await recordProgressWithTotal(currentClient, session, payload, {
+            operationId: makeProgressOperationId(),
+          });
+          await currentClient.completeWorkSession(
+            session.id,
+            makeProgressOperationId(),
+          );
+        }
         if (session.task_id) {
           dismissTaskNotifications(session.task_id).catch((e) =>
             logError('通知の消去', e),
@@ -1662,7 +1773,7 @@ export function HomeView() {
       }
       await refreshRef.current();
     },
-    [],
+    [runTaskAction],
   );
 
   const handleHomeProgressConfirm = useCallback(
@@ -1729,10 +1840,7 @@ export function HomeView() {
     haptic.medium();
     try {
       if (next) {
-        await currentClient.createWorkSession(
-          { task_id: next.id },
-          operationId,
-        );
+        await runTaskAction(next.id, 'start');
         cancelScheduledStartNotifications(next.id).catch((e) =>
           logError('通知のキャンセル', e),
         );
@@ -1754,7 +1862,7 @@ export function HomeView() {
       return;
     }
     await refreshRef.current();
-  }, [findNextTask, openProgressSheet, iconColor]);
+  }, [findNextTask, openProgressSheet, iconColor, runTaskAction]);
 
   const handleStartDoneSlide = useCallback(async () => {
     const currentClient = clientRef.current;
@@ -2381,6 +2489,45 @@ export function HomeView() {
     () =>
       !searching ? (
         <View style={{ gap: 8 }}>
+          {isBootstrap && (
+            <View
+              style={{
+                backgroundColor: colors.surface,
+                padding: 16,
+                borderRadius: 12,
+                gap: 8,
+              }}
+            >
+              <Text
+                style={{ fontSize: 16, color: colors.black, fontWeight: '600' }}
+              >
+                今日の予定を確認しましょう
+              </Text>
+              <Text style={{ fontSize: 13, color: colors.textOnCardSecondary }}>
+                タスクを追加すると、エージェントが作業を整理します
+              </Text>
+              <PressableScale
+                style={{
+                  backgroundColor: colors.brand,
+                  paddingVertical: 10,
+                  paddingHorizontal: 16,
+                  borderRadius: 8,
+                  alignSelf: 'flex-start',
+                }}
+                onPress={() => router.push('/task/add')}
+              >
+                <Text
+                  style={{
+                    color: colors.onBrand,
+                    fontSize: 14,
+                    fontWeight: '600',
+                  }}
+                >
+                  タスクを追加
+                </Text>
+              </PressableScale>
+            </View>
+          )}
           {currentTaskCard ? (
             <CurrentTaskCard
               card={currentTaskCard}
@@ -2391,11 +2538,7 @@ export function HomeView() {
               onComplete={() => openCompactPanel('complete')}
               onDelay={() => openCompactPanel('delay')}
               onConsult={handleConsult}
-              onSettle={(actionId) => {
-                // WI-10: settlement handling is wired to the compact panel.
-                // The actual capability invocation is implemented in WI-18.
-                console.log('settlement action:', actionId);
-              }}
+              onSettle={handleSettle}
             />
           ) : null}
           {hasPast ? (
@@ -2423,6 +2566,9 @@ export function HomeView() {
       runCurrentQuickAction,
       openCompactPanel,
       handleConsult,
+      handleSettle,
+      isBootstrap,
+      router,
     ],
   );
 

@@ -94,6 +94,7 @@ export async function handleActionButtonResponse(
           notificationTaskId,
           inProgressNotifications,
           haptic,
+          agentClient,
           color,
         );
       }
@@ -148,7 +149,16 @@ export async function handleActionButtonResponse(
     const title = response.notification.request.content.title ?? '';
     const taskTitle = title.replace(/^実行中: /, '') || 'タスク';
     try {
-      await client.updateTask(taskId, { status: newStatus });
+      if (actionId === ACTION_DONE && agentClient) {
+        await agentClient.quickAction({
+          task_id: taskId,
+          action: 'complete',
+          device_id: 'mobile',
+          input_path: 'notification_capability',
+        });
+      } else {
+        await client.updateTask(taskId, { status: newStatus });
+      }
       await Promise.all([
         postResultNotification(taskId, taskTitle, newStatus, color),
         dismissInProgressNotification(taskId),
@@ -169,11 +179,21 @@ async function handleLegacyStart(
   taskId: string,
   inProgressNotifications: boolean,
   haptic: ActionHandlerHaptic,
+  agentClient: AgentClient | undefined,
   color?: string,
 ): Promise<boolean> {
   haptic.medium();
   try {
-    await client.updateTask(taskId, { status: 'in_progress' });
+    if (agentClient) {
+      await agentClient.quickAction({
+        task_id: taskId,
+        action: 'start',
+        device_id: 'mobile',
+        input_path: 'notification_capability',
+      });
+    } else {
+      await client.updateTask(taskId, { status: 'in_progress' });
+    }
     await dismissTaskNotifications(taskId);
     await cancelScheduledStartNotifications(taskId);
     if (inProgressNotifications) {
