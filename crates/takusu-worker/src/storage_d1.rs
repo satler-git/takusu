@@ -11,8 +11,8 @@ use std::collections::HashMap;
 use takusu_contracts::storage::StorageResult;
 use takusu_contracts::{
     EstimatorBand, EstimatorResult, EstimatorStateRow, EvaluationEstimator, EvaluationTaskProgress,
-    HabitRow, HabitStepRow, MemoryKindCounts, MemoryRow, ScheduleRow,
-    SettingsRow, SkillRow, StorageError, TaskRow, WorkSessionRow,
+    HabitRow, HabitStepRow, MemoryKindCounts, MemoryRow, ScheduleRow, SettingsRow, SkillRow,
+    StorageError, TaskRow, WorkSessionRow,
 };
 use takusu_types::estimator::{
     DurationDistribution, InterventionBand, effective_distribution, next_crossing_time,
@@ -45,6 +45,27 @@ pub(super) const COMMENT_COLS: &str = "id, task_id, author, content, seq, create
 pub(super) const WORK_SESSION_COLS: &str = "id, task_id, title, note, quantity_total, quantity_done, quantity_unit, started_at, ended_at, created_at";
 pub(super) const PROGRESS_EVENT_COLS: &str =
     "id, work_session_id, task_id, at, quantity_done, delta_quantity, active_minutes, note";
+
+// ── Snapshot selects used by get_evaluation_inputs / get_coverage_evaluation ──
+
+pub(super) const SETTINGS_SELECT: &str = "SELECT id, tz, sleep_start, sleep_end, comfortable_minutes, maximum_minutes, solver, time_budget_ms, seed, warm_start, plan_length_days, device_priority, created_at, updated_at FROM settings WHERE id = 'active'";
+pub(super) const SCHEDULE_SELECT: &str = "SELECT id, created_at, updated_at, schedule, horizon_task_ids FROM schedules WHERE id = 'active'";
+pub(super) const SCHEDULE_REVISION_SELECT: &str =
+    "SELECT revision FROM schedule_revisions WHERE id = 'active'";
+pub(super) const EVENT_LEDGER_SELECT_ORDERED: &str = "SELECT id, kind, task_id, presentation, urgency, schedule_revision, distribution_revision, observation_kind, delivery_state, created_at, delivered_at FROM event_ledger ORDER BY created_at, id";
+pub(super) const COVERAGE_CONFIRMATIONS_SELECT: &str = "SELECT id, start_at, end_at, timezone, source, schedule_revision, calendar_health, created_at, settled_at, operation_id FROM coverage_confirmations ORDER BY created_at DESC";
+pub(super) const UNSETTLED_INTERVALS_SELECT: &str = "SELECT id, start_at, end_at, classification, source, created_at, settled_at, operation_id FROM unsettled_intervals WHERE settled_at IS NULL ORDER BY start_at";
+pub(super) const ALL_ESTIMATOR_STATE_SELECT: &str = "SELECT task_id, revision, mean_minutes, sigma_minutes, source, updated_at, band, next_crossing_time FROM estimator_state WHERE task_id IN (SELECT id FROM tasks WHERE status = 'in_progress')";
+pub(super) const ALL_ESTIMATOR_PRIORS_SELECT: &str =
+    "SELECT kind, mean_minutes, sigma_minutes FROM estimator_task_priors";
+
+pub(super) fn all_work_sessions_sql() -> String {
+    format!("SELECT {WORK_SESSION_COLS} FROM work_sessions WHERE task_id IN (SELECT id FROM tasks WHERE status = 'in_progress')")
+}
+
+pub(super) fn evaluation_tasks_sql() -> String {
+    format!("{} ORDER BY created_at DESC", select_tasks())
+}
 
 pub(super) fn select_tasks() -> String {
     format!("SELECT {TASK_COLS} FROM {TASK_FROM}")
@@ -131,6 +152,11 @@ pub(super) struct CountRow {
 }
 
 #[derive(serde::Deserialize)]
+pub(super) struct RevisionRow {
+    pub(super) revision: i64,
+}
+
+#[derive(serde::Deserialize)]
 pub(super) struct MemoryCountRow {
     #[serde(rename = "kind")]
     pub(super) kind: String,
@@ -189,18 +215,14 @@ fn number_as_bool(value: &serde_json::Value) -> Option<bool> {
     }
 }
 
-pub(super) async fn d1_all<T: serde::de::DeserializeOwned>(
-    stmt: &worker::D1PreparedStatement,
+pub(super) fn d1_parse_all<T: serde::de::DeserializeOwned>(
+    mut values: Vec<serde_json::Value>,
 ) -> StorageResult<Vec<T>> {
-    let raw: Vec<serde_json::Value> = stmt
-        .all()
-        .await
-        .map_err(d1_err)?
-        .results::<serde_json::Value>()
-        .map_err(d1_err)?;
-    let mut out = Vec::with_capacity(raw.len());
-    for mut value in raw {
-        normalize_d1_bools(&mut value);
+    let mut out = Vec::with_capacity(values.len());
+    for value in &mut values {
+        normalize_d1_bools(value);
+    }
+    for value in values {
         out.push(
             serde_json::from_value(value).map_err(|e| {
                 StorageError::Internal(format!("D1 row deserialization failed: {e}"))
@@ -210,10 +232,9 @@ pub(super) async fn d1_all<T: serde::de::DeserializeOwned>(
     Ok(out)
 }
 
-pub(super) async fn d1_first<T: serde::de::DeserializeOwned>(
-    stmt: &worker::D1PreparedStatement,
+pub(super) fn d1_parse_first<T: serde::de::DeserializeOwned>(
+    value: Option<serde_json::Value>,
 ) -> StorageResult<Option<T>> {
-    let value: Option<serde_json::Value> = stmt.first(None).await.map_err(d1_err)?;
     match value {
         Some(mut v) => {
             normalize_d1_bools(&mut v);
@@ -223,6 +244,41 @@ pub(super) async fn d1_first<T: serde::de::DeserializeOwned>(
         }
         None => Ok(None),
     }
+}
+
+pub(super) async fn d1_all<T: serde::de::DeserializeOwned>(
+    stmt: &worker::D1PreparedStatement,
+) -> StorageResult<Vec<T>> {
+    let raw: Vec<serde_json::Value> = stmt
+        .all()
+        .await
+        .map_err(d1_err)?
+        .results::<serde_json::Value>()
+        .map_err(d1_err)?;
+    d1_parse_all(raw)
+}
+
+pub(super) async fn d1_first<T: serde::de::DeserializeOwned>(
+    stmt: &worker::D1PreparedStatement,
+) -> StorageResult<Option<T>> {
+    let value: Option<serde_json::Value> = stmt.first(None).await.map_err(d1_err)?;
+    d1_parse_first(value)
+}
+
+/// Execute a batch of prepared statements in one round trip and return the raw
+/// row values for each statement in the same order. Callers deserialize each
+/// result with [`d1_parse_all`] / [`d1_parse_first`].
+pub(super) async fn d1_batch_results(
+    database: &D1Database,
+    stmts: Vec<worker::D1PreparedStatement>,
+) -> StorageResult<Vec<Vec<serde_json::Value>>> {
+    let results = database.batch(stmts).await.map_err(d1_err)?;
+    let mut out = Vec::with_capacity(results.len());
+    for result in results {
+        let rows = result.results::<serde_json::Value>().map_err(d1_err)?;
+        out.push(rows);
+    }
+    Ok(out)
 }
 
 #[async_trait::async_trait(?Send)]
@@ -462,8 +518,7 @@ pub(super) fn validate_quantity(
 // ── Timezone helper ─────────────────────────────────────────────────────
 
 pub(super) async fn get_timezone(database: &D1Database) -> StorageResult<jiff::tz::TimeZone> {
-    let stmt = database
-        .prepare("SELECT id, tz, sleep_start, sleep_end, comfortable_minutes, maximum_minutes, solver, time_budget_ms, seed, warm_start, created_at, updated_at FROM settings WHERE id = 'active'");
+    let stmt = database.prepare(SETTINGS_SELECT);
     let rows: Vec<SettingsRow> = d1_all(&stmt).await?;
     match rows.into_iter().next() {
         Some(settings) => parse_timezone(&settings.tz)
@@ -541,29 +596,15 @@ pub(super) async fn load_task_kind_prior(
     Ok(row.map(|(mu, sigma)| DurationDistribution::new(mu, sigma)))
 }
 
-/// Load task-kind priors for several kinds in one query.
-pub(super) async fn load_task_kind_priors(
-    database: &D1Database,
-    kinds: &[&str],
-) -> StorageResult<HashMap<String, DurationDistribution>> {
-    if kinds.is_empty() {
-        return Ok(HashMap::new());
-    }
+/// Row returned from `estimator_task_priors`.
+#[derive(serde::Deserialize)]
+pub(super) struct PriorRow {
+    pub(super) kind: String,
+    pub(super) mean_minutes: f64,
+    pub(super) sigma_minutes: f64,
+}
 
-    let placeholders = kinds.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-    let sql = format!(
-        "SELECT kind, mean_minutes, sigma_minutes FROM estimator_task_priors WHERE kind IN ({placeholders})"
-    );
-    let bindings: Vec<JsValue> = kinds.iter().map(|k| JsValue::from_str(k)).collect();
-    let stmt = database.prepare(sql).bind(&bindings).map_err(d1_err)?;
-
-    #[derive(serde::Deserialize)]
-    struct PriorRow {
-        kind: String,
-        mean_minutes: f64,
-        sigma_minutes: f64,
-    }
-    let rows: Vec<PriorRow> = d1_all(&stmt).await?;
+pub(super) fn prior_map_from_rows(rows: Vec<PriorRow>) -> HashMap<String, DurationDistribution> {
     let mut map = HashMap::with_capacity(rows.len());
     for row in rows {
         map.insert(
@@ -571,7 +612,7 @@ pub(super) async fn load_task_kind_priors(
             DurationDistribution::new(row.mean_minutes, row.sigma_minutes),
         );
     }
-    Ok(map)
+    map
 }
 
 pub(super) async fn estimator_state(
@@ -618,83 +659,34 @@ pub(super) async fn estimator_state(
     })
 }
 
-/// Fetch progress for multiple in-progress tasks in a fixed number of queries.
-///
-/// Active minutes are summed from work sessions, estimator state and task-kind
-/// priors are loaded with one query each, and all are grouped in memory,
-/// avoiding the previous N+1 round-trips.
-pub(super) async fn batch_evaluation_progress(
-    database: &D1Database,
+/// Build the per-task progress view from rows already fetched in a snapshot.
+pub(super) fn build_evaluation_progress(
     tasks: &[TaskRow],
-) -> StorageResult<Vec<EvaluationTaskProgress>> {
+    sessions: Vec<WorkSessionRow>,
+    states: Vec<EstimatorStateRow>,
+    priors: &HashMap<String, DurationDistribution>,
+) -> Vec<EvaluationTaskProgress> {
     let in_progress: Vec<&TaskRow> = tasks
         .iter()
         .filter(|t| t.status == TaskStatus::InProgress)
         .collect();
     if in_progress.is_empty() {
-        return Ok(Vec::new());
+        return Vec::new();
     }
-
-    let ids: Vec<&str> = in_progress.iter().map(|t| t.id.as_str()).collect();
-    let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-
-    // 1. Sum active minutes from work sessions (not progress events).
-    let sessions_sql = format!(
-        "SELECT {WORK_SESSION_COLS} FROM work_sessions WHERE task_id IN ({placeholders}) ORDER BY started_at ASC"
-    );
-    let session_bindings: Vec<JsValue> = ids.iter().map(|id| JsValue::from_str(id)).collect();
-    let sessions: Vec<WorkSessionRow> = d1_all(
-        &database
-            .prepare(sessions_sql)
-            .bind(&session_bindings)
-            .map_err(d1_err)?,
-    )
-    .await?;
 
     let mut active_minutes_by_task: HashMap<String, i64> = HashMap::new();
     for session in sessions {
         if let Some(task_id) = session.task_id.as_ref() {
-            *active_minutes_by_task
-                .entry(task_id.clone())
-                .or_default() += session_minutes(&session);
+            *active_minutes_by_task.entry(task_id.clone()).or_default() +=
+                session_minutes(&session);
         }
     }
-
-    // 2. Estimator state for all in-progress tasks.
-    let state_sql = format!(
-        "SELECT task_id, revision, mean_minutes, sigma_minutes, source, updated_at, band, next_crossing_time FROM estimator_state WHERE task_id IN ({placeholders})"
-    );
-    let state_bindings: Vec<JsValue> = ids.iter().map(|id| JsValue::from_str(id)).collect();
-    let states: Vec<EstimatorStateRow> = d1_all(
-        &database
-            .prepare(state_sql)
-            .bind(&state_bindings)
-            .map_err(d1_err)?,
-    )
-    .await?;
 
     let mut state_by_task: HashMap<String, EstimatorStateRow> = HashMap::new();
     for state in states {
         state_by_task.insert(state.task_id.clone(), state);
     }
 
-    // 3. Task-kind priors needed for fallback distributions.
-    let mut fallback_kinds: Vec<&str> = Vec::new();
-    for task in &in_progress {
-        if state_by_task.contains_key(&task.id) {
-            continue;
-        }
-        if task.sigma_minutes > 0 {
-            continue;
-        }
-        let kind = task.habit_id.as_deref().unwrap_or("default");
-        if !fallback_kinds.contains(&kind) {
-            fallback_kinds.push(kind);
-        }
-    }
-    let prior_by_kind = load_task_kind_priors(database, &fallback_kinds).await?;
-
-    // 4. Build the per-task progress view.
     let mut result = Vec::with_capacity(in_progress.len());
     for task in in_progress {
         let total_active_minutes = active_minutes_by_task.get(&task.id).copied().unwrap_or(0);
@@ -714,7 +706,7 @@ pub(super) async fn batch_evaluation_progress(
                 None
             } else {
                 let kind = task.habit_id.as_deref().unwrap_or("default");
-                prior_by_kind.get(kind).copied()
+                priors.get(kind).copied()
             };
             let distribution = effective_distribution(
                 task.avg_minutes as f64,
@@ -736,7 +728,7 @@ pub(super) async fn batch_evaluation_progress(
             estimator,
         });
     }
-    Ok(result)
+    result
 }
 
 pub(super) async fn estimator_observation(
@@ -904,7 +896,6 @@ pub(super) async fn compensate_last_estimator_observation(
     let revision = state.revision + 1;
     let observation_id = uuid::Uuid::now_v7().to_string();
     let band = EstimatorBand::Usual;
-    let next_crossing_time: Option<Timestamp> = None;
     let statements = vec![
         database
             .prepare(
