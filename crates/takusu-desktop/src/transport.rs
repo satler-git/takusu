@@ -50,6 +50,19 @@ pub trait DesktopTransport: Send + Sync {
         capability: &ActionCapability,
     ) -> Pin<Box<dyn Future<Output = Result<(), DesktopError>> + Send + '_>>;
 
+    /// Register this desktop device in the multi-device arbitration table.
+    fn register_device(
+        &self,
+        device_id: &str,
+    ) -> Pin<Box<dyn Future<Output = Result<(), DesktopError>> + Send + '_>>;
+
+    /// Refresh the desktop evaluator heartbeat so the daemon can remain or
+    /// become the resident authority.
+    fn refresh_evaluator_heartbeat(
+        &self,
+        device_id: &str,
+    ) -> Pin<Box<dyn Future<Output = Result<(), DesktopError>> + Send + '_>>;
+
     fn evaluate_planner_events(
         &self,
         device_id: &str,
@@ -183,6 +196,20 @@ impl DesktopTransport for MockTransport {
             guard.push(capability.id.clone());
         }
         Box::pin(async move { Ok(()) })
+    }
+
+    fn register_device(
+        &self,
+        _device_id: &str,
+    ) -> Pin<Box<dyn Future<Output = Result<(), DesktopError>> + Send + '_>> {
+        Box::pin(async { Ok(()) })
+    }
+
+    fn refresh_evaluator_heartbeat(
+        &self,
+        _device_id: &str,
+    ) -> Pin<Box<dyn Future<Output = Result<(), DesktopError>> + Send + '_>> {
+        Box::pin(async { Ok(()) })
     }
 
     fn evaluate_planner_events(

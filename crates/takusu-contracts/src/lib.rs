@@ -13,5 +13,5 @@ pub mod workload;
 
 pub use error::StorageError;
 pub use model::*;
-pub use storage::Storage;
+pub use storage::{Storage, resolve_resident_authority_from_rows};
 pub use validate::Validate;
