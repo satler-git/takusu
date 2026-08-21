@@ -891,7 +891,7 @@ export interface ActionCapability {
   snooze_target?: string;
   /** Quantity completed, present for `progress` capabilities. */
   quantity_done?: number;
-  /** Total quantity, present for `progress` capabilities. */
+  /** Total quantity for the task/session, present for `progress` capabilities. */
   quantity_total?: number;
   /** Note to attach with progress, present for `progress` capabilities. */
   note?: string;

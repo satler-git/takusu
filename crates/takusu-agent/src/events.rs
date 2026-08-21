@@ -588,10 +588,7 @@ fn distribution_event(
     event
 }
 
-fn routine_start_event(
-    snapshot: &EvaluationSnapshot,
-    gap: &EvaluationGap,
-) -> Option<PlannerEvent> {
+fn routine_start_event(snapshot: &EvaluationSnapshot, gap: &EvaluationGap) -> Option<PlannerEvent> {
     let identity = gap.identity.as_deref().unwrap_or("");
     let (title, task_ref) = snapshot
         .tasks
@@ -1132,7 +1129,11 @@ mod tests {
             .find(|event| event.kind == PlannerEventKind::DeadlineViolation)
             .expect("deadline violation should fire");
         assert_eq!(deadline.distribution_revision, Some(7));
-        assert!(deadline.id.contains(":d7:"), "deadline id should include distribution revision: {}", deadline.id);
+        assert!(
+            deadline.id.contains(":d7:"),
+            "deadline id should include distribution revision: {}",
+            deadline.id
+        );
     }
 
     #[test]
@@ -1165,11 +1166,13 @@ mod tests {
                 .count(),
             1
         );
-        assert!(result
-            .due_events
-            .iter()
-            .any(|event| event.kind == PlannerEventKind::TaskStartTimeReached
-                && event.id.contains("routine")));
+        assert!(
+            result
+                .due_events
+                .iter()
+                .any(|event| event.kind == PlannerEventKind::TaskStartTimeReached
+                    && event.id.contains("routine"))
+        );
     }
 
     #[test]

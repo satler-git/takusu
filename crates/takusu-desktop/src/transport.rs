@@ -11,7 +11,9 @@ use std::sync::{Arc, Mutex};
 use futures_util::Stream;
 use takusu_agent::capability::{ActionCapability, CapabilityRequest, InputPath, mint_capability};
 use takusu_agent::events::EvaluationResult;
-use takusu_agent::{SurfaceCommand, SurfaceCommandResponse, SurfaceEvent, SurfaceSnapshot};
+use takusu_agent::{
+    Presentation, SurfaceCommand, SurfaceCommandResponse, SurfaceEvent, SurfaceSnapshot,
+};
 use takusu_contracts::{EventDeliveryState, EventLedgerRow};
 
 use crate::state::DesktopError;
@@ -44,11 +46,24 @@ pub trait DesktopTransport: Send + Sync {
         command: SurfaceCommand,
     ) -> Pin<Box<dyn Future<Output = Result<SurfaceCommandResponse, DesktopError>> + Send + '_>>;
 
-    /// Authorize an immediate action via its server-issued capability.
+    /// Authorize an immediate action via its server-issued capability and return
+    /// the resulting presentation (e.g. a work-transition result).
     fn authorize_action(
         &self,
         capability: &ActionCapability,
-    ) -> Pin<Box<dyn Future<Output = Result<(), DesktopError>> + Send + '_>>;
+    ) -> Pin<Box<dyn Future<Output = Result<Presentation, DesktopError>> + Send + '_>>;
+
+    /// Mint a capability and authorize it in one call.
+    fn quick_action(
+        &self,
+        request: &CapabilityRequest,
+    ) -> Pin<Box<dyn Future<Output = Result<Presentation, DesktopError>> + Send + '_>> {
+        let request = request.clone();
+        Box::pin(async move {
+            let capability = self.mint_action_capability(&request).await?;
+            self.authorize_action(&capability).await
+        })
+    }
 
     /// Register this desktop device in the multi-device arbitration table.
     fn register_device(
@@ -191,11 +206,16 @@ impl DesktopTransport for MockTransport {
     fn authorize_action(
         &self,
         capability: &ActionCapability,
-    ) -> Pin<Box<dyn Future<Output = Result<(), DesktopError>> + Send + '_>> {
+    ) -> Pin<Box<dyn Future<Output = Result<Presentation, DesktopError>> + Send + '_>> {
         if let Ok(mut guard) = self.authorized.lock() {
             guard.push(capability.id.clone());
         }
-        Box::pin(async move { Ok(()) })
+        let action = capability.action.clone();
+        Box::pin(async move {
+            Ok(Presentation::Text {
+                text: format!("authorized {}", action),
+            })
+        })
     }
 
     fn register_device(

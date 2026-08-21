@@ -10,17 +10,34 @@
 //! the daemon event loop.
 
 use std::fmt;
+use std::sync::Arc;
 
+use crate::presentation::{DesktopAction, DesktopPresentation, execute_quick_action};
 use crate::state::DesktopState;
+use crate::transport::DesktopTransport;
+#[cfg(target_os = "linux")]
+use takusu_agent::Presentation;
 
 #[cfg(target_os = "linux")]
 use gpui::prelude::*;
 
 /// A request to display the compact panel.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct PopoverRequest {
     pub title: String,
     pub detail: Option<String>,
+    pub actions: Vec<DesktopAction>,
+}
+
+impl PopoverRequest {
+    /// Build a compact panel request from a desktop presentation.
+    pub fn from_presentation(presentation: &DesktopPresentation) -> Self {
+        Self {
+            title: presentation.title.clone(),
+            detail: Some(presentation.body.clone()),
+            actions: presentation.actions.clone(),
+        }
+    }
 }
 
 /// Current popover backend.
@@ -51,11 +68,42 @@ impl Popover {
         }
 
         #[cfg(target_os = "linux")]
-        match WindowController::new() {
-            Ok(ctrl) => Self::Window(ctrl),
-            Err(err) => {
-                tracing::warn!(error = %err, "GPUI popover unavailable; using menu fallback");
-                Self::MenuFallback
+        {
+            let transport = Arc::new(crate::transport::MockTransport::new(
+                takusu_agent::surface::SurfaceStateMachine::new().snapshot(),
+            )) as Arc<dyn DesktopTransport + Send + Sync>;
+            let runtime = tokio::runtime::Handle::current();
+            match WindowController::new(transport, runtime) {
+                Ok(ctrl) => Self::Window(ctrl),
+                Err(err) => {
+                    tracing::warn!(error = %err, "GPUI popover unavailable; using menu fallback");
+                    Self::MenuFallback
+                }
+            }
+        }
+
+        #[cfg(not(target_os = "linux"))]
+        {
+            tracing::warn!("GPUI popover is only available on Linux; using menu fallback");
+            Self::MenuFallback
+        }
+    }
+
+    /// Create a popover wired to a transport so quick actions can be authorized.
+    pub fn new_with_transport(transport: Arc<dyn DesktopTransport + Send + Sync>) -> Self {
+        if std::env::var("TAKUSU_DESKTOP_POPOVER").as_deref() == Ok("menu") {
+            return Self::MenuFallback;
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            let runtime = tokio::runtime::Handle::current();
+            match WindowController::new(transport, runtime) {
+                Ok(ctrl) => Self::Window(ctrl),
+                Err(err) => {
+                    tracing::warn!(error = %err, "GPUI popover unavailable; using menu fallback");
+                    Self::MenuFallback
+                }
             }
         }
 
@@ -70,7 +118,12 @@ impl Popover {
     pub fn show(&self, state: &DesktopState, request: PopoverRequest) {
         match self {
             Self::MenuFallback => {
-                tracing::info!(title=%request.title, detail=?request.detail, "popover requested (menu fallback)");
+                tracing::info!(
+                    title = %request.title,
+                    detail = ?request.detail,
+                    actions = request.actions.len(),
+                    "popover requested (menu fallback)"
+                );
             }
             Self::Window(ctrl) => ctrl.show(state, request),
         }
@@ -102,7 +155,7 @@ impl fmt::Debug for WindowController {
 #[cfg(not(target_os = "linux"))]
 impl WindowController {
     #[allow(clippy::unnecessary_wraps)]
-    fn new() -> Result<Self, String> {
+    fn new(_transport: Arc<dyn DesktopTransport + Send + Sync>) -> Result<Self, String> {
         Err("GPUI popover is only available on Linux".to_string())
     }
 
@@ -132,6 +185,7 @@ enum WindowCommand {
         title: String,
         detail: Option<String>,
         theme: crate::config::Theme,
+        actions: Vec<DesktopAction>,
     },
     Hide,
 }
@@ -142,6 +196,9 @@ struct PopoverView {
     detail: Option<gpui::SharedString>,
     background: gpui::Hsla,
     text_color: gpui::Hsla,
+    actions: Vec<DesktopAction>,
+    transport: Arc<dyn DesktopTransport + Send + Sync>,
+    runtime: tokio::runtime::Handle,
 }
 
 #[cfg(target_os = "linux")]
@@ -151,6 +208,53 @@ impl gpui::Render for PopoverView {
         _window: &mut gpui::Window,
         _cx: &mut gpui::Context<Self>,
     ) -> impl gpui::IntoElement {
+        let mut action_children = Vec::new();
+        for action in &self.actions {
+            let runtime = self.runtime.clone();
+            let transport = self.transport.clone();
+            let action = action.clone();
+            let label: gpui::SharedString = action.label.clone().into();
+            action_children.push(
+                gpui::div()
+                    .child(label)
+                    .px_3()
+                    .py_1()
+                    .rounded_md()
+                    .border_1()
+                    .border_color(self.text_color)
+                    .cursor_pointer()
+                    .id(gpui::ElementId::Name(action.id.clone().into()))
+                    .on_click(move |_event, _window, _cx| {
+                        let transport = transport.clone();
+                        let action = action.clone();
+                        runtime.spawn(async move {
+                            match execute_quick_action(transport.as_ref(), &action).await {
+                                Ok(Presentation::Text { text }) => {
+                                    tracing::info!(
+                                        text = %text,
+                                        action_id = %action.id,
+                                        "popover quick action returned"
+                                    );
+                                }
+                                Ok(_) => {
+                                    tracing::info!(
+                                        action_id = %action.id,
+                                        "popover quick action returned"
+                                    );
+                                }
+                                Err(e) => {
+                                    tracing::warn!(
+                                        error = %e,
+                                        action_id = %action.id,
+                                        "popover quick action failed"
+                                    );
+                                }
+                            }
+                        });
+                    }),
+            );
+        }
+
         gpui::div()
             .flex()
             .flex_col()
@@ -177,28 +281,41 @@ impl gpui::Render for PopoverView {
             )
             .child(
                 gpui::div()
-                    .child("閉じる")
-                    .px_3()
-                    .py_1()
-                    .rounded_md()
-                    .border_1()
-                    .border_color(self.text_color)
-                    .cursor_pointer()
-                    .id("close")
-                    .on_click(|_event, window, _cx| window.remove_window()),
+                    .flex()
+                    .flex_row()
+                    .gap_2()
+                    .children(action_children)
+                    .child(
+                        gpui::div()
+                            .child("閉じる")
+                            .px_3()
+                            .py_1()
+                            .rounded_md()
+                            .border_1()
+                            .border_color(self.text_color)
+                            .cursor_pointer()
+                            .id("close")
+                            .on_click(|_event, window, _cx| window.remove_window()),
+                    ),
             )
     }
 }
 
 #[cfg(target_os = "linux")]
 impl WindowController {
-    fn new() -> Result<Self, String> {
+    fn new(
+        transport: Arc<dyn DesktopTransport + Send + Sync>,
+        runtime: tokio::runtime::Handle,
+    ) -> Result<Self, String> {
         use std::sync::mpsc::{self, RecvTimeoutError};
         use std::thread;
         use std::time::Duration;
 
         let (init_tx, init_rx) =
             mpsc::channel::<futures_channel::mpsc::UnboundedSender<WindowCommand>>();
+
+        let thread_transport = Arc::clone(&transport);
+        let thread_runtime = runtime.clone();
 
         thread::spawn(move || {
             let app = gpui::Application::new();
@@ -227,6 +344,7 @@ impl WindowController {
                                 title,
                                 detail,
                                 theme,
+                                actions,
                             } => {
                                 if let Some(handle) = current.take() {
                                     let _ = handle.update(cx, |_view, window, _cx| {
@@ -242,7 +360,7 @@ impl WindowController {
                                     window_bounds: Some(gpui::WindowBounds::Windowed(
                                         gpui::Bounds {
                                             origin: gpui::point(gpui::px(100.0), gpui::px(100.0)),
-                                            size: gpui::size(gpui::px(320.0), gpui::px(180.0)),
+                                            size: gpui::size(gpui::px(360.0), gpui::px(220.0)),
                                         },
                                     )),
                                     titlebar: Some(gpui::TitlebarOptions {
@@ -264,6 +382,9 @@ impl WindowController {
                                         detail: detail_ss,
                                         background,
                                         text_color,
+                                        actions,
+                                        transport: Arc::clone(&thread_transport),
+                                        runtime: thread_runtime.clone(),
                                     })
                                 }) {
                                     Ok(handle) => current = Some(handle),
@@ -300,6 +421,7 @@ impl WindowController {
             title: request.title,
             detail: request.detail,
             theme: state.theme(),
+            actions: request.actions,
         };
 
         if let Ok(guard) = self.sender.lock()
@@ -349,8 +471,36 @@ mod tests {
             PopoverRequest {
                 title: "takusu".into(),
                 detail: Some("detail text".into()),
+                actions: Vec::new(),
             },
         );
         popover.hide();
+    }
+
+    #[test]
+    fn popover_request_from_presentation_copies_actions() {
+        let presentation = DesktopPresentation {
+            title: "test".into(),
+            body: "body".into(),
+            actions: vec![DesktopAction {
+                id: "a".into(),
+                label: "start".into(),
+                kind: takusu_agent::presentation::ActionKind::Immediate,
+                capability: None,
+                task_id: Some("t-1".into()),
+                action: Some("start".into()),
+                snooze_minutes: None,
+                event_id: None,
+            }],
+            presentation: takusu_agent::Presentation::Text {
+                text: "body".into(),
+            },
+            task_id: Some("t-1".into()),
+            event_id: None,
+        };
+        let request = PopoverRequest::from_presentation(&presentation);
+        assert_eq!(request.title, "test");
+        assert_eq!(request.detail.as_deref(), Some("body"));
+        assert_eq!(request.actions.len(), 1);
     }
 }

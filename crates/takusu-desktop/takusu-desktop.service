@@ -11,8 +11,17 @@ NoNewPrivileges=true
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true
+ProtectKernelLogs=true
+ProtectClock=true
+ProtectHostname=true
+ProtectHome=read-only
+ProtectSystem=strict
+ReadWritePaths=%t
+PrivateTmp=true
 RestrictRealtime=true
 RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
 LockPersonality=true
 
 [Install]

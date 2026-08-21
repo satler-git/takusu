@@ -23,6 +23,7 @@ import {
 } from 'react-native-paper';
 import { Slider } from '@expo/ui/community/slider';
 import { useServer } from '@/src/api/ServerProvider';
+import { AgentClient } from '@/src/api/agentClient';
 import { undoRedo } from '@/src/api/undoRedo';
 import { showError, logError } from '@/src/api/errors';
 import { parseDepends, parseSchedule } from '@/src/api/types';
@@ -57,9 +58,7 @@ import { parseDuration, formatDuration } from '@/src/utils/duration';
 import {
   makeProgressOperationId,
   makeCommentOperationId,
-  recordProgressWithTotal,
-  findOpenWorkSessionForTask,
-  completeTaskWithOptionalWorkSession,
+  findOptionalOpenWorkSessionForTask,
   restoreTaskAfterCompletion,
   type ProgressPayload,
 } from '@/src/utils/progress';
@@ -646,13 +645,20 @@ const makeStyles = (colors: ColorSet) =>
   });
 
 export function TaskDetailView() {
-  const { client, notifications } = useServer();
+  const { client, notifications, workersToken } = useServer();
   const router = useRouter();
   const colors = useColors();
   const { theme } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const iconColor = useMemo(() => notificationColorForTheme(theme), [theme]);
   const insets = useSafeAreaInsets();
+  const agentClient = useMemo<AgentClient | null>(() => {
+    const baseUrl = client?.baseUrl;
+    if (!baseUrl) return null;
+    return new AgentClient(baseUrl, workersToken);
+  }, [client?.baseUrl, workersToken]);
+  const agentClientRef = useRef<AgentClient | null>(null);
+  agentClientRef.current = agentClient;
   const { id } = useLocalSearchParams<{ id: string }>();
   const [descExpanded, setDescExpanded] = useState(false);
   const [task, setTask] = useState<TaskRow | null>(null);
@@ -1121,15 +1127,15 @@ export function TaskDetailView() {
   // ── Task progress actions (#757) ──
 
   async function startTask() {
-    if (!client || !task) return;
+    if (!client || !task || !agentClient) return;
     const prevStatus = task.status;
-    const operationId = makeProgressOperationId();
-    let startedSession: WorkSessionRow | null = null;
     try {
-      startedSession = await client.createWorkSession(
-        { task_id: task.id },
-        operationId,
-      );
+      await agentClient.quickAction({
+        task_id: task.id,
+        action: 'start',
+        device_id: 'mobile',
+        input_path: 'screen_capability',
+      });
     } catch (e) {
       showError(e, 'タスクの開始に失敗');
       return;
@@ -1149,13 +1155,15 @@ export function TaskDetailView() {
     undoRedo.push({
       description: `start: ${task.title}`,
       undo: async () => {
+        const currentAgent = agentClientRef.current;
+        if (!currentAgent) return;
         try {
-          if (startedSession) {
-            await client.pauseWorkSession(
-              startedSession.id,
-              makeProgressOperationId(),
-            );
-          }
+          await currentAgent.quickAction({
+            task_id: task.id,
+            action: 'pause',
+            device_id: 'mobile',
+            input_path: 'screen_capability',
+          });
         } catch (e) {
           showError(e, 'タスクの巻き戻しに失敗');
           return;
@@ -1170,11 +1178,15 @@ export function TaskDetailView() {
         await refresh();
       },
       redo: async () => {
+        const currentAgent = agentClientRef.current;
+        if (!currentAgent) return;
         try {
-          await client.createWorkSession(
-            { task_id: task.id },
-            makeProgressOperationId(),
-          );
+          await currentAgent.quickAction({
+            task_id: task.id,
+            action: 'start',
+            device_id: 'mobile',
+            input_path: 'screen_capability',
+          });
         } catch (e) {
           showError(e, 'タスクの再開に失敗');
           return;
@@ -1185,19 +1197,22 @@ export function TaskDetailView() {
   }
 
   async function pauseTask(payload?: ProgressPayload) {
-    if (!client || !task) return;
-    const session = await findOpenWorkSessionForTask(client, task.id);
+    if (!client || !task || !agentClient) return;
     const prevQuantityDone = task.quantity_done;
     const prevQuantityTotal = task.quantity_total;
-    const recordOperationId = payload ? makeProgressOperationId() : undefined;
-    const pauseOperationId = makeProgressOperationId();
-    if (payload && recordOperationId) {
+    if (payload) {
       try {
         // Record progress first, then pause. If pause fails after a
         // successful record, the progress is retained and the session remains
         // open; the user is shown the error and can retry pausing.
-        await recordProgressWithTotal(client, session, payload, {
-          operationId: recordOperationId,
+        await agentClient.quickAction({
+          task_id: task.id,
+          action: 'progress',
+          device_id: 'mobile',
+          input_path: 'screen_capability',
+          quantity_done: payload.quantityDone,
+          quantity_total: payload.quantityTotal,
+          note: payload.note,
         });
       } catch (e) {
         showError(e, '進捗の記録に失敗');
@@ -1205,7 +1220,12 @@ export function TaskDetailView() {
       }
     }
     try {
-      await client.pauseWorkSession(session.id, pauseOperationId);
+      await agentClient.quickAction({
+        task_id: task.id,
+        action: 'pause',
+        device_id: 'mobile',
+        input_path: 'screen_capability',
+      });
     } catch (e) {
       showError(e, 'タスクの一時停止に失敗');
       return;
@@ -1218,11 +1238,15 @@ export function TaskDetailView() {
     undoRedo.push({
       description: `pause: ${task.title}`,
       undo: async () => {
+        const currentAgent = agentClientRef.current;
+        if (!currentAgent) return;
         try {
-          await client.createWorkSession(
-            { task_id: task.id },
-            makeProgressOperationId(),
-          );
+          await currentAgent.quickAction({
+            task_id: task.id,
+            action: 'start',
+            device_id: 'mobile',
+            input_path: 'screen_capability',
+          });
         } catch (e) {
           showError(e, 'タスクの巻き戻しに失敗');
           return;
@@ -1240,12 +1264,31 @@ export function TaskDetailView() {
         await refresh();
       },
       redo: async () => {
-        const redoSession = await findOpenWorkSessionForTask(client, task.id);
+        const currentAgent = agentClientRef.current;
+        if (!currentAgent) return;
+        if (payload) {
+          try {
+            await currentAgent.quickAction({
+              task_id: task.id,
+              action: 'progress',
+              device_id: 'mobile',
+              input_path: 'screen_capability',
+              quantity_done: payload.quantityDone,
+              quantity_total: payload.quantityTotal,
+              note: payload.note,
+            });
+          } catch (e) {
+            showError(e, 'タスクの再停止に失敗');
+            return;
+          }
+        }
         try {
-          await client.pauseWorkSession(
-            redoSession.id,
-            makeProgressOperationId(),
-          );
+          await currentAgent.quickAction({
+            task_id: task.id,
+            action: 'pause',
+            device_id: 'mobile',
+            input_path: 'screen_capability',
+          });
         } catch (e) {
           showError(e, 'タスクの再停止に失敗');
           return;
@@ -1256,16 +1299,35 @@ export function TaskDetailView() {
   }
 
   async function completeTask() {
-    if (!client || !task) return;
+    if (!client || !task || !agentClient) return;
     const prevStatus = task.status;
     const prevQuantityDone = task.quantity_done;
     const total = task.quantity_total;
-    const operationId = makeProgressOperationId();
+    let openSession: WorkSessionRow | null = null;
     try {
-      await completeTaskWithOptionalWorkSession(client, task.id, {
-        operationId,
-        quantityTotal: total,
-      });
+      openSession = await findOptionalOpenWorkSessionForTask(client, task.id);
+    } catch (e) {
+      showError(e, '作業セッションの確認に失敗');
+      return;
+    }
+    let usedQuickAction = false;
+    try {
+      if (openSession && task.status === 'in_progress') {
+        await agentClient.quickAction({
+          task_id: task.id,
+          action: 'complete',
+          device_id: 'mobile',
+          input_path: 'screen_capability',
+        });
+        usedQuickAction = true;
+      } else {
+        // Scheduled/pending tasks completed without an open session have no
+        // in-progress capability to consume; fall back to a direct status update.
+        await client.updateTask(task.id, {
+          status: 'completed',
+          quantity_done: total ?? prevQuantityDone,
+        });
+      }
     } catch (e) {
       showError(e, 'タスクの完了に失敗');
       return;
@@ -1279,6 +1341,7 @@ export function TaskDetailView() {
     undoRedo.push({
       description: `complete: ${task.title}`,
       undo: async () => {
+        if (!client) return;
         try {
           await restoreTaskAfterCompletion(
             client,
@@ -1294,10 +1357,21 @@ export function TaskDetailView() {
       },
       redo: async () => {
         try {
-          await client.updateTask(task.id, {
-            status: 'completed',
-            quantity_done: total ?? prevQuantityDone,
-          });
+          if (usedQuickAction) {
+            const currentAgent = agentClientRef.current;
+            if (!currentAgent) return;
+            await currentAgent.quickAction({
+              task_id: task.id,
+              action: 'complete',
+              device_id: 'mobile',
+              input_path: 'screen_capability',
+            });
+          } else {
+            await client.updateTask(task.id, {
+              status: 'completed',
+              quantity_done: total ?? prevQuantityDone,
+            });
+          }
         } catch (e) {
           showError(e, 'タスクの再完了に失敗');
           return;
@@ -1308,10 +1382,17 @@ export function TaskDetailView() {
   }
 
   async function recordProgress(payload: ProgressPayload) {
-    if (!client || !task) return;
-    const session = await findOpenWorkSessionForTask(client, task.id);
+    if (!client || !task || !agentClient) return;
     try {
-      await recordProgressWithTotal(client, session, payload);
+      await agentClient.quickAction({
+        task_id: task.id,
+        action: 'progress',
+        device_id: 'mobile',
+        input_path: 'screen_capability',
+        quantity_done: payload.quantityDone,
+        quantity_total: payload.quantityTotal,
+        note: payload.note,
+      });
     } catch (e) {
       showError(e, '進捗の記録に失敗');
       return;

@@ -10,7 +10,9 @@ use std::sync::Arc;
 
 use futures_util::StreamExt;
 use serde::Deserialize;
+use takusu_agent::SurfaceCommand;
 use takusu_agent::capability::ActionCapability;
+use takusu_agent::presentation::ActionKind;
 use zbus::Connection;
 
 use crate::state::DesktopError;
@@ -27,11 +29,23 @@ pub struct DesktopNotification {
 }
 
 /// A single action shown on a notification.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct NotificationAction {
     pub key: String,
     pub label: String,
+    pub kind: ActionKind,
     pub capability: Option<ActionCapability>,
+}
+
+impl Default for NotificationAction {
+    fn default() -> Self {
+        Self {
+            key: String::new(),
+            label: String::new(),
+            kind: ActionKind::Immediate,
+            capability: None,
+        }
+    }
 }
 
 /// D-Bus proxy for the freedesktop notification server.
@@ -60,19 +74,19 @@ pub trait Notifications {
     fn notification_closed(&self, id: u32, reason: u32) -> zbus::Result<()>;
 }
 
-/// Persistent ID → capability mapping so action invocations can be replay-checked.
+/// Persistent ID → action mapping so action invocations can be routed.
 #[derive(Debug, Default)]
 pub struct NotificationState {
-    /// Maps notification id to the list of capabilities it offered.
-    by_id: HashMap<u32, Vec<ActionCapability>>,
+    /// Maps notification id to the list of actions it offered.
+    by_id: HashMap<u32, Vec<NotificationAction>>,
 }
 
 impl NotificationState {
-    pub fn insert(&mut self, id: u32, capabilities: Vec<ActionCapability>) {
-        self.by_id.insert(id, capabilities);
+    pub fn insert(&mut self, id: u32, actions: Vec<NotificationAction>) {
+        self.by_id.insert(id, actions);
     }
 
-    pub fn take(&mut self, id: u32) -> Vec<ActionCapability> {
+    pub fn take(&mut self, id: u32) -> Vec<NotificationAction> {
         self.by_id.remove(&id).unwrap_or_default()
     }
 }
@@ -104,11 +118,9 @@ pub async fn show(
     notification: &DesktopNotification,
 ) -> Result<u32, DesktopError> {
     let mut action_pairs: Vec<String> = Vec::new();
-    let mut capabilities: Vec<ActionCapability> = Vec::new();
 
     for action in &notification.actions {
         let key = if let Some(cap) = &action.capability {
-            capabilities.push(cap.clone());
             EncodedAction::encode(&cap.id, &action.label)
         } else {
             action.key.clone()
@@ -145,7 +157,10 @@ pub async fn show(
         .await
         .map_err(|e| DesktopError::Notification(e.to_string()))?;
 
-    state.lock().unwrap().insert(id, capabilities);
+    state
+        .lock()
+        .unwrap()
+        .insert(id, notification.actions.clone());
     Ok(id)
 }
 
@@ -156,31 +171,70 @@ pub async fn route_notification_action(
     notification_id: u32,
     action_key: &str,
 ) -> Result<(), DesktopError> {
+    let actions = state.lock().unwrap().take(notification_id);
+
     if let Some(parsed) = EncodedAction::decode(action_key) {
-        let cap = {
-            let guard = state.lock().unwrap();
-            guard
-                .by_id
-                .get(&notification_id)
-                .and_then(|caps| caps.iter().find(|c| c.id == parsed.capability_id))
-                .cloned()
-        };
-        if let Some(cap) = cap {
-            transport.authorize_action(&cap).await?;
-            if let Some(event_id) = cap.event_id.as_deref() {
-                transport
-                    .update_planner_event_state(
-                        event_id,
-                        takusu_contracts::EventDeliveryState::Resolved,
-                    )
-                    .await?;
+        if let Some(action) = actions.iter().find(|a| {
+            a.capability
+                .as_ref()
+                .is_some_and(|c| c.id == parsed.capability_id)
+        }) {
+            if let Some(cap) = &action.capability {
+                let _presentation = transport.authorize_action(cap).await?;
+                if let Some(event_id) = cap.event_id.as_deref() {
+                    transport
+                        .update_planner_event_state(
+                            event_id,
+                            takusu_contracts::EventDeliveryState::Resolved,
+                        )
+                        .await?;
+                }
             }
         } else {
             tracing::warn!(notification_id, action_key, "unknown notification action");
         }
-    } else if action_key.starts_with("open") {
-        tracing::info!("notification {} opened", notification_id);
+        return Ok(());
     }
+
+    if action_key.starts_with("open") {
+        tracing::info!("notification {} opened", notification_id);
+        return Ok(());
+    }
+
+    if let Some(action) = actions.iter().find(|a| a.key == action_key) {
+        match action.kind {
+            ActionKind::Panel => {
+                let response = transport.send_command(SurfaceCommand::OpenPanel).await?;
+                if !response.accepted {
+                    tracing::warn!(
+                        command = ?SurfaceCommand::OpenPanel,
+                        reason = ?response.reason,
+                        "panel command not accepted"
+                    );
+                }
+            }
+            ActionKind::Approval => {
+                let response = transport.send_command(SurfaceCommand::OpenApproval).await?;
+                if !response.accepted {
+                    tracing::warn!(
+                        command = ?SurfaceCommand::OpenApproval,
+                        reason = ?response.reason,
+                        "approval command not accepted"
+                    );
+                }
+            }
+            ActionKind::Immediate => {
+                tracing::warn!(
+                    notification_id,
+                    action_key,
+                    "unroutable immediate notification action"
+                );
+            }
+        }
+    } else {
+        tracing::warn!(notification_id, action_key, "unknown notification action");
+    }
+
     Ok(())
 }
 
@@ -240,6 +294,7 @@ mod tests {
             snooze_minutes: None,
             snooze_target: None,
             quantity_done: None,
+            quantity_total: None,
             note: None,
             scheduled_at: None,
             request: None,
@@ -261,7 +316,15 @@ mod tests {
     async fn routes_notification_action_to_transport() {
         let cap = test_capability("cap-123");
         let state = std::sync::Mutex::new(NotificationState::default());
-        state.lock().unwrap().insert(42, vec![cap.clone()]);
+        state.lock().unwrap().insert(
+            42,
+            vec![NotificationAction {
+                key: "act".into(),
+                label: "今から始める".into(),
+                kind: ActionKind::Immediate,
+                capability: Some(cap.clone()),
+            }],
+        );
 
         let snapshot = SurfaceStateMachine::new().snapshot();
         let transport = MockTransport::new(snapshot);
@@ -278,7 +341,15 @@ mod tests {
     async fn ignores_unknown_or_open_action_keys() {
         let cap = test_capability("cap-123");
         let state = std::sync::Mutex::new(NotificationState::default());
-        state.lock().unwrap().insert(42, vec![cap]);
+        state.lock().unwrap().insert(
+            42,
+            vec![NotificationAction {
+                key: "act".into(),
+                label: "今から始める".into(),
+                kind: ActionKind::Immediate,
+                capability: Some(cap),
+            }],
+        );
 
         let snapshot = SurfaceStateMachine::new().snapshot();
         let transport = MockTransport::new(snapshot);
