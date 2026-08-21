@@ -25,8 +25,7 @@ use sherpa_onnx::{
 const TAIL_PADDING_TENTHS: usize = 3;
 
 /// Number of silent 16 kHz samples in the tail padding buffer.
-const TAIL_PADDING_SAMPLES: usize =
-    (SHERPA_SAMPLE_RATE as usize * TAIL_PADDING_TENTHS) / 10;
+const TAIL_PADDING_SAMPLES: usize = (SHERPA_SAMPLE_RATE as usize * TAIL_PADDING_TENTHS) / 10;
 
 /// Reusable silent tail padding buffer flushed to the streaming recognizer.
 static TAIL_PADDING: [f32; TAIL_PADDING_SAMPLES] = [0.0; TAIL_PADDING_SAMPLES];

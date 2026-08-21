@@ -13,7 +13,8 @@ use takusu_client::{CoverageEvaluation, CoverageState};
 use takusu_types::TaskStatus;
 use takusu_types::Timestamp;
 use takusu_types::estimator::{
-    DurationDistribution, InterventionBand, next_crossing_active_minutes,
+    DurationDistribution, InterventionBand, conditional_expected_remaining_minutes,
+    next_crossing_active_minutes,
 };
 
 use crate::coverage::task_authority;
@@ -663,7 +664,7 @@ fn predicted_end(
     active_minutes: f64,
     distribution: DurationDistribution,
 ) -> Option<Timestamp> {
-    let remaining = (distribution.mean_minutes() - active_minutes).max(0.0);
+    let remaining = conditional_expected_remaining_minutes(distribution, active_minutes)?;
     Some(add_seconds(now, remaining * 60.0))
 }
 

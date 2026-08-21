@@ -3,7 +3,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use takusu_client::{Client, HabitRow, TaskQuery, TaskRow, WorkSessionRow};
-use takusu_types::estimator::{effective_distribution, progress_posterior};
+use takusu_types::estimator::{DurationDistribution, effective_distribution, progress_posterior};
 use takusu_types::{Quantity, TaskStatus};
 
 use crate::tools::takusu::{
@@ -125,6 +125,7 @@ fn focused_clarification(
 fn estimate_preview(
     avg_minutes: i64,
     sigma_minutes: i64,
+    task_kind_prior: Option<DurationDistribution>,
     quantity_total: Option<i64>,
     active_minutes: i64,
     quantity_done: i64,
@@ -136,7 +137,7 @@ fn estimate_preview(
         return (avg_minutes, sigma_minutes);
     }
     let fraction = (quantity_done as f64 / total as f64).clamp(f64::EPSILON, 1.0);
-    let prior = effective_distribution(avg_minutes as f64, sigma_minutes as f64, None);
+    let prior = effective_distribution(avg_minutes as f64, sigma_minutes as f64, task_kind_prior);
     let Ok(posterior) = progress_posterior(prior, active_minutes as f64, fraction) else {
         return (avg_minutes, sigma_minutes);
     };
@@ -562,9 +563,11 @@ impl TypedTool for TaskProgress {
                         );
                     } else {
                         let active_minutes = active_minutes_for_sessions(&sessions);
+                        let task_kind_prior = ctx.task_kind_prior(&task);
                         let (new_avg, new_sigma) = estimate_preview(
                             task.avg_minutes,
                             task.sigma_minutes,
+                            task_kind_prior,
                             task.quantity_total.map(|q| q.get()),
                             active_minutes,
                             task.quantity_done.get() + delta_quantity,
@@ -703,12 +706,14 @@ impl TypedTool for TaskComplete {
         match self.client.list_work_sessions(Some(&task.id)).await {
             Ok(sessions) => {
                 let total_active = active_minutes_for_sessions(&sessions);
+                let task_kind_prior = ctx.task_kind_prior(&task);
                 if let Some(total) = task.quantity_total
                     && !task.fixed
                 {
                     let (new_avg, new_sigma) = estimate_preview(
                         task.avg_minutes,
                         task.sigma_minutes,
+                        task_kind_prior,
                         Some(total.get()),
                         total_active,
                         total.get(),
@@ -724,6 +729,7 @@ impl TypedTool for TaskComplete {
                     let (new_avg, new_sigma) = estimate_preview(
                         task.avg_minutes,
                         task.sigma_minutes,
+                        task_kind_prior,
                         Some(1),
                         total_active,
                         1,
@@ -1022,33 +1028,43 @@ mod tests {
 
     #[test]
     fn estimate_preview_without_total_returns_original() {
-        assert_eq!(estimate_preview(60, 10, None, 30, 5), (60, 10));
+        assert_eq!(estimate_preview(60, 10, None, None, 30, 5), (60, 10));
     }
 
     #[test]
     fn estimate_preview_with_zero_quantity_returns_original() {
-        assert_eq!(estimate_preview(60, 10, Some(10), 30, 0), (60, 10));
+        assert_eq!(estimate_preview(60, 10, None, Some(10), 30, 0), (60, 10));
     }
 
     #[test]
     fn estimate_preview_uses_the_truncated_normal_posterior() {
-        let (avg, sigma) = estimate_preview(60, 5, Some(20), 60, 10);
+        let (avg, sigma) = estimate_preview(60, 5, None, Some(20), 60, 10);
         assert_eq!((avg, sigma), (90, 4));
     }
 
     #[test]
     fn estimate_preview_complete_is_degenerate() {
-        assert_eq!(estimate_preview(60, 5, Some(1), 1, 1), (1, 0));
+        assert_eq!(estimate_preview(60, 5, None, Some(1), 1, 1), (1, 0));
     }
 
     #[test]
     fn estimate_preview_without_active_time_returns_original() {
-        assert_eq!(estimate_preview(60, 5, Some(1), 0, 1), (60, 5));
+        assert_eq!(estimate_preview(60, 5, None, Some(1), 0, 1), (60, 5));
     }
 
     #[test]
     fn estimate_preview_for_unquantified_completion_is_degenerate() {
-        assert_eq!(estimate_preview(60, 20, Some(1), 45, 1), (45, 0));
+        assert_eq!(estimate_preview(60, 20, None, Some(1), 45, 1), (45, 0));
+    }
+
+    #[test]
+    fn estimate_preview_falls_back_to_task_kind_prior_when_sigma_is_zero() {
+        let prior = DurationDistribution::new(90.0, 15.0);
+        let (avg, sigma) = estimate_preview(0, 0, Some(prior), Some(2), 45, 1);
+        // The preview should be based on the prior (90, 15) rather than the
+        // wide fallback used when no prior is supplied.
+        assert!(avg > 60);
+        assert!(sigma > 5);
     }
 
     #[test]

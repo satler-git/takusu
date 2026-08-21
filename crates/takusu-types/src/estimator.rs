@@ -220,6 +220,34 @@ pub fn progress_posterior(
     })
 }
 
+/// Conditional expected remaining time `E[T - e | T > e]` for a positive-support
+/// truncated-normal duration `T` and observed elapsed time `e`.
+///
+/// For `sigma > 0` this is the mean residual life of the underlying normal
+/// distribution at `e`. For `sigma == 0` it is the remaining deterministic
+/// duration, or `0.0` if the elapsed time already meets or exceeds it.
+pub fn conditional_expected_remaining_minutes(
+    distribution: DurationDistribution,
+    active_elapsed_minutes: f64,
+) -> Option<f64> {
+    if active_elapsed_minutes < 0.0 {
+        return None;
+    }
+    if distribution.sigma == 0.0 {
+        return if active_elapsed_minutes >= distribution.mu {
+            Some(0.0)
+        } else {
+            Some(distribution.mu - active_elapsed_minutes)
+        };
+    }
+
+    let alpha = (active_elapsed_minutes - distribution.mu) / distribution.sigma;
+    let survival = (1.0 - normal_cdf(alpha)).max(f64::MIN_POSITIVE);
+    let mills_ratio = normal_pdf(alpha) / survival;
+    let conditional_mean = distribution.mu + distribution.sigma * mills_ratio;
+    Some((conditional_mean - active_elapsed_minutes).max(0.0))
+}
+
 pub fn effective_distribution(
     mu_minutes: f64,
     sigma_minutes: f64,
@@ -377,6 +405,45 @@ mod tests {
         let result = progress_posterior(DurationDistribution::new(60.0, 20.0), 45.0, 1.0).unwrap();
         assert_eq!(result.projection_minutes, 45.0);
         assert_eq!(result.posterior_stddev_minutes, 0.0);
+    }
+
+    #[test]
+    fn conditional_remaining_uses_mean_residual_life() {
+        let distribution = DurationDistribution::new(60.0, 10.0);
+        let at_zero = conditional_expected_remaining_minutes(distribution, 0.0).unwrap();
+        // At e = 0 the condition T > 0 is always true, so the conditional mean
+        // equals the unconditional truncated mean.
+        assert!((at_zero - distribution.mean_minutes()).abs() < 1e-9);
+
+        let at_mean = conditional_expected_remaining_minutes(distribution, 60.0).unwrap();
+        // Above the mean, the conditional expectation still leaves some positive
+        // remaining time (mean residual life of a normal at its mean is ~0.8 sigma).
+        assert!(at_mean > 0.0);
+        assert!(at_mean < at_zero);
+
+        let at_80 = conditional_expected_remaining_minutes(distribution, 80.0).unwrap();
+        assert!(at_80 > 0.0 && at_80 < at_mean);
+    }
+
+    #[test]
+    fn conditional_remaining_is_degenerate_for_zero_sigma() {
+        let distribution = DurationDistribution::new(60.0, 0.0);
+        assert_eq!(
+            conditional_expected_remaining_minutes(distribution, 30.0),
+            Some(30.0)
+        );
+        assert_eq!(
+            conditional_expected_remaining_minutes(distribution, 60.0),
+            Some(0.0)
+        );
+        assert_eq!(
+            conditional_expected_remaining_minutes(distribution, 90.0),
+            Some(0.0)
+        );
+        assert_eq!(
+            conditional_expected_remaining_minutes(distribution, -1.0),
+            None
+        );
     }
 
     #[test]
