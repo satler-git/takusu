@@ -233,4 +233,42 @@ describe('handleActionButtonResponse', () => {
       undefined,
     );
   });
+
+  it('routes legacy START through agentClient.quickAction when available', async () => {
+    const quickAction = jest.fn().mockResolvedValue(undefined);
+    const response = makeResponse(ACTION_START);
+    const result = await handleActionButtonResponse(response, {
+      client: makeClient(),
+      agentClient: { quickAction } as any,
+      inProgressNotifications: false,
+      haptic,
+    });
+    expect(result).toBe(true);
+    expect(quickAction).toHaveBeenCalledWith({
+      task_id: 'task-1',
+      action: 'start',
+      device_id: 'mobile',
+      input_path: 'notification_capability',
+    });
+    expect(mockUpdateTask).not.toHaveBeenCalled();
+  });
+
+  it('routes DONE through agentClient.quickAction when available', async () => {
+    const quickAction = jest.fn().mockResolvedValue(undefined);
+    const response = makeResponse(ACTION_DONE);
+    const result = await handleActionButtonResponse(response, {
+      client: makeClient(),
+      agentClient: { quickAction } as any,
+      inProgressNotifications: true,
+      haptic,
+    });
+    expect(result).toBe(true);
+    expect(quickAction).toHaveBeenCalledWith({
+      task_id: 'task-1',
+      action: 'complete',
+      device_id: 'mobile',
+      input_path: 'notification_capability',
+    });
+    expect(mockUpdateTask).not.toHaveBeenCalled();
+  });
 });
