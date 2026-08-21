@@ -184,6 +184,75 @@ impl DesktopTransport for HttpTransport {
         })
     }
 
+    fn register_device(
+        &self,
+        device_id: &str,
+    ) -> Pin<Box<dyn Future<Output = Result<(), DesktopError>> + Send + '_>> {
+        let this = self.clone();
+        let device_id = device_id.to_string();
+        Box::pin(async move {
+            let body = serde_json::json!({
+                "id": device_id,
+                "name": "desktop",
+                "platform": "desktop",
+            });
+            let response = this
+                .client
+                .post(format!("{}/api/devices", this.base_url))
+                .header(header::AUTHORIZATION, this.bearer()?)
+                .json(&body)
+                .send()
+                .await
+                .map_err(|e| DesktopError::Transport(e.to_string()))?;
+            if !response.status().is_success() {
+                return Err(DesktopError::Transport(format!(
+                    "register device failed: {}",
+                    response.status()
+                )));
+            }
+            Ok(())
+        })
+    }
+
+    fn refresh_evaluator_heartbeat(
+        &self,
+        device_id: &str,
+    ) -> Pin<Box<dyn Future<Output = Result<(), DesktopError>> + Send + '_>> {
+        let this = self.clone();
+        let device_id = device_id.to_string();
+        Box::pin(async move {
+            let now = jiff::Timestamp::now();
+            // The desktop daemon also sends a background heartbeat every 60s;
+            // use a 120s TTL so transient scheduling jitter does not demote
+            // resident authority between refreshes.
+            let until = jiff::Timestamp::from_second(now.as_second() + 120)
+                .unwrap_or(now);
+            let body = serde_json::json!({
+                "device_id": device_id,
+                "until": until.to_string(),
+            });
+            let response = this
+                .client
+                .post(format!(
+                    "{}/api/devices/{}/heartbeat",
+                    this.base_url,
+                    takusu_types::url_encode(&device_id)
+                ))
+                .header(header::AUTHORIZATION, this.bearer()?)
+                .json(&body)
+                .send()
+                .await
+                .map_err(|e| DesktopError::Transport(e.to_string()))?;
+            if !response.status().is_success() {
+                return Err(DesktopError::Transport(format!(
+                    "refresh heartbeat failed: {}",
+                    response.status()
+                )));
+            }
+            Ok(())
+        })
+    }
+
     fn evaluate_planner_events(
         &self,
         device_id: &str,
@@ -238,7 +307,11 @@ impl DesktopTransport for HttpTransport {
         device_id: &str,
     ) -> Pin<Box<dyn Future<Output = Result<bool, DesktopError>> + Send + '_>> {
         let this = self.clone();
-        let path = format!("{}/api/events/{event_id}/claim", this.base_url);
+        let path = format!(
+            "{}/api/events/{}/claim",
+            this.base_url,
+            takusu_types::url_encode(event_id)
+        );
         let device_id = device_id.to_string();
         Box::pin(async move {
             let response = this
@@ -270,7 +343,11 @@ impl DesktopTransport for HttpTransport {
         state: EventDeliveryState,
     ) -> Pin<Box<dyn Future<Output = Result<EventLedgerRow, DesktopError>> + Send + '_>> {
         let this = self.clone();
-        let path = format!("{}/api/events/{event_id}/state", this.base_url);
+        let path = format!(
+            "{}/api/events/{}/state",
+            this.base_url,
+            takusu_types::url_encode(event_id)
+        );
         Box::pin(async move {
             let response = this
                 .client

@@ -5,22 +5,23 @@ use takusu_contracts::storage::StorageResult;
 use takusu_contracts::validate::validate_task_datetimes;
 use takusu_contracts::{
     AttachWorkSession, CommentRow, ConvertWorkSession, CoverageConfirmationRow, CoverageEvaluation,
-    CoverageState, CreateCoverageConfirmation, CreateHabit, CreateHabitScheduledSpan, CreateMemory,
-    CreateSkill, CreateTask, CreateUnsettledInterval, EstimatorStateRow, EvaluationInputs,
-    EventDeliveryState, EventLedgerInsert, EventLedgerRow, GoogleCalEventRow, GoogleCalSettingsRow,
-    HabitRow, HabitScheduledSpanRow, HabitStepEstimateInput, HabitStepInput, HabitStepRow,
-    MemoryInjectionQuery, MemoryInjectionResult, MemoryQuery, MemoryRow, MoveEntryResponse,
-    ProgressEventRow, RecordWorkSessionProgress, SaveScheduleRequest, ScheduleRow, SettingsRow,
-    SimilarTaskQuery, SimilarTaskRow, SkillRow, SplitResult, SplitTask, StartWorkSession, Storage,
-    StorageError, TaskProgress, TaskQuery, TaskRow, TokenCreateResponse, TokenRow,
-    UnsettledIntervalRow, UpdateGoogleCalSettings, UpdateHabit, UpdateMemory, UpdateSettings,
-    UpdateSkill, UpdateTask, WorkSessionProgressResult, WorkSessionRow,
+    CoverageState, CreateCoverageConfirmation, CreateDevice, CreateHabit, CreateHabitScheduledSpan,
+    CreateMemory, CreateSkill, CreateTask, CreateUnsettledInterval, DeviceRow, EstimatorStateRow,
+    EvaluationInputs, EventDeliveryState, EventLedgerInsert, EventLedgerRow, GoogleCalEventRow,
+    GoogleCalSettingsRow, HabitRow, HabitScheduledSpanRow, HabitStepEstimateInput, HabitStepInput,
+    HabitStepRow, MemoryInjectionQuery, MemoryInjectionResult, MemoryQuery, MemoryRow,
+    MoveEntryResponse, ProgressEventRow, RecordWorkSessionProgress, ResidentAuthority,
+    SaveScheduleRequest, ScheduleRow, SettingsRow, SimilarTaskQuery, SimilarTaskRow, SkillRow,
+    SplitResult, SplitTask, StartWorkSession, Storage, StorageError, TaskProgress, TaskQuery,
+    TaskRow, TokenCreateResponse, TokenRow, UnsettledIntervalRow, UpdateDevice,
+    UpdateGoogleCalSettings, UpdateHabit, UpdateMemory, UpdateSettings, UpdateSkill, UpdateTask,
+    WorkSessionProgressResult, WorkSessionRow,
 };
 use takusu_types::estimator::effective_distribution;
 use takusu_types::jwt::{DEFAULT_TOKEN_TTL_SECONDS, generate_token_jwt};
 use takusu_types::{
     CommentAuthor, DependencyList, EnumLabel, Minutes, Quantity, TaskStatus, TaskStatusFilter,
-    TokenClaims, WindowMode,
+    Timestamp, TokenClaims, WindowMode,
 };
 use wasm_bindgen::JsValue;
 
@@ -1187,7 +1188,7 @@ impl Storage for D1Storage {
     // ── Settings ────────────────────────────────────────────────────────
 
     async fn get_settings(&self) -> StorageResult<SettingsRow> {
-        let stmt = self.db.prepare("SELECT id, tz, sleep_start, sleep_end, comfortable_minutes, maximum_minutes, solver, time_budget_ms, seed, warm_start, created_at, updated_at FROM settings WHERE id = 'active'");
+        let stmt = self.db.prepare("SELECT id, tz, sleep_start, sleep_end, comfortable_minutes, maximum_minutes, solver, time_budget_ms, seed, warm_start, plan_length_days, device_priority, created_at, updated_at FROM settings WHERE id = 'active'");
         let rows: Vec<SettingsRow> = d1_all(&stmt).await?;
         rows.into_iter()
             .next()
@@ -1209,8 +1210,14 @@ impl Storage for D1Storage {
             .or(existing.time_budget_ms);
         let seed = body.seed.filter(|&v| v >= 0).or(existing.seed);
         let warm_start = body.warm_start.unwrap_or(existing.warm_start);
+        let plan_length_days = body.plan_length_days.unwrap_or(existing.plan_length_days);
+        let device_priority = body
+            .device_priority
+            .as_ref()
+            .map(|list| takusu_types::JsonString::new(list.clone()).to_json_string())
+            .unwrap_or_else(|| existing.device_priority.to_json_string());
         let stmt = self.db.prepare(
-            "UPDATE settings SET tz = ?1, sleep_start = ?2, sleep_end = ?3, comfortable_minutes = ?4, maximum_minutes = ?5, solver = ?6, time_budget_ms = ?7, seed = ?8, warm_start = ?9, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = 'active'",
+            "UPDATE settings SET tz = ?1, sleep_start = ?2, sleep_end = ?3, comfortable_minutes = ?4, maximum_minutes = ?5, solver = ?6, time_budget_ms = ?7, seed = ?8, warm_start = ?9, plan_length_days = ?10, device_priority = ?11, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = 'active'",
         );
         stmt.bind(&[
             JsValue::from_str(&tz),
@@ -1229,6 +1236,8 @@ impl Storage for D1Storage {
             seed.map(|v| JsValue::from_f64(v as f64))
                 .unwrap_or(JsValue::NULL),
             JsValue::from_bool(warm_start),
+            JsValue::from_f64(plan_length_days as f64),
+            JsValue::from_str(&device_priority),
         ])
         .map_err(d1_err)?
         .run()
@@ -3453,6 +3462,150 @@ impl Storage for D1Storage {
         response: &MoveEntryResponse,
     ) -> StorageResult<()> {
         record_progress_operation(&self.db, operation_id, request_hash, response).await
+    }
+
+    // ── Multi-device arbitration (WI-11) ─────────────────────────────────
+
+    async fn register_device(&self, body: &CreateDevice) -> StorageResult<DeviceRow> {
+        let priority = body.priority.unwrap_or(match body.platform {
+            takusu_contracts::DevicePlatform::Desktop => 0,
+            takusu_contracts::DevicePlatform::Android => 1,
+        });
+        let stmt = self.db.prepare(
+            "INSERT INTO devices (id, name, platform, priority, evaluator_heartbeat_until, evaluator_lease_until, next_eval_at, audio_service_running, private_output_route, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, NULL, NULL, NULL, 0, 0, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), strftime('%Y-%m-%dT%H:%M:%SZ', 'now')) ON CONFLICT(id) DO UPDATE SET name=excluded.name, platform=excluded.platform, priority=excluded.priority, updated_at=excluded.updated_at",
+        );
+        stmt.bind(&[
+            JsValue::from_str(&body.id),
+            JsValue::from_str(&body.name),
+            JsValue::from_str(&body.platform.to_string()),
+            JsValue::from_f64(priority as f64),
+        ])
+        .map_err(d1_err)?
+        .run()
+        .await
+        .map_err(d1_err)?;
+        self.get_device(&body.id).await
+    }
+
+    async fn get_device(&self, id: &str) -> StorageResult<DeviceRow> {
+        let stmt = self.db.prepare(
+            "SELECT id, name, platform, priority, evaluator_heartbeat_until, evaluator_lease_until, next_eval_at, audio_service_running, private_output_route, created_at, updated_at FROM devices WHERE id = ?1",
+        );
+        let stmt = stmt
+            .bind(&[JsValue::from_str(id)])
+            .map_err(d1_err)?;
+        let rows: Vec<DeviceRow> = d1_all(&stmt).await?;
+        rows.into_iter()
+            .next()
+            .ok_or_else(|| not_found(format!("device {id} not found")))
+    }
+
+    async fn list_devices(&self) -> StorageResult<Vec<DeviceRow>> {
+        let stmt = self.db.prepare(
+            "SELECT id, name, platform, priority, evaluator_heartbeat_until, evaluator_lease_until, next_eval_at, audio_service_running, private_output_route, created_at, updated_at FROM devices ORDER BY priority, created_at",
+        );
+        d1_all(&stmt).await
+    }
+
+    async fn update_device(&self, id: &str, body: &UpdateDevice) -> StorageResult<DeviceRow> {
+        let existing = self.get_device(id).await?;
+        let name = body.name.clone().unwrap_or(existing.name);
+        let priority = body.priority.unwrap_or(existing.priority);
+        let audio_service_running = body.audio_service_running.unwrap_or(existing.audio_service_running);
+        let private_output_route = body.private_output_route.unwrap_or(existing.private_output_route);
+        let stmt = self.db.prepare(
+            "UPDATE devices SET name = ?1, priority = ?2, audio_service_running = ?3, private_output_route = ?4, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?5",
+        );
+        stmt.bind(&[
+            JsValue::from_str(&name),
+            JsValue::from_f64(priority as f64),
+            JsValue::from_bool(audio_service_running),
+            JsValue::from_bool(private_output_route),
+            JsValue::from_str(id),
+        ])
+        .map_err(d1_err)?
+        .run()
+        .await
+        .map_err(d1_err)?;
+        self.get_device(id).await
+    }
+
+    async fn delete_device(&self, id: &str) -> StorageResult<()> {
+        // Verify the device exists before deleting; D1's run() does not
+        // reliably report affected rows in all driver versions.
+        let _ = self.get_device(id).await?;
+        let stmt = self.db.prepare("DELETE FROM devices WHERE id = ?1");
+        stmt.bind(&[JsValue::from_str(id)])
+            .map_err(d1_err)?
+            .run()
+            .await
+            .map_err(d1_err)?;
+        Ok(())
+    }
+
+    async fn refresh_evaluator_heartbeat(
+        &self,
+        device_id: &str,
+        until: Timestamp,
+    ) -> StorageResult<DeviceRow> {
+        let stmt = self.db.prepare(
+            "UPDATE devices SET evaluator_heartbeat_until = ?1, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?2",
+        );
+        stmt.bind(&[
+            JsValue::from_str(&until.to_string()),
+            JsValue::from_str(device_id),
+        ])
+        .map_err(d1_err)?
+        .run()
+        .await
+        .map_err(d1_err)?;
+        self.get_device(device_id).await
+    }
+
+    async fn refresh_evaluator_lease(
+        &self,
+        device_id: &str,
+        lease_until: Timestamp,
+        next_eval_at: Option<Timestamp>,
+    ) -> StorageResult<DeviceRow> {
+        let stmt = self.db.prepare(
+            "UPDATE devices SET evaluator_lease_until = ?1, next_eval_at = ?2, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?3",
+        );
+        stmt.bind(&[
+            JsValue::from_str(&lease_until.to_string()),
+            next_eval_at
+                .map(|t| JsValue::from_str(&t.to_string()))
+                .unwrap_or(JsValue::NULL),
+            JsValue::from_str(device_id),
+        ])
+        .map_err(d1_err)?
+        .run()
+        .await
+        .map_err(d1_err)?;
+        self.get_device(device_id).await
+    }
+
+    async fn resolve_resident_authority(
+        &self,
+        candidate_id: &str,
+    ) -> StorageResult<ResidentAuthority> {
+        let devices = self.list_devices().await?;
+        if devices.is_empty() {
+            return Ok(ResidentAuthority {
+                device_id: None,
+                is_resident: false,
+                next_eval_at: None,
+            });
+        }
+        let settings = self.get_settings().await?;
+        let priority_list: Vec<String> = settings.device_priority.as_inner().clone();
+        let now = Timestamp::now();
+        Ok(takusu_contracts::resolve_resident_authority_from_rows(
+            &devices,
+            &priority_list,
+            candidate_id,
+            now,
+        ))
     }
 
     // ── Health ──────────────────────────────────────────────────────────

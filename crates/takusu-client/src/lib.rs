@@ -1162,6 +1162,139 @@ impl Client {
         Self::handle_response(resp).await?;
         Ok(())
     }
+
+    // ── Multi-device arbitration (WI-11) ──
+
+    pub async fn register_device(&self, body: &CreateDevice) -> Result<DeviceRow, ClientError> {
+        let resp = self
+            .request(reqwest::Method::POST, "/api/devices")
+            .await
+            .json(body)
+            .send()
+            .await?;
+        let resp = Self::handle_response(resp).await?;
+        Ok(resp.json().await?)
+    }
+
+    pub async fn list_devices(&self) -> Result<Vec<DeviceRow>, ClientError> {
+        let resp = self
+            .request(reqwest::Method::GET, "/api/devices")
+            .await
+            .send()
+            .await?;
+        let resp = Self::handle_response(resp).await?;
+        Ok(resp.json().await?)
+    }
+
+    pub async fn get_device(&self, id: &str) -> Result<DeviceRow, ClientError> {
+        let resp = self
+            .request(
+                reqwest::Method::GET,
+                &format!("/api/devices/{}", url_encode(id)),
+            )
+            .await
+            .send()
+            .await?;
+        let resp = Self::handle_response(resp).await?;
+        Ok(resp.json().await?)
+    }
+
+    pub async fn update_device(
+        &self,
+        id: &str,
+        body: &UpdateDevice,
+    ) -> Result<DeviceRow, ClientError> {
+        let resp = self
+            .request(
+                reqwest::Method::PATCH,
+                &format!("/api/devices/{}", url_encode(id)),
+            )
+            .await
+            .json(body)
+            .send()
+            .await?;
+        let resp = Self::handle_response(resp).await?;
+        Ok(resp.json().await?)
+    }
+
+    pub async fn delete_device(&self, id: &str) -> Result<(), ClientError> {
+        let resp = self
+            .request(
+                reqwest::Method::DELETE,
+                &format!("/api/devices/{}", url_encode(id)),
+            )
+            .await
+            .send()
+            .await?;
+        Self::handle_response(resp).await?;
+        Ok(())
+    }
+
+    pub async fn refresh_evaluator_heartbeat(
+        &self,
+        body: &RefreshEvaluatorHeartbeat,
+    ) -> Result<DeviceRow, ClientError> {
+        let resp = self
+            .request(
+                reqwest::Method::POST,
+                &format!("/api/devices/{}/heartbeat", url_encode(&body.device_id)),
+            )
+            .await
+            .json(body)
+            .send()
+            .await?;
+        let resp = Self::handle_response(resp).await?;
+        Ok(resp.json().await?)
+    }
+
+    pub async fn refresh_evaluator_lease(
+        &self,
+        body: &RefreshEvaluatorLease,
+    ) -> Result<DeviceRow, ClientError> {
+        let resp = self
+            .request(
+                reqwest::Method::POST,
+                &format!("/api/devices/{}/lease", url_encode(&body.device_id)),
+            )
+            .await
+            .json(body)
+            .send()
+            .await?;
+        let resp = Self::handle_response(resp).await?;
+        Ok(resp.json().await?)
+    }
+
+    pub async fn resolve_resident_authority(
+        &self,
+        device_id: &str,
+    ) -> Result<ResidentAuthority, ClientError> {
+        let resp = self
+            .request(
+                reqwest::Method::GET,
+                &format!("/api/devices/{}/resident", url_encode(device_id)),
+            )
+            .await
+            .send()
+            .await?;
+        let resp = Self::handle_response(resp).await?;
+        Ok(resp.json().await?)
+    }
+
+    pub async fn get_speech_capability(
+        &self,
+        device_id: &str,
+    ) -> Result<SpeechCapability, ClientError> {
+        let resp = self
+            .request(
+                reqwest::Method::GET,
+                &format!("/api/devices/{}/speech", url_encode(device_id)),
+            )
+            .await
+            .send()
+            .await?;
+        let resp = Self::handle_response(resp).await?;
+        Ok(resp.json().await?)
+    }
 }
 
 // ── Shared domain types (re-exported from takusu-contracts) ──
@@ -1294,4 +1427,18 @@ pub struct SettingsResponse {
     /// 前回スケジュールから priority/ALNS の初期解を warm start する。
     #[serde(default)]
     pub warm_start: bool,
+    /// スケジュール計画の期間（日数）。
+    #[serde(default = "default_plan_length_days")]
+    pub plan_length_days: i64,
+    /// デバイス優先度リスト。既定は desktop > android。
+    #[serde(default = "default_device_priority")]
+    pub device_priority: takusu_types::JsonString<Vec<String>>,
+}
+
+fn default_plan_length_days() -> i64 {
+    14
+}
+
+fn default_device_priority() -> takusu_types::JsonString<Vec<String>> {
+    takusu_types::JsonString::new(vec!["desktop".to_string(), "android".to_string()])
 }

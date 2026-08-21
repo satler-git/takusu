@@ -9,16 +9,18 @@ use serde::de::DeserializeOwned;
 use serde_json::json;
 use takusu_contracts::{
     ApplyHabitEstimateRequest, AttachWorkSession, CommentRow, ConvertWorkSession,
-    CoverageConfirmationRow, CoverageEvaluation, CreateCoverageConfirmation, CreateHabit,
+    CoverageConfirmationRow, CoverageEvaluation, CreateCoverageConfirmation, CreateDevice, CreateHabit,
     CreateHabitScheduledSpan, CreateMemory, CreateSkill, CreateTask, CreateUnsettledInterval,
-    EstimatorStateRow, EvaluationInputs, EventDeliveryState, EventLedgerInsert, EventLedgerRow,
-    GoogleCalEventRow, GoogleCalSettingsRow, HabitRow, HabitScheduledSpanRow, HabitStepEstimateInput,
-    HabitStepInput, HabitStepRow, MemoryInjectionQuery, MemoryInjectionResult, MemoryQuery,
-    MemoryRow, RecordWorkSessionProgress, SaveScheduleRequest, ScheduleRow, SettingsRow,
-    SimilarTaskQuery, SimilarTaskRow, SkillRow, SplitResult, SplitTask, StartWorkSession, Storage,
-    StorageError, TaskProgress, TaskQuery, TaskRow, TokenCreateResponse, TokenRow,
-    UnsettledIntervalRow, UpdateGoogleCalSettings, UpdateHabit, UpdateMemory, UpdateSettings,
-    UpdateSkill, UpdateTask, WorkSessionProgressResult, WorkSessionRow, storage::StorageResult,
+    DeviceRow, EstimatorStateRow, EvaluationInputs, EventDeliveryState, EventLedgerInsert,
+    EventLedgerRow, GoogleCalEventRow, GoogleCalSettingsRow, HabitRow, HabitScheduledSpanRow,
+    HabitStepEstimateInput, HabitStepInput, HabitStepRow, MemoryInjectionQuery, MemoryInjectionResult,
+    MemoryQuery, MemoryRow, RecordWorkSessionProgress, RefreshEvaluatorHeartbeat,
+    RefreshEvaluatorLease, ResidentAuthority, SaveScheduleRequest, ScheduleRow, SettingsRow,
+    SimilarTaskQuery, SimilarTaskRow, SkillRow, SplitResult, SplitTask,
+    StartWorkSession, Storage, StorageError, TaskProgress, TaskQuery, TaskRow, TokenCreateResponse,
+    TokenRow, UnsettledIntervalRow, UpdateDevice, UpdateGoogleCalSettings, UpdateHabit,
+    UpdateMemory, UpdateSettings, UpdateSkill, UpdateTask, WorkSessionProgressResult,
+    WorkSessionRow, storage::StorageResult,
 };
 use takusu_types::CommentAuthor;
 use takusu_types::EnumLabel;
@@ -61,6 +63,7 @@ mod paths {
     pub const EVENTS_COMMIT: &str = "/api/events/commit";
     pub const EVENTS_REVISION: &str = "/api/events/revision";
     pub const EVENTS_SNAPSHOT: &str = "/api/events/snapshot";
+    pub const DEVICES: &str = "/api/devices";
 
     // Parameterised paths.  `url_encode` is applied to every user-supplied
     // segment so callers never need to remember it.
@@ -142,6 +145,18 @@ mod paths {
     }
     pub fn event_state_path(id: &str) -> String {
         format!("/api/events/{}/state", url_encode(id))
+    }
+    pub fn device_path(id: &str) -> String {
+        format!("/api/devices/{}", url_encode(id))
+    }
+    pub fn device_heartbeat_path(id: &str) -> String {
+        format!("/api/devices/{}/heartbeat", url_encode(id))
+    }
+    pub fn device_lease_path(id: &str) -> String {
+        format!("/api/devices/{}/lease", url_encode(id))
+    }
+    pub fn device_resident_path(id: &str) -> String {
+        format!("/api/devices/{}/resident", url_encode(id))
     }
 }
 
@@ -1289,6 +1304,101 @@ impl Storage for WorkersStorage {
             &paths::task_split_path(&full),
             RequestBody::json(body)?,
             operation_id,
+        )
+        .await
+    }
+
+    // ── Multi-device arbitration (WI-11) ─────────────────────────────────
+
+    async fn register_device(&self, body: &CreateDevice) -> StorageResult<DeviceRow> {
+        self.send_json(
+            reqwest::Method::POST,
+            paths::DEVICES,
+            RequestBody::json(body)?,
+            None,
+        )
+        .await
+    }
+
+    async fn get_device(&self, id: &str) -> StorageResult<DeviceRow> {
+        self.send_json(
+            reqwest::Method::GET,
+            &paths::device_path(id),
+            RequestBody::None,
+            None,
+        )
+        .await
+    }
+
+    async fn list_devices(&self) -> StorageResult<Vec<DeviceRow>> {
+        self.send_json(reqwest::Method::GET, paths::DEVICES, RequestBody::None, None)
+            .await
+    }
+
+    async fn update_device(&self, id: &str, body: &UpdateDevice) -> StorageResult<DeviceRow> {
+        self.send_json(
+            reqwest::Method::PATCH,
+            &paths::device_path(id),
+            RequestBody::json(body)?,
+            None,
+        )
+        .await
+    }
+
+    async fn delete_device(&self, id: &str) -> StorageResult<()> {
+        self.send_empty(
+            reqwest::Method::DELETE,
+            &paths::device_path(id),
+            RequestBody::None,
+            None,
+        )
+        .await
+    }
+
+    async fn refresh_evaluator_heartbeat(
+        &self,
+        device_id: &str,
+        until: takusu_types::Timestamp,
+    ) -> StorageResult<DeviceRow> {
+        let body = RefreshEvaluatorHeartbeat {
+            device_id: device_id.into(),
+            until,
+        };
+        self.send_json(
+            reqwest::Method::POST,
+            &paths::device_heartbeat_path(device_id),
+            RequestBody::json(&body)?,
+            None,
+        )
+        .await
+    }
+
+    async fn refresh_evaluator_lease(
+        &self,
+        device_id: &str,
+        lease_until: takusu_types::Timestamp,
+        next_eval_at: Option<takusu_types::Timestamp>,
+    ) -> StorageResult<DeviceRow> {
+        let body = RefreshEvaluatorLease {
+            device_id: device_id.into(),
+            lease_until,
+            next_eval_at,
+        };
+        self.send_json(
+            reqwest::Method::POST,
+            &paths::device_lease_path(device_id),
+            RequestBody::json(&body)?,
+            None,
+        )
+        .await
+    }
+
+    async fn resolve_resident_authority(&self, candidate_id: &str) -> StorageResult<ResidentAuthority> {
+        self.send_json(
+            reqwest::Method::GET,
+            &paths::device_resident_path(candidate_id),
+            RequestBody::None,
+            None,
         )
         .await
     }

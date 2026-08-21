@@ -973,12 +973,19 @@ pub struct SettingsRow {
     /// スケジュール計画の期間（日数）。horizon 計算に使う。デフォルト 14。
     #[serde(default = "default_plan_length_days")]
     pub plan_length_days: i64,
+    /// デバイス優先度リスト。既定は desktop > android。
+    #[serde(default = "default_device_priority")]
+    pub device_priority: JsonString<Vec<String>>,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
 }
 
 fn default_plan_length_days() -> i64 {
     14
+}
+
+fn default_device_priority() -> JsonString<Vec<String>> {
+    JsonString::new(vec!["desktop".to_string(), "android".to_string()])
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
@@ -1222,6 +1229,9 @@ pub struct UpdateSettings {
     /// スケジュール計画の期間（日数）。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub plan_length_days: Option<i64>,
+    /// デバイス優先度リスト。`None` の場合は更新しない。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub device_priority: Option<Vec<String>>,
 }
 
 // ── WI-9 active-session progress management ─────────────────────────────────
@@ -1426,6 +1436,137 @@ pub struct HabitEstimateResult {
     /// The updated habit row, present only when `apply` was true.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub habit: Option<HabitRow>,
+}
+
+// ── WI-11 multi-device arbitration ───────────────────────────────────────
+
+/// Platform kind for a registered device.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DevicePlatform {
+    #[default]
+    Desktop,
+    Android,
+}
+
+impl DevicePlatform {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Desktop => "desktop",
+            Self::Android => "android",
+        }
+    }
+}
+
+impl std::fmt::Display for DevicePlatform {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl std::str::FromStr for DevicePlatform {
+    type Err = takusu_types::UnknownLabel;
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "desktop" => Ok(Self::Desktop),
+            "android" => Ok(Self::Android),
+            _ => Err(takusu_types::UnknownLabel::new("DevicePlatform", value)),
+        }
+    }
+}
+
+impl TryFrom<String> for DevicePlatform {
+    type Error = takusu_types::UnknownLabel;
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        value.parse()
+    }
+}
+
+impl takusu_types::EnumLabel for DevicePlatform {
+    fn enum_default() -> Self {
+        Self::Desktop
+    }
+    fn all_variants() -> &'static [Self] {
+        &[Self::Desktop, Self::Android]
+    }
+    fn as_str(&self) -> &'static str {
+        Self::as_str(*self)
+    }
+}
+
+/// A registered device that may hold or contend for resident authority.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+pub struct DeviceRow {
+    pub id: String,
+    pub name: String,
+    #[cfg_attr(feature = "sqlx", sqlx(try_from = "String"))]
+    pub platform: DevicePlatform,
+    pub priority: i64,
+    pub evaluator_heartbeat_until: Option<Timestamp>,
+    pub evaluator_lease_until: Option<Timestamp>,
+    pub next_eval_at: Option<Timestamp>,
+    pub audio_service_running: bool,
+    pub private_output_route: bool,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
+}
+
+/// Request body for registering a new device.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct CreateDevice {
+    pub id: String,
+    pub name: String,
+    pub platform: DevicePlatform,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub priority: Option<i64>,
+}
+
+/// Request body for updating a registered device.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct UpdateDevice {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub priority: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub audio_service_running: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub private_output_route: Option<bool>,
+}
+
+/// Current speech capability for a device.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct SpeechCapability {
+    pub can_speak_proactively: bool,
+}
+
+/// Result of resolving which device currently holds resident authority.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ResidentAuthority {
+    /// The resident device, or `None` when no device currently holds a valid
+    /// evaluator heartbeat or lease.
+    pub device_id: Option<String>,
+    /// `true` when the requesting `candidate_id` is the resident authority.
+    pub is_resident: bool,
+    /// The next scheduled evaluation time advertised by the resident device,
+    /// when known.
+    pub next_eval_at: Option<Timestamp>,
+}
+
+/// Request body for refreshing a desktop evaluator heartbeat.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct RefreshEvaluatorHeartbeat {
+    pub device_id: String,
+    pub until: Timestamp,
+}
+
+/// Request body for reserving or renewing an Android evaluator lease.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct RefreshEvaluatorLease {
+    pub device_id: String,
+    pub lease_until: Timestamp,
+    pub next_eval_at: Option<Timestamp>,
 }
 
 #[cfg(test)]

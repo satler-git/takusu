@@ -8,6 +8,7 @@ use async_trait::async_trait;
 
 use crate::error::StorageError;
 use crate::model::*;
+use takusu_types::Timestamp;
 use takusu_types::TokenClaims;
 
 pub type StorageResult<T> = Result<T, StorageError>;
@@ -351,8 +352,119 @@ pub trait Storage: Send + Sync + 'static {
         Ok(())
     }
 
+    // ── Multi-device arbitration (WI-11) ─────────────────────────────────
+    /// Register or upsert a device. The platform and id together form the
+    /// unique identity; re-registering the same id updates `name` and leaves
+    /// heartbeat/lease state untouched unless `UpdateDevice` is used.
+    async fn register_device(&self, body: &CreateDevice) -> StorageResult<DeviceRow> {
+        let _ = body;
+        Err(StorageError::Internal("device registry is not supported".into()))
+    }
+
+    async fn get_device(&self, id: &str) -> StorageResult<DeviceRow> {
+        let _ = id;
+        Err(StorageError::Internal("device registry is not supported".into()))
+    }
+
+    async fn list_devices(&self) -> StorageResult<Vec<DeviceRow>> {
+        Ok(Vec::new())
+    }
+
+    async fn update_device(&self, id: &str, body: &UpdateDevice) -> StorageResult<DeviceRow> {
+        let _ = (id, body);
+        Err(StorageError::Internal("device registry is not supported".into()))
+    }
+
+    async fn delete_device(&self, id: &str) -> StorageResult<()> {
+        let _ = id;
+        Err(StorageError::Internal("device registry is not supported".into()))
+    }
+
+    /// Refresh a desktop evaluator heartbeat. `until` is the wall-clock time
+    /// through which the host claims to remain alive and resident-eligible.
+    async fn refresh_evaluator_heartbeat(
+        &self,
+        device_id: &str,
+        until: Timestamp,
+    ) -> StorageResult<DeviceRow> {
+        let _ = (device_id, until);
+        Err(StorageError::Internal("device registry is not supported".into()))
+    }
+
+    /// Reserve or renew an Android evaluator lease. `lease_until` covers the
+    /// next exact alarm plus grace period; `next_eval_at` is the scheduled
+    /// evaluation wall-clock time.
+    async fn refresh_evaluator_lease(
+        &self,
+        device_id: &str,
+        lease_until: Timestamp,
+        next_eval_at: Option<Timestamp>,
+    ) -> StorageResult<DeviceRow> {
+        let _ = (device_id, lease_until, next_eval_at);
+        Err(StorageError::Internal("device registry is not supported".into()))
+    }
+
+    /// Compute the current resident authority from the priority list and
+    /// alive devices. Returns the resident device and whether `candidate_id`
+    /// currently holds that role.
+    async fn resolve_resident_authority(
+        &self,
+        candidate_id: &str,
+    ) -> StorageResult<ResidentAuthority> {
+        let _ = candidate_id;
+        Ok(ResidentAuthority {
+            device_id: None,
+            is_resident: false,
+            next_eval_at: None,
+        })
+    }
+
     /// Backend health check. Returns a short human-readable status string.
     /// For `WorkersStorage` this pings the Cloudflare Worker `/health`;
     /// for `SqliteStorage` it reports the local DB is reachable.
     async fn health_check(&self) -> StorageResult<String>;
+}
+
+/// Compute the current resident authority from the priority list and alive
+/// devices. Returns the resident device and whether `candidate_id` currently
+/// holds that role. Shared between SQLite and D1 storage backends.
+pub fn resolve_resident_authority_from_rows(
+    devices: &[DeviceRow],
+    priority_list: &[String],
+    candidate_id: &str,
+    now: Timestamp,
+) -> ResidentAuthority {
+    let now_sec = now.as_second();
+    let mut sorted = devices.to_vec();
+    sorted.sort_by(|a, b| {
+        let a_pos = priority_list
+            .iter()
+            .position(|p| p == a.platform.as_str())
+            .unwrap_or(usize::MAX);
+        let b_pos = priority_list
+            .iter()
+            .position(|p| p == b.platform.as_str())
+            .unwrap_or(usize::MAX);
+        a_pos
+            .cmp(&b_pos)
+            .then_with(|| a.priority.cmp(&b.priority))
+            .then_with(|| a.created_at.cmp(&b.created_at))
+    });
+    let alive = sorted.iter().find(|d| {
+        d.evaluator_heartbeat_until
+            .is_some_and(|t| t.as_second() > now_sec)
+            || d.evaluator_lease_until.is_some_and(|t| t.as_second() > now_sec)
+    });
+    match alive {
+        Some(d) => ResidentAuthority {
+            device_id: Some(d.id.clone()),
+            is_resident: d.id == candidate_id,
+            next_eval_at: d.next_eval_at,
+        },
+        None => ResidentAuthority {
+            device_id: None,
+            is_resident: false,
+            next_eval_at: None,
+        },
+    }
 }
