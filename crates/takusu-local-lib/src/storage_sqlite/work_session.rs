@@ -1396,7 +1396,8 @@ pub(crate) async fn batch_evaluation_progress(
         std::collections::HashMap::new();
     for session in sessions {
         if let Some(task_id) = session.task_id.as_ref() {
-            *active_minutes_by_task.entry(task_id.clone()).or_default() += session_minutes(&session);
+            *active_minutes_by_task.entry(task_id.clone()).or_default() +=
+                session_minutes(&session);
         }
     }
 

@@ -226,10 +226,7 @@ fn build_api_router(open_api: &mut OpenApi) -> Router<AppState> {
             "/events/evaluate",
             api::post(handlers::events::evaluate_events),
         )
-        .api_route(
-            "/events/commit",
-            api::post(handlers::events::commit_events),
-        )
+        .api_route("/events/commit", api::post(handlers::events::commit_events))
         .api_route(
             "/events/{event_id}/claim",
             api::post(handlers::events::claim_event),
