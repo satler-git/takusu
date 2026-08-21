@@ -17189,6 +17189,17 @@
           "event_id": {
             "type": ["string", "null"]
           },
+          "input_path": {
+            "description": "Trusted input path the client wants the capability to be issued for.\n\nThe server minting endpoint decides the actual `input_path` using this\nvalue when present and falling back to a per-endpoint default otherwise.\nThe client cannot self-assert an arbitrary path: the mint response always\ncarries the server-chosen path.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InputPath"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "note": {
             "type": ["string", "null"]
           },

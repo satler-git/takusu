@@ -207,6 +207,21 @@
                 alsa-lib
                 libpulseaudio
                 openblas
+                fontconfig
+                freetype
+                glib
+                libxkbcommon
+                vulkan-headers
+                vulkan-loader
+                wayland
+                wayland-protocols
+                libxcb
+                libx11
+                libxcursor
+                libxrandr
+                libxi
+                libxinerama
+                libxscrnsaver
               ]
               ++ [ sherpaOnnxLinuxX64Shared ];
             LIBCLANG_PATH = "${pkgs.libclang.lib}/lib";

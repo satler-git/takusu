@@ -70,6 +70,7 @@ async function presentationForEvent(
       task_id: event.task_id,
       action: 'start',
       device_id: 'mobile',
+      input_path: 'notification_capability',
       event_id: event.id,
     });
     return withCapability(presentation, capability);

@@ -7,6 +7,13 @@ Type=simple
 ExecStart=/usr/local/bin/takusu-desktop
 Restart=on-failure
 Environment="RUST_LOG=info,takusu_desktop=debug"
+NoNewPrivileges=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
 
 [Install]
 WantedBy=default.target

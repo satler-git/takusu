@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use futures_util::StreamExt;
-use takusu_agent::capability::CapabilityRequest;
+use takusu_agent::capability::{CapabilityRequest, InputPath};
 use takusu_agent::presentation::ActionKind;
 use takusu_agent::{Presentation, SurfaceEvent, SurfaceSnapshot};
 use takusu_contracts::EventDeliveryState;
@@ -194,6 +194,7 @@ async fn replay_events(
                         task_id: task_id.into(),
                         action: "start".into(),
                         device_id: "desktop".into(),
+                        input_path: Some(InputPath::NotificationCapability),
                         event_id: Some(event.id.clone()),
                         ..Default::default()
                     })
@@ -219,6 +220,7 @@ async fn replay_events(
                         task_id: task_id.into(),
                         action: "delay".into(),
                         device_id: "desktop".into(),
+                        input_path: Some(InputPath::NotificationCapability),
                         event_id: Some(event.id.clone()),
                         snooze_minutes: Some(10),
                         ..Default::default()
