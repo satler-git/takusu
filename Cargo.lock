@@ -5653,6 +5653,7 @@ dependencies = [
  "serde_json",
  "takusu-agent",
  "takusu-contracts",
+ "takusu-types",
  "thiserror 2.0.19",
  "tokio",
  "toml 0.8.23",

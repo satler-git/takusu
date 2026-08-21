@@ -27,12 +27,25 @@ impl TakusuApp {
     }
 
     /// Evaluate one consistent planner snapshot and persist newly discovered
-    /// deterministic events. The caller is the resident authority; arbitration
-    /// decides which device may call this method in the multi-device phase.
+    /// deterministic events. Only the current resident authority may commit;
+    /// other devices receive an empty `EvaluationResult` and the resident's
+    /// `next_eval_at` so they can wait or schedule the next alarm.
     pub async fn evaluate_and_commit_events(
         &self,
-        _device_id: &str,
+        device_id: &str,
     ) -> Result<takusu_agent::events::EvaluationResult, AppError> {
+        let authority = self
+            .storage
+            .resolve_resident_authority(device_id)
+            .await
+            .map_err(storage_to_app)?;
+        if !authority.is_resident {
+            return Ok(takusu_agent::events::EvaluationResult {
+                due_events: Vec::new(),
+                next_eval_at: authority.next_eval_at,
+            });
+        }
+
         let now = takusu_types::Timestamp::now();
         let EvaluationInputs {
             schedule_revision,

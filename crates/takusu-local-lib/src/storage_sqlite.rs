@@ -4,22 +4,23 @@ use sqlx::SqlitePool;
 use sqlx::sqlite::SqlitePoolOptions;
 use takusu_contracts::{
     AttachWorkSession, CommentRow, ConvertWorkSession, CoverageConfirmationRow, CoverageEvaluation,
-    CoverageState, CreateCoverageConfirmation, CreateHabit, CreateHabitScheduledSpan, CreateMemory,
-    CreateSkill, CreateTask, CreateUnsettledInterval, EstimatorStateRow, EvaluationInputs,
-    EventDeliveryState, EventLedgerInsert, EventLedgerRow, GoogleCalEventRow, GoogleCalSettingsRow,
-    HabitRow, HabitScheduledSpanRow, HabitStepEstimateInput, HabitStepInput, HabitStepRow,
-    MemoryInjectionQuery, MemoryInjectionResult, MemoryKindCounts, MemoryQuery, MemoryRow,
-    MoveEntryResponse, RecordWorkSessionProgress, SaveScheduleRequest, ScheduleEntry, ScheduleRow,
-    SettingsRow, SimilarTaskQuery, SimilarTaskRow, SkillRow, SplitResult, SplitTask,
-    StartWorkSession, Storage, StorageError, TaskProgress, TaskQuery, TaskRow, TokenCreateResponse,
-    TokenRow, UnsettledIntervalRow, UpdateGoogleCalSettings, UpdateHabit, UpdateMemory,
-    UpdateSettings, UpdateSkill, UpdateTask, WorkSessionProgressResult, WorkSessionRow,
-    storage::StorageResult,
+    CoverageState, CreateCoverageConfirmation, CreateDevice, CreateHabit, CreateHabitScheduledSpan,
+    CreateMemory, CreateSkill, CreateTask, CreateUnsettledInterval, DeviceRow, EstimatorStateRow,
+    EvaluationInputs, EventDeliveryState, EventLedgerInsert, EventLedgerRow, GoogleCalEventRow,
+    GoogleCalSettingsRow, HabitRow, HabitScheduledSpanRow, HabitStepEstimateInput, HabitStepInput,
+    HabitStepRow, MemoryInjectionQuery, MemoryInjectionResult, MemoryKindCounts, MemoryQuery,
+    MemoryRow, MoveEntryResponse, RecordWorkSessionProgress, ResidentAuthority, SaveScheduleRequest,
+    ScheduleEntry, ScheduleRow, SettingsRow, SimilarTaskQuery, SimilarTaskRow, SkillRow, SplitResult,
+    SplitTask, StartWorkSession, Storage, StorageError, TaskProgress, TaskQuery, TaskRow,
+    TokenCreateResponse, TokenRow, UnsettledIntervalRow, UpdateDevice, UpdateGoogleCalSettings,
+    UpdateHabit, UpdateMemory, UpdateSettings, UpdateSkill, UpdateTask, WorkSessionProgressResult,
+    WorkSessionRow, storage::StorageResult,
 };
 use takusu_search::search::{EvalContext, filter_tasks};
 use takusu_types::Minutes;
 use takusu_types::{
-    CommentAuthor, EnumLabel, Quantity, TaskStatus, TaskStatusFilter, Timestamp, WindowMode,
+    CommentAuthor, EnumLabel, JsonString, Quantity, TaskStatus, TaskStatusFilter, Timestamp,
+    WindowMode,
 };
 use takusu_types::{DEFAULT_AUD, SCOPE_READ_WRITE};
 
@@ -70,6 +71,8 @@ const MIGRATION_031: &str = include_str!("../migrations/031_gcal_event_defaults.
 const MIGRATION_032: &str = include_str!("../migrations/032_estimator_state.sql");
 const MIGRATION_033: &str = include_str!("../migrations/033_event_ledger.sql");
 const MIGRATION_034: &str = include_str!("../migrations/034_coverage.sql");
+const MIGRATION_035: &str = include_str!("../migrations/035_devices.sql");
+const MIGRATION_036: &str = include_str!("../migrations/036_devices.sql");
 
 mod work_session;
 
@@ -512,6 +515,29 @@ impl SqliteStorage {
         sqlx::raw_sql(MIGRATION_032).execute(&pool).await?;
         sqlx::raw_sql(MIGRATION_033).execute(&pool).await?;
         sqlx::raw_sql(MIGRATION_034).execute(&pool).await?;
+
+        // Migration 035: add device_priority to settings. Guarded by the
+        // column itself because ALTER TABLE ADD COLUMN is not idempotent.
+        let has_device_priority: bool = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM pragma_table_info('settings') WHERE name = 'device_priority'",
+        )
+        .fetch_one(&pool)
+        .await?
+            > 0;
+        if !has_device_priority {
+            sqlx::raw_sql(MIGRATION_035).execute(&pool).await?;
+        }
+
+        // Migration 036: device registry table. Guarded by the devices table.
+        let has_devices: bool = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='devices'",
+        )
+        .fetch_one(&pool)
+        .await?
+            > 0;
+        if !has_devices {
+            sqlx::raw_sql(MIGRATION_036).execute(&pool).await?;
+        }
 
         Ok(Self { pool, jwt_secret })
     }
@@ -1592,8 +1618,13 @@ impl Storage for SqliteStorage {
         let seed = body.seed.or(existing.seed);
         let warm_start = body.warm_start.unwrap_or(existing.warm_start);
         let plan_length_days = body.plan_length_days.unwrap_or(existing.plan_length_days);
+        let device_priority = body
+            .device_priority
+            .as_ref()
+            .map(|list| JsonString::new(list.clone()))
+            .unwrap_or(existing.device_priority);
         sqlx::query(
-            "UPDATE settings SET tz = ?, sleep_start = ?, sleep_end = ?, comfortable_minutes = ?, maximum_minutes = ?, solver = ?, time_budget_ms = ?, seed = ?, warm_start = ?, plan_length_days = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = 'active'",
+            "UPDATE settings SET tz = ?, sleep_start = ?, sleep_end = ?, comfortable_minutes = ?, maximum_minutes = ?, solver = ?, time_budget_ms = ?, seed = ?, warm_start = ?, plan_length_days = ?, device_priority = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = 'active'",
         )
         .bind(&tz)
         .bind(sleep_start)
@@ -1605,6 +1636,7 @@ impl Storage for SqliteStorage {
         .bind(seed)
         .bind(warm_start)
         .bind(plan_length_days)
+        .bind(&device_priority)
         .execute(&self.pool)
         .await
         .map_err(map_err)?;
@@ -2784,6 +2816,154 @@ impl Storage for SqliteStorage {
         Ok(())
     }
 
+    // ── Multi-device arbitration (WI-11) ─────────────────────────────────
+
+    async fn register_device(&self, body: &CreateDevice) -> StorageResult<DeviceRow> {
+        let now = takusu_types::now_rfc3339();
+        let priority = body.priority.unwrap_or(match body.platform {
+            takusu_contracts::DevicePlatform::Desktop => 0,
+            takusu_contracts::DevicePlatform::Android => 1,
+        });
+        let mut tx = self.pool.begin().await.map_err(map_err)?;
+        let id = body.id.clone();
+        sqlx::query(
+            "INSERT INTO devices (id, name, platform, priority, evaluator_heartbeat_until, evaluator_lease_until, next_eval_at, audio_service_running, private_output_route, created_at, updated_at) VALUES (?, ?, ?, ?, NULL, NULL, NULL, 0, 0, ?, ?) ON CONFLICT(id) DO UPDATE SET name=excluded.name, platform=excluded.platform, priority=excluded.priority, updated_at=excluded.updated_at",
+        )
+        .bind(&id)
+        .bind(&body.name)
+        .bind(body.platform.to_string())
+        .bind(priority)
+        .bind(&now)
+        .bind(&now)
+        .execute(&mut *tx)
+        .await
+        .map_err(map_err)?;
+        let row: DeviceRow = sqlx::query_as::<_, DeviceRow>(
+            "SELECT id, name, platform, priority, evaluator_heartbeat_until, evaluator_lease_until, next_eval_at, audio_service_running, private_output_route, created_at, updated_at FROM devices WHERE id = ?",
+        )
+        .bind(&id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(map_err)?;
+        tx.commit().await.map_err(map_err)?;
+        Ok(row)
+    }
+
+    async fn get_device(&self, id: &str) -> StorageResult<DeviceRow> {
+        sqlx::query_as::<_, DeviceRow>(
+            "SELECT id, name, platform, priority, evaluator_heartbeat_until, evaluator_lease_until, next_eval_at, audio_service_running, private_output_route, created_at, updated_at FROM devices WHERE id = ?",
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(map_err)?
+        .ok_or_else(|| StorageError::NotFound(format!("device {id} not found")))
+    }
+
+    async fn list_devices(&self) -> StorageResult<Vec<DeviceRow>> {
+        sqlx::query_as::<_, DeviceRow>(
+            "SELECT id, name, platform, priority, evaluator_heartbeat_until, evaluator_lease_until, next_eval_at, audio_service_running, private_output_route, created_at, updated_at FROM devices ORDER BY priority, created_at",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(map_err)
+    }
+
+    async fn update_device(&self, id: &str, body: &UpdateDevice) -> StorageResult<DeviceRow> {
+        let existing = self.get_device(id).await?;
+        let name = body.name.clone().unwrap_or(existing.name);
+        let priority = body.priority.unwrap_or(existing.priority);
+        let audio_service_running = body.audio_service_running.unwrap_or(existing.audio_service_running);
+        let private_output_route = body.private_output_route.unwrap_or(existing.private_output_route);
+        let now = takusu_types::now_rfc3339();
+        sqlx::query(
+            "UPDATE devices SET name = ?, priority = ?, audio_service_running = ?, private_output_route = ?, updated_at = ? WHERE id = ?",
+        )
+        .bind(&name)
+        .bind(priority)
+        .bind(audio_service_running)
+        .bind(private_output_route)
+        .bind(&now)
+        .bind(id)
+        .execute(&self.pool)
+        .await
+        .map_err(map_err)?;
+        self.get_device(id).await
+    }
+
+    async fn delete_device(&self, id: &str) -> StorageResult<()> {
+        let result = sqlx::query("DELETE FROM devices WHERE id = ?")
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .map_err(map_err)?;
+        if result.rows_affected() == 0 {
+            return Err(StorageError::NotFound(format!("device {id} not found")));
+        }
+        Ok(())
+    }
+
+    async fn refresh_evaluator_heartbeat(
+        &self,
+        device_id: &str,
+        until: Timestamp,
+    ) -> StorageResult<DeviceRow> {
+        let now = takusu_types::now_rfc3339();
+        sqlx::query(
+            "UPDATE devices SET evaluator_heartbeat_until = ?, updated_at = ? WHERE id = ?",
+        )
+        .bind(until)
+        .bind(&now)
+        .bind(device_id)
+        .execute(&self.pool)
+        .await
+        .map_err(map_err)?;
+        self.get_device(device_id).await
+    }
+
+    async fn refresh_evaluator_lease(
+        &self,
+        device_id: &str,
+        lease_until: Timestamp,
+        next_eval_at: Option<Timestamp>,
+    ) -> StorageResult<DeviceRow> {
+        let now = takusu_types::now_rfc3339();
+        sqlx::query(
+            "UPDATE devices SET evaluator_lease_until = ?, next_eval_at = ?, updated_at = ? WHERE id = ?",
+        )
+        .bind(lease_until)
+        .bind(next_eval_at)
+        .bind(&now)
+        .bind(device_id)
+        .execute(&self.pool)
+        .await
+        .map_err(map_err)?;
+        self.get_device(device_id).await
+    }
+
+    async fn resolve_resident_authority(
+        &self,
+        candidate_id: &str,
+    ) -> StorageResult<ResidentAuthority> {
+        let devices = self.list_devices().await?;
+        if devices.is_empty() {
+            return Ok(ResidentAuthority {
+                device_id: None,
+                is_resident: false,
+                next_eval_at: None,
+            });
+        }
+        let settings = self.get_settings().await?;
+        let priority_list: Vec<String> = settings.device_priority.as_inner().clone();
+        let now = takusu_types::Timestamp::now();
+        Ok(takusu_contracts::resolve_resident_authority_from_rows(
+            &devices,
+            &priority_list,
+            candidate_id,
+            now,
+        ))
+    }
+
     async fn health_check(&self) -> StorageResult<String> {
         // A cheap round-trip to the DB confirms the connection is alive.
         let v: String = sqlx::query_scalar("SELECT sqlite_version()")
@@ -3789,6 +3969,7 @@ mod tests {
             seed: None,
             warm_start: None,
             plan_length_days: Some(14),
+            device_priority: None,
         };
         storage.update_settings(&settings).await.unwrap();
 
@@ -3832,5 +4013,95 @@ mod tests {
             .unwrap();
         let after_settle = storage.get_coverage_evaluation().await.unwrap();
         assert_eq!(after_settle.unsettled_intervals.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn device_arbitration_respects_priority_and_heartbeat() {
+        let cfg = LocalConfig {
+            db: "sqlite::memory:".into(),
+            jwt_secret: "test-secret".into(),
+            ..Default::default()
+        };
+        let storage = SqliteStorage::init(&cfg).await.unwrap();
+
+        let desktop = CreateDevice {
+            id: "desktop-1".into(),
+            name: "desktop".into(),
+            platform: takusu_contracts::DevicePlatform::Desktop,
+            priority: None,
+        };
+        let android = CreateDevice {
+            id: "android-1".into(),
+            name: "android".into(),
+            platform: takusu_contracts::DevicePlatform::Android,
+            priority: None,
+        };
+        storage.register_device(&desktop).await.unwrap();
+        storage.register_device(&android).await.unwrap();
+
+        // No heartbeat/lease yet: no resident.
+        let authority = storage.resolve_resident_authority("desktop-1").await.unwrap();
+        assert!(!authority.is_resident);
+        assert!(authority.device_id.is_none());
+
+        // Android gets a lease but desktop (higher priority) is still idle.
+        let future = takusu_types::Timestamp::from_second(
+            takusu_types::Timestamp::now().as_second() + 600,
+        )
+        .unwrap();
+        storage
+            .refresh_evaluator_lease("android-1", future, Some(future))
+            .await
+            .unwrap();
+        let authority = storage.resolve_resident_authority("android-1").await.unwrap();
+        assert!(authority.is_resident);
+        assert_eq!(authority.device_id, Some("android-1".into()));
+
+        // Desktop heartbeat makes it the resident because it has higher priority.
+        storage
+            .refresh_evaluator_heartbeat("desktop-1", future)
+            .await
+            .unwrap();
+        let authority = storage.resolve_resident_authority("desktop-1").await.unwrap();
+        assert!(authority.is_resident);
+        assert_eq!(authority.device_id, Some("desktop-1".into()));
+
+        // Android sees it is no longer resident.
+        let authority = storage.resolve_resident_authority("android-1").await.unwrap();
+        assert!(!authority.is_resident);
+        assert_eq!(authority.device_id, Some("desktop-1".into()));
+
+        // Expired heartbeat/lease demotes both.
+        let past = takusu_types::Timestamp::from_second(
+            takusu_types::Timestamp::now().as_second() - 1,
+        )
+        .unwrap();
+        storage.refresh_evaluator_heartbeat("desktop-1", past).await.unwrap();
+        storage
+            .refresh_evaluator_lease("android-1", past, None)
+            .await
+            .unwrap();
+        let authority = storage.resolve_resident_authority("desktop-1").await.unwrap();
+        assert!(!authority.is_resident);
+        assert!(authority.device_id.is_none());
+    }
+
+    #[tokio::test]
+    async fn update_settings_persists_device_priority() {
+        let cfg = LocalConfig {
+            db: "sqlite::memory:".into(),
+            jwt_secret: "test-secret".into(),
+            ..Default::default()
+        };
+        let storage = SqliteStorage::init(&cfg).await.unwrap();
+        let update = UpdateSettings {
+            device_priority: Some(vec!["android".into(), "desktop".into()]),
+            ..Default::default()
+        };
+        let settings = storage.update_settings(&update).await.unwrap();
+        assert_eq!(
+            settings.device_priority.as_inner().as_slice(),
+            &["android", "desktop"]
+        );
     }
 }

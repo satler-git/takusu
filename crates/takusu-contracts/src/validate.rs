@@ -440,6 +440,20 @@ impl Validate for crate::UpdateSettings {
         if let Some(tz) = &self.tz {
             validate_timezone(tz)?;
         }
+        if let Some(list) = &self.device_priority {
+            if list.is_empty() {
+                return Err(StorageError::BadRequest(
+                    "device_priority must not be empty".into(),
+                ));
+            }
+            for platform in list {
+                if platform != "desktop" && platform != "android" {
+                    return Err(StorageError::BadRequest(format!(
+                        "device_priority contains unknown platform: {platform}"
+                    )));
+                }
+            }
+        }
         // sleep_start/sleep_end are Option<TimeOfDay>, already validated by deserialization.
         Ok(())
     }
@@ -520,6 +534,37 @@ pub(crate) fn detect_cycle(adj: &[Vec<usize>]) -> Result<(), ()> {
         }
     }
     Ok(())
+}
+
+impl Validate for crate::CreateDevice {
+    fn validate(&self) -> Result<(), StorageError> {
+        if self.id.is_empty() || self.id.len() > 64 {
+            return Err(StorageError::BadRequest(
+                "device id must be 1..64 characters".into(),
+            ));
+        }
+        if self.name.is_empty() || self.name.len() > 100 {
+            return Err(StorageError::BadRequest(
+                "device name must be 1..100 characters".into(),
+            ));
+        }
+        Ok(())
+    }
+}
+
+impl Validate for crate::UpdateDevice {
+    fn validate(&self) -> Result<(), StorageError> {
+        if self
+            .name
+            .as_ref()
+            .is_some_and(|n| n.is_empty() || n.len() > 100)
+        {
+            return Err(StorageError::BadRequest(
+                "device name must be 1..100 characters".into(),
+            ));
+        }
+        Ok(())
+    }
 }
 
 // ── tests ─────────────────────────────────────────────────────────────

@@ -169,6 +169,23 @@ async fn dispatch(req: Request, env: Env) -> Result<Response, crate::error::Work
         (Method::Delete, ["schedule"]) => handlers::schedule::clear(req, env).await,
         (Method::Get, ["settings"]) => handlers::settings::get(req, env).await,
         (Method::Put, ["settings"]) => handlers::settings::update(req, env).await,
+        (Method::Post, ["devices"]) => handlers::devices::create(req, env).await,
+        (Method::Get, ["devices"]) => handlers::devices::list(req, env).await,
+        (Method::Get, ["devices", id]) => handlers::devices::get(req, env, id).await,
+        (Method::Patch, ["devices", id]) => handlers::devices::update(req, env, id).await,
+        (Method::Delete, ["devices", id]) => handlers::devices::delete(req, env, id).await,
+        (Method::Post, ["devices", id, "heartbeat"]) => {
+            handlers::devices::heartbeat(req, env, id).await
+        }
+        (Method::Post, ["devices", id, "lease"]) => {
+            handlers::devices::lease(req, env, id).await
+        }
+        (Method::Get, ["devices", id, "resident"]) => {
+            handlers::devices::resident(req, env, id).await
+        }
+        (Method::Get, ["devices", id, "speech"]) => {
+            handlers::devices::speech(req, env, id).await
+        }
         (Method::Get, ["skills"]) => handlers::skills::list(req, env).await,
         (Method::Post, ["skills"]) => handlers::skills::create(req, env).await,
         (Method::Get, ["skills", id]) => handlers::skills::get(req, env, id).await,
