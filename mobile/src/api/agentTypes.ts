@@ -484,6 +484,7 @@ function decodeCapabilityRequest(v: unknown): CapabilityRequest | undefined {
   if (taskId === undefined || action === undefined || deviceId === undefined) {
     return undefined;
   }
+  const inputPath = isValidInputPath(o.input_path) ? o.input_path : undefined;
   const eventId = strField(o, 'event_id');
   const snoozeMinutes = numField(o, 'snooze_minutes');
   const snoozeTarget = strField(o, 'snooze_target');
@@ -494,6 +495,7 @@ function decodeCapabilityRequest(v: unknown): CapabilityRequest | undefined {
     task_id: taskId,
     action,
     device_id: deviceId,
+    ...(inputPath !== undefined && { input_path: inputPath }),
     ...(eventId !== undefined && { event_id: eventId }),
     ...(snoozeMinutes !== undefined && { snooze_minutes: snoozeMinutes }),
     ...(snoozeTarget !== undefined && { snooze_target: snoozeTarget }),
@@ -897,6 +899,8 @@ export interface CapabilityRequest {
   task_id: string;
   action: QuickAction;
   device_id: string;
+  /** Trusted input path the client wants the capability issued for. The server chooses the actual path. */
+  input_path?: InputPath;
   event_id?: string;
   snooze_minutes?: number;
   /** ISO 8601 target `start_at` for `delay` capabilities, computed client-side or on first tap. */

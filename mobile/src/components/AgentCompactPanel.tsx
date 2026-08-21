@@ -556,6 +556,7 @@ function AgentCompactPanelImpl({
       task_id: quickAction.taskId,
       action: 'complete',
       device_id: 'mobile',
+      input_path: 'screen_capability',
     });
   }, [handleQuickAction, quickAction]);
 
@@ -567,6 +568,7 @@ function AgentCompactPanelImpl({
         task_id: quickAction.taskId,
         action: 'delay',
         device_id: 'mobile',
+        input_path: 'screen_capability',
         snooze_minutes: minutes,
       });
     },
@@ -595,6 +597,7 @@ function AgentCompactPanelImpl({
       task_id: quickAction.taskId,
       action: 'progress',
       device_id: 'mobile',
+      input_path: 'screen_capability',
       quantity_done: n,
       note: note.trim() || undefined,
     });

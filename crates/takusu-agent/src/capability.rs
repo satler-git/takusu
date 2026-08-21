@@ -142,6 +142,14 @@ pub struct CapabilityRequest {
     pub task_id: String,
     pub action: String,
     pub device_id: String,
+    /// Trusted input path the client wants the capability to be issued for.
+    ///
+    /// The server minting endpoint decides the actual `input_path` using this
+    /// value when present and falling back to a per-endpoint default otherwise.
+    /// The client cannot self-assert an arbitrary path: the mint response always
+    /// carries the server-chosen path.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_path: Option<InputPath>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub event_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -322,6 +330,7 @@ impl CapabilityStore {
                 task_id: capability.task_id.clone(),
                 action: capability.action.clone(),
                 device_id: capability.device_id.clone(),
+                input_path: Some(capability.input_path),
                 event_id: capability.event_id.clone(),
                 snooze_minutes: capability.snooze_minutes,
                 snooze_target: capability.snooze_target,
@@ -359,7 +368,13 @@ impl CapabilityStore {
 }
 
 /// Mint a new capability from a request.
-pub fn mint_capability(request: CapabilityRequest, input_path: InputPath) -> ActionCapability {
+pub fn mint_capability(
+    request: CapabilityRequest,
+    default_input_path: InputPath,
+) -> ActionCapability {
+    let input_path = request.input_path.unwrap_or(default_input_path);
+    let mut request = request;
+    request.input_path = Some(input_path);
     let id = format!("cap-{}", uuid::Uuid::now_v7());
     let now = JiffTimestamp::now();
     let expires_at = if let Some(scheduled) = request.scheduled_at {
@@ -473,9 +488,11 @@ pub async fn authorize_action(
             || request.device_id != capability.device_id
             || request.event_id != capability.event_id
             || request.snooze_minutes != capability.snooze_minutes
+            || request.snooze_target != capability.snooze_target
             || request.quantity_done != capability.quantity_done
             || request.note != capability.note
-            || request.scheduled_at != capability.scheduled_at)
+            || request.scheduled_at != capability.scheduled_at
+            || request.input_path != Some(capability.input_path))
     {
         return Err(CapabilityError::Mismatch);
     }
@@ -495,6 +512,7 @@ pub async fn authorize_action(
                 task_id: capability.task_id.clone(),
                 action: capability.action.clone(),
                 device_id: capability.device_id.clone(),
+                input_path: Some(capability.input_path),
                 event_id: capability.event_id.clone(),
                 snooze_minutes: capability.snooze_minutes,
                 snooze_target: capability.snooze_target,
