@@ -87,11 +87,7 @@ pub async fn build_router(
     let token = app.create_token(Some("takusu-web")).await?.token;
 
     let agent = build_agent_state(token.as_str(), local_url);
-    let state = AppState::new(
-        app,
-        Arc::new(RwLock::new(Arc::from(token.as_str()))),
-        agent,
-    );
+    let state = AppState::new(app, Arc::new(RwLock::new(Arc::from(token.as_str()))), agent);
 
     let api = takusu_local::router::router(state);
 

@@ -7,6 +7,8 @@
 pub mod error;
 pub mod model;
 pub mod sleep;
+#[cfg(feature = "sqlx")]
+pub mod sqlx_impl;
 pub mod storage;
 pub mod validate;
 pub mod workload;

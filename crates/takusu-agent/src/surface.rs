@@ -246,6 +246,12 @@ impl SurfaceStateMachine {
 
     pub fn apply_turn_event_for(&self, operation_id: u64, event: &TurnEvent) -> SurfaceSnapshot {
         match event {
+            TurnEvent::AsrText(_) => self.update_for_operation(operation_id, |data| {
+                if data.snapshot.state == SurfaceState::Listening {
+                    data.snapshot.state = SurfaceState::Transcribing;
+                }
+                data.snapshot.error = None;
+            }),
             TurnEvent::Thinking(_) | TurnEvent::Text(_) => {
                 self.update_for_operation(operation_id, |data| {
                     if data.snapshot.state != SurfaceState::Speaking {

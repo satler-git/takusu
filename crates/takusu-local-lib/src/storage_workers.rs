@@ -9,14 +9,14 @@ use serde::de::DeserializeOwned;
 use serde_json::json;
 use takusu_contracts::{
     ApplyHabitEstimateRequest, AttachWorkSession, CommentRow, ConvertWorkSession,
-    CoverageConfirmationRow, CoverageEvaluation, CreateCoverageConfirmation, CreateDevice, CreateHabit,
-    CreateHabitScheduledSpan, CreateMemory, CreateSkill, CreateTask, CreateUnsettledInterval,
-    DeviceRow, EstimatorStateRow, EvaluationInputs, EventDeliveryState, EventLedgerInsert,
-    EventLedgerRow, GoogleCalEventRow, GoogleCalSettingsRow, HabitRow, HabitScheduledSpanRow,
-    HabitStepEstimateInput, HabitStepInput, HabitStepRow, MemoryInjectionQuery, MemoryInjectionResult,
-    MemoryQuery, MemoryRow, RecordWorkSessionProgress, RefreshEvaluatorHeartbeat,
-    RefreshEvaluatorLease, ResidentAuthority, SaveScheduleRequest, ScheduleRow, SettingsRow,
-    SimilarTaskQuery, SimilarTaskRow, SkillRow, SplitResult, SplitTask,
+    CoverageConfirmationRow, CoverageEvaluation, CreateCoverageConfirmation, CreateDevice,
+    CreateHabit, CreateHabitScheduledSpan, CreateMemory, CreateSkill, CreateTask,
+    CreateUnsettledInterval, DeviceRow, EstimatorStateRow, EvaluationInputs, EventDeliveryState,
+    EventLedgerInsert, EventLedgerRow, GoogleCalEventRow, GoogleCalSettingsRow, HabitRow,
+    HabitScheduledSpanRow, HabitStepEstimateInput, HabitStepInput, HabitStepRow,
+    MemoryInjectionQuery, MemoryInjectionResult, MemoryQuery, MemoryRow, RecordWorkSessionProgress,
+    RefreshEvaluatorHeartbeat, RefreshEvaluatorLease, ResidentAuthority, SaveScheduleRequest,
+    ScheduleRow, SettingsRow, SimilarTaskQuery, SimilarTaskRow, SkillRow, SplitResult, SplitTask,
     StartWorkSession, Storage, StorageError, TaskProgress, TaskQuery, TaskRow, TokenCreateResponse,
     TokenRow, UnsettledIntervalRow, UpdateDevice, UpdateGoogleCalSettings, UpdateHabit,
     UpdateMemory, UpdateSettings, UpdateSkill, UpdateTask, WorkSessionProgressResult,
@@ -1331,8 +1331,13 @@ impl Storage for WorkersStorage {
     }
 
     async fn list_devices(&self) -> StorageResult<Vec<DeviceRow>> {
-        self.send_json(reqwest::Method::GET, paths::DEVICES, RequestBody::None, None)
-            .await
+        self.send_json(
+            reqwest::Method::GET,
+            paths::DEVICES,
+            RequestBody::None,
+            None,
+        )
+        .await
     }
 
     async fn update_device(&self, id: &str, body: &UpdateDevice) -> StorageResult<DeviceRow> {
@@ -1393,7 +1398,10 @@ impl Storage for WorkersStorage {
         .await
     }
 
-    async fn resolve_resident_authority(&self, candidate_id: &str) -> StorageResult<ResidentAuthority> {
+    async fn resolve_resident_authority(
+        &self,
+        candidate_id: &str,
+    ) -> StorageResult<ResidentAuthority> {
         self.send_json(
             reqwest::Method::GET,
             &paths::device_resident_path(candidate_id),

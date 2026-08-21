@@ -6,8 +6,8 @@
 
 use std::sync::{Arc, RwLock};
 
-use takusu_agent::{Presentation, SurfaceEvent, SurfaceSnapshot, SurfaceState};
 use takusu_agent::capability::ActionCapability;
+use takusu_agent::{Presentation, SurfaceEvent, SurfaceSnapshot, SurfaceState};
 
 use crate::config::Theme;
 

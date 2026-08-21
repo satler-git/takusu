@@ -225,8 +225,7 @@ impl DesktopTransport for HttpTransport {
             // The desktop daemon also sends a background heartbeat every 60s;
             // use a 120s TTL so transient scheduling jitter does not demote
             // resident authority between refreshes.
-            let until = jiff::Timestamp::from_second(now.as_second() + 120)
-                .unwrap_or(now);
+            let until = jiff::Timestamp::from_second(now.as_second() + 120).unwrap_or(now);
             let body = serde_json::json!({
                 "device_id": device_id,
                 "until": until.to_string(),

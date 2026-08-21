@@ -9,8 +9,8 @@ pub mod config;
 pub mod notify;
 pub mod popover;
 pub mod state;
-pub mod tray;
 pub mod transport;
+pub mod tray;
 
 pub use config::{Config, Theme};
 pub use notify::DesktopNotification;

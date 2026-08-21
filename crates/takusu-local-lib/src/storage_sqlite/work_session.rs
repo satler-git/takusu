@@ -106,7 +106,7 @@ async fn ensure_estimator_state(
     .await
     .map_err(map_err)?;
     sqlx::query_as::<_, EstimatorStateRow>(
-        "SELECT task_id, revision, mean_minutes, sigma_minutes, source, updated_at FROM estimator_state WHERE task_id = ?",
+        "SELECT task_id, revision, mean_minutes, sigma_minutes, source, updated_at, band, next_crossing_time FROM estimator_state WHERE task_id = ?",
     )
     .bind(&task.id)
     .fetch_one(&mut *tx)
@@ -152,8 +152,14 @@ async fn record_estimator_observation(
         .map_err(|e| StorageError::BadRequest(e.to_string()))?;
     let revision = state.revision + 1;
     let observation_id = uuid::Uuid::now_v7().to_string();
+    let band = estimator_band(posterior.band);
+    let next_crossing_time = crossing_timestamp(
+        now,
+        next_crossing_time(posterior.posterior, active_minutes.max(0) as f64, 0.0),
+    );
+
     sqlx::query(
-        "INSERT INTO estimator_observations (id, task_id, revision, kind, active_minutes, quantity_fraction, projection_minutes, prior_mean_minutes, prior_sigma_minutes, posterior_mean_minutes, posterior_sigma_minutes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO estimator_observations (id, task_id, revision, kind, active_minutes, quantity_fraction, projection_minutes, prior_mean_minutes, prior_sigma_minutes, posterior_mean_minutes, posterior_sigma_minutes, band, next_crossing_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(&observation_id)
     .bind(&task.id)
@@ -166,26 +172,29 @@ async fn record_estimator_observation(
     .bind(prior.sigma)
     .bind(posterior.posterior.mu)
     .bind(posterior.posterior.sigma)
+    .bind(band.to_string())
+    .bind(next_crossing_time)
     .execute(&mut *tx)
     .await
     .map_err(map_err)?;
 
     sqlx::query(
-        "UPDATE estimator_state SET revision = ?, mean_minutes = ?, sigma_minutes = ?, source = 'observation', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE task_id = ?",
+        "UPDATE estimator_state SET revision = ?, mean_minutes = ?, sigma_minutes = ?, source = 'observation', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), band = ?, next_crossing_time = ? WHERE task_id = ?",
     )
     .bind(revision)
     .bind(posterior.posterior.mu)
     .bind(posterior.posterior.sigma)
+    .bind(band.to_string())
+    .bind(next_crossing_time)
     .bind(&task.id)
     .execute(&mut *tx)
     .await
     .map_err(map_err)?;
 
-    let crossing_delay = next_crossing_time(posterior.posterior, active_minutes.max(0) as f64, 0.0);
     let result = EstimatorResult {
-        band: estimator_band(posterior.band),
+        band,
         revision,
-        next_crossing_time: crossing_timestamp(now, crossing_delay),
+        next_crossing_time,
         survival_probability: survival_probability(
             posterior.posterior,
             active_minutes.max(0) as f64,
@@ -217,8 +226,10 @@ async fn compensate_last_estimator_observation(
     let target = DurationDistribution::new(target_mu, target_sigma);
     let revision = state.revision + 1;
     let observation_id = uuid::Uuid::now_v7().to_string();
+    let band = EstimatorBand::Usual;
+    let next_crossing_time: Option<Timestamp> = None;
     sqlx::query(
-        "INSERT INTO estimator_observations (id, task_id, revision, kind, active_minutes, prior_mean_minutes, prior_sigma_minutes, posterior_mean_minutes, posterior_sigma_minutes, compensates_observation_id) VALUES (?, ?, ?, 'compensation', 0, ?, ?, ?, ?, ?)",
+        "INSERT INTO estimator_observations (id, task_id, revision, kind, active_minutes, prior_mean_minutes, prior_sigma_minutes, posterior_mean_minutes, posterior_sigma_minutes, compensates_observation_id, band, next_crossing_time) VALUES (?, ?, ?, 'compensation', 0, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(&observation_id)
     .bind(&task.id)
@@ -228,15 +239,19 @@ async fn compensate_last_estimator_observation(
     .bind(target.mu)
     .bind(target.sigma)
     .bind(&compensates_id)
+    .bind(band.to_string())
+    .bind(next_crossing_time)
     .execute(&mut *tx)
     .await
     .map_err(map_err)?;
     sqlx::query(
-        "UPDATE estimator_state SET revision = ?, mean_minutes = ?, sigma_minutes = ?, source = 'compensation', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE task_id = ?",
+        "UPDATE estimator_state SET revision = ?, mean_minutes = ?, sigma_minutes = ?, source = 'compensation', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), band = ?, next_crossing_time = ? WHERE task_id = ?",
     )
     .bind(revision)
     .bind(target.mu)
     .bind(target.sigma)
+    .bind(band.to_string())
+    .bind(next_crossing_time)
     .bind(&task.id)
     .execute(&mut *tx)
     .await
@@ -261,7 +276,7 @@ async fn read_estimator_state(
     task: &TaskRow,
 ) -> StorageResult<EstimatorStateRow> {
     let state = sqlx::query_as::<_, EstimatorStateRow>(
-        "SELECT task_id, revision, mean_minutes, sigma_minutes, source, updated_at FROM estimator_state WHERE task_id = ?",
+        "SELECT task_id, revision, mean_minutes, sigma_minutes, source, updated_at, band, next_crossing_time FROM estimator_state WHERE task_id = ?",
     )
     .bind(&task.id)
     .fetch_optional(storage.pool())
@@ -297,6 +312,8 @@ async fn read_estimator_state(
             "fallback".into()
         },
         updated_at: task.updated_at,
+        band: None,
+        next_crossing_time: None,
     })
 }
 
@@ -1359,7 +1376,7 @@ pub(crate) async fn batch_evaluation_progress(
     let events: Vec<ProgressEventRow> = events_q.fetch_all(&mut *conn).await.map_err(map_err)?;
 
     let state_sql = format!(
-        "SELECT task_id, revision, mean_minutes, sigma_minutes, source, updated_at FROM estimator_state WHERE task_id IN ({placeholders})"
+        "SELECT task_id, revision, mean_minutes, sigma_minutes, source, updated_at, band, next_crossing_time FROM estimator_state WHERE task_id IN ({placeholders})"
     );
     let mut state_q =
         sqlx::query_as::<_, EstimatorStateRow>(sqlx::AssertSqlSafe(state_sql.as_str()));
@@ -1393,6 +1410,8 @@ pub(crate) async fn batch_evaluation_progress(
                 revision: state.revision,
                 mean_minutes: state.mean_minutes,
                 sigma_minutes: state.sigma_minutes,
+                band: state.band,
+                next_crossing_time: state.next_crossing_time,
             })
         } else {
             let task_kind_prior = load_task_kind_prior(&mut *conn, task).await?;
@@ -1405,6 +1424,8 @@ pub(crate) async fn batch_evaluation_progress(
                 revision: 0,
                 mean_minutes: distribution.mu,
                 sigma_minutes: distribution.sigma,
+                band: None,
+                next_crossing_time: None,
             })
         };
 
