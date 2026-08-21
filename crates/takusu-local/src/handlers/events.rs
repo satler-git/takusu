@@ -1,6 +1,7 @@
 use axum::Extension;
 use axum::Json;
 use axum::extract::{Path, Query, State};
+use axum::http::StatusCode;
 use serde::{Deserialize, Serialize};
 use takusu_contracts::{
     CoverageEvaluation, EvaluationInputs, EventDeliveryState, EventLedgerInsert, EventLedgerRow,
@@ -9,7 +10,7 @@ use takusu_contracts::{
 use takusu_local_lib::TokenClaims;
 use takusu_local_lib::error::{AppError, BadRequestKind};
 
-use crate::error::HttpError;
+use crate::error::{HttpError, NoContent};
 use crate::state::AppState;
 
 #[derive(Debug, Default, Deserialize, schemars::JsonSchema)]
@@ -31,6 +32,12 @@ pub struct ClaimEventRequest {
 #[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct ClaimEventResponse {
     pub claimed: bool,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct CommitEventsRequest {
+    pub schedule_revision: i64,
+    pub events: Vec<EventLedgerInsert>,
 }
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
@@ -104,6 +111,17 @@ pub async fn evaluate_events(
         due_events,
         next_eval_at: result.next_eval_at,
     }))
+}
+
+pub async fn commit_events(
+    State(state): State<AppState>,
+    Json(body): Json<CommitEventsRequest>,
+) -> Result<NoContent, HttpError> {
+    state
+        .app
+        .commit_event_evaluation(body.schedule_revision, body.events)
+        .await?;
+    Ok(NoContent(StatusCode::NO_CONTENT))
 }
 
 pub async fn insert_event(

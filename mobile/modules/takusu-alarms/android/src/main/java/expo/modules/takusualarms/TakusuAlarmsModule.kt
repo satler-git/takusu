@@ -2,6 +2,7 @@ package expo.modules.takusualarms
 
 import android.app.AlarmManager
 import android.app.PendingIntent
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -56,6 +57,7 @@ class TakusuAlarmsModule : Module() {
                 workersUrl: String,
                 rootToken: String,
                 deviceId: String,
+                localUrl: String,
                 ->
                 val context =
                     appContext.reactContext
@@ -70,6 +72,7 @@ class TakusuAlarmsModule : Module() {
                     workersUrl,
                     rootToken,
                     deviceId,
+                    localUrl,
                 )
             }
 
@@ -97,18 +100,25 @@ class TakusuAlarmsModule : Module() {
         context: Context,
         workersUrl: String = "",
         rootToken: String = "",
-        deviceId: String = TakusuEvaluatorAlarmReceiver.DEFAULT_DEVICE_ID,
+        deviceId: String = DEFAULT_DEVICE_ID,
+        localUrl: String = "",
     ): PendingIntent {
         val intent =
-            Intent(context, TakusuEvaluatorAlarmReceiver::class.java).apply {
-                action = TakusuEvaluatorAlarmReceiver.ACTION_EVALUATE
-                putExtra(TakusuEvaluatorAlarmReceiver.EXTRA_WORKERS_URL, workersUrl)
-                putExtra(TakusuEvaluatorAlarmReceiver.EXTRA_ROOT_TOKEN, rootToken)
-                putExtra(TakusuEvaluatorAlarmReceiver.EXTRA_DEVICE_ID, deviceId)
+            Intent().apply {
+                component =
+                    ComponentName(
+                        context.packageName,
+                        "expo.modules.takususerver.TakusuEvaluatorAlarmReceiver",
+                    )
+                action = ACTION_EVALUATE
+                putExtra(EXTRA_WORKERS_URL, workersUrl)
+                putExtra(EXTRA_ROOT_TOKEN, rootToken)
+                putExtra(EXTRA_DEVICE_ID, deviceId)
+                putExtra(EXTRA_LOCAL_URL, localUrl)
             }
         return PendingIntent.getBroadcast(
             context,
-            TakusuEvaluatorAlarmReceiver.REQUEST_CODE,
+            REQUEST_CODE,
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
@@ -120,11 +130,12 @@ class TakusuAlarmsModule : Module() {
         workersUrl: String,
         rootToken: String,
         deviceId: String,
+        localUrl: String,
     ): Boolean {
         val alarmManager =
             context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
                 ?: return false
-        val pending = pendingIntent(context, workersUrl, rootToken, deviceId)
+        val pending = pendingIntent(context, workersUrl, rootToken, deviceId, localUrl)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && alarmManager.canScheduleExactAlarms()) {
             alarmManager.setExactAndAllowWhileIdle(
                 AlarmManager.RTC_WAKEUP,
@@ -147,5 +158,15 @@ class TakusuAlarmsModule : Module() {
                 ?: return false
         alarmManager.cancel(pendingIntent(context))
         return true
+    }
+
+    companion object {
+        const val ACTION_EVALUATE = "dev.satler.takusu.EVALUATE_EVENTS"
+        const val EXTRA_WORKERS_URL = "workers_url"
+        const val EXTRA_ROOT_TOKEN = "root_token"
+        const val EXTRA_DEVICE_ID = "device_id"
+        const val EXTRA_LOCAL_URL = "local_url"
+        const val DEFAULT_DEVICE_ID = "mobile"
+        const val REQUEST_CODE = 7381
     }
 }

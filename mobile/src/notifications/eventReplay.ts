@@ -8,6 +8,7 @@ import {
   type Presentation,
 } from '@/src/api/agentTypes';
 import TakusuAlarmsModule from '@/modules/takusu-alarms/src/TakusuAlarmsModule';
+import TakusuServerModule from '@/modules/takusu-server/src/TakusuServerModule';
 import * as Notifications from 'expo-notifications';
 import { CHANNELS } from './channels';
 import { CATEGORY_TASK_START } from './categories';
@@ -49,9 +50,22 @@ function withCapability(
   };
 }
 
+function resolveLocalUrl(): string | undefined {
+  try {
+    const status = TakusuServerModule.status();
+    if (status.running && status.port > 0) {
+      return `http://127.0.0.1:${status.port}`;
+    }
+  } catch {
+    // Module may be unavailable in tests or on non-Android platforms.
+  }
+  return undefined;
+}
+
 async function presentationForEvent(
   event: EventLedgerRow,
   agentClient: AgentClient,
+  deviceId: string,
 ): Promise<Presentation> {
   let presentation: Presentation;
   try {
@@ -69,7 +83,7 @@ async function presentationForEvent(
     const capability = await agentClient.mintCapability({
       task_id: event.task_id,
       action: 'start',
-      device_id: 'mobile',
+      device_id: deviceId,
       input_path: 'notification_capability',
       event_id: event.id,
     });
@@ -82,18 +96,21 @@ export async function replayPlannerEvents(
   agentClient: AgentClient,
   alarmEvaluation?: AlarmEvaluationConfig,
 ): Promise<void> {
-  const evaluation = await agentClient.evaluatePlannerEvents('mobile');
+  const deviceId = alarmEvaluation?.deviceId ?? 'mobile';
+  const evaluation = await agentClient.evaluatePlannerEvents(deviceId);
   if (Platform.OS === 'android' && TakusuAlarmsModule) {
     const next = evaluation.next_eval_at
       ? new Date(evaluation.next_eval_at).getTime()
       : Number.NaN;
     if (Number.isFinite(next) && next > Date.now()) {
       if (alarmEvaluation) {
+        const localUrl = alarmEvaluation.localUrl ?? resolveLocalUrl() ?? '';
         await TakusuAlarmsModule.scheduleEvaluatorAlarm(
           next,
           alarmEvaluation.workersUrl,
           alarmEvaluation.rootToken,
-          alarmEvaluation.deviceId,
+          deviceId,
+          localUrl,
         );
       }
     } else {
@@ -101,7 +118,7 @@ export async function replayPlannerEvents(
     }
   }
 
-  const events = await agentClient.listPlannerEvents('mobile');
+  const events = await agentClient.listPlannerEvents(deviceId);
   const color = await getNotificationIconColor();
   for (const event of events) {
     if (
@@ -110,8 +127,12 @@ export async function replayPlannerEvents(
     ) {
       continue;
     }
-    if (!(await agentClient.claimPlannerEvent(event.id, 'mobile'))) continue;
-    const presentation = await presentationForEvent(event, agentClient);
+    if (!(await agentClient.claimPlannerEvent(event.id, deviceId))) continue;
+    const presentation = await presentationForEvent(
+      event,
+      agentClient,
+      deviceId,
+    );
     const taskId = event.task_id ?? undefined;
     await Notifications.scheduleNotificationAsync({
       content: {

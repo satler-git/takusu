@@ -26,6 +26,8 @@ export interface AlarmEvaluationConfig {
   workersUrl: string;
   rootToken: string;
   deviceId: string;
+  /** Preferred local `takusu-local` URL (e.g. `http://127.0.0.1:3838`). */
+  localUrl?: string;
 }
 
 export interface ScheduleData {

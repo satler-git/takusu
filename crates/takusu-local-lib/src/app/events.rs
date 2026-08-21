@@ -213,6 +213,17 @@ impl TakusuApp {
         Ok(result)
     }
 
+    pub async fn commit_event_evaluation(
+        &self,
+        schedule_revision: i64,
+        events: Vec<EventLedgerInsert>,
+    ) -> Result<(), AppError> {
+        self.storage
+            .commit_event_evaluation(schedule_revision, &events)
+            .await
+            .map_err(storage_to_app)
+    }
+
     pub async fn insert_event_ledger(
         &self,
         event: &EventLedgerInsert,
