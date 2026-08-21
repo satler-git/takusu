@@ -294,14 +294,7 @@ fn normal_cdf(x: f64) -> f64 {
 }
 
 fn erf(x: f64) -> f64 {
-    let sign = if x < 0.0 { -1.0 } else { 1.0 };
-    let x = x.abs();
-    let t = 1.0 / (1.0 + 0.3275911 * x);
-    let polynomial = (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736)
-        * t
-        + 0.254829592)
-        * t;
-    sign * (1.0 - polynomial * (-x * x).exp())
+    libm::erf(x)
 }
 
 fn horner<const N: usize>(coefficients: &[f64; N], x: f64) -> f64 {
@@ -444,6 +437,16 @@ mod tests {
             conditional_expected_remaining_minutes(distribution, -1.0),
             None
         );
+    }
+
+    #[test]
+    fn erf_matches_known_values() {
+        assert!((erf(0.0) - 0.0).abs() < 1e-15);
+        assert!((erf(1.0) - 0.8427007929497149).abs() < 1e-15);
+        assert!((erf(-1.0) + 0.8427007929497149).abs() < 1e-15);
+        assert!((erf(2.0) - 0.9953222650189527).abs() < 1e-15);
+        assert!(erf(6.0) >= 1.0 - 1e-15);
+        assert!(erf(-6.0) <= -1.0 + 1e-15);
     }
 
     #[test]

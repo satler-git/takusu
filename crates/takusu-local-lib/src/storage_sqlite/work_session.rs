@@ -1350,10 +1350,11 @@ pub(crate) async fn get_task_progress(
 
 /// Fetch progress for multiple tasks in a fixed number of queries.
 ///
-/// Returns one [`EvaluationTaskProgress`] per supplied task. Progress events,
-/// estimator state, and task-kind priors are loaded with one query each, then
-/// grouped in memory. This avoids the N+1 `get_task_progress` round-trips
-/// inside the snapshot transaction.
+/// Returns one [`EvaluationTaskProgress`] per supplied task. Active minutes are
+/// summed from work sessions (not progress events), estimator state and
+/// task-kind priors are loaded with one query each, and all are grouped in
+/// memory. This avoids the N+1 `get_task_progress` round-trips inside the
+/// snapshot transaction.
 pub(crate) async fn batch_evaluation_progress(
     conn: &mut sqlx::SqliteConnection,
     tasks: &[TaskRow],
@@ -1365,15 +1366,15 @@ pub(crate) async fn batch_evaluation_progress(
     let ids: Vec<String> = tasks.iter().map(|t| t.id.clone()).collect();
     let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
 
-    let events_sql = format!(
-        "SELECT id, work_session_id, task_id, at, quantity_done, delta_quantity, active_minutes, note FROM progress_events WHERE task_id IN ({placeholders}) ORDER BY task_id, at ASC, id ASC"
+    let sessions_sql = format!(
+        "SELECT id, task_id, title, note, quantity_total, quantity_done, quantity_unit, started_at, ended_at, created_at FROM work_sessions WHERE task_id IN ({placeholders}) ORDER BY started_at ASC"
     );
-    let mut events_q =
-        sqlx::query_as::<_, ProgressEventRow>(sqlx::AssertSqlSafe(events_sql.as_str()));
+    let mut sessions_q =
+        sqlx::query_as::<_, WorkSessionRow>(sqlx::AssertSqlSafe(sessions_sql.as_str()));
     for id in &ids {
-        events_q = events_q.bind(id);
+        sessions_q = sessions_q.bind(id);
     }
-    let events: Vec<ProgressEventRow> = events_q.fetch_all(&mut *conn).await.map_err(map_err)?;
+    let sessions: Vec<WorkSessionRow> = sessions_q.fetch_all(&mut *conn).await.map_err(map_err)?;
 
     let state_sql = format!(
         "SELECT task_id, revision, mean_minutes, sigma_minutes, source, updated_at, band, next_crossing_time FROM estimator_state WHERE task_id IN ({placeholders})"
@@ -1393,9 +1394,9 @@ pub(crate) async fn batch_evaluation_progress(
 
     let mut active_minutes_by_task: std::collections::HashMap<String, i64> =
         std::collections::HashMap::new();
-    for event in events {
-        if let Some(task_id) = event.task_id.as_ref() {
-            *active_minutes_by_task.entry(task_id.clone()).or_default() += event.active_minutes;
+    for session in sessions {
+        if let Some(task_id) = session.task_id.as_ref() {
+            *active_minutes_by_task.entry(task_id.clone()).or_default() += session_minutes(&session);
         }
     }
 
