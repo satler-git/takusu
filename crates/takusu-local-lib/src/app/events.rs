@@ -1,13 +1,15 @@
 //! Application-layer planner event evaluation and ledger delivery operations.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use takusu_agent::coverage::{bootstrap_evaluation, compute_coverage};
 use takusu_agent::events::{
     EvaluationGap, EvaluationScheduleEntry, EvaluationSnapshot, EvaluationTask, EvaluationWork,
-    GapKind, LedgerView, PlannerEvent, evaluate_events,
+    GapKind, LedgerView, PlannerEvent, SleepImpact, evaluate_events,
 };
-use takusu_contracts::{EvaluationInputs, EventDeliveryState, EventLedgerInsert, EventLedgerRow};
+use takusu_contracts::{
+    EvaluationInputs, EventDeliveryState, EventLedgerInsert, EventLedgerRow, SettingsRow,
+};
 use takusu_types::TaskStatus;
 use takusu_types::estimator::{DurationDistribution, InterventionBand, effective_distribution};
 
@@ -72,6 +74,24 @@ impl TakusuApp {
             })
             .collect();
 
+        // Tasks the planner marked as scheduled but did not actually place in the
+        // active schedule are the generation-failure signal for the evaluator.
+        let scheduled_ids: HashSet<&str> = schedule_entries
+            .iter()
+            .map(|entry| entry.task_id.as_str())
+            .collect();
+        let unplaced_task_ids: Vec<String> = tasks
+            .iter()
+            .filter(|task| {
+                task.status == TaskStatus::Scheduled && !scheduled_ids.contains(task.id.as_str())
+            })
+            .map(|task| task.id.clone())
+            .collect();
+
+        let settings = self.get_settings_or_default().await?;
+        let tz = self.server_timezone().await?;
+        let sleep_impact = sleep_impact_from_schedule(&settings, &schedule_entries, &tz);
+
         let progress_by_id: HashMap<String, _> = progress
             .into_iter()
             .map(|p| (p.task_id.clone(), p))
@@ -128,7 +148,6 @@ impl TakusuApp {
             })
             .collect();
 
-        let tz = self.server_timezone().await?;
         let gaps = schedule_gaps(&schedule_entries, now, &tz)?;
 
         let target_start = takusu_types::Timestamp(
@@ -153,12 +172,12 @@ impl TakusuApp {
             schedule: schedule_entries,
             work,
             gaps,
-            unplaced_task_ids: Vec::new(),
+            unplaced_task_ids,
             coverage,
             ledger: LedgerView {
                 committed_event_ids: ledger.into_iter().map(|row| row.id).collect(),
             },
-            sleep_impact: None,
+            sleep_impact,
         };
         let result = evaluate_events(&snapshot);
         let inserts: Vec<EventLedgerInsert> = result
@@ -319,4 +338,93 @@ fn schedule_gaps(
     }
 
     Ok(gaps)
+}
+
+/// Detect whether the active schedule encroaches on the configured sleep window.
+///
+/// Sleep is a user-facing constraint; the evaluator only decides whether to fire
+/// the stable `SleepImpact` event. A schedule entry that overlaps the sleep window
+/// means the planner could not protect the user's sleep.
+fn sleep_impact_from_schedule(
+    settings: &SettingsRow,
+    schedule: &[EvaluationScheduleEntry],
+    tz: &jiff::tz::TimeZone,
+) -> Option<SleepImpact> {
+    let sleep_start_minutes = settings.sleep_start.to_minutes();
+    let sleep_end_minutes = settings.sleep_end.to_minutes();
+
+    for entry in schedule {
+        let entry_start = entry.start_at.as_second();
+        let entry_end = entry.end_at.as_second();
+
+        // Check the sleep window for both the start and end dates of the entry.
+        for boundary_ts in [entry.start_at, entry.end_at] {
+            let boundary_zoned = boundary_ts.to_zoned(tz.clone());
+            let date = boundary_zoned.date();
+
+            let (sleep_start_zoned, sleep_end_zoned) = if sleep_end_minutes > sleep_start_minutes {
+                let start = jiff::civil::DateTime::new(
+                    date.year(),
+                    date.month(),
+                    date.day(),
+                    settings.sleep_start.hour() as i8,
+                    settings.sleep_start.minute() as i8,
+                    0,
+                    0,
+                )
+                .ok()?
+                .to_zoned(tz.clone())
+                .ok()?;
+                let end = jiff::civil::DateTime::new(
+                    date.year(),
+                    date.month(),
+                    date.day(),
+                    settings.sleep_end.hour() as i8,
+                    settings.sleep_end.minute() as i8,
+                    0,
+                    0,
+                )
+                .ok()?
+                .to_zoned(tz.clone())
+                .ok()?;
+                (start, end)
+            } else {
+                // Sleep crosses midnight (e.g. 22:00–06:00).
+                let start = jiff::civil::DateTime::new(
+                    date.year(),
+                    date.month(),
+                    date.day(),
+                    settings.sleep_start.hour() as i8,
+                    settings.sleep_start.minute() as i8,
+                    0,
+                    0,
+                )
+                .ok()?
+                .to_zoned(tz.clone())
+                .ok()?;
+                let next_date = date.tomorrow().ok()?;
+                let end = jiff::civil::DateTime::new(
+                    next_date.year(),
+                    next_date.month(),
+                    next_date.day(),
+                    settings.sleep_end.hour() as i8,
+                    settings.sleep_end.minute() as i8,
+                    0,
+                    0,
+                )
+                .ok()?
+                .to_zoned(tz.clone())
+                .ok()?;
+                (start, end)
+            };
+
+            let sleep_start_sec = sleep_start_zoned.timestamp().as_second();
+            let sleep_end_sec = sleep_end_zoned.timestamp().as_second();
+            if entry_start < sleep_end_sec && entry_end > sleep_start_sec {
+                return Some(SleepImpact { detected: true });
+            }
+        }
+    }
+
+    None
 }
