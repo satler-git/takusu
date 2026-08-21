@@ -903,7 +903,10 @@ async fn move_task_tool_proposes_move_with_existing_entry() {
                     seed: None,
                     warm_start: false,
                     plan_length_days: 14,
-                    device_priority: takusu_types::JsonString::new(vec!["desktop".to_string(), "android".to_string()]),
+                    device_priority: takusu_types::JsonString::new(vec![
+                        "desktop".to_string(),
+                        "android".to_string(),
+                    ]),
                 })
             }),
         );
@@ -947,7 +950,10 @@ fn settings_response() -> SettingsResponse {
         seed: None,
         warm_start: false,
         plan_length_days: 14,
-        device_priority: takusu_types::JsonString::new(vec!["desktop".to_string(), "android".to_string()]),
+        device_priority: takusu_types::JsonString::new(vec![
+            "desktop".to_string(),
+            "android".to_string(),
+        ]),
     }
 }
 
@@ -1081,7 +1087,10 @@ async fn habit_scheduled_spans_tool_lists_and_proposes() {
                     seed: None,
                     warm_start: false,
                     plan_length_days: 14,
-                    device_priority: takusu_types::JsonString::new(vec!["desktop".to_string(), "android".to_string()]),
+                    device_priority: takusu_types::JsonString::new(vec![
+                        "desktop".to_string(),
+                        "android".to_string(),
+                    ]),
                 })
             }),
         );

@@ -581,7 +581,7 @@ pub(super) async fn estimator_state(
     let state: Option<EstimatorStateRow> = d1_first(
         &database
             .prepare(
-                "SELECT task_id, revision, mean_minutes, sigma_minutes, source, updated_at FROM estimator_state WHERE task_id = ?1",
+                "SELECT task_id, revision, mean_minutes, sigma_minutes, source, updated_at, band, next_crossing_time FROM estimator_state WHERE task_id = ?1",
             )
             .bind(&[JsValue::from_str(&task.id)])
             .map_err(d1_err)?,
@@ -613,6 +613,8 @@ pub(super) async fn estimator_state(
             "fallback".into()
         },
         updated_at: task.updated_at,
+        band: None,
+        next_crossing_time: None,
     })
 }
 
@@ -657,7 +659,7 @@ pub(super) async fn batch_evaluation_progress(
 
     // 2. Estimator state for all in-progress tasks.
     let state_sql = format!(
-        "SELECT task_id, revision, mean_minutes, sigma_minutes, source, updated_at FROM estimator_state WHERE task_id IN ({placeholders})"
+        "SELECT task_id, revision, mean_minutes, sigma_minutes, source, updated_at, band, next_crossing_time FROM estimator_state WHERE task_id IN ({placeholders})"
     );
     let state_bindings: Vec<JsValue> = ids.iter().map(|id| JsValue::from_str(id)).collect();
     let states: Vec<EstimatorStateRow> = d1_all(
@@ -701,6 +703,8 @@ pub(super) async fn batch_evaluation_progress(
                 revision: state.revision,
                 mean_minutes: state.mean_minutes,
                 sigma_minutes: state.sigma_minutes,
+                band: state.band,
+                next_crossing_time: state.next_crossing_time,
             })
         } else {
             let task_kind_prior = if task.sigma_minutes > 0 {
@@ -718,6 +722,8 @@ pub(super) async fn batch_evaluation_progress(
                 revision: 0,
                 mean_minutes: distribution.mu,
                 sigma_minutes: distribution.sigma,
+                band: None,
+                next_crossing_time: None,
             })
         };
 
@@ -746,7 +752,7 @@ pub(super) async fn estimator_observation(
     let existing: Option<EstimatorStateRow> = d1_first(
         &database
             .prepare(
-                "SELECT task_id, revision, mean_minutes, sigma_minutes, source, updated_at FROM estimator_state WHERE task_id = ?1",
+                "SELECT task_id, revision, mean_minutes, sigma_minutes, source, updated_at, band, next_crossing_time FROM estimator_state WHERE task_id = ?1",
             )
             .bind(&[JsValue::from_str(&task.id)])
             .map_err(d1_err)?,
@@ -778,6 +784,8 @@ pub(super) async fn estimator_observation(
                 "fallback".into()
             },
             updated_at: task.updated_at,
+            band: None,
+            next_crossing_time: None,
         }
     };
     let prior = DurationDistribution::new(state.mean_minutes, state.sigma_minutes);
@@ -785,6 +793,14 @@ pub(super) async fn estimator_observation(
         .map_err(|e| StorageError::BadRequest(e.to_string()))?;
     let revision = state.revision + 1;
     let observation_id = uuid::Uuid::now_v7().to_string();
+    let band = estimator_band(posterior.band);
+    let crossing_delay = next_crossing_time(posterior.posterior, active_minutes.max(0) as f64, 0.0);
+    let next_crossing_time = crossing_delay.and_then(|delay| {
+        let seconds = (delay * 60.0).ceil();
+        (seconds.is_finite() && seconds >= 0.0)
+            .then(|| Timestamp::from_second(now.as_second().saturating_add(seconds as i64)))
+            .flatten()
+    });
     let mut statements = Vec::new();
     if existing.is_none() {
         statements.push(
@@ -804,7 +820,7 @@ pub(super) async fn estimator_observation(
     statements.push(
         database
             .prepare(
-                "INSERT INTO estimator_observations (id, task_id, revision, kind, active_minutes, quantity_fraction, projection_minutes, prior_mean_minutes, prior_sigma_minutes, posterior_mean_minutes, posterior_sigma_minutes) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                "INSERT INTO estimator_observations (id, task_id, revision, kind, active_minutes, quantity_fraction, projection_minutes, prior_mean_minutes, prior_sigma_minutes, posterior_mean_minutes, posterior_sigma_minutes, band, next_crossing_time) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
             )
             .bind(&[
                 JsValue::from_str(&observation_id),
@@ -818,33 +834,34 @@ pub(super) async fn estimator_observation(
                 JsValue::from_f64(prior.sigma),
                 JsValue::from_f64(posterior.posterior.mu),
                 JsValue::from_f64(posterior.posterior.sigma),
+                JsValue::from_str(&band.to_string()),
+                next_crossing_time
+                    .map(|t| JsValue::from_str(&t.to_string()))
+                    .unwrap_or(JsValue::NULL),
             ])
             .map_err(d1_err)?,
     );
     statements.push(
         database
             .prepare(
-                "UPDATE estimator_state SET revision = ?1, mean_minutes = ?2, sigma_minutes = ?3, source = 'observation', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE task_id = ?4",
+                "UPDATE estimator_state SET revision = ?1, mean_minutes = ?2, sigma_minutes = ?3, source = 'observation', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), band = ?4, next_crossing_time = ?5 WHERE task_id = ?6",
             )
             .bind(&[
                 JsValue::from_f64(revision as f64),
                 JsValue::from_f64(posterior.posterior.mu),
                 JsValue::from_f64(posterior.posterior.sigma),
+                JsValue::from_str(&band.to_string()),
+                next_crossing_time
+                    .map(|t| JsValue::from_str(&t.to_string()))
+                    .unwrap_or(JsValue::NULL),
                 JsValue::from_str(&task.id),
             ])
             .map_err(d1_err)?,
     );
 
-    let crossing_delay = next_crossing_time(posterior.posterior, active_minutes.max(0) as f64, 0.0);
-    let next_crossing_time = crossing_delay.and_then(|delay| {
-        let seconds = (delay * 60.0).ceil();
-        (seconds.is_finite() && seconds >= 0.0)
-            .then(|| Timestamp::from_second(now.as_second().saturating_add(seconds as i64)))
-            .flatten()
-    });
     Ok(EstimatorMutation {
         result: EstimatorResult {
-            band: estimator_band(posterior.band),
+            band,
             revision,
             next_crossing_time,
             survival_probability: survival_probability(
@@ -883,10 +900,12 @@ pub(super) async fn compensate_last_estimator_observation(
     let target = DurationDistribution::new(target_mu, target_sigma);
     let revision = state.revision + 1;
     let observation_id = uuid::Uuid::now_v7().to_string();
+    let band = EstimatorBand::Usual;
+    let next_crossing_time: Option<Timestamp> = None;
     let statements = vec![
         database
             .prepare(
-                "INSERT INTO estimator_observations (id, task_id, revision, kind, active_minutes, prior_mean_minutes, prior_sigma_minutes, posterior_mean_minutes, posterior_sigma_minutes, compensates_observation_id) VALUES (?1, ?2, ?3, 'compensation', 0, ?4, ?5, ?6, ?7, ?8)",
+                "INSERT INTO estimator_observations (id, task_id, revision, kind, active_minutes, prior_mean_minutes, prior_sigma_minutes, posterior_mean_minutes, posterior_sigma_minutes, compensates_observation_id, band, next_crossing_time) VALUES (?1, ?2, ?3, 'compensation', 0, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             )
             .bind(&[
                 JsValue::from_str(&observation_id),
@@ -897,16 +916,20 @@ pub(super) async fn compensate_last_estimator_observation(
                 JsValue::from_f64(target.mu),
                 JsValue::from_f64(target.sigma),
                 JsValue::from_str(&compensates_id),
+                JsValue::from_str(&band.to_string()),
+                JsValue::NULL,
             ])
             .map_err(d1_err)?,
         database
             .prepare(
-                "UPDATE estimator_state SET revision = ?1, mean_minutes = ?2, sigma_minutes = ?3, source = 'compensation', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE task_id = ?4",
+                "UPDATE estimator_state SET revision = ?1, mean_minutes = ?2, sigma_minutes = ?3, source = 'compensation', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), band = ?4, next_crossing_time = ?5 WHERE task_id = ?6",
             )
             .bind(&[
                 JsValue::from_f64(revision as f64),
                 JsValue::from_f64(target.mu),
                 JsValue::from_f64(target.sigma),
+                JsValue::from_str(&band.to_string()),
+                JsValue::NULL,
                 JsValue::from_str(&task.id),
             ])
             .map_err(d1_err)?,

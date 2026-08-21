@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use takusu_types::{
     Abandonability, Date, DependencyList, JsonString, Quantity, ScheduleMode, Similarity,
-    TaskStatus, TaskStatusFilter, TimeOfDay, Timestamp,
+    TaskStatus, TaskStatusFilter, TimeOfDay, Timestamp, UnknownLabel,
 };
 
 pub use crate::sleep::{SleepConfig, SleepInput, SleepInputError};
@@ -555,7 +555,9 @@ impl std::str::FromStr for EventDeliveryState {
 /// Precedence is `bootstrap -> stale -> today-covered -> trusted`. A stale
 /// state triggers a settlement prompt; today-covered makes the current task
 /// authoritative; trusted is reached by a target-period procedure.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, schemars::JsonSchema,
+)]
 #[serde(rename_all = "snake_case")]
 #[cfg_attr(feature = "sqlx", derive(sqlx::Type))]
 pub enum CoverageState {
@@ -752,6 +754,10 @@ pub struct EvaluationEstimator {
     pub revision: i64,
     pub mean_minutes: f64,
     pub sigma_minutes: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub band: Option<EstimatorBand>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_crossing_time: Option<Timestamp>,
 }
 
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
@@ -1304,12 +1310,61 @@ pub struct AttachWorkSession {
     pub task_id: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum EstimatorBand {
     Usual,
     Attention,
     Replan,
+}
+
+impl std::fmt::Display for EstimatorBand {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Usual => "usual",
+            Self::Attention => "attention",
+            Self::Replan => "replan",
+        })
+    }
+}
+
+impl std::str::FromStr for EstimatorBand {
+    type Err = UnknownLabel;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "usual" => Ok(Self::Usual),
+            "attention" => Ok(Self::Attention),
+            "replan" => Ok(Self::Replan),
+            other => Err(UnknownLabel::new("EstimatorBand", other)),
+        }
+    }
+}
+
+impl TryFrom<String> for EstimatorBand {
+    type Error = UnknownLabel;
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        s.parse()
+    }
+}
+
+impl From<EstimatorBand> for takusu_types::estimator::InterventionBand {
+    fn from(band: EstimatorBand) -> Self {
+        match band {
+            EstimatorBand::Usual => Self::Usual,
+            EstimatorBand::Attention => Self::Attention,
+            EstimatorBand::Replan => Self::Replan,
+        }
+    }
+}
+
+impl From<takusu_types::estimator::InterventionBand> for EstimatorBand {
+    fn from(band: takusu_types::estimator::InterventionBand) -> Self {
+        match band {
+            takusu_types::estimator::InterventionBand::Usual => Self::Usual,
+            takusu_types::estimator::InterventionBand::Attention => Self::Attention,
+            takusu_types::estimator::InterventionBand::Replan => Self::Replan,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
@@ -1321,6 +1376,12 @@ pub struct EstimatorStateRow {
     pub sigma_minutes: f64,
     pub source: String,
     pub updated_at: Timestamp,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "sqlx", sqlx(default))]
+    pub band: Option<EstimatorBand>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "sqlx", sqlx(default))]
+    pub next_crossing_time: Option<Timestamp>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
@@ -1441,7 +1502,9 @@ pub struct HabitEstimateResult {
 // ── WI-11 multi-device arbitration ───────────────────────────────────────
 
 /// Platform kind for a registered device.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, schemars::JsonSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum DevicePlatform {
     #[default]

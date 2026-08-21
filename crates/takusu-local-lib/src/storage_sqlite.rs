@@ -9,12 +9,12 @@ use takusu_contracts::{
     EvaluationInputs, EventDeliveryState, EventLedgerInsert, EventLedgerRow, GoogleCalEventRow,
     GoogleCalSettingsRow, HabitRow, HabitScheduledSpanRow, HabitStepEstimateInput, HabitStepInput,
     HabitStepRow, MemoryInjectionQuery, MemoryInjectionResult, MemoryKindCounts, MemoryQuery,
-    MemoryRow, MoveEntryResponse, RecordWorkSessionProgress, ResidentAuthority, SaveScheduleRequest,
-    ScheduleEntry, ScheduleRow, SettingsRow, SimilarTaskQuery, SimilarTaskRow, SkillRow, SplitResult,
-    SplitTask, StartWorkSession, Storage, StorageError, TaskProgress, TaskQuery, TaskRow,
-    TokenCreateResponse, TokenRow, UnsettledIntervalRow, UpdateDevice, UpdateGoogleCalSettings,
-    UpdateHabit, UpdateMemory, UpdateSettings, UpdateSkill, UpdateTask, WorkSessionProgressResult,
-    WorkSessionRow, storage::StorageResult,
+    MemoryRow, MoveEntryResponse, RecordWorkSessionProgress, ResidentAuthority,
+    SaveScheduleRequest, ScheduleEntry, ScheduleRow, SettingsRow, SimilarTaskQuery, SimilarTaskRow,
+    SkillRow, SplitResult, SplitTask, StartWorkSession, Storage, StorageError, TaskProgress,
+    TaskQuery, TaskRow, TokenCreateResponse, TokenRow, UnsettledIntervalRow, UpdateDevice,
+    UpdateGoogleCalSettings, UpdateHabit, UpdateMemory, UpdateSettings, UpdateSkill, UpdateTask,
+    WorkSessionProgressResult, WorkSessionRow, storage::StorageResult,
 };
 use takusu_search::search::{EvalContext, filter_tasks};
 use takusu_types::Minutes;
@@ -69,6 +69,7 @@ const MIGRATION_029: &str = include_str!("../migrations/029_task_note_comments.s
 const MIGRATION_030: &str = include_str!("../migrations/030_gcal_reminder_minutes.sql");
 const MIGRATION_031: &str = include_str!("../migrations/031_gcal_event_defaults.sql");
 const MIGRATION_032: &str = include_str!("../migrations/032_estimator_state.sql");
+const MIGRATION_032_BAND: &str = include_str!("../migrations/032_estimator_state_band.sql");
 const MIGRATION_033: &str = include_str!("../migrations/033_event_ledger.sql");
 const MIGRATION_034: &str = include_str!("../migrations/034_coverage.sql");
 const MIGRATION_035: &str = include_str!("../migrations/035_devices.sql");
@@ -513,6 +514,20 @@ impl SqliteStorage {
         }
 
         sqlx::raw_sql(MIGRATION_032).execute(&pool).await?;
+
+        // Migration 032_band adds band/next_crossing_time to the estimator
+        // tables. It is a separate migration because 032 was already released
+        // without these columns. SQLite has no IF NOT EXISTS for ALTER TABLE,
+        // so guard by checking the estimator_state table for `band`.
+        let has_estimator_band: bool = sqlx::query_scalar(
+            "SELECT COUNT(*) > 0 FROM pragma_table_info('estimator_state') WHERE name = 'band'",
+        )
+        .fetch_one(&pool)
+        .await?;
+        if !has_estimator_band {
+            sqlx::raw_sql(MIGRATION_032_BAND).execute(&pool).await?;
+        }
+
         sqlx::raw_sql(MIGRATION_033).execute(&pool).await?;
         sqlx::raw_sql(MIGRATION_034).execute(&pool).await?;
 
@@ -2784,15 +2799,13 @@ impl Storage for SqliteStorage {
     ) -> StorageResult<UnsettledIntervalRow> {
         let mut tx = self.pool.begin().await.map_err(map_err)?;
         let now = takusu_types::now_rfc3339();
-        sqlx::query(
-            "UPDATE unsettled_intervals SET settled_at = ?, operation_id = ? WHERE id = ?",
-        )
-        .bind(&now)
-        .bind(operation_id)
-        .bind(id)
-        .execute(&mut *tx)
-        .await
-        .map_err(map_err)?;
+        sqlx::query("UPDATE unsettled_intervals SET settled_at = ?, operation_id = ? WHERE id = ?")
+            .bind(&now)
+            .bind(operation_id)
+            .bind(id)
+            .execute(&mut *tx)
+            .await
+            .map_err(map_err)?;
         let row: UnsettledIntervalRow = sqlx::query_as::<_, UnsettledIntervalRow>(
             "SELECT id, start_at, end_at, classification, source, created_at, settled_at, operation_id FROM unsettled_intervals WHERE id = ?",
         )
@@ -2873,8 +2886,12 @@ impl Storage for SqliteStorage {
         let existing = self.get_device(id).await?;
         let name = body.name.clone().unwrap_or(existing.name);
         let priority = body.priority.unwrap_or(existing.priority);
-        let audio_service_running = body.audio_service_running.unwrap_or(existing.audio_service_running);
-        let private_output_route = body.private_output_route.unwrap_or(existing.private_output_route);
+        let audio_service_running = body
+            .audio_service_running
+            .unwrap_or(existing.audio_service_running);
+        let private_output_route = body
+            .private_output_route
+            .unwrap_or(existing.private_output_route);
         let now = takusu_types::now_rfc3339();
         sqlx::query(
             "UPDATE devices SET name = ?, priority = ?, audio_service_running = ?, private_output_route = ?, updated_at = ? WHERE id = ?",
@@ -3973,8 +3990,7 @@ mod tests {
         };
         storage.update_settings(&settings).await.unwrap();
 
-        let today: takusu_types::Timestamp =
-            "2026-08-20T00:00:00+09:00".parse().unwrap();
+        let today: takusu_types::Timestamp = "2026-08-20T00:00:00+09:00".parse().unwrap();
         let confirmation = CreateCoverageConfirmation {
             start_at: today,
             end_at: "2026-08-20T23:59:59+09:00".parse().unwrap(),
@@ -4040,20 +4056,25 @@ mod tests {
         storage.register_device(&android).await.unwrap();
 
         // No heartbeat/lease yet: no resident.
-        let authority = storage.resolve_resident_authority("desktop-1").await.unwrap();
+        let authority = storage
+            .resolve_resident_authority("desktop-1")
+            .await
+            .unwrap();
         assert!(!authority.is_resident);
         assert!(authority.device_id.is_none());
 
         // Android gets a lease but desktop (higher priority) is still idle.
-        let future = takusu_types::Timestamp::from_second(
-            takusu_types::Timestamp::now().as_second() + 600,
-        )
-        .unwrap();
+        let future =
+            takusu_types::Timestamp::from_second(takusu_types::Timestamp::now().as_second() + 600)
+                .unwrap();
         storage
             .refresh_evaluator_lease("android-1", future, Some(future))
             .await
             .unwrap();
-        let authority = storage.resolve_resident_authority("android-1").await.unwrap();
+        let authority = storage
+            .resolve_resident_authority("android-1")
+            .await
+            .unwrap();
         assert!(authority.is_resident);
         assert_eq!(authority.device_id, Some("android-1".into()));
 
@@ -4062,26 +4083,37 @@ mod tests {
             .refresh_evaluator_heartbeat("desktop-1", future)
             .await
             .unwrap();
-        let authority = storage.resolve_resident_authority("desktop-1").await.unwrap();
+        let authority = storage
+            .resolve_resident_authority("desktop-1")
+            .await
+            .unwrap();
         assert!(authority.is_resident);
         assert_eq!(authority.device_id, Some("desktop-1".into()));
 
         // Android sees it is no longer resident.
-        let authority = storage.resolve_resident_authority("android-1").await.unwrap();
+        let authority = storage
+            .resolve_resident_authority("android-1")
+            .await
+            .unwrap();
         assert!(!authority.is_resident);
         assert_eq!(authority.device_id, Some("desktop-1".into()));
 
         // Expired heartbeat/lease demotes both.
-        let past = takusu_types::Timestamp::from_second(
-            takusu_types::Timestamp::now().as_second() - 1,
-        )
-        .unwrap();
-        storage.refresh_evaluator_heartbeat("desktop-1", past).await.unwrap();
+        let past =
+            takusu_types::Timestamp::from_second(takusu_types::Timestamp::now().as_second() - 1)
+                .unwrap();
+        storage
+            .refresh_evaluator_heartbeat("desktop-1", past)
+            .await
+            .unwrap();
         storage
             .refresh_evaluator_lease("android-1", past, None)
             .await
             .unwrap();
-        let authority = storage.resolve_resident_authority("desktop-1").await.unwrap();
+        let authority = storage
+            .resolve_resident_authority("desktop-1")
+            .await
+            .unwrap();
         assert!(!authority.is_resident);
         assert!(authority.device_id.is_none());
     }

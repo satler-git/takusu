@@ -14285,9 +14285,29 @@
         "description": "Estimator distribution snapshot for a single task.",
         "type": "object",
         "properties": {
+          "band": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EstimatorBand"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "mean_minutes": {
             "type": "number",
             "format": "double"
+          },
+          "next_crossing_time": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Timestamp"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "revision": {
             "type": "integer",

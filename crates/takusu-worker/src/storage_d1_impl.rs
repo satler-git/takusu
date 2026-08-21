@@ -2862,9 +2862,9 @@ impl Storage for D1Storage {
         );
         let unsettled: Vec<UnsettledIntervalRow> = d1_all(&stmt).await?;
 
-        let schedule_revision_stmt = self
-            .db
-            .prepare("SELECT COALESCE(MAX(schedule_revision), 0) AS value FROM coverage_confirmations");
+        let schedule_revision_stmt = self.db.prepare(
+            "SELECT COALESCE(MAX(schedule_revision), 0) AS value FROM coverage_confirmations",
+        );
         let schedule_revision: i64 = d1_first::<serde_json::Value>(&schedule_revision_stmt)
             .await?
             .and_then(|v| v.get("value").and_then(|v| v.as_i64()))
@@ -3491,9 +3491,7 @@ impl Storage for D1Storage {
         let stmt = self.db.prepare(
             "SELECT id, name, platform, priority, evaluator_heartbeat_until, evaluator_lease_until, next_eval_at, audio_service_running, private_output_route, created_at, updated_at FROM devices WHERE id = ?1",
         );
-        let stmt = stmt
-            .bind(&[JsValue::from_str(id)])
-            .map_err(d1_err)?;
+        let stmt = stmt.bind(&[JsValue::from_str(id)]).map_err(d1_err)?;
         let rows: Vec<DeviceRow> = d1_all(&stmt).await?;
         rows.into_iter()
             .next()
@@ -3511,8 +3509,12 @@ impl Storage for D1Storage {
         let existing = self.get_device(id).await?;
         let name = body.name.clone().unwrap_or(existing.name);
         let priority = body.priority.unwrap_or(existing.priority);
-        let audio_service_running = body.audio_service_running.unwrap_or(existing.audio_service_running);
-        let private_output_route = body.private_output_route.unwrap_or(existing.private_output_route);
+        let audio_service_running = body
+            .audio_service_running
+            .unwrap_or(existing.audio_service_running);
+        let private_output_route = body
+            .private_output_route
+            .unwrap_or(existing.private_output_route);
         let stmt = self.db.prepare(
             "UPDATE devices SET name = ?1, priority = ?2, audio_service_running = ?3, private_output_route = ?4, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?5",
         );

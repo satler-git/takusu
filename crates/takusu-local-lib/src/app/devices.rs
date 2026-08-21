@@ -76,7 +76,11 @@ impl TakusuApp {
         &self,
         device_id: &str,
     ) -> Result<SpeechCapability, AppError> {
-        let device = self.storage.get_device(device_id).await.map_err(storage_to_app)?;
+        let device = self
+            .storage
+            .get_device(device_id)
+            .await
+            .map_err(storage_to_app)?;
         Ok(SpeechCapability {
             can_speak_proactively: device.audio_service_running && device.private_output_route,
         })

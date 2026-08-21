@@ -16,11 +16,11 @@ use takusu_types::estimator::{
     DurationDistribution, InterventionBand, next_crossing_active_minutes,
 };
 
+use crate::coverage::task_authority;
 use crate::presentation::{
     Action, ActionGroup, ActionKind, CheckInCard, NonEmptyVec, Presentation, SettlementPrompt,
     TaskCard, WorkState,
 };
-use crate::coverage::task_authority;
 
 /// Grace period before a missed start becomes a sync check-in.
 pub const NON_START_GRACE_MINUTES: i64 = 15;
@@ -61,6 +61,9 @@ pub struct EvaluationWork {
     /// unset and is judged from the survival probability instead.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub progress_band: Option<InterventionBand>,
+    /// Stored next-crossing time from the work-session layer, if known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_crossing_at: Option<Timestamp>,
 }
 
 /// The five gap categories in the event contract.
@@ -257,7 +260,12 @@ pub fn evaluate_events(snapshot: &EvaluationSnapshot) -> EvaluationResult {
             );
         }
 
-        if let Some(crossing) = next_crossing_active_minutes(work.distribution, work.active_minutes)
+        if let Some(crossing_at) = work.next_crossing_at {
+            if crossing_at > snapshot.now {
+                next_eval_at = earlier(next_eval_at, crossing_at);
+            }
+        } else if let Some(crossing) =
+            next_crossing_active_minutes(work.distribution, work.active_minutes)
         {
             let delta = (crossing - work.active_minutes).max(0.0);
             if delta > 0.0 {
@@ -893,6 +901,7 @@ mod tests {
             distribution: DurationDistribution::new(60.0, 10.0),
             distribution_revision: 4,
             progress_band: None,
+            next_crossing_at: None,
         });
         let result = evaluate_events(&snapshot);
         assert!(

@@ -102,7 +102,10 @@ async fn run() -> Result<(), DesktopError> {
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
             interval.tick().await;
-            if let Err(error) = heartbeat_transport.refresh_evaluator_heartbeat("desktop").await {
+            if let Err(error) = heartbeat_transport
+                .refresh_evaluator_heartbeat("desktop")
+                .await
+            {
                 tracing::warn!(error = %error, "desktop heartbeat failed");
             }
         }
