@@ -285,7 +285,23 @@
               pkg-config
               libclang
             ];
-            buildInputs = [ ];
+            buildInputs = with pkgs; [
+              fontconfig
+              freetype
+              glib
+              libxkbcommon
+              vulkan-headers
+              vulkan-loader
+              wayland
+              wayland-protocols
+              libxcb
+              libx11
+              libxcursor
+              libxrandr
+              libxi
+              libxinerama
+              libxscrnsaver
+            ];
             LIBCLANG_PATH = "${pkgs.libclang.lib}/lib";
             meta.mainProgram = "takusu-desktop";
           };
@@ -984,6 +1000,25 @@
                 stdenv.cc.cc.lib
                 zlib
                 sherpaOnnxLinuxX64Shared
+
+                # GPUI / winit / Vulkan runtime and link-time dependencies.
+                fontconfig
+                freetype
+                glib
+                libxkbcommon
+                vulkan-headers
+                vulkan-loader
+                vulkan-tools
+                wayland
+                wayland-protocols
+                wayland-scanner
+                libxcb
+                libx11
+                libxcursor
+                libxrandr
+                libxi
+                libxinerama
+                libxscrnsaver
               ];
               shellHook = commonRustShellHook + ''
                 # Copy Sherpa-ONNX shared libs into a writable directory so the
@@ -999,6 +1034,26 @@
                 }
                 _setup_sherpa_host
                 unset -f _setup_sherpa_host
+
+                # GPUI / Vulkan / X11 runtime libraries.
+                _gpui_libs="${pkgs.lib.makeLibraryPath (with pkgs; [
+                  fontconfig
+                  freetype
+                  glib
+                  libxkbcommon
+                  vulkan-loader
+                  wayland
+                  wayland-protocols
+                  libxcb
+                  libx11
+                  libxcursor
+                  libxrandr
+                  libxi
+                  libxinerama
+                  libxscrnsaver
+                ])}"
+                export LD_LIBRARY_PATH="$_gpui_libs''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
                 # Remove stale read-only copies from previous builds so the
                 # build.rs copy step can overwrite them.
                 rm -f target/debug/libonnxruntime.so target/debug/libsherpa-onnx-*.so \
@@ -1101,6 +1156,25 @@
                 androidComposition.ndk-bundle
                 sherpaOnnxLinuxX64Shared
                 sherpaOnnxAndroid
+
+                # GPUI / winit / Vulkan runtime and link-time dependencies.
+                fontconfig
+                freetype
+                glib
+                libxkbcommon
+                vulkan-headers
+                vulkan-loader
+                vulkan-tools
+                wayland
+                wayland-protocols
+                wayland-scanner
+                libxcb
+                libx11
+                libxcursor
+                libxrandr
+                libxi
+                libxinerama
+                libxscrnsaver
               ];
 
               shellHook = commonRustShellHook + ''
@@ -1119,6 +1193,26 @@
                 }
                 _setup_sherpa_host
                 unset -f _setup_sherpa_host
+
+                # GPUI / Vulkan / X11 runtime libraries.
+                _gpui_libs="${pkgs.lib.makeLibraryPath (with pkgs; [
+                  fontconfig
+                  freetype
+                  glib
+                  libxkbcommon
+                  vulkan-loader
+                  wayland
+                  wayland-protocols
+                  libxcb
+                  libx11
+                  libxcursor
+                  libxrandr
+                  libxi
+                  libxinerama
+                  libxscrnsaver
+                ])}"
+                export LD_LIBRARY_PATH="$_gpui_libs''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
                 # Remove stale read-only copies from previous builds.
                 rm -f target/debug/libonnxruntime.so target/debug/libsherpa-onnx-*.so \
                   target/debug/examples/libonnxruntime.so target/debug/examples/libsherpa-onnx-*.so 2>/dev/null || true
