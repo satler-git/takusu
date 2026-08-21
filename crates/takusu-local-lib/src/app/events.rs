@@ -9,6 +9,7 @@ use takusu_agent::events::{
 };
 use takusu_contracts::{
     EvaluationInputs, EventDeliveryState, EventLedgerInsert, EventLedgerRow, SettingsRow,
+    UnsettledIntervalRow,
 };
 use takusu_types::TaskStatus;
 use takusu_types::estimator::{DurationDistribution, InterventionBand, effective_distribution};
@@ -160,9 +161,29 @@ impl TakusuApp {
         );
 
         let mut coverage = coverage;
-        if coverage.confirmations.is_empty() && coverage.unsettled_intervals.is_empty() {
+        if coverage.confirmations.is_empty()
+            && coverage.unsettled_intervals.is_empty()
+            && coverage.unclassified_gaps.is_empty()
+        {
             coverage = bootstrap_evaluation(schedule_revision);
         }
+        coverage.unclassified_gaps = gaps
+            .iter()
+            .filter(|gap| gap.kind == GapKind::Unclassified)
+            .map(|gap| UnsettledIntervalRow {
+                id: gap
+                    .identity
+                    .clone()
+                    .unwrap_or_else(|| format!("gap:{}..{}", gap.start_at, gap.end_at)),
+                start_at: gap.start_at,
+                end_at: gap.end_at,
+                classification: "unclassified".into(),
+                source: "schedule".into(),
+                created_at: now,
+                settled_at: None,
+                operation_id: None,
+            })
+            .collect();
         coverage.state = compute_coverage(&coverage, now, target_start, target_end);
 
         let snapshot = EvaluationSnapshot {
