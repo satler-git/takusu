@@ -8953,6 +8953,7 @@ dependencies = [
  "getrandom 0.4.3",
  "hmac 0.13.0",
  "jiff",
+ "libm",
  "schemars",
  "serde",
  "serde_json",

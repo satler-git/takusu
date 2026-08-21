@@ -11,8 +11,8 @@ use std::collections::HashMap;
 use takusu_contracts::storage::StorageResult;
 use takusu_contracts::{
     EstimatorBand, EstimatorResult, EstimatorStateRow, EvaluationEstimator, EvaluationTaskProgress,
-    HabitRow, HabitStepRow, MemoryKindCounts, MemoryRow, ProgressEventRow, ScheduleRow,
-    SettingsRow, SkillRow, StorageError, TaskRow,
+    HabitRow, HabitStepRow, MemoryKindCounts, MemoryRow, ScheduleRow,
+    SettingsRow, SkillRow, StorageError, TaskRow, WorkSessionRow,
 };
 use takusu_types::estimator::{
     DurationDistribution, InterventionBand, effective_distribution, next_crossing_time,
@@ -620,8 +620,9 @@ pub(super) async fn estimator_state(
 
 /// Fetch progress for multiple in-progress tasks in a fixed number of queries.
 ///
-/// Progress events, estimator state, and task-kind priors are loaded with one
-/// query each and grouped in memory, avoiding the previous N+1 round-trips.
+/// Active minutes are summed from work sessions, estimator state and task-kind
+/// priors are loaded with one query each, and all are grouped in memory,
+/// avoiding the previous N+1 round-trips.
 pub(super) async fn batch_evaluation_progress(
     database: &D1Database,
     tasks: &[TaskRow],
@@ -637,23 +638,25 @@ pub(super) async fn batch_evaluation_progress(
     let ids: Vec<&str> = in_progress.iter().map(|t| t.id.as_str()).collect();
     let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
 
-    // 1. Sum active minutes from progress events.
-    let events_sql = format!(
-        "SELECT {PROGRESS_EVENT_COLS} FROM progress_events WHERE task_id IN ({placeholders}) ORDER BY task_id, id"
+    // 1. Sum active minutes from work sessions (not progress events).
+    let sessions_sql = format!(
+        "SELECT {WORK_SESSION_COLS} FROM work_sessions WHERE task_id IN ({placeholders}) ORDER BY started_at ASC"
     );
-    let event_bindings: Vec<JsValue> = ids.iter().map(|id| JsValue::from_str(id)).collect();
-    let events: Vec<ProgressEventRow> = d1_all(
+    let session_bindings: Vec<JsValue> = ids.iter().map(|id| JsValue::from_str(id)).collect();
+    let sessions: Vec<WorkSessionRow> = d1_all(
         &database
-            .prepare(events_sql)
-            .bind(&event_bindings)
+            .prepare(sessions_sql)
+            .bind(&session_bindings)
             .map_err(d1_err)?,
     )
     .await?;
 
     let mut active_minutes_by_task: HashMap<String, i64> = HashMap::new();
-    for event in events {
-        if let Some(task_id) = event.task_id.as_ref() {
-            *active_minutes_by_task.entry(task_id.clone()).or_default() += event.active_minutes;
+    for session in sessions {
+        if let Some(task_id) = session.task_id.as_ref() {
+            *active_minutes_by_task
+                .entry(task_id.clone())
+                .or_default() += session_minutes(&session);
         }
     }
 
