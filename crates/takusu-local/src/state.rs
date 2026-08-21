@@ -53,7 +53,10 @@ impl SessionFactory for HeadlessSessionFactory {
 }
 
 /// Build an agent state using the local server token and planner URL.
-pub fn build_agent_state(token: impl AsRef<str>, worker_url: impl AsRef<str>) -> Arc<AgentApiState> {
+pub fn build_agent_state(
+    token: impl AsRef<str>,
+    worker_url: impl AsRef<str>,
+) -> Arc<AgentApiState> {
     let mut config = AgentConfig::default();
     config.server.url = worker_url.as_ref().to_string();
     Arc::new(AgentApiState::new(

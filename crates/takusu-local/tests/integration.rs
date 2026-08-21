@@ -35,11 +35,7 @@ async fn setup() -> (AppState, SqlitePool) {
     let token_cache = Arc::new(TokenCache::with_default_ttl());
     let app = Arc::new(TakusuApp::new(Arc::new(storage), token_cache));
     let agent = build_agent_state(root_token(), "");
-    let state = AppState::new(
-        app,
-        Arc::new(RwLock::new(Arc::from(root_token()))),
-        agent,
-    );
+    let state = AppState::new(app, Arc::new(RwLock::new(Arc::from(root_token()))), agent);
     (state, pool)
 }
 

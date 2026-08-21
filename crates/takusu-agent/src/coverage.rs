@@ -79,19 +79,13 @@ pub fn compute_coverage(
         .unsettled_intervals
         .iter()
         .filter(|i| i.settled_at.is_none())
-        .any(|i| {
-            i.end_at > target_start && i.start_at < target_end && i.end_at <= now
-        });
+        .any(|i| i.end_at > target_start && i.start_at < target_end && i.end_at <= now);
     if unresolved {
         return CoverageState::Stale;
     }
 
     // No confirmation at all -> bootstrap.
-    let confirmation = match evaluation
-        .confirmations
-        .iter()
-        .max_by_key(|c| c.created_at)
-    {
+    let confirmation = match evaluation.confirmations.iter().max_by_key(|c| c.created_at) {
         Some(c) => c,
         None => return CoverageState::Bootstrap,
     };
@@ -144,7 +138,9 @@ pub fn task_authority(state: CoverageState) -> TaskAuthority {
 
 fn is_expired_confirmation(confirmation: &CoverageConfirmationRow, now: Timestamp) -> bool {
     let ttl_seconds = COVERAGE_CONFIRMATION_TTL_HOURS * 3600;
-    let elapsed = now.as_second().saturating_sub(confirmation.created_at.as_second());
+    let elapsed = now
+        .as_second()
+        .saturating_sub(confirmation.created_at.as_second());
     elapsed > ttl_seconds
 }
 

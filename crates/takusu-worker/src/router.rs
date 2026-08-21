@@ -177,15 +177,11 @@ async fn dispatch(req: Request, env: Env) -> Result<Response, crate::error::Work
         (Method::Post, ["devices", id, "heartbeat"]) => {
             handlers::devices::heartbeat(req, env, id).await
         }
-        (Method::Post, ["devices", id, "lease"]) => {
-            handlers::devices::lease(req, env, id).await
-        }
+        (Method::Post, ["devices", id, "lease"]) => handlers::devices::lease(req, env, id).await,
         (Method::Get, ["devices", id, "resident"]) => {
             handlers::devices::resident(req, env, id).await
         }
-        (Method::Get, ["devices", id, "speech"]) => {
-            handlers::devices::speech(req, env, id).await
-        }
+        (Method::Get, ["devices", id, "speech"]) => handlers::devices::speech(req, env, id).await,
         (Method::Get, ["skills"]) => handlers::skills::list(req, env).await,
         (Method::Post, ["skills"]) => handlers::skills::create(req, env).await,
         (Method::Get, ["skills", id]) => handlers::skills::get(req, env, id).await,

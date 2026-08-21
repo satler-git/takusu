@@ -414,8 +414,10 @@ interface components$1 {
         };
         /** @description Estimator distribution snapshot for a single task. */
         EvaluationEstimator: {
+            band?: components$1['schemas']['EstimatorBand'] | null;
             /** Format: double */
             mean_minutes: number;
+            next_crossing_time?: components$1['schemas']['Timestamp'] | null;
             /** Format: int64 */
             revision: number;
             /** Format: double */

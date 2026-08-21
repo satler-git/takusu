@@ -48,10 +48,12 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>>
     } else {
         #[cfg(feature = "audio-device")]
         {
-            takusu_agent::runner::run_audio(Arc::new(session), cli.no_tts, cli.yes, |event| match event {
-                takusu_agent::TurnEvent::AsrText(text) => eprintln!("> {text}"),
-                takusu_agent::TurnEvent::Text(delta) => print!("{delta}"),
-                _ => {}
+            takusu_agent::runner::run_audio(Arc::new(session), cli.no_tts, cli.yes, |event| {
+                match event {
+                    takusu_agent::TurnEvent::AsrText(text) => eprintln!("> {text}"),
+                    takusu_agent::TurnEvent::Text(delta) => print!("{delta}"),
+                    _ => {}
+                }
             })
             .await?;
         }

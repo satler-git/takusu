@@ -28,11 +28,7 @@ pub async fn get(_req: worker::Request, env: Env, id: &str) -> Result<Response, 
     json_ok(&row)
 }
 
-pub async fn update(
-    mut req: worker::Request,
-    env: Env,
-    id: &str,
-) -> Result<Response, WorkerError> {
+pub async fn update(mut req: worker::Request, env: Env, id: &str) -> Result<Response, WorkerError> {
     let body: UpdateDevice = parse_json(&mut req).await?;
     body.validate()?;
     let store = storage(&env)?;
@@ -65,11 +61,7 @@ pub async fn heartbeat(
     json_ok(&row)
 }
 
-pub async fn lease(
-    mut req: worker::Request,
-    env: Env,
-    id: &str,
-) -> Result<Response, WorkerError> {
+pub async fn lease(mut req: worker::Request, env: Env, id: &str) -> Result<Response, WorkerError> {
     let body: RefreshEvaluatorLease = parse_json(&mut req).await?;
     if id != body.device_id {
         return Err(WorkerError::BadRequest(format!(
@@ -84,21 +76,13 @@ pub async fn lease(
     json_ok(&row)
 }
 
-pub async fn resident(
-    _req: worker::Request,
-    env: Env,
-    id: &str,
-) -> Result<Response, WorkerError> {
+pub async fn resident(_req: worker::Request, env: Env, id: &str) -> Result<Response, WorkerError> {
     let store = storage(&env)?;
     let authority = store.resolve_resident_authority(id).await?;
     json_ok(&authority)
 }
 
-pub async fn speech(
-    _req: worker::Request,
-    env: Env,
-    id: &str,
-) -> Result<Response, WorkerError> {
+pub async fn speech(_req: worker::Request, env: Env, id: &str) -> Result<Response, WorkerError> {
     let store = storage(&env)?;
     let row = store.get_device(id).await?;
     let capability = takusu_contracts::SpeechCapability {

@@ -53,14 +53,12 @@ pub async fn run(args: AgentRunArgs) -> Result<(), AppError> {
         let session = Arc::new(session);
         let mut output = String::new();
         let mut last_asr = false;
-        let result = takusu_agent::runner::run_audio(
-            Arc::clone(&session),
-            false,
-            args.yes,
-            |event| emit_stream_event(event, true, &mut output, &mut last_asr),
-        )
-        .await
-        .map_err(agent_err);
+        let result =
+            takusu_agent::runner::run_audio(Arc::clone(&session), false, args.yes, |event| {
+                emit_stream_event(event, true, &mut output, &mut last_asr)
+            })
+            .await
+            .map_err(agent_err);
         save_session_snapshot(&session)?;
         return result;
     }

@@ -48,15 +48,15 @@ pub async fn revision(
     }))
 }
 
-pub async fn snapshot(
-    State(state): State<AppState>,
-) -> Result<Json<EvaluationInputs>, HttpError> {
+pub async fn snapshot(State(state): State<AppState>) -> Result<Json<EvaluationInputs>, HttpError> {
     let mut inputs = state.app.get_evaluation_inputs().await?;
     let settings = state.app.get_settings().await?;
-    let tz = takusu_types::parse_timezone(&settings.tz)
-        .map_err(|e| HttpError::from(AppError::BadRequest(BadRequestKind::InvalidTime(format!("invalid timezone: {e}")))))?;
-    let now = takusu_types::now_timestamp()
-        .map_err(|e| HttpError::from(AppError::Internal(e)))?;
+    let tz = takusu_types::parse_timezone(&settings.tz).map_err(|e| {
+        HttpError::from(AppError::BadRequest(BadRequestKind::InvalidTime(format!(
+            "invalid timezone: {e}"
+        ))))
+    })?;
+    let now = takusu_types::now_timestamp().map_err(|e| HttpError::from(AppError::Internal(e)))?;
     let (target_start, target_end) = target_period_for(&tz).map_err(HttpError::from)?;
     let state = takusu_agent::coverage::compute_coverage(
         &inputs.coverage,

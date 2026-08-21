@@ -252,7 +252,10 @@ mod tests {
             icon_name_for_state(SurfaceState::Speaking),
             "takusu-tray-speaking"
         );
-        assert_eq!(icon_name_for_state(SurfaceState::Error), "takusu-tray-error");
+        assert_eq!(
+            icon_name_for_state(SurfaceState::Error),
+            "takusu-tray-error"
+        );
     }
 
     #[test]
@@ -268,13 +271,13 @@ mod tests {
         );
 
         // Thinking/approval use the warning color.
-        assert_eq!(
-            state_color(SurfaceState::Thinking, Theme::Dark),
-            "#E0B040"
-        );
+        assert_eq!(state_color(SurfaceState::Thinking, Theme::Dark), "#E0B040");
 
         // Idle is muted.
-        assert_eq!(state_color(SurfaceState::Idle, Theme::Catppuccin), "#9B95AA");
+        assert_eq!(
+            state_color(SurfaceState::Idle, Theme::Catppuccin),
+            "#9B95AA"
+        );
 
         // Error is red.
         assert_eq!(state_color(SurfaceState::Error, Theme::Light), "#B33A3A");

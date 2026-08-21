@@ -246,7 +246,10 @@ fn build_api_router(open_api: &mut OpenApi) -> Router<AppState> {
         .api_route("/devices", api::get(handlers::device::list_devices))
         .api_route("/devices/{id}", api::get(handlers::device::get_device))
         .api_route("/devices/{id}", api::patch(handlers::device::update_device))
-        .api_route("/devices/{id}", api::delete(handlers::device::delete_device))
+        .api_route(
+            "/devices/{id}",
+            api::delete(handlers::device::delete_device),
+        )
         .api_route(
             "/devices/{id}/heartbeat",
             api::post(handlers::device::refresh_heartbeat),

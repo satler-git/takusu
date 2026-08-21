@@ -114,11 +114,12 @@ impl Config {
             tracing::warn!("no desktop bearer token configured; agent routes may fail");
         }
 
-        let tz = desktop
-            .tz
-            .clone()
-            .or(file.tz)
-            .unwrap_or_else(|| jiff::tz::TimeZone::system().iana_name().unwrap_or("UTC").to_string());
+        let tz = desktop.tz.clone().or(file.tz).unwrap_or_else(|| {
+            jiff::tz::TimeZone::system()
+                .iana_name()
+                .unwrap_or("UTC")
+                .to_string()
+        });
 
         Ok(Config {
             theme: desktop.theme,

@@ -10656,8 +10656,10 @@ export interface components {
     };
     /** @description Estimator distribution snapshot for a single task. */
     EvaluationEstimator: {
+      band?: components['schemas']['EstimatorBand'] | null;
       /** Format: double */
       mean_minutes: number;
+      next_crossing_time?: components['schemas']['Timestamp'] | null;
       /** Format: int64 */
       revision: number;
       /** Format: double */

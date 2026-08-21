@@ -9,7 +9,7 @@ use takusu_agent::events::{
 };
 use takusu_contracts::{EvaluationInputs, EventDeliveryState, EventLedgerInsert, EventLedgerRow};
 use takusu_types::TaskStatus;
-use takusu_types::estimator::{DurationDistribution, effective_distribution};
+use takusu_types::estimator::{DurationDistribution, InterventionBand, effective_distribution};
 
 use super::TakusuApp;
 use crate::error::{AppError, storage_to_app};
@@ -23,7 +23,10 @@ impl TakusuApp {
     }
 
     pub async fn get_evaluation_inputs(&self) -> Result<EvaluationInputs, AppError> {
-        self.storage.get_evaluation_inputs().await.map_err(storage_to_app)
+        self.storage
+            .get_evaluation_inputs()
+            .await
+            .map_err(storage_to_app)
     }
 
     /// Evaluate one consistent planner snapshot and persist newly discovered
@@ -116,7 +119,11 @@ impl TakusuApp {
                     active_minutes: progress.total_active_minutes as f64,
                     distribution,
                     distribution_revision: progress.estimator.map(|est| est.revision).unwrap_or(0),
-                    progress_band: None,
+                    progress_band: progress
+                        .estimator
+                        .and_then(|est| est.band)
+                        .map(InterventionBand::from),
+                    next_crossing_at: progress.estimator.and_then(|est| est.next_crossing_time),
                 })
             })
             .collect();

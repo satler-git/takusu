@@ -34,11 +34,11 @@ pub use presentation::{
     ProgressSummary, ScheduleAlert, ScheduleAlertKind, ScheduleEntry, ScheduleSummary,
     SettlementPrompt, TaskAuthority, TaskCard, WorkState, WorkTransition, WorkTransitionKind,
 };
-pub use takusu_client::{CoverageEvaluation, CoverageState};
 pub use surface::{
     AudioCallback, AudioEvent, StateScope, SurfaceCommand, SurfaceCommandResponse, SurfaceEvent,
     SurfaceSnapshot, SurfaceState, SurfaceStateMachine,
 };
+pub use takusu_client::{CoverageEvaluation, CoverageState};
 pub use tts_queue::TtsQueue;
 
 pub use crate::llm::CompactionSettings;

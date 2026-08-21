@@ -358,12 +358,16 @@ pub trait Storage: Send + Sync + 'static {
     /// heartbeat/lease state untouched unless `UpdateDevice` is used.
     async fn register_device(&self, body: &CreateDevice) -> StorageResult<DeviceRow> {
         let _ = body;
-        Err(StorageError::Internal("device registry is not supported".into()))
+        Err(StorageError::Internal(
+            "device registry is not supported".into(),
+        ))
     }
 
     async fn get_device(&self, id: &str) -> StorageResult<DeviceRow> {
         let _ = id;
-        Err(StorageError::Internal("device registry is not supported".into()))
+        Err(StorageError::Internal(
+            "device registry is not supported".into(),
+        ))
     }
 
     async fn list_devices(&self) -> StorageResult<Vec<DeviceRow>> {
@@ -372,12 +376,16 @@ pub trait Storage: Send + Sync + 'static {
 
     async fn update_device(&self, id: &str, body: &UpdateDevice) -> StorageResult<DeviceRow> {
         let _ = (id, body);
-        Err(StorageError::Internal("device registry is not supported".into()))
+        Err(StorageError::Internal(
+            "device registry is not supported".into(),
+        ))
     }
 
     async fn delete_device(&self, id: &str) -> StorageResult<()> {
         let _ = id;
-        Err(StorageError::Internal("device registry is not supported".into()))
+        Err(StorageError::Internal(
+            "device registry is not supported".into(),
+        ))
     }
 
     /// Refresh a desktop evaluator heartbeat. `until` is the wall-clock time
@@ -388,7 +396,9 @@ pub trait Storage: Send + Sync + 'static {
         until: Timestamp,
     ) -> StorageResult<DeviceRow> {
         let _ = (device_id, until);
-        Err(StorageError::Internal("device registry is not supported".into()))
+        Err(StorageError::Internal(
+            "device registry is not supported".into(),
+        ))
     }
 
     /// Reserve or renew an Android evaluator lease. `lease_until` covers the
@@ -401,7 +411,9 @@ pub trait Storage: Send + Sync + 'static {
         next_eval_at: Option<Timestamp>,
     ) -> StorageResult<DeviceRow> {
         let _ = (device_id, lease_until, next_eval_at);
-        Err(StorageError::Internal("device registry is not supported".into()))
+        Err(StorageError::Internal(
+            "device registry is not supported".into(),
+        ))
     }
 
     /// Compute the current resident authority from the priority list and
@@ -453,7 +465,8 @@ pub fn resolve_resident_authority_from_rows(
     let alive = sorted.iter().find(|d| {
         d.evaluator_heartbeat_until
             .is_some_and(|t| t.as_second() > now_sec)
-            || d.evaluator_lease_until.is_some_and(|t| t.as_second() > now_sec)
+            || d.evaluator_lease_until
+                .is_some_and(|t| t.as_second() > now_sec)
     });
     match alive {
         Some(d) => ResidentAuthority {
