@@ -11,9 +11,9 @@ use takusu_contracts::{
     GoogleCalSettingsRow, HabitRow, HabitScheduledSpanRow, HabitStepEstimateInput, HabitStepInput,
     HabitStepRow, MemoryInjectionQuery, MemoryInjectionResult, MemoryQuery, MemoryRow,
     MoveEntryResponse, ProgressEventRow, RecordWorkSessionProgress, ResidentAuthority,
-    SaveScheduleRequest, ScheduleRow, SettingsRow, SimilarTaskQuery, SimilarTaskRow, SkillRow,
-    SplitResult, SplitTask, StartWorkSession, Storage, StorageError, TaskProgress, TaskQuery,
-    TaskRow, TokenCreateResponse, TokenRow, UnsettledIntervalRow, UpdateDevice,
+    SaveScheduleRequest, ScheduleEntry, ScheduleRow, SettingsRow, SimilarTaskQuery, SimilarTaskRow,
+    SkillRow, SplitResult, SplitTask, StartWorkSession, Storage, StorageError, TaskProgress,
+    TaskQuery, TaskRow, TokenCreateResponse, TokenRow, UnsettledIntervalRow, UpdateDevice,
     UpdateGoogleCalSettings, UpdateHabit, UpdateMemory, UpdateSettings, UpdateSkill, UpdateTask,
     WorkSessionProgressResult, WorkSessionRow,
 };
@@ -51,6 +51,68 @@ fn valid_event_transition(from: EventDeliveryState, to: EventDeliveryState) -> b
                 )
                 | (EventDeliveryState::Ignored, EventDeliveryState::Resolved)
         )
+}
+
+/// Compute unclassified schedule gaps for the current local day, mirroring the
+/// SQLite application layer in `takusu_local_lib::app::events::schedule_gaps`.
+/// All schedule blanks are treated as unclassified gaps at the storage boundary.
+async fn schedule_gaps(db: &worker::D1Database) -> StorageResult<Vec<UnsettledIntervalRow>> {
+    let tz = get_timezone(db).await?;
+    let now = Timestamp::now();
+    let day_start: Timestamp = takusu_types::parse_date_expression("today", &tz, false)
+        .map_err(|e| StorageError::Internal(format!("day start: {e}")))?
+        .into();
+    let day_end: Timestamp = takusu_types::parse_date_expression("today", &tz, true)
+        .map_err(|e| StorageError::Internal(format!("day end: {e}")))?
+        .into();
+
+    let stmt = db.prepare(
+        "SELECT id, created_at, updated_at, schedule, horizon_task_ids FROM schedules WHERE id = 'active'",
+    );
+    let rows: Vec<ScheduleRow> = d1_all(&stmt).await?;
+    let mut entries: Vec<ScheduleEntry> = rows
+        .into_iter()
+        .next()
+        .map(|r| r.schedule.into_inner())
+        .unwrap_or_default();
+    entries.sort_by_key(|e| e.start_at);
+
+    let mut gaps = Vec::new();
+
+    if let Some(first) = entries.first() {
+        if day_start < first.start_at {
+            gaps.push(unsettled_gap_row(day_start, first.start_at));
+        }
+    } else if now <= day_end {
+        gaps.push(unsettled_gap_row(day_start, day_end));
+    }
+
+    for window in entries.windows(2) {
+        if window[0].end_at < window[1].start_at {
+            gaps.push(unsettled_gap_row(window[0].end_at, window[1].start_at));
+        }
+    }
+
+    if let Some(last) = entries.last() {
+        if last.end_at < day_end {
+            gaps.push(unsettled_gap_row(last.end_at, day_end));
+        }
+    }
+
+    Ok(gaps)
+}
+
+fn unsettled_gap_row(start_at: Timestamp, end_at: Timestamp) -> UnsettledIntervalRow {
+    UnsettledIntervalRow {
+        id: format!("gap:{start_at}..{end_at}"),
+        start_at,
+        end_at,
+        classification: "unclassified".into(),
+        source: "schedule".into(),
+        created_at: Timestamp::now(),
+        settled_at: None,
+        operation_id: None,
+    }
 }
 
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
@@ -2862,18 +2924,14 @@ impl Storage for D1Storage {
         );
         let unsettled: Vec<UnsettledIntervalRow> = d1_all(&stmt).await?;
 
-        let schedule_revision_stmt = self.db.prepare(
-            "SELECT COALESCE(MAX(schedule_revision), 0) AS value FROM coverage_confirmations",
-        );
-        let schedule_revision: i64 = d1_first::<serde_json::Value>(&schedule_revision_stmt)
-            .await?
-            .and_then(|v| v.get("value").and_then(|v| v.as_i64()))
-            .unwrap_or(0);
+        let unclassified_gaps = schedule_gaps(&self.db).await?;
+        let schedule_revision = self.get_schedule_revision().await?;
 
         Ok(CoverageEvaluation {
             state: CoverageState::Bootstrap,
             confirmations,
             unsettled_intervals: unsettled,
+            unclassified_gaps,
             schedule_revision,
         })
     }

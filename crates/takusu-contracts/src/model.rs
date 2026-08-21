@@ -651,6 +651,10 @@ pub struct CoverageEvaluation {
     pub state: CoverageState,
     pub confirmations: Vec<CoverageConfirmationRow>,
     pub unsettled_intervals: Vec<UnsettledIntervalRow>,
+    /// Unclassified schedule gaps detected for the current evaluation.
+    /// These are synthetic unsettled intervals derived from the active schedule.
+    #[serde(default)]
+    pub unclassified_gaps: Vec<UnsettledIntervalRow>,
     pub schedule_revision: i64,
 }
 

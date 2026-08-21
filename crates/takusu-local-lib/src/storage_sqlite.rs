@@ -3045,17 +3045,18 @@ impl SqliteStorage {
         // pre-compute a state.
         let state = CoverageState::Bootstrap;
 
-        let schedule_revision: i64 = sqlx::query_scalar::<_, i64>(
-            "SELECT COALESCE(MAX(schedule_revision), 0) FROM coverage_confirmations",
-        )
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(map_err)?;
+        let schedule_revision: i64 =
+            sqlx::query_scalar("SELECT revision FROM schedule_revisions WHERE id = 'active'")
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(map_err)?
+                .unwrap_or(0);
 
         Ok(CoverageEvaluation {
             state,
             confirmations,
             unsettled_intervals: unsettled,
+            unclassified_gaps: Vec::new(),
             schedule_revision,
         })
     }

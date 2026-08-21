@@ -7,7 +7,9 @@
 //! candidate or authoritative "今やること", and whether a settlement prompt
 //! should take precedence over the current task.
 
-use takusu_client::{CoverageConfirmationRow, CoverageEvaluation, CoverageState};
+use takusu_client::{
+    CoverageConfirmationRow, CoverageEvaluation, CoverageState, UnsettledIntervalRow,
+};
 use takusu_types::Timestamp;
 
 use crate::presentation::TaskAuthority;
@@ -73,20 +75,54 @@ pub fn compute_coverage(
     target_start: Timestamp,
     target_end: Timestamp,
 ) -> CoverageState {
-    // Unresolved intervals that overlap the target period and have already
-    // started (whether ended or still in progress) make the coverage stale.
-    // Future unsettled intervals do not affect the current coverage decision.
-    let unresolved = evaluation
-        .unsettled_intervals
+    // A confirmation is only trustworthy if it was recorded against the active
+    // schedule revision. Use the most recent confirmation that matches.
+    let active_confirmation = evaluation
+        .confirmations
         .iter()
-        .filter(|i| i.settled_at.is_none())
-        .any(|i| i.start_at <= now && i.start_at < target_end && i.end_at > target_start);
-    if unresolved {
+        .filter(|c| c.schedule_revision == evaluation.schedule_revision)
+        .max_by_key(|c| c.created_at);
+    let has_confirmations = !evaluation.confirmations.is_empty();
+
+    // Unresolved intervals and unclassified gaps that overlap the target period
+    // and have already started make the coverage stale. Future ones do not.
+    // An unclassified gap is "confirmed" if it falls entirely within the active
+    // confirmation interval, in which case it does not affect classification.
+    let is_unresolved = |i: &UnsettledIntervalRow| {
+        i.settled_at.is_none()
+            && i.start_at <= now
+            && i.start_at < target_end
+            && i.end_at > target_start
+    };
+    let is_covered_by_confirmation = |i: &UnsettledIntervalRow, c: &CoverageConfirmationRow| {
+        c.start_at <= i.start_at && c.end_at >= i.end_at
+    };
+
+    for interval in &evaluation.unsettled_intervals {
+        if is_unresolved(interval) {
+            return CoverageState::Stale;
+        }
+    }
+
+    for gap in &evaluation.unclassified_gaps {
+        if is_unresolved(gap) {
+            if let Some(c) = active_confirmation
+                && is_covered_by_confirmation(gap, c)
+            {
+                continue;
+            }
+            return CoverageState::Stale;
+        }
+    }
+
+    // If there are confirmations but none for the active schedule revision,
+    // the coverage is stale.
+    if has_confirmations && active_confirmation.is_none() {
         return CoverageState::Stale;
     }
 
-    // No confirmation at all -> bootstrap.
-    let confirmation = match evaluation.confirmations.iter().max_by_key(|c| c.created_at) {
+    // No matching confirmation at all -> bootstrap.
+    let confirmation = match active_confirmation {
         Some(c) => c,
         None => return CoverageState::Bootstrap,
     };
@@ -151,6 +187,7 @@ pub fn bootstrap_evaluation(schedule_revision: i64) -> CoverageEvaluation {
         state: CoverageState::Bootstrap,
         confirmations: Vec::new(),
         unsettled_intervals: Vec::new(),
+        unclassified_gaps: Vec::new(),
         schedule_revision,
     }
 }
@@ -201,6 +238,7 @@ mod tests {
     #[test]
     fn target_period_confirmation_is_trusted() {
         let eval = CoverageEvaluation {
+            schedule_revision: 1,
             confirmations: vec![confirmation(
                 "2025-01-02T00:00:00Z",
                 "2025-01-02T23:59:59Z",
@@ -223,6 +261,7 @@ mod tests {
     #[test]
     fn today_covered_without_target_source() {
         let eval = CoverageEvaluation {
+            schedule_revision: 1,
             confirmations: vec![confirmation(
                 "2025-01-02T00:00:00Z",
                 "2025-01-02T23:59:59Z",
@@ -244,6 +283,7 @@ mod tests {
     #[test]
     fn unresolved_interval_makes_stale() {
         let eval = CoverageEvaluation {
+            schedule_revision: 1,
             confirmations: vec![confirmation(
                 "2025-01-02T00:00:00Z",
                 "2025-01-02T23:59:59Z",
@@ -276,6 +316,7 @@ mod tests {
     #[test]
     fn in_progress_unresolved_interval_makes_stale() {
         let eval = CoverageEvaluation {
+            schedule_revision: 1,
             confirmations: vec![confirmation(
                 "2025-01-02T00:00:00Z",
                 "2025-01-02T23:59:59Z",
@@ -307,6 +348,7 @@ mod tests {
     #[test]
     fn future_unresolved_interval_does_not_make_stale() {
         let eval = CoverageEvaluation {
+            schedule_revision: 1,
             confirmations: vec![confirmation(
                 "2025-01-02T00:00:00Z",
                 "2025-01-02T23:59:59Z",
@@ -338,6 +380,7 @@ mod tests {
     #[test]
     fn stale_calendar_sync_makes_stale() {
         let eval = CoverageEvaluation {
+            schedule_revision: 1,
             confirmations: vec![confirmation(
                 "2025-01-02T00:00:00Z",
                 "2025-01-02T23:59:59Z",
@@ -359,6 +402,7 @@ mod tests {
     #[test]
     fn expired_confirmation_makes_stale() {
         let eval = CoverageEvaluation {
+            schedule_revision: 1,
             confirmations: vec![confirmation(
                 "2025-01-01T00:00:00Z",
                 "2025-01-01T23:59:59Z",
@@ -375,5 +419,119 @@ mod tests {
             ts("2025-01-02T23:59:59Z"),
         );
         assert_eq!(state, CoverageState::Stale);
+    }
+
+    #[test]
+    fn active_schedule_revision_mismatch_makes_stale() {
+        let mut confirmation = confirmation(
+            "2025-01-02T00:00:00Z",
+            "2025-01-02T23:59:59Z",
+            "target_period",
+            "ok",
+            "2025-01-02T08:00:00Z",
+        );
+        confirmation.schedule_revision = 1;
+        let eval = CoverageEvaluation {
+            schedule_revision: 2,
+            confirmations: vec![confirmation],
+            ..CoverageEvaluation::default()
+        };
+        let state = compute_coverage(
+            &eval,
+            ts("2025-01-02T10:00:00Z"),
+            ts("2025-01-02T00:00:00Z"),
+            ts("2025-01-02T23:59:59Z"),
+        );
+        assert_eq!(state, CoverageState::Stale);
+        assert_eq!(task_authority(state), TaskAuthority::Candidate);
+    }
+
+    #[test]
+    fn unclassified_gap_in_target_period_makes_stale() {
+        let eval = CoverageEvaluation {
+            schedule_revision: 1,
+            unclassified_gaps: vec![UnsettledIntervalRow {
+                id: "g1".into(),
+                start_at: ts("2025-01-02T09:00:00Z"),
+                end_at: ts("2025-01-02T09:30:00Z"),
+                classification: "unclassified".into(),
+                source: "schedule".into(),
+                created_at: ts("2025-01-02T09:05:00Z"),
+                settled_at: None,
+                operation_id: None,
+            }],
+            ..CoverageEvaluation::default()
+        };
+        let state = compute_coverage(
+            &eval,
+            ts("2025-01-02T10:00:00Z"),
+            ts("2025-01-02T00:00:00Z"),
+            ts("2025-01-02T23:59:59Z"),
+        );
+        assert_eq!(state, CoverageState::Stale);
+    }
+
+    #[test]
+    fn future_unclassified_gap_does_not_make_stale() {
+        let eval = CoverageEvaluation {
+            schedule_revision: 1,
+            confirmations: vec![confirmation(
+                "2025-01-02T00:00:00Z",
+                "2025-01-02T23:59:59Z",
+                "target_period",
+                "ok",
+                "2025-01-02T08:00:00Z",
+            )],
+            unclassified_gaps: vec![UnsettledIntervalRow {
+                id: "g1".into(),
+                start_at: ts("2025-01-02T14:00:00Z"),
+                end_at: ts("2025-01-02T15:00:00Z"),
+                classification: "unclassified".into(),
+                source: "schedule".into(),
+                created_at: ts("2025-01-02T09:05:00Z"),
+                settled_at: None,
+                operation_id: None,
+            }],
+            ..CoverageEvaluation::default()
+        };
+        let state = compute_coverage(
+            &eval,
+            ts("2025-01-02T10:00:00Z"),
+            ts("2025-01-02T00:00:00Z"),
+            ts("2025-01-02T23:59:59Z"),
+        );
+        assert_eq!(state, CoverageState::Trusted);
+    }
+
+    #[test]
+    fn confirmed_unclassified_gaps_do_not_affect_other_classifications() {
+        let eval = CoverageEvaluation {
+            schedule_revision: 1,
+            confirmations: vec![confirmation(
+                "2025-01-02T00:00:00Z",
+                "2025-01-02T23:59:59Z",
+                "target_period",
+                "ok",
+                "2025-01-02T08:00:00Z",
+            )],
+            unclassified_gaps: vec![UnsettledIntervalRow {
+                id: "g1".into(),
+                start_at: ts("2025-01-02T09:00:00Z"),
+                end_at: ts("2025-01-02T09:30:00Z"),
+                classification: "unclassified".into(),
+                source: "schedule".into(),
+                created_at: ts("2025-01-02T09:05:00Z"),
+                settled_at: None,
+                operation_id: None,
+            }],
+            ..CoverageEvaluation::default()
+        };
+        let state = compute_coverage(
+            &eval,
+            ts("2025-01-02T10:00:00Z"),
+            ts("2025-01-02T00:00:00Z"),
+            ts("2025-01-02T23:59:59Z"),
+        );
+        assert_eq!(state, CoverageState::Trusted);
     }
 }
