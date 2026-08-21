@@ -21,6 +21,20 @@ use sherpa_onnx::{
 // `SherpaOnnxModel` is imported from `stt` via the `use` above and is also
 // re-exported by `lib.rs` directly from `stt`, so no re-export is needed here.
 
+/// Tail padding duration in tenths of a second (0.3 s).
+const TAIL_PADDING_TENTHS: usize = 3;
+
+/// Number of silent 16 kHz samples in the tail padding buffer.
+const TAIL_PADDING_SAMPLES: usize =
+    (SHERPA_SAMPLE_RATE as usize * TAIL_PADDING_TENTHS) / 10;
+
+/// Reusable silent tail padding buffer flushed to the streaming recognizer.
+static TAIL_PADDING: [f32; TAIL_PADDING_SAMPLES] = [0.0; TAIL_PADDING_SAMPLES];
+
+fn tail_padding_len(sample_rate: i32) -> usize {
+    (sample_rate as usize * TAIL_PADDING_TENTHS) / 10
+}
+
 /// Configuration for [`SherpaOnnxAsr`] and [`SherpaOnnxStreamingAsr`].
 #[derive(Debug, Clone, Default)]
 pub struct SherpaOnnxAsrConfig {
@@ -130,7 +144,7 @@ impl SherpaOnnxAsr {
                 offline_config.model_config.nemo_ctc = OfflineNemoEncDecCtcModelConfig {
                     model: Some(model.to_string_lossy().to_string()),
                 };
-                offline_config.model_config.modeling_unit = Some("bpe".to_string());
+                offline_config.model_config.model_type = Some("nemo_ctc".to_string());
             }
             SherpaOnnxModel::NemotronMultilingual => {
                 return Err(SttError::Other(
@@ -287,16 +301,32 @@ impl SpeechToText for SherpaOnnxStreamingAsr {
     }
 
     fn transcribe_sync(&self, audio: &[f32]) -> Result<String, SttError> {
-        let handle = tokio::runtime::Handle::try_current().map_err(|e| {
-            SttError::Other(format!(
-                "no tokio runtime available for streaming transcription: {e}"
-            ))
-        })?;
-        handle.block_on(async {
-            let mut stream = self.start_stream(&self.language).await?;
-            stream.accept_waveform(audio);
-            stream.finish().await
-        })
+        // Run streaming recognition synchronously so this works from Android
+        // threads and other contexts without an active tokio runtime.
+        let stream = self.recognizer.create_stream();
+        if !self.language.is_empty() {
+            stream.set_option("language", &self.language);
+        }
+        stream.accept_waveform(self.sample_rate, audio);
+        while self.recognizer.is_ready(&stream) {
+            self.recognizer.decode(&stream);
+        }
+
+        // Tail padding (~0.3 s) gives the streaming recognizer enough trailing
+        // silence to emit the final tokens and finish the utterance.
+        let tail_len = tail_padding_len(self.sample_rate).min(TAIL_PADDING.len());
+        if tail_len > 0 {
+            stream.accept_waveform(self.sample_rate, &TAIL_PADDING[..tail_len]);
+        }
+        stream.input_finished();
+        while self.recognizer.is_ready(&stream) {
+            self.recognizer.decode(&stream);
+        }
+
+        self.recognizer
+            .get_result(&stream)
+            .map(|r| r.text)
+            .ok_or(SttError::NoResult)
     }
 }
 
@@ -376,6 +406,13 @@ impl AsrStream for SherpaOnnxStream {
     }
 
     async fn finish(&mut self) -> Result<String, SttError> {
+        // Tail padding (~0.3 s) flushes the streaming recognizer so the final
+        // tokens are emitted before input is finished.
+        let tail_len = tail_padding_len(self.sample_rate).min(TAIL_PADDING.len());
+        if tail_len > 0 {
+            self.stream
+                .accept_waveform(self.sample_rate, &TAIL_PADDING[..tail_len]);
+        }
         self.stream.input_finished();
         while self.recognizer.is_ready(&self.stream) {
             self.recognizer.decode(&self.stream);
