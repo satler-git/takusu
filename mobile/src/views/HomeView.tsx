@@ -1175,6 +1175,7 @@ export function HomeView() {
           task_id: currentTask.id,
           action,
           device_id: 'mobile',
+          input_path: 'screen_capability',
         });
         await refresh();
       } catch (e) {

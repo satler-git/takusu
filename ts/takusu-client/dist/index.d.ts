@@ -1580,6 +1580,15 @@ interface components$1 {
             action: string;
             device_id: string;
             event_id?: string | null;
+            /**
+             * @description Trusted input path the client wants the capability to be issued for.
+             *
+             *     The server minting endpoint decides the actual `input_path` using this
+             *     value when present and falling back to a per-endpoint default otherwise.
+             *     The client cannot self-assert an arbitrary path: the mint response always
+             *     carries the server-chosen path.
+             */
+            input_path?: components$1['schemas']['InputPath'] | null;
             note?: string | null;
             /** Format: int64 */
             quantity_done?: number | null;
