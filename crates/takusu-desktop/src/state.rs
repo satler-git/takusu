@@ -115,6 +115,11 @@ impl DesktopState {
         }
     }
 
+    /// Return the currently configured theme, falling back to the default.
+    pub fn theme(&self) -> Theme {
+        self.snapshot().map(|view| view.theme).unwrap_or_default()
+    }
+
     /// Extract quick actions from the current presentation, if any.
     pub fn quick_actions(&self) -> Vec<(String, Option<ActionCapability>)> {
         let guard = match self.inner.read() {
