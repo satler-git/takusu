@@ -61,18 +61,6 @@ const MODEL_NAMES: Record<string, string> = {
   'sherpa-nemotron-ja-0.6b': 'Nemotron ストリーミング',
 };
 
-function modelButtonLabel(
-  modelId: string,
-  cached: boolean,
-  downloading: boolean,
-): string {
-  const name = MODEL_NAMES[modelId] ?? modelId;
-  if (downloading) {
-    return `${name}を準備中`;
-  }
-  return cached ? `${name}は準備済み` : `${name}を準備`;
-}
-
 function newLlmProvider(): LlmProvider {
   return {
     id: newId('llm'),
@@ -188,6 +176,40 @@ const makeStyles = (colors: ColorSet) =>
       borderRadius: 8,
       textAlign: 'center',
     },
+    voiceModelList: {
+      borderWidth: 1,
+      borderRadius: 12,
+      overflow: 'hidden',
+    },
+    voiceModelRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      padding: 10,
+      gap: 10,
+      borderBottomWidth: 1,
+    },
+    voiceModelRowLast: { borderBottomWidth: 0 },
+    voiceModelRowPressed: { backgroundColor: colors.pressed },
+    voiceModelRowContent: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    voiceModelText: { flex: 1 },
+    voiceModelName: { fontWeight: '600', fontSize: 15 },
+    voiceModelMeta: { fontSize: 12, color: colors.gray },
+    voiceModelStatus: { fontSize: 12, color: colors.gray, flexShrink: 0 },
+    voiceModelAction: {
+      minHeight: 44,
+      borderRadius: 8,
+      backgroundColor: colors.brand,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    voiceModelActionPressed: { opacity: 0.85 },
+    voiceModelActionDisabled: { opacity: 0.4 },
+    voiceModelActionText: { color: colors.onBrand, fontWeight: '700' },
   });
 
 export function AgentSettingsView() {
@@ -224,6 +246,8 @@ export function AgentSettingsView() {
     Record<string, boolean>
   >({});
   const [asrModel, setAsrModel] = useState<AsrModelId>(DEFAULT_ASR_MODEL);
+  const [savedAsrModel, setSavedAsrModel] =
+    useState<AsrModelId>(DEFAULT_ASR_MODEL);
 
   useEffect(() => {
     let cancelled = false;
@@ -261,6 +285,13 @@ export function AgentSettingsView() {
           if (cached) {
             setCachedModels((prev) => ({ ...prev, [id]: true }));
             setDownloadingModels((prev) => ({ ...prev, [id]: false }));
+            if (asrModel === id) {
+              try {
+                await persistAsrModel(id as AsrModelId);
+              } catch (e) {
+                void showError(e, '保存失敗');
+              }
+            }
           }
         } catch (e) {
           console.error('isModelCached polling failed:', e);
@@ -268,7 +299,7 @@ export function AgentSettingsView() {
       }
     }, 1000);
     return () => clearInterval(interval);
-  }, [downloadingModels]);
+  }, [downloadingModels, asrModel]);
 
   useEffect(() => {
     let cancelled = false;
@@ -282,6 +313,7 @@ export function AgentSettingsView() {
         setActiveTts(settings.activeTtsProvider || null);
         setSessionHistoryCount(settings.agentSessionHistoryCount);
         setAsrModel(loadedAsrModel as AsrModelId);
+        setSavedAsrModel(loadedAsrModel as AsrModelId);
       })
       .catch((e) => {
         void showError(e, '読み込み失敗');
@@ -622,6 +654,34 @@ export function AgentSettingsView() {
     }
   }
 
+  async function persistAsrModel(model: AsrModelId) {
+    await saveAsrModel(model);
+    setSavedAsrModel(model);
+  }
+
+  async function handleAsrAction() {
+    if (downloadingModels[asrModel]) {
+      return;
+    }
+    if (cachedModels[asrModel]) {
+      try {
+        await persistAsrModel(asrModel);
+        haptic.success();
+      } catch (e) {
+        void showError(e, '保存失敗');
+      }
+      return;
+    }
+    const size = MODEL_SIZES[asrModel];
+    const message = size
+      ? `${size}のデータをダウンロードします。よろしいですか？`
+      : 'データをダウンロードします。よろしいですか？';
+    Alert.alert('ダウンロード確認', message, [
+      { text: 'いいえ', style: 'cancel' },
+      { text: 'はい', onPress: () => startModelDownload(asrModel) },
+    ]);
+  }
+
   function promptModelDownload(modelId: string) {
     if (cachedModels[modelId]) {
       showTopToast('このモデルはすでに準備されています');
@@ -648,6 +708,10 @@ export function AgentSettingsView() {
   const editingLlmModelProvider = editingLlmModel
     ? llmProviders.find((p) => p.id === editingLlmModel.providerId)
     : undefined;
+
+  const isAsrActionDisabled =
+    asrModel === savedAsrModel &&
+    (cachedModels[asrModel] || downloadingModels[asrModel]);
 
   return (
     <ScrollView contentContainerStyle={styles.content}>
@@ -837,54 +901,125 @@ export function AgentSettingsView() {
       )}
 
       <Text style={[styles.heading, { color: colors.black }]}>音声モデル</Text>
-      <Pressable
-        onPress={() => promptModelDownload('hush')}
-        disabled={cachedModels['hush'] || downloadingModels['hush']}
-        style={styles.secondary}
+
+      <View
+        style={[
+          styles.voiceModelList,
+          { borderColor: colors.separator, backgroundColor: colors.surface },
+        ]}
       >
-        <Text style={{ color: colors.black }}>
-          {modelButtonLabel(
-            'hush',
-            cachedModels['hush'] ?? false,
-            downloadingModels['hush'] ?? false,
-          )}
-        </Text>
-      </Pressable>
-      {ASR_MODELS.map((id) => (
         <Pressable
-          key={id}
-          onPress={() => promptModelDownload(id)}
-          disabled={cachedModels[id] || downloadingModels[id]}
-          style={styles.secondary}
+          onPress={() => promptModelDownload('hush')}
+          disabled={cachedModels['hush'] || downloadingModels['hush']}
+          style={({ pressed }) => [
+            styles.voiceModelRow,
+            { borderBottomColor: colors.separator },
+            pressed && styles.voiceModelRowPressed,
+            styles.voiceModelRowLast,
+          ]}
         >
-          <Text style={{ color: colors.black }}>
-            {modelButtonLabel(
-              id,
-              cachedModels[id] ?? false,
-              downloadingModels[id] ?? false,
-            )}
+          <View style={styles.voiceModelRowContent}>
+            <Ionicons
+              name={
+                cachedModels['hush']
+                  ? 'checkmark-circle'
+                  : 'cloud-download-outline'
+              }
+              size={22}
+              color={cachedModels['hush'] ? colors.success : colors.gray}
+            />
+            <View style={styles.voiceModelText}>
+              <Text style={[styles.voiceModelName, { color: colors.black }]}>
+                {MODEL_NAMES['hush']}
+              </Text>
+              <Text style={styles.voiceModelMeta}>{MODEL_SIZES['hush']}</Text>
+            </View>
+          </View>
+          <Text style={styles.voiceModelStatus}>
+            {downloadingModels['hush']
+              ? '準備中'
+              : cachedModels['hush']
+                ? '準備済み'
+                : '未ダウンロード'}
           </Text>
         </Pressable>
-      ))}
+      </View>
 
       <Text style={[styles.heading, { color: colors.black }]}>
         音声認識モデル
       </Text>
-      {ASR_MODELS.map((id) => (
-        <Pressable
-          key={id}
-          onPress={() => {
-            setAsrModel(id);
-            void saveAsrModel(id);
-          }}
-          style={styles.secondary}
-        >
-          <Text style={{ color: colors.black }}>
-            {asrModel === id ? '● ' : '○ '}
-            {MODEL_NAMES[id]}
-          </Text>
-        </Pressable>
-      ))}
+      <Text style={{ color: colors.gray, fontSize: 12 }}>
+        一覧から 1 つ選んで、保存またはダウンロードしてください
+      </Text>
+
+      <View
+        style={[
+          styles.voiceModelList,
+          { borderColor: colors.separator, backgroundColor: colors.surface },
+        ]}
+      >
+        {ASR_MODELS.map((id, index) => {
+          const isLast = index === ASR_MODELS.length - 1;
+          const isCached = cachedModels[id] ?? false;
+          const isDownloading = downloadingModels[id] ?? false;
+          const status = isDownloading
+            ? '準備中'
+            : isCached
+              ? '準備済み'
+              : '未ダウンロード';
+          return (
+            <Pressable
+              key={id}
+              onPress={() => setAsrModel(id)}
+              style={({ pressed }) => [
+                styles.voiceModelRow,
+                { borderBottomColor: colors.separator },
+                pressed && styles.voiceModelRowPressed,
+                isLast && styles.voiceModelRowLast,
+              ]}
+            >
+              <View style={styles.voiceModelRowContent}>
+                <Ionicons
+                  name={
+                    asrModel === id ? 'checkmark-circle' : 'ellipse-outline'
+                  }
+                  size={22}
+                  color={asrModel === id ? colors.brand : colors.black}
+                />
+                <View style={styles.voiceModelText}>
+                  <Text
+                    style={[styles.voiceModelName, { color: colors.black }]}
+                  >
+                    {MODEL_NAMES[id]}
+                  </Text>
+                  <Text style={styles.voiceModelMeta}>{MODEL_SIZES[id]}</Text>
+                </View>
+              </View>
+              <Text style={styles.voiceModelStatus}>{status}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
+
+      <Pressable
+        onPress={handleAsrAction}
+        disabled={isAsrActionDisabled}
+        style={({ pressed }) => [
+          styles.voiceModelAction,
+          pressed && !isAsrActionDisabled && styles.voiceModelActionPressed,
+          isAsrActionDisabled && styles.voiceModelActionDisabled,
+        ]}
+      >
+        <Text style={styles.voiceModelActionText}>
+          {downloadingModels[asrModel]
+            ? '準備中…'
+            : cachedModels[asrModel]
+              ? asrModel === savedAsrModel
+                ? '保存済み'
+                : '保存'
+              : 'ダウンロード'}
+        </Text>
+      </Pressable>
 
       <Text style={[styles.heading, { color: colors.black }]}>
         TTS Provider
