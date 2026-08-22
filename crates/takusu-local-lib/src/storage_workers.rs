@@ -18,9 +18,9 @@ use takusu_contracts::{
     RefreshEvaluatorHeartbeat, RefreshEvaluatorLease, ResidentAuthority, SaveScheduleRequest,
     ScheduleRow, SettingsRow, SimilarTaskQuery, SimilarTaskRow, SkillRow, SplitResult, SplitTask,
     StartWorkSession, Storage, StorageError, TaskProgress, TaskQuery, TaskRow, TokenCreateResponse,
-    TokenRow, UnsettledIntervalRow, UpdateDevice, UpdateGoogleCalSettings, UpdateHabit,
-    UpdateMemory, UpdateSettings, UpdateSkill, UpdateTask, WorkSessionProgressResult,
-    WorkSessionRow, storage::StorageResult,
+    TokenRow, UndoWorkSession, UndoWorkSessionResult, UnsettledIntervalRow, UpdateDevice,
+    UpdateGoogleCalSettings, UpdateHabit, UpdateMemory, UpdateSettings, UpdateSkill, UpdateTask,
+    WorkSessionProgressResult, WorkSessionRow, storage::StorageResult,
 };
 use takusu_types::CommentAuthor;
 use takusu_types::EnumLabel;
@@ -102,6 +102,9 @@ mod paths {
     }
     pub fn work_session_convert_path(id: &str) -> String {
         format!("/api/work-sessions/{}/convert", url_encode(id))
+    }
+    pub fn work_session_undo_path() -> String {
+        "/api/work-sessions/undo".into()
     }
     pub fn task_split_path(id: &str) -> String {
         format!("/api/tasks/{}/split", url_encode(id))
@@ -1141,6 +1144,20 @@ impl Storage for WorkersStorage {
         self.send_json(
             reqwest::Method::POST,
             &paths::work_session_convert_path(id),
+            RequestBody::json(body)?,
+            operation_id,
+        )
+        .await
+    }
+
+    async fn undo_work_session(
+        &self,
+        body: &UndoWorkSession,
+        operation_id: Option<&str>,
+    ) -> StorageResult<UndoWorkSessionResult> {
+        self.send_json(
+            reqwest::Method::POST,
+            &paths::work_session_undo_path(),
             RequestBody::json(body)?,
             operation_id,
         )

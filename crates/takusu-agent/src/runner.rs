@@ -83,11 +83,19 @@ where
     A: FnMut(crate::surface::AudioCallback) + Send + 'static,
 {
     use crate::audio::AudioAdapter;
+    use crate::capability::InputPath;
     use crate::voice_session::VoiceSession;
+    let input_path = match origin {
+        crate::voice_session::InputOrigin::Voice => InputPath::ExplicitVoiceSession,
+        crate::voice_session::InputOrigin::Text => InputPath::PlainText,
+        crate::voice_session::InputOrigin::Background => InputPath::NotificationCapability,
+    };
     let mut adapter = AudioAdapter::new(session)
         .await?
         .with_events(on_turn_event)
         .with_audio_callback(on_audio_callback)
         .with_stop_signal(stop);
-    Ok(VoiceSession::new(config, origin).run(&mut adapter).await)
+    Ok(VoiceSession::new(config, origin, input_path)
+        .run(&mut adapter)
+        .await)
 }

@@ -145,12 +145,11 @@ pub enum WorkTransitionKind {
     Pause,
     Progress,
     Complete,
-    /// Reserved for the WI-2 delay / Snooze quick action (「延期」). No
-    /// `ChangeOperation` or tool emits it yet, so it is currently not reachable
-    /// from `from_tool_output`; it is kept now so the WI-2 capability and wire
-    /// shape do not change the contract.
+    /// Emitted by the `ChangeOperation::Snooze` tool for short snoozes
+    /// (WI-2 delay) and by quick-action capabilities that perform a short delay.
     Delay,
     Split,
+    Undo,
 }
 
 /// Result of a start / pause / progress / complete / delay / split mutation.
@@ -173,6 +172,7 @@ impl WorkTransition {
             WorkTransitionKind::Complete => "「{}」の作業を完了しました",
             WorkTransitionKind::Delay => "「{}」の開始をずらしました",
             WorkTransitionKind::Split => "「{}」を分割しました",
+            WorkTransitionKind::Undo => "「{}」を元に戻しました",
         };
         let base = strfmt(prefix, &self.title);
         if self.detail.is_empty() {
@@ -472,6 +472,7 @@ impl Presentation {
                     let kind = match change.operation {
                         ChangeOperation::Start => WorkTransitionKind::Start,
                         ChangeOperation::Pause => WorkTransitionKind::Pause,
+                        ChangeOperation::Snooze => WorkTransitionKind::Delay,
                         ChangeOperation::Progress => WorkTransitionKind::Progress,
                         ChangeOperation::Complete => WorkTransitionKind::Complete,
                         ChangeOperation::Split => WorkTransitionKind::Split,

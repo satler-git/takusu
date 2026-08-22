@@ -84,6 +84,10 @@ fn build_api_router(open_api: &mut OpenApi) -> Router<AppState> {
             api::get(handlers::work_session::list_work_sessions),
         )
         .api_route(
+            "/work-sessions/undo",
+            api::post(handlers::work_session::undo_work_session),
+        )
+        .api_route(
             "/work-sessions/{id}",
             api::get(handlers::work_session::get_work_session),
         )

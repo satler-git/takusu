@@ -1746,6 +1746,122 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/work-sessions/undo': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      /** @description Request body for `POST /api/work-sessions/undo` (WI-14). */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['UndoWorkSession'];
+        };
+      };
+      responses: {
+        /**
+         * @description Response from `POST /api/work-sessions/undo` (WI-14).
+         *     `action` is `"deleted"` for a start-undo and `"reopened"` for a pause-undo.
+         */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['UndoWorkSessionResult'];
+          };
+        };
+        /** @description Error */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Expected request with `Content-Type: application/json` */
+        415: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Failed to deserialize the JSON body into the target type */
+        422: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Error */
+        500: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/work-sessions/{id}': {
     parameters: {
       query?: never;
@@ -9045,7 +9161,13 @@ export interface paths {
     put?: never;
     post: {
       parameters: {
-        query?: never;
+        query?: {
+          /**
+           * @description The agent session that will own the pending approval for non-immediate
+           *     quick actions. Required when the action resolves to `ChangeProposal`.
+           */
+          session_id?: string;
+        };
         header?: never;
         path?: never;
         cookie?: never;
@@ -11683,6 +11805,19 @@ export interface components {
     };
     /** @enum {string} */
     TokenScope: 'read-write' | 'root';
+    /** @description Request body for `POST /api/work-sessions/undo` (WI-14). */
+    UndoWorkSession: {
+      task_id: string;
+    };
+    /**
+     * @description Response from `POST /api/work-sessions/undo` (WI-14).
+     *     `action` is `"deleted"` for a start-undo and `"reopened"` for a pause-undo.
+     */
+    UndoWorkSessionResult: {
+      action: string;
+      task?: components['schemas']['TaskRow'] | null;
+      work_session?: components['schemas']['WorkSessionRow'] | null;
+    };
     /** @description An unresolved elapsed-time interval that needs settlement (WI-10 / WI-18). */
     UnsettledIntervalRow: {
       classification: string;
@@ -11953,6 +12088,13 @@ export interface components {
       | 'transcribing'
       | 'speaking'
       | 'playback_finished';
+    AuthorizeActionQuery: {
+      /**
+       * @description The agent session that will own the pending approval for non-immediate
+       *     quick actions. Required when the action resolves to `ChangeProposal`.
+       */
+      session_id?: string | null;
+    };
     CapabilitiesResponse: {
       approvals: boolean;
       audio_input: boolean;
@@ -12005,9 +12147,11 @@ export interface components {
       | 'move'
       | 'start'
       | 'pause'
+      | 'snooze'
       | 'progress'
       | 'complete'
       | 'split'
+      | 'undo'
       | 'create_scheduled_span'
       | 'delete_scheduled_span';
     /** @description Flattened target fields inside `ChangeReceipt`. */
@@ -12602,7 +12746,7 @@ export interface components {
     };
     /** @description Kind of a recorded work transition. */
     WorkTransitionKind:
-      | ('start' | 'pause' | 'progress' | 'complete' | 'split')
+      | ('start' | 'pause' | 'progress' | 'complete' | 'split' | 'undo')
       | 'delay';
   };
   responses: never;
