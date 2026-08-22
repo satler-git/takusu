@@ -9829,6 +9829,140 @@
         }
       }
     },
+    "/events/commit": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommitEventsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Expected request with `Content-Type: application/json`",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Failed to deserialize the JSON body into the target type",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/events/{event_id}/claim": {
       "post": {
         "requestBody": {
@@ -13202,6 +13336,22 @@
         },
         "required": ["id", "task_id", "author", "content", "seq", "created_at"]
       },
+      "CommitEventsRequest": {
+        "type": "object",
+        "properties": {
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventLedgerInsert"
+            }
+          },
+          "schedule_revision": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "required": ["schedule_revision", "events"]
+      },
       "CompleteQuery": {
         "type": "object",
         "properties": {
@@ -13321,6 +13471,14 @@
           },
           "state": {
             "$ref": "#/components/schemas/CoverageState"
+          },
+          "unclassified_gaps": {
+            "description": "Unclassified schedule gaps detected for the current evaluation.\nThese are synthetic unsettled intervals derived from the active schedule.",
+            "type": "array",
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/UnsettledIntervalRow"
+            }
           },
           "unsettled_intervals": {
             "type": "array",
@@ -14335,6 +14493,7 @@
               "confirmations": [],
               "schedule_revision": 0,
               "state": "bootstrap",
+              "unclassified_gaps": [],
               "unsettled_intervals": []
             }
           },
@@ -17018,6 +17177,11 @@
             "type": ["integer", "null"],
             "format": "int64"
           },
+          "quantity_total": {
+            "description": "Total quantity for the task/session, present for `progress` capabilities.",
+            "type": ["integer", "null"],
+            "format": "int64"
+          },
           "request": {
             "description": "The original request the capability was minted from.\n\nIncluded so a client can return the capability unchanged across server\nrestarts, when the in-memory `CapabilityStore` is empty. The server\nignores this field during authorization; all authoritative parameters\nlive as top-level fields on the capability itself.",
             "anyOf": [
@@ -17204,6 +17368,10 @@
             "type": ["string", "null"]
           },
           "quantity_done": {
+            "type": ["integer", "null"],
+            "format": "int64"
+          },
+          "quantity_total": {
             "type": ["integer", "null"],
             "format": "int64"
           },

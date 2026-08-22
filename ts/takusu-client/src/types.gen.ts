@@ -7459,6 +7459,116 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/events/commit': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['CommitEventsRequest'];
+        };
+      };
+      responses: {
+        /** @description No Content */
+        204: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content?: never;
+        };
+        /** @description Error */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Expected request with `Content-Type: application/json` */
+        415: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Failed to deserialize the JSON body into the target type */
+        422: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Error */
+        500: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/events/{event_id}/claim': {
     parameters: {
       query?: never;
@@ -10286,6 +10396,11 @@ export interface components {
       seq: number;
       task_id: string;
     };
+    CommitEventsRequest: {
+      events: components['schemas']['EventLedgerInsert'][];
+      /** Format: int64 */
+      schedule_revision: number;
+    };
     CompleteQuery: {
       /** Format: uint */
       limit?: number | null;
@@ -10327,6 +10442,12 @@ export interface components {
       /** Format: int64 */
       schedule_revision: number;
       state: components['schemas']['CoverageState'];
+      /**
+       * @description Unclassified schedule gaps detected for the current evaluation.
+       *     These are synthetic unsettled intervals derived from the active schedule.
+       * @default []
+       */
+      unclassified_gaps: components['schemas']['UnsettledIntervalRow'][];
       unsettled_intervals: components['schemas']['UnsettledIntervalRow'][];
     };
     /**
@@ -10679,6 +10800,7 @@ export interface components {
        *       "confirmations": [],
        *       "schedule_revision": 0,
        *       "state": "bootstrap",
+       *       "unclassified_gaps": [],
        *       "unsettled_intervals": []
        *     }
        */
@@ -11765,6 +11887,11 @@ export interface components {
        */
       quantity_done?: number | null;
       /**
+       * Format: int64
+       * @description Total quantity for the task/session, present for `progress` capabilities.
+       */
+      quantity_total?: number | null;
+      /**
        * @description The original request the capability was minted from.
        *
        *     Included so a client can return the capability unchanged across server
@@ -11849,6 +11976,8 @@ export interface components {
       note?: string | null;
       /** Format: int64 */
       quantity_done?: number | null;
+      /** Format: int64 */
+      quantity_total?: number | null;
       /**
        * @description The scheduled delivery time for notification capabilities (WI-4).
        *
