@@ -31,7 +31,8 @@ use serde_json::Value;
 use takusu_client::{
     Client, CreateHabit, CreateHabitScheduledSpan, CreateMemory, CreateSkill, CreateTask,
     HabitDetail, MoveEntry, RecordWorkSessionProgress, SaveScheduleRequest, ScheduleEntry,
-    SplitTask, StartWorkSession, UpdateHabit, UpdateMemory, UpdateSkill, UpdateTask,
+    SplitTask, StartWorkSession, UndoWorkSession, UndoWorkSessionResult, UpdateHabit, UpdateMemory,
+    UpdateSkill, UpdateTask,
 };
 use takusu_types::Timestamp;
 
@@ -343,9 +344,18 @@ struct MemoryDeleteArgs {
 
 /// Typed extraction for move arguments (includes `fixed` which is not part
 /// of `MoveEntry`).
+///
+/// Supports both an explicit `start_at` (normal move) and a short `snooze`
+/// (`snooze_minutes` / `snooze_target`). A short snooze is converted to an
+/// absolute `start_at` before calling the planner.
 #[derive(Debug, Deserialize)]
 struct MoveArgs {
-    start_at: takusu_types::Timestamp,
+    #[serde(default)]
+    start_at: Option<takusu_types::Timestamp>,
+    #[serde(default)]
+    snooze_minutes: Option<i64>,
+    #[serde(default)]
+    snooze_target: Option<takusu_types::Timestamp>,
     #[serde(default)]
     force: bool,
     #[serde(default = "default_true")]
@@ -451,12 +461,33 @@ impl ChangeHandler for TaskMove {
         args: &'a Self::Args,
     ) -> impl Future<Output = Result<ExecutionOutcome, AgentError>> + Send {
         async move {
+            let start_at = match (args.start_at, args.snooze_target, args.snooze_minutes) {
+                (Some(start_at), _, _) => start_at,
+                (None, Some(target), _) => target,
+                (None, None, Some(minutes)) => {
+                    let now = jiff::Timestamp::now();
+                    let target = now
+                        .checked_add(jiff::Span::new().minutes(minutes))
+                        .map_err(|_| {
+                            AgentError::Tool(ToolError::InvalidArgs(
+                                InvalidArgsError::new("snooze_minutes", "snooze too far"),
+                            ))
+                        })?;
+                    takusu_types::Timestamp(target)
+                }
+                (None, None, None) => {
+                    return Err(AgentError::Tool(ToolError::InvalidArgs(
+                        InvalidArgsError::no_field("start_at or snooze_minutes required"),
+                    )));
+                }
+            };
+
             let move_result = ctx
                 .client()
                 .move_entry(
                     &ctx.target_id,
                     &MoveEntry {
-                        start_at: args.start_at,
+                        start_at,
                         force: args.force,
                     },
                     ctx.operation_id,
@@ -561,6 +592,47 @@ impl ChangeHandler for TaskPause {
                 result_id: ctx.target_id.clone(),
                 before: ctx.change.before.clone(),
                 after: to_after(&task)?,
+                target_revision: None,
+            })
+        }
+    }
+}
+
+struct TaskUndo;
+impl ChangeHandler for TaskUndo {
+    type Args = ();
+
+    fn deserialize_args(_args: &Value) -> Result<Self::Args, AgentError> {
+        Ok(())
+    }
+
+    fn execute_typed<'a>(
+        &'a self,
+        ctx: &ChangeContext<'a>,
+        _args: &'a Self::Args,
+    ) -> impl Future<Output = Result<ExecutionOutcome, AgentError>> + Send {
+        async move {
+            let body = UndoWorkSession {
+                task_id: ctx.target_id.clone(),
+            };
+            let result: UndoWorkSessionResult = ctx
+                .client()
+                .undo_work_session(&body, ctx.operation_id)
+                .await
+                .map_err(|e| AgentError::Tool(takusu_client_error(e)))?;
+            // `undo_work_session` returns the updated task, which is the
+            // authoritative "after" state. `work_session` is present for
+            // information only.
+            let after = result
+                .task
+                .as_ref()
+                .map(to_after)
+                .transpose()?
+                .unwrap_or_else(|| ctx.change.before.clone());
+            Ok(ExecutionOutcome {
+                result_id: ctx.target_id.clone(),
+                before: ctx.change.before.clone(),
+                after,
                 target_revision: None,
             })
         }
@@ -1052,8 +1124,10 @@ pub(crate) fn dispatch(
         (Task, ChangeOperation::Update) => Some(&TaskUpdate),
         (Task, ChangeOperation::Delete) => Some(&TaskDelete),
         (Task, ChangeOperation::Move) => Some(&TaskMove),
+        (Task, ChangeOperation::Snooze) => Some(&TaskMove),
         (Task, ChangeOperation::Start) => Some(&TaskStart),
         (Task, ChangeOperation::Pause) => Some(&TaskPause),
+        (Task, ChangeOperation::Undo) => Some(&TaskUndo),
         (Task, ChangeOperation::Progress) => Some(&TaskProgress),
         (Task, ChangeOperation::Complete) => Some(&TaskComplete),
         (Task, ChangeOperation::Split) => Some(&TaskSplit),

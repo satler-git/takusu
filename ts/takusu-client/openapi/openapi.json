@@ -2367,6 +2367,148 @@
         }
       }
     },
+    "/work-sessions/undo": {
+      "post": {
+        "requestBody": {
+          "description": "Request body for `POST /api/work-sessions/undo` (WI-14).",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UndoWorkSession"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Response from `POST /api/work-sessions/undo` (WI-14).\n`action` is `\"deleted\"` for a start-undo and `\"reopened\"` for a pause-undo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UndoWorkSessionResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Expected request with `Content-Type: application/json`",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Failed to deserialize the JSON body into the target type",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/work-sessions/{id}": {
       "get": {
         "responses": {
@@ -11785,6 +11927,18 @@
     },
     "/agent/v1/actions": {
       "post": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "description": "The agent session that will own the pending approval for non-immediate\nquick actions. Required when the action resolves to `ChangeProposal`.",
+            "schema": {
+              "description": "The agent session that will own the pending approval for non-immediate\nquick actions. Required when the action resolves to `ChangeProposal`.",
+              "type": "string"
+            },
+            "style": "form"
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -16587,6 +16741,46 @@
         "type": "string",
         "enum": ["read-write", "root"]
       },
+      "UndoWorkSession": {
+        "description": "Request body for `POST /api/work-sessions/undo` (WI-14).",
+        "type": "object",
+        "properties": {
+          "task_id": {
+            "type": "string"
+          }
+        },
+        "required": ["task_id"]
+      },
+      "UndoWorkSessionResult": {
+        "description": "Response from `POST /api/work-sessions/undo` (WI-14).\n`action` is `\"deleted\"` for a start-undo and `\"reopened\"` for a pause-undo.",
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "task": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TaskRow"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "work_session": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkSessionRow"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": ["action"]
+      },
       "UnsettledIntervalRow": {
         "description": "An unresolved elapsed-time interval that needs settlement (WI-10 / WI-18).",
         "type": "object",
@@ -17322,6 +17516,15 @@
         "type": "string",
         "enum": ["listening", "transcribing", "speaking", "playback_finished"]
       },
+      "AuthorizeActionQuery": {
+        "type": "object",
+        "properties": {
+          "session_id": {
+            "description": "The agent session that will own the pending approval for non-immediate\nquick actions. Required when the action resolves to `ChangeProposal`.",
+            "type": ["string", "null"]
+          }
+        }
+      },
       "CapabilitiesResponse": {
         "type": "object",
         "properties": {
@@ -17405,9 +17608,11 @@
           "move",
           "start",
           "pause",
+          "snooze",
           "progress",
           "complete",
           "split",
+          "undo",
           "create_scheduled_span",
           "delete_scheduled_span"
         ]
@@ -18838,10 +19043,10 @@
         "oneOf": [
           {
             "type": "string",
-            "enum": ["start", "pause", "progress", "complete", "split"]
+            "enum": ["start", "pause", "progress", "complete", "split", "undo"]
           },
           {
-            "description": "Reserved for the WI-2 delay / Snooze quick action (「延期」). No\n`ChangeOperation` or tool emits it yet, so it is currently not reachable\nfrom `from_tool_output`; it is kept now so the WI-2 capability and wire\nshape do not change the contract.",
+            "description": "Emitted by the `ChangeOperation::Snooze` tool for short snoozes\n(WI-2 delay) and by quick-action capabilities that perform a short delay.",
             "type": "string",
             "const": "delay"
           }

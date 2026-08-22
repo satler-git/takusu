@@ -9,7 +9,7 @@ use std::convert::Infallible;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
@@ -251,7 +251,8 @@ impl AgentApiState {
             QuickAction::Start
             | QuickAction::Pause
             | QuickAction::Progress
-            | QuickAction::Complete => vec!["tasks".to_string()],
+            | QuickAction::Complete
+            | QuickAction::Undo => vec!["tasks".to_string()],
             QuickAction::Delay => vec!["schedule".to_string()],
         }
     }
@@ -894,9 +895,17 @@ async fn mint_capability(
     .into_response()
 }
 
+#[derive(Debug, Clone, Default, Deserialize, schemars::JsonSchema)]
+pub struct AuthorizeActionQuery {
+    /// The agent session that will own the pending approval for non-immediate
+    /// quick actions. Required when the action resolves to `ChangeProposal`.
+    session_id: Option<String>,
+}
+
 async fn authorize_action(
     State(state): State<Arc<AgentApiState>>,
     headers: HeaderMap,
+    Query(query): Query<AuthorizeActionQuery>,
     Json(body): Json<Versioned<ActionCapability>>,
 ) -> Response {
     if let Err(status) = auth_token(&state, &headers).await {
@@ -906,8 +915,49 @@ async fn authorize_action(
         return StatusCode::BAD_REQUEST.into_response();
     }
     let record = state.capability_store.get_or_insert(&body.value).await;
-    match crate::capability::authorize_action(&state.planner_client, record, &body.value).await {
-        Ok((presentation, action)) => {
+    match crate::capability::authorize_action(&state.planner_client, record.clone(), &body.value)
+        .await
+    {
+        Ok((mut presentation, action)) => {
+            // Non-immediate quick actions (e.g. progress/complete from a
+            // notification) need a session to hold the pending approval. The
+            // caller must supply the session id as a query parameter so the
+            // approval can be resolved through the normal
+            // /sessions/{id}/approvals/{approval_id} endpoint.
+            let already_consumed = record
+                .as_ref()
+                .is_some_and(|r| r.try_lock().map(|g| g.consumed).unwrap_or(false));
+            if let Some(session_id) = query.session_id
+                && let crate::presentation::Presentation::ChangeProposal(ref request) = presentation
+                && !already_consumed
+            {
+                if let Some(session) = state.session(&session_id) {
+                    match session.make_approval_request(
+                        request.changes.clone(),
+                        request.inferred_fields.clone(),
+                        Some(request.why.clone()),
+                        request.warnings.clone(),
+                    ) {
+                        Ok(Some(new_request)) => {
+                            presentation =
+                                crate::presentation::Presentation::ChangeProposal(new_request);
+                            if let Some(record) = record.as_ref() {
+                                let mut guard = record.lock().await;
+                                guard.consumed = true;
+                                guard.result = Some(presentation.clone());
+                                guard.action = Some(action);
+                            }
+                        }
+                        Ok(None) => {
+                            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                        }
+                        Err(e) => return agent_error(e),
+                    }
+                } else {
+                    return StatusCode::NOT_FOUND.into_response();
+                }
+            }
+
             let kinds = AgentApiState::state_changed_kinds_for_action(action);
             state.emit_state_changed("action", kinds);
             Json(Versioned {

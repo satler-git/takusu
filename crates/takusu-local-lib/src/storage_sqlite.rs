@@ -12,9 +12,10 @@ use takusu_contracts::{
     MemoryRow, MoveEntryResponse, RecordWorkSessionProgress, ResidentAuthority,
     SaveScheduleRequest, ScheduleEntry, ScheduleRow, SettingsRow, SimilarTaskQuery, SimilarTaskRow,
     SkillRow, SplitResult, SplitTask, StartWorkSession, Storage, StorageError, TaskProgress,
-    TaskQuery, TaskRow, TokenCreateResponse, TokenRow, UnsettledIntervalRow, UpdateDevice,
-    UpdateGoogleCalSettings, UpdateHabit, UpdateMemory, UpdateSettings, UpdateSkill, UpdateTask,
-    WorkSessionProgressResult, WorkSessionRow, storage::StorageResult,
+    TaskQuery, TaskRow, TokenCreateResponse, TokenRow, UndoWorkSession, UndoWorkSessionResult,
+    UnsettledIntervalRow, UpdateDevice, UpdateGoogleCalSettings, UpdateHabit, UpdateMemory,
+    UpdateSettings, UpdateSkill, UpdateTask, WorkSessionProgressResult, WorkSessionRow,
+    storage::StorageResult,
 };
 use takusu_search::search::{EvalContext, filter_tasks};
 use takusu_types::Minutes;
@@ -2304,6 +2305,14 @@ impl Storage for SqliteStorage {
         operation_id: Option<&str>,
     ) -> StorageResult<TaskRow> {
         work_session::convert_work_session(self, id, body, operation_id).await
+    }
+
+    async fn undo_work_session(
+        &self,
+        body: &UndoWorkSession,
+        operation_id: Option<&str>,
+    ) -> StorageResult<UndoWorkSessionResult> {
+        work_session::undo_work_session(self, body, operation_id).await
     }
 
     async fn get_task_progress(&self, id: &str) -> StorageResult<TaskProgress> {

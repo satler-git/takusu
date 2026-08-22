@@ -15,12 +15,14 @@ use std::time::Duration;
 use takusu_audio::play::{PcmFormat, PlayError, StreamedAudioFormat, play_stream};
 use takusu_audio::{
     CartesiaSonic, CartesiaSonicConfig, DEFAULT_SPEAKER_MODEL_ID, FishAudio, FishAudioConfig,
-    ModelCache, RecordConfig, SpeakerConfig, SpeakerEmbeddingMatch, SpeakerVerifier,
+    MIN_SPEAKER_AUDIO_SECONDS, ModelCache, RecordConfig, SHERPA_SAMPLE_RATE, SpeakerConfig,
+    SpeakerEmbeddingMatch, SpeakerVerifier,
     StreamingRecorder, StreamingSpeechToText, TextToSpeech, TtsBackend, TtsOptions, TtsRequest,
     TtsStream, VadEvent, VerificationResult, normalize, normalize_for_tts,
 };
 use thiserror::Error;
 
+use crate::capability::InputPath;
 use crate::surface::AudioCallback;
 use crate::voice_session::{InputOrigin, ProcessedTurn, VoiceSessionError, VoiceSessionIo};
 use crate::{AgentError, AgentSession, TurnEvent, TurnResult};
@@ -140,6 +142,10 @@ pub struct AudioAdapter {
     /// Optional speaker embedding verifier for voiceprint enrollment and
     /// verification. Shared so `&self` methods can run verification.
     speaker_verifier: Option<Arc<SpeakerVerifier>>,
+    /// The most recently captured 16 kHz mono f32 samples. This is updated by
+    /// `capture_utterance` and is used to verify the speaker for voice
+    /// confirmations and ambient-immediate commands.
+    last_captured_samples: Vec<f32>,
 }
 
 impl AudioAdapter {
@@ -168,6 +174,7 @@ impl AudioAdapter {
             on_audio_callback: None,
             endpoint: Some(endpoint),
             speaker_verifier,
+            last_captured_samples: Vec::new(),
         })
     }
 
@@ -284,9 +291,14 @@ impl AudioAdapter {
 
             self.emit(TurnEvent::AsrText(text.clone()));
 
-            let mut result = self.run_agent_turn(&text, !no_tts).await?;
+            let mut result = self
+                .run_agent_turn(&text, !no_tts, InputPath::ExplicitVoiceSession)
+                .await?;
 
             if let Some(approval) = result.approval_request.as_ref() {
+                // The `--yes` flag is a development convenience. It bypasses the
+                // voice / screen approval layers and should not be enabled in
+                // release builds.
                 if yes {
                     let res = self
                         .session
@@ -363,6 +375,9 @@ impl AudioAdapter {
             .ok_or_else(|| AudioError::Other("VAD endpoint not initialized".into()))?;
         endpoint.get_mut().reset();
 
+        // Accumulate raw 16 kHz mono f32 samples for speaker verification.
+        self.last_captured_samples.clear();
+
         let mut last_text = String::new();
         let mut stopped = false;
         loop {
@@ -373,6 +388,7 @@ impl AudioAdapter {
                         // amplified into "speech", but ASR is generally happier with
                         // a normalized RMS. Keep the raw chunk for endpointing and
                         // feed a normalized copy to the transcription stream.
+                        self.last_captured_samples.extend_from_slice(&chunk);
                         let reached_end =
                             endpoint.get_mut().push(&chunk) == Some(VadEvent::SpeechEnd);
                         asr_stream.accept_waveform(&normalize(&chunk, 0.1));
@@ -422,9 +438,15 @@ impl AudioAdapter {
         }
     }
 
-    /// Run one agent turn from `text`, streaming TTS when `speak` is `true`, and
-    /// return the turn result. Approval resolution is the caller's responsibility.
-    async fn run_agent_turn(&mut self, text: &str, speak: bool) -> Result<TurnResult, AgentError> {
+    /// Run one agent turn from `text` on the given `input_path`, streaming TTS
+    /// when `speak` is `true`, and return the turn result. Approval resolution
+    /// is the caller's responsibility.
+    async fn run_agent_turn(
+        &mut self,
+        text: &str,
+        speak: bool,
+        input_path: InputPath,
+    ) -> Result<TurnResult, AgentError> {
         // Reset the tap-to-stop flag for this turn.
         self.stop_tts.store(false, Ordering::Relaxed);
 
@@ -501,8 +523,9 @@ impl AudioAdapter {
         let on_event = self.on_event.clone();
         let result = match self
             .session
-            .run_turn_stream(
+            .run_turn_stream_with_input(
                 text,
+                input_path,
                 move |event| Self::emit_with(&on_event, event),
                 |block| {
                     if !no_tts_this_turn {
@@ -533,6 +556,202 @@ impl AudioAdapter {
         }
 
         Ok(result)
+    }
+
+    /// If `result` carries a voice-confirmable approval request, resolve it
+    /// according to its approval layer. `VoiceConfirmed` requests are read back
+    /// and require a closed-vocabulary yes/no that also passes speaker
+    /// verification. `AmbientImmediate` requests are verified against the
+    /// already-captured wake-word and then executed or downgraded to a screen
+    /// approval. Screen-required or unverified requests fall back to the
+    /// surface/transport layer so the compact panel can render them.
+    async fn resolve_voice_approval(
+        &mut self,
+        result: &mut TurnResult,
+        input_path: InputPath,
+    ) -> Result<(), AudioError> {
+        let Some(request) = result.approval_request.as_ref() else {
+            return Ok(());
+        };
+
+        let layer = crate::approval_layers::classify_set(&request.changes, input_path);
+        if !layer.requires_voice_confirmation() && !layer.is_ambient_immediate() {
+            // ScreenRequired falls through to the surface; Immediate needs no
+            // further approval; VoiceConfirmed and AmbientImmediate are handled
+            // below.
+            return Ok(());
+        }
+
+        if layer.is_ambient_immediate() {
+            // The wake-word was already captured before this turn. Verify the
+            // speaker and either execute immediately or leave the approval on
+            // the surface for manual confirmation.
+            match self.verify_last_captured_speaker() {
+                Some(true) => {
+                    let approved = self
+                        .session
+                        .resolve_approval(&request.id, true, None)
+                        .await
+                        .map_err(|e| AudioError::Other(e.to_string()))?;
+                    if approved.approved {
+                        result.text = "承認しました。".to_string();
+                        result.changes = approved.changes;
+                    }
+                    result.schedule_dirty |= approved.schedule_dirty;
+                    result.approval_request = None;
+                    result.presentation = None;
+                }
+                Some(false) | None => {
+                    result.text = "話者確認が取れなかったため、画面で承認をお待ちします。".to_string();
+                    result.presentation = Some(crate::presentation::Presentation::ChangeProposal(
+                        result.approval_request.clone().unwrap(),
+                    ));
+                }
+            }
+            return Ok(());
+        }
+
+        // VoiceConfirmed: read back and capture yes/no.
+        let readback = self.build_voice_readback(request);
+        match self.voice_confirm_loop(&readback).await? {
+            Some(confirmed) => {
+                let approved = self
+                    .session
+                    .resolve_approval(&request.id, confirmed, None)
+                    .await
+                    .map_err(|e| AudioError::Other(e.to_string()))?;
+                if approved.approved {
+                    result.text = format!("{}。承認しました。", readback);
+                    result.changes = approved.changes;
+                } else {
+                    result.text = format!("{}。キャンセルしました。", readback);
+                    result.changes = Vec::new();
+                }
+                result.schedule_dirty |= approved.schedule_dirty;
+                result.approval_request = None;
+                result.presentation = None;
+            }
+            None => {
+                // Fall back to screen; keep the approval request and surface it.
+                result.text = format!("{}。画面で承認をお待ちします。", readback);
+                result.presentation = Some(crate::presentation::Presentation::ChangeProposal(
+                    result.approval_request.clone().unwrap(),
+                ));
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Verify the last captured utterance against any enrolled speaker.
+    /// Returns `Some(true)` when the best match passes the configured
+    /// threshold and the sample is long enough, `Some(false)` when it does not,
+    /// and `None` when no verifier or no enrolled speakers are configured.
+    fn verify_last_captured_speaker(&self) -> Option<bool> {
+        let verifier = self.speaker_verifier.as_ref()?;
+        let speaker = self.last_audio.speaker.as_ref()?;
+        let samples = &self.last_captured_samples;
+        if samples.is_empty() {
+            return Some(false);
+        }
+        let seconds = samples.len() as f32 / SHERPA_SAMPLE_RATE as f32;
+        if seconds < MIN_SPEAKER_AUDIO_SECONDS {
+            return Some(false);
+        }
+        match verifier.search(samples) {
+            Ok(Some(m)) => Some(m.score >= speaker.verify_threshold),
+            Ok(None) => Some(false),
+            Err(_) => Some(false),
+        }
+    }
+
+    /// Build a short Japanese readback for a voice-confirmation prompt.
+    fn build_voice_readback(&self, request: &crate::ApprovalRequest) -> String {
+        let mut summary = String::new();
+        for change in &request.changes {
+            summary.push_str(&change.description);
+            if !summary.ends_with('。') {
+                summary.push('。');
+            }
+        }
+        if request.why.is_empty() {
+            format!("{}よろしいですか", summary)
+        } else if request.why.ends_with('。') {
+            format!("{}{}よろしいですか", summary, request.why)
+        } else {
+            format!("{}{}。よろしいですか", summary, request.why)
+        }
+    }
+
+    /// Speak a prompt, then capture and classify yes/no answers up to
+    /// `MAX_VOICE_CONFIRM_ATTEMPTS`. Returns `Some(true)` for an affirmative
+    /// answer, `Some(false)` for a negative one, and `None` when the answer is
+    /// ambiguous, silent, or fails speaker verification. In the `None` case the
+    /// caller must fall back to the screen and keep the approval request pending.
+    async fn voice_confirm_loop(&mut self, prompt: &str) -> Result<Option<bool>, AudioError> {
+        const AFFIRMATIVE: &[&str] = &["はい", "うん", "yes", "ok", "おう"];
+        const NEGATIVE: &[&str] = &["いいえ", "いや", "no", "やだ", "キャンセル"];
+        const MAX_ATTEMPTS: usize = 3;
+
+        for attempt in 0..MAX_ATTEMPTS {
+            self.speak_text(prompt).await?;
+
+            let (_stop_tx, stop_rx) = tokio::sync::mpsc::channel(1);
+            let Some(text) = self.capture_utterance(stop_rx).await? else {
+                continue;
+            };
+
+            let trimmed = text.trim().to_lowercase();
+            let answer = if AFFIRMATIVE.iter().any(|w| trimmed == *w) {
+                Some(true)
+            } else if NEGATIVE.iter().any(|w| trimmed == *w) {
+                Some(false)
+            } else {
+                None
+            };
+
+            // Both yes and no must pass speaker verification to prevent a third
+            // party from spoofing an approval or a cancellation.
+            if let Some(answer) = answer {
+                match self.verify_last_captured_speaker() {
+                    Some(true) => return Ok(Some(answer)),
+                    Some(false) | None => {
+                        tracing::info!("voice confirmation failed speaker verification");
+                    }
+                }
+            }
+
+            if attempt < MAX_ATTEMPTS - 1 {
+                self.speak_text("もう一度お答えください。はい、または、いいえ、でお答えください。")
+                    .await?;
+            }
+        }
+
+        // Fall back to the screen on silence, repeated unrecognized input, or
+        // repeated verification failures.
+        self.speak_text("確認が取れませんでした。画面で承認をお待ちします。")
+            .await?;
+        Ok(None)
+    }
+
+    /// Synthesize and play a single text block for voice interaction.
+    async fn speak_text(&mut self, text: &str) -> Result<(), AudioError> {
+        if self.last_audio.tts.mute {
+            return Ok(());
+        }
+        self.audio_callback(AudioCallback::Speaking);
+        let stream = synthesize_stream_with_timeout(
+            self.tts.as_ref(),
+            text,
+            &self.tts_voice_id,
+            &self.last_audio.tts.language,
+            self.tts_speed,
+            Duration::from_secs(120),
+        )
+        .await?;
+        play_stream_with_timeout(stream, self.tts_format, Duration::from_secs(120)).await?;
+        self.audio_callback(AudioCallback::PlaybackFinished);
+        Ok(())
     }
 
     async fn reconfigure_if_needed(&mut self) -> Result<(), AudioError> {
@@ -735,6 +954,7 @@ impl VoiceSessionIo for AudioAdapter {
         &mut self,
         text: &str,
         origin: InputOrigin,
+        input_path: InputPath,
     ) -> Result<ProcessedTurn, VoiceSessionError> {
         // Do not start a new turn while the previous turn is still waiting for
         // approval. Without this guard, the next utterance would grab the turn
@@ -744,7 +964,12 @@ impl VoiceSessionIo for AudioAdapter {
         while self.session.pending_approval().is_some() {
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
-        let result = self.run_agent_turn(text, origin.auto_speaks()).await?;
+        let mut result = self
+            .run_agent_turn(text, origin.auto_speaks(), input_path)
+            .await?;
+        self.resolve_voice_approval(&mut result, input_path)
+            .await
+            .map_err(AgentError::Audio)?;
         Ok(ProcessedTurn { result })
     }
 }

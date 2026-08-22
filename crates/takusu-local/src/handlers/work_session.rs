@@ -4,7 +4,7 @@ use axum::http::HeaderMap;
 use serde::Deserialize;
 use takusu_contracts::{
     AttachWorkSession, ConvertWorkSession, RecordWorkSessionProgress, StartWorkSession, TaskRow,
-    WorkSessionProgressResult, WorkSessionRow,
+    UndoWorkSession, UndoWorkSessionResult, WorkSessionProgressResult, WorkSessionRow,
 };
 
 use crate::error::HttpError;
@@ -108,4 +108,16 @@ pub async fn convert_work_session(
         .convert_work_session(&id, &body, operation_id(&headers))
         .await?;
     Ok(Json(task))
+}
+
+pub async fn undo_work_session(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<UndoWorkSession>,
+) -> Result<Json<UndoWorkSessionResult>, HttpError> {
+    let result = state
+        .app
+        .undo_work_session(&body, operation_id(&headers))
+        .await?;
+    Ok(Json(result))
 }
