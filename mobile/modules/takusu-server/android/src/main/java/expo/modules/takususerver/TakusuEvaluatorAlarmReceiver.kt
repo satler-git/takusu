@@ -12,6 +12,7 @@ import android.content.Intent
 import android.util.Log
 import java.io.IOException
 import java.util.concurrent.Executors
+import uniffi.takusu_android.EventEvaluationResult
 import uniffi.takusu_android.TakusuException
 import uniffi.takusu_android.evaluateAndCommitEvents
 
