@@ -220,6 +220,9 @@ class AudioRecorder {
 
     fun isStreaming(): Boolean = streaming
 
+    /** Return true if recording is currently in progress. */
+    fun isRunning(): Boolean = running.get()
+
     companion object {
         const val SAMPLE_RATE = 16_000
         private const val MAX_DURATION_SECONDS = 60

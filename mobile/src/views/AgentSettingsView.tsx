@@ -16,6 +16,7 @@ import { useTopToast } from '@/src/components/TopToast';
 import { haptic } from '@/src/components/haptics';
 import { showError } from '@/src/api/errors';
 import TakusuServerModule from '../../modules/takusu-server/src/TakusuServerModule';
+import TakusuAudioModule from '../../modules/takusu-server/src/TakusuAudioModule';
 import {
   AGENT_SESSION_HISTORY_DEFAULT,
   AGENT_SESSION_HISTORY_MAX,
@@ -47,11 +48,14 @@ const ASR_MODELS = [
 
 type AsrModelId = (typeof ASR_MODELS)[number];
 
+const SPEAKER_MODEL_ID = 'sherpa-speaker-campplus-zh-en';
+
 const MODEL_SIZES: Record<string, string> = {
   hush: '約8 MB',
   'sherpa-sense-voice-int8': '約160 MB',
   'sherpa-parakeet-ctc-ja-0.6b': '約470 MB',
   'sherpa-nemotron-ja-0.6b': '約470 MB',
+  [SPEAKER_MODEL_ID]: '約27 MB',
 };
 
 const MODEL_NAMES: Record<string, string> = {
@@ -59,6 +63,7 @@ const MODEL_NAMES: Record<string, string> = {
   'sherpa-sense-voice-int8': 'SenseVoice音声認識',
   'sherpa-parakeet-ctc-ja-0.6b': 'Parakeet 日本語 CTC',
   'sherpa-nemotron-ja-0.6b': 'Nemotron ストリーミング',
+  [SPEAKER_MODEL_ID]: 'CAM++ 話者認証',
 };
 
 function newLlmProvider(): LlmProvider {
@@ -248,6 +253,14 @@ export function AgentSettingsView() {
   const [asrModel, setAsrModel] = useState<AsrModelId>(DEFAULT_ASR_MODEL);
   const [savedAsrModel, setSavedAsrModel] =
     useState<AsrModelId>(DEFAULT_ASR_MODEL);
+
+  const [speakerName, setSpeakerName] = useState('default');
+  const [isSpeakerRecording, setIsSpeakerRecording] = useState(false);
+  const [enrolledSpeakers, setEnrolledSpeakers] = useState<string[]>([]);
+  const [lastVerifyResult, setLastVerifyResult] = useState<{
+    score: number;
+    accepted: boolean;
+  } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -697,6 +710,94 @@ export function AgentSettingsView() {
     ]);
   }
 
+  async function startSpeakerRecording() {
+    try {
+      await TakusuAudioModule.startSpeakerRecording();
+      setIsSpeakerRecording(true);
+      setLastVerifyResult(null);
+    } catch (e) {
+      void showError(e, '録音開始失敗');
+    }
+  }
+
+  async function stopAndEnrollSpeaker() {
+    setIsSpeakerRecording(false);
+    try {
+      await TakusuAudioModule.stopAndEnrollSpeaker(speakerName);
+      haptic.success();
+      showTopToast('声紋を登録しました');
+      await refreshSpeakers();
+    } catch (e) {
+      void showError(e, '登録失敗');
+    }
+  }
+
+  async function stopAndVerifySpeaker() {
+    setIsSpeakerRecording(false);
+    try {
+      const result = await TakusuAudioModule.stopAndVerifySpeaker(speakerName);
+      setLastVerifyResult({
+        score: result.score,
+        accepted: result.accepted,
+      });
+      if (result.accepted) {
+        haptic.success();
+        showTopToast(`一致: ${(result.score * 100).toFixed(1)}%`);
+      } else {
+        showTopToast(`不一致: ${(result.score * 100).toFixed(1)}%`);
+      }
+    } catch (e) {
+      void showError(e, '照合失敗');
+    }
+  }
+
+  async function deleteSpeaker(name: string) {
+    try {
+      await TakusuAudioModule.deleteSpeaker(name);
+      showTopToast('声紋を削除しました');
+      await refreshSpeakers();
+    } catch (e) {
+      void showError(e, '削除失敗');
+    }
+  }
+
+  async function refreshSpeakers() {
+    try {
+      const list = await TakusuAudioModule.listSpeakers();
+      setEnrolledSpeakers(list);
+    } catch (e) {
+      console.error('refreshSpeakers failed:', e);
+    }
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    async function init() {
+      if (!cachedModels[SPEAKER_MODEL_ID] || cancelled) {
+        return;
+      }
+      try {
+        await TakusuAudioModule.configureSpeaker({
+          modelDir: '',
+          voiceDir: '',
+          threshold: 0.5,
+        });
+        if (cancelled) return;
+        const list = await TakusuAudioModule.listSpeakers();
+        if (!cancelled) {
+          setEnrolledSpeakers(list);
+        }
+      } catch (e) {
+        // Not an error on first load; the user may not have downloaded the model yet.
+        console.error('configureSpeaker failed:', e);
+      }
+    }
+    init();
+    return () => {
+      cancelled = true;
+    };
+  }, [cachedModels]);
+
   if (loading) {
     return (
       <View style={[styles.loading, { backgroundColor: colors.white }]}>
@@ -915,7 +1016,6 @@ export function AgentSettingsView() {
             styles.voiceModelRow,
             { borderBottomColor: colors.separator },
             pressed && styles.voiceModelRowPressed,
-            styles.voiceModelRowLast,
           ]}
         >
           <View style={styles.voiceModelRowContent}>
@@ -943,7 +1043,178 @@ export function AgentSettingsView() {
                 : '未ダウンロード'}
           </Text>
         </Pressable>
+        <Pressable
+          onPress={() => promptModelDownload(SPEAKER_MODEL_ID)}
+          disabled={
+            cachedModels[SPEAKER_MODEL_ID] ||
+            downloadingModels[SPEAKER_MODEL_ID]
+          }
+          style={({ pressed }) => [
+            styles.voiceModelRow,
+            { borderBottomColor: colors.separator },
+            pressed && styles.voiceModelRowPressed,
+            styles.voiceModelRowLast,
+          ]}
+        >
+          <View style={styles.voiceModelRowContent}>
+            <Ionicons
+              name={
+                cachedModels[SPEAKER_MODEL_ID]
+                  ? 'checkmark-circle'
+                  : 'cloud-download-outline'
+              }
+              size={22}
+              color={
+                cachedModels[SPEAKER_MODEL_ID] ? colors.success : colors.gray
+              }
+            />
+            <View style={styles.voiceModelText}>
+              <Text style={[styles.voiceModelName, { color: colors.black }]}>
+                {MODEL_NAMES[SPEAKER_MODEL_ID]}
+              </Text>
+              <Text style={styles.voiceModelMeta}>
+                {MODEL_SIZES[SPEAKER_MODEL_ID]}
+              </Text>
+            </View>
+          </View>
+          <Text style={styles.voiceModelStatus}>
+            {downloadingModels[SPEAKER_MODEL_ID]
+              ? '準備中'
+              : cachedModels[SPEAKER_MODEL_ID]
+                ? '準備済み'
+                : '未ダウンロード'}
+          </Text>
+        </Pressable>
       </View>
+
+      {cachedModels[SPEAKER_MODEL_ID] && (
+        <>
+          <Text style={[styles.heading, { color: colors.black }]}>
+            話者認証
+          </Text>
+          <Text style={{ color: colors.gray, fontSize: 12 }}>
+            同じ話者の声を 1 回録音して登録・照合できます
+          </Text>
+
+          <View
+            style={[
+              styles.editor,
+              {
+                borderColor: colors.separator,
+                backgroundColor: colors.surface,
+              },
+            ]}
+          >
+            <Text style={{ color: colors.black, fontWeight: '600' }}>
+              話者名
+            </Text>
+            <TextInput
+              style={[
+                styles.input,
+                { color: colors.black, borderColor: colors.separator },
+              ]}
+              value={speakerName}
+              onChangeText={setSpeakerName}
+              placeholder="default"
+              placeholderTextColor={colors.gray}
+            />
+
+            {isSpeakerRecording ? (
+              <View style={styles.actions}>
+                <Pressable
+                  onPress={stopAndEnrollSpeaker}
+                  style={[
+                    styles.save,
+                    { backgroundColor: colors.brand, flex: 1 },
+                  ]}
+                >
+                  <Text style={styles.saveText}>停止して登録</Text>
+                </Pressable>
+                <Pressable
+                  onPress={stopAndVerifySpeaker}
+                  style={[
+                    styles.save,
+                    { backgroundColor: colors.brand, flex: 1 },
+                  ]}
+                >
+                  <Text style={styles.saveText}>停止して照合</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <Pressable
+                onPress={startSpeakerRecording}
+                style={[styles.secondary, { borderColor: colors.brand }]}
+              >
+                <Text style={{ color: colors.brand, fontWeight: '600' }}>
+                  録音開始
+                </Text>
+              </Pressable>
+            )}
+
+            {lastVerifyResult != null && (
+              <Text
+                style={{
+                  color: lastVerifyResult.accepted
+                    ? colors.success
+                    : colors.destructive,
+                  fontWeight: '600',
+                }}
+              >
+                {lastVerifyResult.accepted ? '一致' : '不一致'}:{' '}
+                {(lastVerifyResult.score * 100).toFixed(1)}%
+              </Text>
+            )}
+          </View>
+
+          {enrolledSpeakers.length > 0 && (
+            <View
+              style={[
+                styles.voiceModelList,
+                {
+                  borderColor: colors.separator,
+                  backgroundColor: colors.surface,
+                },
+              ]}
+            >
+              {enrolledSpeakers.map((name, index) => {
+                const isLast = index === enrolledSpeakers.length - 1;
+                return (
+                  <View
+                    key={name}
+                    style={[
+                      styles.voiceModelRow,
+                      { borderBottomColor: colors.separator },
+                      isLast && styles.voiceModelRowLast,
+                    ]}
+                  >
+                    <View style={styles.voiceModelRowContent}>
+                      <Ionicons
+                        name="person-outline"
+                        size={22}
+                        color={colors.black}
+                      />
+                      <Text
+                        style={[styles.voiceModelName, { color: colors.black }]}
+                      >
+                        {name}
+                      </Text>
+                    </View>
+                    <Pressable
+                      onPress={() => deleteSpeaker(name)}
+                      style={[
+                        styles.editButton,
+                        { borderColor: colors.destructive },
+                      ]}
+                    >
+                      <Text style={{ color: colors.destructive }}>削除</Text>
+                    </Pressable>
+                  </View>
+                );
+              })}
+            </View>
+          )}
+        </>
+      )}
 
       <Text style={[styles.heading, { color: colors.black }]}>
         音声認識モデル
