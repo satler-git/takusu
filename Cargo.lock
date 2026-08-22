@@ -3322,7 +3322,7 @@ dependencies = [
 
 [[package]]
 name = "google-cal"
-version = "0.20260821.1"
+version = "0.20260823.1"
 dependencies = [
  "httparse",
  "rand 0.10.2",
@@ -8630,7 +8630,7 @@ checksum = "8bdb6fa0dfa67b38c1e66b7041ba9dcf23b99d8121907cd31c807a332f7a0bbb"
 
 [[package]]
 name = "takusu-agent"
-version = "0.20260821.1"
+version = "0.20260823.1"
 dependencies = [
  "aide",
  "async-trait",
@@ -8666,7 +8666,7 @@ dependencies = [
 
 [[package]]
 name = "takusu-android"
-version = "0.20260821.1"
+version = "0.20260823.1"
 dependencies = [
  "axum",
  "serde_json",
@@ -8686,7 +8686,7 @@ dependencies = [
 
 [[package]]
 name = "takusu-audio"
-version = "0.20260821.1"
+version = "0.20260823.1"
 dependencies = [
  "async-trait",
  "bytes",
@@ -8718,7 +8718,7 @@ dependencies = [
 
 [[package]]
 name = "takusu-audio-cli"
-version = "0.20260821.1"
+version = "0.20260823.1"
 dependencies = [
  "clap",
  "takusu-audio",
@@ -8727,7 +8727,7 @@ dependencies = [
 
 [[package]]
 name = "takusu-cli"
-version = "0.20260821.1"
+version = "0.20260823.1"
 dependencies = [
  "async-trait",
  "atty",
@@ -8761,7 +8761,7 @@ dependencies = [
 
 [[package]]
 name = "takusu-client"
-version = "0.20260821.1"
+version = "0.20260823.1"
 dependencies = [
  "reqwest",
  "serde",
@@ -8775,7 +8775,7 @@ dependencies = [
 
 [[package]]
 name = "takusu-contracts"
-version = "0.20260821.1"
+version = "0.20260823.1"
 dependencies = [
  "async-trait",
  "jiff",
@@ -8790,7 +8790,7 @@ dependencies = [
 
 [[package]]
 name = "takusu-core"
-version = "0.20260821.1"
+version = "0.20260823.1"
 dependencies = [
  "codspeed-criterion-compat",
  "jiff",
@@ -8807,7 +8807,7 @@ dependencies = [
 
 [[package]]
 name = "takusu-desktop"
-version = "0.20260821.1"
+version = "0.20260823.1"
 dependencies = [
  "dirs 6.0.0",
  "eventsource-stream",
@@ -8832,7 +8832,7 @@ dependencies = [
 
 [[package]]
 name = "takusu-habit"
-version = "0.20260821.1"
+version = "0.20260823.1"
 dependencies = [
  "codspeed-criterion-compat",
  "jiff",
@@ -8845,7 +8845,7 @@ dependencies = [
 
 [[package]]
 name = "takusu-ical"
-version = "0.20260821.1"
+version = "0.20260823.1"
 dependencies = [
  "codspeed-criterion-compat",
  "jiff",
@@ -8855,7 +8855,7 @@ dependencies = [
 
 [[package]]
 name = "takusu-local"
-version = "0.20260821.1"
+version = "0.20260823.1"
 dependencies = [
  "aide",
  "async-trait",
@@ -8888,7 +8888,7 @@ dependencies = [
 
 [[package]]
 name = "takusu-local-lib"
-version = "0.20260821.1"
+version = "0.20260823.1"
 dependencies = [
  "async-trait",
  "google-cal",
@@ -8918,7 +8918,7 @@ dependencies = [
 
 [[package]]
 name = "takusu-search"
-version = "0.20260821.1"
+version = "0.20260823.1"
 dependencies = [
  "jiff",
  "schemars",
@@ -8930,7 +8930,7 @@ dependencies = [
 
 [[package]]
 name = "takusu-tui"
-version = "0.20260821.1"
+version = "0.20260823.1"
 dependencies = [
  "crossterm",
  "jiff",
@@ -8947,7 +8947,7 @@ dependencies = [
 
 [[package]]
 name = "takusu-types"
-version = "0.20260821.1"
+version = "0.20260823.1"
 dependencies = [
  "base64 0.22.1",
  "clap",
@@ -8966,7 +8966,7 @@ dependencies = [
 
 [[package]]
 name = "takusu-web"
-version = "0.20260821.1"
+version = "0.20260823.1"
 dependencies = [
  "axum",
  "mime_guess",
@@ -8984,7 +8984,7 @@ dependencies = [
 
 [[package]]
 name = "takusu-worker"
-version = "0.20260821.1"
+version = "0.20260823.1"
 dependencies = [
  "async-trait",
  "console_error_panic_hook",
