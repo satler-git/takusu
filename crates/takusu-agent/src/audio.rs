@@ -14,9 +14,10 @@ use std::time::Duration;
 
 use takusu_audio::play::{PcmFormat, PlayError, StreamedAudioFormat, play_stream};
 use takusu_audio::{
-    CartesiaSonic, CartesiaSonicConfig, FishAudio, FishAudioConfig, RecordConfig,
+    CartesiaSonic, CartesiaSonicConfig, DEFAULT_SPEAKER_MODEL_ID, FishAudio, FishAudioConfig,
+    ModelCache, RecordConfig, SpeakerConfig, SpeakerEmbeddingMatch, SpeakerVerifier,
     StreamingRecorder, StreamingSpeechToText, TextToSpeech, TtsBackend, TtsOptions, TtsRequest,
-    TtsStream, VadEvent, normalize, normalize_for_tts,
+    TtsStream, VadEvent, VerificationResult, normalize, normalize_for_tts,
 };
 use thiserror::Error;
 
@@ -44,6 +45,8 @@ pub enum AudioError {
     /// A `Mutex` / `RwLock` guard was poisoned by a panic while held.
     #[error("lock poisoned: {0}")]
     Lock(String),
+    #[error("speaker verification failed: {0}")]
+    Speaker(#[from] takusu_audio::SpeakerError),
     #[error("{0}")]
     Other(String),
 }
@@ -134,6 +137,9 @@ pub struct AudioAdapter {
     /// across every utterance instead of rebuilding the Silero detector each
     /// turn.
     endpoint: Option<Box<dyn takusu_audio::Endpoint>>,
+    /// Optional speaker embedding verifier for voiceprint enrollment and
+    /// verification. Shared so `&self` methods can run verification.
+    speaker_verifier: Option<Arc<SpeakerVerifier>>,
 }
 
 impl AudioAdapter {
@@ -145,6 +151,7 @@ impl AudioAdapter {
         };
         let (stt, tts, voice_id, speed, tts_format) = Self::build_audio(&audio).await?;
         let endpoint = takusu_audio::default_endpoint_async().await;
+        let speaker_verifier = Self::build_speaker_verifier(audio.speaker.as_ref()).await?;
         let (stop_tx, stop) = tokio::sync::watch::channel(false);
         Ok(Self {
             session,
@@ -160,6 +167,7 @@ impl AudioAdapter {
             on_event: None,
             on_audio_callback: None,
             endpoint: Some(endpoint),
+            speaker_verifier,
         })
     }
 
@@ -536,11 +544,13 @@ impl AudioAdapter {
             return Ok(());
         }
         let (stt, tts, voice_id, speed, tts_format) = Self::build_audio(&current).await?;
+        let speaker_verifier = Self::build_speaker_verifier(current.speaker.as_ref()).await?;
         self.stt = stt;
         self.tts = tts;
         self.tts_voice_id = voice_id;
         self.tts_speed = speed;
         self.tts_format = tts_format;
+        self.speaker_verifier = speaker_verifier;
         self.last_audio = current;
         Ok(())
     }
@@ -580,6 +590,131 @@ impl AudioAdapter {
         };
         Ok((stt, tts, voice_id, speed, tts_format))
     }
+
+    async fn build_speaker_verifier(
+        speaker: Option<&SpeakerConfig>,
+    ) -> Result<Option<Arc<SpeakerVerifier>>, AudioError> {
+        let Some(config) = speaker else {
+            return Ok(None);
+        };
+        let config = config.clone();
+
+        let model_id = if config.model_id.is_empty() {
+            DEFAULT_SPEAKER_MODEL_ID.to_string()
+        } else {
+            config.model_id.clone()
+        };
+
+        let model_id_for_ensure = model_id.clone();
+        let config_for_cache = config.clone();
+        let (model_path, voice_dir) = tokio::task::spawn_blocking(move || {
+            let cache = ModelCache::default_dir().map_err(|e| AudioError::Other(e.to_string()))?;
+            let model_dir = cache.ensure(&model_id_for_ensure).map_err(|e| {
+                AudioError::Other(format!(
+                    "failed to download speaker model {model_id_for_ensure}: {e}"
+                ))
+            })?;
+            let model_path = model_dir.join("model.onnx");
+            let voice_dir = config_for_cache
+                .voice_dir
+                .as_ref()
+                .map(PathBuf::from)
+                .unwrap_or_else(default_voice_dir);
+            Ok::<_, AudioError>((model_path, voice_dir))
+        })
+        .await
+        .map_err(|e| AudioError::Other(format!("speaker cache task failed: {e}")))??;
+
+        let mut speaker_config = config;
+        speaker_config.model_id = model_id;
+
+        let verifier = tokio::task::spawn_blocking(move || {
+            SpeakerVerifier::new(speaker_config, &model_path, Some(voice_dir)).map_err(|e| {
+                AudioError::Other(format!("failed to create speaker verifier: {e}"))
+            })
+        })
+        .await
+        .map_err(|e| AudioError::Other(format!("speaker verifier task failed: {e}")))??;
+
+        Ok(Some(Arc::new(verifier)))
+    }
+
+    // Speaker management surface.
+    //
+    // These methods are exposed as a public API for surfaces that need explicit
+    // speaker enrollment / verification (CLI, mobile settings, tests, etc.).
+    // Automatic verification during the voice session capture loop is not wired
+    // yet and is planned for a follow-up work item.
+
+    /// Enroll the user from a 16 kHz mono f32 sample.
+    pub fn enroll_speaker(&self, name: &str, samples: &[f32]) -> Result<(), AudioError> {
+        match self.speaker_verifier.as_ref() {
+            Some(v) => v.enroll(name, samples).map_err(Into::into),
+            None => Err(AudioError::Other(
+                "speaker verification is not configured".to_string(),
+            )),
+        }
+    }
+
+    /// Enroll the user from multiple 16 kHz mono f32 samples.
+    pub fn enroll_speaker_list(
+        &self,
+        name: &str,
+        samples_list: &[&[f32]],
+    ) -> Result<(), AudioError> {
+        match self.speaker_verifier.as_ref() {
+            Some(v) => v.enroll_list(name, samples_list).map_err(Into::into),
+            None => Err(AudioError::Other(
+                "speaker verification is not configured".to_string(),
+            )),
+        }
+    }
+
+    /// Verify a 16 kHz mono f32 sample against the enrolled speaker.
+    pub fn verify_speaker(&self, name: &str, samples: &[f32]) -> Result<VerificationResult, AudioError> {
+        match self.speaker_verifier.as_ref() {
+            Some(v) => v.verify(name, samples).map_err(Into::into),
+            None => Err(AudioError::Other(
+                "speaker verification is not configured".to_string(),
+            )),
+        }
+    }
+
+    /// Search the enrolled speakers for the best match.
+    pub fn search_speaker(&self, samples: &[f32]) -> Result<Option<SpeakerEmbeddingMatch>, AudioError> {
+        match self.speaker_verifier.as_ref() {
+            Some(v) => v.search(samples).map_err(Into::into),
+            None => Err(AudioError::Other(
+                "speaker verification is not configured".to_string(),
+            )),
+        }
+    }
+
+    /// Delete an enrolled speaker.
+    pub fn delete_speaker(&self, name: &str) -> Result<(), AudioError> {
+        match self.speaker_verifier.as_ref() {
+            Some(v) => v.remove(name).map_err(Into::into),
+            None => Err(AudioError::Other(
+                "speaker verification is not configured".to_string(),
+            )),
+        }
+    }
+
+    /// List enrolled speaker names.
+    pub fn list_speakers(&self) -> Vec<String> {
+        match self.speaker_verifier.as_ref() {
+            Some(v) => v.list(),
+            None => Vec::new(),
+        }
+    }
+
+    /// Check whether a speaker is enrolled.
+    pub fn is_speaker_enrolled(&self, name: &str) -> bool {
+        match self.speaker_verifier.as_ref() {
+            Some(v) => v.is_enrolled(name),
+            None => false,
+        }
+    }
 }
 
 #[async_trait::async_trait]
@@ -612,6 +747,20 @@ impl VoiceSessionIo for AudioAdapter {
         let result = self.run_agent_turn(text, origin.auto_speaks()).await?;
         Ok(ProcessedTurn { result })
     }
+}
+
+fn default_voice_dir() -> PathBuf {
+    if let Some(dir) = std::env::var_os("XDG_DATA_HOME") {
+        return PathBuf::from(dir).join("takusu").join("voiceprint");
+    }
+    if let Some(home) = std::env::var_os("HOME") {
+        return PathBuf::from(home)
+            .join(".local")
+            .join("share")
+            .join("takusu")
+            .join("voiceprint");
+    }
+    PathBuf::from("takusu").join("voiceprint")
 }
 
 fn build_stt(config: &SttConfig) -> Result<Arc<dyn StreamingSpeechToText>, AudioError> {
