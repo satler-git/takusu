@@ -6,6 +6,7 @@
 //! agent routes are mounted.
 
 pub mod config;
+pub mod local;
 pub mod notify;
 pub mod popover;
 pub mod presentation;

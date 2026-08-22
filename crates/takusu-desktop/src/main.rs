@@ -13,6 +13,7 @@ use takusu_contracts::EventDeliveryState;
 use tracing_subscriber::{EnvFilter, fmt};
 
 use takusu_desktop::config::Config;
+use takusu_desktop::local;
 use takusu_desktop::notify::{self, NotificationState};
 use takusu_desktop::popover::{Popover, PopoverRequest};
 use takusu_desktop::presentation::{build_presentation, presentation_to_notification};
@@ -33,22 +34,34 @@ async fn main() {
 }
 
 async fn run() -> Result<(), DesktopError> {
-    let config = Config::load().map_err(|e| DesktopError::Transport(e.to_string()))?;
-    if config.token.is_empty() {
+    let mut config = Config::load().map_err(|e| DesktopError::Transport(e.to_string()))?;
+
+    let use_mock = std::env::var("TAKUSU_DESKTOP_MOCK").is_ok();
+
+    // If no local URL is configured and we are not in mock mode, start an
+    // in-process `takusu-local` server so the desktop daemon is self-contained.
+    if !use_mock && config.local_url.is_empty() {
+        local::start(&mut config).await.map_err(|e| {
+            tracing::error!(error = %e, "failed to start embedded takusu-local");
+            e
+        })?;
+    }
+
+    if !use_mock && config.token.is_empty() {
         tracing::warn!("no bearer token configured; agent routes may fail");
     }
+
     let state = DesktopState::new();
     state.set_theme(config.theme);
 
     // Real transport: HTTP to takusu-local agent routes.
-    let transport: Arc<dyn DesktopTransport + Send + Sync> =
-        if std::env::var("TAKUSU_DESKTOP_MOCK").is_ok() {
-            Arc::new(MockTransport::new(
-                takusu_agent::surface::SurfaceStateMachine::new().snapshot(),
-            ))
-        } else {
-            Arc::new(HttpTransport::new(&config.local_url, &config.token))
-        };
+    let transport: Arc<dyn DesktopTransport + Send + Sync> = if use_mock {
+        Arc::new(MockTransport::new(
+            takusu_agent::surface::SurfaceStateMachine::new().snapshot(),
+        ))
+    } else {
+        Arc::new(HttpTransport::new(&config.local_url, &config.token))
+    };
 
     // Register this host as the desktop device (WI-11). Re-registering is
     // idempotent, so a daemon restart updates the name without clearing state.

@@ -32,11 +32,14 @@ impl Theme {
 }
 
 /// `[desktop]` section of `~/.config/takusu/config.toml`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct DesktopConfig {
     pub theme: Theme,
-    /// URL of the local takusu host. Defaults to `http://127.0.0.1:3000`.
+    /// URL of the local takusu host. When empty (the default), the daemon
+    /// starts an embedded `takusu-local` server on a random loopback port.
+    /// Set this explicitly (or via `TAKUSU_DESKTOP_LOCAL_URL`) to use an
+    /// existing external server.
     pub local_url: String,
     /// Bearer token for the local API. If empty, the daemon reads
     /// `TAKUSU_TOKEN` or the file from `TAKUSU_TOKEN_FILE`.
@@ -44,17 +47,6 @@ pub struct DesktopConfig {
     /// Timezone for notification scheduling. Falls back to the top-level `tz`
     /// field or the system local timezone.
     pub tz: Option<String>,
-}
-
-impl Default for DesktopConfig {
-    fn default() -> Self {
-        Self {
-            theme: Theme::default(),
-            local_url: "http://127.0.0.1:3000".into(),
-            token: String::new(),
-            tz: None,
-        }
-    }
 }
 
 /// Full file layout. Unknown fields are ignored so the file can also hold
@@ -106,12 +98,6 @@ impl Config {
             desktop.token = std::fs::read_to_string(file)
                 .map(|s| s.trim().to_string())
                 .unwrap_or_default();
-        }
-
-        // Do not fall back to a workers backend token: agent routes need a root
-        // token, and using a worker token would fail at runtime with 401/403.
-        if desktop.token.is_empty() {
-            tracing::warn!("no desktop bearer token configured; agent routes may fail");
         }
 
         let tz = desktop.tz.clone().or(file.tz).unwrap_or_else(|| {
