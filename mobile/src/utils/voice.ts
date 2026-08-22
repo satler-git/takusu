@@ -116,8 +116,9 @@ export async function startRecording(): Promise<void> {
       notifyRecordingChanged(false);
       throw new Error('録音がキャンセルされました');
     }
+    await ensureAudioConfigured();
     TakusuAudioModule.stopPlayback();
-    TakusuAudioModule.startRecording();
+    await TakusuAudioModule.startRecording();
   } catch (e) {
     if (isRecording) {
       isRecording = false;

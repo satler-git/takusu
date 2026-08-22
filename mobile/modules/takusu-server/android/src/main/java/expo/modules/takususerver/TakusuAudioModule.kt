@@ -61,6 +61,9 @@ class TakusuAudioModule : Module() {
     private var ttsProvider: String = "cartesia"
 
     @Volatile
+    private var audioLanguage: String = "ja"
+
+    @Volatile
     private var muted: Boolean = false
 
     @Volatile
@@ -141,6 +144,7 @@ class TakusuAudioModule : Module() {
                 // Reset the provider choice; it will be restored only after the
                 // new backend initializes successfully.
                 ttsProvider = ""
+                audioLanguage = options.language
                 muted = options.mute
 
                 when (options.provider) {
@@ -192,22 +196,30 @@ class TakusuAudioModule : Module() {
                 true
             }
 
-            Function("startRecording") {
-                val instance = AudioRecorder()
-                instance.start()
-                recorder = instance
+            AsyncFunction("startRecording") {
+                val instance =
+                    audio
+                        ?: throw CodedException("ERR_AUDIO_CONFIG", "Audio is not configured", null)
+                val newRecorder = AudioRecorder()
+                newRecorder.startStreaming(instance, audioLanguage)
+                recorder = newRecorder
                 true
             }
 
             AsyncFunction("stopAndTranscribe") {
-                val samples =
-                    recorder?.stop()
+                val activeRecorder =
+                    recorder
                         ?: throw CodedException("ERR_NOT_RECORDING", "Recording is not active", null)
                 recorder = null
-                val instance =
-                    audio
-                        ?: throw CodedException("ERR_AUDIO_CONFIG", "Audio is not configured", null)
-                instance.transcribePcm(samples)
+                if (activeRecorder.isStreaming()) {
+                    activeRecorder.stopStreaming()
+                } else {
+                    val instance =
+                        audio
+                            ?: throw CodedException("ERR_AUDIO_CONFIG", "Audio is not configured", null)
+                    val samples = activeRecorder.stop()
+                    instance.transcribePcm(samples)
+                }
             }
 
             AsyncFunction("synthesizeAndPlay") Coroutine { text: String ->

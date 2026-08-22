@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::sync::mpsc;
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicBool, Ordering},
@@ -27,10 +28,15 @@ use crate::TakusuError;
 /// `Arc`, release the mutex, and call `block_on` without the mutex being held.
 /// This prevents a panic in an audio task from poisoning the runtime lock and
 /// permanently disabling TTS/STT.
+struct SttCache {
+    stt: Arc<dyn StreamingSpeechToText>,
+    asr_model: String,
+}
+
 #[derive(uniffi::Object)]
 pub struct MobileAudio {
     hush: Mutex<Option<Hush>>,
-    stt: Mutex<Option<Arc<dyn StreamingSpeechToText>>>,
+    stt: Mutex<Option<SttCache>>,
     stt_model: Mutex<String>,
     tts: Option<Arc<dyn TextToSpeech>>,
     runtime: Mutex<Option<Arc<Runtime>>>,
@@ -41,6 +47,14 @@ pub struct MobileAudio {
     sample_rate: u32,
     speed: Option<f32>,
     mute: AtomicBool,
+    streaming: Mutex<Option<StreamingAsrSession>>,
+}
+
+/// State for one concurrent (record + streaming ASR) session.
+struct StreamingAsrSession {
+    chunk_tx: mpsc::Sender<Vec<f32>>,
+    partial_text: Arc<Mutex<String>>,
+    final_rx: Mutex<Option<mpsc::Receiver<Result<String, TakusuError>>>>,
 }
 
 impl MobileAudio {
@@ -106,6 +120,47 @@ impl MobileAudio {
                 detail: format!("TTS normalization failed: {error}"),
             })
     }
+
+    /// Load and cache the Sherpa-ONNX streaming STT backend for the current
+    /// `asr_model`. The cached `Arc` is cloned and returned.
+    fn load_stt(&self) -> Result<Arc<dyn StreamingSpeechToText>, TakusuError> {
+        let asr_model = self
+            .stt_model
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .clone();
+        let (model, model_dir) = self.parse_asr_model(&asr_model)?;
+
+        let mut stt_guard = self.stt.lock().unwrap_or_else(|error| {
+            let mut guard = error.into_inner();
+            guard.take();
+            guard
+        });
+        let should_reload = stt_guard
+            .as_ref()
+            .map(|cache| cache.asr_model != asr_model || !model_dir.exists())
+            .unwrap_or(true);
+        if should_reload {
+            let stt_config = SttRuntimeConfig {
+                backend: takusu_audio::SttBackend::Sherpa,
+                model,
+                model_dir: Some(model_dir),
+                language: self.language.clone(),
+                use_itn: true,
+                num_threads: 2,
+                provider: ExecutionProvider::Cpu,
+                sample_rate: SHERPA_SAMPLE_RATE as i32,
+            };
+            let stt =
+                stt_config
+                    .build_streaming()
+                    .map_err(|error: SttError| TakusuError::Audio {
+                        detail: format!("failed to load {asr_model}: {error}"),
+                    })?;
+            *stt_guard = Some(SttCache { stt, asr_model });
+        }
+        Ok(stt_guard.as_ref().unwrap().stt.clone())
+    }
 }
 
 #[uniffi::export]
@@ -165,6 +220,7 @@ impl MobileAudio {
             sample_rate,
             speed,
             mute: AtomicBool::new(mute),
+            streaming: Mutex::new(None),
         })
     }
 
@@ -232,47 +288,118 @@ impl MobileAudio {
             .lock()
             .unwrap_or_else(|error| error.into_inner())
             .clone();
-        let (model, model_dir) = self.parse_asr_model(&asr_model)?;
-
-        // Load the STT model once, then release the mutex so a panic in
-        // transcription cannot poison the stt lock. If the selected model
-        // changes, the cached model is discarded.
-        let stt = {
-            let mut stt_guard = self.stt.lock().unwrap_or_else(|error| {
-                let mut guard = error.into_inner();
-                guard.take();
-                guard
-            });
-            let should_reload = stt_guard
-                .as_ref()
-                .map(|_| !model_dir.exists())
-                .unwrap_or(true);
-            if should_reload {
-                let stt_config = SttRuntimeConfig {
-                    backend: takusu_audio::SttBackend::Sherpa,
-                    model,
-                    model_dir: Some(model_dir),
-                    language: self.language.clone(),
-                    use_itn: true,
-                    num_threads: 2,
-                    provider: ExecutionProvider::Cpu,
-                    sample_rate: SHERPA_SAMPLE_RATE as i32,
-                };
-                let stt =
-                    stt_config
-                        .build_streaming()
-                        .map_err(|error: SttError| TakusuError::Audio {
-                            detail: format!("failed to load {asr_model}: {error}"),
-                        })?;
-                *stt_guard = Some(stt);
-            }
-            stt_guard.as_ref().unwrap().clone()
-        };
+        let stt = self.load_stt()?;
 
         stt.transcribe_sync(&enhanced)
             .map_err(|error| TakusuError::Audio {
                 detail: format!("{asr_model} inference failed: {error}"),
             })
+    }
+
+    pub fn start_streaming_asr(&self, language: String) -> Result<(), TakusuError> {
+        let runtime = self.ensure_runtime()?;
+        let stt = self.load_stt()?;
+        let language = if language.is_empty() {
+            self.language.clone()
+        } else {
+            language
+        };
+
+        let asr_stream = runtime
+            .block_on(stt.start_stream(&language))
+            .map_err(|error| TakusuError::Audio {
+                detail: format!("failed to start streaming ASR: {error}"),
+            })?;
+
+        let (chunk_tx, chunk_rx) = mpsc::channel::<Vec<f32>>();
+        let (final_tx, final_rx) = mpsc::channel::<Result<String, TakusuError>>();
+        let partial_text = Arc::new(Mutex::new(String::new()));
+
+        let runtime_for_thread = Arc::clone(&runtime);
+        let partial_for_thread = Arc::clone(&partial_text);
+        std::thread::spawn(move || {
+            let mut asr_stream = asr_stream;
+            while let Ok(chunk) = chunk_rx.recv() {
+                asr_stream.accept_waveform(&chunk);
+                *partial_for_thread
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner()) = asr_stream.text();
+            }
+            let final_result = runtime_for_thread
+                .block_on(asr_stream.finish())
+                .map_err(|error| TakusuError::Audio {
+                    detail: format!("streaming ASR finish failed: {error}"),
+                });
+            let _ = final_tx.send(final_result);
+        });
+
+        *self
+            .streaming
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) = Some(StreamingAsrSession {
+            chunk_tx,
+            partial_text,
+            final_rx: Mutex::new(Some(final_rx)),
+        });
+        Ok(())
+    }
+
+    pub fn feed_streaming_chunk(&self, samples: Vec<i16>) -> Result<String, TakusuError> {
+        if samples.is_empty() {
+            return Ok(String::new());
+        }
+
+        let pcm: Vec<f32> = samples
+            .into_iter()
+            .map(|sample| sample as f32 / i16::MAX as f32)
+            .collect();
+
+        let guard = self
+            .streaming
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let session = guard.as_ref().ok_or(TakusuError::Audio {
+            detail: "streaming ASR is not started".to_string(),
+        })?;
+        session
+            .chunk_tx
+            .send(pcm)
+            .map_err(|error| TakusuError::Audio {
+                detail: format!("streaming ASR channel closed: {error}"),
+            })?;
+        Ok(session
+            .partial_text
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .clone())
+    }
+
+    pub fn finish_streaming_asr(&self) -> Result<String, TakusuError> {
+        let session = self
+            .streaming
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .take()
+            .ok_or(TakusuError::Audio {
+                detail: "streaming ASR is not started".to_string(),
+            })?;
+
+        // Dropping the sender closes the channel and tells the consumer thread
+        // that no more chunks will arrive.
+        drop(session.chunk_tx);
+
+        let final_rx = session
+            .final_rx
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .take()
+            .ok_or(TakusuError::Audio {
+                detail: "streaming ASR is already finished".to_string(),
+            })?;
+
+        final_rx.recv().map_err(|_| TakusuError::Audio {
+            detail: "streaming ASR consumer was dropped".to_string(),
+        })?
     }
 
     pub fn synthesize(&self, text: String) -> Result<Vec<u8>, TakusuError> {
