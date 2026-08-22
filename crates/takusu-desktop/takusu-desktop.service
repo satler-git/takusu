@@ -1,10 +1,12 @@
+# This is a template. The Nix package and the Home Manager module substitute
+# @takusu_desktop@ with the actual store path at build/evaluation time.
 [Unit]
 Description=takusu resident desktop daemon
 After=graphical-session.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/takusu-desktop
+ExecStart=@takusu_desktop@
 Restart=on-failure
 Environment="RUST_LOG=info,takusu_desktop=debug"
 NoNewPrivileges=true
@@ -16,7 +18,8 @@ ProtectClock=true
 ProtectHostname=true
 ProtectHome=read-only
 ProtectSystem=strict
-ReadWritePaths=%t
+StateDirectory=takusu
+ReadWritePaths=%S/takusu %t
 PrivateTmp=true
 RestrictRealtime=true
 RestrictSUIDSGID=true

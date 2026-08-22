@@ -8809,6 +8809,7 @@ dependencies = [
 name = "takusu-desktop"
 version = "0.20260821.1"
 dependencies = [
+ "axum",
  "dirs 6.0.0",
  "eventsource-stream",
  "futures-channel",
@@ -8821,12 +8822,15 @@ dependencies = [
  "serde_json",
  "takusu-agent",
  "takusu-contracts",
+ "takusu-local",
+ "takusu-local-lib",
  "takusu-types",
  "thiserror 2.0.20",
  "tokio",
  "toml 0.8.23",
  "tracing",
  "tracing-subscriber",
+ "uuid",
  "zbus",
 ]
 

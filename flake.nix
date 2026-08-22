@@ -271,6 +271,13 @@
             strictDeps = true;
             pname = "takusu-local";
             cargoExtraArgs = "-p takusu-local";
+            # takusu-audio pulls in lindera-ipadic, which downloads a dictionary
+            # at build time. Provide it offline so the build succeeds in the sandbox.
+            preBuild = ''
+              export LINDERA_DICTIONARIES_PATH="$NIX_BUILD_TOP/lindera-dicts"
+              mkdir -p "$LINDERA_DICTIONARIES_PATH/4.0.1"
+              cp --no-preserve=mode "${linderaIpadicDict}/4.0.1/mecab-ipadic-2.7.0-20250920.tar.gz" "$LINDERA_DICTIONARIES_PATH/4.0.1/"
+            '';
             nativeBuildInputs = with pkgs; [
               pkg-config
               cmake
@@ -295,9 +302,17 @@
             strictDeps = true;
             pname = "takusu-desktop";
             cargoExtraArgs = "-p takusu-desktop";
+            # takusu-audio pulls in lindera-ipadic, which downloads a dictionary
+            # at build time. Provide it offline so the build succeeds in the sandbox.
+            preBuild = ''
+              export LINDERA_DICTIONARIES_PATH="$NIX_BUILD_TOP/lindera-dicts"
+              mkdir -p "$LINDERA_DICTIONARIES_PATH/4.0.1"
+              cp --no-preserve=mode "${linderaIpadicDict}/4.0.1/mecab-ipadic-2.7.0-20250920.tar.gz" "$LINDERA_DICTIONARIES_PATH/4.0.1/"
+            '';
             doCheck = false;
             nativeBuildInputs = with pkgs; [
               pkg-config
+              cmake
               libclang
             ];
             buildInputs = with pkgs; [
@@ -319,6 +334,12 @@
             ];
             LIBCLANG_PATH = "${pkgs.libclang.lib}/lib";
             meta.mainProgram = "takusu-desktop";
+            postInstall = ''
+              mkdir -p $out/lib/systemd/user
+              cp ${./crates/takusu-desktop/takusu-desktop.service} $out/lib/systemd/user/takusu-desktop.service
+              substituteInPlace $out/lib/systemd/user/takusu-desktop.service \
+                --replace-fail '@takusu_desktop@' "$out/bin/takusu-desktop"
+            '';
           };
 
           # Shared @takusu/client package built in Nix (pure tsup build, no
@@ -1051,22 +1072,27 @@
                 unset -f _setup_sherpa_host
 
                 # GPUI / Vulkan / X11 runtime libraries.
-                _gpui_libs="${pkgs.lib.makeLibraryPath (with pkgs; [
-                  fontconfig
-                  freetype
-                  glib
-                  libxkbcommon
-                  vulkan-loader
-                  wayland
-                  wayland-protocols
-                  libxcb
-                  libx11
-                  libxcursor
-                  libxrandr
-                  libxi
-                  libxinerama
-                  libxscrnsaver
-                ])}"
+                _gpui_libs="${
+                  pkgs.lib.makeLibraryPath (
+                    with pkgs;
+                    [
+                      fontconfig
+                      freetype
+                      glib
+                      libxkbcommon
+                      vulkan-loader
+                      wayland
+                      wayland-protocols
+                      libxcb
+                      libx11
+                      libxcursor
+                      libxrandr
+                      libxi
+                      libxinerama
+                      libxscrnsaver
+                    ]
+                  )
+                }"
                 export LD_LIBRARY_PATH="$_gpui_libs''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
                 # Remove stale read-only copies from previous builds so the
@@ -1210,22 +1236,27 @@
                 unset -f _setup_sherpa_host
 
                 # GPUI / Vulkan / X11 runtime libraries.
-                _gpui_libs="${pkgs.lib.makeLibraryPath (with pkgs; [
-                  fontconfig
-                  freetype
-                  glib
-                  libxkbcommon
-                  vulkan-loader
-                  wayland
-                  wayland-protocols
-                  libxcb
-                  libx11
-                  libxcursor
-                  libxrandr
-                  libxi
-                  libxinerama
-                  libxscrnsaver
-                ])}"
+                _gpui_libs="${
+                  pkgs.lib.makeLibraryPath (
+                    with pkgs;
+                    [
+                      fontconfig
+                      freetype
+                      glib
+                      libxkbcommon
+                      vulkan-loader
+                      wayland
+                      wayland-protocols
+                      libxcb
+                      libx11
+                      libxcursor
+                      libxrandr
+                      libxi
+                      libxinerama
+                      libxscrnsaver
+                    ]
+                  )
+                }"
                 export LD_LIBRARY_PATH="$_gpui_libs''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
                 # Remove stale read-only copies from previous builds.
@@ -1249,5 +1280,14 @@
             };
           };
         };
+
+      flake = {
+        homeManagerModules.default = import ./nix/hm-module.nix { self = inputs.self; };
+        overlays.default = final: prev: {
+          takusu-desktop = inputs.self.packages.${final.stdenv.hostPlatform.system}.takusu-desktop;
+          takusu-cli = inputs.self.packages.${final.stdenv.hostPlatform.system}.takusu-cli or null;
+          takusu-local = inputs.self.packages.${final.stdenv.hostPlatform.system}.takusu-local or null;
+        };
+      };
     };
 }

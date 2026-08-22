@@ -24,6 +24,10 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 takusu-agent = { workspace = true, default-features = false }
 takusu-contracts = { workspace = true }
 takusu-types = { workspace = true }
+takusu-local = { workspace = true, default-features = false, features = ["sqlite"] }
+takusu-local-lib = { workspace = true, default-features = false, features = ["sqlite"] }
+axum = "0.8"
+uuid = { workspace = true }
 dirs = "6"
 toml = "0.8"
 
