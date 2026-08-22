@@ -151,6 +151,28 @@ impl Tray for TakusuTray {
             items.push(MenuItem::Separator);
         }
 
+        #[cfg(feature = "audio-device")]
+        {
+            let state = self.state.clone();
+            let activate = Box::new(move |_this: &mut Self| {
+                if state.voice_session_active() {
+                    state.stop_voice_session();
+                } else {
+                    state.set_voice_invite(true);
+                    state.start_voice_session();
+                }
+            });
+            items.push(
+                StandardItem {
+                    label: "Voice session".into(),
+                    activate,
+                    ..Default::default()
+                }
+                .into(),
+            );
+            items.push(MenuItem::Separator);
+        }
+
         // Open the compact panel / approval UI / recovery view.
         {
             let transport = Arc::clone(&self.transport);

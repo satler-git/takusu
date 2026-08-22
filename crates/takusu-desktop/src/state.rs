@@ -5,12 +5,20 @@
 //! stream fed by the local agent transport and from the planner event replay
 //! loop.
 
-use std::sync::{Arc, RwLock};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, RwLock};
+
+type OnChange = Arc<Mutex<Option<Arc<dyn Fn() + Send + Sync>>>>;
 
 use takusu_agent::{Presentation, SurfaceEvent, SurfaceSnapshot, SurfaceState};
+#[cfg(feature = "audio-device")]
+use takusu_agent::TurnEvent;
 
-use crate::config::Theme;
+use crate::config::Config;
 use crate::presentation::{DesktopAction, DesktopPresentation};
+
+#[cfg(feature = "audio-device")]
+use crate::audio::{spawn_voice_session, VoiceSessionHandle};
 
 /// Errors the daemon can surface to the user.
 #[derive(Debug, thiserror::Error)]
@@ -35,7 +43,7 @@ pub struct ViewModel {
     /// Current desktop presentation built from the last planner event or
     /// current-task card. Carries server-issued quick-action capabilities.
     pub current_presentation: Option<DesktopPresentation>,
-    pub theme: Theme,
+    pub theme: crate::config::Theme,
     /// Whether desktop notifications should be suppressed.
     pub do_not_disturb: bool,
 }
@@ -100,21 +108,29 @@ fn state_label(state: SurfaceState) -> &'static str {
 }
 
 /// Thread-safe shared state.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct DesktopState {
     inner: Arc<RwLock<ViewModel>>,
-}
-
-impl Default for DesktopState {
-    fn default() -> Self {
-        Self::new()
-    }
+    #[allow(dead_code)]
+    config: Config,
+    voice_invite: Arc<AtomicBool>,
+    on_change: OnChange,
+    #[cfg(feature = "audio-device")]
+    voice: Arc<Mutex<Option<VoiceSessionHandle>>>,
 }
 
 impl DesktopState {
-    pub fn new() -> Self {
+    pub fn new(config: Config) -> Self {
         Self {
-            inner: Arc::new(RwLock::new(ViewModel::default())),
+            inner: Arc::new(RwLock::new(ViewModel {
+                theme: config.theme,
+                ..Default::default()
+            })),
+            config,
+            voice_invite: Arc::new(AtomicBool::new(false)),
+            on_change: Arc::new(Mutex::new(None)),
+            #[cfg(feature = "audio-device")]
+            voice: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -122,6 +138,7 @@ impl DesktopState {
         if let Ok(mut guard) = self.inner.write() {
             *guard = model;
         }
+        self.notify_change();
     }
 
     pub fn snapshot(&self) -> Option<ViewModel> {
@@ -134,18 +151,21 @@ impl DesktopState {
                 SurfaceEvent::Snapshot(s) | SurfaceEvent::StateChanged(s) => guard.snapshot = s,
             }
         }
+        self.notify_change();
     }
 
     pub fn set_surface_presentation(&self, presentation: Option<Presentation>) {
         if let Ok(mut guard) = self.inner.write() {
             guard.surface_presentation = presentation;
         }
+        self.notify_change();
     }
 
     pub fn set_current_presentation(&self, presentation: Option<DesktopPresentation>) {
         if let Ok(mut guard) = self.inner.write() {
             guard.current_presentation = presentation;
         }
+        self.notify_change();
     }
 
     pub fn current_presentation(&self) -> Option<DesktopPresentation> {
@@ -155,14 +175,15 @@ impl DesktopState {
             .and_then(|g| g.current_presentation.clone())
     }
 
-    pub fn set_theme(&self, theme: Theme) {
+    pub fn set_theme(&self, theme: crate::config::Theme) {
         if let Ok(mut guard) = self.inner.write() {
             guard.theme = theme;
         }
+        self.notify_change();
     }
 
     /// Return the currently configured theme, falling back to the default.
-    pub fn theme(&self) -> Theme {
+    pub fn theme(&self) -> crate::config::Theme {
         self.snapshot().map(|view| view.theme).unwrap_or_default()
     }
 
@@ -170,6 +191,7 @@ impl DesktopState {
         if let Ok(mut guard) = self.inner.write() {
             guard.do_not_disturb = enabled;
         }
+        self.notify_change();
     }
 
     pub fn do_not_disturb(&self) -> bool {
@@ -203,4 +225,94 @@ impl DesktopState {
             .map(|p| p.actions.clone())
             .unwrap_or_default()
     }
+
+    /// Set a callback to run whenever the surface state or presentation
+    /// changes. Used by `main.rs` to keep the compact panel in sync.
+    pub fn set_on_change<F>(&self, f: F)
+    where
+        F: Fn() + Send + Sync + 'static,
+    {
+        if let Ok(mut guard) = self.on_change.lock() {
+            *guard = Some(Arc::new(f));
+        }
+    }
+
+    fn notify_change(&self) {
+        if let Ok(guard) = self.on_change.lock()
+            && let Some(cb) = guard.as_ref()
+        {
+            cb();
+        }
+    }
+
+    /// Invite the compact panel to show a voice session start button.
+    pub fn set_voice_invite(&self, enabled: bool) {
+        self.voice_invite.store(enabled, Ordering::Relaxed);
+        self.notify_change();
+    }
+
+    /// Read and reset the voice session invitation flag.
+    pub fn consume_voice_invite(&self) -> bool {
+        self.voice_invite.swap(false, Ordering::Relaxed)
+    }
+
+    /// Whether a voice session invitation is pending.
+    pub fn voice_invite(&self) -> bool {
+        self.voice_invite.load(Ordering::Relaxed)
+    }
+
+    /// Whether a voice session is currently running.
+    #[cfg(feature = "audio-device")]
+    pub fn voice_session_active(&self) -> bool {
+        self.voice.lock().ok().is_some_and(|g| g.is_some())
+    }
+
+    /// Always false when the `audio-device` feature is disabled.
+    #[cfg(not(feature = "audio-device"))]
+    pub fn voice_session_active(&self) -> bool {
+        false
+    }
+
+    #[cfg(feature = "audio-device")]
+    pub(crate) fn set_voice_handle(&self, handle: Option<VoiceSessionHandle>) {
+        if let Ok(mut guard) = self.voice.lock() {
+            *guard = handle;
+        }
+        self.notify_change();
+    }
+
+    /// Start a voice session from the desktop surface.
+    #[cfg(feature = "audio-device")]
+    pub fn start_voice_session(&self) {
+        if self.voice_session_active() {
+            return;
+        }
+        if let Err(error) = spawn_voice_session(self.clone(), self.config.clone()) {
+            tracing::error!(error=%error, "failed to start voice session");
+            let machine = takusu_agent::SurfaceStateMachine::new();
+            let snapshot =
+                machine.apply_turn_event(&TurnEvent::Error(error.to_string()));
+            self.update_surface(SurfaceEvent::StateChanged(snapshot));
+        }
+    }
+
+    /// No-op placeholder when the `audio-device` feature is disabled.
+    #[cfg(not(feature = "audio-device"))]
+    pub fn start_voice_session(&self) {
+        tracing::warn!("audio-device feature is disabled; voice sessions are unavailable");
+    }
+
+    /// Stop a running voice session.
+    #[cfg(feature = "audio-device")]
+    pub fn stop_voice_session(&self) {
+        if let Ok(mut guard) = self.voice.lock()
+            && let Some(handle) = guard.take()
+        {
+            handle.stop();
+        }
+    }
+
+    /// No-op placeholder when the `audio-device` feature is disabled.
+    #[cfg(not(feature = "audio-device"))]
+    pub fn stop_voice_session(&self) {}
 }

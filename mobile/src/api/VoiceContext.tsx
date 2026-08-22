@@ -12,6 +12,12 @@ interface VoiceContextValue {
   /** Whether any voice button is currently recording. */
   isRecording: boolean;
   setIsRecording: (value: boolean) => void;
+  /** Whether a continuous voice session is active (multi-turn continuation). */
+  sessionActive: boolean;
+  /** Begin a continuous voice session; recording re-arms after each turn. */
+  startSession: () => void;
+  /** End the continuous voice session after the current turn. */
+  stopSession: () => void;
   /** Session id queued by the floating voice button for AgentView to activate as a new session. */
   pendingSessionId: string | null;
   setPendingSessionId: (value: string | null) => void;
@@ -20,6 +26,9 @@ interface VoiceContextValue {
 const VoiceContext = createContext<VoiceContextValue>({
   isRecording: false,
   setIsRecording: () => {},
+  sessionActive: false,
+  startSession: () => {},
+  stopSession: () => {},
   pendingSessionId: null,
   setPendingSessionId: () => {},
 });
@@ -34,6 +43,7 @@ export function VoiceProvider({
   ) => (() => void) | void;
 }) {
   const [isRecording, setIsRecording] = useState(false);
+  const [sessionActive, setSessionActive] = useState(false);
   const [pendingSessionId, setPendingSessionIdState] = useState<string | null>(
     null,
   );
@@ -51,14 +61,33 @@ export function VoiceProvider({
     setPendingSessionIdState(value);
   }, []);
 
+  const startSession = useCallback(() => {
+    setSessionActive(true);
+  }, []);
+
+  const stopSession = useCallback(() => {
+    setSessionActive(false);
+  }, []);
+
   const value = useMemo<VoiceContextValue>(
     () => ({
       isRecording,
       setIsRecording: setIsRecordingStable,
+      sessionActive,
+      startSession,
+      stopSession,
       pendingSessionId,
       setPendingSessionId,
     }),
-    [isRecording, setIsRecordingStable, pendingSessionId, setPendingSessionId],
+    [
+      isRecording,
+      setIsRecordingStable,
+      sessionActive,
+      startSession,
+      stopSession,
+      pendingSessionId,
+      setPendingSessionId,
+    ],
   );
 
   return (

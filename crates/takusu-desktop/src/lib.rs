@@ -5,6 +5,8 @@
 //! no planner logic; all state and actions are served by `takusu-local` once the
 //! agent routes are mounted.
 
+#[cfg(feature = "audio-device")]
+pub mod audio;
 pub mod config;
 pub mod local;
 pub mod notify;
@@ -22,3 +24,6 @@ pub use presentation::{
 };
 pub use state::{DesktopError, DesktopState};
 pub use transport::{DesktopTransport, MockTransport};
+
+#[cfg(feature = "audio-device")]
+pub use audio::{spawn_voice_session, voice_loop_with_surface, VoiceSessionHandle};

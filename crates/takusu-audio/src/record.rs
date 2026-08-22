@@ -36,6 +36,12 @@ pub struct RecordConfig {
     /// the caller handles resampling itself; use `Some(SHERPA_SAMPLE_RATE)`
     /// in normal pipelines.
     pub target_sample_rate: Option<u32>,
+    /// Normalize each chunk to a fixed target RMS (0.1) before emitting it.
+    /// ASR backends generally prefer normalized input, but a VAD gate must see
+    /// the *raw* levels so near-silence is not amplified into "speech". Enable
+    /// normalization after the VAD decision, not before it. Defaults to `true`
+    /// for back-compat with the offline `record` behavior.
+    pub normalize_audio: bool,
 }
 
 impl Default for RecordConfig {
@@ -43,6 +49,7 @@ impl Default for RecordConfig {
         Self {
             max_duration: Duration::from_secs(300),
             target_sample_rate: Some(SHERPA_SAMPLE_RATE),
+            normalize_audio: true,
         }
     }
 }
@@ -191,7 +198,9 @@ pub fn record(config: &RecordConfig) -> Result<Vec<f32>, RecorderError> {
         raw = resample(&raw, device_sample_rate, target);
     }
 
-    raw = normalize(&raw, 0.1);
+    if config.normalize_audio {
+        raw = normalize(&raw, 0.1);
+    }
 
     Ok(raw)
 }

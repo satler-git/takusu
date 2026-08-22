@@ -150,7 +150,9 @@ impl StreamingRecorder {
                         if device_sample_rate != target_rate {
                             chunk = resample(&chunk, device_sample_rate, target_rate);
                         }
-                        chunk = normalize(&chunk, 0.1);
+                        if config.normalize_audio {
+                            chunk = normalize(&chunk, 0.1);
+                        }
 
                         // Send in chunk_size slices so the ASR sees a regular cadence.
                         for window in chunk.chunks(chunk_size) {
