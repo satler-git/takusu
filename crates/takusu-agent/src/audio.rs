@@ -1,22 +1,28 @@
 //! Application-level audio adapter for the takusu agent.
 //!
-//! This module is responsible for the push-to-talk loop:
-//! record → transcribe → agent turn → synthesize → play.
-//! It is not exposed as an LLM tool.
+//! This module is responsible for the audio loop:
+//! record → transcribe → agent turn → synthesize → play. It backs both the
+//! push-to-talk CLI loop ([`AudioAdapter::run`]) and the continuous voice
+//! session ([`AudioAdapter`] implements [`VoiceSessionIo`]), where recording
+//! stops itself via VAD endpointing. It is not exposed as an LLM tool.
 
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use takusu_audio::play::{PcmFormat, PlayError, StreamedAudioFormat, play_stream};
 use takusu_audio::{
     CartesiaSonic, CartesiaSonicConfig, FishAudio, FishAudioConfig, RecordConfig,
     StreamingRecorder, StreamingSpeechToText, TextToSpeech, TtsBackend, TtsOptions, TtsRequest,
-    TtsStream, normalize_for_tts,
+    TtsStream, VadEvent, normalize, normalize_for_tts,
 };
 use thiserror::Error;
 
-use crate::{AgentError, AgentSession, TurnEvent};
+use crate::surface::AudioCallback;
+use crate::voice_session::{InputOrigin, ProcessedTurn, VoiceSessionError, VoiceSessionIo};
+use crate::{AgentError, AgentSession, TurnEvent, TurnResult};
 
 #[derive(Debug, Error)]
 pub enum AudioError {
@@ -32,6 +38,9 @@ pub enum AudioError {
     UnsupportedBackend(String),
     #[error("audio operation timed out")]
     Timeout,
+    /// The caller requested an in-progress capture or playback to stop.
+    #[error("audio session stopped")]
+    UserCancelled,
     /// A `Mutex` / `RwLock` guard was poisoned by a panic while held.
     #[error("lock poisoned: {0}")]
     Lock(String),
@@ -61,6 +70,42 @@ impl From<PlayError> for AudioError {
 
 pub use crate::audio_config::{AudioConfig, SttConfig, TtsConfig};
 
+/// Shared sink for streaming assistant turn events.
+type EventSink = Arc<Mutex<dyn FnMut(TurnEvent) + Send>>;
+
+/// Shared sink for audio lifecycle callbacks (listening / speaking / finished).
+type AudioCallbackSink = Arc<Mutex<dyn FnMut(AudioCallback) + Send>>;
+
+/// Temporary guard that removes the cached VAD endpoint from `AudioAdapter` and
+/// restores it when dropped, so `capture_utterance` can mutably borrow the
+/// endpoint while still calling `&self` methods like `emit`.
+struct EndpointGuard<'a> {
+    slot: &'a mut Option<Box<dyn takusu_audio::Endpoint>>,
+    endpoint: Option<Box<dyn takusu_audio::Endpoint>>,
+}
+
+impl<'a> EndpointGuard<'a> {
+    fn new(slot: &'a mut Option<Box<dyn takusu_audio::Endpoint>>) -> Option<Self> {
+        let endpoint = slot.take();
+        if endpoint.is_none() {
+            *slot = endpoint;
+            return None;
+        }
+        Some(Self { slot, endpoint })
+    }
+
+    fn get_mut(&mut self) -> &mut dyn takusu_audio::Endpoint {
+        // The option is always Some while the guard lives.
+        &mut **self.endpoint.as_mut().expect("endpoint present")
+    }
+}
+
+impl Drop for EndpointGuard<'_> {
+    fn drop(&mut self) {
+        *self.slot = self.endpoint.take();
+    }
+}
+
 /// Application-level audio adapter. Owns the agent session and the audio clients.
 pub struct AudioAdapter {
     session: Arc<AgentSession>,
@@ -70,6 +115,25 @@ pub struct AudioAdapter {
     tts_voice_id: String,
     tts_speed: Option<f32>,
     tts_format: StreamedAudioFormat,
+    /// Flipped by [`stop_tts_signal`](Self::stop_tts_signal) to cut an
+    /// in-progress TTS playback.
+    stop_tts: Arc<AtomicBool>,
+    /// Receiver for an out-of-band stop signal. The matching sender lives in
+    /// [`VoiceSessionHandle`] (desktop) or is dropped for the push-to-talk loop.
+    stop: tokio::sync::watch::Receiver<bool>,
+    /// Sender paired with `stop`. `None` when the stop channel is owned by a
+    /// caller outside the adapter (e.g. the desktop voice session handle).
+    stop_tx: Option<tokio::sync::watch::Sender<bool>>,
+    /// Sink for assistant turn events, used by the CLI runner and the voice
+    /// session so surfaces can render streaming state.
+    on_event: Option<EventSink>,
+    /// Sink for audio lifecycle callbacks, used by the desktop daemon to keep
+    /// the shared `SurfaceStateMachine` in sync with capture and playback.
+    on_audio_callback: Option<AudioCallbackSink>,
+    /// Cached VAD endpoint, loaded once when the adapter is created and reused
+    /// across every utterance instead of rebuilding the Silero detector each
+    /// turn.
+    endpoint: Option<Box<dyn takusu_audio::Endpoint>>,
 }
 
 impl AudioAdapter {
@@ -80,6 +144,8 @@ impl AudioAdapter {
             config.audio.clone()
         };
         let (stt, tts, voice_id, speed, tts_format) = Self::build_audio(&audio).await?;
+        let endpoint = takusu_audio::default_endpoint_async().await;
+        let (stop_tx, stop) = tokio::sync::watch::channel(false);
         Ok(Self {
             session,
             last_audio: audio,
@@ -88,22 +154,88 @@ impl AudioAdapter {
             tts_voice_id: voice_id,
             tts_speed: speed,
             tts_format,
+            stop_tts: Arc::new(AtomicBool::new(false)),
+            stop,
+            stop_tx: Some(stop_tx),
+            on_event: None,
+            on_audio_callback: None,
+            endpoint: Some(endpoint),
         })
     }
 
-    /// Run the push-to-talk loop until interrupted or an unrecoverable error occurs.
+    /// Route assistant turn events to `f`. Used by the CLI runner and any
+    /// surface that wants to render streaming transcriptions.
+    pub fn with_events(mut self, f: impl FnMut(TurnEvent) + Send + 'static) -> Self {
+        self.on_event = Some(Arc::new(Mutex::new(f)));
+        self
+    }
+
+    /// Route audio lifecycle callbacks to `f`. Used by the desktop daemon to
+    /// keep the shared `SurfaceStateMachine` in sync with capture and playback.
+    pub fn with_audio_callback(mut self, f: impl FnMut(AudioCallback) + Send + 'static) -> Self {
+        self.on_audio_callback = Some(Arc::new(Mutex::new(f)));
+        self
+    }
+
+    /// Replace the stop signal receiver with one owned by the caller.
+    /// The matching sender is typically held by a [`VoiceSessionHandle`].
+    pub fn with_stop_signal(mut self, stop: tokio::sync::watch::Receiver<bool>) -> Self {
+        self.stop = stop;
+        self.stop_tx = None;
+        self
+    }
+
+    /// Request that the current capture or playback stop. This flips the TTS
+    /// stop flag and, if the adapter owns the stop sender, sends a stop signal.
+    pub fn request_stop(&self) {
+        self.stop_tts_signal();
+        if let Some(tx) = self.stop_tx.as_ref() {
+            let _ = tx.send(true);
+        }
+    }
+
+    /// Emit a turn event to the configured sink, if any.
+    fn emit(&self, event: TurnEvent) {
+        Self::emit_with(&self.on_event, event);
+    }
+
+    /// Emit a turn event to `sink` without borrowing `self`.
+    fn emit_with(sink: &Option<EventSink>, event: TurnEvent) {
+        if let Some(sink) = sink
+            && let Ok(mut guard) = sink.lock()
+        {
+            guard(event);
+        }
+    }
+
+    /// Emit an audio lifecycle callback to the configured sink, if any.
+    fn audio_callback(&self, callback: AudioCallback) {
+        Self::audio_callback_with(&self.on_audio_callback, callback);
+    }
+
+    /// Emit an audio callback to `sink` without borrowing `self`.
+    fn audio_callback_with(sink: &Option<AudioCallbackSink>, callback: AudioCallback) {
+        if let Some(sink) = sink
+            && let Ok(mut guard) = sink.lock()
+        {
+            guard(callback);
+        }
+    }
+
+    /// Request that any in-progress TTS playback stop at the next block.
+    //
+    // TODO(WI-12): wire this to `SurfaceCommand::StopTts` so tray/mobile
+    // surfaces can stop the assistant's speech mid-turn.
+    pub fn stop_tts_signal(&self) {
+        self.stop_tts.store(true, Ordering::Relaxed);
+    }
+
+    /// Run the push-to-talk loop until interrupted or an unrecoverable error.
     ///
-    /// `on_event` receives streaming ASR transcripts (`TurnEvent::AsrText`) and
-    /// the assistant turn events produced by `run_turn_stream`.
-    pub async fn run<E>(
-        &mut self,
-        no_tts: bool,
-        yes: bool,
-        mut on_event: E,
-    ) -> Result<(), AgentError>
-    where
-        E: FnMut(TurnEvent) + Send,
-    {
+    /// Recording stops itself on VAD endpointing; pressing Enter on stdin also
+    /// cuts the active recording. `no_tts` mutes speech and `yes` auto-approves
+    /// any approval request.
+    pub async fn run(&mut self, no_tts: bool, yes: bool) -> Result<(), AgentError> {
         // Single background thread that reads "Enter" from stdin and routes it
         // to the currently active recording's stop channel. This avoids spawning
         // a new thread per turn and prevents multiple readers from competing for
@@ -129,154 +261,22 @@ impl AudioAdapter {
         loop {
             self.reconfigure_if_needed().await?;
 
-            let language = self.last_audio.stt.language.clone();
-            let mut asr_stream = self
-                .stt
-                .start_stream(&language)
-                .await
-                .map_err(|e| AgentError::Audio(AudioError::Transcribe(e.to_string())))?;
-
-            let (stop_tx, mut stop_rx) = tokio::sync::mpsc::channel(1);
+            let (stop_tx, stop_rx) = tokio::sync::mpsc::channel(1);
             *current_stop.lock().unwrap_or_else(|e| e.into_inner()) = Some(stop_tx);
 
-            let (recorder, mut chunk_rx) = StreamingRecorder::start(RecordConfig {
-                max_duration: Duration::from_secs(60),
-                ..Default::default()
-            })
-            .map_err(|e| AgentError::Audio(AudioError::Record(e.to_string())))?;
-
-            let mut last_text = String::new();
-            let mut recording = true;
-
-            while recording {
-                tokio::select! {
-                    chunk = chunk_rx.recv() => {
-                        match chunk {
-                            Some(chunk) => {
-                                asr_stream.accept_waveform(&chunk);
-                                let text = asr_stream.text();
-                                if text != last_text {
-                                    last_text = text.clone();
-                                    on_event(TurnEvent::AsrText(text));
-                                }
-                            }
-                            None => {
-                                recording = false;
-                            }
-                        }
-                    }
-                    _ = stop_rx.recv() => {
-                        recorder.stop();
-                        recording = false;
-                    }
-                }
-            }
-
+            let captured = self
+                .capture_utterance(stop_rx)
+                .await
+                .map_err(AgentError::Audio)?;
             *current_stop.lock().unwrap_or_else(|e| e.into_inner()) = None;
 
-            recorder
-                .join()
-                .map_err(|e| AgentError::Audio(AudioError::Record(e.to_string())))?;
-
-            let text = asr_stream
-                .finish()
-                .await
-                .map_err(|e| AgentError::Audio(AudioError::Transcribe(e.to_string())))?;
-            if text.trim().is_empty() {
+            let Some(text) = captured else {
                 continue;
-            }
-
-            // Emit the final ASR transcript before the assistant turn.
-            on_event(TurnEvent::AsrText(text.clone()));
-
-            let (tts_tx, tts_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
-            let (audio_tx, mut audio_rx) = tokio::sync::mpsc::channel::<TtsStream>(3);
-            let tts = Arc::clone(&self.tts);
-            let tts_format = self.tts_format;
-            let voice_id = Arc::new(self.tts_voice_id.clone());
-            let speed = self.tts_speed;
-            let tts_language = Arc::new(self.last_audio.tts.language.clone());
-            let no_tts_this_turn = no_tts || self.last_audio.tts.mute;
-
-            let tts_synth = tokio::spawn(async move {
-                if no_tts_this_turn {
-                    return Result::<(), AudioError>::Ok(());
-                }
-
-                use futures_util::StreamExt;
-
-                let stream = futures_util::stream::unfold(tts_rx, |mut rx| async move {
-                    rx.recv().await.map(|block| (block, rx))
-                })
-                .filter(|block| std::future::ready(!block.trim().is_empty()))
-                .map(move |block| {
-                    let tts = Arc::clone(&tts);
-                    let voice_id = Arc::clone(&voice_id);
-                    let tts_language = Arc::clone(&tts_language);
-                    async move {
-                        synthesize_stream_with_timeout(
-                            tts.as_ref(),
-                            &block,
-                            voice_id.as_str(),
-                            tts_language.as_str(),
-                            speed,
-                            Duration::from_secs(120),
-                        )
-                        .await
-                    }
-                })
-                .buffered(3);
-
-                tokio::pin!(stream);
-
-                while let Some(stream) = stream.next().await {
-                    let stream = stream?;
-                    if audio_tx.send(stream).await.is_err() {
-                        break;
-                    }
-                }
-                Ok(())
-            });
-
-            let tts_play = tokio::spawn(async move {
-                while let Some(stream) = audio_rx.recv().await {
-                    play_stream_with_timeout(stream, tts_format, Duration::from_secs(120)).await?;
-                }
-                Ok::<(), AudioError>(())
-            });
-
-            let result = match self
-                .session
-                .run_turn_stream(&text, &mut on_event, |block| {
-                    if !no_tts_this_turn {
-                        let _ = tts_tx.send(block);
-                    }
-                })
-                .await
-            {
-                Ok(result) => result,
-                Err(e) => {
-                    drop(tts_tx);
-                    tts_synth.abort();
-                    tts_play.abort();
-                    return Err(e);
-                }
             };
 
-            // Drop the text sender so the synthesizer exits after the final block.
-            drop(tts_tx);
-            let (synth_result, play_result) = tokio::join!(tts_synth, tts_play);
-            synth_result
-                .map_err(|e| AudioError::Play(format!("tts synthesizer task panicked: {e}")))??;
-            play_result
-                .map_err(|e| AudioError::Play(format!("tts player task panicked: {e}")))??;
+            self.emit(TurnEvent::AsrText(text.clone()));
 
-            if !result.changes.is_empty() {
-                match serde_json::to_string_pretty(&result.changes) {
-                    Ok(changes) => eprintln!("{changes}"),
-                    Err(e) => eprintln!("changes: {e}"),
-                }
-            }
+            let mut result = self.run_agent_turn(&text, !no_tts).await?;
 
             if let Some(approval) = result.approval_request.as_ref() {
                 if yes {
@@ -287,11 +287,21 @@ impl AudioAdapter {
                         .map_err(|e| AudioError::Other(e.to_string()))?;
                     if res.approved {
                         eprintln!("approved {} change(s)", res.changes.len());
+                        result.changes = res.changes;
+                        result.schedule_dirty |= res.schedule_dirty;
                     } else {
                         eprintln!("denied");
                     }
                 } else {
                     eprintln!("approval required; re-run with --yes to auto-approve");
+                }
+                result.approval_request = None;
+            }
+
+            if !result.changes.is_empty() {
+                match serde_json::to_string_pretty(&result.changes) {
+                    Ok(changes) => eprintln!("{changes}"),
+                    Err(e) => eprintln!("changes: {e}"),
                 }
             }
 
@@ -299,6 +309,222 @@ impl AudioAdapter {
                 eprintln!("schedule dirty: true");
             }
         }
+    }
+
+    /// Capture one utterance: stream the microphone into the ASR session and
+    /// stop when VAD endpointing detects the end of speech, when `stop_rx`
+    /// signals a manual cut, or when the out-of-band stop signal fires.
+    /// Returns `None` when no speech was detected.
+    async fn capture_utterance(
+        &mut self,
+        mut stop_rx: tokio::sync::mpsc::Receiver<()>,
+    ) -> Result<Option<String>, AudioError> {
+        if *self.stop.borrow() {
+            return Err(AudioError::UserCancelled);
+        }
+
+        self.reconfigure_if_needed().await?;
+
+        let language = self.last_audio.stt.language.clone();
+        let mut asr_stream = self
+            .stt
+            .start_stream(&language)
+            .await
+            .map_err(|e| AudioError::Transcribe(e.to_string()))?;
+
+        let (recorder, mut chunk_rx) = StreamingRecorder::start(RecordConfig {
+            max_duration: Duration::from_secs(60),
+            // Feed the VAD gate raw levels; normalization would amplify
+            // silence into "speech" and the endpoint would never fire.
+            normalize_audio: false,
+            ..Default::default()
+        })
+        .map_err(|e| AudioError::Record(e.to_string()))?;
+
+        // Tell any surface that we are now listening.
+        self.audio_callback(AudioCallback::Listening);
+
+        // Snapshot the event sink so we can emit events while the endpoint
+        // guard holds a mutable borrow on `self.endpoint`.
+        let on_event = self.on_event.clone();
+        let emit = |event: TurnEvent| Self::emit_with(&on_event, event);
+
+        // Reuse the cached VAD endpoint (loaded once when the adapter was
+        // created) and reset it for a fresh utterance.
+        let mut endpoint = EndpointGuard::new(&mut self.endpoint)
+            .ok_or_else(|| AudioError::Other("VAD endpoint not initialized".into()))?;
+        endpoint.get_mut().reset();
+
+        let mut last_text = String::new();
+        let mut stopped = false;
+        loop {
+            tokio::select! {
+                chunk = chunk_rx.recv() => match chunk {
+                    Some(chunk) => {
+                        // VAD must see raw microphone levels so near-silence is not
+                        // amplified into "speech", but ASR is generally happier with
+                        // a normalized RMS. Keep the raw chunk for endpointing and
+                        // feed a normalized copy to the transcription stream.
+                        let reached_end =
+                            endpoint.get_mut().push(&chunk) == Some(VadEvent::SpeechEnd);
+                        asr_stream.accept_waveform(&normalize(&chunk, 0.1));
+                        let text = asr_stream.text();
+                        if text != last_text {
+                            last_text = text.clone();
+                            emit(TurnEvent::AsrText(text));
+                        }
+                        if reached_end {
+                            recorder.stop();
+                            break;
+                        }
+                    }
+                    None => break,
+                },
+                _ = stop_rx.recv() => {
+                    recorder.stop();
+                    break;
+                },
+                _ = self.stop.changed() => {
+                    recorder.stop();
+                    stopped = true;
+                    break;
+                }
+            }
+        }
+
+        // Join on a blocking thread so the std thread::join does not trip
+        // tokio's blocking-in-async guard.
+        tokio::task::spawn_blocking(move || recorder.join())
+            .await
+            .map_err(|e| AudioError::Record(format!("recording thread join task failed: {e}")))?
+            .map_err(|e| AudioError::Record(format!("recording thread panicked: {e}")))?;
+
+        if stopped {
+            return Err(AudioError::UserCancelled);
+        }
+
+        let text = asr_stream
+            .finish()
+            .await
+            .map_err(|e| AudioError::Transcribe(e.to_string()))?;
+        if text.trim().is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(text))
+        }
+    }
+
+    /// Run one agent turn from `text`, streaming TTS when `speak` is `true`, and
+    /// return the turn result. Approval resolution is the caller's responsibility.
+    async fn run_agent_turn(&mut self, text: &str, speak: bool) -> Result<TurnResult, AgentError> {
+        // Reset the tap-to-stop flag for this turn.
+        self.stop_tts.store(false, Ordering::Relaxed);
+
+        let no_tts_this_turn = !speak || self.last_audio.tts.mute;
+
+        let (tts_tx, tts_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+        let (audio_tx, mut audio_rx) = tokio::sync::mpsc::channel::<TtsStream>(3);
+        let tts = Arc::clone(&self.tts);
+        let tts_format = self.tts_format;
+        let voice_id = Arc::new(self.tts_voice_id.clone());
+        let speed = self.tts_speed;
+        let tts_language = Arc::new(self.last_audio.tts.language.clone());
+        let stop_tts = Arc::clone(&self.stop_tts);
+        let stop_tts_play = Arc::clone(&stop_tts);
+
+        let tts_synth = tokio::spawn(async move {
+            if no_tts_this_turn {
+                return Result::<(), AudioError>::Ok(());
+            }
+
+            use futures_util::StreamExt;
+
+            let stream = futures_util::stream::unfold(tts_rx, |mut rx| async move {
+                rx.recv().await.map(|block| (block, rx))
+            })
+            .filter(|block| std::future::ready(!block.trim().is_empty()))
+            .map(move |block| {
+                let tts = Arc::clone(&tts);
+                let voice_id = Arc::clone(&voice_id);
+                let tts_language = Arc::clone(&tts_language);
+                async move {
+                    synthesize_stream_with_timeout(
+                        tts.as_ref(),
+                        &block,
+                        voice_id.as_str(),
+                        tts_language.as_str(),
+                        speed,
+                        Duration::from_secs(120),
+                    )
+                    .await
+                }
+            })
+            .buffered(3);
+
+            tokio::pin!(stream);
+
+            while let Some(stream) = stream.next().await {
+                if stop_tts.load(Ordering::Relaxed) {
+                    break;
+                }
+                let stream = stream?;
+                if audio_tx.send(stream).await.is_err() {
+                    break;
+                }
+            }
+            Ok(())
+        });
+
+        let tts_play = tokio::spawn(async move {
+            while let Some(stream) = audio_rx.recv().await {
+                if stop_tts_play.load(Ordering::Relaxed) {
+                    break;
+                }
+                play_stream_with_timeout(stream, tts_format, Duration::from_secs(120)).await?;
+            }
+            Ok::<(), AudioError>(())
+        });
+
+        // The turn event callback may be called from a spawned task, so move
+        // the cloned event sink into the closure instead of borrowing `self`.
+        if !no_tts_this_turn {
+            self.audio_callback(AudioCallback::Speaking);
+        }
+        let on_event = self.on_event.clone();
+        let result = match self
+            .session
+            .run_turn_stream(
+                text,
+                move |event| Self::emit_with(&on_event, event),
+                |block| {
+                    if !no_tts_this_turn {
+                        let _ = tts_tx.send(block);
+                    }
+                },
+            )
+            .await
+        {
+            Ok(result) => result,
+            Err(e) => {
+                drop(tts_tx);
+                tts_synth.abort();
+                tts_play.abort();
+                return Err(e);
+            }
+        };
+
+        // Drop the text sender so the synthesizer exits after the final block.
+        drop(tts_tx);
+        let (synth_result, play_result) = tokio::join!(tts_synth, tts_play);
+        synth_result
+            .map_err(|e| AudioError::Play(format!("tts synthesizer task panicked: {e}")))??;
+        play_result.map_err(|e| AudioError::Play(format!("tts player task panicked: {e}")))??;
+
+        if !no_tts_this_turn {
+            self.audio_callback(AudioCallback::PlaybackFinished);
+        }
+
+        Ok(result)
     }
 
     async fn reconfigure_if_needed(&mut self) -> Result<(), AudioError> {
@@ -353,6 +579,38 @@ impl AudioAdapter {
             pcm_format: PcmFormat::I16,
         };
         Ok((stt, tts, voice_id, speed, tts_format))
+    }
+}
+
+#[async_trait::async_trait]
+impl VoiceSessionIo for AudioAdapter {
+    async fn capture(&mut self, _origin: InputOrigin) -> Result<Option<String>, VoiceSessionError> {
+        // A never-signalled stop channel: the voice session uses the watch
+        // receiver for out-of-band stop requests instead.
+        let (_stop_tx, stop_rx) = tokio::sync::mpsc::channel(1);
+        self.capture_utterance(stop_rx)
+            .await
+            .map_err(|e| match e {
+                AudioError::UserCancelled => VoiceSessionError::UserCancelled,
+                _ => VoiceSessionError::Capture(e.to_string()),
+            })
+    }
+
+    async fn process(
+        &mut self,
+        text: &str,
+        origin: InputOrigin,
+    ) -> Result<ProcessedTurn, VoiceSessionError> {
+        // Do not start a new turn while the previous turn is still waiting for
+        // approval. Without this guard, the next utterance would grab the turn
+        // lock and overwrite the pending approval before the surface could
+        // resolve it. Wait instead of failing so the session can continue once
+        // the user resolves the approval.
+        while self.session.pending_approval().is_some() {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        let result = self.run_agent_turn(text, origin.auto_speaks()).await?;
+        Ok(ProcessedTurn { result })
     }
 }
 

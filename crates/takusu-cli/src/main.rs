@@ -1102,7 +1102,9 @@ struct AgentArgs {
     /// Single text input for one agent turn.
     text: Option<String>,
 
-    /// Auto-approve any pending changes without prompting.
+    /// Auto-approve any pending changes without prompting. Ignored when
+    /// --voice-session is used; continuous sessions defer approvals to the
+    /// surface.
     #[arg(long)]
     yes: bool,
 
@@ -1125,6 +1127,11 @@ struct AgentArgs {
     /// Run in voice mode (streaming ASR) instead of text/REPL.
     #[arg(long, conflicts_with = "text")]
     voice: bool,
+
+    /// Run a continuous voice session (multi-turn within one explicit session,
+    /// VAD endpointing). Requires `voice`.
+    #[arg(long, requires = "voice")]
+    voice_session: bool,
 
     #[command(subcommand)]
     command: Option<AgentSubCommands>,
@@ -2998,6 +3005,7 @@ async fn run_agent(app: Arc<TakusuApp>, args: AgentArgs, plain: bool) -> Result<
             continue_session: args.continue_session,
             new_session: args.new_session,
             voice: args.voice,
+            voice_session: args.voice_session,
         })
         .await?;
     }

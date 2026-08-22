@@ -5,7 +5,7 @@ import {
   loadAgentApiKey,
   loadTtsMuted,
 } from '@/src/api/settingsStore';
-import TakusuAudioModule from '../../modules/takusu-server/src/TakusuAudioModule';
+import TakusuAudioModule from '@/modules/takusu-server/src/TakusuAudioModule';
 
 const ASR_MODEL_KEY = 'takusu.agent.asrModel';
 
@@ -25,6 +25,12 @@ let lastConfigKey = '';
 let isRecording = false;
 let onRecordingChange: ((recording: boolean) => void) | null = null;
 let stopPromise: Promise<string> | null = null;
+let endpointingEnabled = false;
+
+/** Enable VAD endpointing (recording auto-stops ~0.5 s after speech). */
+export function setEndpointingEnabled(enabled: boolean): void {
+  endpointingEnabled = enabled;
+}
 
 function hashString(input: string): number {
   let h = 0;
@@ -118,7 +124,11 @@ export async function startRecording(): Promise<void> {
     }
     await ensureAudioConfigured();
     TakusuAudioModule.stopPlayback();
-    await TakusuAudioModule.startRecording();
+    if (endpointingEnabled) {
+      await TakusuAudioModule.startRecordingWithEndpointing();
+    } else {
+      await TakusuAudioModule.startRecording();
+    }
   } catch (e) {
     if (isRecording) {
       isRecording = false;

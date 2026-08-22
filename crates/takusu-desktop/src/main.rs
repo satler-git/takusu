@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use futures_util::StreamExt;
-use takusu_agent::{SurfaceCommand, SurfaceEvent, SurfaceSnapshot, SurfaceState};
+use takusu_agent::{SurfaceCommand, SurfaceEvent, SurfaceState};
 use takusu_contracts::EventDeliveryState;
 use tracing_subscriber::{EnvFilter, fmt};
 
@@ -37,8 +37,7 @@ async fn run() -> Result<(), DesktopError> {
     if config.token.is_empty() {
         tracing::warn!("no bearer token configured; agent routes may fail");
     }
-    let state = DesktopState::new();
-    state.set_theme(config.theme);
+    let state = DesktopState::new(config.clone());
 
     // Real transport: HTTP to takusu-local agent routes.
     let transport: Arc<dyn DesktopTransport + Send + Sync> =
@@ -72,6 +71,12 @@ async fn run() -> Result<(), DesktopError> {
     });
 
     let popover = Popover::new_with_transport(Arc::clone(&transport));
+
+    let state_for_popover = state.clone();
+    let popover_for_callback = popover.clone();
+    state.set_on_change(move || {
+        show_popover_for_state(&state_for_popover, &popover_for_callback);
+    });
 
     let initial_next_eval_at =
         replay_events(transport.as_ref(), &state, &notification_state, &proxy).await?;
@@ -122,7 +127,6 @@ async fn run() -> Result<(), DesktopError> {
     let snapshot = transport.surface_snapshot().await?;
     apply_surface_event(
         &state,
-        &popover,
         SurfaceEvent::Snapshot(snapshot),
         transport.as_ref(),
     )
@@ -132,7 +136,7 @@ async fn run() -> Result<(), DesktopError> {
     loop {
         let mut events = transport.surface_events().await?;
         while let Some(event) = events.next().await {
-            apply_surface_event(&state, &popover, event, transport.as_ref()).await?;
+            apply_surface_event(&state, event, transport.as_ref()).await?;
         }
         tracing::warn!("surface event stream ended; reconnecting in 5s");
         tokio::time::sleep(Duration::from_secs(5)).await;
@@ -237,7 +241,6 @@ async fn replay_events(
 
 async fn apply_surface_event(
     state: &DesktopState,
-    popover: &Popover,
     event: SurfaceEvent,
     transport: &dyn DesktopTransport,
 ) -> Result<(), DesktopError> {
@@ -278,34 +281,38 @@ async fn apply_surface_event(
             }
         }
 
-        // Keep the compact panel in sync with the surface state even when no
-        // explicit surface command was issued.
-        show_popover_for_state(state, popover, &snapshot);
     }
 
     Ok(())
 }
 
-fn show_popover_for_state(state: &DesktopState, popover: &Popover, snapshot: &SurfaceSnapshot) {
-    let title = state
-        .snapshot()
-        .map(|v| v.title())
-        .unwrap_or_else(|| "takusu".into());
-    let detail = state.snapshot().and_then(|v| v.detail());
+fn show_popover_for_state(state: &DesktopState, popover: &Popover) {
+    let view = state.snapshot();
+    let snapshot = view.as_ref().map(|v| v.snapshot.clone()).unwrap_or_default();
+    let title = view.as_ref().map(|v| v.title()).unwrap_or_else(|| "takusu".into());
+    let detail = view.as_ref().and_then(|v| v.detail());
+    let active = state.voice_session_active();
+    let invited = state.consume_voice_invite();
 
-    if matches!(
-        snapshot.state,
-        SurfaceState::Thinking
-            | SurfaceState::WaitingForApproval
-            | SurfaceState::Error
-            | SurfaceState::WaitingForUser
-    ) {
+    let show_voice_button = cfg!(feature = "audio-device") && (active || invited);
+
+    if active
+        || invited
+        || matches!(
+            snapshot.state,
+            SurfaceState::Thinking
+                | SurfaceState::WaitingForApproval
+                | SurfaceState::Error
+                | SurfaceState::WaitingForUser
+        )
+    {
         popover.show(
             state,
             PopoverRequest {
                 title,
                 detail: detail.or_else(|| snapshot.error.clone()),
                 actions: state.quick_actions(),
+                voice_button: show_voice_button,
             },
         );
     } else {

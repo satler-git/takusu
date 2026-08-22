@@ -14,6 +14,8 @@ import { haptic } from '@/src/components/haptics';
 import { useTheme, type ColorSet } from '@/src/theme';
 import { AgentClient, AgentApiError } from '@/src/api/agentClient';
 import { showError } from '@/src/api/errors';
+import TakusuAudioModule from '@/modules/takusu-server/src/TakusuAudioModule';
+import { ensureAudioConfigured } from '@/src/utils/voice';
 import {
   loadSettings,
   saveAgentProviders,
@@ -393,6 +395,7 @@ function AgentCompactPanelImpl({
 
   const abortRef = useRef<AbortController | null>(null);
   const pendingSessionRef = useRef<string | null>(null);
+  const ttsPromiseRef = useRef(Promise.resolve());
 
   useEffect(() => {
     if (!visible) {
@@ -423,6 +426,7 @@ function AgentCompactPanelImpl({
       return;
     }
 
+    ttsPromiseRef.current = Promise.resolve();
     setTranscript(spec.transcript ?? '');
     setTurnText('');
     setTurnError(null);
@@ -434,6 +438,22 @@ function AgentCompactPanelImpl({
     abortRef.current = abort;
 
     const start = async () => {
+      const playTtsBlock = (block: string) => {
+        const text = block.trim();
+        if (!text) {
+          return;
+        }
+        const next = ttsPromiseRef.current.then(async () => {
+          try {
+            await ensureAudioConfigured();
+            await TakusuAudioModule.synthesizeAndPlay(text);
+          } catch (e) {
+            console.error('compact panel TTS failed:', e);
+          }
+        });
+        ttsPromiseRef.current = next;
+      };
+
       try {
         let sid = spec.sessionId ?? pendingSessionRef.current ?? null;
         if (!sid) {
@@ -455,8 +475,7 @@ function AgentCompactPanelImpl({
           (event: AgentStreamEvent) => {
             if (abort.signal.aborted) return;
             if (event.type === 'TtsBlock') {
-              // TTS is handled by the server-side queue; the compact panel
-              // only shows text and state.
+              playTtsBlock(event.data);
               return;
             }
             switch (event.type) {
@@ -499,7 +518,14 @@ function AgentCompactPanelImpl({
                 );
                 setApproval(event.data.approval_request ?? null);
                 setSurfaceBusy(false);
-                spec.onComplete?.();
+                void (async () => {
+                  try {
+                    await ttsPromiseRef.current;
+                  } catch {
+                    // Ignore TTS failures; the turn text is still displayed.
+                  }
+                  spec.onComplete?.();
+                })();
                 break;
             }
           },

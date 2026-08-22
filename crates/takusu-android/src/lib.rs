@@ -3,6 +3,7 @@ uniffi::setup_scaffolding!();
 mod audio;
 mod log_buffer;
 mod model;
+mod vad;
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
