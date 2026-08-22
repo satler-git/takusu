@@ -32,6 +32,10 @@ enum Commands {
         /// Maximum recording duration in seconds
         #[arg(long, default_value_t = 300.0)]
         max_duration: f64,
+
+        /// Stop automatically ~500 ms after speech ends (VAD endpointing)
+        #[arg(long, default_value_t = false)]
+        endpoint: bool,
     },
 
     /// Transcribe a WAV audio file using Sherpa-ONNX
@@ -139,17 +143,22 @@ async fn main() {
         Commands::Record {
             output,
             max_duration,
+            endpoint,
         } => {
             let config = takusu_audio::RecordConfig {
                 max_duration: Duration::from_secs_f64(max_duration),
                 ..Default::default()
             };
 
-            let samples = match record(&config) {
-                Ok(s) => s,
-                Err(e) => {
-                    eprintln!("Recording error: {e}");
-                    std::process::exit(1);
+            let samples = if endpoint {
+                listen_endpoint(&config).await
+            } else {
+                match record(&config) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        eprintln!("Recording error: {e}");
+                        std::process::exit(1);
+                    }
                 }
             };
 
@@ -451,6 +460,69 @@ async fn listen_streaming(
             std::process::exit(1)
         })
     }
+}
+
+/// Record from the microphone until VAD endpointing detects the end of speech
+/// (a few hundred ms after the user stops talking). This is the on-device smoke
+/// test for WI-12 VAD endpointing: run it, speak, then stop and observe that
+/// recording stops ~0.5 s later, printing the segment boundaries. Ctrl-C
+/// gracefully stops and still returns the captured audio.
+///
+/// The stream is left *unnormalized* so the VAD (Silero by default, else
+/// raw-energy) sees real input levels instead of the recorder's fixed-RMS boost
+/// that turns silence into "speech".
+async fn listen_endpoint(config: &takusu_audio::RecordConfig) -> Vec<f32> {
+    use takusu_audio::VadEvent;
+
+    let mut raw_config = config.clone();
+    raw_config.normalize_audio = false;
+
+    let (recorder, mut rx) =
+        takusu_audio::StreamingRecorder::start(raw_config).unwrap_or_else(|e| {
+            eprintln!("Recorder error: {e}");
+            std::process::exit(1);
+        });
+
+    eprintln!("Initializing VAD (downloads the Silero model on first run)...");
+    let mut endpoint = takusu_audio::default_endpoint_async().await;
+
+    let mut samples = Vec::new();
+    let start = std::time::Instant::now();
+    eprintln!("Listening; recording stops ~500 ms after speech ends. Ctrl-C to stop.");
+    loop {
+        tokio::select! {
+            chunk = rx.recv() => {
+                match chunk {
+                    Some(chunk) => {
+                        samples.extend_from_slice(&chunk);
+                        match endpoint.push(&chunk) {
+                            Some(VadEvent::SpeechStart) => eprintln!(
+                                "[+{:.2}s] speech start",
+                                start.elapsed().as_secs_f64()
+                            ),
+                            Some(VadEvent::SpeechEnd) => {
+                                eprintln!(
+                                    "[+{:.2}s] speech end (endpoint)",
+                                    start.elapsed().as_secs_f64()
+                                );
+                                recorder.stop();
+                                break;
+                            }
+                            None => {}
+                        }
+                    }
+                    None => break,
+                }
+            }
+            _ = tokio::signal::ctrl_c() => {
+                eprintln!("interrupted; capturing what was recorded");
+                recorder.stop();
+                break;
+            }
+        }
+    }
+    let _ = tokio::task::spawn_blocking(move || recorder.join()).await;
+    samples
 }
 
 async fn transcribe_offline(samples: &[f32], stt_config: SttRuntimeConfig) -> String {

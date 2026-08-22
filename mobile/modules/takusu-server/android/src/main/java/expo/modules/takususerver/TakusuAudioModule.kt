@@ -21,6 +21,7 @@ import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import uniffi.takusu_android.AndroidVad
 import uniffi.takusu_android.MobileAudio
 
 class AudioOptions : Record {
@@ -50,6 +51,9 @@ private const val TAG = "TakusuAudioModule"
 class TakusuAudioModule : Module() {
     private var audio: MobileAudio? = null
     private var recorder: AudioRecorder? = null
+
+    /** Reusable VAD endpoint. Loaded once and reset before each recording. */
+    private var vad: AndroidVad? = null
 
     @Volatile
     private var player: MediaPlayer? = null
@@ -203,6 +207,34 @@ class TakusuAudioModule : Module() {
                 val newRecorder = AudioRecorder()
                 newRecorder.startStreaming(instance, audioLanguage)
                 recorder = newRecorder
+                true
+            }
+
+            // VAD endpointing: downloads the Silero model (first run) and stops
+            // recording ~0.5 s after speech ends instead of requiring a tap.
+            AsyncFunction("startRecordingWithEndpointing") Coroutine {
+                val dir =
+                    cacheDir
+                        ?: throw CodedException(
+                            "ERR_AUDIO_CONFIG",
+                            "React context is not available",
+                            null,
+                        )
+                if (vad == null) {
+                    val modelDir =
+                        withContext(Dispatchers.IO) {
+                            uniffi.takusu_android.downloadModel(
+                                dir.absolutePath,
+                                "silero-vad",
+                                "${dir.absolutePath}/silero-vad-status.json",
+                            )
+                        }
+                    vad = AndroidVad("$modelDir/silero_vad.onnx")
+                }
+                val instance = AudioRecorder()
+                instance.setVadEndpointing(vad)
+                instance.start()
+                recorder = instance
                 true
             }
 

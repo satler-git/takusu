@@ -76,6 +76,17 @@ pub struct Config {
     pub tz: String,
 }
 
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            theme: Theme::default(),
+            local_url: "http://127.0.0.1:3000".into(),
+            token: String::new(),
+            tz: "UTC".into(),
+        }
+    }
+}
+
 impl Config {
     /// Load from `~/.config/takusu/config.toml` and environment overrides.
     pub fn load() -> Result<Self, ConfigError> {

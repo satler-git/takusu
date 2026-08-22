@@ -27,6 +27,8 @@ pub struct PopoverRequest {
     pub title: String,
     pub detail: Option<String>,
     pub actions: Vec<DesktopAction>,
+    /// Whether to include a start/stop voice session button.
+    pub voice_button: bool,
 }
 
 impl PopoverRequest {
@@ -36,6 +38,7 @@ impl PopoverRequest {
             title: presentation.title.clone(),
             detail: Some(presentation.body.clone()),
             actions: presentation.actions.clone(),
+            voice_button: false,
         }
     }
 }
@@ -179,13 +182,15 @@ impl fmt::Debug for WindowController {
 }
 
 #[cfg(target_os = "linux")]
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 enum WindowCommand {
     Show {
         title: String,
         detail: Option<String>,
         theme: crate::config::Theme,
         actions: Vec<DesktopAction>,
+        voice_button: bool,
+        state: DesktopState,
     },
     Hide,
 }
@@ -197,6 +202,8 @@ struct PopoverView {
     background: gpui::Hsla,
     text_color: gpui::Hsla,
     actions: Vec<DesktopAction>,
+    voice_button: bool,
+    state: DesktopState,
     transport: Arc<dyn DesktopTransport + Send + Sync>,
     runtime: tokio::runtime::Handle,
 }
@@ -249,6 +256,38 @@ impl gpui::Render for PopoverView {
                                         "popover quick action failed"
                                     );
                                 }
+                            }
+                        });
+                    }),
+            );
+        }
+
+        if self.voice_button {
+            let state = self.state.clone();
+            let runtime = self.runtime.clone();
+            let label = if state.voice_session_active() {
+                "Stop voice session"
+            } else {
+                "Start voice session"
+            };
+            action_children.push(
+                gpui::div()
+                    .child(label)
+                    .px_3()
+                    .py_1()
+                    .rounded_md()
+                    .border_1()
+                    .border_color(self.text_color)
+                    .cursor_pointer()
+                    .id("voice-session")
+                    .on_click(move |_event, _window, _cx| {
+                        let state = state.clone();
+                        runtime.spawn(async move {
+                            if state.voice_session_active() {
+                                state.stop_voice_session();
+                            } else {
+                                state.set_voice_invite(true);
+                                state.start_voice_session();
                             }
                         });
                     }),
@@ -345,6 +384,8 @@ impl WindowController {
                                 detail,
                                 theme,
                                 actions,
+                                voice_button,
+                                state,
                             } => {
                                 if let Some(handle) = current.take() {
                                     let _ = handle.update(cx, |_view, window, _cx| {
@@ -383,6 +424,8 @@ impl WindowController {
                                         background,
                                         text_color,
                                         actions,
+                                        voice_button,
+                                        state: state.clone(),
                                         transport: Arc::clone(&thread_transport),
                                         runtime: thread_runtime.clone(),
                                     })
@@ -422,6 +465,8 @@ impl WindowController {
             detail: request.detail,
             theme: state.theme(),
             actions: request.actions,
+            voice_button: request.voice_button,
+            state: state.clone(),
         };
 
         if let Ok(guard) = self.sender.lock()
@@ -465,13 +510,14 @@ mod tests {
         let popover = Popover::new();
         assert!(matches!(popover, Popover::MenuFallback));
 
-        let state = DesktopState::new();
+        let state = DesktopState::new(crate::config::Config::default());
         popover.show(
             &state,
             PopoverRequest {
                 title: "takusu".into(),
                 detail: Some("detail text".into()),
                 actions: Vec::new(),
+                voice_button: false,
             },
         );
         popover.hide();

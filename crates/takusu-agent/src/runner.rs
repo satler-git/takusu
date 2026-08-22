@@ -51,9 +51,43 @@ pub async fn run_audio<E>(
     on_event: E,
 ) -> Result<(), AgentError>
 where
-    E: FnMut(crate::TurnEvent) + Send,
+    E: FnMut(crate::TurnEvent) + Send + 'static,
 {
     use crate::audio::AudioAdapter;
-    let mut adapter = AudioAdapter::new(session).await?;
-    adapter.run(no_tts, yes, on_event).await
+    let mut adapter = AudioAdapter::new(session).await?.with_events(on_event);
+    adapter.run(no_tts, yes).await
+}
+
+/// Run a continuous voice session against a real microphone, routing streaming
+/// assistant events to `on_turn_event` and audio lifecycle callbacks to
+/// `on_audio_callback`.
+///
+/// This is the concrete desktop/platform entry point for the WI-12 voice
+/// session: after it returns, control has already run the session loop
+/// (`capture -> process -> speak -> capture ...`) until the user exited or the
+/// idle timeout fired. `on_turn_event` lets a surface forward `TurnEvent`s to
+/// the shared `SurfaceStateMachine`; `on_audio_callback` does the same for
+/// `AudioCallback`s.
+#[cfg(feature = "audio-device")]
+#[allow(clippy::needless_pass_by_value)]
+pub async fn run_voice_session<E, A>(
+    session: Arc<AgentSession>,
+    origin: crate::voice_session::InputOrigin,
+    config: crate::voice_session::VoiceSessionConfig,
+    stop: tokio::sync::watch::Receiver<bool>,
+    on_turn_event: E,
+    on_audio_callback: A,
+) -> Result<crate::voice_session::SessionOutcome, AgentError>
+where
+    E: FnMut(crate::TurnEvent) + Send + 'static,
+    A: FnMut(crate::surface::AudioCallback) + Send + 'static,
+{
+    use crate::audio::AudioAdapter;
+    use crate::voice_session::VoiceSession;
+    let mut adapter = AudioAdapter::new(session)
+        .await?
+        .with_events(on_turn_event)
+        .with_audio_callback(on_audio_callback)
+        .with_stop_signal(stop);
+    Ok(VoiceSession::new(config, origin).run(&mut adapter).await)
 }

@@ -21,6 +21,7 @@ pub mod transport;
 pub use transport::ResumeSessionRequest as SessionSnapshot;
 pub mod tts_queue;
 pub mod user_input;
+pub mod voice_session;
 
 pub(crate) mod notification;
 
@@ -40,6 +41,10 @@ pub use surface::{
 };
 pub use takusu_client::{CoverageEvaluation, CoverageState};
 pub use tts_queue::TtsQueue;
+pub use voice_session::{
+    InputOrigin, ProcessedTurn, SessionOutcome, VoiceSession, VoiceSessionConfig,
+    VoiceSessionError, VoiceSessionIo,
+};
 
 pub use crate::llm::CompactionSettings;
 pub use tool::{

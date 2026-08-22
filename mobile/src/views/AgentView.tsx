@@ -53,7 +53,7 @@ import {
   voiceBridge,
   type VoiceResult,
 } from '@/src/utils/voice';
-import TakusuAudioModule from '../../modules/takusu-server/src/TakusuAudioModule';
+import TakusuAudioModule from '@/modules/takusu-server/src/TakusuAudioModule';
 import {
   AGENT_SESSION_HISTORY_DEFAULT,
   loadSettings,
