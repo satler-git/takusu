@@ -30,11 +30,11 @@ use crate::capability::{ActionCapability, CapabilityRequest};
 use crate::notification::{StartTimeNotificationList, StartTimeNotificationRequest};
 use crate::surface::{SurfaceCommandResponse, SurfaceEvent, SurfaceSnapshot};
 use crate::transport::{
-    API_VERSION, ApprovalDecisionRequest, ApprovalResultDto, CapabilitiesResponse,
-    CreateSessionRequest, CreateSessionResponse, EditTurnRequest, HealthResponse, PlannerEvent,
-    ResumeSessionRequest, ResumeSessionResponse, RevertRequest, SseEvent, SurfaceAudioRequest,
-    SurfaceCommandRequest, TurnRequest, TurnResultDto, UpdateAgentSettings, UpdateSessionSettings,
-    UserInputResolutionRequest, Versioned,
+    API_VERSION, ApprovalDecisionRequest, ApprovalResultDto, AuthorizeActionQuery,
+    CapabilitiesResponse, CreateSessionRequest, CreateSessionResponse, EditTurnRequest,
+    HealthResponse, PlannerEvent, ResumeSessionRequest, ResumeSessionResponse, RevertRequest,
+    SseEvent, SurfaceAudioRequest, SurfaceCommandRequest, TurnRequest, TurnResultDto,
+    UpdateAgentSettings, UpdateSessionSettings, UserInputResolutionRequest, Versioned,
 };
 
 /// Generic `{ "ok": true }` body used by several agent endpoints.
@@ -339,6 +339,7 @@ async fn mint_capability_schema(
 /// Schema-only stub for `POST /agent/v1/actions`. The real handler is in
 /// `transport.rs`; this function exists only to register the OpenAPI shape.
 async fn authorize_action_schema(
+    Query(_query): Query<AuthorizeActionQuery>,
     Json(_body): Json<Versioned<ActionCapability>>,
 ) -> Json<Versioned<Presentation>> {
     versioned(Presentation::Text {

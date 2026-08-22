@@ -6,6 +6,7 @@ use crate::handlers::tokens::{json_ok, parse_json};
 use crate::models::SplitTask;
 use takusu_contracts::{
     AttachWorkSession, ConvertWorkSession, RecordWorkSessionProgress, StartWorkSession, Storage,
+    UndoWorkSession,
 };
 
 fn operation_id(req: &Request) -> Option<String> {
@@ -113,4 +114,12 @@ pub async fn get_task_progress(_req: Request, env: Env, id: &str) -> Result<Resp
     let store = storage(&env)?;
     let progress = store.get_task_progress(id).await?;
     json_ok(&progress)
+}
+
+pub async fn undo_work_session(mut req: Request, env: Env) -> Result<Response, WorkerError> {
+    let body: UndoWorkSession = parse_json(&mut req).await?;
+    let op_id = operation_id(&req);
+    let store = storage(&env)?;
+    let result = store.undo_work_session(&body, op_id.as_deref()).await?;
+    json_ok(&result)
 }

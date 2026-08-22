@@ -5,7 +5,7 @@
 
 use takusu_contracts::{
     AttachWorkSession, ConvertWorkSession, RecordWorkSessionProgress, StartWorkSession, TaskRow,
-    WorkSessionProgressResult, WorkSessionRow,
+    UndoWorkSession, UndoWorkSessionResult, WorkSessionProgressResult, WorkSessionRow,
 };
 
 use crate::error::storage_to_app;
@@ -114,6 +114,17 @@ impl super::TakusuApp {
     ) -> Result<TaskRow, AppError> {
         self.storage
             .convert_work_session(id, body, operation_id)
+            .await
+            .map_err(storage_to_app)
+    }
+
+    pub async fn undo_work_session(
+        &self,
+        body: &UndoWorkSession,
+        operation_id: Option<&str>,
+    ) -> Result<UndoWorkSessionResult, AppError> {
+        self.storage
+            .undo_work_session(body, operation_id)
             .await
             .map_err(storage_to_app)
     }

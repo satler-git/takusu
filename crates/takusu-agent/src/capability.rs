@@ -18,10 +18,15 @@ use indexmap::IndexMap;
 use jiff::Timestamp as JiffTimestamp;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use takusu_client::{Client, MoveEntry, RecordWorkSessionProgress, StartWorkSession, TaskRow};
+use takusu_client::{
+    Client, MoveEntry, RecordWorkSessionProgress, StartWorkSession, TaskRow, UndoWorkSession,
+    UndoWorkSessionResult,
+};
 use takusu_types::{Quantity, QuantityError, TaskStatus, Timestamp};
 
 use crate::presentation::{Presentation, WorkTransition, WorkTransitionKind};
+use crate::tool::{ChangeOperation, ProposedChange, Target, TargetKind};
+use crate::approval_layers::classify;
 
 /// Default lifetime of a quick-action capability.
 pub const CAPABILITY_TTL_MINUTES: i64 = 5;
@@ -50,6 +55,18 @@ pub enum InputPath {
     PlainText,
 }
 
+impl std::fmt::Display for InputPath {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ScreenCapability => write!(f, "screen"),
+            Self::NotificationCapability => write!(f, "notification"),
+            Self::ExplicitVoiceSession => write!(f, "voice"),
+            Self::AmbientWakeWord => write!(f, "ambient"),
+            Self::PlainText => write!(f, "plain_text"),
+        }
+    }
+}
+
 /// A quick action that a one-shot capability can authorize.
 ///
 /// Kept as a string on the wire for forward compatibility, but parsed into this
@@ -61,6 +78,7 @@ pub enum QuickAction {
     Progress,
     Complete,
     Delay,
+    Undo,
 }
 
 impl std::fmt::Display for QuickAction {
@@ -71,6 +89,7 @@ impl std::fmt::Display for QuickAction {
             Self::Progress => "progress",
             Self::Complete => "complete",
             Self::Delay => "delay",
+            Self::Undo => "undo",
         };
         f.write_str(s)
     }
@@ -86,6 +105,7 @@ impl std::str::FromStr for QuickAction {
             "progress" => Ok(Self::Progress),
             "complete" => Ok(Self::Complete),
             "delay" => Ok(Self::Delay),
+            "undo" => Ok(Self::Undo),
             _ => Err("unknown quick action"),
         }
     }
@@ -378,7 +398,9 @@ pub fn mint_capability(
     request: CapabilityRequest,
     default_input_path: InputPath,
 ) -> ActionCapability {
-    let input_path = request.input_path.unwrap_or(default_input_path);
+    // The server always chooses the input path. The client may include one in
+    // the request, but it is advisory at best and cannot be self-asserted.
+    let input_path = default_input_path;
     let mut request = request;
     request.input_path = Some(input_path);
     let id = format!("cap-{}", uuid::Uuid::now_v7());
@@ -427,6 +449,53 @@ fn normalized_capability(client: &ActionCapability, stored: &ActionCapability) -
         c.snooze_target = stored.snooze_target;
     }
     c
+}
+
+/// Build a `ProposedChange` for the quick action so it can be classified by
+/// the approval layer code, which operates on the same `ProposedChange` shape
+/// used by the agent turn flow.
+fn proposed_change_for_quick_action(
+    action: &QuickAction,
+    task: &TaskRow,
+    capability: &ActionCapability,
+) -> Result<ProposedChange, CapabilityError> {
+    let operation = match action {
+        QuickAction::Start => ChangeOperation::Start,
+        QuickAction::Pause => ChangeOperation::Pause,
+        QuickAction::Progress => ChangeOperation::Progress,
+        QuickAction::Complete => ChangeOperation::Complete,
+        QuickAction::Delay => ChangeOperation::Snooze,
+        QuickAction::Undo => ChangeOperation::Undo,
+    };
+
+    let mut arguments = serde_json::Map::new();
+    if let Some(minutes) = capability.snooze_minutes {
+        arguments.insert("snooze_minutes".into(), serde_json::json!(minutes));
+    }
+    if let Some(target) = capability.snooze_target {
+        arguments.insert("start_at".into(), serde_json::json!(target.to_string()));
+    }
+    if let Some(quantity_done) = capability.quantity_done {
+        arguments.insert("quantity_done".into(), serde_json::json!(quantity_done));
+    }
+    if let Some(quantity_total) = capability.quantity_total {
+        arguments.insert("quantity_total".into(), serde_json::json!(quantity_total));
+    }
+    if let Some(note) = &capability.note {
+        arguments.insert("note".into(), serde_json::json!(note));
+    }
+
+    Ok(ProposedChange {
+        operation,
+        target: Target::new(TargetKind::Task, task.display_id.to_string()),
+        description: format!("{operation} from {} capability", capability.input_path),
+        arguments: if arguments.is_empty() {
+            None
+        } else {
+            Some(serde_json::Value::Object(arguments))
+        },
+        ..Default::default()
+    })
 }
 
 pub async fn authorize_action(
@@ -508,6 +577,25 @@ pub async fn authorize_action(
     let task = client.get_task(&capability.task_id).await?;
     let operation_id = capability.id.as_str();
 
+    // Classify the proposed operation using the trusted input path carried by
+    // the capability. Only Immediate-layer actions may execute without a
+    // further round trip. Any other layer (VoiceConfirmed, ScreenRequired,
+    // AmbientImmediate) is returned as an approval request for the client to
+    // render. This keeps quick actions from bypassing the layer rules.
+    let proposed = proposed_change_for_quick_action(&action, &task, capability)?;
+    let layer = classify(&proposed, capability.input_path);
+    if !layer.is_immediate() {
+        let request = crate::ApprovalRequest {
+            id: capability.id.clone(),
+            why: format!("{} requires approval", action),
+            changes: vec![proposed],
+            inferred_fields: vec![],
+            warnings: vec![],
+            expires_at: capability.expires_at,
+        };
+        return Ok((Presentation::ChangeProposal(request), action));
+    }
+
     // Build a mutable record reference. If the in-memory store has one, use it
     // so state (consumed, result, delay target) is cached. Otherwise use a
     // local record reconstructed from the capability itself; this keeps the
@@ -546,6 +634,7 @@ pub async fn authorize_action(
         }
         QuickAction::Complete => execute_complete(client, &task, operation_id).await?,
         QuickAction::Delay => execute_delay(client, &task, record_ref).await?,
+        QuickAction::Undo => execute_undo(client, &task, operation_id).await?,
     };
 
     if is_stored {
@@ -687,6 +776,21 @@ async fn execute_delay(
         title: task.title.clone(),
         detail: format!("{}分後", minutes),
     }))
+}
+
+async fn execute_undo(
+    client: &Client,
+    task: &TaskRow,
+    operation_id: &str,
+) -> Result<Presentation, CapabilityError> {
+    let body = UndoWorkSession {
+        task_id: task.id.clone(),
+    };
+    let _result: UndoWorkSessionResult = client
+        .undo_work_session(&body, Some(operation_id))
+        .await
+        .map_err(CapabilityError::Client)?;
+    Ok(work_transition(WorkTransitionKind::Undo, task))
 }
 
 fn work_transition(kind: WorkTransitionKind, task: &TaskRow) -> Presentation {

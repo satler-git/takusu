@@ -26,6 +26,7 @@ pub mod voice_session;
 pub(crate) mod notification;
 
 pub(crate) mod approval;
+pub(crate) mod approval_layers;
 pub(crate) mod habit_steps;
 pub(crate) mod history;
 
@@ -54,6 +55,7 @@ pub use tool::{
     deserialize_trimmed_optional, deserialize_trimmed_required, inferred_field_schema,
     inferred_fields_schema, normalize_schema,
 };
+pub use capability::InputPath;
 pub use tool_stats::{ToolStat, ToolStats, ToolStatsSnapshot};
 pub use user_input::{
     StubUserInputProvider, UserInputAnswer, UserInputProvider, UserInputQuestion,
@@ -478,7 +480,29 @@ impl AgentSession {
         Ok(())
     }
 
-    fn all_changes_allowed(&self, changes: &[ProposedChange]) -> Result<bool, AgentError> {
+    fn all_changes_allowed(
+        &self,
+        changes: &[ProposedChange],
+        input_path: InputPath,
+    ) -> Result<bool, AgentError> {
+        if changes.is_empty() {
+            return Ok(false);
+        }
+
+        if input_path == InputPath::PlainText {
+            // Plain text turns are not a trusted input path. Layer classification
+            // runs before the `Permissions` default grant, so no operation may be
+            // auto-approved from a plain text turn (WI-14).
+            return Ok(false);
+        }
+
+        // Trusted non-plain paths: classify the whole set and only auto-execute
+        // Immediate-layer operations that are also permitted.
+        let layer = approval_layers::classify_set(changes, input_path);
+        if !layer.is_immediate() {
+            return Ok(false);
+        }
+
         for change in changes {
             if !self.is_auto_approved(change.target.kind, change.operation)? {
                 return Ok(false);
@@ -488,6 +512,14 @@ impl AgentSession {
     }
 
     pub async fn run_turn(&self, user_text: &str) -> Result<TurnResult, AgentError> {
+        self.run_turn_with_input(user_text, InputPath::PlainText).await
+    }
+
+    pub async fn run_turn_with_input(
+        &self,
+        user_text: &str,
+        input_path: InputPath,
+    ) -> Result<TurnResult, AgentError> {
         let _guard = self.turn_lock.lock().await;
         self.clear_discovered_tools()?;
         self.maybe_compact().await?;
@@ -550,7 +582,7 @@ impl AgentSession {
                         combined
                     };
                     let all_allowed = !proposed_changes.is_empty()
-                        && self.all_changes_allowed(&proposed_changes)?;
+                        && self.all_changes_allowed(&proposed_changes, input_path)?;
                     let approval_request = self.make_approval_request(
                         proposed_changes,
                         inferred_fields,
@@ -644,6 +676,21 @@ impl AgentSession {
         F: FnMut(TurnEvent),
         G: FnMut(String),
     {
+        self.run_turn_stream_with_input(user_text, InputPath::PlainText, emit, tts_emit)
+            .await
+    }
+
+    pub async fn run_turn_stream_with_input<F, G>(
+        &self,
+        user_text: &str,
+        input_path: InputPath,
+        emit: F,
+        tts_emit: G,
+    ) -> Result<TurnResult, AgentError>
+    where
+        F: FnMut(TurnEvent),
+        G: FnMut(String),
+    {
         let _guard = self.turn_lock.lock().await;
         self.clear_discovered_tools()?;
         self.maybe_compact().await?;
@@ -656,8 +703,15 @@ impl AgentSession {
         let mut local = self.history.lock()?.clone();
         local.push(llm::Message::User(user_text.to_string()));
 
-        self.run_from_local_stream(system, system_estimate, local, emit, tts_emit)
-            .await
+        self.run_from_local_stream(
+            system,
+            system_estimate,
+            local,
+            input_path,
+            emit,
+            tts_emit,
+        )
+        .await
     }
 
     /// Edits an existing user turn (by 0-based user-message index), truncates
@@ -708,7 +762,7 @@ impl AgentSession {
         *self.schedule_dirty.lock()? = false;
         *self.last_prompt_tokens.lock()? = None;
 
-        self.run_from_local_stream(system, system_estimate, local, emit, tts_emit)
+        self.run_from_local_stream(system, system_estimate, local, InputPath::PlainText, emit, tts_emit)
             .await
     }
 
@@ -717,6 +771,7 @@ impl AgentSession {
         system: llm::Message,
         system_estimate: usize,
         mut local: Vec<llm::Message>,
+        input_path: InputPath,
         mut emit: F,
         mut tts_emit: G,
     ) -> Result<TurnResult, AgentError>
@@ -816,7 +871,7 @@ impl AgentSession {
                             )));
                             self.replace_history(local, prompt_tokens, system_estimate)?;
                             let all_allowed = !proposed_changes.is_empty()
-                                && self.all_changes_allowed(&proposed_changes)?;
+                                && self.all_changes_allowed(&proposed_changes, input_path)?;
                             let approval_request = self.make_approval_request(
                                 proposed_changes,
                                 inferred_fields,
@@ -2923,19 +2978,27 @@ mod tests {
         let agent = make_agent(cfg, registry, mock);
         let result = agent.run_turn("スケジュールを作成して").await.unwrap();
 
-        assert!(
-            result.approval_request.is_none(),
-            "allowed changes should be auto-approved"
-        );
-        assert_eq!(result.changes.len(), 1);
+        // Plain text is not a trusted input path, so provider permissions cannot
+        // bypass the screen-required layer.
+        let approval = result
+            .approval_request
+            .expect("plain text changes should require approval");
+        assert!(result.changes.is_empty());
         assert!(!result.schedule_dirty);
+
+        let resolved = agent
+            .resolve_approval(&approval.id, true, None)
+            .await
+            .unwrap();
+        assert!(resolved.approved);
+        assert_eq!(resolved.changes.len(), 1);
 
         let history = agent.history.lock().unwrap();
         assert!(
             history
                 .iter()
-                .any(|m| matches!(m, llm::Message::User(text) if text.contains("自動承認"))),
-            "auto-approval should be recorded in LLM history: {:?}",
+                .any(|m| matches!(m, llm::Message::User(text) if text.contains("承認"))),
+            "approval should be recorded in LLM history: {:?}",
             history
         );
     }
@@ -3003,11 +3066,19 @@ mod tests {
 
         let result = agent.run_turn("スケジュールを作成して").await.unwrap();
 
-        assert!(
-            result.approval_request.is_none(),
-            "session permissions should override provider and auto-approve"
-        );
-        assert_eq!(result.changes.len(), 1);
+        // Plain text is not a trusted input path, so session permissions cannot
+        // bypass the screen-required layer either.
+        let approval = result
+            .approval_request
+            .expect("plain text changes should require approval");
+        assert!(result.changes.is_empty());
+
+        let resolved = agent
+            .resolve_approval(&approval.id, true, None)
+            .await
+            .unwrap();
+        assert!(resolved.approved);
+        assert_eq!(resolved.changes.len(), 1);
     }
 
     #[tokio::test]

@@ -13,6 +13,7 @@ use std::time::{Duration, Instant};
 
 use thiserror::Error;
 
+use crate::capability::InputPath;
 use crate::{AgentError, TurnResult};
 
 /// How a turn entered the session.
@@ -79,6 +80,7 @@ pub trait VoiceSessionIo: Send {
         &mut self,
         text: &str,
         origin: InputOrigin,
+        input_path: InputPath,
     ) -> Result<ProcessedTurn, VoiceSessionError>;
 }
 
@@ -117,12 +119,19 @@ pub struct VoiceSession {
     /// The origin that frames every free turn in this session. Explicit voice
     /// sessions default to [`InputOrigin::Voice`].
     origin: InputOrigin,
+    /// The trusted input path for authorization. Defaults to
+    /// [`InputPath::ExplicitVoiceSession`] for voice-origin sessions.
+    input_path: InputPath,
 }
 
 impl VoiceSession {
-    /// Create a session that frames turns with the given origin.
-    pub fn new(config: VoiceSessionConfig, origin: InputOrigin) -> Self {
-        Self { config, origin }
+    /// Create a session that frames turns with the given origin and input path.
+    pub fn new(config: VoiceSessionConfig, origin: InputOrigin, input_path: InputPath) -> Self {
+        Self {
+            config,
+            origin,
+            input_path,
+        }
     }
 
     /// Run the session against `io`.
@@ -148,7 +157,10 @@ impl VoiceSession {
                 captured = io.capture(self.origin) => {
                     match captured {
                         Ok(Some(text)) => {
-                            if io.process(&text, self.origin).await.is_err() {
+                            if io.process(&text, self.origin, self.input_path)
+                                .await
+                                .is_err()
+                            {
                                 return SessionOutcome::Failed;
                             }
                             // Real activity resets the idle deadline so the
@@ -207,6 +219,7 @@ mod tests {
             &mut self,
             _text: &str,
             _origin: InputOrigin,
+            _input_path: InputPath,
         ) -> Result<ProcessedTurn, VoiceSessionError> {
             self.processed += 1;
             Ok(ProcessedTurn {
@@ -235,6 +248,7 @@ mod tests {
                 idle_timeout: Duration::from_secs(60),
             },
             InputOrigin::Voice,
+            InputPath::ExplicitVoiceSession,
         );
         let mut io = ScriptedIo {
             voice: vec![None; 100],
@@ -254,6 +268,7 @@ mod tests {
                 idle_timeout: Duration::from_millis(300),
             },
             InputOrigin::Voice,
+            InputPath::ExplicitVoiceSession,
         );
         let mut io = ScriptedIo {
             voice: vec![Some("one".into()), Some("two".into())],
@@ -286,6 +301,7 @@ mod tests {
                 &mut self,
                 _t: &str,
                 _o: InputOrigin,
+                _p: InputPath,
             ) -> Result<ProcessedTurn, VoiceSessionError> {
                 unreachable!()
             }
@@ -295,6 +311,7 @@ mod tests {
                 idle_timeout: Duration::from_millis(120),
             },
             InputOrigin::Voice,
+            InputPath::ExplicitVoiceSession,
         );
         let mut io = SlowIo;
         let outcome = session.run(&mut io).await;

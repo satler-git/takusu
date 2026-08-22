@@ -13,9 +13,9 @@ use takusu_contracts::{
     MoveEntryResponse, ProgressEventRow, RecordWorkSessionProgress, ResidentAuthority,
     SaveScheduleRequest, ScheduleEntry, ScheduleRow, SettingsRow, SimilarTaskQuery, SimilarTaskRow,
     SkillRow, SplitResult, SplitTask, StartWorkSession, Storage, StorageError, TaskProgress,
-    TaskQuery, TaskRow, TokenCreateResponse, TokenRow, UnsettledIntervalRow, UpdateDevice,
-    UpdateGoogleCalSettings, UpdateHabit, UpdateMemory, UpdateSettings, UpdateSkill, UpdateTask,
-    WorkSessionProgressResult, WorkSessionRow,
+    TaskQuery, TaskRow, TokenCreateResponse, TokenRow, UndoWorkSession, UndoWorkSessionResult,
+    UnsettledIntervalRow, UpdateDevice, UpdateGoogleCalSettings, UpdateHabit, UpdateMemory,
+    UpdateSettings, UpdateSkill, UpdateTask, WorkSessionProgressResult, WorkSessionRow,
 };
 use takusu_types::estimator::effective_distribution;
 use takusu_types::jwt::{DEFAULT_TOKEN_TTL_SECONDS, generate_token_jwt};
@@ -1945,7 +1945,8 @@ impl Storage for D1Storage {
             .await?
             .ok_or_else(|| StorageError::NotFound(format!("work session {id} not found")))?;
 
-        let now = takusu_types::now_rfc3339();
+        let now_rfc = takusu_types::now_rfc3339();
+        let now_ts = takusu_types::Timestamp::now();
         let was_open = session.ended_at.is_none();
         let mut stmts: Vec<worker::D1PreparedStatement> = Vec::new();
         let update = self
@@ -1953,7 +1954,7 @@ impl Storage for D1Storage {
             .prepare("UPDATE work_sessions SET ended_at = COALESCE(ended_at, ?1) WHERE id = ?2");
         stmts.push(
             update
-                .bind(&[JsValue::from_str(&now), JsValue::from_str(id)])
+                .bind(&[JsValue::from_str(&now_rfc), JsValue::from_str(id)])
                 .map_err(d1_err)?,
         );
 
@@ -1961,13 +1962,43 @@ impl Storage for D1Storage {
             && was_open
         {
             let task = select_one_task(&self.db, task_id).await?;
+            let mut new_avg = task.avg_minutes;
+            let mut new_sigma = task.sigma_minutes;
+            if !task.fixed
+                && let Some(total) = session.quantity_total
+                && session.quantity_done > 0
+            {
+                let active_minutes =
+                    takusu_types::minutes_between_ts(session.started_at, now_ts);
+                if active_minutes > 0 {
+                    let quantity_fraction = (session.quantity_done.get() as f64
+                        / total.get() as f64)
+                        .min(1.0);
+                    let mutation = estimator_observation(
+                        &self.db,
+                        &task,
+                        active_minutes,
+                        quantity_fraction,
+                        now_ts,
+                        "pause",
+                    )
+                    .await?;
+                    stmts.extend(mutation.statements);
+                    new_avg = mutation.avg_minutes;
+                    new_sigma = mutation.sigma_minutes;
+                }
+            }
             if task.status != TaskStatus::Completed && task.status != TaskStatus::Skipped {
                 let task_update = self.db.prepare(
-                    "UPDATE tasks SET status = 'scheduled', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?1",
+                    "UPDATE tasks SET status = 'scheduled', avg_minutes = ?1, sigma_minutes = ?2, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?3",
                 );
                 stmts.push(
                     task_update
-                        .bind(&[JsValue::from_str(task_id)])
+                        .bind(&[
+                            JsValue::from_f64(new_avg as f64),
+                            JsValue::from_f64(new_sigma as f64),
+                            JsValue::from_str(task_id),
+                        ])
                         .map_err(d1_err)?,
                 );
             }
@@ -2850,6 +2881,162 @@ impl Storage for D1Storage {
             record_progress_operation(&self.db, op_id, &request_hash, &task).await?;
         }
         Ok(task)
+    }
+
+    async fn undo_work_session(
+        &self,
+        body: &UndoWorkSession,
+        operation_id: Option<&str>,
+    ) -> StorageResult<UndoWorkSessionResult> {
+        let payload = serde_json::json!({"op": "undo_work_session", "body": body}).to_string();
+        let request_hash = progress_request_hash(&payload, operation_id);
+        if let Some(op_id) = operation_id
+            && let Some(stored) =
+                check_progress_idempotency::<UndoWorkSessionResult>(&self.db, op_id, &request_hash).await?
+        {
+            return Ok(stored);
+        }
+
+        let full = resolve_task_id(&self.db, &body.task_id).await?;
+        let task = select_one_task(&self.db, &full).await?;
+
+        let session_stmt = self.db.prepare(format!(
+            "SELECT {WORK_SESSION_COLS} FROM work_sessions WHERE task_id = ?1 ORDER BY created_at DESC, started_at DESC LIMIT 1",
+        ));
+        let session: Option<WorkSessionRow> = session_stmt
+            .bind(&[JsValue::from_str(&full)])
+            .map_err(d1_err)?
+            .first_t()
+            .await?;
+
+        let Some(session) = session else {
+            return Err(StorageError::NotFound(format!(
+                "no work session to undo for task {}",
+                body.task_id
+            )));
+        };
+
+        let now = now_seconds();
+        let mut stmts: Vec<worker::D1PreparedStatement> = Vec::new();
+        let result = if session.ended_at.is_none() {
+            let created = parse_timestamp(&session.created_at.to_string()).unwrap_or(now);
+            if now - created > 60 {
+                return Err(StorageError::BadRequest(
+                    "start undo window expired".into(),
+                ));
+            }
+
+            let delete = self.db.prepare("DELETE FROM work_sessions WHERE id = ?1");
+            stmts.push(
+                delete
+                    .bind(&[JsValue::from_str(&session.id)])
+                    .map_err(d1_err)?,
+            );
+
+            // Start-undo: deleting the open session reverts the task back to scheduled.
+            if task.status == TaskStatus::InProgress {
+                let task_update = self.db.prepare(
+                    "UPDATE tasks SET status = 'scheduled', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?1",
+                );
+                stmts.push(
+                    task_update
+                        .bind(&[JsValue::from_str(&full)])
+                        .map_err(d1_err)?,
+                );
+            }
+
+            UndoWorkSessionResult {
+                action: "deleted".into(),
+                work_session: Some(session.clone()),
+                task: None,
+            }
+        } else {
+            let ended = session
+                .ended_at
+                .map(|e| parse_timestamp(&e.to_string()).unwrap_or(now))
+                .unwrap_or(now);
+            if now - ended > 60 {
+                return Err(StorageError::BadRequest(
+                    "pause undo window expired".into(),
+                ));
+            }
+
+            let reopen = self
+                .db
+                .prepare("UPDATE work_sessions SET ended_at = NULL WHERE id = ?1");
+            stmts.push(
+                reopen
+                    .bind(&[JsValue::from_str(&session.id)])
+                    .map_err(d1_err)?,
+            );
+
+            let mut new_avg = task.avg_minutes;
+            let mut new_sigma = task.sigma_minutes;
+            let latest: Option<(String, String)> = if !task.fixed {
+                d1_first(
+                    &self
+                        .db
+                        .prepare("SELECT id, kind FROM estimator_observations WHERE task_id = ?1 ORDER BY revision DESC LIMIT 1")
+                        .bind(&[JsValue::from_str(&full)])
+                        .map_err(d1_err)?,
+                )
+                .await?
+            } else {
+                None
+            };
+            if let Some((_, kind)) = latest
+                && kind == "pause"
+                && let Some(mutation) =
+                    compensate_last_estimator_observation(&self.db, &task).await?
+            {
+                stmts.extend(mutation.statements);
+                new_avg = mutation.avg_minutes;
+                new_sigma = mutation.sigma_minutes;
+            }
+
+            if task.status != TaskStatus::Completed && task.status != TaskStatus::Skipped {
+                let task_update = self.db.prepare(
+                    "UPDATE tasks SET status = 'in_progress', avg_minutes = ?1, sigma_minutes = ?2, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?3",
+                );
+                stmts.push(
+                    task_update
+                        .bind(&[
+                            JsValue::from_f64(new_avg as f64),
+                            JsValue::from_f64(new_sigma as f64),
+                            JsValue::from_str(&full),
+                        ])
+                        .map_err(d1_err)?,
+                );
+            }
+
+            let reopened: WorkSessionRow = self
+                .db
+                .prepare(format!(
+                    "SELECT {WORK_SESSION_COLS} FROM work_sessions WHERE id = ?1",
+                ))
+                .bind(&[JsValue::from_str(&session.id)])
+                .map_err(d1_err)?
+                .first_t()
+                .await?
+                .ok_or_else(|| StorageError::NotFound("work session not found".into()))?;
+
+            UndoWorkSessionResult {
+                action: "reopened".into(),
+                work_session: Some(reopened),
+                task: None,
+            }
+        };
+
+        self.db.batch(stmts).await.map_err(d1_err)?;
+
+        let task = select_one_task(&self.db, &full).await?;
+        let mut result = result;
+        result.task = Some(task);
+
+        if let Some(op_id) = operation_id {
+            record_progress_operation(&self.db, op_id, &request_hash, &result).await?;
+        }
+        Ok(result)
     }
 
     async fn get_task_progress(&self, id: &str) -> StorageResult<TaskProgress> {
