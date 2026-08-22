@@ -45,7 +45,29 @@ interface TakusuServerModuleType extends NativeModule {
   clearScheduleOperationStatus(): boolean;
 }
 
-const TakusuServerModule =
-  requireNativeModule<TakusuServerModuleType>('TakusuServer');
+let moduleRef: TakusuServerModuleType | undefined | null;
+
+function getTakusuServerModule(): TakusuServerModuleType | undefined {
+  if (moduleRef === undefined) {
+    try {
+      moduleRef = requireNativeModule<TakusuServerModuleType>('TakusuServer');
+    } catch {
+      moduleRef = null;
+    }
+  }
+  return moduleRef ?? undefined;
+}
+
+const TakusuServerModule = new Proxy({} as TakusuServerModuleType, {
+  get(_target, prop) {
+    const mod = getTakusuServerModule();
+    if (mod == null) return undefined;
+    const value = mod[prop as keyof TakusuServerModuleType];
+    if (typeof value === 'function') {
+      return value.bind(mod);
+    }
+    return value;
+  },
+});
 
 export default TakusuServerModule;

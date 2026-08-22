@@ -44,6 +44,11 @@ interface components$1 {
             seq: number;
             task_id: string;
         };
+        CommitEventsRequest: {
+            events: components$1['schemas']['EventLedgerInsert'][];
+            /** Format: int64 */
+            schedule_revision: number;
+        };
         CompleteQuery: {
             /** Format: uint */
             limit?: number | null;
@@ -85,6 +90,12 @@ interface components$1 {
             /** Format: int64 */
             schedule_revision: number;
             state: components$1['schemas']['CoverageState'];
+            /**
+             * @description Unclassified schedule gaps detected for the current evaluation.
+             *     These are synthetic unsettled intervals derived from the active schedule.
+             * @default []
+             */
+            unclassified_gaps: components$1['schemas']['UnsettledIntervalRow'][];
             unsettled_intervals: components$1['schemas']['UnsettledIntervalRow'][];
         };
         /**
@@ -437,6 +448,7 @@ interface components$1 {
              *       "confirmations": [],
              *       "schedule_revision": 0,
              *       "state": "bootstrap",
+             *       "unclassified_gaps": [],
              *       "unsettled_intervals": []
              *     }
              */
@@ -1512,6 +1524,11 @@ interface components$1 {
              */
             quantity_done?: number | null;
             /**
+             * Format: int64
+             * @description Total quantity for the task/session, present for `progress` capabilities.
+             */
+            quantity_total?: number | null;
+            /**
              * @description The original request the capability was minted from.
              *
              *     Included so a client can return the capability unchanged across server
@@ -1592,6 +1609,8 @@ interface components$1 {
             note?: string | null;
             /** Format: int64 */
             quantity_done?: number | null;
+            /** Format: int64 */
+            quantity_total?: number | null;
             /**
              * @description The scheduled delivery time for notification capabilities (WI-4).
              *
