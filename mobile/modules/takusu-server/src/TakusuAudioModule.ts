@@ -25,7 +25,7 @@ export interface TtsVoiceInfo {
 interface TakusuAudioModuleType extends NativeModule {
   configure(options: AudioOptions): Promise<boolean>;
   setMuted(muted: boolean): Promise<boolean>;
-  startRecording(): boolean;
+  startRecording(): Promise<boolean>;
   stopAndTranscribe(): Promise<string>;
   synthesizeAndPlay(text: string): Promise<boolean>;
   synthesizeToFile(text: string): Promise<string>;

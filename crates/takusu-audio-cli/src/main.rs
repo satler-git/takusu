@@ -1,3 +1,4 @@
+use std::io::BufRead;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -5,8 +6,8 @@ use clap::{Parser, Subcommand};
 #[cfg(feature = "hush")]
 use takusu_audio::hush::Hush;
 use takusu_audio::{
-    ExecutionProvider, SHERPA_SAMPLE_RATE, SherpaOnnxModel, SttBackend, SttRuntimeConfig, read_wav,
-    record, write_wav,
+    ExecutionProvider, RecordConfig, SHERPA_SAMPLE_RATE, SherpaOnnxModel, StreamingRecorder,
+    SttBackend, SttRuntimeConfig, read_wav, record, write_wav,
 };
 
 #[derive(Parser)]
@@ -101,7 +102,7 @@ enum Commands {
         #[arg(long, value_enum, default_value = "cpu")]
         sherpa_provider: ExecutionProvider,
 
-        /// Use streaming (chunked) transcription (default: true)
+        /// Use streaming (chunked) transcription; defaults to true for nemotron-ja
         #[arg(long)]
         streaming: Option<bool>,
     },
@@ -211,35 +212,6 @@ async fn main() {
             sherpa_provider,
             streaming,
         } => {
-            let config = takusu_audio::RecordConfig {
-                max_duration: Duration::from_secs_f64(max_duration),
-                ..Default::default()
-            };
-
-            let samples = match record(&config) {
-                Ok(s) => s,
-                Err(e) => {
-                    eprintln!("Recording error: {e}");
-                    std::process::exit(1);
-                }
-            };
-
-            if samples.is_empty() {
-                eprintln!("No audio recorded.");
-                std::process::exit(1);
-            }
-
-            eprintln!(
-                "Recorded {} samples ({:.1}s)",
-                samples.len(),
-                samples.len() as f64 / SHERPA_SAMPLE_RATE as f64
-            );
-            write_wav(&output, &samples, SHERPA_SAMPLE_RATE).unwrap_or_else(|e| {
-                eprintln!("Failed to write WAV: {e}");
-                std::process::exit(1);
-            });
-            eprintln!("Saved to {}", output.display());
-
             let stt_config = SttRuntimeConfig {
                 backend: SttBackend::Sherpa,
                 model: sherpa_model,
@@ -251,10 +223,39 @@ async fn main() {
                 sample_rate: SHERPA_SAMPLE_RATE as i32,
             };
 
-            let use_streaming = streaming.unwrap_or(true);
+            let use_streaming = streaming.unwrap_or_else(|| stt_config.default_streaming());
             let text = if use_streaming {
-                transcribe_streaming(&samples, stt_config, &sherpa_language, true).await
+                listen_streaming(stt_config, &sherpa_language, max_duration, &output).await
             } else {
+                let config = RecordConfig {
+                    max_duration: Duration::from_secs_f64(max_duration),
+                    ..Default::default()
+                };
+
+                let samples = match record(&config) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        eprintln!("Recording error: {e}");
+                        std::process::exit(1);
+                    }
+                };
+
+                if samples.is_empty() {
+                    eprintln!("No audio recorded.");
+                    std::process::exit(1);
+                }
+
+                eprintln!(
+                    "Recorded {} samples ({:.1}s)",
+                    samples.len(),
+                    samples.len() as f64 / SHERPA_SAMPLE_RATE as f64
+                );
+                write_wav(&output, &samples, SHERPA_SAMPLE_RATE).unwrap_or_else(|e| {
+                    eprintln!("Failed to write WAV: {e}");
+                    std::process::exit(1);
+                });
+                eprintln!("Saved to {}", output.display());
+
                 transcribe_offline(&samples, stt_config).await
             };
             println!("{text}");
@@ -321,6 +322,134 @@ async fn main() {
             });
             eprintln!("Saved to {}", output.display());
         }
+    }
+}
+
+async fn listen_streaming(
+    stt_config: SttRuntimeConfig,
+    language: &str,
+    max_duration: f64,
+    output: &std::path::Path,
+) -> String {
+    #[cfg(not(feature = "sherpa"))]
+    {
+        let _ = (stt_config, language, max_duration, output);
+        eprintln!("Sherpa-ONNX backend requires the 'sherpa' feature at compile time");
+        std::process::exit(1);
+    }
+
+    #[cfg(feature = "sherpa")]
+    {
+        let language = language.to_string();
+        let output = output.to_path_buf();
+        tokio::task::spawn_blocking(move || {
+            let handle = tokio::runtime::Handle::try_current().unwrap_or_else(|e| {
+                eprintln!("No tokio runtime: {e}");
+                std::process::exit(1)
+            });
+
+            eprintln!("Loading Sherpa-ONNX model...");
+            let start = std::time::Instant::now();
+            let asr = stt_config.build_streaming().unwrap_or_else(|e| {
+                eprintln!("Sherpa-ONNX model error: {e}");
+                std::process::exit(1)
+            });
+            eprintln!("Model loaded in {:.1}s.", start.elapsed().as_secs_f64());
+
+            handle.block_on(async {
+                eprintln!("Recording... Press Enter to stop.");
+                let mut stream = asr.start_stream(&language).await.unwrap_or_else(|e| {
+                    eprintln!("Sherpa-ONNX stream error: {e}");
+                    std::process::exit(1)
+                });
+
+                let (recorder, mut chunk_rx) = StreamingRecorder::start(RecordConfig {
+                    max_duration: Duration::from_secs_f64(max_duration),
+                    ..Default::default()
+                })
+                .unwrap_or_else(|e| {
+                    eprintln!("Recording error: {e}");
+                    std::process::exit(1)
+                });
+
+                let (stop_tx, mut stop_rx) = tokio::sync::oneshot::channel();
+                tokio::task::spawn_blocking(move || {
+                    let _ = std::io::stdin().lock().read_line(&mut String::new());
+                    let _ = stop_tx.send(());
+                });
+
+                let mut all_samples = Vec::new();
+                let mut last = String::new();
+
+                let maybe_text: Option<String> = loop {
+                    tokio::select! {
+                        chunk = chunk_rx.recv() => {
+                            match chunk {
+                                Some(chunk) => {
+                                    all_samples.extend_from_slice(&chunk);
+                                    stream.accept_waveform(&chunk);
+                                    let text = stream.text();
+                                    if !text.is_empty() && text != last {
+                                        eprintln!("> {text}");
+                                        last = text;
+                                    }
+                                }
+                                None => break Some(stream.finish().await.unwrap_or_else(|e| {
+                                    eprintln!("Sherpa-ONNX transcription error: {e}");
+                                    std::process::exit(1)
+                                })),
+                            }
+                        }
+                        _ = &mut stop_rx => {
+                            recorder.stop();
+                            break None;
+                        }
+                    }
+                };
+
+                let text = match maybe_text {
+                    Some(text) => text,
+                    None => {
+                        while let Some(chunk) = chunk_rx.recv().await {
+                            all_samples.extend_from_slice(&chunk);
+                            stream.accept_waveform(&chunk);
+                            let text = stream.text();
+                            if !text.is_empty() && text != last {
+                                eprintln!("> {text}");
+                                last = text;
+                            }
+                        }
+                        stream.finish().await.unwrap_or_else(|e| {
+                            eprintln!("Sherpa-ONNX transcription error: {e}");
+                            std::process::exit(1)
+                        })
+                    }
+                };
+
+                recorder.join().unwrap_or_else(|e| {
+                    eprintln!("Recording error: {e}");
+                    std::process::exit(1)
+                });
+
+                eprintln!(
+                    "Recorded {} samples ({:.1}s)",
+                    all_samples.len(),
+                    all_samples.len() as f64 / SHERPA_SAMPLE_RATE as f64
+                );
+                write_wav(&output, &all_samples, SHERPA_SAMPLE_RATE).unwrap_or_else(|e| {
+                    eprintln!("Failed to write WAV: {e}");
+                    std::process::exit(1)
+                });
+                eprintln!("Saved to {}", output.display());
+
+                text
+            })
+        })
+        .await
+        .unwrap_or_else(|e| {
+            eprintln!("Streaming transcription task failed: {e}");
+            std::process::exit(1)
+        })
     }
 }
 

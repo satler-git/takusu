@@ -133,11 +133,10 @@ impl StreamingRecorder {
             loop {
                 std::thread::sleep(Duration::from_millis(10));
 
-                if stop_c.load(Ordering::Relaxed) || start.elapsed() >= config.max_duration {
-                    break;
-                }
+                let should_stop =
+                    stop_c.load(Ordering::Relaxed) || start.elapsed() >= config.max_duration;
 
-                if Instant::now() >= next_send {
+                if Instant::now() >= next_send || should_stop {
                     let raw = {
                         let mut buf = samples.lock().unwrap_or_else(|e| e.into_inner());
                         buf.drain(..).collect::<Vec<_>>()
@@ -162,6 +161,10 @@ impl StreamingRecorder {
                     }
 
                     next_send = Instant::now() + Duration::from_millis(CHUNK_MS);
+                }
+
+                if should_stop {
+                    break;
                 }
             }
 
