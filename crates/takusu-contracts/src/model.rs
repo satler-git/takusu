@@ -1314,6 +1314,21 @@ pub struct AttachWorkSession {
     pub task_id: String,
 }
 
+/// Request body for `POST /api/work-sessions/undo` (WI-14).
+#[derive(Debug, Default, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct UndoWorkSession {
+    pub task_id: String,
+}
+
+/// Response from `POST /api/work-sessions/undo` (WI-14).
+/// `action` is `"deleted"` for a start-undo and `"reopened"` for a pause-undo.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct UndoWorkSessionResult {
+    pub action: String,
+    pub work_session: Option<WorkSessionRow>,
+    pub task: Option<TaskRow>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum EstimatorBand {

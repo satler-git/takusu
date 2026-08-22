@@ -439,6 +439,13 @@ mod tests {
         ) -> Result<takusu_contracts::TaskRow, takusu_contracts::StorageError> {
             unimplemented()
         }
+        async fn undo_work_session(
+            &self,
+            _: &takusu_contracts::UndoWorkSession,
+            _: Option<&str>,
+        ) -> Result<takusu_contracts::UndoWorkSessionResult, takusu_contracts::StorageError> {
+            unimplemented()
+        }
         async fn get_evaluation_inputs(
             &self,
         ) -> Result<EvaluationInputs, takusu_contracts::StorageError> {

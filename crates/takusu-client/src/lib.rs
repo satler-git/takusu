@@ -316,6 +316,23 @@ impl Client {
         Ok(resp.json().await?)
     }
 
+    pub async fn undo_work_session(
+        &self,
+        body: &UndoWorkSession,
+        operation_id: Option<&str>,
+    ) -> Result<UndoWorkSessionResult, ClientError> {
+        let mut req = self
+            .request(reqwest::Method::POST, "/api/work-sessions/undo")
+            .await
+            .json(body);
+        if let Some(op_id) = operation_id {
+            req = req.header("Idempotency-Key", op_id);
+        }
+        let resp = req.send().await?;
+        let resp = Self::handle_response(resp).await?;
+        Ok(resp.json().await?)
+    }
+
     pub async fn record_work_session_progress(
         &self,
         id: &str,

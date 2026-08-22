@@ -255,9 +255,11 @@ enum_label! {
         Move = "move",
         Start = "start",
         Pause = "pause",
+        Snooze = "snooze",
         Progress = "progress",
         Complete = "complete",
         Split = "split",
+        Undo = "undo",
         CreateScheduledSpan = "create_scheduled_span",
         DeleteScheduledSpan = "delete_scheduled_span",
     }

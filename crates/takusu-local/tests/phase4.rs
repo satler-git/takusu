@@ -377,6 +377,13 @@ impl Storage for CountingStorage {
     ) -> StorageResult<TaskRow> {
         Err(StorageError::Internal("n/a".into()))
     }
+    async fn undo_work_session(
+        &self,
+        _body: &takusu_contracts::UndoWorkSession,
+        _operation_id: Option<&str>,
+    ) -> StorageResult<takusu_contracts::UndoWorkSessionResult> {
+        Err(StorageError::Internal("n/a".into()))
+    }
     async fn get_evaluation_inputs(&self) -> StorageResult<EvaluationInputs> {
         Ok(EvaluationInputs::default())
     }

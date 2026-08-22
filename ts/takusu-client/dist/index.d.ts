@@ -1320,6 +1320,19 @@ interface components$1 {
         };
         /** @enum {string} */
         TokenScope: 'read-write' | 'root';
+        /** @description Request body for `POST /api/work-sessions/undo` (WI-14). */
+        UndoWorkSession: {
+            task_id: string;
+        };
+        /**
+         * @description Response from `POST /api/work-sessions/undo` (WI-14).
+         *     `action` is `"deleted"` for a start-undo and `"reopened"` for a pause-undo.
+         */
+        UndoWorkSessionResult: {
+            action: string;
+            task?: components$1['schemas']['TaskRow'] | null;
+            work_session?: components$1['schemas']['WorkSessionRow'] | null;
+        };
         /** @description An unresolved elapsed-time interval that needs settlement (WI-10 / WI-18). */
         UnsettledIntervalRow: {
             classification: string;
@@ -1586,6 +1599,13 @@ interface components$1 {
         };
         /** @enum {string} */
         AudioCallback: 'listening' | 'transcribing' | 'speaking' | 'playback_finished';
+        AuthorizeActionQuery: {
+            /**
+             * @description The agent session that will own the pending approval for non-immediate
+             *     quick actions. Required when the action resolves to `ChangeProposal`.
+             */
+            session_id?: string | null;
+        };
         CapabilitiesResponse: {
             approvals: boolean;
             audio_input: boolean;
@@ -1629,7 +1649,7 @@ interface components$1 {
          * @description Operation kind for a proposed or applied change.
          * @enum {string}
          */
-        ChangeOperation: 'create' | 'update' | 'delete' | 'generate' | 'reschedule' | 'move' | 'start' | 'pause' | 'progress' | 'complete' | 'split' | 'create_scheduled_span' | 'delete_scheduled_span';
+        ChangeOperation: 'create' | 'update' | 'delete' | 'generate' | 'reschedule' | 'move' | 'start' | 'pause' | 'snooze' | 'progress' | 'complete' | 'split' | 'undo' | 'create_scheduled_span' | 'delete_scheduled_span';
         /** @description Flattened target fields inside `ChangeReceipt`. */
         ChangeReceipt: {
             after?: unknown;
@@ -2179,7 +2199,7 @@ interface components$1 {
             title: string;
         };
         /** @description Kind of a recorded work transition. */
-        WorkTransitionKind: ('start' | 'pause' | 'progress' | 'complete' | 'split') | 'delay';
+        WorkTransitionKind: ('start' | 'pause' | 'progress' | 'complete' | 'split' | 'undo') | 'delay';
     };
     responses: never;
     parameters: never;

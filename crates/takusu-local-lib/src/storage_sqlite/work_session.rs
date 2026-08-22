@@ -7,8 +7,8 @@
 use takusu_contracts::{
     AttachWorkSession, ConvertWorkSession, EstimatorBand, EstimatorResult, EstimatorStateRow,
     EvaluationEstimator, EvaluationTaskProgress, ProgressEventRow, RecordWorkSessionProgress,
-    StartWorkSession, StorageError, TaskProgress, TaskRow, WorkSessionProgressResult,
-    WorkSessionRow, storage::StorageResult,
+    StartWorkSession, StorageError, TaskProgress, TaskRow, UndoWorkSession, UndoWorkSessionResult,
+    WorkSessionProgressResult, WorkSessionRow, storage::StorageResult,
 };
 use takusu_types::estimator::{
     DurationDistribution, InterventionBand, effective_distribution, next_crossing_time,
@@ -534,12 +534,19 @@ pub(crate) async fn pause_work_session(
             other => StorageError::Internal(other.to_string()),
         })?;
 
-    let now = takusu_types::now_rfc3339();
+    let now_rfc = takusu_types::now_rfc3339();
+    let now_ts = Timestamp::now();
     let was_open = session.ended_at.is_none();
     sqlx::query("UPDATE work_sessions SET ended_at = COALESCE(ended_at, ?) WHERE id = ?")
-        .bind(&now)
+        .bind(&now_rfc)
         .bind(id)
         .execute(&mut *tx)
+        .await
+        .map_err(map_err)?;
+
+    let session: WorkSessionRow = sqlx::query_as::<_, WorkSessionRow>(SELECT_WORK_SESSION_BY_ID)
+        .bind(id)
+        .fetch_one(&mut *tx)
         .await
         .map_err(map_err)?;
 
@@ -549,22 +556,45 @@ pub(crate) async fn pause_work_session(
             .fetch_one(&mut *tx)
             .await
             .map_err(map_err)?;
+
+        let mut new_avg = task.avg_minutes;
+        let mut new_sigma = task.sigma_minutes;
+        if !task.fixed
+            && let Some(total) = session.quantity_total
+            && session.quantity_done > 0
+        {
+            let active_minutes = session_minutes(&session);
+            if active_minutes > 0 {
+                let quantity_fraction = (session.quantity_done.get() as f64
+                    / total.get() as f64)
+                    .min(1.0);
+                record_estimator_observation(
+                    &mut tx,
+                    &task,
+                    active_minutes,
+                    quantity_fraction,
+                    now_ts,
+                    "pause",
+                )
+                .await?;
+                let state = ensure_estimator_state(&mut tx, &task).await?;
+                new_avg = state.mean_minutes.round() as i64;
+                new_sigma = state.sigma_minutes.round() as i64;
+            }
+        }
+
         if task.status != TaskStatus::Completed && task.status != TaskStatus::Skipped {
             sqlx::query(
-                    "UPDATE tasks SET status = 'scheduled', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?",
+                    "UPDATE tasks SET status = 'scheduled', avg_minutes = ?, sigma_minutes = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?",
                 )
+                .bind(new_avg)
+                .bind(new_sigma)
                 .bind(task_id)
                 .execute(&mut *tx)
                 .await
                 .map_err(map_err)?;
         }
     }
-
-    let session: WorkSessionRow = sqlx::query_as::<_, WorkSessionRow>(SELECT_WORK_SESSION_BY_ID)
-        .bind(id)
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(map_err)?;
 
     if let Some(op_id) = operation_id {
         super::SqliteStorage::record_progress_operation(&mut *tx, op_id, &request_hash, &session)
@@ -1284,6 +1314,161 @@ pub(crate) async fn convert_work_session(
     }
     tx.commit().await.map_err(map_err)?;
     Ok(task)
+}
+
+const SELECT_LATEST_WORK_SESSION_BY_TASK: &str = "SELECT id, task_id, title, note, quantity_total, quantity_done, quantity_unit, started_at, ended_at, created_at FROM work_sessions WHERE task_id = ? ORDER BY created_at DESC, started_at DESC LIMIT 1";
+
+pub(crate) async fn undo_work_session(
+    storage: &super::SqliteStorage,
+    body: &UndoWorkSession,
+    operation_id: Option<&str>,
+) -> StorageResult<UndoWorkSessionResult> {
+    let payload = serde_json::json!({"op": "undo_work_session", "body": body}).to_string();
+    let request_hash = progress_request_hash(&payload, operation_id);
+
+    let mut tx = storage.pool().begin().await.map_err(map_err)?;
+    if let Some(op_id) = operation_id
+        && let Some(stored) = super::SqliteStorage::check_progress_idempotency::<_,
+            UndoWorkSessionResult>(&mut *tx, op_id, &request_hash).await?
+    {
+        return stored;
+    }
+
+    let full = resolve_task_id(&mut *tx, &body.task_id).await?;
+
+    let task: TaskRow = sqlx::query_as::<_, TaskRow>(SELECT_TASK_BY_ID)
+        .bind(&full)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| match e {
+            sqlx::Error::RowNotFound => StorageError::NotFound(format!("task {} not found", body.task_id)),
+            other => StorageError::Internal(other.to_string()),
+        })?;
+
+    let session: Option<WorkSessionRow> =
+        sqlx::query_as::<_, WorkSessionRow>(SELECT_LATEST_WORK_SESSION_BY_TASK)
+            .bind(&full)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(map_err)?;
+
+    let Some(session) = session else {
+        return Err(StorageError::NotFound(format!(
+            "no work session to undo for task {}",
+            body.task_id
+        )));
+    };
+
+    let now = Timestamp::now();
+    let result = match session.ended_at {
+        None => {
+            // Start-undo: delete the recently-created open session.
+            if now.as_second() - session.created_at.as_second() > 60 {
+                return Err(StorageError::BadRequest(
+                    "start undo window expired".into(),
+                ));
+            }
+
+            sqlx::query("DELETE FROM work_sessions WHERE id = ?")
+                .bind(&session.id)
+                .execute(&mut *tx)
+                .await
+                .map_err(map_err)?;
+
+            if task.status == TaskStatus::InProgress {
+                sqlx::query(
+                    "UPDATE tasks SET status = 'scheduled', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?",
+                )
+                .bind(&full)
+                .execute(&mut *tx)
+                .await
+                .map_err(map_err)?;
+            }
+
+            UndoWorkSessionResult {
+                action: "deleted".into(),
+                work_session: Some(session),
+                task: None,
+            }
+        }
+        Some(ended_at) => {
+            // Pause-undo: reopen the recently-closed session.
+            if now.as_second() - ended_at.as_second() > 60 {
+                return Err(StorageError::BadRequest(
+                    "pause undo window expired".into(),
+                ));
+            }
+
+            sqlx::query("UPDATE work_sessions SET ended_at = NULL WHERE id = ?")
+                .bind(&session.id)
+                .execute(&mut *tx)
+                .await
+                .map_err(map_err)?;
+
+            if task.status != TaskStatus::Completed && task.status != TaskStatus::Skipped {
+                sqlx::query(
+                    "UPDATE tasks SET status = 'in_progress', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?",
+                )
+                .bind(&full)
+                .execute(&mut *tx)
+                .await
+                .map_err(map_err)?;
+            }
+
+            let latest: Option<(String, String)> = sqlx::query_as(
+                "SELECT id, kind FROM estimator_observations WHERE task_id = ? ORDER BY revision DESC LIMIT 1",
+            )
+            .bind(&full)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(map_err)?;
+            if !task.fixed
+                && let Some((_, kind)) = latest
+                && kind == "pause"
+                && let Some((_, avg, sigma)) =
+                    compensate_last_estimator_observation(&mut tx, &task).await?
+            {
+                sqlx::query(
+                    "UPDATE tasks SET avg_minutes = ?, sigma_minutes = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?",
+                )
+                .bind(avg)
+                .bind(sigma)
+                .bind(&full)
+                .execute(&mut *tx)
+                .await
+                .map_err(map_err)?;
+            }
+
+            let reopened: WorkSessionRow =
+                sqlx::query_as::<_, WorkSessionRow>(SELECT_WORK_SESSION_BY_ID)
+                    .bind(&session.id)
+                    .fetch_one(&mut *tx)
+                    .await
+                    .map_err(map_err)?;
+
+            UndoWorkSessionResult {
+                action: "reopened".into(),
+                work_session: Some(reopened),
+                task: None,
+            }
+        }
+    };
+
+    let task: TaskRow = sqlx::query_as::<_, TaskRow>(SELECT_TASK_BY_ID)
+        .bind(&full)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(map_err)?;
+
+    let mut result = result;
+    result.task = Some(task);
+
+    if let Some(op_id) = operation_id {
+        super::SqliteStorage::record_progress_operation(&mut *tx, op_id, &request_hash, &result)
+            .await?;
+    }
+    tx.commit().await.map_err(map_err)?;
+    Ok(result)
 }
 
 pub(crate) async fn get_estimator_state(

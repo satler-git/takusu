@@ -120,6 +120,9 @@ async fn dispatch(req: Request, env: Env) -> Result<Response, crate::error::Work
             handlers::progress::create_work_session(req, env).await
         }
         (Method::Get, ["work-sessions"]) => handlers::progress::list_work_sessions(req, env).await,
+        (Method::Post, ["work-sessions", "undo"]) => {
+            handlers::progress::undo_work_session(req, env).await
+        }
         (Method::Get, ["work-sessions", id]) => {
             handlers::progress::get_work_session(req, env, id).await
         }
