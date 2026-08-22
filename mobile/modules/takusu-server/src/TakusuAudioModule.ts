@@ -13,6 +13,18 @@ export interface AudioOptions {
   mute?: boolean;
 }
 
+export interface SpeakerOptions {
+  modelDir: string;
+  voiceDir: string;
+  threshold: number;
+}
+
+export interface SpeakerVerifyResult {
+  score: number;
+  accepted: boolean;
+  speaker: string;
+}
+
 export interface TtsVoiceInfo {
   name: string;
   locale: string;
@@ -35,6 +47,12 @@ interface TakusuAudioModuleType extends NativeModule {
   stopPlayback(): boolean;
   clearTtsStop(): boolean;
   getAvailableVoices(): Promise<TtsVoiceInfo[]>;
+  configureSpeaker(options: SpeakerOptions): Promise<boolean>;
+  startSpeakerRecording(): Promise<boolean>;
+  stopAndEnrollSpeaker(name: string): Promise<boolean>;
+  stopAndVerifySpeaker(name: string): Promise<SpeakerVerifyResult>;
+  deleteSpeaker(name: string): Promise<boolean>;
+  listSpeakers(): Promise<string[]>;
 }
 
 const TakusuAudioModule =

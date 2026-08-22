@@ -5,6 +5,10 @@ use std::time::Duration;
 use clap::{Parser, Subcommand};
 #[cfg(feature = "hush")]
 use takusu_audio::hush::Hush;
+#[cfg(feature = "sherpa")]
+use takusu_audio::{
+    DEFAULT_SPEAKER_MODEL_ID, DEFAULT_VERIFY_THRESHOLD, SpeakerConfig, SpeakerVerifier,
+};
 use takusu_audio::{
     ExecutionProvider, RecordConfig, SHERPA_SAMPLE_RATE, SherpaOnnxModel, StreamingRecorder,
     SttBackend, SttRuntimeConfig, read_wav, record, write_wav,
@@ -132,6 +136,104 @@ enum Commands {
         /// Do not restore the original loudness after denoising
         #[arg(long, default_value_t = false)]
         no_restore: bool,
+    },
+
+    #[cfg(feature = "sherpa")]
+    /// Speaker enrollment and verification
+    Speaker {
+        #[command(subcommand)]
+        command: SpeakerCommands,
+    },
+}
+
+#[cfg(feature = "sherpa")]
+#[derive(Subcommand)]
+enum SpeakerCommands {
+    /// Enroll a speaker from one or more WAV files
+    Enroll {
+        /// Speaker name
+        #[arg(short, long, default_value = "default")]
+        name: String,
+
+        /// WAV files to enroll (multiple files are averaged as a list)
+        #[arg(required = true)]
+        audio: Vec<PathBuf>,
+
+        /// Path to the speaker embedding model file (omit to download on first run)
+        #[arg(long)]
+        model_dir: Option<PathBuf>,
+
+        /// Directory to persist voiceprints
+        #[arg(long)]
+        voice_dir: Option<PathBuf>,
+
+        /// Number of threads for ONNX inference
+        #[arg(long, default_value_t = 1)]
+        num_threads: i32,
+
+        /// ONNX execution provider (cpu, cuda, coreml)
+        #[arg(long, value_enum, default_value = "cpu")]
+        provider: ExecutionProvider,
+
+        /// Verification threshold
+        #[arg(long, default_value_t = DEFAULT_VERIFY_THRESHOLD)]
+        threshold: f32,
+    },
+
+    /// Verify a WAV file against an enrolled speaker
+    Verify {
+        /// Speaker name
+        #[arg(short, long, default_value = "default")]
+        name: String,
+
+        /// WAV file to verify
+        audio: PathBuf,
+
+        /// Path to the speaker embedding model file (omit to download on first run)
+        #[arg(long)]
+        model_dir: Option<PathBuf>,
+
+        /// Directory to persist voiceprints
+        #[arg(long)]
+        voice_dir: Option<PathBuf>,
+
+        /// Number of threads for ONNX inference
+        #[arg(long, default_value_t = 1)]
+        num_threads: i32,
+
+        /// ONNX execution provider (cpu, cuda, coreml)
+        #[arg(long, value_enum, default_value = "cpu")]
+        provider: ExecutionProvider,
+
+        /// Verification threshold
+        #[arg(long, default_value_t = DEFAULT_VERIFY_THRESHOLD)]
+        threshold: f32,
+    },
+
+    /// Delete an enrolled speaker
+    Delete {
+        /// Speaker name
+        #[arg(short, long, default_value = "default")]
+        name: String,
+
+        /// Directory to persist voiceprints
+        #[arg(long)]
+        voice_dir: Option<PathBuf>,
+
+        /// Path to the speaker embedding model file
+        #[arg(long)]
+        model_dir: Option<PathBuf>,
+    },
+
+    /// List enrolled speakers
+    List {
+        /// Directory to persist voiceprints
+        #[arg(long)]
+        voice_dir: Option<PathBuf>,
+
+        /// Path to the speaker embedding model file
+        #[arg(long)]
+        model_dir: Option<PathBuf>,
     },
 }
 
@@ -330,6 +432,11 @@ async fn main() {
                 std::process::exit(1);
             });
             eprintln!("Saved to {}", output.display());
+        }
+
+        #[cfg(feature = "sherpa")]
+        Commands::Speaker { command } => {
+            run_speaker(command).await;
         }
     }
 }
@@ -641,4 +748,210 @@ async fn transcribe_streaming(
             std::process::exit(1)
         })
     }
+}
+
+#[cfg(feature = "sherpa")]
+fn default_voice_dir() -> PathBuf {
+    if let Some(dir) = std::env::var_os("XDG_DATA_HOME") {
+        return PathBuf::from(dir).join("takusu").join("voiceprint");
+    }
+    if let Some(home) = std::env::var_os("HOME") {
+        return PathBuf::from(home)
+            .join(".local")
+            .join("share")
+            .join("takusu")
+            .join("voiceprint");
+    }
+    PathBuf::from("takusu").join("voiceprint")
+}
+
+#[cfg(feature = "sherpa")]
+async fn run_speaker(command: SpeakerCommands) {
+    match command {
+        SpeakerCommands::Enroll {
+            name,
+            audio,
+            model_dir,
+            voice_dir,
+            num_threads,
+            provider,
+            threshold,
+        } => {
+            let (verifier, _model_dir) = load_speaker_verifier(
+                model_dir,
+                voice_dir.unwrap_or_else(default_voice_dir),
+                num_threads,
+                provider,
+                threshold,
+            )
+            .await;
+
+            let samples: Vec<Vec<f32>> = audio
+                .iter()
+                .map(|path| {
+                    read_wav(path).unwrap_or_else(|e| {
+                        eprintln!("Failed to read WAV {}: {e}", path.display());
+                        std::process::exit(1)
+                    })
+                })
+                .collect();
+
+            if samples.is_empty() {
+                eprintln!("No audio files provided.");
+                std::process::exit(1);
+            }
+
+            let refs: Vec<&[f32]> = samples.iter().map(|v| v.as_slice()).collect();
+            verifier
+                .enroll_list(&name, &refs)
+                .unwrap_or_else(|e| {
+                    eprintln!("Enrollment failed: {e}");
+                    std::process::exit(1);
+                });
+            println!("Enrolled speaker: {name}");
+        }
+
+        SpeakerCommands::Verify {
+            name,
+            audio,
+            model_dir,
+            voice_dir,
+            num_threads,
+            provider,
+            threshold,
+        } => {
+            let (verifier, _model_dir) = load_speaker_verifier(
+                model_dir,
+                voice_dir.unwrap_or_else(default_voice_dir),
+                num_threads,
+                provider,
+                threshold,
+            )
+            .await;
+
+            let samples = read_wav(&audio).unwrap_or_else(|e| {
+                eprintln!("Failed to read WAV {}: {e}", audio.display());
+                std::process::exit(1)
+            });
+
+            let result = verifier.verify(&name, &samples).unwrap_or_else(|e| {
+                eprintln!("Verification failed: {e}");
+                std::process::exit(1);
+            });
+
+            println!(
+                "score={:.4} accepted={} speaker={}",
+                result.score,
+                result.accepted,
+                result.speaker.as_deref().unwrap_or("?")
+            );
+
+            if !result.accepted {
+                std::process::exit(2);
+            }
+        }
+
+        SpeakerCommands::Delete {
+            name,
+            voice_dir,
+            model_dir,
+        } => {
+            // Model is not needed for delete, but we need a verifier to load
+            // the manager and delete the on-disk file. Use the model path if
+            // provided; otherwise try to download/cache the model.
+            let (verifier, _model_dir) = load_speaker_verifier(
+                model_dir,
+                voice_dir.unwrap_or_else(default_voice_dir),
+                1,
+                ExecutionProvider::Cpu,
+                DEFAULT_VERIFY_THRESHOLD,
+            )
+            .await;
+
+            verifier.remove(&name).unwrap_or_else(|e| {
+                eprintln!("Delete failed: {e}");
+                std::process::exit(1);
+            });
+            println!("Deleted speaker: {name}");
+        }
+
+        SpeakerCommands::List {
+            voice_dir,
+            model_dir,
+        } => {
+            let (verifier, _model_dir) = load_speaker_verifier(
+                model_dir,
+                voice_dir.unwrap_or_else(default_voice_dir),
+                1,
+                ExecutionProvider::Cpu,
+                DEFAULT_VERIFY_THRESHOLD,
+            )
+            .await;
+
+            let speakers = verifier.list();
+            if speakers.is_empty() {
+                println!("No enrolled speakers.");
+            } else {
+                for name in speakers {
+                    println!("{name}");
+                }
+            }
+        }
+    }
+}
+
+#[cfg(feature = "sherpa")]
+async fn load_speaker_verifier(
+    model_dir: Option<PathBuf>,
+    voice_dir: PathBuf,
+    num_threads: i32,
+    provider: ExecutionProvider,
+    verify_threshold: f32,
+) -> (SpeakerVerifier, PathBuf) {
+    let cache = tokio::task::spawn_blocking(|| {
+        takusu_audio::ModelCache::default_dir().map_err(|e| e.to_string())
+    })
+    .await
+    .unwrap_or_else(|e| {
+        eprintln!("Model cache task failed: {e}");
+        std::process::exit(1);
+    })
+    .unwrap_or_else(|e| {
+        eprintln!("Model cache error: {e}");
+        std::process::exit(1);
+    });
+
+    let model_dir = match model_dir {
+        Some(path) => path,
+        None => cache
+            .ensure(DEFAULT_SPEAKER_MODEL_ID)
+            .unwrap_or_else(|e| {
+                eprintln!("Model download error: {e}");
+                std::process::exit(1);
+            }),
+    };
+    let model_path = model_dir.join("model.onnx");
+
+    let config = SpeakerConfig {
+        model_id: DEFAULT_SPEAKER_MODEL_ID.to_string(),
+        num_threads,
+        provider,
+        verify_threshold,
+        voice_dir: None,
+    };
+
+    let verifier = tokio::task::spawn_blocking(move || {
+        SpeakerVerifier::new(config, &model_path, Some(voice_dir)).map_err(|e| e.to_string())
+    })
+    .await
+    .unwrap_or_else(|e| {
+        eprintln!("Speaker verifier task failed: {e}");
+        std::process::exit(1);
+    })
+    .unwrap_or_else(|e| {
+        eprintln!("Speaker verifier error: {e}");
+        std::process::exit(1);
+    });
+
+    (verifier, model_dir)
 }

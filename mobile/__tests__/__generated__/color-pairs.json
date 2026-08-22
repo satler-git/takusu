@@ -1289,6 +1289,34 @@
       "source": "text"
     },
     {
+      "fg": "black",
+      "bg": "surface",
+      "file": "views/AgentSettingsView.tsx",
+      "kind": "parent-child",
+      "source": "text"
+    },
+    {
+      "fg": "brand",
+      "bg": "surface",
+      "file": "views/AgentSettingsView.tsx",
+      "kind": "parent-child",
+      "source": "text"
+    },
+    {
+      "fg": "success",
+      "bg": "surface",
+      "file": "views/AgentSettingsView.tsx",
+      "kind": "parent-child",
+      "source": "text"
+    },
+    {
+      "fg": "destructive",
+      "bg": "surface",
+      "file": "views/AgentSettingsView.tsx",
+      "kind": "parent-child",
+      "source": "text"
+    },
+    {
       "fg": "onBrand",
       "bg": "brand",
       "file": "views/AgentSettingsView.tsx",
@@ -2222,5 +2250,5 @@
       "source": "icon"
     }
   ],
-  "generatedAt": "2026-08-23T06:36:51.970Z"
+  "generatedAt": "2026-08-24T14:35:43.824Z"
 }

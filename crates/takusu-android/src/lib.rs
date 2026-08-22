@@ -3,6 +3,7 @@ uniffi::setup_scaffolding!();
 mod audio;
 mod log_buffer;
 mod model;
+mod speaker;
 mod vad;
 
 use std::collections::HashMap;

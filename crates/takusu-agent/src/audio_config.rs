@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use takusu_audio::{
-    ExecutionProvider, SHERPA_SAMPLE_RATE, SherpaOnnxModel, SttBackend, TtsBackend,
+    ExecutionProvider, SHERPA_SAMPLE_RATE, SherpaOnnxModel, SpeakerConfig, SttBackend, TtsBackend,
 };
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -8,6 +8,10 @@ use takusu_audio::{
 pub struct AudioConfig {
     pub stt: SttConfig,
     pub tts: TtsConfig,
+    /// Optional speaker verification configuration. When `Some`, the audio
+    /// adapter will load a speaker embedding model and verify utterances
+    /// against enrolled voiceprints.
+    pub speaker: Option<SpeakerConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
