@@ -13322,6 +13322,14 @@
           "state": {
             "$ref": "#/components/schemas/CoverageState"
           },
+          "unclassified_gaps": {
+            "description": "Unclassified schedule gaps detected for the current evaluation.\nThese are synthetic unsettled intervals derived from the active schedule.",
+            "type": "array",
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/UnsettledIntervalRow"
+            }
+          },
           "unsettled_intervals": {
             "type": "array",
             "items": {
@@ -14335,6 +14343,7 @@
               "confirmations": [],
               "schedule_revision": 0,
               "state": "bootstrap",
+              "unclassified_gaps": [],
               "unsettled_intervals": []
             }
           },
@@ -17018,6 +17027,11 @@
             "type": ["integer", "null"],
             "format": "int64"
           },
+          "quantity_total": {
+            "description": "Total quantity for the task/session, present for `progress` capabilities.",
+            "type": ["integer", "null"],
+            "format": "int64"
+          },
           "request": {
             "description": "The original request the capability was minted from.\n\nIncluded so a client can return the capability unchanged across server\nrestarts, when the in-memory `CapabilityStore` is empty. The server\nignores this field during authorization; all authoritative parameters\nlive as top-level fields on the capability itself.",
             "anyOf": [
@@ -17193,6 +17207,10 @@
             "type": ["string", "null"]
           },
           "quantity_done": {
+            "type": ["integer", "null"],
+            "format": "int64"
+          },
+          "quantity_total": {
             "type": ["integer", "null"],
             "format": "int64"
           },
