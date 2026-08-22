@@ -258,7 +258,7 @@ impl MobileAudio {
         }
         let pcm: Vec<f32> = samples
             .into_iter()
-            .map(|sample| sample as f32 / i16::MAX as f32)
+            .map(|sample| sample as f32 / 32768.0)
             .collect();
 
         // Hush state is mutated by enhance(), so a panic while the guard is
@@ -351,7 +351,7 @@ impl MobileAudio {
 
         let pcm: Vec<f32> = samples
             .into_iter()
-            .map(|sample| sample as f32 / i16::MAX as f32)
+            .map(|sample| sample as f32 / 32768.0)
             .collect();
 
         let guard = self

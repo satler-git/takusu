@@ -2,6 +2,7 @@ pub mod cartesia;
 pub mod fish;
 mod http;
 pub mod models;
+pub mod speaker;
 #[cfg(feature = "record")]
 pub mod play;
 #[cfg(feature = "record")]
@@ -35,6 +36,11 @@ pub use models::{
     DownloadProgress, DownloadStage, ModelCache, ModelError, ModelRegistry, ModelSpec,
     ProgressCallback,
 };
+pub use speaker::{
+    DEFAULT_SPEAKER_MODEL_ID, DEFAULT_VERIFY_THRESHOLD, MIN_SPEAKER_AUDIO_SECONDS, SpeakerConfig, SpeakerError, VerificationResult,
+};
+#[cfg(feature = "sherpa")]
+pub use speaker::{SpeakerEmbeddingMatch, SpeakerVerifier};
 #[cfg(feature = "record")]
 pub use record::{RecordConfig, RecorderError, record};
 #[cfg(feature = "record")]

@@ -19,6 +19,7 @@ const HUSH_URL: &str = "https://huggingface.co/weya-ai/hush/resolve/main/onnx/ad
 const SHERPA_SENSE_VOICE_URL: &str = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17.tar.bz2";
 const SHERPA_PARAKEET_CTC_JA_URL: &str = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet-tdt_ctc-0.6b-ja-35000-int8.tar.bz2";
 const SHERPA_NEMOTRON_JA_URL: &str = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-560ms-int8-2026-06-11.tar.bz2";
+const SHERPA_SPEAKER_CAMPPLUS_ZH_EN_URL: &str = "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx";
 const SILERO_VAD_URL: &str =
     "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx";
 
@@ -121,12 +122,22 @@ const SILERO_VAD_SPEC: ModelSpec = ModelSpec {
     expected_size: Some(643_854),
 };
 
-const ALL_MODELS: [ModelSpec; 5] = [
+const SHERPA_SPEAKER_CAMPPLUS_ZH_EN_SPEC: ModelSpec = ModelSpec {
+    id: "sherpa-speaker-campplus-zh-en",
+    url: SHERPA_SPEAKER_CAMPPLUS_ZH_EN_URL,
+    format: ArchiveFormat::TarGz, // unused for single-file downloads
+    single_file: Some("model.onnx"),
+    expected_files: &["model.onnx"],
+    expected_size: Some(28_281_164),
+};
+
+const ALL_MODELS: [ModelSpec; 6] = [
     HUSH_SPEC,
     SHERPA_SENSE_VOICE_SPEC,
     SHERPA_PARAKEET_CTC_JA_SPEC,
     SHERPA_NEMOTRON_JA_SPEC,
     SILERO_VAD_SPEC,
+    SHERPA_SPEAKER_CAMPPLUS_ZH_EN_SPEC,
 ];
 
 /// Known downloadable models.
@@ -157,6 +168,12 @@ impl ModelRegistry {
     /// use by recording loops and by `download_model` on Android.
     pub const fn silero_vad() -> ModelSpec {
         SILERO_VAD_SPEC
+    }
+
+    /// sherpa-onnx 3D-Speaker CAM++ Chinese-English speaker embedding model
+    /// (single `.onnx`, ~28 MB).
+    pub const fn sherpa_speaker_campplus_zh_en() -> ModelSpec {
+        SHERPA_SPEAKER_CAMPPLUS_ZH_EN_SPEC
     }
 
     /// All known models.

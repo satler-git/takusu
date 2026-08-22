@@ -23,6 +23,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import uniffi.takusu_android.AndroidVad
 import uniffi.takusu_android.MobileAudio
+import uniffi.takusu_android.MobileSpeaker
 
 class AudioOptions : Record {
     @Field val provider: String = "cartesia"
@@ -46,7 +47,18 @@ class AudioOptions : Record {
     @Field val mute: Boolean = false
 }
 
+class SpeakerOptions : Record {
+    @Field val modelDir: String = ""
+
+    @Field val voiceDir: String = ""
+
+    @Field val threshold: Double = 0.5
+}
+
 private const val TAG = "TakusuAudioModule"
+
+/** Convert 16-bit PCM samples to 32-bit float [-1.0, 1.0]. */
+private fun List<Short>.toFloatArray(): FloatArray = FloatArray(size) { index -> this[index].toFloat() / 32768.0f }
 
 class TakusuAudioModule : Module() {
     private var audio: MobileAudio? = null
@@ -54,6 +66,12 @@ class TakusuAudioModule : Module() {
 
     /** Reusable VAD endpoint. Loaded once and reset before each recording. */
     private var vad: AndroidVad? = null
+
+    /** Speaker verifier. Created lazily when the speaker settings are configured. */
+    private var speaker: MobileSpeaker? = null
+
+    /** Recorder used for speaker enrollment / verification samples. */
+    private var speakerRecorder: AudioRecorder? = null
 
     @Volatile
     private var player: MediaPlayer? = null
@@ -469,6 +487,119 @@ class TakusuAudioModule : Module() {
                         }
                     }
                 voices
+            }
+
+            AsyncFunction("configureSpeaker") Coroutine { options: SpeakerOptions ->
+                withContext(Dispatchers.IO) {
+                    val context =
+                        appContext.reactContext
+                            ?: throw CodedException("ERR_AUDIO_CONFIG", "React context is not available", null)
+                    val modelDir =
+                        options.modelDir.ifEmpty {
+                            File(context.noBackupFilesDir, "takusu/models").absolutePath
+                        }
+                    val voiceDir =
+                        options.voiceDir.ifEmpty {
+                            File(context.noBackupFilesDir, "takusu/voiceprint").absolutePath
+                        }
+                    try {
+                        speaker = MobileSpeaker(modelDir, voiceDir, options.threshold.toFloat())
+                    } catch (error: Exception) {
+                        throw CodedException(
+                            "ERR_SPEAKER_CONFIG",
+                            "Failed to load speaker verifier: ${error.message}",
+                            error,
+                        )
+                    }
+                }
+                true
+            }
+
+            AsyncFunction("startSpeakerRecording") {
+                if (speakerRecorder?.let { it.isRunning() } == true) {
+                    throw CodedException("ERR_SPEAKER_RECORDING", "Speaker recording is already active", null)
+                }
+                val instance = AudioRecorder()
+                instance.start()
+                speakerRecorder = instance
+                true
+            }
+
+            AsyncFunction("stopAndEnrollSpeaker") Coroutine { name: String ->
+                val activeRecorder =
+                    speakerRecorder
+                        ?: throw CodedException("ERR_NOT_RECORDING", "Speaker recording is not active", null)
+                speakerRecorder = null
+                val samples = activeRecorder.stop()
+                val verifier =
+                    speaker
+                        ?: throw CodedException("ERR_SPEAKER_CONFIG", "Speaker verifier is not configured", null)
+                withContext(Dispatchers.IO) {
+                    try {
+                        verifier.enroll(name, samples.toFloatArray())
+                    } catch (error: Throwable) {
+                        throw CodedException(
+                            "ERR_SPEAKER_ENROLL",
+                            "Speaker enrollment failed: ${error.message}",
+                            error,
+                        )
+                    }
+                }
+                true
+            }
+
+            AsyncFunction("stopAndVerifySpeaker") Coroutine { name: String ->
+                val activeRecorder =
+                    speakerRecorder
+                        ?: throw CodedException("ERR_NOT_RECORDING", "Speaker recording is not active", null)
+                speakerRecorder = null
+                val samples = activeRecorder.stop()
+                val verifier =
+                    speaker
+                        ?: throw CodedException("ERR_SPEAKER_CONFIG", "Speaker verifier is not configured", null)
+                withContext(Dispatchers.IO) {
+                    try {
+                        val result = verifier.verify(name, samples.toFloatArray())
+                        mapOf(
+                            "score" to result.score.toDouble(),
+                            "accepted" to result.accepted,
+                            "speaker" to result.speaker,
+                        )
+                    } catch (error: Throwable) {
+                        throw CodedException(
+                            "ERR_SPEAKER_VERIFY",
+                            "Speaker verification failed: ${error.message}",
+                            error,
+                        )
+                    }
+                }
+            }
+
+            AsyncFunction("deleteSpeaker") Coroutine { name: String ->
+                val verifier =
+                    speaker
+                        ?: throw CodedException("ERR_SPEAKER_CONFIG", "Speaker verifier is not configured", null)
+                withContext(Dispatchers.IO) {
+                    try {
+                        verifier.delete(name)
+                    } catch (error: Throwable) {
+                        throw CodedException(
+                            "ERR_SPEAKER_DELETE",
+                            "Failed to delete speaker: ${error.message}",
+                            error,
+                        )
+                    }
+                }
+                true
+            }
+
+            AsyncFunction("listSpeakers") Coroutine {
+                val verifier =
+                    speaker
+                        ?: throw CodedException("ERR_SPEAKER_CONFIG", "Speaker verifier is not configured", null)
+                withContext(Dispatchers.IO) {
+                    verifier.list()
+                }
             }
 
             OnDestroy {
