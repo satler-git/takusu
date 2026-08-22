@@ -21,7 +21,11 @@ import { useSurface } from '@/src/api/SurfaceContext';
 import { useVoice } from '@/src/api/VoiceContext';
 import { useColors, type ColorSet } from '@/src/theme';
 import { haptic } from '@/src/components/haptics';
-import { startRecording, stopAndTranscribe } from '@/src/utils/voice';
+import {
+  startRecording,
+  stopAndTranscribe,
+  setEndpointingEnabled,
+} from '@/src/utils/voice';
 import { AgentCompactPanel } from '@/src/components/AgentCompactPanel';
 import type { SurfaceSnapshot } from '@/src/api/agentTypes';
 
@@ -127,7 +131,13 @@ export function ResidentAgentButton({
   const { top, left, right, bottom } = insets;
   const { width, height } = useWindowDimensions();
   const { snapshot, agentClient, sendCommand, reportAudio } = useSurface();
-  const { setIsRecording, setPendingSessionId } = useVoice();
+  const {
+    setIsRecording,
+    setPendingSessionId,
+    sessionActive,
+    startSession,
+    stopSession,
+  } = useVoice();
 
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [panelVisible, setPanelVisible] = useState(false);
@@ -301,6 +311,8 @@ export function ResidentAgentButton({
     if (recording.value || !agentClient) return;
     recording.value = true;
     setIsRecording(true);
+    startSession();
+    setEndpointingEnabled(true);
     try {
       await startRecording();
       // The user may have released while we were waiting for permissions or
@@ -310,8 +322,20 @@ export function ResidentAgentButton({
     } catch {
       recording.value = false;
       setIsRecording(false);
+      if (sessionActive) {
+        stopSession();
+      }
+      setEndpointingEnabled(false);
     }
-  }, [agentClient, reportAudio, setIsRecording, recording]);
+  }, [
+    agentClient,
+    reportAudio,
+    setIsRecording,
+    recording,
+    startSession,
+    sessionActive,
+    stopSession,
+  ]);
 
   const finishRecording = useCallback(async () => {
     if (!recording.value) return;
@@ -327,12 +351,25 @@ export function ResidentAgentButton({
         setSurfaceSessionId(undefined);
         setPanelVisible(true);
       } else {
+        // No speech detected; a continuous session ends rather than waiting
+        // forever for an unattended microphone.
         setSurfaceTranscript('');
+        if (sessionActive) {
+          stopSession();
+          setEndpointingEnabled(false);
+        }
       }
     } catch {
       // ignore
     }
-  }, [agentClient, reportAudio, setIsRecording, recording]);
+  }, [
+    agentClient,
+    reportAudio,
+    setIsRecording,
+    recording,
+    sessionActive,
+    stopSession,
+  ]);
 
   const startLongPressTimer = useCallback(() => {
     clearLongPressTimer();
@@ -407,10 +444,16 @@ export function ResidentAgentButton({
       case 'idle':
       case 'transcribing':
       default:
+        // Tapping while a continuous session is idle ends it.
+        if (sessionActive && current.state !== 'transcribing') {
+          stopSession();
+          setEndpointingEnabled(false);
+          return;
+        }
         openAgent();
         break;
     }
-  }, [openAgent, sendCommand]);
+  }, [openAgent, sendCommand, sessionActive, stopSession]);
 
   // Release runs on the JS thread so it can use Date.now() and React state.
   const release = useCallback(async () => {
@@ -475,7 +518,12 @@ export function ResidentAgentButton({
     // The surface turn has finished; keep the panel open so the user can read
     // the result, but clear the transcript so a new turn can start.
     setSurfaceTranscript('');
-  }, []);
+    // A continuous voice session re-arms the microphone after each turn so the
+    // user can keep talking (multi-turn continuation).
+    if (sessionActive) {
+      beginRecording();
+    }
+  }, [sessionActive, beginRecording]);
 
   const surfaceSpec = useMemo(
     () => ({

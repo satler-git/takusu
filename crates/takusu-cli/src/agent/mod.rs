@@ -28,6 +28,7 @@ pub struct AgentRunArgs {
     pub continue_session: bool,
     pub new_session: bool,
     pub voice: bool,
+    pub voice_session: bool,
 }
 
 pub async fn run(args: AgentRunArgs) -> Result<(), AppError> {
@@ -51,10 +52,35 @@ pub async fn run(args: AgentRunArgs) -> Result<(), AppError> {
             args.new_session || !args.continue_session,
         )?;
         let session = Arc::new(session);
+        if args.voice_session {
+            if args.yes {
+                eprintln!(
+                    "warning: --yes has no effect with --voice-session; continuous sessions defer approvals to the surface"
+                );
+            }
+            // Continuous multi-turn session: record → act → speak → listen
+            // until the user stops talking or the idle timeout elapses.
+            let mut output = String::new();
+            let mut last_asr = false;
+            let (_stop_tx, stop_rx) = tokio::sync::watch::channel(false);
+            let outcome = takusu_agent::runner::run_voice_session(
+                Arc::clone(&session),
+                takusu_agent::InputOrigin::Voice,
+                takusu_agent::VoiceSessionConfig::default(),
+                stop_rx,
+                move |event| emit_stream_event(event, true, &mut output, &mut last_asr),
+                |_callback| {},
+            )
+            .await
+            .map_err(agent_err)?;
+            save_session_snapshot(&session)?;
+            eprintln!("voice session ended: {outcome:?}");
+            return Ok(());
+        }
         let mut output = String::new();
         let mut last_asr = false;
         let result =
-            takusu_agent::runner::run_audio(Arc::clone(&session), false, args.yes, |event| {
+            takusu_agent::runner::run_audio(Arc::clone(&session), false, args.yes, move |event| {
                 emit_stream_event(event, true, &mut output, &mut last_asr)
             })
             .await

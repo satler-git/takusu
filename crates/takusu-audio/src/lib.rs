@@ -12,6 +12,7 @@ pub mod secrets;
 pub mod stt;
 pub mod tts;
 pub mod tts_normalize;
+pub mod vad;
 pub mod wav;
 
 #[cfg(feature = "hush")]
@@ -45,6 +46,15 @@ pub use stt::{
 };
 pub use tts::{TextToSpeech, TtsBackend, TtsConfig, TtsError, TtsOptions, TtsRequest, TtsStream};
 pub use tts_normalize::normalize_for_tts;
+pub use vad::{
+    Endpoint, EnergyVad, VadEndpoint, VadEndpointConfig, VadEvent, VoiceActivity, default_endpoint,
+};
+
+#[cfg(feature = "record")]
+pub use vad::default_endpoint_async;
+
+#[cfg(feature = "sherpa")]
+pub use vad::{SileroEndpoint, silero_endpoint_from_cache};
 pub use wav::{
     AudioError, I16_MAX_F32, SHERPA_SAMPLE_RATE, mix_to_mono, normalize, read_wav, resample,
     write_wav,

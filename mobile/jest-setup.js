@@ -55,3 +55,21 @@ jest.mock('react-native-reanimated', () => {
   const mock = require('react-native-reanimated/mock');
   return mock;
 });
+
+jest.mock('@/modules/takusu-server/src/TakusuAudioModule', () => ({
+  __esModule: true,
+  default: {
+    configure: jest.fn(() => Promise.resolve(true)),
+    setMuted: jest.fn(() => Promise.resolve(true)),
+    startRecording: jest.fn(() => true),
+    startRecordingWithEndpointing: jest.fn(() => Promise.resolve(true)),
+    stopAndTranscribe: jest.fn(() => Promise.resolve('')),
+    synthesizeAndPlay: jest.fn(() => Promise.resolve(true)),
+    synthesizeToFile: jest.fn(() => Promise.resolve('')),
+    playFile: jest.fn(() => Promise.resolve(true)),
+    deleteFile: jest.fn(() => Promise.resolve()),
+    stopPlayback: jest.fn(() => true),
+    clearTtsStop: jest.fn(() => true),
+    getAvailableVoices: jest.fn(() => Promise.resolve([])),
+  },
+}));

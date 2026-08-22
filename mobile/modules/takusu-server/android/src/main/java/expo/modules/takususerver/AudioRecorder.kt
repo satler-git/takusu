@@ -4,13 +4,17 @@ import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
 import expo.modules.kotlin.exception.CodedException
-import java.util.Collections
 import java.util.concurrent.atomic.AtomicBoolean
+import uniffi.takusu_android.AndroidVad
 import uniffi.takusu_android.MobileAudio
 
 class AudioRecorder {
     private val running = AtomicBoolean(false)
-    private val samples = Collections.synchronizedList(mutableListOf<Short>())
+    private val maxSamples = SAMPLE_RATE * MAX_DURATION_SECONDS
+    private var samples = ShortArray(maxSamples)
+
+    @Volatile
+    private var samplesCount = 0
     private var recorder: AudioRecord? = null
     private var thread: Thread? = null
     private var started = false
@@ -19,6 +23,12 @@ class AudioRecorder {
     private var language: String = ""
     private var transcript: String? = null
     private var error: Throwable? = null
+    private var vad: AndroidVad? = null
+
+    /** Enable VAD endpointing: recording stops ~0.5 s after speech ends. */
+    fun setVadEndpointing(endpoint: AndroidVad?) {
+        vad = endpoint
+    }
 
     fun start() {
         startInternal(streamingAudio = null, language = "")
@@ -46,6 +56,12 @@ class AudioRecorder {
 
             streamingAudio?.startStreamingAsr(language)
 
+            vad?.reset()
+            synchronized(this) {
+                samples = ShortArray(maxSamples)
+                samplesCount = 0
+            }
+
             val minimumBuffer =
                 AudioRecord.getMinBufferSize(
                     SAMPLE_RATE,
@@ -64,9 +80,6 @@ class AudioRecorder {
             var success = false
             try {
                 check(audioRecord.state == AudioRecord.STATE_INITIALIZED) { "failed to initialize microphone" }
-                if (!streaming) {
-                    samples.clear()
-                }
                 recorder = audioRecord
                 val t =
                     Thread {
@@ -75,16 +88,17 @@ class AudioRecorder {
                         var totalSamples = 0
                         try {
                             audioRecord.startRecording()
+                            val max = maxSamples
                             recording@
-                            while (running.get() && totalSamples < SAMPLE_RATE * MAX_DURATION_SECONDS) {
+                            while (running.get() && (if (streaming) totalSamples < max else samplesCount < max)) {
                                 val count = audioRecord.read(buffer, 0, buffer.size)
                                 if (count > 0) {
-                                    for (index in 0 until count) {
-                                        if (error != null) {
-                                            break@recording
-                                        }
-                                        val sample = buffer[index]
-                                        if (streaming) {
+                                    if (streaming) {
+                                        for (index in 0 until count) {
+                                            if (error != null) {
+                                                break@recording
+                                            }
+                                            val sample = buffer[index]
                                             chunk.add(sample)
                                             if (chunk.size >= CHUNK_SIZE) {
                                                 try {
@@ -95,10 +109,23 @@ class AudioRecorder {
                                                 }
                                                 chunk.clear()
                                             }
-                                        } else {
-                                            samples.add(sample)
+                                            totalSamples++
                                         }
-                                        totalSamples++
+                                    } else {
+                                        val space = maxSamples - samplesCount
+                                        val toCopy = count.coerceAtMost(space)
+                                        if (toCopy > 0) {
+                                            synchronized(this) {
+                                                buffer.copyInto(samples, samplesCount, 0, toCopy)
+                                                samplesCount += toCopy
+                                            }
+                                        }
+                                        // VAD endpointing: stop once the utterance
+                                        // has ended (speech + ~0.5 s silence tail).
+                                        val vad = vad
+                                        if (vad != null && vad.feed(buffer.take(toCopy))) {
+                                            break
+                                        }
                                     }
                                 }
                             }
@@ -161,7 +188,7 @@ class AudioRecorder {
                 recorder = null
                 started = false
                 check(!streaming) { "called stop() on a streaming recorder" }
-                synchronized(samples) { samples.toList() }
+                samples.copyOf(samplesCount).asList()
             } else {
                 emptyList()
             }

@@ -8821,6 +8821,7 @@ dependencies = [
  "serde",
  "serde_json",
  "takusu-agent",
+ "takusu-client",
  "takusu-contracts",
  "takusu-local",
  "takusu-local-lib",

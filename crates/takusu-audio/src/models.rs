@@ -19,6 +19,8 @@ const HUSH_URL: &str = "https://huggingface.co/weya-ai/hush/resolve/main/onnx/ad
 const SHERPA_SENSE_VOICE_URL: &str = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17.tar.bz2";
 const SHERPA_PARAKEET_CTC_JA_URL: &str = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet-tdt_ctc-0.6b-ja-35000-int8.tar.bz2";
 const SHERPA_NEMOTRON_JA_URL: &str = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-560ms-int8-2026-06-11.tar.bz2";
+const SILERO_VAD_URL: &str =
+    "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx";
 
 /// Archive compression used by a model bundle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -52,47 +54,79 @@ pub struct ModelSpec {
     pub id: &'static str,
     pub url: &'static str,
     pub format: ArchiveFormat,
+    /// When set, the download is a single file (not an archive) written to
+    /// `model_dir/<filename>`. Used for un-bundled models such as Silero VAD.
+    pub single_file: Option<&'static str>,
     pub expected_files: &'static [&'static str],
+    /// Optional expected file size in bytes. When set, `is_cached` validates
+    /// the on-disk size so interrupted downloads that left a partial file are
+    /// not accepted as complete.
+    pub expected_size: Option<u64>,
+}
+
+impl ModelSpec {
+    /// Whether this spec is a single-file download rather than an archive.
+    pub fn is_single_file(&self) -> bool {
+        self.single_file.is_some()
+    }
 }
 
 const HUSH_SPEC: ModelSpec = ModelSpec {
     id: "hush",
     url: HUSH_URL,
     format: ArchiveFormat::TarGz,
+    single_file: None,
     expected_files: &["enc.onnx", "erb_dec.onnx", "df_dec.onnx"],
+    expected_size: None,
 };
 
 const SHERPA_SENSE_VOICE_SPEC: ModelSpec = ModelSpec {
     id: "sherpa-sense-voice-int8",
     url: SHERPA_SENSE_VOICE_URL,
     format: ArchiveFormat::TarBz2,
+    single_file: None,
     expected_files: &["tokens.txt", "model.int8.onnx"],
+    expected_size: None,
 };
 
 const SHERPA_PARAKEET_CTC_JA_SPEC: ModelSpec = ModelSpec {
     id: "sherpa-parakeet-ctc-ja-0.6b",
     url: SHERPA_PARAKEET_CTC_JA_URL,
     format: ArchiveFormat::TarBz2,
+    single_file: None,
     expected_files: &["model.int8.onnx", "tokens.txt"],
+    expected_size: None,
 };
 
 const SHERPA_NEMOTRON_JA_SPEC: ModelSpec = ModelSpec {
     id: "sherpa-nemotron-ja-0.6b",
     url: SHERPA_NEMOTRON_JA_URL,
     format: ArchiveFormat::TarBz2,
+    single_file: None,
     expected_files: &[
         "encoder.int8.onnx",
         "decoder.int8.onnx",
         "joiner.int8.onnx",
         "tokens.txt",
     ],
+    expected_size: None,
 };
 
-const ALL_MODELS: [ModelSpec; 4] = [
+const SILERO_VAD_SPEC: ModelSpec = ModelSpec {
+    id: "silero-vad",
+    url: SILERO_VAD_URL,
+    format: ArchiveFormat::TarGz, // unused for single-file downloads
+    single_file: Some("silero_vad.onnx"),
+    expected_files: &["silero_vad.onnx"],
+    expected_size: Some(643_854),
+};
+
+const ALL_MODELS: [ModelSpec; 5] = [
     HUSH_SPEC,
     SHERPA_SENSE_VOICE_SPEC,
     SHERPA_PARAKEET_CTC_JA_SPEC,
     SHERPA_NEMOTRON_JA_SPEC,
+    SILERO_VAD_SPEC,
 ];
 
 /// Known downloadable models.
@@ -119,6 +153,12 @@ impl ModelRegistry {
         SHERPA_NEMOTRON_JA_SPEC
     }
 
+    /// sherpa-onnx Silero VAD (single `.onnx`, ~628 KB). Downloaded on first
+    /// use by recording loops and by `download_model` on Android.
+    pub const fn silero_vad() -> ModelSpec {
+        SILERO_VAD_SPEC
+    }
+
     /// All known models.
     pub fn all() -> &'static [ModelSpec] {
         &ALL_MODELS
@@ -142,6 +182,8 @@ pub enum ModelError {
     Download(#[from] reqwest::Error),
     #[error("io error: {0}")]
     Io(#[from] io::Error),
+    #[error("download size mismatch: expected {expected}, got {actual}")]
+    SizeMismatch { expected: u64, actual: u64 },
     #[error("archive extraction failed: {0}")]
     Extract(String),
     #[error("missing expected files after extraction: {0}")]
@@ -172,11 +214,23 @@ impl ModelCache {
         Ok(Self::new(dir))
     }
 
+    /// Ensure the sherpa-onnx Silero VAD model is present, downloading the
+    /// single `.onnx` file on first use, and return its path.
+    ///
+    /// This is now a registered model (`"silero-vad"`) usable through
+    /// [`Self::ensure`], so the same path is shared by desktop recording loops
+    /// and Android's `download_model`.
+    pub fn ensure_silero_vad(&self) -> Result<PathBuf, ModelError> {
+        let model_dir = self.ensure("silero-vad")?;
+        Ok(model_dir.join("silero_vad.onnx"))
+    }
+
     /// Check whether a model is already present and complete in the cache.
     pub fn is_cached(&self, id: &str) -> Result<bool, ModelError> {
         let spec = ModelRegistry::find(id).ok_or(ModelError::UnknownModel(id.to_string()))?;
         let model_dir = self.cache_dir.join(spec.id);
-        Ok(model_dir.is_dir() && has_expected_files(&model_dir, spec.expected_files))
+        Ok(model_dir.is_dir()
+            && has_expected_files(&model_dir, spec.expected_files, spec.expected_size))
     }
 
     /// Ensure a model is available, downloading it if necessary.
@@ -194,11 +248,13 @@ impl ModelCache {
     ) -> Result<PathBuf, ModelError> {
         let spec = ModelRegistry::find(id).ok_or(ModelError::UnknownModel(id.to_string()))?;
         let model_dir = self.cache_dir.join(spec.id);
-        if model_dir.is_dir() && has_expected_files(&model_dir, spec.expected_files) {
+        if model_dir.is_dir()
+            && has_expected_files(&model_dir, spec.expected_files, spec.expected_size)
+        {
             return Ok(model_dir);
         }
         self.download_and_extract(&spec, progress)?;
-        if !has_expected_files(&model_dir, spec.expected_files) {
+        if !has_expected_files(&model_dir, spec.expected_files, spec.expected_size) {
             return Err(ModelError::MissingFiles(model_dir.display().to_string()));
         }
         Ok(model_dir)
@@ -231,9 +287,6 @@ impl ModelCache {
         let model_dir = self.cache_dir.join(spec.id);
         fs::create_dir_all(&model_dir)?;
 
-        let archive_name = archive_name_from_url(spec.url);
-        let archive_path = self.cache_dir.join(format!("{}.{}", spec.id, archive_name));
-
         let certs: Vec<reqwest::Certificate> = webpki_root_certs::TLS_SERVER_ROOT_CERTS
             .iter()
             .filter_map(|c| reqwest::Certificate::from_der(c.as_ref()).ok())
@@ -253,8 +306,66 @@ impl ModelCache {
 
         let total_bytes = response.content_length();
         let mut downloaded_bytes = 0;
-        let mut file = fs::File::create(&archive_path)?;
         let mut buffer = [0u8; 64 * 1024];
+
+        if let Some(filename) = spec.single_file {
+            // Single-file model: write to a temporary file, validate size, then
+            // atomically rename it into place. This prevents a partial download
+            // from being accepted as a complete model on the next run.
+            let final_path = model_dir.join(filename);
+            let tmp_path = model_dir.join(format!("{}.{}", filename, "tmp"));
+            if tmp_path.exists() {
+                fs::remove_file(&tmp_path)?;
+            }
+            let mut file = fs::File::create(&tmp_path)?;
+            loop {
+                let read = response.read(&mut buffer)?;
+                if read == 0 {
+                    break;
+                }
+                file.write_all(&buffer[..read])?;
+                downloaded_bytes += read as u64;
+                if let Some(callback) = &progress {
+                    callback(DownloadProgress {
+                        downloaded_bytes,
+                        total_bytes,
+                        stage: DownloadStage::Downloading,
+                    });
+                }
+            }
+            file.flush()?;
+            drop(file);
+
+            if let Some(expected) = total_bytes
+                && downloaded_bytes != expected
+            {
+                fs::remove_file(&tmp_path)?;
+                return Err(ModelError::SizeMismatch {
+                    expected,
+                    actual: downloaded_bytes,
+                });
+            }
+
+            fs::rename(&tmp_path, &final_path)?;
+            if let Some(callback) = &progress {
+                callback(DownloadProgress {
+                    downloaded_bytes,
+                    total_bytes,
+                    stage: DownloadStage::Verifying,
+                });
+            }
+            return Ok(());
+        }
+
+        let archive_name = archive_name_from_url(spec.url);
+        let archive_path = self.cache_dir.join(format!("{}.{}", spec.id, archive_name));
+        let tmp_archive_path = self
+            .cache_dir
+            .join(format!("{}.{}.tmp", spec.id, archive_name));
+        if tmp_archive_path.exists() {
+            fs::remove_file(&tmp_archive_path)?;
+        }
+        let mut file = fs::File::create(&tmp_archive_path)?;
         loop {
             let read = response.read(&mut buffer)?;
             if read == 0 {
@@ -272,6 +383,18 @@ impl ModelCache {
         }
         file.flush()?;
         drop(file);
+
+        if let Some(expected) = total_bytes
+            && downloaded_bytes != expected
+        {
+            fs::remove_file(&tmp_archive_path)?;
+            return Err(ModelError::SizeMismatch {
+                expected,
+                actual: downloaded_bytes,
+            });
+        }
+
+        fs::rename(&tmp_archive_path, &archive_path)?;
 
         if let Some(callback) = &progress {
             callback(DownloadProgress {
@@ -294,7 +417,7 @@ impl ModelCache {
         // contains only one directory and no expected files, move the contents
         // up one level.
         if let Some(top) = single_child_directory(&model_dir)
-            && !has_expected_files_direct(&model_dir, spec.expected_files)
+            && !has_expected_files_direct(&model_dir, spec.expected_files, spec.expected_size)
         {
             let temp = self.cache_dir.join(format!("{}.tmp", spec.id));
             if temp.exists() {
@@ -393,31 +516,48 @@ fn is_safe_archive_path(path: &Path) -> bool {
     true
 }
 
-fn has_expected_files(dir: &Path, expected: &[&str]) -> bool {
+fn has_expected_files(dir: &Path, expected: &[&str], expected_size: Option<u64>) -> bool {
     expected
         .iter()
-        .all(|name| find_file_recursive(dir, name).is_some())
+        .all(|name| find_file_recursive(dir, name, expected_size).is_some())
 }
 
-fn has_expected_files_direct(dir: &Path, expected: &[&str]) -> bool {
-    expected.iter().all(|name| dir.join(name).exists())
+fn has_expected_files_direct(dir: &Path, expected: &[&str], expected_size: Option<u64>) -> bool {
+    expected
+        .iter()
+        .all(|name| is_valid_model_file(&dir.join(name), expected_size))
 }
 
-fn find_file_recursive(dir: &Path, name: &str) -> Option<PathBuf> {
+fn find_file_recursive(dir: &Path, name: &str, expected_size: Option<u64>) -> Option<PathBuf> {
     let path = dir.join(name);
-    if path.exists() {
+    if is_valid_model_file(&path, expected_size) {
         return Some(path);
     }
     for entry in fs::read_dir(dir).ok()? {
         let entry = entry.ok()?;
         let path = entry.path();
         if path.is_dir()
-            && let Some(found) = find_file_recursive(&path, name)
+            && let Some(found) = find_file_recursive(&path, name, expected_size)
         {
             return Some(found);
         }
     }
     None
+}
+
+fn is_valid_model_file(path: &Path, expected_size: Option<u64>) -> bool {
+    let meta = match path.metadata() {
+        Ok(m) if m.is_file() => m,
+        _ => return false,
+    };
+    let len = meta.len();
+    if len == 0 {
+        return false;
+    }
+    if let Some(expected) = expected_size {
+        return len == expected;
+    }
+    true
 }
 
 fn single_child_directory(dir: &Path) -> Option<PathBuf> {
