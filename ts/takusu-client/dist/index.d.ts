@@ -117,6 +117,19 @@ interface components$1 {
         CreateComment: {
             content: string;
         };
+        /** @description Request body for recording a coverage confirmation (WI-10). */
+        CreateCoverageConfirmation: {
+            /** @default ok */
+            calendar_health: string;
+            end_at: components$1['schemas']['Timestamp'];
+            operation_id?: string | null;
+            /** Format: int64 */
+            schedule_revision: number;
+            /** @default intake_complete */
+            source: string;
+            start_at: components$1['schemas']['Timestamp'];
+            timezone: string;
+        };
         /** @description Request body for registering a new device. */
         CreateDevice: {
             id: string;
@@ -352,6 +365,16 @@ interface components$1 {
         };
         CreateTokenRequest: {
             label?: string | null;
+        };
+        /** @description Request body for recording an unsettled interval (WI-10 / WI-18). */
+        CreateUnsettledInterval: {
+            /** @default unclassified */
+            classification: string;
+            end_at: components$1['schemas']['Timestamp'];
+            operation_id?: string | null;
+            /** @default capture */
+            source: string;
+            start_at: components$1['schemas']['Timestamp'];
         };
         /**
          * @description A calendar date in `YYYY-MM-DD` format.
@@ -1743,6 +1766,31 @@ interface components$1 {
          * @enum {string}
          */
         InputPath: 'screen_capability' | 'notification_capability' | 'explicit_voice_session' | 'ambient_wake_word' | 'plain_text';
+        /** @description Where the user is in the fixed-order intake interview. */
+        IntakeStage: 'not_started' | 'deadlines' | 'recurring' | 'calendar_import' | 'complete';
+        /** @description Saved state for an interruptible intake interview. */
+        IntakeState: {
+            /**
+             * @description Display ids of tasks/habits created so far in this intake. Used to
+             *     resume the summary and avoid re-asking about items already accepted.
+             * @default []
+             */
+            collected_ids: string[];
+            /**
+             * @description Whether a coverage confirmation is waiting for the current batch to be
+             *     committed before it can be recorded.
+             * @default false
+             */
+            coverage_pending: boolean;
+            /**
+             * @description `proposal_id` used to batch the current set of intake proposals so they
+             *     can be approved together.
+             * @default null
+             */
+            proposal_id: string | null;
+            /** @default not_started */
+            stage: components$1['schemas']['IntakeStage'];
+        };
         /**
          * @description Identifies which LLM backend implementation to build.
          *
@@ -1893,6 +1941,11 @@ interface components$1 {
              * @default []
              */
             injected_memory_ids: string[];
+            /**
+             * @description Resumable intake interview state (WI-16).
+             * @default null
+             */
+            intake_state: components$1['schemas']['IntakeState'] | null;
             /** @default null */
             pending_approval: components$1['schemas']['ApprovalRequest'] | null;
             /**
@@ -2133,6 +2186,8 @@ interface components$1 {
         TurnResult: {
             approval_request?: components$1['schemas']['ApprovalRequest'] | null;
             changes: components$1['schemas']['ChangeReceipt'][];
+            /** @description Resumable intake interview state at the end of the turn (WI-16). */
+            intake_state?: components$1['schemas']['IntakeState'] | null;
             /**
              * @description Typed presentation derived from the turn's tool results (WI-1). `None`
              *     when no tool result maps to a presentation kind.
@@ -2144,6 +2199,7 @@ interface components$1 {
         TurnResultDto: {
             approval_request?: components$1['schemas']['ApprovalRequest'] | null;
             changes: components$1['schemas']['ChangeReceipt'][];
+            intake_state?: components$1['schemas']['IntakeState'] | null;
             presentation?: components$1['schemas']['Presentation'] | null;
             schedule_dirty: boolean;
             text: string;

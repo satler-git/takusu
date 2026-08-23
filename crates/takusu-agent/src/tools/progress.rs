@@ -94,6 +94,7 @@ fn clarification_output(message: &str) -> ToolOutput {
         discovered_tools: Vec::new(),
         schedule_dirty: false,
         is_error: false,
+        intake_state: None,
     }
 }
 
@@ -235,6 +236,7 @@ fn progress_output(
         discovered_tools: Vec::new(),
         schedule_dirty,
         is_error: false,
+        intake_state: None,
     }
 }
 

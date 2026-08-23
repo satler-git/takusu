@@ -229,6 +229,7 @@ mod tests {
                     schedule_dirty: false,
                     approval_request: None,
                     presentation: None,
+                    intake_state: None,
                 },
             })
         }

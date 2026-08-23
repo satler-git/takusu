@@ -42,12 +42,27 @@ export interface ApprovalResult {
   schedule_dirty: boolean;
 }
 
+export type IntakeStage =
+  | 'not_started'
+  | 'deadlines'
+  | 'recurring'
+  | 'calendar_import'
+  | 'complete';
+
+export interface IntakeState {
+  stage: IntakeStage;
+  proposal_id: string | null;
+  coverage_pending: boolean;
+  collected_ids: string[];
+}
+
 export interface AgentTurnResult {
   text: string;
   changes: ChangeReceipt[];
   schedule_dirty: boolean;
   approval_request: ApprovalRequest | null;
   presentation?: Presentation | null;
+  intake_state?: IntakeState | null;
 }
 
 // ── Shared surface state (WI-5) ──────────────────────────────────────────
