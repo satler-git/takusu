@@ -240,7 +240,7 @@ class TakusuAudioModule : Module() {
                         )
                 if (vad == null) {
                     val modelDir =
-                        withContext(Dispatchers.IO) {
+                        withIoContext {
                             uniffi.takusu_android.downloadModel(
                                 dir.absolutePath,
                                 "silero-vad",
@@ -318,7 +318,7 @@ class TakusuAudioModule : Module() {
                         audio
                             ?: throw CodedException("ERR_AUDIO_CONFIG", "Audio is not configured", null)
                     val mp3 =
-                        withContext(Dispatchers.IO) {
+                        withIoContext {
                             instance.synthesize(text)
                         }
                     val dir =
@@ -387,7 +387,7 @@ class TakusuAudioModule : Module() {
                     val file = File.createTempFile("takusu-tts-", ".mp3", dir)
                     try {
                         val mp3 =
-                            withContext(Dispatchers.IO) {
+                            withIoContext {
                                 instance.synthesize(text)
                             }
                         if (stopTtsRequested) {
@@ -490,7 +490,7 @@ class TakusuAudioModule : Module() {
             }
 
             AsyncFunction("configureSpeaker") Coroutine { options: SpeakerOptions ->
-                withContext(Dispatchers.IO) {
+                withIoContext {
                     val context =
                         appContext.reactContext
                             ?: throw CodedException("ERR_AUDIO_CONFIG", "React context is not available", null)
@@ -534,7 +534,7 @@ class TakusuAudioModule : Module() {
                 val verifier =
                     speaker
                         ?: throw CodedException("ERR_SPEAKER_CONFIG", "Speaker verifier is not configured", null)
-                withContext(Dispatchers.IO) {
+                withIoContext {
                     try {
                         verifier.enroll(name, samples.toFloatArray())
                     } catch (error: Throwable) {
@@ -557,7 +557,7 @@ class TakusuAudioModule : Module() {
                 val verifier =
                     speaker
                         ?: throw CodedException("ERR_SPEAKER_CONFIG", "Speaker verifier is not configured", null)
-                withContext(Dispatchers.IO) {
+                withIoContext {
                     try {
                         val result = verifier.verify(name, samples.toFloatArray())
                         mapOf(
@@ -579,7 +579,7 @@ class TakusuAudioModule : Module() {
                 val verifier =
                     speaker
                         ?: throw CodedException("ERR_SPEAKER_CONFIG", "Speaker verifier is not configured", null)
-                withContext(Dispatchers.IO) {
+                withIoContext {
                     try {
                         verifier.delete(name)
                     } catch (error: Throwable) {
@@ -597,7 +597,7 @@ class TakusuAudioModule : Module() {
                 val verifier =
                     speaker
                         ?: throw CodedException("ERR_SPEAKER_CONFIG", "Speaker verifier is not configured", null)
-                withContext(Dispatchers.IO) {
+                withIoContext {
                     verifier.list()
                 }
             }
@@ -746,6 +746,14 @@ class TakusuAudioModule : Module() {
                 )
             }
         }
+
+    /**
+     * Wrap [withContext] in a non-inline suspend helper so it can be called from
+     * [expo.modules.kotlin.functions.Coroutine] blocks. The [Coroutine] body is
+     * crossinline and cannot contain direct calls to inline suspend functions
+     * such as [withContext] with newer Kotlin compilers.
+     */
+    private suspend fun <T> withIoContext(block: suspend () -> T): T = withContext(Dispatchers.IO) { block() }
 
     private fun createMobileAudio(
         context: Context,
