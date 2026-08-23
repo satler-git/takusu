@@ -419,6 +419,10 @@ pub struct ResumeSessionRequest {
     /// check-in is not lost across CLI save/resume.
     #[serde(default)]
     pub pending_check_ins: Vec<crate::tools::comments::PendingCheckIn>,
+    /// Delay actions that exceeded the short-snooze threshold, awaiting a
+    /// one-time postpone reason question (WI-17).
+    #[serde(default)]
+    pub pending_postpone_reasons: Vec<crate::tools::comments::PendingPostponeReason>,
     /// Memory ids already injected into the system context, so a resumed
     /// session does not re-inject them (WI-4 / #1003).
     #[serde(default)]
@@ -933,11 +937,11 @@ async fn authorize_action(
             let already_consumed = record
                 .as_ref()
                 .is_some_and(|r| r.try_lock().map(|g| g.consumed).unwrap_or(false));
-            if let Some(session_id) = query.session_id
+            if let Some(ref session_id) = query.session_id
                 && let crate::presentation::Presentation::ChangeProposal(ref request) = presentation
                 && !already_consumed
             {
-                if let Some(session) = state.session(&session_id) {
+                if let Some(session) = state.session(session_id) {
                     match session.make_approval_request(
                         request.changes.clone(),
                         request.inferred_fields.clone(),
@@ -961,6 +965,41 @@ async fn authorize_action(
                     }
                 } else {
                     return StatusCode::NOT_FOUND.into_response();
+                }
+            }
+
+            // WI-17: one-time postpone reason hook for delay actions that
+            // exceed the short-snooze threshold.
+            if action == QuickAction::Delay
+                && let Some(minutes) = body.value.snooze_minutes
+                && crate::contact_policy::should_ask_postpone_reason(minutes)
+                && let Some(session_id) = query.session_id.as_ref()
+                && let Some(session) = state.session(session_id)
+            {
+                match state.planner_client.get_task(&body.value.task_id).await {
+                    Ok(task) => {
+                        let pending = crate::tools::comments::PendingPostponeReason {
+                            task_id: body.value.task_id.clone(),
+                            display_id: task.display_id,
+                            title: task.title,
+                            snooze_minutes: minutes,
+                            delivered: false,
+                        };
+                        if let Err(error) = session.enqueue_pending_postpone_reason(pending) {
+                            tracing::warn!(
+                                error = %error,
+                                session_id = %session_id,
+                                "failed to enqueue postpone reason"
+                            );
+                        }
+                    }
+                    Err(error) => {
+                        tracing::warn!(
+                            error = %error,
+                            task_id = %body.value.task_id,
+                            "failed to fetch task for postpone reason hook"
+                        );
+                    }
                 }
             }
 
@@ -1187,6 +1226,9 @@ async fn resume_session(
     }
 
     if let Err(e) = session.set_pending_check_ins(body.value.pending_check_ins) {
+        return agent_error(e);
+    }
+    if let Err(e) = session.set_pending_postpone_reasons(body.value.pending_postpone_reasons) {
         return agent_error(e);
     }
 
@@ -2265,6 +2307,7 @@ mod tests {
                 schedule_dirty: None,
                 compaction_summary: None,
                 pending_check_ins: Vec::new(),
+                pending_postpone_reasons: Vec::new(),
                 injected_memory_ids: Vec::new(),
                 intake_state: None,
             },
@@ -2391,6 +2434,7 @@ mod tests {
                 schedule_dirty: None,
                 compaction_summary: None,
                 pending_check_ins: Vec::new(),
+                pending_postpone_reasons: Vec::new(),
                 injected_memory_ids: Vec::new(),
                 intake_state: None,
             },

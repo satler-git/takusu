@@ -34,6 +34,11 @@ pub struct ClaimEventResponse {
     pub claimed: bool,
 }
 
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct DeliveryModeResponse {
+    pub mode: takusu_agent::contact_policy::DeliveryMode,
+}
+
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct CommitEventsRequest {
     pub schedule_revision: i64,
@@ -157,6 +162,21 @@ pub async fn claim_event(
             .app
             .claim_event_delivery(&body.device_id, &event_id)
             .await?,
+    }))
+}
+
+pub async fn delivery_mode(
+    State(state): State<AppState>,
+    Path(event_id): Path<String>,
+    Query(query): Query<EventListQuery>,
+) -> Result<Json<DeliveryModeResponse>, HttpError> {
+    let device_id = query.device_id.as_deref().ok_or_else(|| {
+        HttpError(AppError::BadRequest(
+            takusu_local_lib::error::BadRequestKind::Other("device_id is required".into()),
+        ))
+    })?;
+    Ok(Json(DeliveryModeResponse {
+        mode: state.app.event_delivery_mode(device_id, &event_id).await?,
     }))
 }
 

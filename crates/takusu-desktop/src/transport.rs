@@ -12,9 +12,10 @@ use futures_util::Stream;
 use takusu_agent::capability::{ActionCapability, CapabilityRequest, InputPath, mint_capability};
 use takusu_agent::events::EvaluationResult;
 use takusu_agent::{
-    Presentation, SurfaceCommand, SurfaceCommandResponse, SurfaceEvent, SurfaceSnapshot,
+    DeliveryMode, Presentation, SurfaceCommand, SurfaceCommandResponse, SurfaceEvent,
+    SurfaceSnapshot,
 };
-use takusu_contracts::{EventDeliveryState, EventLedgerRow};
+use takusu_contracts::{DeviceRow, EventDeliveryState, EventLedgerRow};
 
 use crate::state::DesktopError;
 
@@ -94,11 +95,23 @@ pub trait DesktopTransport: Send + Sync {
         device_id: &str,
     ) -> Pin<Box<dyn Future<Output = Result<bool, DesktopError>> + Send + '_>>;
 
+    fn event_delivery_mode(
+        &self,
+        event_id: &str,
+        device_id: &str,
+    ) -> Pin<Box<dyn Future<Output = Result<DeliveryMode, DesktopError>> + Send + '_>>;
+
     fn update_planner_event_state(
         &self,
         event_id: &str,
         state: EventDeliveryState,
     ) -> Pin<Box<dyn Future<Output = Result<EventLedgerRow, DesktopError>> + Send + '_>>;
+
+    fn suppress_device(
+        &self,
+        device_id: &str,
+        minutes: i64,
+    ) -> Pin<Box<dyn Future<Output = Result<DeviceRow, DesktopError>> + Send + '_>>;
 
     fn mint_action_capability(
         &self,
@@ -259,6 +272,14 @@ impl DesktopTransport for MockTransport {
         Box::pin(async { Ok(true) })
     }
 
+    fn event_delivery_mode(
+        &self,
+        _event_id: &str,
+        _device_id: &str,
+    ) -> Pin<Box<dyn Future<Output = Result<DeliveryMode, DesktopError>> + Send + '_>> {
+        Box::pin(async { Ok(DeliveryMode::Notify) })
+    }
+
     fn update_planner_event_state(
         &self,
         _event_id: &str,
@@ -267,6 +288,18 @@ impl DesktopTransport for MockTransport {
         Box::pin(async {
             Err(DesktopError::Transport(
                 "mock event state is not persisted".into(),
+            ))
+        })
+    }
+
+    fn suppress_device(
+        &self,
+        _device_id: &str,
+        _minutes: i64,
+    ) -> Pin<Box<dyn Future<Output = Result<DeviceRow, DesktopError>> + Send + '_>> {
+        Box::pin(async {
+            Err(DesktopError::Transport(
+                "mock device suppression is not persisted".into(),
             ))
         })
     }

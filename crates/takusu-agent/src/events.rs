@@ -156,6 +156,25 @@ impl PlannerEventKind {
     }
 }
 
+impl std::str::FromStr for PlannerEventKind {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "task_start_time_reached" => Ok(Self::TaskStartTimeReached),
+            "task_non_start_continued" => Ok(Self::TaskNonStartContinued),
+            "unclassified_gap_continued" => Ok(Self::UnclassifiedGapContinued),
+            "distribution_overrun" => Ok(Self::DistributionOverrun),
+            "deadline_violation" => Ok(Self::DeadlineViolation),
+            "carried_over_incomplete" => Ok(Self::CarriedOverIncomplete),
+            "schedule_generation_failure" => Ok(Self::ScheduleGenerationFailure),
+            "sleep_impact" => Ok(Self::SleepImpact),
+            "current_task" => Ok(Self::CurrentTask),
+            _ => Err(format!("unknown planner event kind: {s}")),
+        }
+    }
+}
+
 /// Delivery urgency, kept separate from delivery modality.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -163,6 +182,19 @@ pub enum Urgency {
     Normal,
     High,
     Emergency,
+}
+
+impl std::str::FromStr for Urgency {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "normal" => Ok(Self::Normal),
+            "high" => Ok(Self::High),
+            "emergency" => Ok(Self::Emergency),
+            _ => Err(format!("unknown urgency: {s}")),
+        }
+    }
 }
 
 /// A task identity included in event payloads.

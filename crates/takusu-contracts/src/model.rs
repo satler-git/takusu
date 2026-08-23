@@ -1636,6 +1636,8 @@ pub struct DeviceRow {
     pub next_eval_at: Option<Timestamp>,
     pub audio_service_running: bool,
     pub private_output_route: bool,
+    /// Timed contact suppression from a "ほっといて" action (WI-17).
+    pub contact_suppress_until: Option<Timestamp>,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
 }
@@ -1661,6 +1663,21 @@ pub struct UpdateDevice {
     pub audio_service_running: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub private_output_route: Option<bool>,
+    /// Extend or clear the timed contact suppression window (WI-17).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub contact_suppress_until: Option<Timestamp>,
+}
+
+/// Request body for extending the contact suppression window on a device.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct SuppressDevice {
+    /// Suppression duration in minutes. Defaults to 60 minutes.
+    #[serde(default = "default_suppress_minutes")]
+    pub minutes: i64,
+}
+
+fn default_suppress_minutes() -> i64 {
+    60
 }
 
 /// Current speech capability for a device.

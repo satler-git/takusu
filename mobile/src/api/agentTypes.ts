@@ -970,6 +970,16 @@ export interface EventEvaluationResult {
   next_eval_at?: string | null;
 }
 
+export type DeliveryMode =
+  | 'speak'
+  | 'notify'
+  | 'suppress'
+  | 'defer_quiet_hours';
+
+export interface DeliveryModeResponse {
+  mode: DeliveryMode;
+}
+
 /** Response body for the start-time notification endpoint (Versioned flattens it). */
 export interface StartTimeNotificationList {
   notifications: StartTimeNotification[];

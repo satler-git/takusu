@@ -218,6 +218,65 @@ pub(crate) fn check_in_prompt_section(queue: &mut [PendingCheckIn]) -> String {
     )
 }
 
+/// A delay that crossed the short-snooze threshold, awaiting a one-time
+/// "why did you postpone this task?" question on a later turn.
+///
+/// The user's answer is stored as a task comment.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+pub struct PendingPostponeReason {
+    pub task_id: String,
+    pub display_id: i64,
+    pub title: String,
+    pub snooze_minutes: i64,
+    /// Whether the postpone check-in has ever been surfaced in a system prompt.
+    #[serde(default)]
+    pub delivered: bool,
+}
+
+/// Enqueue a postpone reason check-in unless one for the same task is already
+/// pending.
+pub fn enqueue_postpone_reason(
+    queue: &mut Vec<PendingPostponeReason>,
+    pending: PendingPostponeReason,
+) {
+    if !queue.iter().any(|p| p.task_id == pending.task_id) {
+        queue.push(pending);
+    }
+}
+
+/// Drop pending postpone reasons for tasks that were deleted.
+pub fn clear_postpone_reasons_for_task_ids(
+    queue: &mut Vec<PendingPostponeReason>,
+    task_ids: &[String],
+) {
+    if task_ids.is_empty() {
+        return;
+    }
+    queue.retain(|p| !task_ids.iter().any(|id| id == &p.task_id));
+}
+
+/// Build the system-prompt section for pending postpone reasons.
+pub fn postpone_reason_prompt_section(queue: &mut [PendingPostponeReason]) -> String {
+    if queue.is_empty() {
+        return String::new();
+    }
+    let lines = queue
+        .iter()
+        .map(|p| {
+            let question = crate::contact_policy::postpone_reason_check_in(&p.title);
+            format!("{}\n  理由を聞いて、回答を `add_comment` でそのタスクのコメントとして記録してください。", question)
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    for p in queue.iter_mut() {
+        p.delivered = true;
+    }
+    format!(
+        "## タスク先送りの理由確認（確認待ち）
+{lines}",
+    )
+}
+
 struct CommentModule;
 
 impl ToolModule for CommentModule {

@@ -236,6 +236,10 @@ fn build_api_router(open_api: &mut OpenApi) -> Router<AppState> {
             api::post(handlers::events::claim_event),
         )
         .api_route(
+            "/events/{event_id}/delivery",
+            api::get(handlers::events::delivery_mode),
+        )
+        .api_route(
             "/events/{event_id}/acknowledge",
             api::post(handlers::events::acknowledge_event),
         )
@@ -270,6 +274,10 @@ fn build_api_router(open_api: &mut OpenApi) -> Router<AppState> {
         .api_route(
             "/devices/{id}/speech",
             api::get(handlers::device::get_speech_capability),
+        )
+        .api_route(
+            "/devices/{id}/suppress",
+            api::post(handlers::device::suppress_device),
         )
         .api_route(
             "/coverage/confirmations",

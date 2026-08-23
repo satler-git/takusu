@@ -7796,6 +7796,97 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/events/{event_id}/delivery': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: {
+          device_id?: string;
+        };
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['DeliveryModeResponse'];
+          };
+        };
+        /** @description Error */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        500: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/events/{event_id}/acknowledge': {
     parameters: {
       query?: never;
@@ -8943,6 +9034,119 @@ export interface paths {
     };
     put?: never;
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/devices/{id}/suppress': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      /** @description Request body for extending the contact suppression window on a device. */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['SuppressDevice'];
+        };
+      };
+      responses: {
+        /** @description A registered device that may hold or contend for resident authority. */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['DeviceRow'];
+          };
+        };
+        /** @description Error */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Expected request with `Content-Type: application/json` */
+        415: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Failed to deserialize the JSON body into the target type */
+        422: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Error */
+        500: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+      };
+    };
     delete?: never;
     options?: never;
     head?: never;
@@ -11102,6 +11306,11 @@ export interface components {
       /** Format: int64 */
       observed_revision: number;
     };
+    /** @description How a planner event should be delivered to a specific device. */
+    DeliveryMode: 'speak' | 'notify' | 'suppress' | 'defer_quiet_hours';
+    DeliveryModeResponse: {
+      mode: components['schemas']['DeliveryMode'];
+    };
     /**
      * @description Response for `GET /api/tasks/dependency-analysis` and the habit step
      *     variant (#355).
@@ -11122,6 +11331,8 @@ export interface components {
     /** @description A registered device that may hold or contend for resident authority. */
     DeviceRow: {
       audio_service_running: boolean;
+      /** @description Timed contact suppression from a "ほっといて" action (WI-17). */
+      contact_suppress_until?: components['schemas']['Timestamp'] | null;
       created_at: components['schemas']['Timestamp'];
       evaluator_heartbeat_until?: components['schemas']['Timestamp'] | null;
       evaluator_lease_until?: components['schemas']['Timestamp'] | null;
@@ -11935,6 +12146,15 @@ export interface components {
     };
     /** @enum {string} */
     SubjectType: '' | 'task' | 'habit' | 'skill' | 'schedule';
+    /** @description Request body for extending the contact suppression window on a device. */
+    SuppressDevice: {
+      /**
+       * Format: int64
+       * @description Suppression duration in minutes. Defaults to 60 minutes.
+       * @default 60
+       */
+      minutes: number;
+    };
     /** @description Response for `POST /api/sync/trigger`. */
     SyncTriggerResponse: {
       status: string;
@@ -12086,6 +12306,8 @@ export interface components {
     /** @description Request body for updating a registered device. */
     UpdateDevice: {
       audio_service_running?: boolean | null;
+      /** @description Extend or clear the timed contact suppression window (WI-17). */
+      contact_suppress_until?: components['schemas']['Timestamp'] | null;
       name?: string | null;
       /** Format: int64 */
       priority?: number | null;
@@ -12591,6 +12813,25 @@ export interface components {
       title: string;
     };
     /**
+     * @description A delay that crossed the short-snooze threshold, awaiting a one-time
+     *     "why did you postpone this task?" question on a later turn.
+     *
+     *     The user's answer is stored as a task comment.
+     */
+    PendingPostponeReason: {
+      /**
+       * @description Whether the postpone check-in has ever been surfaced in a system prompt.
+       * @default false
+       */
+      delivered: boolean;
+      /** Format: int64 */
+      display_id: number;
+      /** Format: int64 */
+      snooze_minutes: number;
+      task_id: string;
+      title: string;
+    };
+    /**
      * @description Permission map for auto-approving proposed changes.
      *
      *     Serialized as a flat map of `"target:operation"` -> bool so that mobile
@@ -12712,6 +12953,12 @@ export interface components {
        * @default []
        */
       pending_check_ins: components['schemas']['PendingCheckIn'][];
+      /**
+       * @description Delay actions that exceeded the short-snooze threshold, awaiting a
+       *     one-time postpone reason question (WI-17).
+       * @default []
+       */
+      pending_postpone_reasons: components['schemas']['PendingPostponeReason'][];
       /** @default null */
       permissions: components['schemas']['Permissions'] | null;
       /** @default null */

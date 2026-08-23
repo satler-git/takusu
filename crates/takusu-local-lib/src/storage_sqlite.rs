@@ -75,6 +75,7 @@ const MIGRATION_033: &str = include_str!("../migrations/033_event_ledger.sql");
 const MIGRATION_034: &str = include_str!("../migrations/034_coverage.sql");
 const MIGRATION_035: &str = include_str!("../migrations/035_devices.sql");
 const MIGRATION_036: &str = include_str!("../migrations/036_devices.sql");
+const MIGRATION_037: &str = include_str!("../migrations/037_device_contact_suppress.sql");
 
 mod work_session;
 
@@ -553,6 +554,17 @@ impl SqliteStorage {
             > 0;
         if !has_devices {
             sqlx::raw_sql(MIGRATION_036).execute(&pool).await?;
+        }
+
+        // Migration 037: contact_suppress_until column. Guarded by the column.
+        let has_contact_suppress: bool = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM pragma_table_info('devices') WHERE name = 'contact_suppress_until'",
+        )
+        .fetch_one(&pool)
+        .await?
+            > 0;
+        if !has_contact_suppress {
+            sqlx::raw_sql(MIGRATION_037).execute(&pool).await?;
         }
 
         Ok(Self { pool, jwt_secret })
@@ -2849,7 +2861,7 @@ impl Storage for SqliteStorage {
         let mut tx = self.pool.begin().await.map_err(map_err)?;
         let id = body.id.clone();
         sqlx::query(
-            "INSERT INTO devices (id, name, platform, priority, evaluator_heartbeat_until, evaluator_lease_until, next_eval_at, audio_service_running, private_output_route, created_at, updated_at) VALUES (?, ?, ?, ?, NULL, NULL, NULL, 0, 0, ?, ?) ON CONFLICT(id) DO UPDATE SET name=excluded.name, platform=excluded.platform, priority=excluded.priority, updated_at=excluded.updated_at",
+            "INSERT INTO devices (id, name, platform, priority, evaluator_heartbeat_until, evaluator_lease_until, next_eval_at, audio_service_running, private_output_route, contact_suppress_until, created_at, updated_at) VALUES (?, ?, ?, ?, NULL, NULL, NULL, 0, 0, NULL, ?, ?) ON CONFLICT(id) DO UPDATE SET name=excluded.name, platform=excluded.platform, priority=excluded.priority, updated_at=excluded.updated_at",
         )
         .bind(&id)
         .bind(&body.name)
@@ -2861,7 +2873,7 @@ impl Storage for SqliteStorage {
         .await
         .map_err(map_err)?;
         let row: DeviceRow = sqlx::query_as::<_, DeviceRow>(
-            "SELECT id, name, platform, priority, evaluator_heartbeat_until, evaluator_lease_until, next_eval_at, audio_service_running, private_output_route, created_at, updated_at FROM devices WHERE id = ?",
+            "SELECT id, name, platform, priority, evaluator_heartbeat_until, evaluator_lease_until, next_eval_at, audio_service_running, private_output_route, contact_suppress_until, created_at, updated_at FROM devices WHERE id = ?",
         )
         .bind(&id)
         .fetch_one(&mut *tx)
@@ -2873,7 +2885,7 @@ impl Storage for SqliteStorage {
 
     async fn get_device(&self, id: &str) -> StorageResult<DeviceRow> {
         sqlx::query_as::<_, DeviceRow>(
-            "SELECT id, name, platform, priority, evaluator_heartbeat_until, evaluator_lease_until, next_eval_at, audio_service_running, private_output_route, created_at, updated_at FROM devices WHERE id = ?",
+            "SELECT id, name, platform, priority, evaluator_heartbeat_until, evaluator_lease_until, next_eval_at, audio_service_running, private_output_route, contact_suppress_until, created_at, updated_at FROM devices WHERE id = ?",
         )
         .bind(id)
         .fetch_optional(&self.pool)
@@ -2884,7 +2896,7 @@ impl Storage for SqliteStorage {
 
     async fn list_devices(&self) -> StorageResult<Vec<DeviceRow>> {
         sqlx::query_as::<_, DeviceRow>(
-            "SELECT id, name, platform, priority, evaluator_heartbeat_until, evaluator_lease_until, next_eval_at, audio_service_running, private_output_route, created_at, updated_at FROM devices ORDER BY priority, created_at",
+            "SELECT id, name, platform, priority, evaluator_heartbeat_until, evaluator_lease_until, next_eval_at, audio_service_running, private_output_route, contact_suppress_until, created_at, updated_at FROM devices ORDER BY priority, created_at",
         )
         .fetch_all(&self.pool)
         .await
@@ -2901,14 +2913,18 @@ impl Storage for SqliteStorage {
         let private_output_route = body
             .private_output_route
             .unwrap_or(existing.private_output_route);
+        let contact_suppress_until = body
+            .contact_suppress_until
+            .or(existing.contact_suppress_until);
         let now = takusu_types::now_rfc3339();
         sqlx::query(
-            "UPDATE devices SET name = ?, priority = ?, audio_service_running = ?, private_output_route = ?, updated_at = ? WHERE id = ?",
+            "UPDATE devices SET name = ?, priority = ?, audio_service_running = ?, private_output_route = ?, contact_suppress_until = ?, updated_at = ? WHERE id = ?",
         )
         .bind(&name)
         .bind(priority)
         .bind(audio_service_running)
         .bind(private_output_route)
+        .bind(contact_suppress_until)
         .bind(&now)
         .bind(id)
         .execute(&self.pool)
