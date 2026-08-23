@@ -658,32 +658,78 @@ pub struct CoverageEvaluation {
     pub schedule_revision: i64,
 }
 
+fn default_coverage_source() -> String {
+    "intake_complete".into()
+}
+
+fn default_calendar_health() -> String {
+    "ok".into()
+}
+
+fn default_unsettled_classification() -> String {
+    "unclassified".into()
+}
+
+fn default_unsettled_source() -> String {
+    "capture".into()
+}
+
 /// Request body for recording a coverage confirmation (WI-10).
-#[derive(Debug, Default, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CreateCoverageConfirmation {
     pub start_at: Timestamp,
     pub end_at: Timestamp,
     pub timezone: String,
-    #[serde(default)]
+    #[serde(default = "default_coverage_source")]
+    #[schemars(default = "default_coverage_source")]
     pub source: String,
     pub schedule_revision: i64,
-    #[serde(default)]
+    #[serde(default = "default_calendar_health")]
+    #[schemars(default = "default_calendar_health")]
     pub calendar_health: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub operation_id: Option<String>,
 }
 
+impl Default for CreateCoverageConfirmation {
+    fn default() -> Self {
+        Self {
+            start_at: Timestamp::default(),
+            end_at: Timestamp::default(),
+            timezone: String::new(),
+            source: default_coverage_source(),
+            schedule_revision: 0,
+            calendar_health: default_calendar_health(),
+            operation_id: None,
+        }
+    }
+}
+
 /// Request body for recording an unsettled interval (WI-10 / WI-18).
-#[derive(Debug, Default, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CreateUnsettledInterval {
     pub start_at: Timestamp,
     pub end_at: Timestamp,
-    #[serde(default)]
+    #[serde(default = "default_unsettled_classification")]
+    #[schemars(default = "default_unsettled_classification")]
     pub classification: String,
-    #[serde(default)]
+    #[serde(default = "default_unsettled_source")]
+    #[schemars(default = "default_unsettled_source")]
     pub source: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub operation_id: Option<String>,
+}
+
+impl Default for CreateUnsettledInterval {
+    fn default() -> Self {
+        Self {
+            start_at: Timestamp::default(),
+            end_at: Timestamp::default(),
+            classification: default_unsettled_classification(),
+            source: default_unsettled_source(),
+            operation_id: None,
+        }
+    }
 }
 
 /// Storage representation of an immutable planner event.

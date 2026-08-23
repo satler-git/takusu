@@ -704,6 +704,17 @@ impl Client {
         Ok(resp.json().await?)
     }
 
+    pub async fn get_schedule_revision(&self) -> Result<i64, ClientError> {
+        let resp = self
+            .request(reqwest::Method::GET, "/api/events/revision")
+            .await
+            .send()
+            .await?;
+        let resp = Self::handle_response(resp).await?;
+        let body: takusu_contracts::ScheduleRevisionResponse = resp.json().await?;
+        Ok(body.revision)
+    }
+
     pub async fn generate_schedule(
         &self,
         body: &GenerateSchedule,
@@ -1307,6 +1318,36 @@ impl Client {
                 &format!("/api/devices/{}/speech", url_encode(device_id)),
             )
             .await
+            .send()
+            .await?;
+        let resp = Self::handle_response(resp).await?;
+        Ok(resp.json().await?)
+    }
+
+    // ── Coverage trust state (WI-10 / WI-16) ──
+
+    pub async fn create_coverage_confirmation(
+        &self,
+        body: &CreateCoverageConfirmation,
+    ) -> Result<CoverageConfirmationRow, ClientError> {
+        let resp = self
+            .request(reqwest::Method::POST, "/api/coverage/confirmations")
+            .await
+            .json(body)
+            .send()
+            .await?;
+        let resp = Self::handle_response(resp).await?;
+        Ok(resp.json().await?)
+    }
+
+    pub async fn create_unsettled_interval(
+        &self,
+        body: &CreateUnsettledInterval,
+    ) -> Result<UnsettledIntervalRow, ClientError> {
+        let resp = self
+            .request(reqwest::Method::POST, "/api/coverage/unsettled-intervals")
+            .await
+            .json(body)
             .send()
             .await?;
         let resp = Self::handle_response(resp).await?;

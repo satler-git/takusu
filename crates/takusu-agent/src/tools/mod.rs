@@ -1,5 +1,7 @@
 pub mod comments;
+pub mod coverage;
 pub mod day_details;
+pub mod intake_state;
 pub mod memory;
 pub mod progress;
 pub mod rrule;

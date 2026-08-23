@@ -493,6 +493,7 @@ mod tests {
                 expires_at: jiff::Timestamp::now(),
             }),
             presentation: None,
+            intake_state: None,
         }
     }
 
@@ -503,6 +504,7 @@ mod tests {
             schedule_dirty: false,
             approval_request: None,
             presentation: None,
+            intake_state: None,
         }
     }
 

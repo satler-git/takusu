@@ -265,6 +265,7 @@ impl AgentApiState {
             schedule_dirty: result.schedule_dirty,
             approval_request: result.approval_request.clone(),
             presentation: result.presentation.clone(),
+            intake_state: result.intake_state.clone(),
         };
         self.surface
             .apply_turn_event_for(operation_id, &TurnEvent::Done(Box::new(turn)));
@@ -422,6 +423,9 @@ pub struct ResumeSessionRequest {
     /// session does not re-inject them (WI-4 / #1003).
     #[serde(default)]
     pub injected_memory_ids: Vec<String>,
+    /// Resumable intake interview state (WI-16).
+    #[serde(default)]
+    pub intake_state: Option<crate::IntakeState>,
 }
 
 #[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
@@ -633,6 +637,7 @@ pub struct TurnResultDto {
     pub schedule_dirty: bool,
     pub approval_request: Option<ApprovalRequest>,
     pub presentation: Option<crate::presentation::Presentation>,
+    pub intake_state: Option<crate::IntakeState>,
 }
 
 impl From<TurnResult> for TurnResultDto {
@@ -643,6 +648,7 @@ impl From<TurnResult> for TurnResultDto {
             schedule_dirty: result.schedule_dirty,
             approval_request: result.approval_request,
             presentation: result.presentation,
+            intake_state: result.intake_state,
         }
     }
 }
@@ -1161,6 +1167,18 @@ async fn resume_session(
         return agent_error(e);
     }
 
+    if let Err(e) =
+        session.set_injected_memory_ids(body.value.injected_memory_ids.iter().cloned().collect())
+    {
+        return agent_error(e);
+    }
+
+    if let Some(state) = body.value.intake_state
+        && let Err(e) = session.set_intake_state(state)
+    {
+        return agent_error(e);
+    }
+
     let has_pending_approval = body.value.pending_approval.is_some();
     if let Some(approval) = body.value.pending_approval
         && let Err(e) = session.set_pending_approval(approval)
@@ -1344,6 +1362,7 @@ async fn run_turn_stream(
             schedule_dirty: result.schedule_dirty,
             approval_request: result.approval_request.clone(),
             presentation: result.presentation.clone(),
+            intake_state: result.intake_state.clone(),
         };
         let event = StreamEvent::Turn(TurnEvent::Done(Box::new(cached)));
         let json = event.to_json();
@@ -1445,6 +1464,7 @@ async fn edit_turn_stream(
             schedule_dirty: result.schedule_dirty,
             approval_request: result.approval_request.clone(),
             presentation: result.presentation.clone(),
+            intake_state: result.intake_state.clone(),
         };
         let event = StreamEvent::Turn(TurnEvent::Done(Box::new(cached)));
         let json = event.to_json();
@@ -2246,6 +2266,7 @@ mod tests {
                 compaction_summary: None,
                 pending_check_ins: Vec::new(),
                 injected_memory_ids: Vec::new(),
+                intake_state: None,
             },
         };
         let res =
@@ -2371,6 +2392,7 @@ mod tests {
                 compaction_summary: None,
                 pending_check_ins: Vec::new(),
                 injected_memory_ids: Vec::new(),
+                intake_state: None,
             },
         };
         let res =

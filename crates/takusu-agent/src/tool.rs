@@ -142,6 +142,26 @@ where
     }
 }
 
+/// Serde helper: deserialize an array of strings, trim each element, and drop
+/// empty/whitespace-only entries.
+pub fn deserialize_trimmed_vec<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let raw: Vec<String> = Vec::deserialize(deserializer)?;
+    Ok(raw
+        .into_iter()
+        .filter_map(|s| {
+            let trimmed = s.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        })
+        .collect())
+}
+
 /// How a tool is exposed to the model.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToolExposure {
@@ -242,6 +262,10 @@ pub enum ToolName {
 
     #[strum(serialize = "move_task")]
     MoveTask,
+    #[strum(serialize = "coverage_confirm")]
+    CoverageConfirm,
+    #[strum(serialize = "set_intake_state")]
+    SetIntakeState,
 }
 
 enum_label! {
@@ -486,6 +510,9 @@ pub struct ToolOutput {
     pub schedule_dirty: bool,
     /// Whether this result represents an error the LLM should correct.
     pub is_error: bool,
+    /// If the tool updated the resumable intake interview state, the new value
+    /// to store on the session (WI-16).
+    pub intake_state: Option<crate::IntakeState>,
 }
 
 /// OpenAI function-calling tool definition (what we send to the API).

@@ -202,6 +202,12 @@ async fn dispatch(req: Request, env: Env) -> Result<Response, crate::error::Work
         (Method::Get, ["events", "revision"]) => handlers::events::revision(req, env).await,
         (Method::Get, ["events", "snapshot"]) => handlers::events::snapshot(req, env).await,
         (Method::Post, ["events", "evaluate"]) => handlers::events::evaluate(req, env).await,
+        (Method::Post, ["coverage", "confirmations"]) => {
+            handlers::coverage::create_confirmation(req, env).await
+        }
+        (Method::Post, ["coverage", "unsettled-intervals"]) => {
+            handlers::coverage::create_unsettled_interval(req, env).await
+        }
         (Method::Post, ["events", id, "claim"]) => handlers::events::claim(req, env, id).await,
         (Method::Post, ["events", id, "acknowledge"]) => {
             handlers::events::acknowledge(req, env, id).await

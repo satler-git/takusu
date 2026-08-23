@@ -1,0 +1,87 @@
+---
+source: crates/takusu-agent/tests/schema_snapshots.rs
+expression: def
+---
+{
+  "function": {
+    "description": "Record a coverage confirmation for a local time interval. Use this after an intake or capture flow when the user has confirmed what happened during a period. Does not require approval; it is an immediate write.",
+    "name": "coverage_confirm",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "calendar_health": {
+          "description": "Health of the external calendar this confirmation was drawn from.",
+          "enum": [
+            "ok",
+            "stale",
+            "error"
+          ],
+          "type": "string"
+        },
+        "end_at": {
+          "description": "End of the covered interval as an RFC 3339 timestamp.",
+          "type": "string"
+        },
+        "inferred_fields": {
+          "description": "Fields inferred from context.",
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "field": {
+                "description": "Name of the inferred field.",
+                "type": "string"
+              },
+              "reason": {
+                "description": "Reason the field was inferred.",
+                "type": "string"
+              },
+              "value": {
+                "description": "Inferred value for the field."
+              }
+            },
+            "required": [
+              "field",
+              "value",
+              "reason"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "source": {
+          "description": "Why the confirmation is being recorded.",
+          "enum": [
+            "intake_complete",
+            "target_period",
+            "system"
+          ],
+          "type": "string"
+        },
+        "start_at": {
+          "description": "Start of the covered interval as an RFC 3339 timestamp.",
+          "type": "string"
+        },
+        "timezone": {
+          "description": "IANA timezone for the interval, e.g. Asia/Tokyo",
+          "type": "string"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "why": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "start_at",
+        "end_at",
+        "timezone"
+      ],
+      "type": "object"
+    }
+  },
+  "type": "function"
+}

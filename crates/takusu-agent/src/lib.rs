@@ -29,6 +29,7 @@ pub(crate) mod approval;
 pub(crate) mod approval_layers;
 pub(crate) mod habit_steps;
 pub(crate) mod history;
+pub mod intake;
 
 pub use permissions::{PermissionKey, PermissionKeyParseError, Permissions};
 pub use presentation::{
@@ -48,14 +49,15 @@ pub use voice_session::{
 };
 
 pub use crate::llm::CompactionSettings;
+pub use capability::InputPath;
+pub use intake::{IntakeStage, IntakeState};
 pub use tool::{
     ChangeOperation, ChangeReceipt, InferredField, InvalidArgsError, OpenAITool,
     OpenAIToolFunction, ProposalContent, ProposedChange, ReceiptTarget, Target, TargetKind, Tool,
     ToolError, ToolExposure, ToolName, ToolOutput, ToolRegistry, Typed, TypedTool,
-    deserialize_trimmed_optional, deserialize_trimmed_required, inferred_field_schema,
-    inferred_fields_schema, normalize_schema,
+    deserialize_trimmed_optional, deserialize_trimmed_required, deserialize_trimmed_vec,
+    inferred_field_schema, inferred_fields_schema, normalize_schema,
 };
-pub use capability::InputPath;
 pub use tool_stats::{ToolStat, ToolStats, ToolStatsSnapshot};
 pub use user_input::{
     StubUserInputProvider, UserInputAnswer, UserInputProvider, UserInputQuestion,
@@ -199,6 +201,9 @@ pub struct TurnResult {
     /// when no tool result maps to a presentation kind.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub presentation: Option<Presentation>,
+    /// Resumable intake interview state at the end of the turn (WI-16).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub intake_state: Option<IntakeState>,
 }
 
 fn new_session_id() -> String {
@@ -278,6 +283,8 @@ pub struct AgentSession {
     /// Memory ids already injected into the system context this session, so a
     /// memory is surfaced at most once (WI-4 / #1003).
     injected_memory_ids: Mutex<std::collections::HashSet<String>>,
+    /// Resumable intake interview state (WI-16).
+    intake_state: Mutex<IntakeState>,
 }
 
 impl AgentSession {
@@ -326,6 +333,7 @@ impl AgentSession {
             tool_stats: ToolStats::shared(),
             pending_check_ins: Mutex::new(Vec::new()),
             injected_memory_ids: Mutex::new(std::collections::HashSet::new()),
+            intake_state: Mutex::new(IntakeState::default()),
         };
         tracing::info!(session_id = %session.session_id, "agent session created");
         session
@@ -361,6 +369,9 @@ impl AgentSession {
         // A new logical session should be able to re-surface memories that were
         // already injected in the previous conversation (WI-4 / #1003).
         *self.injected_memory_ids.lock()? = std::collections::HashSet::new();
+        // History reset starts a new conversation, so any in-progress intake
+        // interview is no longer continuous (WI-16).
+        *self.intake_state.lock()? = IntakeState::default();
         Ok(())
     }
 
@@ -406,6 +417,25 @@ impl AgentSession {
         Ok(())
     }
 
+    /// Return the current resumable intake interview state.
+    pub fn get_intake_state(&self) -> Result<IntakeState, AgentError> {
+        Ok(self.intake_state.lock()?.clone())
+    }
+
+    /// Set the resumable intake interview state.
+    pub fn set_intake_state(&self, state: IntakeState) -> Result<(), AgentError> {
+        *self.intake_state.lock()? = state;
+        Ok(())
+    }
+
+    pub fn set_injected_memory_ids(
+        &self,
+        ids: std::collections::HashSet<String>,
+    ) -> Result<(), AgentError> {
+        *self.injected_memory_ids.lock()? = ids;
+        Ok(())
+    }
+
     pub(crate) fn fill_proposal_ids(&self, changes: &mut [ProposedChange]) {
         for change in changes.iter_mut() {
             if change.proposal_id.is_none() {
@@ -435,6 +465,7 @@ impl AgentSession {
             compaction_summary: self.compaction_summary.lock()?.clone(),
             pending_check_ins: self.pending_check_ins.lock()?.clone(),
             injected_memory_ids: self.injected_memory_ids.lock()?.iter().cloned().collect(),
+            intake_state: Some(self.intake_state.lock()?.clone()),
         })
     }
 
@@ -465,6 +496,7 @@ impl AgentSession {
         }
         *self.pending_check_ins.lock()? = snapshot.pending_check_ins.clone();
         *self.injected_memory_ids.lock()? = snapshot.injected_memory_ids.iter().cloned().collect();
+        *self.intake_state.lock()? = snapshot.intake_state.clone().unwrap_or_default();
         Ok(())
     }
 
@@ -512,7 +544,8 @@ impl AgentSession {
     }
 
     pub async fn run_turn(&self, user_text: &str) -> Result<TurnResult, AgentError> {
-        self.run_turn_with_input(user_text, InputPath::PlainText).await
+        self.run_turn_with_input(user_text, InputPath::PlainText)
+            .await
     }
 
     pub async fn run_turn_with_input(
@@ -602,6 +635,7 @@ impl AgentSession {
                             schedule_dirty: result.schedule_dirty,
                             approval_request: None,
                             presentation,
+                            intake_state: self.get_intake_state().ok(),
                         });
                     }
                     *self.schedule_dirty.lock()? = schedule_dirty;
@@ -615,6 +649,7 @@ impl AgentSession {
                         schedule_dirty,
                         approval_request,
                         presentation: final_presentation,
+                        intake_state: self.get_intake_state().ok(),
                     });
                 }
                 llm::LlmResponseContent::ToolCalls { text, calls } => {
@@ -703,15 +738,8 @@ impl AgentSession {
         let mut local = self.history.lock()?.clone();
         local.push(llm::Message::User(user_text.to_string()));
 
-        self.run_from_local_stream(
-            system,
-            system_estimate,
-            local,
-            input_path,
-            emit,
-            tts_emit,
-        )
-        .await
+        self.run_from_local_stream(system, system_estimate, local, input_path, emit, tts_emit)
+            .await
     }
 
     /// Edits an existing user turn (by 0-based user-message index), truncates
@@ -762,8 +790,15 @@ impl AgentSession {
         *self.schedule_dirty.lock()? = false;
         *self.last_prompt_tokens.lock()? = None;
 
-        self.run_from_local_stream(system, system_estimate, local, InputPath::PlainText, emit, tts_emit)
-            .await
+        self.run_from_local_stream(
+            system,
+            system_estimate,
+            local,
+            InputPath::PlainText,
+            emit,
+            tts_emit,
+        )
+        .await
     }
 
     async fn run_from_local_stream<F, G>(
@@ -891,6 +926,7 @@ impl AgentSession {
                                     schedule_dirty: result.schedule_dirty,
                                     approval_request: None,
                                     presentation,
+                                    intake_state: self.get_intake_state().ok(),
                                 });
                             }
                             *self.schedule_dirty.lock()? = schedule_dirty;
@@ -906,6 +942,7 @@ impl AgentSession {
                                 schedule_dirty,
                                 approval_request,
                                 presentation: final_presentation,
+                                intake_state: self.get_intake_state().ok(),
                             });
                         }
 
@@ -1018,6 +1055,9 @@ impl AgentSession {
                         approval_warnings.extend(output.warnings);
                         proposed_changes.extend(output.proposed_changes);
                         inferred_fields.extend(output.inferred_fields);
+                        if let Some(state) = output.intake_state {
+                            self.set_intake_state(state)?;
+                        }
                         self.clear_check_ins_from_receipts(&output.changes)?;
                         changes.extend(output.changes);
                         *schedule_dirty |= output.schedule_dirty;
@@ -1216,6 +1256,14 @@ impl AgentSession {
             - これらのツールを呼ぶこと自体が「変更を提案する」行為です。ツールを呼ぶ前に「～してもよいですか？」と口頭でユーザーに確認を挟まないでください。
             - 情報が揃っていれば躊躇せずツールを呼び出し、最後に変更内容とその理由を提示してください。ユーザーは Proposal を承認または否認できます。否認なら何も書き換わりません。
             - 関連する複数の変更を 1 つの Proposal としてまとめたい場合、各変更ツールの `proposal_id` 引数に同じ値を指定してください（例： `"1"` など任意の文字列）。同じ `proposal_id` を持つ変更はユーザーに 1 ページでまとめて表示され、まとめて承認・否認されます。無関係な変更は別の `proposal_id` を使って分けてください。`proposal_id` を指定しない場合は、そのツール呼び出しが 1 つの独立した Proposal になります。
+
+            ## intake インタビュー (WI-16)
+            - 初回セットアップや coverage が bootstrap の状態では、ユーザーに `skills_read` で `intake` スキルを読み、 intake インタビューを主導してください。
+            - 聞く順序は固定です: 1. 締め切りが決まっているもの、2. 毎週・定期の予定、3. カレンダーからの import 確認。
+            - ユーザーは思いつくまま自由に話します。構造化・見積もり・quantity の補完は agent が `similar_tasks` や文脈から行い、1つの `proposal_id` にまとめて承認に出してください。
+            - 各段階を開始するたびに `set_intake_state` を呼び出して、現在の `stage` と、まとめて扱う `proposal_id`、作成したタスク・習慣の `collected_ids` を記録してください。次の質問に進んだら `stage` を `deadlines` / `recurring` / `calendar_import` / `complete` の順に進めてください。
+            - 中断時は「今日はここまでにしますか？」と確認し、了承があれば `coverage_confirm` を使って今日の coverage を `intake_complete` として記録してください。不完全な場合は coverage を進めず、次回のセッションで再開できます。
+            - セッションは resumable です。クライアントが保存した snapshot から再開できます。
 
             ## 行動指針
             1. 調査してから行動してください。タスク・習慣・スケジュールの変更を提案する前は、必ず関連する情報を取得してください。
