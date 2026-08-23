@@ -8949,6 +8949,237 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/coverage/confirmations': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      /** @description Request body for recording a coverage confirmation (WI-10). */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['CreateCoverageConfirmation'];
+        };
+      };
+      responses: {
+        /**
+         * @description A recorded coverage confirmation (WI-10).
+         *
+         *     Confirms that a local period was covered: the user (or an intake/capture
+         *     flow) stated what happened during that interval.
+         */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['CoverageConfirmationRow'];
+          };
+        };
+        /** @description Error */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Expected request with `Content-Type: application/json` */
+        415: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Failed to deserialize the JSON body into the target type */
+        422: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Error */
+        500: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/coverage/unsettled-intervals': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      /** @description Request body for recording an unsettled interval (WI-10 / WI-18). */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['CreateUnsettledInterval'];
+        };
+      };
+      responses: {
+        /** @description An unresolved elapsed-time interval that needs settlement (WI-10 / WI-18). */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['UnsettledIntervalRow'];
+          };
+        };
+        /** @description Error */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Expected request with `Content-Type: application/json` */
+        415: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Failed to deserialize the JSON body into the target type */
+        422: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Error */
+        500: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/agent/v1/health': {
     parameters: {
       query?: never;
@@ -10591,6 +10822,19 @@ export interface components {
     CreateComment: {
       content: string;
     };
+    /** @description Request body for recording a coverage confirmation (WI-10). */
+    CreateCoverageConfirmation: {
+      /** @default ok */
+      calendar_health: string;
+      end_at: components['schemas']['Timestamp'];
+      operation_id?: string | null;
+      /** Format: int64 */
+      schedule_revision: number;
+      /** @default intake_complete */
+      source: string;
+      start_at: components['schemas']['Timestamp'];
+      timezone: string;
+    };
     /** @description Request body for registering a new device. */
     CreateDevice: {
       id: string;
@@ -10826,6 +11070,16 @@ export interface components {
     };
     CreateTokenRequest: {
       label?: string | null;
+    };
+    /** @description Request body for recording an unsettled interval (WI-10 / WI-18). */
+    CreateUnsettledInterval: {
+      /** @default unclassified */
+      classification: string;
+      end_at: components['schemas']['Timestamp'];
+      operation_id?: string | null;
+      /** @default capture */
+      source: string;
+      start_at: components['schemas']['Timestamp'];
     };
     /**
      * @description A calendar date in `YYYY-MM-DD` format.
@@ -12256,6 +12510,36 @@ export interface components {
       | 'explicit_voice_session'
       | 'ambient_wake_word'
       | 'plain_text';
+    /** @description Where the user is in the fixed-order intake interview. */
+    IntakeStage:
+      | 'not_started'
+      | 'deadlines'
+      | 'recurring'
+      | 'calendar_import'
+      | 'complete';
+    /** @description Saved state for an interruptible intake interview. */
+    IntakeState: {
+      /**
+       * @description Display ids of tasks/habits created so far in this intake. Used to
+       *     resume the summary and avoid re-asking about items already accepted.
+       * @default []
+       */
+      collected_ids: string[];
+      /**
+       * @description Whether a coverage confirmation is waiting for the current batch to be
+       *     committed before it can be recorded.
+       * @default false
+       */
+      coverage_pending: boolean;
+      /**
+       * @description `proposal_id` used to batch the current set of intake proposals so they
+       *     can be approved together.
+       * @default null
+       */
+      proposal_id: string | null;
+      /** @default not_started */
+      stage: components['schemas']['IntakeStage'];
+    };
     /**
      * @description Identifies which LLM backend implementation to build.
      *
@@ -12415,6 +12699,11 @@ export interface components {
        * @default []
        */
       injected_memory_ids: string[];
+      /**
+       * @description Resumable intake interview state (WI-16).
+       * @default null
+       */
+      intake_state: components['schemas']['IntakeState'] | null;
       /** @default null */
       pending_approval: components['schemas']['ApprovalRequest'] | null;
       /**
@@ -12679,6 +12968,8 @@ export interface components {
     TurnResult: {
       approval_request?: components['schemas']['ApprovalRequest'] | null;
       changes: components['schemas']['ChangeReceipt'][];
+      /** @description Resumable intake interview state at the end of the turn (WI-16). */
+      intake_state?: components['schemas']['IntakeState'] | null;
       /**
        * @description Typed presentation derived from the turn's tool results (WI-1). `None`
        *     when no tool result maps to a presentation kind.
@@ -12690,6 +12981,7 @@ export interface components {
     TurnResultDto: {
       approval_request?: components['schemas']['ApprovalRequest'] | null;
       changes: components['schemas']['ChangeReceipt'][];
+      intake_state?: components['schemas']['IntakeState'] | null;
       presentation?: components['schemas']['Presentation'] | null;
       schedule_dirty: boolean;
       text: string;

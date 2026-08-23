@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import type { ApprovalRequest } from './agentTypes';
+import type { ApprovalRequest, IntakeState } from './agentTypes';
 import type { PermissionsMap } from './settingsStore';
 
 const HISTORY_KEY = 'takusu.agent.sessionHistory';
@@ -35,6 +35,7 @@ export interface AgentSessionSnapshot {
   messages: Message[];
   approval: ApprovalRequest | null;
   permissions?: PermissionsMap;
+  intakeState?: IntakeState | null;
 }
 
 export interface AgentSessionHistory {

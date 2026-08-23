@@ -8,6 +8,7 @@ import type {
   EventEvaluationResult,
   EventLedgerRow,
   CapabilityRequest,
+  IntakeState,
   PlannerStateEvent,
   Presentation,
   ProposalDecision,
@@ -216,6 +217,7 @@ export class AgentClient {
     pendingApproval?: ApprovalRequest;
     scheduleDirty?: boolean;
     compactionSummary?: string;
+    intakeState?: IntakeState | null;
   }): Promise<string> {
     const response = await this.request<{ session_id: string }>(
       'POST',
@@ -228,6 +230,7 @@ export class AgentClient {
         pending_approval: options.pendingApproval,
         schedule_dirty: options.scheduleDirty,
         compaction_summary: options.compactionSummary,
+        intake_state: options.intakeState,
       },
     );
     return response.session_id;

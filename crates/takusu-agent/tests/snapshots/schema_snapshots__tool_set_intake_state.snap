@@ -1,0 +1,65 @@
+---
+source: crates/takusu-agent/tests/schema_snapshots.rs
+expression: def
+---
+{
+  "function": {
+    "description": "Update the resumable intake interview state. The agent uses this to record the current stage, the proposal id used for the current batch, and the ids collected so far. No approval is required.",
+    "name": "set_intake_state",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "collected_ids": {
+          "description": "Display ids of tasks/habits created so far in this intake.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "coverage_pending": {
+          "description": "Whether a coverage confirmation is waiting for the current batch to commit.",
+          "type": "boolean"
+        },
+        "proposal_id": {
+          "description": "`proposal_id` used to batch the current set of intake proposals.",
+          "type": "string"
+        },
+        "stage": {
+          "description": "Current stage in the fixed-order interview.",
+          "oneOf": [
+            {
+              "const": "not_started",
+              "description": "Interview has not started.",
+              "type": "string"
+            },
+            {
+              "const": "deadlines",
+              "description": "Collecting deadlines and imminent tasks.",
+              "type": "string"
+            },
+            {
+              "const": "recurring",
+              "description": "Collecting recurring commitments.",
+              "type": "string"
+            },
+            {
+              "const": "calendar_import",
+              "description": "Confirming calendar import.",
+              "type": "string"
+            },
+            {
+              "const": "complete",
+              "description": "The user paused or finished the interview.",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "required": [
+        "stage"
+      ],
+      "type": "object"
+    }
+  },
+  "type": "function"
+}

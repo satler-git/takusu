@@ -68,8 +68,11 @@ import {
   type AgentTurnResult,
 } from '@/src/api/agentClient';
 import type {
+  AgentHistoryMessage,
+  AgentHistoryToolCall,
   AgentStreamEvent,
   ApprovalRequest,
+  IntakeState,
   ProposalDecision,
   UserInputQuestion,
   UserInputAnswer,
@@ -191,6 +194,39 @@ function updateCollapsedGroup(message: Message, groupIndex: number): boolean[] {
   }
   next[groupIndex] = !getCollapsed(message, groupIndex);
   return next;
+}
+
+function toAgentHistory(messages: Message[]): AgentHistoryMessage[] {
+  const history: AgentHistoryMessage[] = [];
+  for (const message of messages) {
+    if (message.role === 'user') {
+      history.push({ role: 'user', content: message.text });
+    } else if (message.role === 'assistant') {
+      const toolCalls: AgentHistoryToolCall[] | undefined =
+        message.toolCalls?.map((tool, index) => {
+          const id = tool.callId ?? `resume-${message.id}-tool-${index}`;
+          return {
+            id,
+            name: tool.name,
+            arguments: tool.arguments,
+          };
+        });
+      history.push({
+        role: 'assistant',
+        content: message.text,
+        tool_calls: toolCalls?.length ? toolCalls : undefined,
+      });
+      for (const [index, tool] of (message.toolCalls ?? []).entries()) {
+        history.push({
+          role: 'tool',
+          tool_call_id: tool.callId ?? `resume-${message.id}-tool-${index}`,
+          content: tool.result ?? '',
+          is_error: tool.isError,
+        });
+      }
+    }
+  }
+  return history;
 }
 
 type ContextStage =
@@ -1105,8 +1141,10 @@ const makeStyles = (colors: ColorSet) =>
 
 export function AgentView({
   rescheduleTaskId,
+  initialMessage,
 }: {
   rescheduleTaskId?: string;
+  initialMessage?: string;
 } = {}) {
   const router = useRouter();
   const colors = useColors();
@@ -1234,8 +1272,10 @@ export function AgentView({
   const [sessionPermissions, setSessionPermissions] = useState<PermissionsMap>(
     {},
   );
+  const [intakeState, setIntakeState] = useState<IntakeState | null>(null);
 
   const sessionIdsRef = useRef<string[]>([]);
+  const intakeStateRef = useRef<IntakeState | null>(null);
   const activeIndexRef = useRef(0);
   const sessionIdRef = useRef<string | null>(null);
   const sessionHistoryCountRef = useRef(AGENT_SESSION_HISTORY_DEFAULT);
@@ -1327,12 +1367,31 @@ export function AgentView({
       const perms = snapshot?.permissions ?? {};
       setSessionPermissions(perms);
       sessionPermissionsRef.current = perms;
+      const restoredIntake = snapshot?.intakeState ?? null;
+      setIntakeState(restoredIntake);
+      intakeStateRef.current = restoredIntake;
       forceScrollToBottomRef.current = true;
       setMessages(snapshot?.messages ?? []);
       // Approval state is synced from the server after activation so we do not
       // show a stale approval from the local snapshot.
       setApproval(null);
       sessionIdRef.current = id;
+      if (!isNew) {
+        try {
+          await client.resumeSession({
+            sessionId: id,
+            permissions: sessionPermissionsRef.current,
+            history: toAgentHistory(snapshot?.messages ?? []),
+            intakeState: restoredIntake,
+          });
+        } catch (e) {
+          if (e instanceof AgentApiError && e.status === 409) {
+            // Server already has this session active; no need to resume.
+          } else {
+            console.error('Failed to resume agent session:', e);
+          }
+        }
+      }
       setText('');
       setSessionIds(ids);
       sessionIdsRef.current = ids;
@@ -1643,6 +1702,17 @@ export function AgentView({
     };
   }, [historyReady, rescheduleTaskId, takusuClient]);
 
+  // Send an optional initial message when the agent view opens, used by
+  // the mobile intake onboarding entry point (WI-16).
+  const hasInitialMessageRef = useRef(false);
+  useEffect(() => {
+    if (!historyReady || !initialMessage || hasInitialMessageRef.current) {
+      return;
+    }
+    hasInitialMessageRef.current = true;
+    sendTextRef.current(initialMessage);
+  }, [historyReady, initialMessage]);
+
   // Sync the pending approval with the server whenever the active session
   // changes. This avoids showing a stale approval from the local snapshot
   // and prevents `approval_id: not found` when the user presses approve.
@@ -1795,8 +1865,9 @@ export function AgentView({
       messages,
       approval,
       permissions: sessionPermissionsRef.current,
+      intakeState: intakeStateRef.current,
     }).catch(() => {});
-  }, [messages, approval, busy]);
+  }, [messages, approval, busy, intakeState]);
 
   useEffect(() => {
     return voiceBridge.subscribe((r) => {
@@ -2158,6 +2229,10 @@ export function AgentView({
 
     const handleResult = async (result: AgentTurnResult) => {
       setApproval(result.approval_request);
+      if (result.intake_state !== undefined) {
+        setIntakeState(result.intake_state);
+        intakeStateRef.current = result.intake_state;
+      }
       // If the server did not emit any TtsBlock events (e.g. an older agent
       // version), fall back to synthesizing the full final text once.
       // The final text from an older server is raw, so filter it here.
@@ -2606,6 +2681,7 @@ export function AgentView({
           messages,
           approval,
           permissions: sessionPermissionsRef.current,
+          intakeState: intakeStateRef.current,
         }).catch(() => {});
       }
       await activateSessionId(nextId, false);
@@ -2659,6 +2735,7 @@ export function AgentView({
           messages,
           approval,
           permissions: sessionPermissionsRef.current,
+          intakeState: intakeStateRef.current,
         }).catch(() => {});
       }
       await activateSessionId(emptyId, false);
@@ -2668,11 +2745,13 @@ export function AgentView({
 
     const previousMessages = messages;
     const previousApproval = approval;
+    const previousIntakeState = intakeStateRef.current;
     if (currentId) {
       await saveSessionSnapshot(currentId, {
         messages: previousMessages,
         approval: previousApproval,
         permissions: sessionPermissionsRef.current,
+        intakeState: previousIntakeState,
       }).catch(() => {});
     }
     skipSnapshotSaveRef.current = true;
@@ -3157,6 +3236,7 @@ export function AgentView({
                 messages,
                 approval,
                 permissions,
+                intakeState: intakeStateRef.current,
               }).catch(() => {});
             }
           }}
