@@ -100,6 +100,8 @@ const makeStyles = (colors: ColorSet) =>
       // Do not let the row compress the label out of view on narrow screens;
       // the actions wrap instead (#phase1).
       flexShrink: 0,
+      maxWidth: '100%',
+      overflow: 'hidden',
     },
     primaryAction: {
       backgroundColor: colors.brand,
@@ -111,8 +113,8 @@ const makeStyles = (colors: ColorSet) =>
       fontSize: 13,
       fontWeight: '600',
       color: colors.textOnCard,
-      // The Text inside PressableScale must shrink so numberOfLines does not
-      // collapse the label to zero width and hide it entirely.
+      // Allow the label to shrink when an action is wider than its line so
+      // numberOfLines + ellipsizeMode can render an ellipsis instead of hiding.
       flexShrink: 1,
     },
     primaryActionText: {

@@ -1837,6 +1837,13 @@ export function ApprovalPanel({
 }: ApprovalPanelProps) {
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const { height: windowHeight } = useWindowDimensions();
+  const [bodyHeight, setBodyHeight] = useState(0);
+  const panelMaxHeight = useMemo(
+    () => Math.round(windowHeight * 0.6),
+    [windowHeight],
+  );
+  const scrollMaxHeight =
+    bodyHeight > 0 ? Math.min(bodyHeight, panelMaxHeight) : panelMaxHeight;
   const [permissionValue, setPermissionValue] =
     useState<PermissionSectionValue>({
       granted: {},
@@ -1944,11 +1951,14 @@ export function ApprovalPanel({
       </View>
 
       <ScrollView
-        style={{ maxHeight: windowHeight * 0.6 }}
+        style={{ maxHeight: scrollMaxHeight }}
         contentContainerStyle={styles.panelBodyContent}
         keyboardShouldPersistTaps="handled"
       >
-        <View style={styles.panelBodyInner}>
+        <View
+          style={styles.panelBodyInner}
+          onLayout={(e) => setBodyHeight(e.nativeEvent.layout.height)}
+        >
           <View style={styles.changeList}>
             {currentGroup?.changes.map((change, i) => (
               <ChangeCard

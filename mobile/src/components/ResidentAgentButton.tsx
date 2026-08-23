@@ -154,8 +154,11 @@ export function ResidentAgentButton({
     };
   }, [defaultPosition, screenWidth, screenHeight, insets.bottom]);
 
-  const buttonX = useSharedValue(startPos.x);
-  const buttonY = useSharedValue(startPos.y);
+  // Start off-screen; the default-position effect will move the button to a
+  // valid bottom-center (or saved) position once dimensions are known.
+  const buttonX = useSharedValue(-BUTTON_SIZE);
+  const buttonY = useSharedValue(-BUTTON_SIZE);
+  const needsDefaultPosition = useRef(true);
 
   useEffect(() => {
     minX.value = left + 8;
@@ -163,7 +166,11 @@ export function ResidentAgentButton({
     minY.value = top + 8;
     maxY.value = screenHeight - BUTTON_SIZE - bottom - 8 - keyboardHeight;
     // Clamp the current position whenever the available screen area changes
-    // (rotation, keyboard show/hide, safe-area updates).
+    // (rotation, keyboard show/hide, safe-area updates). Skip clamping while
+    // the default-position effect has not yet placed the button, otherwise the
+    // off-screen initial value (-BUTTON_SIZE) gets snapped to the top-left.
+    if (screenWidth <= 0 || screenHeight <= 0) return;
+    if (needsDefaultPosition.current) return;
     buttonX.value = Math.max(minX.value, Math.min(maxX.value, buttonX.value));
     buttonY.value = Math.max(minY.value, Math.min(maxY.value, buttonY.value));
   }, [
@@ -182,7 +189,8 @@ export function ResidentAgentButton({
     maxY,
   ]);
 
-  // Load saved position once on mount.
+  // Load saved position once on mount. If a saved position exists, restore it;
+  // otherwise the default-position effect below will place the button.
   useEffect(() => {
     AsyncStorage.getItem(POSITION_KEY)
       .then((raw) => {
@@ -202,6 +210,7 @@ export function ResidentAgentButton({
             const y = Math.max(minY.value, Math.min(maxY.value, pos.y));
             buttonX.value = withSpring(x);
             buttonY.value = withSpring(y);
+            needsDefaultPosition.current = false;
           }
         } catch {
           // ignore malformed saved position
@@ -210,6 +219,28 @@ export function ResidentAgentButton({
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Default position: bottom-center once we have a valid screen size. This
+  // also replaces any invalid -BUTTON_SIZE initial value from first render.
+  useEffect(() => {
+    if (!needsDefaultPosition.current) return;
+    if (screenWidth <= 0 || screenHeight <= 0) return;
+    const x = Math.max(minX.value, Math.min(maxX.value, startPos.x));
+    const y = Math.max(minY.value, Math.min(maxY.value, startPos.y));
+    buttonX.value = withSpring(x);
+    buttonY.value = withSpring(y);
+    needsDefaultPosition.current = false;
+  }, [
+    screenWidth,
+    screenHeight,
+    startPos,
+    buttonX,
+    buttonY,
+    minX,
+    maxX,
+    minY,
+    maxY,
+  ]);
 
   // Keyboard avoidance: shift the button up when the keyboard appears.
   useEffect(() => {

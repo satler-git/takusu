@@ -67,6 +67,7 @@ import { useUndoableToast } from '@/src/hooks/useUndoableToast';
 import { TaskProgressSheet } from '@/src/components/TaskProgressSheet';
 import { PressableScale } from '@/src/components/PressableScale';
 import { CrossFadeIcon } from '@/src/components/CrossFadeIcon';
+import { BottomAddHandle } from '@/src/components/BottomAddHandle';
 import { dateKey, todayDateKey } from '@/src/utils/dateKey';
 import TakusuWidgetModule from '../../modules/takusu-widget/src/TakusuWidgetModule';
 import { useScheduleOperation } from '@/src/hooks/useScheduleOperation';
@@ -2766,6 +2767,7 @@ export function HomeView() {
 
       {/* Bottom bar */}
       <View style={[styles.bottomBar, { paddingBottom: 16 + insets.bottom }]}>
+        <BottomAddHandle onAdd={() => router.push('/task/add')} />
         <GestureDetector gesture={startDoneGesture}>
           <Reanimated.View
             style={[
