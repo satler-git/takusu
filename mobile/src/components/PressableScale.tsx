@@ -47,8 +47,30 @@ function resolveStyle(style: unknown, pressed: boolean): ViewStyle {
   return StyleSheet.flatten(resolved as ViewStyle | ViewStyle[] | undefined);
 }
 
+function isPositiveNumber(value: unknown): boolean {
+  return typeof value === 'number' && value > 0;
+}
+
+function isPositiveDimension(value: ViewStyle['width']): boolean {
+  if (value == null || value === 'auto') return false;
+  if (typeof value === 'number') return value > 0;
+  if (typeof value === 'string') return true;
+  // Animated/SharedValue nodes are not a statically known size; treat as false.
+  return false;
+}
+
+function hasExplicitMainSize(style: ViewStyle): boolean {
+  return (
+    isPositiveDimension(style.width) ||
+    isPositiveDimension(style.height) ||
+    isPositiveNumber(style.flex) ||
+    isPositiveNumber(style.flexGrow) ||
+    isPositiveNumber(style.flexBasis)
+  );
+}
+
 function childLayoutStyle(style: ViewStyle): ViewStyle {
-  const child: ViewStyle = { flex: 1 };
+  const child: ViewStyle = hasExplicitMainSize(style) ? { flex: 1 } : {};
   for (const key of LAYOUT_KEYS) {
     const value = style[key];
     if (value !== undefined) {

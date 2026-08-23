@@ -297,7 +297,11 @@ function ToolNameChip({ call, colors, onPress }: ToolNameChipProps) {
   const children = (
     <>
       <View style={[styles.toolChipDot, { backgroundColor: dotColor }]} />
-      <Text style={[styles.toolChipText, { color: colors.black }]}>
+      <Text
+        style={[styles.toolChipText, { color: colors.black }]}
+        numberOfLines={1}
+        ellipsizeMode="tail"
+      >
         {call.name}
       </Text>
       {rejected && <Ionicons name="close" size={10} color={colors.red} />}
@@ -563,6 +567,8 @@ function ThinkingChip({ active, colors }: ThinkingChipProps) {
           styles.toolChipText,
           { color: active ? colors.brand : colors.black },
         ]}
+        numberOfLines={1}
+        ellipsizeMode="tail"
       >
         考え中
       </Text>
@@ -661,7 +667,11 @@ function ContextGroup({
           },
         ]}
       >
-        <Text style={[styles.toolChipText, { color: colors.gray }]}>
+        <Text
+          style={[styles.toolChipText, { color: colors.gray }]}
+          numberOfLines={1}
+          ellipsizeMode="tail"
+        >
           {overflowCount}+
         </Text>
       </View>,
@@ -963,9 +973,17 @@ const makeStyles = (colors: ColorSet) =>
       paddingVertical: 3,
       borderRadius: 12,
       borderWidth: 1,
+      // Keep a long tool name from overflowing the header and clipping the
+      // rounded right edge; the label itself ellipsizes inside the chip.
+      flexShrink: 0,
+      maxWidth: '100%',
+      overflow: 'hidden',
     },
     toolChipDot: { width: 6, height: 6, borderRadius: 3 },
-    toolChipText: { fontSize: 11 },
+    toolChipText: {
+      fontSize: 11,
+      flexShrink: 1,
+    },
     contextBody: { gap: 6 },
     loadingIndicator: { alignItems: 'center', minWidth: 120 },
     thinkingCard: {

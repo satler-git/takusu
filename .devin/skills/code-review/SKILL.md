@@ -26,7 +26,7 @@ Review the current working-copy change tracked by Jujutsu (`@`).
    - **Consistency with the codebase**: follows existing patterns, conventions, and module boundaries.
    - **Tests & verification**: whether the change is covered by tests, whether new tests are needed, and whether `cargo check` / `cargo clippy` / `cargo nextest run` would pass.
 
-5. If the project is a Rust workspace, run `cargo check` (and `cargo clippy` / `cargo nextest run` when appropriate) to verify the change compiles and tests pass. Adapt to the project's actual build/test commands when you detect them.
+5. Run the build/test commands appropriate to the changed code. If the project is a Rust workspace, run `cargo check` (and `cargo clippy` / `cargo nextest run` when appropriate) only when the change touches Rust; otherwise, run the relevant package/language checks (e.g. `npm run lint`, `npx tsc --noEmit`, `npm run fmt:check`, `npx jest` for the mobile app). Adapt to the project's actual build/test commands when you detect them.
 
 6. Output the final review result in **Japanese only**.
    - Use clear sections such as: 概要、指摘事項、確認ポイント、推奨事項、総合評価.
