@@ -5,6 +5,8 @@ import type {
   AgentTurnResult,
   ApprovalRequest,
   ApprovalResult,
+  DeliveryMode,
+  DeliveryModeResponse,
   EventEvaluationResult,
   EventLedgerRow,
   CapabilityRequest,
@@ -781,6 +783,25 @@ export class AgentClient {
       { device_id: deviceId },
     );
     return result.claimed;
+  }
+
+  async eventDeliveryMode(
+    eventId: string,
+    deviceId = 'mobile',
+  ): Promise<DeliveryMode> {
+    const response = await this.request<DeliveryModeResponse>(
+      'GET',
+      `/api/events/${encodeURIComponent(eventId)}/delivery?device_id=${encodeURIComponent(deviceId)}`,
+    );
+    return response.mode;
+  }
+
+  async suppressDevice(deviceId: string, minutes = 60): Promise<void> {
+    await this.request<unknown>(
+      'POST',
+      `/api/devices/${encodeURIComponent(deviceId)}/suppress`,
+      { minutes },
+    );
   }
 
   async updatePlannerEventState(

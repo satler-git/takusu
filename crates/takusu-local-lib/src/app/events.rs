@@ -5,11 +5,11 @@ use std::collections::{HashMap, HashSet};
 use takusu_agent::coverage::{bootstrap_evaluation, compute_coverage};
 use takusu_agent::events::{
     EvaluationGap, EvaluationScheduleEntry, EvaluationSnapshot, EvaluationTask, EvaluationWork,
-    GapKind, LedgerView, PlannerEvent, SleepImpact, evaluate_events,
+    GapKind, LedgerView, PlannerEvent, SleepImpact, Urgency, evaluate_events,
 };
 use takusu_contracts::{
-    EvaluationInputs, EventDeliveryState, EventLedgerInsert, EventLedgerRow, SettingsRow,
-    UnsettledIntervalRow,
+    DevicePlatform, EvaluationInputs, EventDeliveryState, EventLedgerInsert, EventLedgerRow,
+    SettingsRow, UnsettledIntervalRow,
 };
 use takusu_types::TaskStatus;
 use takusu_types::estimator::{DurationDistribution, InterventionBand, effective_distribution};
@@ -186,6 +186,23 @@ impl TakusuApp {
             .collect();
         coverage.state = compute_coverage(&coverage, now, target_start, target_end);
 
+        // Build resident contact policy state from today's ledger and the
+        // device's suppression window (WI-17).
+        let committed_event_ids: HashSet<String> =
+            ledger.iter().map(|row| row.id.clone()).collect();
+        let device = self
+            .storage
+            .get_device(device_id)
+            .await
+            .map_err(storage_to_app)?;
+        let contact_state = build_contact_policy_state(
+            &ledger,
+            device.contact_suppress_until,
+            now,
+            target_start,
+            target_end,
+        );
+
         let snapshot = EvaluationSnapshot {
             schedule_revision,
             now,
@@ -196,11 +213,29 @@ impl TakusuApp {
             unplaced_task_ids,
             coverage,
             ledger: LedgerView {
-                committed_event_ids: ledger.into_iter().map(|row| row.id).collect(),
+                committed_event_ids,
             },
             sleep_impact,
         };
-        let result = evaluate_events(&snapshot);
+        let mut result = evaluate_events(&snapshot);
+
+        // Apply resident contact policy: cap, decay, and suppression (WI-17).
+        let mut contact_state = contact_state;
+        let filter_result = takusu_agent::contact_policy::filter_events(
+            std::mem::take(&mut result.due_events),
+            &mut contact_state,
+            now,
+        );
+        result.due_events = filter_result.committed;
+
+        if !filter_result.suppressed_ids.is_empty() {
+            tracing::info!(
+                suppressed = filter_result.suppressed_ids.len(),
+                ?filter_result.suppressed_ids,
+                "contact policy suppressed resident events"
+            );
+        }
+
         let inserts: Vec<EventLedgerInsert> = result
             .due_events
             .iter()
@@ -253,6 +288,60 @@ impl TakusuApp {
             .claim_event_delivery(device_id, event_id)
             .await
             .map_err(storage_to_app)
+    }
+
+    /// Compute the device-specific delivery mode for a ledger event.
+    pub async fn event_delivery_mode(
+        &self,
+        device_id: &str,
+        event_id: &str,
+    ) -> Result<takusu_agent::contact_policy::DeliveryMode, AppError> {
+        let ledger = self
+            .storage
+            .list_event_ledger(None)
+            .await
+            .map_err(storage_to_app)?;
+        let row = ledger
+            .iter()
+            .find(|r| r.id == event_id)
+            .ok_or_else(|| AppError::NotFound(format!("event {event_id} not found")))?
+            .clone();
+        let event = ledger_row_to_planner_event(&row)?;
+
+        let device = self
+            .storage
+            .get_device(device_id)
+            .await
+            .map_err(storage_to_app)?;
+        let now = takusu_types::Timestamp::now();
+        let tz = self.server_timezone().await?;
+        let (today_start, today_end) = day_bounds(&tz)?;
+        let contact_state = build_contact_policy_state(
+            &ledger,
+            device.contact_suppress_until,
+            now,
+            today_start,
+            today_end,
+        );
+        let settings = self.get_settings_or_default().await?;
+        let quiet_hours = in_quiet_hours(&settings, &tz, now);
+        let policy = takusu_agent::contact_policy::SpeechPolicy {
+            can_speak_proactively: matches!(device.platform, DevicePlatform::Desktop)
+                || (device.audio_service_running && device.private_output_route),
+            quiet_hours,
+            private_output: device.private_output_route
+                || matches!(device.platform, DevicePlatform::Desktop),
+            // TODO(WI-17): the device row currently has no way to know whether
+            // the user is in an active voice session on this device. Wire this
+            // once the voice surface reports session state to the local server.
+            ongoing_voice_conversation: false,
+        };
+        Ok(takusu_agent::contact_policy::delivery_mode_for(
+            &event,
+            &policy,
+            &contact_state,
+            now,
+        ))
     }
 
     pub async fn update_event_delivery_state(
@@ -372,6 +461,47 @@ fn schedule_gaps(
     Ok(gaps)
 }
 
+/// Compute the start/end zoned timestamps for the user's configured sleep window
+/// on a given civil date, handling windows that cross midnight.
+fn sleep_zoned_window(
+    settings: &SettingsRow,
+    tz: &jiff::tz::TimeZone,
+    date: jiff::civil::Date,
+) -> Option<(jiff::Zoned, jiff::Zoned)> {
+    let start = jiff::civil::DateTime::new(
+        date.year(),
+        date.month(),
+        date.day(),
+        settings.sleep_start.hour() as i8,
+        settings.sleep_start.minute() as i8,
+        0,
+        0,
+    )
+    .ok()?
+    .to_zoned(tz.clone())
+    .ok()?;
+
+    let end_date = if settings.sleep_end.to_minutes() < settings.sleep_start.to_minutes() {
+        date.tomorrow().ok()?
+    } else {
+        date
+    };
+    let end = jiff::civil::DateTime::new(
+        end_date.year(),
+        end_date.month(),
+        end_date.day(),
+        settings.sleep_end.hour() as i8,
+        settings.sleep_end.minute() as i8,
+        0,
+        0,
+    )
+    .ok()?
+    .to_zoned(tz.clone())
+    .ok()?;
+
+    Some((start, end))
+}
+
 /// Detect whether the active schedule encroaches on the configured sleep window.
 ///
 /// Sleep is a user-facing constraint; the evaluator only decides whether to fire
@@ -382,9 +512,6 @@ fn sleep_impact_from_schedule(
     schedule: &[EvaluationScheduleEntry],
     tz: &jiff::tz::TimeZone,
 ) -> Option<SleepImpact> {
-    let sleep_start_minutes = settings.sleep_start.to_minutes();
-    let sleep_end_minutes = settings.sleep_end.to_minutes();
-
     for entry in schedule {
         let entry_start = entry.start_at.as_second();
         let entry_end = entry.end_at.as_second();
@@ -393,62 +520,7 @@ fn sleep_impact_from_schedule(
         for boundary_ts in [entry.start_at, entry.end_at] {
             let boundary_zoned = boundary_ts.to_zoned(tz.clone());
             let date = boundary_zoned.date();
-
-            let (sleep_start_zoned, sleep_end_zoned) = if sleep_end_minutes > sleep_start_minutes {
-                let start = jiff::civil::DateTime::new(
-                    date.year(),
-                    date.month(),
-                    date.day(),
-                    settings.sleep_start.hour() as i8,
-                    settings.sleep_start.minute() as i8,
-                    0,
-                    0,
-                )
-                .ok()?
-                .to_zoned(tz.clone())
-                .ok()?;
-                let end = jiff::civil::DateTime::new(
-                    date.year(),
-                    date.month(),
-                    date.day(),
-                    settings.sleep_end.hour() as i8,
-                    settings.sleep_end.minute() as i8,
-                    0,
-                    0,
-                )
-                .ok()?
-                .to_zoned(tz.clone())
-                .ok()?;
-                (start, end)
-            } else {
-                // Sleep crosses midnight (e.g. 22:00–06:00).
-                let start = jiff::civil::DateTime::new(
-                    date.year(),
-                    date.month(),
-                    date.day(),
-                    settings.sleep_start.hour() as i8,
-                    settings.sleep_start.minute() as i8,
-                    0,
-                    0,
-                )
-                .ok()?
-                .to_zoned(tz.clone())
-                .ok()?;
-                let next_date = date.tomorrow().ok()?;
-                let end = jiff::civil::DateTime::new(
-                    next_date.year(),
-                    next_date.month(),
-                    next_date.day(),
-                    settings.sleep_end.hour() as i8,
-                    settings.sleep_end.minute() as i8,
-                    0,
-                    0,
-                )
-                .ok()?
-                .to_zoned(tz.clone())
-                .ok()?;
-                (start, end)
-            };
+            let (sleep_start_zoned, sleep_end_zoned) = sleep_zoned_window(settings, tz, date)?;
 
             let sleep_start_sec = sleep_start_zoned.timestamp().as_second();
             let sleep_end_sec = sleep_end_zoned.timestamp().as_second();
@@ -459,4 +531,95 @@ fn sleep_impact_from_schedule(
     }
 
     None
+}
+
+fn day_bounds(
+    tz: &jiff::tz::TimeZone,
+) -> Result<(takusu_types::Timestamp, takusu_types::Timestamp), AppError> {
+    let start = takusu_types::Timestamp(
+        takusu_types::parse_date_expression("today", tz, false)
+            .map_err(|error| AppError::Internal(format!("day start: {error}")))?,
+    );
+    let end = takusu_types::Timestamp(
+        takusu_types::parse_date_expression("today", tz, true)
+            .map_err(|error| AppError::Internal(format!("day end: {error}")))?,
+    );
+    Ok((start, end))
+}
+
+fn in_quiet_hours(
+    settings: &SettingsRow,
+    tz: &jiff::tz::TimeZone,
+    now: takusu_types::Timestamp,
+) -> bool {
+    let zoned = now.0.to_zoned(tz.clone());
+    let date = zoned.date();
+    let Some((start, end)) = sleep_zoned_window(settings, tz, date) else {
+        return false;
+    };
+    let now_sec = now.as_second();
+    let start_sec = start.timestamp().as_second();
+    let end_sec = end.timestamp().as_second();
+    now_sec >= start_sec && now_sec < end_sec
+}
+
+fn ledger_row_to_planner_event(row: &EventLedgerRow) -> Result<PlannerEvent, AppError> {
+    let kind: takusu_agent::events::PlannerEventKind = row
+        .kind
+        .parse()
+        .map_err(|error: String| AppError::Internal(format!("event kind: {error}")))?;
+    let urgency: Urgency = row
+        .urgency
+        .parse()
+        .map_err(|error: String| AppError::Internal(format!("event urgency: {error}")))?;
+    let presentation: takusu_agent::presentation::Presentation =
+        serde_json::from_str(&row.presentation)
+            .map_err(|error| AppError::Internal(format!("event presentation: {error}")))?;
+    Ok(PlannerEvent {
+        id: row.id.clone(),
+        kind,
+        task_ref: None,
+        band: None,
+        presentation,
+        urgency,
+        schedule_revision: row.schedule_revision,
+        distribution_revision: row.distribution_revision,
+        due_at: row.created_at,
+    })
+}
+
+fn build_contact_policy_state(
+    ledger: &[EventLedgerRow],
+    suppress_until: Option<takusu_types::Timestamp>,
+    now: takusu_types::Timestamp,
+    today_start: takusu_types::Timestamp,
+    today_end: takusu_types::Timestamp,
+) -> takusu_agent::contact_policy::ContactPolicyState {
+    let summaries: Vec<takusu_agent::contact_policy::CommittedContactSummary> = ledger
+        .iter()
+        .map(
+            |row| {
+                let kind = match row.kind.parse() {
+                    Ok(kind) => Some(kind),
+                    Err(error) => {
+                        tracing::warn!(event_id = %row.id, %error, "failed to parse event kind");
+                        None
+                    }
+                };
+                takusu_agent::contact_policy::CommittedContactSummary {
+                    event_id: row.id.clone(),
+                    kind,
+                    created_at: row.created_at,
+                    ignored: row.delivery_state == EventDeliveryState::Ignored,
+                }
+            },
+        )
+        .collect();
+    takusu_agent::contact_policy::ContactPolicyState::from_ledger(
+        &summaries,
+        now,
+        today_start,
+        today_end,
+        suppress_until,
+    )
 }

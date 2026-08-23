@@ -397,6 +397,11 @@ interface components$1 {
             /** Format: int64 */
             observed_revision: number;
         };
+        /** @description How a planner event should be delivered to a specific device. */
+        DeliveryMode: 'speak' | 'notify' | 'suppress' | 'defer_quiet_hours';
+        DeliveryModeResponse: {
+            mode: components$1['schemas']['DeliveryMode'];
+        };
         /**
          * @description Response for `GET /api/tasks/dependency-analysis` and the habit step
          *     variant (#355).
@@ -417,6 +422,8 @@ interface components$1 {
         /** @description A registered device that may hold or contend for resident authority. */
         DeviceRow: {
             audio_service_running: boolean;
+            /** @description Timed contact suppression from a "ほっといて" action (WI-17). */
+            contact_suppress_until?: components$1['schemas']['Timestamp'] | null;
             created_at: components$1['schemas']['Timestamp'];
             evaluator_heartbeat_until?: components$1['schemas']['Timestamp'] | null;
             evaluator_lease_until?: components$1['schemas']['Timestamp'] | null;
@@ -1224,6 +1231,15 @@ interface components$1 {
         };
         /** @enum {string} */
         SubjectType: '' | 'task' | 'habit' | 'skill' | 'schedule';
+        /** @description Request body for extending the contact suppression window on a device. */
+        SuppressDevice: {
+            /**
+             * Format: int64
+             * @description Suppression duration in minutes. Defaults to 60 minutes.
+             * @default 60
+             */
+            minutes: number;
+        };
         /** @description Response for `POST /api/sync/trigger`. */
         SyncTriggerResponse: {
             status: string;
@@ -1370,6 +1386,8 @@ interface components$1 {
         /** @description Request body for updating a registered device. */
         UpdateDevice: {
             audio_service_running?: boolean | null;
+            /** @description Extend or clear the timed contact suppression window (WI-17). */
+            contact_suppress_until?: components$1['schemas']['Timestamp'] | null;
             name?: string | null;
             /** Format: int64 */
             priority?: number | null;
@@ -1842,6 +1860,25 @@ interface components$1 {
             title: string;
         };
         /**
+         * @description A delay that crossed the short-snooze threshold, awaiting a one-time
+         *     "why did you postpone this task?" question on a later turn.
+         *
+         *     The user's answer is stored as a task comment.
+         */
+        PendingPostponeReason: {
+            /**
+             * @description Whether the postpone check-in has ever been surfaced in a system prompt.
+             * @default false
+             */
+            delivered: boolean;
+            /** Format: int64 */
+            display_id: number;
+            /** Format: int64 */
+            snooze_minutes: number;
+            task_id: string;
+            title: string;
+        };
+        /**
          * @description Permission map for auto-approving proposed changes.
          *
          *     Serialized as a flat map of `"target:operation"` -> bool so that mobile
@@ -1954,6 +1991,12 @@ interface components$1 {
              * @default []
              */
             pending_check_ins: components$1['schemas']['PendingCheckIn'][];
+            /**
+             * @description Delay actions that exceeded the short-snooze threshold, awaiting a
+             *     one-time postpone reason question (WI-17).
+             * @default []
+             */
+            pending_postpone_reasons: components$1['schemas']['PendingPostponeReason'][];
             /** @default null */
             permissions: components$1['schemas']['Permissions'] | null;
             /** @default null */

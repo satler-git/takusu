@@ -7,10 +7,16 @@
 //! `takusu-agent` audio runtime (cpal/sherpa) for this crate.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use takusu_agent::{
-    AgentConfig, AgentError, AgentSession, InputOrigin, SessionOutcome, SurfaceSnapshot,
-    SurfaceStateMachine, SurfaceEvent,
+    AgentConfig, AgentError, AgentSession, InputOrigin, Presentation, SessionOutcome, SurfaceEvent,
+    SurfaceSnapshot, SurfaceStateMachine,
+};
+use takusu_audio::play::{PcmFormat, StreamedAudioFormat, play_stream};
+use takusu_audio::{
+    CartesiaSonic, CartesiaSonicConfig, FishAudio, FishAudioConfig, TextToSpeech, TtsBackend,
+    TtsOptions, TtsRequest, normalize_for_tts,
 };
 use tokio::task::JoinHandle;
 
@@ -126,6 +132,122 @@ pub fn spawn_voice_session(
 
     state.set_voice_handle(Some(handle.clone()));
     Ok(handle)
+}
+
+/// Synthesize and play the voice template for a planner presentation.
+///
+/// Loads the agent's audio configuration, builds the configured TTS backend,
+/// and streams 16-bit PCM to the default output device. Returns an error on
+/// missing keys, synthesis failures, or playback problems so the caller can
+/// fall back to a desktop notification.
+pub async fn speak_presentation(presentation: &Presentation) -> Result<(), DesktopError> {
+    let text = presentation.voice_template();
+    if text.trim().is_empty() {
+        return Err(DesktopError::Transport("empty voice template".into()));
+    }
+
+    let config = AgentConfig::load()
+        .map_err(|e| DesktopError::Transport(format!("failed to load agent config: {e}")))?;
+    let tts_config = &config.audio.tts;
+
+    let normalized = tokio::task::spawn_blocking({
+        let text = text.clone();
+        let language = tts_config.language.clone();
+        move || normalize_for_tts(&text, &language).into_owned()
+    })
+    .await
+    .map_err(|e| DesktopError::Transport(format!("tts normalization panicked: {e}")))?;
+
+    let (tts, voice_id, speed, sample_rate) = build_tts(tts_config)?;
+    let request = TtsRequest {
+        text: normalized,
+        voice: if voice_id.is_empty() {
+            None
+        } else {
+            Some(voice_id)
+        },
+        reference_audio_path: None,
+        options: TtsOptions {
+            response_format: Some("pcm_s16le".into()),
+            speed,
+        },
+    };
+
+    let stream = tts
+        .synthesize_stream(&request)
+        .await
+        .map_err(|e| DesktopError::Transport(format!("tts synthesis failed: {e}")))?;
+
+    let format = StreamedAudioFormat {
+        sample_rate,
+        channels: 1,
+        pcm_format: PcmFormat::I16,
+    };
+    tokio::time::timeout(Duration::from_secs(120), play_stream(stream, format))
+        .await
+        .map_err(|_| DesktopError::Transport("tts playback timed out".into()))?
+        .map_err(|e| DesktopError::Transport(format!("tts playback failed: {e}")))?;
+
+    Ok(())
+}
+
+type TtsBuildResult = Result<(Arc<dyn TextToSpeech>, String, Option<f32>, u32), DesktopError>;
+
+fn build_tts(config: &takusu_agent::audio_config::TtsConfig) -> TtsBuildResult {
+    let api_key = if config.api_key.is_empty() {
+        std::env::var(&config.api_key_env).unwrap_or_default()
+    } else {
+        config.api_key.clone()
+    };
+
+    let sample_rate = if config.sample_rate == 0 {
+        44100
+    } else {
+        config.sample_rate
+    };
+
+    match config.backend {
+        TtsBackend::Cartesia => {
+            if api_key.is_empty() && !config.mute {
+                return Err(DesktopError::Transport("missing Cartesia API key".into()));
+            }
+            let mut tts_config = CartesiaSonicConfig::new(api_key);
+            tts_config.voice_id = config.voice_id.clone();
+            if !config.model.is_empty() {
+                tts_config.model_id = config.model.clone();
+            }
+            tts_config.language = Some(config.language.clone());
+            tts_config.output_format.sample_rate = sample_rate;
+            tts_config.mute = config.mute;
+            Ok((
+                Arc::new(CartesiaSonic::new(tts_config)),
+                config.voice_id.clone(),
+                config.speed,
+                sample_rate,
+            ))
+        }
+        TtsBackend::Fish => {
+            if api_key.is_empty() && !config.mute {
+                return Err(DesktopError::Transport("missing Fish Audio API key".into()));
+            }
+            let mut tts_config = FishAudioConfig::new(api_key);
+            tts_config.voice_id = config.voice_id.clone();
+            if !config.model.is_empty() {
+                tts_config.model = config.model.clone();
+            }
+            tts_config.sample_rate = sample_rate;
+            tts_config.mute = config.mute;
+            Ok((
+                Arc::new(FishAudio::new(tts_config)),
+                config.voice_id.clone(),
+                config.speed,
+                sample_rate,
+            ))
+        }
+        TtsBackend::Android => Err(DesktopError::Transport(
+            "android tts backend is not supported on desktop".into(),
+        )),
+    }
 }
 
 #[cfg(test)]

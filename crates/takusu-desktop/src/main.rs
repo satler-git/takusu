@@ -8,8 +8,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use futures_util::StreamExt;
-use takusu_agent::{SurfaceCommand, SurfaceEvent, SurfaceState};
+use takusu_agent::{DeliveryMode, SurfaceCommand, SurfaceEvent, SurfaceState};
 use takusu_contracts::EventDeliveryState;
+
+#[cfg(feature = "audio-device")]
+use takusu_desktop::audio::speak_presentation;
 use tracing_subscriber::{EnvFilter, fmt};
 
 use takusu_desktop::config::Config;
@@ -139,12 +142,7 @@ async fn run() -> Result<(), DesktopError> {
 
     // Initial snapshot.
     let snapshot = transport.surface_snapshot().await?;
-    apply_surface_event(
-        &state,
-        SurfaceEvent::Snapshot(snapshot),
-        transport.as_ref(),
-    )
-    .await?;
+    apply_surface_event(&state, SurfaceEvent::Snapshot(snapshot), transport.as_ref()).await?;
 
     // Subscribe to surface events and reconnect if the stream drops.
     loop {
@@ -194,43 +192,89 @@ async fn replay_events(
             continue;
         }
 
+        let delivery_mode = transport.event_delivery_mode(&event.id, "desktop").await?;
+        match delivery_mode {
+            DeliveryMode::Suppress => {
+                tracing::info!(event_id = %event.id, "suppressed planner event delivery");
+                if let Err(error) = transport
+                    .update_planner_event_state(&event.id, EventDeliveryState::Ignored)
+                    .await
+                {
+                    tracing::warn!(
+                        error = %error,
+                        event_id = %event.id,
+                        "failed to mark suppressed planner event as ignored"
+                    );
+                }
+                continue;
+            }
+            DeliveryMode::DeferQuietHours => {
+                if let Err(error) = transport
+                    .update_planner_event_state(&event.id, EventDeliveryState::DeferredQuietHours)
+                    .await
+                {
+                    tracing::warn!(
+                        error = %error,
+                        event_id = %event.id,
+                        "failed to defer planner event to quiet hours"
+                    );
+                }
+                continue;
+            }
+            _ => {}
+        }
+
         let desktop_presentation = build_presentation(transport, &event, "desktop").await?;
 
         // Surface the current planner event in the tray and compact panel.
         state.set_current_presentation(Some(desktop_presentation.clone()));
 
+        // do_not_disturb suppresses audible output and system notifications, but
+        // the tray / compact panel may already show the latest presentation. The
+        // next delivery attempt will re-evaluate delivery mode and can speak or
+        // notify once do_not_disturb is off.
         if state.do_not_disturb() {
             tracing::info!(event_id = %event.id, "suppressed notification in do-not-disturb");
             continue;
         }
 
-        let notification = presentation_to_notification(&desktop_presentation);
-
-        match notify::show(proxy, notification_state, transport, &notification).await {
-            Ok(_) => {
-                if let Err(error) = transport
-                    .update_planner_event_state(&event.id, EventDeliveryState::Delivered)
-                    .await
+        let spoke = match delivery_mode {
+            DeliveryMode::Speak => {
+                #[cfg(feature = "audio-device")]
                 {
-                    if let Err(rollback_err) = transport
-                        .update_planner_event_state(&event.id, EventDeliveryState::PendingDelivery)
-                        .await
-                    {
-                        tracing::warn!(
-                            error = %rollback_err,
-                            event_id = %event.id,
-                            "failed to rollback planner event state"
-                        );
+                    match speak_presentation(&desktop_presentation.presentation).await {
+                        Ok(()) => {
+                            tracing::info!(event_id = %event.id, "spoke planner event");
+                            true
+                        }
+                        Err(error) => {
+                            tracing::warn!(
+                                error = %error,
+                                event_id = %event.id,
+                                "failed to speak planner event; falling back to notification"
+                            );
+                            false
+                        }
                     }
+                }
+                #[cfg(not(feature = "audio-device"))]
+                {
                     tracing::warn!(
-                        error = %error,
                         event_id = %event.id,
-                        "failed to mark planner event as delivered"
+                        "audio-device feature disabled; falling back to notification"
                     );
-                    continue;
+                    false
                 }
             }
-            Err(error) => {
+            DeliveryMode::Notify => false,
+            _ => unreachable!("suppress and defer quiet hours handled above"),
+        };
+
+        if !spoke {
+            let notification = presentation_to_notification(&desktop_presentation);
+            if let Err(error) =
+                notify::show(proxy, notification_state, transport, &notification).await
+            {
                 if let Err(rollback_err) = transport
                     .update_planner_event_state(&event.id, EventDeliveryState::PendingDelivery)
                     .await
@@ -248,6 +292,28 @@ async fn replay_events(
                 );
                 continue;
             }
+        }
+
+        if let Err(error) = transport
+            .update_planner_event_state(&event.id, EventDeliveryState::Delivered)
+            .await
+        {
+            if let Err(rollback_err) = transport
+                .update_planner_event_state(&event.id, EventDeliveryState::PendingDelivery)
+                .await
+            {
+                tracing::warn!(
+                    error = %rollback_err,
+                    event_id = %event.id,
+                    "failed to rollback planner event state"
+                );
+            }
+            tracing::warn!(
+                error = %error,
+                event_id = %event.id,
+                "failed to mark planner event as delivered"
+            );
+            continue;
         }
     }
     Ok(result.next_eval_at.map(|ts| ts.to_jiff()))
@@ -294,7 +360,6 @@ async fn apply_surface_event(
                 }
             }
         }
-
     }
 
     Ok(())
@@ -302,8 +367,14 @@ async fn apply_surface_event(
 
 fn show_popover_for_state(state: &DesktopState, popover: &Popover) {
     let view = state.snapshot();
-    let snapshot = view.as_ref().map(|v| v.snapshot.clone()).unwrap_or_default();
-    let title = view.as_ref().map(|v| v.title()).unwrap_or_else(|| "takusu".into());
+    let snapshot = view
+        .as_ref()
+        .map(|v| v.snapshot.clone())
+        .unwrap_or_default();
+    let title = view
+        .as_ref()
+        .map(|v| v.title())
+        .unwrap_or_else(|| "takusu".into());
     let detail = view.as_ref().and_then(|v| v.detail());
     let active = state.voice_session_active();
     let invited = state.consume_voice_invite();
