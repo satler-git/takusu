@@ -10246,6 +10246,127 @@
         }
       }
     },
+    "/events/{event_id}/delivery": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "device_id",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryModeResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/events/{event_id}/acknowledge": {
       "post": {
         "responses": {
@@ -11697,6 +11818,148 @@
                     }
                   },
                   "required": ["message"]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/devices/{id}/suppress": {
+      "post": {
+        "requestBody": {
+          "description": "Request body for extending the contact suppression window on a device.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SuppressDevice"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "A registered device that may hold or contend for resident authority.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceRow"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Expected request with `Content-Type: application/json`",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Failed to deserialize the JSON body into the target type",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -14778,6 +15041,40 @@
         },
         "required": ["observed_revision"]
       },
+      "DeliveryMode": {
+        "description": "How a planner event should be delivered to a specific device.",
+        "oneOf": [
+          {
+            "description": "Speak the presentation via TTS on this device.\n\nOnly selected when proactive speech is allowed and the channel is\nprivate. Reactive speech is always allowed.",
+            "type": "string",
+            "const": "speak"
+          },
+          {
+            "description": "Show a notification (or visual surface update) on this device.",
+            "type": "string",
+            "const": "notify"
+          },
+          {
+            "description": "Drop the contact without re-asking.",
+            "type": "string",
+            "const": "suppress"
+          },
+          {
+            "description": "Hold delivery until quiet hours end.",
+            "type": "string",
+            "const": "defer_quiet_hours"
+          }
+        ]
+      },
+      "DeliveryModeResponse": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "$ref": "#/components/schemas/DeliveryMode"
+          }
+        },
+        "required": ["mode"]
+      },
       "DependencyAnalysisResponse": {
         "description": "Response for `GET /api/tasks/dependency-analysis` and the habit step\nvariant (#355).",
         "type": "object",
@@ -14815,6 +15112,17 @@
         "properties": {
           "audio_service_running": {
             "type": "boolean"
+          },
+          "contact_suppress_until": {
+            "description": "Timed contact suppression from a \"ほっといて\" action (WI-17).",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Timestamp"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "created_at": {
             "$ref": "#/components/schemas/Timestamp"
@@ -16794,6 +17102,18 @@
         "type": "string",
         "enum": ["", "task", "habit", "skill", "schedule"]
       },
+      "SuppressDevice": {
+        "description": "Request body for extending the contact suppression window on a device.",
+        "type": "object",
+        "properties": {
+          "minutes": {
+            "description": "Suppression duration in minutes. Defaults to 60 minutes.",
+            "type": "integer",
+            "format": "int64",
+            "default": 60
+          }
+        }
+      },
       "SyncTriggerResponse": {
         "description": "Response for `POST /api/sync/trigger`.",
         "type": "object",
@@ -17171,6 +17491,17 @@
         "properties": {
           "audio_service_running": {
             "type": ["boolean", "null"]
+          },
+          "contact_suppress_until": {
+            "description": "Extend or clear the timed contact suppression window (WI-17).",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Timestamp"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "name": {
             "type": ["string", "null"]
@@ -18323,6 +18654,32 @@
           "sigma_minutes"
         ]
       },
+      "PendingPostponeReason": {
+        "description": "A delay that crossed the short-snooze threshold, awaiting a one-time\n\"why did you postpone this task?\" question on a later turn.\n\nThe user's answer is stored as a task comment.",
+        "type": "object",
+        "properties": {
+          "delivered": {
+            "description": "Whether the postpone check-in has ever been surfaced in a system prompt.",
+            "type": "boolean",
+            "default": false
+          },
+          "display_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "snooze_minutes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "task_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": ["task_id", "display_id", "title", "snooze_minutes"]
+      },
       "Permissions": {
         "description": "Permission map for auto-approving proposed changes.\n\nSerialized as a flat map of `\"target:operation\"` -> bool so that mobile\nclients can send it directly without wrapping it in an `allow` field.\nInternally the keys are typed (`PermissionKey`) to prevent typos and avoid\nper-lookup string allocation.",
         "type": "object",
@@ -18626,6 +18983,14 @@
             "default": [],
             "items": {
               "$ref": "#/components/schemas/PendingCheckIn"
+            }
+          },
+          "pending_postpone_reasons": {
+            "description": "Delay actions that exceeded the short-snooze threshold, awaiting a\none-time postpone reason question (WI-17).",
+            "type": "array",
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PendingPostponeReason"
             }
           },
           "permissions": {

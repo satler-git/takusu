@@ -1245,6 +1245,25 @@ impl Client {
         Ok(resp.json().await?)
     }
 
+    pub async fn suppress_device(
+        &self,
+        id: &str,
+        minutes: i64,
+    ) -> Result<DeviceRow, ClientError> {
+        let body = SuppressDevice { minutes };
+        let resp = self
+            .request(
+                reqwest::Method::POST,
+                &format!("/api/devices/{}/suppress", url_encode(id)),
+            )
+            .await
+            .json(&body)
+            .send()
+            .await?;
+        let resp = Self::handle_response(resp).await?;
+        Ok(resp.json().await?)
+    }
+
     pub async fn delete_device(&self, id: &str) -> Result<(), ClientError> {
         let resp = self
             .request(

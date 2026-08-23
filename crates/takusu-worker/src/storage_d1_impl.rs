@@ -3787,7 +3787,7 @@ impl Storage for D1Storage {
             takusu_contracts::DevicePlatform::Android => 1,
         });
         let stmt = self.db.prepare(
-            "INSERT INTO devices (id, name, platform, priority, evaluator_heartbeat_until, evaluator_lease_until, next_eval_at, audio_service_running, private_output_route, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, NULL, NULL, NULL, 0, 0, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), strftime('%Y-%m-%dT%H:%M:%SZ', 'now')) ON CONFLICT(id) DO UPDATE SET name=excluded.name, platform=excluded.platform, priority=excluded.priority, updated_at=excluded.updated_at",
+            "INSERT INTO devices (id, name, platform, priority, evaluator_heartbeat_until, evaluator_lease_until, next_eval_at, audio_service_running, private_output_route, contact_suppress_until, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, NULL, NULL, NULL, 0, 0, NULL, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), strftime('%Y-%m-%dT%H:%M:%SZ', 'now')) ON CONFLICT(id) DO UPDATE SET name=excluded.name, platform=excluded.platform, priority=excluded.priority, updated_at=excluded.updated_at",
         );
         stmt.bind(&[
             JsValue::from_str(&body.id),
@@ -3804,7 +3804,7 @@ impl Storage for D1Storage {
 
     async fn get_device(&self, id: &str) -> StorageResult<DeviceRow> {
         let stmt = self.db.prepare(
-            "SELECT id, name, platform, priority, evaluator_heartbeat_until, evaluator_lease_until, next_eval_at, audio_service_running, private_output_route, created_at, updated_at FROM devices WHERE id = ?1",
+            "SELECT id, name, platform, priority, evaluator_heartbeat_until, evaluator_lease_until, next_eval_at, audio_service_running, private_output_route, contact_suppress_until, created_at, updated_at FROM devices WHERE id = ?1",
         );
         let stmt = stmt.bind(&[JsValue::from_str(id)]).map_err(d1_err)?;
         let rows: Vec<DeviceRow> = d1_all(&stmt).await?;
@@ -3815,7 +3815,7 @@ impl Storage for D1Storage {
 
     async fn list_devices(&self) -> StorageResult<Vec<DeviceRow>> {
         let stmt = self.db.prepare(
-            "SELECT id, name, platform, priority, evaluator_heartbeat_until, evaluator_lease_until, next_eval_at, audio_service_running, private_output_route, created_at, updated_at FROM devices ORDER BY priority, created_at",
+            "SELECT id, name, platform, priority, evaluator_heartbeat_until, evaluator_lease_until, next_eval_at, audio_service_running, private_output_route, contact_suppress_until, created_at, updated_at FROM devices ORDER BY priority, created_at",
         );
         d1_all(&stmt).await
     }
@@ -3830,14 +3830,21 @@ impl Storage for D1Storage {
         let private_output_route = body
             .private_output_route
             .unwrap_or(existing.private_output_route);
+        let contact_suppress_until = body
+            .contact_suppress_until
+            .or(existing.contact_suppress_until);
         let stmt = self.db.prepare(
-            "UPDATE devices SET name = ?1, priority = ?2, audio_service_running = ?3, private_output_route = ?4, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?5",
+            "UPDATE devices SET name = ?1, priority = ?2, audio_service_running = ?3, private_output_route = ?4, contact_suppress_until = ?5, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?6",
         );
         stmt.bind(&[
             JsValue::from_str(&name),
             JsValue::from_f64(priority as f64),
             JsValue::from_bool(audio_service_running),
             JsValue::from_bool(private_output_route),
+            match contact_suppress_until {
+                Some(ts) => JsValue::from_str(&ts.to_string()),
+                None => JsValue::NULL,
+            },
             JsValue::from_str(id),
         ])
         .map_err(d1_err)?

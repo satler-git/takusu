@@ -13,6 +13,7 @@ import * as Notifications from 'expo-notifications';
 import { CHANNELS } from './channels';
 import { CATEGORY_TASK_START } from './categories';
 import { getNotificationIconColor } from './theme';
+import TakusuAudioModule from '@/modules/takusu-server/src/TakusuAudioModule';
 
 function bodyForPresentation(presentation: Presentation): string {
   switch (presentation.type) {
@@ -32,6 +33,32 @@ function bodyForPresentation(presentation: Presentation): string {
     case 'clarification':
       return 'takusuからのお知らせがあります';
   }
+}
+
+async function scheduleNotificationForPresentation(
+  presentation: Presentation,
+  eventId: string,
+  taskId: string | undefined,
+  color: string,
+): Promise<void> {
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: 'takusu',
+      body: bodyForPresentation(presentation),
+      data: {
+        eventId,
+        taskId,
+        check_in: presentation,
+      },
+      color,
+      categoryIdentifier: CATEGORY_TASK_START,
+    },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+      seconds: 1,
+      channelId: CHANNELS.taskReminders,
+    },
+  });
 }
 
 function withCapability(
@@ -128,30 +155,57 @@ export async function replayPlannerEvents(
       continue;
     }
     if (!(await agentClient.claimPlannerEvent(event.id, deviceId))) continue;
+    const mode = await agentClient.eventDeliveryMode(event.id, deviceId);
     const presentation = await presentationForEvent(
       event,
       agentClient,
       deviceId,
     );
     const taskId = event.task_id ?? undefined;
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title: 'takusu',
-        body: bodyForPresentation(presentation),
-        data: {
-          eventId: event.id,
+
+    switch (mode) {
+      case 'suppress': {
+        await agentClient.updatePlannerEventState(event.id, 'ignored');
+        continue;
+      }
+      case 'defer_quiet_hours': {
+        await agentClient.updatePlannerEventState(
+          event.id,
+          'deferred_quiet_hours',
+        );
+        continue;
+      }
+      case 'speak': {
+        try {
+          await TakusuAudioModule.synthesizeAndPlay(
+            bodyForPresentation(presentation),
+          );
+          await agentClient.updatePlannerEventState(event.id, 'delivered');
+        } catch (error) {
+          console.warn(
+            'proactive tts failed, falling back to notification',
+            error,
+          );
+          await scheduleNotificationForPresentation(
+            presentation,
+            event.id,
+            taskId,
+            color,
+          );
+          await agentClient.updatePlannerEventState(event.id, 'delivered');
+        }
+        continue;
+      }
+      case 'notify':
+      default: {
+        await scheduleNotificationForPresentation(
+          presentation,
+          event.id,
           taskId,
-          check_in: presentation,
-        },
-        color,
-        categoryIdentifier: CATEGORY_TASK_START,
-      },
-      trigger: {
-        type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-        seconds: 1,
-        channelId: CHANNELS.taskReminders,
-      },
-    });
-    await agentClient.updatePlannerEventState(event.id, 'delivered');
+          color,
+        );
+        await agentClient.updatePlannerEventState(event.id, 'delivered');
+      }
+    }
   }
 }
