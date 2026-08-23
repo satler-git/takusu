@@ -443,7 +443,8 @@ mod tests {
             &self,
             _: &takusu_contracts::UndoWorkSession,
             _: Option<&str>,
-        ) -> Result<takusu_contracts::UndoWorkSessionResult, takusu_contracts::StorageError> {
+        ) -> Result<takusu_contracts::UndoWorkSessionResult, takusu_contracts::StorageError>
+        {
             unimplemented()
         }
         async fn get_evaluation_inputs(
@@ -470,6 +471,12 @@ mod tests {
             _: &takusu_contracts::SplitTask,
             _: Option<&str>,
         ) -> Result<takusu_contracts::SplitResult, takusu_contracts::StorageError> {
+            unimplemented()
+        }
+        async fn settle(
+            &self,
+            _: &takusu_contracts::SettleRequest,
+        ) -> Result<takusu_contracts::SettleResponse, takusu_contracts::StorageError> {
             unimplemented()
         }
     }

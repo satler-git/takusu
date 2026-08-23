@@ -1245,11 +1245,7 @@ impl Client {
         Ok(resp.json().await?)
     }
 
-    pub async fn suppress_device(
-        &self,
-        id: &str,
-        minutes: i64,
-    ) -> Result<DeviceRow, ClientError> {
+    pub async fn suppress_device(&self, id: &str, minutes: i64) -> Result<DeviceRow, ClientError> {
         let body = SuppressDevice { minutes };
         let resp = self
             .request(
@@ -1365,6 +1361,18 @@ impl Client {
     ) -> Result<UnsettledIntervalRow, ClientError> {
         let resp = self
             .request(reqwest::Method::POST, "/api/coverage/unsettled-intervals")
+            .await
+            .json(body)
+            .send()
+            .await?;
+        let resp = Self::handle_response(resp).await?;
+        Ok(resp.json().await?)
+    }
+
+    /// Atomically settle an interval and replace the schedule (WI-18).
+    pub async fn settle(&self, body: &SettleRequest) -> Result<SettleResponse, ClientError> {
+        let resp = self
+            .request(reqwest::Method::POST, "/api/coverage/settle")
             .await
             .json(body)
             .send()
