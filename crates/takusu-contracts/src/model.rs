@@ -732,6 +732,45 @@ impl Default for CreateUnsettledInterval {
     }
 }
 
+fn default_settlement_source() -> String {
+    "manual".into()
+}
+
+/// Atomically settle an elapsed-time interval and save the replanned schedule.
+///
+/// Used by the resident agent settlement proposal (WI-18). The interval is
+/// recorded as an unsettled interval with `settled_at` set, the schedule is
+/// replaced with the supplied preview, and a coverage confirmation is created
+/// for the new schedule revision so coverage returns to `today_covered`.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct SettleRequest {
+    /// Existing unsettled interval to settle. If omitted, a new interval is
+    /// created and immediately marked settled.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub interval_id: Option<String>,
+    pub start_at: Timestamp,
+    pub end_at: Timestamp,
+    pub classification: String,
+    pub timezone: String,
+    pub schedule_entries: Vec<ScheduleEntry>,
+    #[serde(default = "default_settlement_source")]
+    #[schemars(default = "default_settlement_source")]
+    pub source: String,
+    #[serde(default = "default_calendar_health")]
+    #[schemars(default = "default_calendar_health")]
+    pub calendar_health: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub operation_id: Option<String>,
+}
+
+/// Result of a successful settlement.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct SettleResponse {
+    pub interval: UnsettledIntervalRow,
+    pub schedule: ScheduleRow,
+    pub confirmation: CoverageConfirmationRow,
+}
+
 /// Storage representation of an immutable planner event.
 ///
 /// Presentation and action templates remain JSON strings at this boundary so

@@ -5,7 +5,9 @@ use serde_json::Value;
 use std::marker::PhantomData;
 use std::str::FromStr;
 use takusu_client::{Client, SchedulePreviewRequest, TaskQuery};
-use takusu_types::{TaskStatusFilter, parse_datetime_tz};
+use takusu_types::{
+    ScheduleMode, TaskStatusFilter, parse_date_expression, parse_datetime_tz, parse_timezone,
+};
 
 use crate::{
     ChangeOperation, InferredField, InvalidArgsError, ProposalContent, ProposedChange, Target,
@@ -48,6 +50,7 @@ pub(super) fn register_mutation_tools(
     register_kind::<DeleteHabit>(registry, &client, &tz_cache);
     register_kind::<GenerateSchedule>(registry, &client, &tz_cache);
     register_kind::<Reschedule>(registry, &client, &tz_cache);
+    register_kind::<ProposeSettlement>(registry, &client, &tz_cache);
     registry.register(Box::new(crate::tool::Typed(HabitScheduledSpans {
         client: client.clone(),
         tz_cache: tz_cache.clone(),
@@ -1427,4 +1430,172 @@ pub(super) fn normalize_task_ref(
         );
     }
     Ok(())
+}
+
+fn default_settlement_source() -> String {
+    "manual".into()
+}
+
+fn default_calendar_health() -> String {
+    "ok".into()
+}
+
+/// Best-effort canonical string for a `jiff` timezone.
+fn tz_to_string(tz: &jiff::tz::TimeZone) -> String {
+    tz.iana_name()
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| tz.to_offset(jiff::Timestamp::now()).to_string())
+}
+
+// ── propose_settlement (WI-18) ─────────────────────────────────────────
+
+/// Arguments for `propose_settlement`.
+///
+/// Records an elapsed-time interval and asks for approval to save the
+/// resulting schedule. `mode`, `from`, and `until` drive the schedule preview
+/// just like `reschedule`; `start_at`/`end_at` describe the interval to settle.
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub(super) struct ProposeSettlementArgs {
+    /// Start of the elapsed-time interval to settle.
+    #[serde(deserialize_with = "deserialize_trimmed_required")]
+    #[schemars(with = "String")]
+    start_at: String,
+    /// End of the elapsed-time interval to settle (also the start of the replan range).
+    #[serde(deserialize_with = "deserialize_trimmed_required")]
+    #[schemars(with = "String")]
+    end_at: String,
+    /// What the user did during the interval (e.g. "game", "rest", "chore").
+    #[serde(deserialize_with = "deserialize_trimmed_required")]
+    #[schemars(with = "String")]
+    classification: String,
+    /// Existing unsettled interval to settle. Omit to create a new one.
+    #[serde(default, deserialize_with = "deserialize_trimmed_optional")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<String>")]
+    interval_id: Option<String>,
+    /// Schedule preview mode; defaults to "range".
+    #[serde(default)]
+    mode: ScheduleMode,
+    /// Start of the replan window. Defaults to `end_at`.
+    #[serde(default, deserialize_with = "deserialize_trimmed_optional")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<String>")]
+    from: Option<String>,
+    /// End of the replan window. Defaults to end of today.
+    #[serde(default, deserialize_with = "deserialize_trimmed_optional")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<String>")]
+    until: Option<String>,
+    /// Timezone used to interpret date-only expressions; defaults to the configured timezone.
+    #[serde(default, deserialize_with = "deserialize_trimmed_optional")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<String>")]
+    timezone: Option<String>,
+    /// Source for the resulting coverage confirmation; defaults to "manual".
+    #[serde(default = "default_settlement_source")]
+    #[schemars(with = "String")]
+    source: String,
+    /// Calendar health for the resulting coverage confirmation; defaults to "ok".
+    #[serde(default = "default_calendar_health")]
+    #[schemars(with = "String")]
+    calendar_health: String,
+    #[serde(default, deserialize_with = "deserialize_trimmed_optional")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<String>")]
+    why: Option<String>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    warnings: Vec<String>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    inferred_fields: Vec<InferredField>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<String>")]
+    proposal_id: Option<String>,
+}
+
+impl MutationMeta for ProposeSettlementArgs {
+    fn why(&self) -> Option<String> {
+        self.why.clone()
+    }
+    fn warnings(&self) -> Vec<String> {
+        self.warnings.clone()
+    }
+    fn inferred_fields(&self) -> Vec<InferredField> {
+        self.inferred_fields.clone()
+    }
+    fn proposal_id(&self) -> Option<String> {
+        self.proposal_id.clone()
+    }
+}
+
+pub(super) struct ProposeSettlement;
+
+#[async_trait]
+impl MutationSpec for ProposeSettlement {
+    type Args = ProposeSettlementArgs;
+
+    const NAME: ToolName = ToolName::ProposeSettlement;
+    const DESCRIPTION: &'static str = "Create a settlement proposal. Calling this tool generates a pending approval request; it does not write immediately. Use when the user reports off-plan time that should be recorded and the remainder of the day should be replanned.";
+    const OPERATION: ChangeOperation = ChangeOperation::Settle;
+    const TARGET_TYPE: TargetKind = TargetKind::Schedule;
+
+    fn exposure() -> ToolExposure {
+        ToolExposure::Deferred
+    }
+
+    fn change_summary(args: &Self::Args) -> (String, String) {
+        let desc = format!(
+            "{}として精算し、残りのスケジュールを再調整",
+            args.classification
+        );
+        (String::new(), desc)
+    }
+
+    fn normalize(args: &mut Self::Args, tz: &jiff::tz::TimeZone) -> Result<(), ToolError> {
+        normalize_required_datetime(&mut args.start_at, "start_at", tz)?;
+        normalize_required_datetime(&mut args.end_at, "end_at", tz)?;
+        if args.start_at > args.end_at {
+            return Err(ToolError::InvalidArgs(InvalidArgsError::new(
+                "start_at",
+                "interval start must be before or equal to end",
+            )));
+        }
+        if args.from.is_none() {
+            args.from = Some(args.end_at.clone());
+        } else {
+            normalize_optional_datetime(&mut args.from, "from", tz)?;
+        }
+        if args.until.is_none() {
+            let day_end = parse_date_expression("today", tz, true).map_err(|e| {
+                ToolError::InvalidArgs(InvalidArgsError::new(
+                    "until",
+                    format!("could not compute end of day: {e}"),
+                ))
+            })?;
+            args.until = Some(day_end.to_string());
+        } else {
+            normalize_optional_datetime(&mut args.until, "until", tz)?;
+        }
+        if args.timezone.is_none() {
+            args.timezone = Some(tz_to_string(tz));
+        } else if let Some(tz_str) = args.timezone.as_deref() {
+            let _ = parse_timezone(tz_str).map_err(|e| {
+                ToolError::InvalidArgs(InvalidArgsError::new("timezone", format!("invalid: {e}")))
+            })?;
+        }
+        if args.source.is_empty() {
+            args.source = default_settlement_source();
+        }
+        if args.calendar_health.is_empty() {
+            args.calendar_health = default_calendar_health();
+        }
+        Ok(())
+    }
+
+    fn preview() -> Preview {
+        Preview::FromArgs
+    }
 }

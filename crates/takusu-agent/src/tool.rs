@@ -264,6 +264,8 @@ pub enum ToolName {
     MoveTask,
     #[strum(serialize = "coverage_confirm")]
     CoverageConfirm,
+    #[strum(serialize = "propose_settlement")]
+    ProposeSettlement,
     #[strum(serialize = "set_intake_state")]
     SetIntakeState,
 }
@@ -286,6 +288,7 @@ enum_label! {
         Undo = "undo",
         CreateScheduledSpan = "create_scheduled_span",
         DeleteScheduledSpan = "delete_scheduled_span",
+        Settle = "settle",
     }
 }
 

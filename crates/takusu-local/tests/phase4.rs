@@ -405,6 +405,12 @@ impl Storage for CountingStorage {
     ) -> StorageResult<takusu_contracts::SplitResult> {
         Err(StorageError::Internal("n/a".into()))
     }
+    async fn settle(
+        &self,
+        _request: &takusu_contracts::SettleRequest,
+    ) -> StorageResult<takusu_contracts::SettleResponse> {
+        Err(StorageError::Internal("n/a".into()))
+    }
 }
 
 #[tokio::test]

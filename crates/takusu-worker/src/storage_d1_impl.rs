@@ -11,17 +11,18 @@ use takusu_contracts::{
     GoogleCalSettingsRow, HabitRow, HabitScheduledSpanRow, HabitStepEstimateInput, HabitStepInput,
     HabitStepRow, MemoryInjectionQuery, MemoryInjectionResult, MemoryQuery, MemoryRow,
     MoveEntryResponse, ProgressEventRow, RecordWorkSessionProgress, ResidentAuthority,
-    SaveScheduleRequest, ScheduleEntry, ScheduleRow, SettingsRow, SimilarTaskQuery, SimilarTaskRow,
-    SkillRow, SplitResult, SplitTask, StartWorkSession, Storage, StorageError, TaskProgress,
-    TaskQuery, TaskRow, TokenCreateResponse, TokenRow, UndoWorkSession, UndoWorkSessionResult,
-    UnsettledIntervalRow, UpdateDevice, UpdateGoogleCalSettings, UpdateHabit, UpdateMemory,
-    UpdateSettings, UpdateSkill, UpdateTask, WorkSessionProgressResult, WorkSessionRow,
+    SaveScheduleRequest, ScheduleData, ScheduleEntry, ScheduleRow, SettingsRow, SettleRequest,
+    SettleResponse, SimilarTaskQuery, SimilarTaskRow, SkillRow, SplitResult, SplitTask,
+    StartWorkSession, Storage, StorageError, TaskProgress, TaskQuery, TaskRow, TokenCreateResponse,
+    TokenRow, UndoWorkSession, UndoWorkSessionResult, UnsettledIntervalRow, UpdateDevice,
+    UpdateGoogleCalSettings, UpdateHabit, UpdateMemory, UpdateSettings, UpdateSkill, UpdateTask,
+    WorkSessionProgressResult, WorkSessionRow,
 };
 use takusu_types::estimator::effective_distribution;
 use takusu_types::jwt::{DEFAULT_TOKEN_TTL_SECONDS, generate_token_jwt};
 use takusu_types::{
     CommentAuthor, DependencyList, EnumLabel, Minutes, Quantity, TaskStatus, TaskStatusFilter,
-    Timestamp, TokenClaims, WindowMode, parse_timezone,
+    Timestamp, TokenClaims, WindowMode, now_rfc3339, parse_timezone,
 };
 use wasm_bindgen::JsValue;
 
@@ -1968,12 +1969,10 @@ impl Storage for D1Storage {
                 && let Some(total) = session.quantity_total
                 && session.quantity_done > 0
             {
-                let active_minutes =
-                    takusu_types::minutes_between_ts(session.started_at, now_ts);
+                let active_minutes = takusu_types::minutes_between_ts(session.started_at, now_ts);
                 if active_minutes > 0 {
-                    let quantity_fraction = (session.quantity_done.get() as f64
-                        / total.get() as f64)
-                        .min(1.0);
+                    let quantity_fraction =
+                        (session.quantity_done.get() as f64 / total.get() as f64).min(1.0);
                     let mutation = estimator_observation(
                         &self.db,
                         &task,
@@ -2892,7 +2891,8 @@ impl Storage for D1Storage {
         let request_hash = progress_request_hash(&payload, operation_id);
         if let Some(op_id) = operation_id
             && let Some(stored) =
-                check_progress_idempotency::<UndoWorkSessionResult>(&self.db, op_id, &request_hash).await?
+                check_progress_idempotency::<UndoWorkSessionResult>(&self.db, op_id, &request_hash)
+                    .await?
         {
             return Ok(stored);
         }
@@ -2921,9 +2921,7 @@ impl Storage for D1Storage {
         let result = if session.ended_at.is_none() {
             let created = parse_timestamp(&session.created_at.to_string()).unwrap_or(now);
             if now - created > 60 {
-                return Err(StorageError::BadRequest(
-                    "start undo window expired".into(),
-                ));
+                return Err(StorageError::BadRequest("start undo window expired".into()));
             }
 
             let delete = self.db.prepare("DELETE FROM work_sessions WHERE id = ?1");
@@ -2956,9 +2954,7 @@ impl Storage for D1Storage {
                 .map(|e| parse_timestamp(&e.to_string()).unwrap_or(now))
                 .unwrap_or(now);
             if now - ended > 60 {
-                return Err(StorageError::BadRequest(
-                    "pause undo window expired".into(),
-                ));
+                return Err(StorageError::BadRequest("pause undo window expired".into()));
             }
 
             let reopen = self
@@ -3267,6 +3263,171 @@ impl Storage for D1Storage {
         d1_first::<UnsettledIntervalRow>(&stmt)
             .await?
             .ok_or_else(|| StorageError::NotFound("unsettled interval not found".into()))
+    }
+
+    async fn settle(&self, request: &SettleRequest) -> StorageResult<SettleResponse> {
+        let now = now_rfc3339();
+        let start_at = request.start_at.to_string();
+        let end_at = request.end_at.to_string();
+        let mut stmts: Vec<worker::D1PreparedStatement> = Vec::new();
+
+        let interval_id = if let Some(id) = request.interval_id.as_deref() {
+            let stmt = self
+                .db
+                .prepare(
+                    "UPDATE unsettled_intervals SET start_at = ?1, end_at = ?2, classification = ?3, settled_at = ?4, operation_id = ?5 WHERE id = ?6",
+                )
+                .bind(&[
+                    JsValue::from_str(&start_at),
+                    JsValue::from_str(&end_at),
+                    JsValue::from_str(&request.classification),
+                    JsValue::from_str(&now),
+                    request
+                        .operation_id
+                        .as_deref()
+                        .map(JsValue::from_str)
+                        .unwrap_or(JsValue::NULL),
+                    JsValue::from_str(id),
+                ])
+                .map_err(d1_err)?;
+            stmts.push(stmt);
+            id.to_string()
+        } else {
+            let id = uuid::Uuid::now_v7().to_string();
+            let stmt = self
+                .db
+                .prepare(
+                    "INSERT INTO unsettled_intervals (id, start_at, end_at, classification, source, created_at, settled_at, operation_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                )
+                .bind(&[
+                    JsValue::from_str(&id),
+                    JsValue::from_str(&start_at),
+                    JsValue::from_str(&end_at),
+                    JsValue::from_str(&request.classification),
+                    JsValue::from_str(&request.source),
+                    JsValue::from_str(&now),
+                    JsValue::from_str(&now),
+                    request
+                        .operation_id
+                        .as_deref()
+                        .map(JsValue::from_str)
+                        .unwrap_or(JsValue::NULL),
+                ])
+                .map_err(d1_err)?;
+            stmts.push(stmt);
+            id
+        };
+
+        let schedule = ScheduleData::new(request.schedule_entries.clone());
+        let schedule_json = schedule.to_json_string();
+        let horizon_json = takusu_types::JsonString::new(Vec::<String>::new()).to_json_string();
+
+        let upsert = self
+            .db
+            .prepare(
+                "INSERT INTO schedules (id, created_at, updated_at, schedule, horizon_task_ids) VALUES ('active', ?1, ?1, ?2, ?3) ON CONFLICT(id) DO UPDATE SET schedule=excluded.schedule, horizon_task_ids=excluded.horizon_task_ids, updated_at=excluded.updated_at",
+            )
+            .bind(&[
+                JsValue::from_str(&now),
+                JsValue::from_str(&schedule_json),
+                JsValue::from_str(&horizon_json),
+            ])
+            .map_err(d1_err)?;
+        stmts.push(upsert);
+
+        for id in request.schedule_entries.iter().map(|e| e.task_id.clone()) {
+            let stmt = self
+                .db
+                .prepare(
+                    "UPDATE tasks SET status = 'scheduled', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?1 AND status != 'in_progress'",
+                )
+                .bind(&[JsValue::from_str(&id)])
+                .map_err(d1_err)?;
+            stmts.push(stmt);
+        }
+
+        stmts.push(
+            self.db.prepare(
+                "UPDATE schedule_revisions SET revision = revision + 1 WHERE id = 'active'",
+            ),
+        );
+
+        let tz = parse_timezone(&request.timezone)
+            .map_err(|e| StorageError::Internal(format!("invalid timezone: {e}")))?;
+        let target_start = takusu_types::parse_date_expression("today", &tz, false)
+            .map_err(|e| StorageError::Internal(format!("day start: {e}")))?;
+        let target_end = takusu_types::parse_date_expression("today", &tz, true)
+            .map_err(|e| StorageError::Internal(format!("day end: {e}")))?;
+
+        let confirmation_id = uuid::Uuid::now_v7().to_string();
+        let coverage_stmt = self
+            .db
+            .prepare(
+                "INSERT INTO coverage_confirmations (id, start_at, end_at, timezone, source, schedule_revision, calendar_health, created_at, settled_at, operation_id) VALUES (?1, ?2, ?3, ?4, ?5, (SELECT revision FROM schedule_revisions WHERE id = 'active'), ?6, ?7, ?7, ?8)",
+            )
+            .bind(&[
+                JsValue::from_str(&confirmation_id),
+                JsValue::from_str(&target_start.to_string()),
+                JsValue::from_str(&target_end.to_string()),
+                JsValue::from_str(&request.timezone),
+                JsValue::from_str(&request.source),
+                JsValue::from_str(&request.calendar_health),
+                JsValue::from_str(&now),
+                request
+                    .operation_id
+                    .as_deref()
+                    .map(JsValue::from_str)
+                    .unwrap_or(JsValue::NULL),
+            ])
+            .map_err(d1_err)?;
+        stmts.push(coverage_stmt);
+
+        let results = self.db.batch(stmts).await.map_err(d1_err)?;
+
+        if request.interval_id.is_some() {
+            let affected = results[0]
+                .meta()
+                .map_err(d1_err)?
+                .and_then(|m| m.rows_written)
+                .unwrap_or(0);
+            if affected == 0 {
+                return Err(not_found(format!(
+                    "interval {} not found",
+                    request.interval_id.as_deref().unwrap()
+                )));
+            }
+        }
+
+        let stmt = self.db.prepare(
+            "SELECT id, start_at, end_at, classification, source, created_at, settled_at, operation_id FROM unsettled_intervals WHERE id = ?1",
+        );
+        let stmt = stmt
+            .bind(&[JsValue::from_str(&interval_id)])
+            .map_err(d1_err)?;
+        let interval = d1_first::<UnsettledIntervalRow>(&stmt)
+            .await?
+            .ok_or_else(|| not_found("unsettled interval not found"))?;
+
+        let schedule = self
+            .get_schedule()
+            .await?
+            .ok_or_else(|| StorageError::Internal("schedule not found after settle".into()))?;
+
+        let stmt = self.db.prepare(
+            "SELECT id, start_at, end_at, timezone, source, schedule_revision, calendar_health, created_at, settled_at, operation_id FROM coverage_confirmations WHERE id = ?1",
+        );
+        let stmt = stmt
+            .bind(&[JsValue::from_str(&confirmation_id)])
+            .map_err(d1_err)?;
+        let confirmation = d1_first::<CoverageConfirmationRow>(&stmt)
+            .await?
+            .ok_or_else(|| not_found("coverage confirmation not found"))?;
+
+        Ok(SettleResponse {
+            interval,
+            schedule,
+            confirmation,
+        })
     }
 
     async fn settle_unsettled_interval(

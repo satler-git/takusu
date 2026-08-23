@@ -10,18 +10,18 @@ use takusu_contracts::{
     GoogleCalSettingsRow, HabitRow, HabitScheduledSpanRow, HabitStepEstimateInput, HabitStepInput,
     HabitStepRow, MemoryInjectionQuery, MemoryInjectionResult, MemoryKindCounts, MemoryQuery,
     MemoryRow, MoveEntryResponse, RecordWorkSessionProgress, ResidentAuthority,
-    SaveScheduleRequest, ScheduleEntry, ScheduleRow, SettingsRow, SimilarTaskQuery, SimilarTaskRow,
-    SkillRow, SplitResult, SplitTask, StartWorkSession, Storage, StorageError, TaskProgress,
-    TaskQuery, TaskRow, TokenCreateResponse, TokenRow, UndoWorkSession, UndoWorkSessionResult,
-    UnsettledIntervalRow, UpdateDevice, UpdateGoogleCalSettings, UpdateHabit, UpdateMemory,
-    UpdateSettings, UpdateSkill, UpdateTask, WorkSessionProgressResult, WorkSessionRow,
-    storage::StorageResult,
+    SaveScheduleRequest, ScheduleEntry, ScheduleRow, SettingsRow, SettleRequest, SettleResponse,
+    SimilarTaskQuery, SimilarTaskRow, SkillRow, SplitResult, SplitTask, StartWorkSession, Storage,
+    StorageError, TaskProgress, TaskQuery, TaskRow, TokenCreateResponse, TokenRow, UndoWorkSession,
+    UndoWorkSessionResult, UnsettledIntervalRow, UpdateDevice, UpdateGoogleCalSettings,
+    UpdateHabit, UpdateMemory, UpdateSettings, UpdateSkill, UpdateTask, WorkSessionProgressResult,
+    WorkSessionRow, storage::StorageResult,
 };
 use takusu_search::search::{EvalContext, filter_tasks};
 use takusu_types::Minutes;
 use takusu_types::{
     CommentAuthor, EnumLabel, JsonString, Quantity, TaskStatus, TaskStatusFilter, Timestamp,
-    WindowMode,
+    WindowMode, parse_date_expression, parse_timezone,
 };
 use takusu_types::{DEFAULT_AUD, SCOPE_READ_WRITE};
 
@@ -2838,6 +2838,142 @@ impl Storage for SqliteStorage {
         Ok(row)
     }
 
+    async fn settle(&self, request: &SettleRequest) -> StorageResult<SettleResponse> {
+        let mut tx = self.pool.begin().await.map_err(map_err)?;
+        let now = takusu_types::now_rfc3339();
+
+        // 1. Record the settled interval.
+        let interval_id = if let Some(id) = request.interval_id.as_deref() {
+            let result = sqlx::query(
+                "UPDATE unsettled_intervals SET start_at = ?, end_at = ?, classification = ?, settled_at = ?, operation_id = ? WHERE id = ?",
+            )
+            .bind(request.start_at)
+            .bind(request.end_at)
+            .bind(&request.classification)
+            .bind(&now)
+            .bind(request.operation_id.as_deref())
+            .bind(id)
+            .execute(&mut *tx)
+            .await
+            .map_err(map_err)?;
+            if result.rows_affected() == 0 {
+                return Err(StorageError::NotFound(format!("interval {id} not found")));
+            }
+            id.to_string()
+        } else {
+            let id = uuid::Uuid::now_v7().to_string();
+            sqlx::query(
+                "INSERT INTO unsettled_intervals (id, start_at, end_at, classification, source, created_at, settled_at, operation_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            )
+            .bind(&id)
+            .bind(request.start_at)
+            .bind(request.end_at)
+            .bind(&request.classification)
+            .bind(&request.source)
+            .bind(&now)
+            .bind(&now)
+            .bind(request.operation_id.as_deref())
+            .execute(&mut *tx)
+            .await
+            .map_err(map_err)?;
+            id
+        };
+
+        // 2. Replace the schedule and bump the schedule revision in the same
+        // transaction so the coverage confirmation below can read the new revision.
+        let schedule = takusu_contracts::ScheduleData::new(request.schedule_entries.clone());
+        let mark_ids: Vec<String> = request
+            .schedule_entries
+            .iter()
+            .map(|e| e.task_id.clone())
+            .collect();
+        let horizon_ids = takusu_types::JsonString::new(Vec::<String>::new());
+        sqlx::query(
+            "INSERT INTO schedules (id, created_at, updated_at, schedule, horizon_task_ids) VALUES ('active', ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET schedule=excluded.schedule, horizon_task_ids=excluded.horizon_task_ids, updated_at=excluded.updated_at",
+        )
+        .bind(&now)
+        .bind(&now)
+        .bind(&schedule)
+        .bind(&horizon_ids)
+        .execute(&mut *tx)
+        .await
+        .map_err(map_err)?;
+        for id in &mark_ids {
+            sqlx::query(
+                "UPDATE tasks SET status = 'scheduled', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ? AND status != 'in_progress'",
+            )
+            .bind(id)
+            .execute(&mut *tx)
+            .await
+            .map_err(map_err)?;
+        }
+        sqlx::query("UPDATE schedule_revisions SET revision = revision + 1 WHERE id = 'active'")
+            .execute(&mut *tx)
+            .await
+            .map_err(map_err)?;
+
+        // 3. Build a coverage confirmation for today using the new schedule revision.
+        let tz = parse_timezone(&request.timezone)
+            .map_err(|e| StorageError::Internal(format!("invalid timezone: {e}")))?;
+        let target_start = parse_date_expression("today", &tz, false)
+            .map_err(|e| StorageError::Internal(format!("day start: {e}")))?;
+        let target_end = parse_date_expression("today", &tz, true)
+            .map_err(|e| StorageError::Internal(format!("day end: {e}")))?;
+        let schedule_revision: i64 =
+            sqlx::query_scalar("SELECT revision FROM schedule_revisions WHERE id = 'active'")
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(map_err)?;
+
+        let confirmation_id = uuid::Uuid::now_v7().to_string();
+        sqlx::query(
+            "INSERT INTO coverage_confirmations (id, start_at, end_at, timezone, source, schedule_revision, calendar_health, created_at, settled_at, operation_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(&confirmation_id)
+        .bind(target_start.to_string())
+        .bind(target_end.to_string())
+        .bind(&request.timezone)
+        .bind(&request.source)
+        .bind(schedule_revision)
+        .bind(&request.calendar_health)
+        .bind(&now)
+        .bind(&now)
+        .bind(request.operation_id.as_deref())
+        .execute(&mut *tx)
+        .await
+        .map_err(map_err)?;
+
+        tx.commit().await.map_err(map_err)?;
+
+        let interval: UnsettledIntervalRow = sqlx::query_as::<_, UnsettledIntervalRow>(
+            "SELECT id, start_at, end_at, classification, source, created_at, settled_at, operation_id FROM unsettled_intervals WHERE id = ?",
+        )
+        .bind(&interval_id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(map_err)?;
+
+        let schedule: ScheduleRow =
+            sqlx::query_as::<_, ScheduleRow>("SELECT * FROM schedules WHERE id = 'active'")
+                .fetch_one(&self.pool)
+                .await
+                .map_err(map_err)?;
+
+        let confirmation: CoverageConfirmationRow = sqlx::query_as::<_, CoverageConfirmationRow>(
+            "SELECT id, start_at, end_at, timezone, source, schedule_revision, calendar_health, created_at, settled_at, operation_id FROM coverage_confirmations WHERE id = ?",
+        )
+        .bind(&confirmation_id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(map_err)?;
+
+        Ok(SettleResponse {
+            interval,
+            schedule,
+            confirmation,
+        })
+    }
+
     async fn record_move_idempotency(
         &self,
         operation_id: &str,
@@ -4055,6 +4191,101 @@ mod tests {
             .unwrap();
         let after_settle = storage.get_coverage_evaluation().await.unwrap();
         assert_eq!(after_settle.unsettled_intervals.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn settle_creates_interval_confirmation_and_schedule_revision() {
+        let cfg = LocalConfig {
+            db: "sqlite::memory:".into(),
+            jwt_secret: "test-secret".into(),
+            ..Default::default()
+        };
+        let storage = SqliteStorage::init(&cfg).await.unwrap();
+
+        let settings = UpdateSettings {
+            tz: Some("Asia/Tokyo".into()),
+            sleep_start: Some(takusu_types::TimeOfDay::new(22, 0).unwrap()),
+            sleep_end: Some(takusu_types::TimeOfDay::new(6, 0).unwrap()),
+            comfortable_minutes: None,
+            maximum_minutes: None,
+            solver: Some(takusu_types::Solver::Sa),
+            time_budget_ms: None,
+            seed: None,
+            warm_start: None,
+            plan_length_days: Some(14),
+            device_priority: None,
+        };
+        storage.update_settings(&settings).await.unwrap();
+
+        let now_jiff = takusu_types::now_timestamp().unwrap();
+        let start_at_jiff = now_jiff - jiff::Span::new().hours(3);
+        let end_at_jiff = now_jiff - jiff::Span::new().hours(2);
+        let now = takusu_types::Timestamp::from(now_jiff);
+        let start_at = takusu_types::Timestamp::from(start_at_jiff);
+        let end_at = takusu_types::Timestamp::from(end_at_jiff);
+
+        // Create a dummy task and schedule so the settlement has entries to save.
+        let task = storage
+            .create_task(&CreateTask {
+                title: "test task".into(),
+                description: None,
+                start_at: None,
+                end_at,
+                avg_minutes: 60,
+                sigma_minutes: Some(10),
+                depends: None,
+                parallelizable: None,
+                allows_parallel: None,
+                abandonability: None,
+                ical_uid: None,
+                habit_id: None,
+                fixed: None,
+                habit_step_id: None,
+                quantity_total: None,
+                quantity_done: None,
+                quantity_unit: None,
+                original_quantity_total: None,
+            })
+            .await
+            .unwrap();
+        let entry = ScheduleEntry {
+            task_id: task.id.clone(),
+            start_at: end_at,
+            end_at: now,
+        };
+        let before_revision = storage.get_schedule_revision().await.unwrap();
+        storage
+            .save_schedule(&SaveScheduleRequest {
+                entries: vec![entry.clone()],
+                mark_scheduled_task_ids: vec![task.id.clone()],
+                horizon_task_ids: vec![task.id.clone()],
+            })
+            .await
+            .unwrap();
+
+        let request = SettleRequest {
+            interval_id: None,
+            start_at,
+            end_at,
+            classification: "game".into(),
+            timezone: "Asia/Tokyo".into(),
+            schedule_entries: vec![entry],
+            source: "manual".into(),
+            calendar_health: "ok".into(),
+            operation_id: Some("settle-op".into()),
+        };
+        let response = storage.settle(&request).await.unwrap();
+
+        assert!(response.interval.settled_at.is_some());
+        assert_eq!(response.interval.classification, "game");
+        assert!(response.confirmation.schedule_revision > before_revision);
+        assert_eq!(response.confirmation.timezone, "Asia/Tokyo");
+        assert!(!response.schedule.schedule.0.is_empty());
+
+        // The interval should now appear in coverage evaluation and no longer be unsettled.
+        let evaluation = storage.get_coverage_evaluation().await.unwrap();
+        assert_eq!(evaluation.unsettled_intervals.len(), 0);
+        assert_eq!(evaluation.confirmations.len(), 1);
     }
 
     #[tokio::test]
