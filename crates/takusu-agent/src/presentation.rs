@@ -18,10 +18,12 @@ use std::borrow::Cow;
 use serde::de::Error as _;
 use serde::{Deserialize, Deserializer, Serialize, de::DeserializeOwned};
 use serde_json::Value;
+use std::str::FromStr;
 
 use crate::ApprovalRequest;
 use crate::UserInputAnswer;
-use crate::tool::{ChangeOperation, ToolOutput};
+use crate::approval::DEFAULT_APPROVAL_WHY;
+use crate::tool::{ChangeOperation, TargetKind, ToolOutput};
 
 /// A non-empty wrapper for a group of choices or actions.
 ///
@@ -449,7 +451,7 @@ impl Presentation {
             Presentation::ProgressSummary(p) => p.voice_template(),
             Presentation::ScheduleAlert(a) => a.voice_template(),
             Presentation::CheckIn(c) => c.voice_template(),
-            Presentation::ChangeProposal(r) => format!("変更の承認をお願いします。{}", r.why),
+            Presentation::ChangeProposal(r) => build_change_proposal_readback(r),
             Presentation::Clarification(q) => q.voice_template(),
             Presentation::Text { text } => text.clone(),
         }
@@ -666,6 +668,244 @@ impl<'de> Deserialize<'de> for Presentation {
             _ => Ok(Presentation::Text { text: fallback }),
         }
     }
+}
+
+/// Build a deterministic Japanese readback for a change proposal.
+///
+/// Reads the concrete fields out of each `ProposedChange.after` value so the
+/// user hears what will actually be written: task title, estimate, deadline,
+/// quantity, and any schedule knock-on effects (displaced tasks from a
+/// `_preview` block). The result always ends with the confirmation prompt
+/// expected by the voice confirmation loop.
+fn build_change_proposal_readback(request: &ApprovalRequest) -> String {
+    let mut task_parts = Vec::new();
+    let mut schedule_parts = Vec::new();
+    let mut other_parts = Vec::new();
+
+    for change in &request.changes {
+        match (change.target.kind, change.operation) {
+            (TargetKind::Task, ChangeOperation::Create) => {
+                if let Some(after) = change.after.as_ref().filter(|v| !v.is_null()) {
+                    task_parts.push(describe_task_create(after));
+                } else {
+                    task_parts.push(change.description.clone());
+                }
+            }
+            (TargetKind::Task, ChangeOperation::Update) => {
+                if let Some(after) = change.after.as_ref().filter(|v| !v.is_null()) {
+                    task_parts.push(describe_task_update(after, &change.description));
+                } else {
+                    task_parts.push(change.description.clone());
+                }
+            }
+            (TargetKind::Task, ChangeOperation::Delete) => {
+                task_parts.push(change.description.clone());
+            }
+            (TargetKind::Schedule, ChangeOperation::Generate)
+            | (TargetKind::Schedule, ChangeOperation::Reschedule) => {
+                schedule_parts.push(describe_schedule_impact(
+                    change.after.as_ref(),
+                    change.operation,
+                    &change.description,
+                ));
+            }
+            _ => other_parts.push(change.description.clone()),
+        }
+    }
+
+    let mut body = String::new();
+    if !task_parts.is_empty() {
+        body.push_str(&task_parts.join("。"));
+        body.push('。');
+    }
+    if !schedule_parts.is_empty() {
+        if !body.is_empty() {
+            body.push(' ');
+        }
+        body.push_str(&schedule_parts.join("。"));
+        body.push('。');
+    }
+    if !other_parts.is_empty() {
+        if !body.is_empty() {
+            body.push(' ');
+        }
+        body.push_str(&other_parts.join("。"));
+        body.push('。');
+    }
+
+    if !request.why.is_empty() && request.why != DEFAULT_APPROVAL_WHY {
+        if !body.is_empty() {
+            body.push(' ');
+        }
+        body.push_str(&request.why);
+        if !body.ends_with('。') {
+            body.push('。');
+        }
+    }
+
+    if body.is_empty() {
+        body = request.why.clone();
+    }
+    if body.is_empty() {
+        body = "変更を提案しました".to_string();
+    }
+    if body.ends_with('。') {
+        body.pop();
+    }
+    format!("{}。よろしいですか", body)
+}
+
+/// Format a stored/absolute datetime string for voice readback.
+///
+/// Preserves the original offset when possible and produces a Japanese
+/// phrase such as "2026年8月28日 23時59分". Falls back to the original
+/// string when parsing fails.
+fn format_datetime_for_voice(s: &str) -> String {
+    if s.is_empty() {
+        return s.to_string();
+    }
+    if let Ok(zdt) = jiff::Zoned::from_str(s) {
+        return zdt.strftime("%Y年%m月%d日 %H時%M分").to_string();
+    }
+    if let Ok(ts) = jiff::Timestamp::from_str(s) {
+        return ts
+            .to_zoned(jiff::tz::TimeZone::UTC)
+            .strftime("%Y年%m月%d日 %H時%M分")
+            .to_string();
+    }
+    for fmt in ["%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M"] {
+        if let Ok(dt) = jiff::civil::DateTime::strptime(fmt, s)
+            && let Ok(zdt) = dt.to_zoned(jiff::tz::TimeZone::UTC)
+        {
+            return zdt.strftime("%Y年%m月%d日 %H時%M分").to_string();
+        }
+    }
+    s.to_string()
+}
+
+/// Describe a task-create proposal in spoken Japanese.
+///
+/// Falls back gracefully when the LLM did not fill optional fields.
+fn describe_task_create(after: &Value) -> String {
+    let title = after
+        .get("title")
+        .and_then(Value::as_str)
+        .unwrap_or("タスク");
+
+    let mut parts = vec![format!("「{title}」を作成")];
+
+    if let Some(avg) = after.get("avg_minutes").and_then(Value::as_i64) {
+        parts.push(format!("見積もり{avg}分"));
+    }
+    if let Some(q) = after.get("quantity_total").and_then(Value::as_i64)
+        && q > 0
+    {
+        let unit = after
+            .get("quantity_unit")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        if unit.is_empty() {
+            parts.push(format!("数量{q}"));
+        } else {
+            parts.push(format!("数量{q}{unit}"));
+        }
+    }
+    if let Some(end) = after.get("end_at").and_then(Value::as_str) {
+        parts.push(format!("期限{}まで", format_datetime_for_voice(end)));
+    } else if let Some(end) = after.get("end_at") {
+        // The field may be JSON null; ignore it.
+        let _ = end;
+    }
+    if let Some(start) = after.get("start_at").and_then(Value::as_str)
+        && !start.is_empty()
+    {
+        parts.push(format!("開始{}から", format_datetime_for_voice(start)));
+    }
+
+    parts.join("、")
+}
+
+/// Describe a task-update proposal, including fields that actually changed.
+fn describe_task_update(after: &Value, description: &str) -> String {
+    let title = after.get("title").and_then(Value::as_str).unwrap_or("");
+    if title.is_empty() {
+        return description.to_string();
+    }
+    let mut parts = vec![format!("「{title}」を更新")];
+    if let Some(end) = after.get("end_at").and_then(Value::as_str) {
+        parts.push(format!("期限{}まで", format_datetime_for_voice(end)));
+    }
+    if let Some(start) = after.get("start_at").and_then(Value::as_str)
+        && !start.is_empty()
+    {
+        parts.push(format!("開始{}から", format_datetime_for_voice(start)));
+    }
+    if let Some(avg) = after.get("avg_minutes").and_then(Value::as_i64) {
+        parts.push(format!("見積もり{avg}分"));
+    }
+    if let Some(q) = after.get("quantity_total").and_then(Value::as_i64)
+        && q > 0
+    {
+        let unit = after
+            .get("quantity_unit")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        if unit.is_empty() {
+            parts.push(format!("数量{q}"));
+        } else {
+            parts.push(format!("数量{q}{unit}"));
+        }
+    }
+    parts.join("、")
+}
+
+/// Describe the knock-on schedule impact from a `_preview` block.
+///
+/// Only the displaced tasks are read aloud; unscheduled tasks and full entry
+/// lists would be too long for a voice readback.
+fn describe_schedule_impact(
+    after: Option<&Value>,
+    operation: ChangeOperation,
+    description: &str,
+) -> String {
+    let mut summary = match operation {
+        ChangeOperation::Reschedule => "スケジュールを再調整".to_string(),
+        _ => "スケジュールを生成".to_string(),
+    };
+
+    let Some(after) = after else {
+        return description.to_string();
+    };
+    let preview = after
+        .get("_preview")
+        .or_else(|| after.get("_preview_entries"));
+    if let Some(Value::Array(entries)) = preview.as_ref().and_then(|p| p.get("entries"))
+        && !entries.is_empty()
+    {
+        let first = entries
+            .iter()
+            .next()
+            .and_then(|e| e.get("title").and_then(Value::as_str))
+            .unwrap_or("");
+        if !first.is_empty() {
+            summary = format!("{summary}。直近は{first}から");
+        }
+    }
+
+    if let Some(Value::Array(displaced)) =
+        preview.as_ref().and_then(|p| p.get("displaced_task_ids"))
+    {
+        let titles: Vec<&str> = displaced
+            .iter()
+            .filter_map(|v| v.as_str())
+            .filter(|s| !s.is_empty() && *s != "unknown" && !s.starts_with("unknown "))
+            .collect();
+        if !titles.is_empty() {
+            summary = format!("{summary}。{}がずれます", titles.join("、"));
+        }
+    }
+
+    summary
 }
 
 /// Minimal `{}` placeholder formatter. Only the first placeholder is replaced
@@ -958,7 +1198,7 @@ mod tests {
         let p = Presentation::ChangeProposal(r);
         assert_eq!(
             p.voice_template(),
-            "変更の承認をお願いします。スケジュールを再生成します"
+            "スケジュールを再生成します。よろしいですか"
         );
     }
 
@@ -1069,5 +1309,219 @@ mod tests {
         let v: Presentation =
             serde_json::from_str(r#"{"type":"future_kind","text":"fallback"}"#).unwrap();
         assert!(matches!(v, Presentation::Text { text } if text == "fallback"));
+    }
+
+    // ── one-utterance capture readback (WI-15) ─────────────────────────
+
+    #[test]
+    fn capture_readback_includes_estimate_quantity_deadline() {
+        let request = ApprovalRequest {
+            id: "approval-1".into(),
+            why: "過去の演習実績から推定".into(),
+            changes: vec![ProposedChange {
+                operation: ChangeOperation::Create,
+                target: Target::new(TargetKind::Task, "#next"),
+                description: "「演習30題追加」を作成".into(),
+                after: Some(json!({
+                    "title": "演習30題追加",
+                    "avg_minutes": 45,
+                    "sigma_minutes": 10,
+                    "quantity_total": 30,
+                    "quantity_unit": "題",
+                    "end_at": "2026-08-28T23:59",
+                    "start_at": "2026-08-26T14:00",
+                })),
+                ..Default::default()
+            }],
+            inferred_fields: vec![],
+            warnings: vec![],
+            expires_at: jiff::Timestamp::now(),
+        };
+        let template = Presentation::ChangeProposal(request).voice_template();
+        assert!(template.contains("演習30題追加"));
+        assert!(template.contains("見積もり45分"));
+        assert!(template.contains("数量30題"));
+        assert!(template.contains("期限"));
+        assert!(template.contains("よろしいですか"));
+    }
+
+    #[test]
+    fn capture_readback_includes_knock_on_schedule_impact() {
+        let request = ApprovalRequest {
+            id: "approval-2".into(),
+            why: String::new(),
+            changes: vec![
+                ProposedChange {
+                    operation: ChangeOperation::Create,
+                    target: Target::new(TargetKind::Task, "#next"),
+                    description: "「歯医者」を作成".into(),
+                    after: Some(json!({
+                        "title": "歯医者",
+                        "avg_minutes": 60,
+                        "end_at": "2026-08-26T13:40",
+                    })),
+                    ..Default::default()
+                },
+                ProposedChange {
+                    operation: ChangeOperation::Generate,
+                    target: Target::new(TargetKind::Schedule, ""),
+                    description: "スケジュールを生成".into(),
+                    after: Some(json!({
+                        "_preview": {
+                            "entries": [
+                                {"title": "歯医者", "start_at": "12:40", "end_at": "13:40"},
+                            ],
+                            "displaced_task_ids": ["#3 昼食"],
+                        },
+                    })),
+                    ..Default::default()
+                },
+            ],
+            inferred_fields: vec![],
+            warnings: vec![],
+            expires_at: jiff::Timestamp::now(),
+        };
+        let template = Presentation::ChangeProposal(request).voice_template();
+        assert!(template.contains("歯医者"));
+        assert!(template.contains("スケジュールを生成"));
+        assert!(template.contains("昼食"));
+        assert!(template.contains("ずれます"));
+        assert!(template.contains("よろしいですか"));
+    }
+
+    #[test]
+    fn capture_readback_formats_deadline_for_voice() {
+        let request = ApprovalRequest {
+            id: "approval-3".into(),
+            why: String::new(),
+            changes: vec![ProposedChange {
+                operation: ChangeOperation::Create,
+                target: Target::new(TargetKind::Task, "#next"),
+                description: "「演習」を作成".into(),
+                after: Some(json!({
+                    "title": "演習",
+                    "avg_minutes": 30,
+                    "end_at": "2026-08-28T23:59",
+                })),
+                ..Default::default()
+            }],
+            inferred_fields: vec![],
+            warnings: vec![],
+            expires_at: jiff::Timestamp::now(),
+        };
+        let template = Presentation::ChangeProposal(request).voice_template();
+        assert!(template.contains("2026年08月28日 23時59分"), "deadline should be voice-formatted: {template}");
+        assert!(!template.contains("T23:59"), "raw ISO string should not appear: {template}");
+    }
+
+    #[test]
+    fn capture_readback_omits_zero_quantity() {
+        let request = ApprovalRequest {
+            id: "approval-4".into(),
+            why: String::new(),
+            changes: vec![ProposedChange {
+                operation: ChangeOperation::Create,
+                target: Target::new(TargetKind::Task, "#next"),
+                description: "「雑務」を作成".into(),
+                after: Some(json!({
+                    "title": "雑務",
+                    "avg_minutes": 15,
+                    "quantity_total": 0,
+                    "quantity_unit": "題",
+                })),
+                ..Default::default()
+            }],
+            inferred_fields: vec![],
+            warnings: vec![],
+            expires_at: jiff::Timestamp::now(),
+        };
+        let template = Presentation::ChangeProposal(request).voice_template();
+        assert!(!template.contains("数量"), "zero quantity should be omitted: {template}");
+    }
+
+    #[test]
+    fn capture_readback_falls_back_to_description_when_after_is_null() {
+        let request = ApprovalRequest {
+            id: "approval-5".into(),
+            why: String::new(),
+            changes: vec![ProposedChange {
+                operation: ChangeOperation::Create,
+                target: Target::new(TargetKind::Task, "#next"),
+                description: "「メール確認」を作成".into(),
+                after: Some(Value::Null),
+                ..Default::default()
+            }],
+            inferred_fields: vec![],
+            warnings: vec![],
+            expires_at: jiff::Timestamp::now(),
+        };
+        let template = Presentation::ChangeProposal(request).voice_template();
+        assert!(template.contains("メール確認"), "description should be read when after is null: {template}");
+        assert!(template.contains("よろしいですか"));
+    }
+
+    #[test]
+    fn reschedule_readback_says_reschedule_not_generate() {
+        let request = ApprovalRequest {
+            id: "approval-6".into(),
+            why: String::new(),
+            changes: vec![ProposedChange {
+                operation: ChangeOperation::Reschedule,
+                target: Target::new(TargetKind::Schedule, ""),
+                description: "スケジュールを再調整".into(),
+                after: Some(json!({
+                    "_preview": {
+                        "entries": [{"title": "会議", "start_at": "14:00", "end_at": "15:00"}],
+                        "displaced_task_ids": [],
+                    },
+                })),
+                ..Default::default()
+            }],
+            inferred_fields: vec![],
+            warnings: vec![],
+            expires_at: jiff::Timestamp::now(),
+        };
+        let template = Presentation::ChangeProposal(request).voice_template();
+        assert!(template.contains("スケジュールを再調整"), "reschedule should say 再調整: {template}");
+        assert!(!template.contains("スケジュールを生成"), "reschedule should not say 生成: {template}");
+    }
+
+    #[test]
+    fn capture_readback_ignores_unknown_displaced_tasks() {
+        let request = ApprovalRequest {
+            id: "approval-7".into(),
+            why: String::new(),
+            changes: vec![
+                ProposedChange {
+                    operation: ChangeOperation::Create,
+                    target: Target::new(TargetKind::Task, "#next"),
+                    description: "「歯医者」を作成".into(),
+                    after: Some(json!({
+                        "title": "歯医者",
+                        "avg_minutes": 60,
+                        "end_at": "2026-08-26T13:40",
+                    })),
+                    ..Default::default()
+                },
+                ProposedChange {
+                    operation: ChangeOperation::Generate,
+                    target: Target::new(TargetKind::Schedule, ""),
+                    description: "スケジュールを生成".into(),
+                    after: Some(json!({
+                        "_preview": {
+                            "entries": [{"title": "歯医者"}],
+                            "displaced_task_ids": ["unknown", "#3 昼食", "unknown task"],
+                        },
+                    })),
+                    ..Default::default()
+                },
+            ],
+            inferred_fields: vec![],
+            warnings: vec![],
+            expires_at: jiff::Timestamp::now(),
+        };
+        let template = Presentation::ChangeProposal(request).voice_template();
+        assert!(template.contains("昼食"), "known displaced task should be read: {template}");
+        assert!(!template.contains("unknown"), "unknown displaced task should be omitted: {template}");
     }
 }

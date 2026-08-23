@@ -556,6 +556,29 @@ fn update_task_status_schema_has_enum() {
 }
 
 #[test]
+fn create_task_description_mentions_one_utterance_capture() {
+    let client = Client::new("http://localhost", "");
+    let tool = MutationTool::<CreateTask>::new(client.clone(), TimeZoneCache::new(client));
+    let desc = tool.description();
+    assert!(
+        desc.contains("quantity"),
+        "description should mention quantity: {desc}"
+    );
+    assert!(
+        desc.contains("avg_minutes"),
+        "description should mention estimate: {desc}"
+    );
+    assert!(
+        desc.contains("inferred_fields"),
+        "description should mention inferred_fields: {desc}"
+    );
+    assert!(
+        desc.contains("演習30題追加。金曜まで"),
+        "description should include capture example: {desc}"
+    );
+}
+
+#[test]
 fn change_summary_covers_all_kinds() {
     let create_task: CreateTaskArgs = serde_json::from_value(json!({
         "title": "演習30題追加", "end_at": "2026-07-30", "avg_minutes": 30,
