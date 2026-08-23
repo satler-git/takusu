@@ -58,7 +58,7 @@ class SpeakerOptions : Record {
 private const val TAG = "TakusuAudioModule"
 
 /** Convert 16-bit PCM samples to 32-bit float [-1.0, 1.0]. */
-private fun List<Short>.toFloatArray(): FloatArray = FloatArray(size) { index -> this[index].toFloat() / 32768.0f }
+private fun List<Short>.toFloatList(): List<Float> = map { it.toFloat() / 32768.0f }
 
 class TakusuAudioModule : Module() {
     private var audio: MobileAudio? = null
@@ -230,7 +230,7 @@ class TakusuAudioModule : Module() {
 
             // VAD endpointing: downloads the Silero model (first run) and stops
             // recording ~0.5 s after speech ends instead of requiring a tap.
-            AsyncFunction("startRecordingWithEndpointing") Coroutine {
+            AsyncFunction("startRecordingWithEndpointing").Coroutine<Unit> {
                 val dir =
                     cacheDir
                         ?: throw CodedException(
@@ -536,7 +536,7 @@ class TakusuAudioModule : Module() {
                         ?: throw CodedException("ERR_SPEAKER_CONFIG", "Speaker verifier is not configured", null)
                 withIoContext {
                     try {
-                        verifier.enroll(name, samples.toFloatArray())
+                        verifier.enroll(name, samples.toFloatList())
                     } catch (error: Throwable) {
                         throw CodedException(
                             "ERR_SPEAKER_ENROLL",
@@ -559,7 +559,7 @@ class TakusuAudioModule : Module() {
                         ?: throw CodedException("ERR_SPEAKER_CONFIG", "Speaker verifier is not configured", null)
                 withIoContext {
                     try {
-                        val result = verifier.verify(name, samples.toFloatArray())
+                        val result = verifier.verify(name, samples.toFloatList())
                         mapOf(
                             "score" to result.score.toDouble(),
                             "accepted" to result.accepted,
@@ -593,7 +593,7 @@ class TakusuAudioModule : Module() {
                 true
             }
 
-            AsyncFunction("listSpeakers") Coroutine {
+            AsyncFunction("listSpeakers").Coroutine<Unit> {
                 val verifier =
                     speaker
                         ?: throw CodedException("ERR_SPEAKER_CONFIG", "Speaker verifier is not configured", null)
