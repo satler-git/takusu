@@ -13,7 +13,7 @@ path = "src/main.rs"
 # Pull in the shared agent audio runtime (VAD endpointing, voice session) for
 # the daemon's local microphone capture (WI-12). Off by default so the tray-only
 # daemon does not require cpal/sherpa.
-audio-device = ["takusu-agent/audio-device", "dep:takusu-client"]
+audio-device = ["takusu-agent/audio-device", "dep:takusu-client", "dep:takusu-audio"]
 
 [dependencies]
 serde = { workspace = true }
@@ -28,6 +28,7 @@ eventsource-stream = "0.2"
 tracing = { workspace = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 takusu-agent = { workspace = true, default-features = false }
+takusu-audio = { workspace = true, optional = true }
 takusu-contracts = { workspace = true }
 takusu-types = { workspace = true }
 takusu-client = { workspace = true, optional = true }

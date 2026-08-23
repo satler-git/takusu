@@ -5,6 +5,7 @@ pub mod bundled_skills;
 pub mod capability;
 pub(crate) mod change_executor;
 pub(crate) mod compact;
+pub mod contact_policy;
 pub mod coverage;
 pub mod events;
 pub mod llm;
@@ -50,6 +51,12 @@ pub use voice_session::{
 
 pub use crate::llm::CompactionSettings;
 pub use capability::InputPath;
+pub use contact_policy::{
+    CommittedContactSummary, ContactFilterResult, ContactPolicyState, DAILY_CHECK_IN_CAP,
+    DeliveryMode, IGNORED_DECAY_THRESHOLD, SUPPRESSION_MINUTES, SpeechPolicy, SuppressionReason,
+    delivery_mode_for, filter_events, is_proactive_check_in, is_scheduled_notification,
+    postpone_reason_check_in, should_ask_postpone_reason,
+};
 pub use intake::{IntakeStage, IntakeState};
 pub use tool::{
     ChangeOperation, ChangeReceipt, InferredField, InvalidArgsError, OpenAITool,
@@ -280,6 +287,9 @@ pub struct AgentSession {
     /// question on a later turn (WI-3). Cleared once the answer is recorded as
     /// a comment.
     pending_check_ins: Mutex<Vec<crate::tools::comments::PendingCheckIn>>,
+    /// Delay actions that exceeded the short-snooze threshold, awaiting a one-time
+    /// "why did you postpone this task?" question on a later turn (WI-17).
+    pending_postpone_reasons: Mutex<Vec<crate::tools::comments::PendingPostponeReason>>,
     /// Memory ids already injected into the system context this session, so a
     /// memory is surfaced at most once (WI-4 / #1003).
     injected_memory_ids: Mutex<std::collections::HashSet<String>>,
@@ -332,6 +342,7 @@ impl AgentSession {
             discovered_tools: Mutex::new(HashSet::new()),
             tool_stats: ToolStats::shared(),
             pending_check_ins: Mutex::new(Vec::new()),
+            pending_postpone_reasons: Mutex::new(Vec::new()),
             injected_memory_ids: Mutex::new(std::collections::HashSet::new()),
             intake_state: Mutex::new(IntakeState::default()),
         };
@@ -366,6 +377,7 @@ impl AgentSession {
         // History reset (`/new`, `/clear`) starts a fresh conversation, so
         // any not-yet-asked overrun check-ins no longer make sense.
         *self.pending_check_ins.lock()? = Vec::new();
+        *self.pending_postpone_reasons.lock()? = Vec::new();
         // A new logical session should be able to re-surface memories that were
         // already injected in the previous conversation (WI-4 / #1003).
         *self.injected_memory_ids.lock()? = std::collections::HashSet::new();
@@ -417,6 +429,25 @@ impl AgentSession {
         Ok(())
     }
 
+    /// Restore pending postpone reasons from a resumed snapshot.
+    pub fn set_pending_postpone_reasons(
+        &self,
+        reasons: Vec<crate::tools::comments::PendingPostponeReason>,
+    ) -> Result<(), AgentError> {
+        *self.pending_postpone_reasons.lock()? = reasons;
+        Ok(())
+    }
+
+    /// Enqueue a pending postpone reason from an authorized delay action.
+    pub fn enqueue_pending_postpone_reason(
+        &self,
+        reason: crate::tools::comments::PendingPostponeReason,
+    ) -> Result<(), AgentError> {
+        let mut queue = self.pending_postpone_reasons.lock()?;
+        crate::tools::comments::enqueue_postpone_reason(&mut queue, reason);
+        Ok(())
+    }
+
     /// Return the current resumable intake interview state.
     pub fn get_intake_state(&self) -> Result<IntakeState, AgentError> {
         Ok(self.intake_state.lock()?.clone())
@@ -464,6 +495,7 @@ impl AgentSession {
             schedule_dirty: Some(*self.schedule_dirty.lock()?),
             compaction_summary: self.compaction_summary.lock()?.clone(),
             pending_check_ins: self.pending_check_ins.lock()?.clone(),
+            pending_postpone_reasons: self.pending_postpone_reasons.lock()?.clone(),
             injected_memory_ids: self.injected_memory_ids.lock()?.iter().cloned().collect(),
             intake_state: Some(self.intake_state.lock()?.clone()),
         })
@@ -495,6 +527,7 @@ impl AgentSession {
             self.set_pending_approval(approval.clone())?;
         }
         *self.pending_check_ins.lock()? = snapshot.pending_check_ins.clone();
+        *self.pending_postpone_reasons.lock()? = snapshot.pending_postpone_reasons.clone();
         *self.injected_memory_ids.lock()? = snapshot.injected_memory_ids.iter().cloned().collect();
         *self.intake_state.lock()? = snapshot.intake_state.clone().unwrap_or_default();
         Ok(())
@@ -1059,6 +1092,7 @@ impl AgentSession {
                             self.set_intake_state(state)?;
                         }
                         self.clear_check_ins_from_receipts(&output.changes)?;
+                        self.clear_postpone_reasons_from_receipts(&output.changes)?;
                         changes.extend(output.changes);
                         *schedule_dirty |= output.schedule_dirty;
                         self.discovered_tools
@@ -1152,6 +1186,25 @@ impl AgentSession {
         Ok(())
     }
 
+    /// Clear pending postpone reasons whose answer was just recorded as a
+    /// comment. Any comment on the task is treated as the reason.
+    pub(crate) fn clear_postpone_reasons_from_receipts(
+        &self,
+        receipts: &[ChangeReceipt],
+    ) -> Result<(), AgentError> {
+        let task_ids: Vec<String> = receipts
+            .iter()
+            .filter(|r| r.target.target_type == TargetKind::Comment)
+            .map(|r| r.target.target_id.clone())
+            .collect();
+        if task_ids.is_empty() {
+            return Ok(());
+        }
+        let mut queue = self.pending_postpone_reasons.lock()?;
+        crate::tools::comments::clear_postpone_reasons_for_task_ids(&mut queue, &task_ids);
+        Ok(())
+    }
+
     /// Drop pending check-ins for tasks that were just deleted, so prompt
     /// notes never reference a task that no longer exists.
     pub(crate) fn clear_check_ins_for_deleted_tasks(
@@ -1179,6 +1232,14 @@ impl AgentSession {
         Ok(crate::tools::comments::check_in_prompt_section(&mut queue))
     }
 
+    /// Build the system-prompt section for pending postpone reasons.
+    fn postpone_reason_prompt_section(&self) -> Result<String, AgentError> {
+        let mut queue = self.pending_postpone_reasons.lock()?;
+        Ok(crate::tools::comments::postpone_reason_prompt_section(
+            &mut queue,
+        ))
+    }
+
     async fn build_system_prompt(&self) -> Result<String, AgentError> {
         let tz = self.load_server_timezone().await;
         let now = jiff::Timestamp::now()
@@ -1194,6 +1255,7 @@ impl AgentSession {
             .map(|s| format!("## これまでの要約\n{s}\n"))
             .unwrap_or_default();
         let check_in_section = self.check_in_prompt_section()?;
+        let postpone_reason_section = self.postpone_reason_prompt_section()?;
 
         let prompt = format!(
             r####"## 役割
@@ -1210,6 +1272,7 @@ impl AgentSession {
 
             {summary_section}
             {check_in_section}
+            {postpone_reason_section}
             ## 使用可能なスキル
             {skills}
 

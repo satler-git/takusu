@@ -4,6 +4,7 @@ use takusu_contracts::{
     CreateDevice, DeviceRow, RefreshEvaluatorHeartbeat, RefreshEvaluatorLease, ResidentAuthority,
     SpeechCapability, UpdateDevice,
 };
+use takusu_types::Timestamp;
 
 use super::TakusuApp;
 use crate::error::{AppError, storage_to_app};
@@ -40,6 +41,20 @@ impl TakusuApp {
 
     pub async fn delete_device(&self, id: &str) -> Result<(), AppError> {
         self.storage.delete_device(id).await.map_err(storage_to_app)
+    }
+
+    /// Extend the device's contact suppression window by `minutes` from now.
+    pub async fn suppress_device(&self, id: &str, minutes: i64) -> Result<DeviceRow, AppError> {
+        let now = Timestamp::from(jiff::Timestamp::now());
+        let until = Timestamp::from_second(
+            now.as_second().saturating_add(minutes.saturating_mul(60)),
+        )
+        .unwrap_or(now);
+        let body = UpdateDevice {
+            contact_suppress_until: Some(until),
+            ..Default::default()
+        };
+        self.update_device(id, &body).await
     }
 
     pub async fn refresh_evaluator_heartbeat(

@@ -230,11 +230,11 @@ impl AgentSession {
         let mut receipts = Vec::new();
         let mut schedule_dirty = *self.schedule_dirty.lock()?;
         let mut execution_error = None;
-        for (idx, change) in request.changes.into_iter().enumerate() {
+        for (idx, change) in request.changes.iter().enumerate() {
             let args = change.arguments.clone().unwrap_or_default();
             let operation_id = format!("{}:{idx}", request.id);
             match self
-                .execute_proposed_change(&change, args, Some(&operation_id))
+                .execute_proposed_change(change, args, Some(&operation_id))
                 .await
             {
                 Ok(receipt) => {
@@ -243,7 +243,7 @@ impl AgentSession {
                     receipts.push(receipt);
                 }
                 Err(e) => {
-                    execution_error = Some((change, e));
+                    execution_error = Some((change.clone(), e));
                     break;
                 }
             }
@@ -256,6 +256,11 @@ impl AgentSession {
         // Drop check-ins for tasks deleted in this approval so prompt notes
         // never reference a now-nonexistent task.
         self.clear_check_ins_for_deleted_tasks(&receipts)?;
+        // WI-17: one-time postpone reason hook for approved long snoozes/moves.
+        let executed = &request.changes[..receipts.len()];
+        if let Err(error) = self.record_postpone_reasons_from_changes(executed).await {
+            tracing::warn!(session_id = %self.session_id, %error, "failed to record postpone reasons from approved changes");
+        }
         if schedule_commit && execution_error.is_none() {
             schedule_dirty = false;
         }
@@ -356,5 +361,60 @@ impl AgentSession {
             target_revision,
             ..Default::default()
         })
+    }
+
+    /// Queue one-time postpone-reason check-ins for approved snoozes/moves that
+    /// exceed the short-snooze threshold.
+    pub(crate) async fn record_postpone_reasons_from_changes(
+        &self,
+        changes: &[ProposedChange],
+    ) -> Result<(), AgentError> {
+        for change in changes {
+            if change.target.kind != TargetKind::Task {
+                continue;
+            }
+            if !matches!(change.operation, ChangeOperation::Move | ChangeOperation::Snooze) {
+                continue;
+            }
+            let Some(args) = &change.arguments else {
+                continue;
+            };
+
+            let minutes = if let Some(minutes) = args.get("snooze_minutes").and_then(|v| v.as_i64())
+            {
+                minutes
+            } else if let Some(target) = args
+                .get("snooze_target")
+                .and_then(|v| v.as_str())
+                .and_then(|s| s.parse::<takusu_types::Timestamp>().ok())
+            {
+                let now = takusu_types::Timestamp::from(jiff::Timestamp::now());
+                ((target.as_second() - now.as_second()) / 60).max(0)
+            } else if let Some(start_at) = args
+                .get("start_at")
+                .and_then(|v| v.as_str())
+                .and_then(|s| s.parse::<takusu_types::Timestamp>().ok())
+            {
+                let now = takusu_types::Timestamp::from(jiff::Timestamp::now());
+                ((start_at.as_second() - now.as_second()) / 60).max(0)
+            } else {
+                continue;
+            };
+
+            if !crate::contact_policy::should_ask_postpone_reason(minutes) {
+                continue;
+            }
+
+            let task = self.client().get_task(&change.target.display_id).await?;
+            let pending = crate::tools::comments::PendingPostponeReason {
+                task_id: task.id,
+                display_id: task.display_id,
+                title: task.title,
+                snooze_minutes: minutes,
+                delivered: false,
+            };
+            self.enqueue_pending_postpone_reason(pending)?;
+        }
+        Ok(())
     }
 }

@@ -13,13 +13,15 @@ use std::time::Duration;
 use eventsource_stream::{Event as SseEvent, Eventsource};
 use futures_util::{StreamExt, TryStreamExt};
 use reqwest::header::{self, HeaderValue};
+use serde::Deserialize;
 use takusu_agent::capability::{ActionCapability, CapabilityRequest};
 use takusu_agent::events::EvaluationResult;
 use takusu_agent::transport::{API_VERSION, SurfaceCommandRequest, Versioned};
 use takusu_agent::{
-    Presentation, SurfaceCommand, SurfaceCommandResponse, SurfaceEvent, SurfaceSnapshot,
+    DeliveryMode, Presentation, SurfaceCommand, SurfaceCommandResponse, SurfaceEvent,
+    SurfaceSnapshot,
 };
-use takusu_contracts::{EventDeliveryState, EventLedgerRow};
+use takusu_contracts::{DeviceRow, EventDeliveryState, EventLedgerRow};
 
 use crate::state::DesktopError;
 use crate::transport::{BoxStream, DesktopTransport};
@@ -31,6 +33,11 @@ pub struct HttpTransport {
     sse_client: reqwest::Client,
     base_url: String,
     token: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct DeliveryModeResponse {
+    mode: DeliveryMode,
 }
 
 impl HttpTransport {
@@ -361,6 +368,37 @@ impl DesktopTransport for HttpTransport {
         })
     }
 
+    fn event_delivery_mode(
+        &self,
+        event_id: &str,
+        device_id: &str,
+    ) -> Pin<Box<dyn Future<Output = Result<DeliveryMode, DesktopError>> + Send + '_>> {
+        let this = self.clone();
+        let path = format!(
+            "{}/api/events/{}/delivery",
+            this.base_url,
+            takusu_types::url_encode(event_id)
+        );
+        let device_id = device_id.to_string();
+        Box::pin(async move {
+            let response = this
+                .client
+                .get(path)
+                .query(&[("device_id", device_id)])
+                .header(header::AUTHORIZATION, this.bearer()?)
+                .send()
+                .await
+                .map_err(|e| DesktopError::Transport(e.to_string()))?;
+            response
+                .error_for_status()
+                .map_err(|e| DesktopError::Transport(e.to_string()))?
+                .json::<DeliveryModeResponse>()
+                .await
+                .map(|value| value.mode)
+                .map_err(|e| DesktopError::Transport(e.to_string()))
+        })
+    }
+
     fn update_planner_event_state(
         &self,
         event_id: &str,
@@ -385,6 +423,35 @@ impl DesktopTransport for HttpTransport {
                 .error_for_status()
                 .map_err(|e| DesktopError::Transport(e.to_string()))?
                 .json::<EventLedgerRow>()
+                .await
+                .map_err(|e| DesktopError::Transport(e.to_string()))
+        })
+    }
+
+    fn suppress_device(
+        &self,
+        device_id: &str,
+        minutes: i64,
+    ) -> Pin<Box<dyn Future<Output = Result<DeviceRow, DesktopError>> + Send + '_>> {
+        let this = self.clone();
+        let path = format!(
+            "{}/api/devices/{}/suppress",
+            this.base_url,
+            takusu_types::url_encode(device_id)
+        );
+        Box::pin(async move {
+            let response = this
+                .client
+                .post(path)
+                .header(header::AUTHORIZATION, this.bearer()?)
+                .json(&takusu_contracts::SuppressDevice { minutes })
+                .send()
+                .await
+                .map_err(|e| DesktopError::Transport(e.to_string()))?;
+            response
+                .error_for_status()
+                .map_err(|e| DesktopError::Transport(e.to_string()))?
+                .json::<DeviceRow>()
                 .await
                 .map_err(|e| DesktopError::Transport(e.to_string()))
         })
