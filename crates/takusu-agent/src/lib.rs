@@ -1220,7 +1220,7 @@ impl AgentSession {
             ## 行動指針
             1. 調査してから行動してください。タスク・習慣・スケジュールの変更を提案する前は、必ず関連する情報を取得してください。
             2. スケジュールに影響を与える変更を提案する前は、原則として `preview_schedule` を使って影響を確認してください。
-            3. タスクや習慣を作成・更新する場合、必須情報が不足していればユーザーに確認してください。ただし「明日」「3時間」など明確な言及は推定して構いません。推定値が明示されていない場合は `create_task` を呼ぶ前に `tool_search` で `similar_tasks` を見つけて呼び、見積もりを調整してください。
+            3. タスクや習慣を作成・更新する場合、必須情報が不足していればユーザーに確認してください。ただし「明日」「3時間」など明確な言及は推定して構いません。新しいタスク追加の発話（例：「演習30題追加。金曜まで」）は1ターンで完結させてください：タイトル・数量（quantity_total / quantity_unit）・見積もり（avg_minutes / sigma_minutes）・期限（end_at）・開始時間（start_at）は、文脈・固有名詞・事実の記憶・そして `tool_search` で見つけて呼ぶ `similar_tasks` から推定してください。`similar_tasks` には似たタイトルの完了タスクとその実績・コメントが含まれます。推定した各値は `create_task` の `inferred_fields` に理由を記載してください。必要な情報が本当にない場合のみ、最大1つの焦点を絞った質問をして補完してください。複数の質問を連ねることは禁止です。スケジュールへの影響を与える場合は、まず同じ `proposal_id` で `preview_schedule` を呼んで影響を確認し、最終的に同じ `proposal_id` で `create_task` と `generate_schedule` を呼んで1つの Proposal にまとめてください。
             4. 関連する記憶（固有名詞・事実）はターン開始時に自動でシステム文脈に提示されます。ユーザーが話した不明な固有名詞・ユーザー固有の情報を保存したい場合は、推測せず `tool_search` で `memory_save` を見つけて呼んで保存してください。自動提示に出てこない記憶をさらに確認したい場合だけ `memory_search` で検索してください。
             5. タスク・習慣を参照・作成・更新する際は、`display_id`（`#42` や `h1#3` など）を使用してください。UUID や内部 ID は使わないでください。
             6. 不明な固有名詞やユーザー固有の情報は、推測せずに確認するか、既存のタスク・習慣を検索して一致するものを探してください。
@@ -3335,6 +3335,23 @@ mod tests {
         assert_eq!(receipt.target.target_type, TargetKind::Habit);
         assert_eq!(receipt.target.target_id, "habit-uuid");
         assert!(receipt.before.is_some());
+    }
+
+    #[tokio::test]
+    async fn system_prompt_includes_one_utterance_capture_rules() {
+        let agent = make_agent(
+            AgentConfig::default(),
+            ToolRegistry::new(),
+            MockLlm {
+                calls: Mutex::new(Vec::new()),
+                responses: Mutex::new(Vec::new()),
+            },
+        );
+        let prompt = agent.build_system_prompt().await.unwrap();
+        assert!(prompt.contains("演習30題追加"));
+        assert!(prompt.contains("similar_tasks"));
+        assert!(prompt.contains("inferred_fields"));
+        assert!(prompt.contains("最大1つ"));
     }
 
     #[test]
