@@ -271,6 +271,14 @@ fn build_api_router(open_api: &mut OpenApi) -> Router<AppState> {
             "/devices/{id}/speech",
             api::get(handlers::device::get_speech_capability),
         )
+        .api_route(
+            "/coverage/confirmations",
+            api::post(handlers::coverage::create_coverage_confirmation),
+        )
+        .api_route(
+            "/coverage/unsettled-intervals",
+            api::post(handlers::coverage::create_unsettled_interval),
+        )
         // Serve the generated OpenAPI document. This route is not documented
         // in the spec itself (it uses `route`, not `api_route`).
         .route("/openapi.json", get(serve_openapi))

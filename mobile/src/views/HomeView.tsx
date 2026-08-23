@@ -2502,10 +2502,10 @@ export function HomeView() {
               <Text
                 style={{ fontSize: 16, color: colors.black, fontWeight: '600' }}
               >
-                今日の予定を確認しましょう
+                初回セットアップ
               </Text>
               <Text style={{ fontSize: 13, color: colors.textOnCardSecondary }}>
-                タスクを追加すると、エージェントが作業を整理します
+                エージェントに予定を話すと、スケジュールを整理します
               </Text>
               <PressableScale
                 style={{
@@ -2515,7 +2515,9 @@ export function HomeView() {
                   borderRadius: 8,
                   alignSelf: 'flex-start',
                 }}
-                onPress={() => router.push('/task/add')}
+                onPress={() =>
+                  router.push('/agent?initialMessage=予定を聞いて')
+                }
               >
                 <Text
                   style={{
@@ -2524,7 +2526,7 @@ export function HomeView() {
                     fontWeight: '600',
                   }}
                 >
-                  タスクを追加
+                  予定を話す
                 </Text>
               </PressableScale>
             </View>

@@ -567,6 +567,70 @@ impl Validate for crate::UpdateDevice {
     }
 }
 
+impl Validate for crate::CreateCoverageConfirmation {
+    fn validate(&self) -> Result<(), StorageError> {
+        if self.start_at > self.end_at {
+            return Err(StorageError::BadRequest(
+                "coverage start_at must not be after end_at".into(),
+            ));
+        }
+        if self.timezone.is_empty() || self.timezone.len() > 64 {
+            return Err(StorageError::BadRequest(
+                "timezone must be 1..64 characters".into(),
+            ));
+        }
+        if parse_timezone(&self.timezone).is_err() {
+            return Err(StorageError::BadRequest(
+                "timezone is not a valid IANA or offset timezone".into(),
+            ));
+        }
+        if self.source.is_empty() || self.source.len() > 64 {
+            return Err(StorageError::BadRequest(
+                "source must be 1..64 characters".into(),
+            ));
+        }
+        const VALID_SOURCES: &[&str] = &["intake_complete", "target_period", "system"];
+        if !VALID_SOURCES.contains(&self.source.as_str()) {
+            return Err(StorageError::BadRequest(
+                "source must be one of intake_complete, target_period, system".into(),
+            ));
+        }
+        const VALID_HEALTH: &[&str] = &["ok", "stale", "error"];
+        if self.calendar_health.is_empty() || self.calendar_health.len() > 64 {
+            return Err(StorageError::BadRequest(
+                "calendar_health must be 1..64 characters".into(),
+            ));
+        }
+        if !VALID_HEALTH.contains(&self.calendar_health.as_str()) {
+            return Err(StorageError::BadRequest(
+                "calendar_health must be one of ok, stale, error".into(),
+            ));
+        }
+        Ok(())
+    }
+}
+
+impl Validate for crate::CreateUnsettledInterval {
+    fn validate(&self) -> Result<(), StorageError> {
+        if self.start_at > self.end_at {
+            return Err(StorageError::BadRequest(
+                "unsettled interval start_at must not be after end_at".into(),
+            ));
+        }
+        if self.classification.is_empty() || self.classification.len() > 64 {
+            return Err(StorageError::BadRequest(
+                "classification must be 1..64 characters".into(),
+            ));
+        }
+        if self.source.is_empty() || self.source.len() > 64 {
+            return Err(StorageError::BadRequest(
+                "source must be 1..64 characters".into(),
+            ));
+        }
+        Ok(())
+    }
+}
+
 // ── tests ─────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -789,5 +853,86 @@ mod tests {
     fn detect_cycle_self_loop() {
         let adj = vec![vec![0]];
         assert!(detect_cycle(&adj).is_err());
+    }
+
+    // ── CreateCoverageConfirmation / CreateUnsettledInterval ────────────
+
+    fn default_coverage() -> crate::CreateCoverageConfirmation {
+        crate::CreateCoverageConfirmation {
+            start_at: "2026-01-01T00:00:00Z".parse().unwrap(),
+            end_at: "2026-01-01T01:00:00Z".parse().unwrap(),
+            timezone: "Asia/Tokyo".into(),
+            source: "intake_complete".into(),
+            schedule_revision: 1,
+            calendar_health: "ok".into(),
+            operation_id: None,
+        }
+    }
+
+    #[test]
+    fn create_coverage_confirmation_validates_interval() {
+        let mut c = default_coverage();
+        c.end_at = "2025-12-31T23:00:00Z".parse().unwrap();
+        assert!(c.validate().is_err());
+        c.end_at = "2026-01-01T01:00:00Z".parse().unwrap();
+        assert!(c.validate().is_ok());
+    }
+
+    #[test]
+    fn create_coverage_confirmation_rejects_invalid_timezone() {
+        let mut c = default_coverage();
+        c.timezone = "".into();
+        assert!(c.validate().is_err());
+        c.timezone = "not_a_timezone".into();
+        assert!(c.validate().is_err());
+    }
+
+    #[test]
+    fn create_coverage_confirmation_rejects_invalid_source_and_health() {
+        let mut c = default_coverage();
+        c.source = "".into();
+        assert!(c.validate().is_err());
+        c.source = "intake".into();
+        assert!(c.validate().is_err());
+        c.source = "intake_complete".into();
+        c.calendar_health = "".into();
+        assert!(c.validate().is_err());
+        c.calendar_health = "broken".into();
+        assert!(c.validate().is_err());
+        c.calendar_health = "stale".into();
+        assert!(c.validate().is_ok());
+    }
+
+    fn default_unsettled() -> crate::CreateUnsettledInterval {
+        crate::CreateUnsettledInterval {
+            start_at: "2026-01-01T00:00:00Z".parse().unwrap(),
+            end_at: "2026-01-01T01:00:00Z".parse().unwrap(),
+            classification: "unclassified".into(),
+            source: "capture".into(),
+            operation_id: None,
+        }
+    }
+
+    #[test]
+    fn create_unsettled_interval_validates_interval() {
+        let mut u = default_unsettled();
+        u.end_at = "2025-12-31T23:00:00Z".parse().unwrap();
+        assert!(u.validate().is_err());
+        u.end_at = "2026-01-01T01:00:00Z".parse().unwrap();
+        assert!(u.validate().is_ok());
+    }
+
+    #[test]
+    fn create_unsettled_interval_rejects_empty_classification_or_source() {
+        let mut u = default_unsettled();
+        u.classification = "".into();
+        assert!(u.validate().is_err());
+        u.classification = "a".repeat(65);
+        assert!(u.validate().is_err());
+        u.classification = "unclassified".into();
+        u.source = "".into();
+        assert!(u.validate().is_err());
+        u.source = "capture".into();
+        assert!(u.validate().is_ok());
     }
 }

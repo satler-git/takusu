@@ -95,6 +95,7 @@ fn make_proposal(
         discovered_tools: Vec::new(),
         schedule_dirty: false,
         is_error: false,
+        intake_state: None,
     }
 }
 

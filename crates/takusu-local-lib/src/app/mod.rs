@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
 use takusu_contracts::{
-    CommentRow, CreateComment, CreateMemory, CreateSkill, MemoryInjectionQuery,
-    MemoryInjectionResult, MemoryQuery, MemoryRow, SettingsRow, SimilarTaskQuery, SimilarTaskRow,
-    SkillRow, Storage, TokenCreateResponse, TokenRow, UpdateMemory, UpdateSettings, UpdateSkill,
+    CommentRow, CreateComment, CreateCoverageConfirmation, CreateMemory, CreateSkill,
+    CreateUnsettledInterval, MemoryInjectionQuery, MemoryInjectionResult, MemoryQuery, MemoryRow,
+    SettingsRow, SimilarTaskQuery, SimilarTaskRow, SkillRow, Storage, TokenCreateResponse,
+    TokenRow, UpdateMemory, UpdateSettings, UpdateSkill,
 };
 use takusu_types::CommentAuthor;
 
@@ -367,6 +368,30 @@ impl TakusuApp {
     /// backend (e.g. "worker ok" or "sqlite ok (v3.x)").
     pub async fn health_check(&self) -> Result<String, AppError> {
         self.storage.health_check().await.map_err(storage_to_app)
+    }
+
+    // ── Coverage trust state (WI-10 / WI-16) ──
+
+    pub async fn create_coverage_confirmation(
+        &self,
+        body: &CreateCoverageConfirmation,
+    ) -> Result<takusu_contracts::CoverageConfirmationRow, AppError> {
+        body.validate()?;
+        self.storage
+            .create_coverage_confirmation(body)
+            .await
+            .map_err(storage_to_app)
+    }
+
+    pub async fn create_unsettled_interval(
+        &self,
+        body: &CreateUnsettledInterval,
+    ) -> Result<takusu_contracts::UnsettledIntervalRow, AppError> {
+        body.validate()?;
+        self.storage
+            .create_unsettled_interval(body)
+            .await
+            .map_err(storage_to_app)
     }
 }
 

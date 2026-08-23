@@ -1,5 +1,6 @@
 pub mod comment;
 pub mod common;
+pub mod coverage;
 pub mod device;
 pub mod events;
 pub mod habit;

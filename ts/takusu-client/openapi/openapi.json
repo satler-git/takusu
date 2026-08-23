@@ -11723,6 +11723,290 @@
         }
       }
     },
+    "/coverage/confirmations": {
+      "post": {
+        "requestBody": {
+          "description": "Request body for recording a coverage confirmation (WI-10).",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCoverageConfirmation"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "A recorded coverage confirmation (WI-10).\n\nConfirms that a local period was covered: the user (or an intake/capture\nflow) stated what happened during that interval.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoverageConfirmationRow"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Expected request with `Content-Type: application/json`",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Failed to deserialize the JSON body into the target type",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/coverage/unsettled-intervals": {
+      "post": {
+        "requestBody": {
+          "description": "Request body for recording an unsettled interval (WI-10 / WI-18).",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateUnsettledInterval"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "An unresolved elapsed-time interval that needs settlement (WI-10 / WI-18).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnsettledIntervalRow"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Expected request with `Content-Type: application/json`",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Failed to deserialize the JSON body into the target type",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/agent/v1/health": {
       "get": {
         "responses": {
@@ -13683,6 +13967,37 @@
         },
         "required": ["content"]
       },
+      "CreateCoverageConfirmation": {
+        "description": "Request body for recording a coverage confirmation (WI-10).",
+        "type": "object",
+        "properties": {
+          "calendar_health": {
+            "type": "string",
+            "default": "ok"
+          },
+          "end_at": {
+            "$ref": "#/components/schemas/Timestamp"
+          },
+          "operation_id": {
+            "type": ["string", "null"]
+          },
+          "schedule_revision": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "source": {
+            "type": "string",
+            "default": "intake_complete"
+          },
+          "start_at": {
+            "$ref": "#/components/schemas/Timestamp"
+          },
+          "timezone": {
+            "type": "string"
+          }
+        },
+        "required": ["start_at", "end_at", "timezone", "schedule_revision"]
+      },
       "CreateDevice": {
         "description": "Request body for registering a new device.",
         "type": "object",
@@ -14394,6 +14709,30 @@
             "type": ["string", "null"]
           }
         }
+      },
+      "CreateUnsettledInterval": {
+        "description": "Request body for recording an unsettled interval (WI-10 / WI-18).",
+        "type": "object",
+        "properties": {
+          "classification": {
+            "type": "string",
+            "default": "unclassified"
+          },
+          "end_at": {
+            "$ref": "#/components/schemas/Timestamp"
+          },
+          "operation_id": {
+            "type": ["string", "null"]
+          },
+          "source": {
+            "type": "string",
+            "default": "capture"
+          },
+          "start_at": {
+            "$ref": "#/components/schemas/Timestamp"
+          }
+        },
+        "required": ["start_at", "end_at"]
       },
       "Date": {
         "description": "A calendar date in `YYYY-MM-DD` format.\n\nSerialized as a `\"YYYY-MM-DD\"` string for JSON and stored as `TEXT` in\nSQLite. Wraps [`jiff::civil::Date`].",
@@ -17859,6 +18198,68 @@
           "plain_text"
         ]
       },
+      "IntakeStage": {
+        "description": "Where the user is in the fixed-order intake interview.",
+        "oneOf": [
+          {
+            "description": "Interview has not started.",
+            "type": "string",
+            "const": "not_started"
+          },
+          {
+            "description": "Collecting deadlines and imminent tasks.",
+            "type": "string",
+            "const": "deadlines"
+          },
+          {
+            "description": "Collecting recurring commitments.",
+            "type": "string",
+            "const": "recurring"
+          },
+          {
+            "description": "Confirming calendar import.",
+            "type": "string",
+            "const": "calendar_import"
+          },
+          {
+            "description": "The user paused or finished the interview.",
+            "type": "string",
+            "const": "complete"
+          }
+        ]
+      },
+      "IntakeState": {
+        "description": "Saved state for an interruptible intake interview.",
+        "type": "object",
+        "properties": {
+          "collected_ids": {
+            "description": "Display ids of tasks/habits created so far in this intake. Used to\nresume the summary and avoid re-asking about items already accepted.",
+            "type": "array",
+            "default": [],
+            "items": {
+              "type": "string"
+            }
+          },
+          "coverage_pending": {
+            "description": "Whether a coverage confirmation is waiting for the current batch to be\ncommitted before it can be recorded.",
+            "type": "boolean",
+            "default": false
+          },
+          "proposal_id": {
+            "description": "`proposal_id` used to batch the current set of intake proposals so they\ncan be approved together.",
+            "type": ["string", "null"],
+            "default": null
+          },
+          "stage": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/IntakeStage"
+              }
+            ],
+            "default": "not_started"
+          }
+        }
+      },
       "LlmProviderKind": {
         "description": "Identifies which LLM backend implementation to build.\n\nCurrently only `OpenAICompatible` exists — OpenAI, OpenRouter, and custom\nOpenAI-compatible endpoints are all served by [`OpenAIClient`]. The enum\nis kept as a single variant so that future non-OpenAI-compatible providers\n(e.g. Anthropic native, Gemini) can be added without touching the dispatch\nsites that call [`build_llm_client`].\n\nThe legacy `openai`, `openrouter`, and `custom` values (from the previous\nthree-variant enum) are accepted as aliases during deserialization so that\nexisting `agent.toml` files and persisted mobile settings keep working.\nThey all map to `OpenAICompatible`. Serialization always emits\n`openai_compatible`.",
         "type": "string",
@@ -18195,6 +18596,18 @@
             "items": {
               "type": "string"
             }
+          },
+          "intake_state": {
+            "description": "Resumable intake interview state (WI-16).",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IntakeState"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           },
           "pending_approval": {
             "anyOf": [
@@ -18806,6 +19219,17 @@
               "$ref": "#/components/schemas/ChangeReceipt"
             }
           },
+          "intake_state": {
+            "description": "Resumable intake interview state at the end of the turn (WI-16).",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IntakeState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "presentation": {
             "description": "Typed presentation derived from the turn's tool results (WI-1). `None`\nwhen no tool result maps to a presentation kind.",
             "anyOf": [
@@ -18844,6 +19268,16 @@
             "items": {
               "$ref": "#/components/schemas/ChangeReceipt"
             }
+          },
+          "intake_state": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IntakeState"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "presentation": {
             "anyOf": [
