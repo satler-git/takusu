@@ -208,6 +208,7 @@ async fn dispatch(req: Request, env: Env) -> Result<Response, crate::error::Work
         (Method::Post, ["coverage", "unsettled-intervals"]) => {
             handlers::coverage::create_unsettled_interval(req, env).await
         }
+        (Method::Post, ["coverage", "settle"]) => handlers::coverage::settle(req, env).await,
         (Method::Post, ["events", id, "claim"]) => handlers::events::claim(req, env, id).await,
         (Method::Post, ["events", id, "acknowledge"]) => {
             handlers::events::acknowledge(req, env, id).await

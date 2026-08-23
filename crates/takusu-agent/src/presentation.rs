@@ -709,6 +709,12 @@ fn build_change_proposal_readback(request: &ApprovalRequest) -> String {
                     &change.description,
                 ));
             }
+            (TargetKind::Schedule, ChangeOperation::Settle) => {
+                schedule_parts.push(describe_settlement(
+                    change.after.as_ref(),
+                    &change.description,
+                ));
+            }
             _ => other_parts.push(change.description.clone()),
         }
     }
@@ -906,6 +912,43 @@ fn describe_schedule_impact(
     }
 
     summary
+}
+
+/// Describe a settlement proposal for voice readback.
+///
+/// Reads the interval and any schedule preview first/next task, but does not
+/// enumerate the full new schedule.
+fn describe_settlement(after: Option<&Value>, description: &str) -> String {
+    let Some(after) = after else {
+        return description.to_string();
+    };
+    let mut parts = vec![description.to_string()];
+    if let (Some(start), Some(end)) = (
+        after.get("start_at").and_then(Value::as_str),
+        after.get("end_at").and_then(Value::as_str),
+    ) {
+        parts.push(format!(
+            "{}から{}を精算",
+            format_datetime_for_voice(start),
+            format_datetime_for_voice(end)
+        ));
+    }
+    let preview = after
+        .get("_preview")
+        .or_else(|| after.get("_preview_entries"));
+    if let Some(Value::Array(entries)) = preview.as_ref().and_then(|p| p.get("entries"))
+        && !entries.is_empty()
+    {
+        let first = entries
+            .iter()
+            .next()
+            .and_then(|e| e.get("title").and_then(Value::as_str))
+            .unwrap_or("");
+        if !first.is_empty() {
+            parts.push(format!("直近は{first}から"));
+        }
+    }
+    parts.join("。")
 }
 
 /// Minimal `{}` placeholder formatter. Only the first placeholder is replaced
@@ -1410,8 +1453,14 @@ mod tests {
             expires_at: jiff::Timestamp::now(),
         };
         let template = Presentation::ChangeProposal(request).voice_template();
-        assert!(template.contains("2026年08月28日 23時59分"), "deadline should be voice-formatted: {template}");
-        assert!(!template.contains("T23:59"), "raw ISO string should not appear: {template}");
+        assert!(
+            template.contains("2026年08月28日 23時59分"),
+            "deadline should be voice-formatted: {template}"
+        );
+        assert!(
+            !template.contains("T23:59"),
+            "raw ISO string should not appear: {template}"
+        );
     }
 
     #[test]
@@ -1436,7 +1485,10 @@ mod tests {
             expires_at: jiff::Timestamp::now(),
         };
         let template = Presentation::ChangeProposal(request).voice_template();
-        assert!(!template.contains("数量"), "zero quantity should be omitted: {template}");
+        assert!(
+            !template.contains("数量"),
+            "zero quantity should be omitted: {template}"
+        );
     }
 
     #[test]
@@ -1456,7 +1508,10 @@ mod tests {
             expires_at: jiff::Timestamp::now(),
         };
         let template = Presentation::ChangeProposal(request).voice_template();
-        assert!(template.contains("メール確認"), "description should be read when after is null: {template}");
+        assert!(
+            template.contains("メール確認"),
+            "description should be read when after is null: {template}"
+        );
         assert!(template.contains("よろしいですか"));
     }
 
@@ -1482,8 +1537,14 @@ mod tests {
             expires_at: jiff::Timestamp::now(),
         };
         let template = Presentation::ChangeProposal(request).voice_template();
-        assert!(template.contains("スケジュールを再調整"), "reschedule should say 再調整: {template}");
-        assert!(!template.contains("スケジュールを生成"), "reschedule should not say 生成: {template}");
+        assert!(
+            template.contains("スケジュールを再調整"),
+            "reschedule should say 再調整: {template}"
+        );
+        assert!(
+            !template.contains("スケジュールを生成"),
+            "reschedule should not say 生成: {template}"
+        );
     }
 
     #[test]
@@ -1521,7 +1582,13 @@ mod tests {
             expires_at: jiff::Timestamp::now(),
         };
         let template = Presentation::ChangeProposal(request).voice_template();
-        assert!(template.contains("昼食"), "known displaced task should be read: {template}");
-        assert!(!template.contains("unknown"), "unknown displaced task should be omitted: {template}");
+        assert!(
+            template.contains("昼食"),
+            "known displaced task should be read: {template}"
+        );
+        assert!(
+            !template.contains("unknown"),
+            "unknown displaced task should be omitted: {template}"
+        );
     }
 }

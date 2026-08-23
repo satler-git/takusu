@@ -12270,6 +12270,148 @@
         }
       }
     },
+    "/coverage/settle": {
+      "post": {
+        "requestBody": {
+          "description": "Atomically settle an elapsed-time interval and save the replanned schedule.\n\nUsed by the resident agent settlement proposal (WI-18). The interval is\nrecorded as an unsettled interval with `settled_at` set, the schedule is\nreplaced with the supplied preview, and a coverage confirmation is created\nfor the new schedule revision so coverage returns to `today_covered`.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Result of a successful settlement.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettleResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Expected request with `Content-Type: application/json`",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Failed to deserialize the JSON body into the target type",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/agent/v1/health": {
       "get": {
         "responses": {
@@ -16873,6 +17015,68 @@
           "updated_at"
         ]
       },
+      "SettleRequest": {
+        "description": "Atomically settle an elapsed-time interval and save the replanned schedule.\n\nUsed by the resident agent settlement proposal (WI-18). The interval is\nrecorded as an unsettled interval with `settled_at` set, the schedule is\nreplaced with the supplied preview, and a coverage confirmation is created\nfor the new schedule revision so coverage returns to `today_covered`.",
+        "type": "object",
+        "properties": {
+          "calendar_health": {
+            "type": "string",
+            "default": "ok"
+          },
+          "classification": {
+            "type": "string"
+          },
+          "end_at": {
+            "$ref": "#/components/schemas/Timestamp"
+          },
+          "interval_id": {
+            "description": "Existing unsettled interval to settle. If omitted, a new interval is\ncreated and immediately marked settled.",
+            "type": ["string", "null"]
+          },
+          "operation_id": {
+            "type": ["string", "null"]
+          },
+          "schedule_entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScheduleEntry"
+            }
+          },
+          "source": {
+            "type": "string",
+            "default": "manual"
+          },
+          "start_at": {
+            "$ref": "#/components/schemas/Timestamp"
+          },
+          "timezone": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "start_at",
+          "end_at",
+          "classification",
+          "timezone",
+          "schedule_entries"
+        ]
+      },
+      "SettleResponse": {
+        "description": "Result of a successful settlement.",
+        "type": "object",
+        "properties": {
+          "confirmation": {
+            "$ref": "#/components/schemas/CoverageConfirmationRow"
+          },
+          "interval": {
+            "$ref": "#/components/schemas/UnsettledIntervalRow"
+          },
+          "schedule": {
+            "$ref": "#/components/schemas/ScheduleRow"
+          }
+        },
+        "required": ["interval", "schedule", "confirmation"]
+      },
       "SimilarTaskQuery": {
         "type": "object",
         "properties": {
@@ -18284,7 +18488,8 @@
           "split",
           "undo",
           "create_scheduled_span",
-          "delete_scheduled_span"
+          "delete_scheduled_span",
+          "settle"
         ]
       },
       "ChangeReceipt": {

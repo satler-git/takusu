@@ -31,8 +31,8 @@ use serde_json::Value;
 use takusu_client::{
     Client, CreateHabit, CreateHabitScheduledSpan, CreateMemory, CreateSkill, CreateTask,
     HabitDetail, MoveEntry, RecordWorkSessionProgress, SaveScheduleRequest, ScheduleEntry,
-    SplitTask, StartWorkSession, UndoWorkSession, UndoWorkSessionResult, UpdateHabit, UpdateMemory,
-    UpdateSkill, UpdateTask,
+    SettleRequest, SplitTask, StartWorkSession, UndoWorkSession, UndoWorkSessionResult,
+    UpdateHabit, UpdateMemory, UpdateSkill, UpdateTask,
 };
 use takusu_types::Timestamp;
 
@@ -469,9 +469,10 @@ impl ChangeHandler for TaskMove {
                     let target = now
                         .checked_add(jiff::Span::new().minutes(minutes))
                         .map_err(|_| {
-                            AgentError::Tool(ToolError::InvalidArgs(
-                                InvalidArgsError::new("snooze_minutes", "snooze too far"),
-                            ))
+                            AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
+                                "snooze_minutes",
+                                "snooze too far",
+                            )))
                         })?;
                     takusu_types::Timestamp(target)
                 }
@@ -1107,6 +1108,73 @@ impl ChangeHandler for ScheduleGenerate {
     }
 }
 
+struct ScheduleSettle;
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+struct SettlementArgs {
+    start_at: Timestamp,
+    end_at: Timestamp,
+    classification: String,
+    timezone: String,
+    #[serde(default)]
+    interval_id: Option<String>,
+    #[serde(default)]
+    source: String,
+    #[serde(default)]
+    calendar_health: String,
+}
+
+impl ChangeHandler for ScheduleSettle {
+    type Args = SettlementArgs;
+
+    fn deserialize_args(args: &Value) -> Result<Self::Args, AgentError> {
+        serde_json::from_value(args.clone()).map_err(invalid_args)
+    }
+
+    fn execute_typed<'a>(
+        &'a self,
+        ctx: &ChangeContext<'a>,
+        args: &'a Self::Args,
+    ) -> impl Future<Output = Result<ExecutionOutcome, AgentError>> + Send {
+        async move {
+            let entries = ctx.args.get("_preview_entries").cloned().ok_or_else(|| {
+                AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
+                    "_preview_entries",
+                    "schedule preview is missing",
+                )))
+            })?;
+            let schedule_entries =
+                serde_json::from_value::<Vec<ScheduleEntry>>(entries).map_err(invalid_args)?;
+            let request = SettleRequest {
+                interval_id: args.interval_id.clone(),
+                start_at: args.start_at,
+                end_at: args.end_at,
+                classification: args.classification.clone(),
+                timezone: args.timezone.clone(),
+                schedule_entries,
+                source: if args.source.is_empty() {
+                    "manual".into()
+                } else {
+                    args.source.clone()
+                },
+                calendar_health: if args.calendar_health.is_empty() {
+                    "ok".into()
+                } else {
+                    args.calendar_health.clone()
+                },
+                operation_id: ctx.operation_id.map(ToOwned::to_owned),
+            };
+            let response = ctx.client().settle(&request).await.map_err(other_err)?;
+            Ok(ExecutionOutcome {
+                result_id: response.interval.id.clone(),
+                before: None,
+                after: None,
+                target_revision: Some(response.confirmation.schedule_revision),
+            })
+        }
+    }
+}
+
 // --- dispatch ----------------------------------------------------------------
 
 /// Resolve the executor for a `(kind, operation)` pair.
@@ -1144,6 +1212,7 @@ pub(crate) fn dispatch(
         (Schedule, ChangeOperation::Generate) | (Schedule, ChangeOperation::Reschedule) => {
             Some(&ScheduleGenerate)
         }
+        (Schedule, ChangeOperation::Settle) => Some(&ScheduleSettle),
         _ => None,
     }
 }

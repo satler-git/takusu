@@ -631,6 +631,48 @@ impl Validate for crate::CreateUnsettledInterval {
     }
 }
 
+impl Validate for crate::SettleRequest {
+    fn validate(&self) -> Result<(), StorageError> {
+        if self.start_at > self.end_at {
+            return Err(StorageError::BadRequest(
+                "settlement interval start_at must not be after end_at".into(),
+            ));
+        }
+        if self.classification.is_empty() || self.classification.len() > 64 {
+            return Err(StorageError::BadRequest(
+                "classification must be 1..64 characters".into(),
+            ));
+        }
+        if self.timezone.is_empty() || self.timezone.len() > 64 {
+            return Err(StorageError::BadRequest(
+                "timezone must be 1..64 characters".into(),
+            ));
+        }
+        if parse_timezone(&self.timezone).is_err() {
+            return Err(StorageError::BadRequest(
+                "timezone is not a valid IANA or offset timezone".into(),
+            ));
+        }
+        if self.source.is_empty() || self.source.len() > 64 {
+            return Err(StorageError::BadRequest(
+                "source must be 1..64 characters".into(),
+            ));
+        }
+        const VALID_HEALTH: &[&str] = &["ok", "stale", "error"];
+        if self.calendar_health.is_empty() || self.calendar_health.len() > 64 {
+            return Err(StorageError::BadRequest(
+                "calendar_health must be 1..64 characters".into(),
+            ));
+        }
+        if !VALID_HEALTH.contains(&self.calendar_health.as_str()) {
+            return Err(StorageError::BadRequest(
+                "calendar_health must be one of ok, stale, error".into(),
+            ));
+        }
+        Ok(())
+    }
+}
+
 // ── tests ─────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -934,5 +976,41 @@ mod tests {
         assert!(u.validate().is_err());
         u.source = "capture".into();
         assert!(u.validate().is_ok());
+    }
+
+    fn default_settle() -> crate::SettleRequest {
+        crate::SettleRequest {
+            interval_id: None,
+            start_at: "2026-01-01T09:00:00Z".parse().unwrap(),
+            end_at: "2026-01-01T12:00:00Z".parse().unwrap(),
+            classification: "game".into(),
+            timezone: "Asia/Tokyo".into(),
+            schedule_entries: vec![],
+            source: "manual".into(),
+            calendar_health: "ok".into(),
+            operation_id: None,
+        }
+    }
+
+    #[test]
+    fn settle_request_validates_interval_and_timezone() {
+        let mut r = default_settle();
+        assert!(r.validate().is_ok());
+
+        r.start_at = "2026-01-01T13:00:00Z".parse().unwrap();
+        assert!(r.validate().is_err());
+        r.start_at = "2026-01-01T09:00:00Z".parse().unwrap();
+
+        r.timezone = "".into();
+        assert!(r.validate().is_err());
+        r.timezone = "not_a_timezone".into();
+        assert!(r.validate().is_err());
+        r.timezone = "+09:00".into();
+        assert!(r.validate().is_ok());
+
+        r.calendar_health = "bad".into();
+        assert!(r.validate().is_err());
+        r.calendar_health = "ok".into();
+        assert!(r.validate().is_ok());
     }
 }

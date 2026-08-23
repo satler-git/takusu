@@ -9384,6 +9384,126 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/coverage/settle': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      /**
+       * @description Atomically settle an elapsed-time interval and save the replanned schedule.
+       *
+       *     Used by the resident agent settlement proposal (WI-18). The interval is
+       *     recorded as an unsettled interval with `settled_at` set, the schedule is
+       *     replaced with the supplied preview, and a coverage confirmation is created
+       *     for the new schedule revision so coverage returns to `today_covered`.
+       */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['SettleRequest'];
+        };
+      };
+      responses: {
+        /** @description Result of a successful settlement. */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['SettleResponse'];
+          };
+        };
+        /** @description Error */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Expected request with `Content-Type: application/json` */
+        415: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Failed to deserialize the JSON body into the target type */
+        422: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Error */
+        500: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/agent/v1/health': {
     parameters: {
       query?: never;
@@ -12045,6 +12165,37 @@ export interface components {
        */
       warm_start: boolean;
     };
+    /**
+     * @description Atomically settle an elapsed-time interval and save the replanned schedule.
+     *
+     *     Used by the resident agent settlement proposal (WI-18). The interval is
+     *     recorded as an unsettled interval with `settled_at` set, the schedule is
+     *     replaced with the supplied preview, and a coverage confirmation is created
+     *     for the new schedule revision so coverage returns to `today_covered`.
+     */
+    SettleRequest: {
+      /** @default ok */
+      calendar_health: string;
+      classification: string;
+      end_at: components['schemas']['Timestamp'];
+      /**
+       * @description Existing unsettled interval to settle. If omitted, a new interval is
+       *     created and immediately marked settled.
+       */
+      interval_id?: string | null;
+      operation_id?: string | null;
+      schedule_entries: components['schemas']['ScheduleEntry'][];
+      /** @default manual */
+      source: string;
+      start_at: components['schemas']['Timestamp'];
+      timezone: string;
+    };
+    /** @description Result of a successful settlement. */
+    SettleResponse: {
+      confirmation: components['schemas']['CoverageConfirmationRow'];
+      interval: components['schemas']['UnsettledIntervalRow'];
+      schedule: components['schemas']['ScheduleRow'];
+    };
     SimilarTaskQuery: {
       /** Format: int64 */
       limit?: number | null;
@@ -12629,7 +12780,8 @@ export interface components {
       | 'split'
       | 'undo'
       | 'create_scheduled_span'
-      | 'delete_scheduled_span';
+      | 'delete_scheduled_span'
+      | 'settle';
     /** @description Flattened target fields inside `ChangeReceipt`. */
     ChangeReceipt: {
       after?: unknown;

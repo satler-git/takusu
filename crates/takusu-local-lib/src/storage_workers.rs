@@ -16,11 +16,12 @@ use takusu_contracts::{
     HabitScheduledSpanRow, HabitStepEstimateInput, HabitStepInput, HabitStepRow,
     MemoryInjectionQuery, MemoryInjectionResult, MemoryQuery, MemoryRow, RecordWorkSessionProgress,
     RefreshEvaluatorHeartbeat, RefreshEvaluatorLease, ResidentAuthority, SaveScheduleRequest,
-    ScheduleRow, SettingsRow, SimilarTaskQuery, SimilarTaskRow, SkillRow, SplitResult, SplitTask,
-    StartWorkSession, Storage, StorageError, TaskProgress, TaskQuery, TaskRow, TokenCreateResponse,
-    TokenRow, UndoWorkSession, UndoWorkSessionResult, UnsettledIntervalRow, UpdateDevice,
-    UpdateGoogleCalSettings, UpdateHabit, UpdateMemory, UpdateSettings, UpdateSkill, UpdateTask,
-    WorkSessionProgressResult, WorkSessionRow, storage::StorageResult,
+    ScheduleRow, SettingsRow, SettleRequest, SettleResponse, SimilarTaskQuery, SimilarTaskRow,
+    SkillRow, SplitResult, SplitTask, StartWorkSession, Storage, StorageError, TaskProgress,
+    TaskQuery, TaskRow, TokenCreateResponse, TokenRow, UndoWorkSession, UndoWorkSessionResult,
+    UnsettledIntervalRow, UpdateDevice, UpdateGoogleCalSettings, UpdateHabit, UpdateMemory,
+    UpdateSettings, UpdateSkill, UpdateTask, WorkSessionProgressResult, WorkSessionRow,
+    storage::StorageResult,
 };
 use takusu_types::CommentAuthor;
 use takusu_types::EnumLabel;
@@ -59,6 +60,7 @@ mod paths {
     pub const TASKS_SIMILAR: &str = "/api/tasks/similar";
     pub const AUTH_VERIFY: &str = "/api/auth/verify";
     pub const HEALTH: &str = "/health";
+    pub const COVERAGE_SETTLE: &str = "/api/coverage/settle";
     pub const EVENTS: &str = "/api/events";
     pub const EVENTS_COMMIT: &str = "/api/events/commit";
     pub const EVENTS_REVISION: &str = "/api/events/revision";
@@ -1297,6 +1299,16 @@ impl Storage for WorkersStorage {
         Err(StorageError::Internal(
             "unsettled intervals are not supported over workers".into(),
         ))
+    }
+
+    async fn settle(&self, request: &SettleRequest) -> StorageResult<SettleResponse> {
+        self.send_json(
+            reqwest::Method::POST,
+            paths::COVERAGE_SETTLE,
+            RequestBody::json(request)?,
+            request.operation_id.as_deref(),
+        )
+        .await
     }
 
     async fn settle_unsettled_interval(

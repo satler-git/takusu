@@ -1,0 +1,104 @@
+---
+source: crates/takusu-agent/tests/schema_snapshots.rs
+expression: def
+---
+{
+  "function": {
+    "description": "Create a settlement proposal. Calling this tool generates a pending approval request; it does not write immediately. Use when the user reports off-plan time that should be recorded and the remainder of the day should be replanned.",
+    "name": "propose_settlement",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "calendar_health": {
+          "description": "Calendar health for the resulting coverage confirmation; defaults to \"ok\".",
+          "type": "string"
+        },
+        "classification": {
+          "description": "What the user did during the interval (e.g. \"game\", \"rest\", \"chore\").",
+          "type": "string"
+        },
+        "end_at": {
+          "description": "End of the elapsed-time interval to settle (also the start of the replan range).",
+          "type": "string"
+        },
+        "from": {
+          "description": "Start of the replan window. Defaults to `end_at`.",
+          "type": "string"
+        },
+        "inferred_fields": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "field": {
+                "description": "Name of the inferred field.",
+                "type": "string"
+              },
+              "reason": {
+                "description": "Reason the field was inferred.",
+                "type": "string"
+              },
+              "value": {
+                "description": "Inferred value for the field."
+              }
+            },
+            "required": [
+              "field",
+              "value",
+              "reason"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "interval_id": {
+          "description": "Existing unsettled interval to settle. Omit to create a new one.",
+          "type": "string"
+        },
+        "mode": {
+          "description": "Schedule preview mode; defaults to \"range\".",
+          "enum": [
+            "range",
+            "tasks",
+            "full"
+          ],
+          "type": "string"
+        },
+        "proposal_id": {
+          "type": "string"
+        },
+        "source": {
+          "description": "Source for the resulting coverage confirmation; defaults to \"manual\".",
+          "type": "string"
+        },
+        "start_at": {
+          "description": "Start of the elapsed-time interval to settle.",
+          "type": "string"
+        },
+        "timezone": {
+          "description": "Timezone used to interpret date-only expressions; defaults to the configured timezone.",
+          "type": "string"
+        },
+        "until": {
+          "description": "End of the replan window. Defaults to end of today.",
+          "type": "string"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "why": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "start_at",
+        "end_at",
+        "classification"
+      ],
+      "type": "object"
+    }
+  },
+  "type": "function"
+}
