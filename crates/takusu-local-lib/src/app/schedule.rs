@@ -354,6 +354,9 @@ impl super::TakusuApp {
             }
         };
         let entries = self.plan_to_entries(&plan, &id_map)?;
+        let entries = self
+            .preserve_active_entries(entries, &existing_entries, &[TaskStatus::InProgress])
+            .await?;
         let scheduled = entries
             .iter()
             .map(|entry| entry.task_id.clone())

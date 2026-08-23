@@ -3,8 +3,8 @@ use std::sync::Arc;
 use takusu_contracts::{
     CommentRow, CreateComment, CreateCoverageConfirmation, CreateMemory, CreateSkill,
     CreateUnsettledInterval, MemoryInjectionQuery, MemoryInjectionResult, MemoryQuery, MemoryRow,
-    SettingsRow, SimilarTaskQuery, SimilarTaskRow, SkillRow, Storage, TokenCreateResponse,
-    TokenRow, UpdateMemory, UpdateSettings, UpdateSkill,
+    SettingsRow, SettleRequest, SettleResponse, SimilarTaskQuery, SimilarTaskRow, SkillRow,
+    Storage, TokenCreateResponse, TokenRow, UpdateMemory, UpdateSettings, UpdateSkill,
 };
 use takusu_types::CommentAuthor;
 
@@ -392,6 +392,16 @@ impl TakusuApp {
             .create_unsettled_interval(body)
             .await
             .map_err(storage_to_app)
+    }
+
+    /// Atomically settle an interval and replace the schedule (WI-18).
+    pub async fn settle(&self, request: &SettleRequest) -> Result<SettleResponse, AppError> {
+        request.validate()?;
+        let result = self.storage.settle(request).await.map_err(storage_to_app)?;
+        if let Err(error) = self.do_sync().await {
+            tracing::warn!("google calendar sync failed: {error}");
+        }
+        Ok(result)
     }
 }
 

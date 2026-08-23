@@ -1130,6 +1130,37 @@ interface components$1 {
              */
             warm_start: boolean;
         };
+        /**
+         * @description Atomically settle an elapsed-time interval and save the replanned schedule.
+         *
+         *     Used by the resident agent settlement proposal (WI-18). The interval is
+         *     recorded as an unsettled interval with `settled_at` set, the schedule is
+         *     replaced with the supplied preview, and a coverage confirmation is created
+         *     for the new schedule revision so coverage returns to `today_covered`.
+         */
+        SettleRequest: {
+            /** @default ok */
+            calendar_health: string;
+            classification: string;
+            end_at: components$1['schemas']['Timestamp'];
+            /**
+             * @description Existing unsettled interval to settle. If omitted, a new interval is
+             *     created and immediately marked settled.
+             */
+            interval_id?: string | null;
+            operation_id?: string | null;
+            schedule_entries: components$1['schemas']['ScheduleEntry'][];
+            /** @default manual */
+            source: string;
+            start_at: components$1['schemas']['Timestamp'];
+            timezone: string;
+        };
+        /** @description Result of a successful settlement. */
+        SettleResponse: {
+            confirmation: components$1['schemas']['CoverageConfirmationRow'];
+            interval: components$1['schemas']['UnsettledIntervalRow'];
+            schedule: components$1['schemas']['ScheduleRow'];
+        };
         SimilarTaskQuery: {
             /** Format: int64 */
             limit?: number | null;
@@ -1690,7 +1721,7 @@ interface components$1 {
          * @description Operation kind for a proposed or applied change.
          * @enum {string}
          */
-        ChangeOperation: 'create' | 'update' | 'delete' | 'generate' | 'reschedule' | 'move' | 'start' | 'pause' | 'snooze' | 'progress' | 'complete' | 'split' | 'undo' | 'create_scheduled_span' | 'delete_scheduled_span';
+        ChangeOperation: 'create' | 'update' | 'delete' | 'generate' | 'reschedule' | 'move' | 'start' | 'pause' | 'snooze' | 'progress' | 'complete' | 'split' | 'undo' | 'create_scheduled_span' | 'delete_scheduled_span' | 'settle';
         /** @description Flattened target fields inside `ChangeReceipt`. */
         ChangeReceipt: {
             after?: unknown;

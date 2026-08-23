@@ -1,7 +1,7 @@
 use axum::Json;
 use axum::extract::State;
 use axum::http::HeaderMap;
-use takusu_contracts::{CreateCoverageConfirmation, CreateUnsettledInterval};
+use takusu_contracts::{CreateCoverageConfirmation, CreateUnsettledInterval, SettleRequest};
 
 use crate::error::HttpError;
 use crate::handlers::common::operation_id;
@@ -29,4 +29,16 @@ pub async fn create_unsettled_interval(
     }
     let interval = state.app.create_unsettled_interval(&body).await?;
     Ok(Json(interval))
+}
+
+pub async fn settle(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(mut body): Json<SettleRequest>,
+) -> Result<Json<takusu_contracts::SettleResponse>, HttpError> {
+    if body.operation_id.is_none() {
+        body.operation_id = operation_id(&headers).map(|s| s.to_string());
+    }
+    let response = state.app.settle(&body).await?;
+    Ok(Json(response))
 }

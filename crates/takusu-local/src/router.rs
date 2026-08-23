@@ -287,6 +287,7 @@ fn build_api_router(open_api: &mut OpenApi) -> Router<AppState> {
             "/coverage/unsettled-intervals",
             api::post(handlers::coverage::create_unsettled_interval),
         )
+        .api_route("/coverage/settle", api::post(handlers::coverage::settle))
         // Serve the generated OpenAPI document. This route is not documented
         // in the spec itself (it uses `route`, not `api_route`).
         .route("/openapi.json", get(serve_openapi))

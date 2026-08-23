@@ -334,6 +334,9 @@ pub trait Storage: Send + Sync + 'static {
         ))
     }
 
+    /// Atomically settle an interval and save the replanned schedule (WI-18).
+    async fn settle(&self, request: &SettleRequest) -> StorageResult<SettleResponse>;
+
     // ── Schedule move idempotency (WI-4) ─────────────────────────────────
     /// Check whether a `move_entry` response for the same `operation_id` and
     /// `request_hash` has already been persisted. Default backends that do not
