@@ -16,6 +16,10 @@ use crate::tool::{
 };
 use crate::{AgentError, AgentSession, ApprovalRequest, ApprovalResult};
 
+/// Default `why` text for an approval request. Kept in one place so the readback
+/// layer can reliably filter out the generic boilerplate.
+pub(crate) const DEFAULT_APPROVAL_WHY: &str = "ユーザーの承認が必要な変更です";
+
 impl AgentSession {
     pub(crate) fn is_auto_approved(
         &self,
@@ -52,7 +56,7 @@ impl AgentSession {
         tracing::info!(session_id = %self.session_id, approval_id = %id, changes = changes.len(), "approval requested");
         let request = ApprovalRequest {
             id,
-            why: why.unwrap_or_else(|| "ユーザーの承認が必要な変更です".to_owned()),
+            why: why.unwrap_or_else(|| DEFAULT_APPROVAL_WHY.to_owned()),
             changes,
             inferred_fields,
             warnings,
