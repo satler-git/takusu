@@ -474,7 +474,7 @@ impl MutationSpec for CreateTask {
     type Args = CreateTaskArgs;
 
     const NAME: ToolName = ToolName::CreateTask;
-    const DESCRIPTION: &'static str = "Create a task proposal. Calling this tool generates a pending approval request; it does not write immediately. For example, \"演習30題追加\".";
+    const DESCRIPTION: &'static str = "Create a task proposal. Calling this tool generates a pending approval request; it does not write immediately. For one-utterance capture, fill title, quantity (quantity_total / quantity_unit), estimate (avg_minutes / sigma_minutes), end_at, and optional start_at from similar_tasks, memory, and context. Record the rationale in inferred_fields. For example, \"演習30題追加。金曜まで\".";
     const OPERATION: ChangeOperation = ChangeOperation::Create;
     const TARGET_TYPE: TargetKind = TargetKind::Task;
 

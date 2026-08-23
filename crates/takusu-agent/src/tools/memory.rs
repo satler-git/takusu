@@ -216,7 +216,7 @@ impl TypedTool for SimilarTasks {
         ToolName::SimilarTasks.into()
     }
     fn description(&self) -> &'static str {
-        "Find completed tasks with titles similar to the given title. Useful for estimating durations before creating a task."
+        "Find completed tasks with titles similar to the given title. Use before create_task to estimate avg_minutes / sigma_minutes from past actuals and comments; also use when inferring quantity for a new task."
     }
     fn exposure(&self) -> ToolExposure {
         ToolExposure::Deferred
