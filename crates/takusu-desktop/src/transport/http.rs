@@ -16,7 +16,7 @@ use reqwest::header::{self, HeaderValue};
 use serde::Deserialize;
 use takusu_agent::capability::{ActionCapability, CapabilityRequest};
 use takusu_agent::events::EvaluationResult;
-use takusu_agent::transport::{API_VERSION, SurfaceCommandRequest, Versioned};
+use takusu_agent::transport::{API_VERSION, CreateSessionRequest, CreateSessionResponse, SurfaceCommandRequest, Versioned};
 use takusu_agent::{
     DeliveryMode, Presentation, SurfaceCommand, SurfaceCommandResponse, SurfaceEvent,
     SurfaceSnapshot,
@@ -186,17 +186,32 @@ impl DesktopTransport for HttpTransport {
     fn authorize_action(
         &self,
         capability: &ActionCapability,
+        session_id: Option<&str>,
     ) -> Pin<Box<dyn Future<Output = Result<Presentation, DesktopError>> + Send + '_>> {
         let this = self.clone();
         let capability = capability.clone();
+        // Long delays (and other non-immediate quick actions) resolve to a
+        // ChangeProposal and require a session to own the pending approval.
+        let needs_session = capability.action == "delay"
+            && capability
+                .snooze_minutes
+                .is_some_and(takusu_agent::contact_policy::should_ask_postpone_reason);
+        let mut session_id = session_id.map(|s| s.to_string());
         Box::pin(async move {
+            if session_id.is_none() && needs_session {
+                session_id = Some(this.create_session().await?);
+            }
+            let mut url = format!("{}/api/agent/v1/actions", this.base_url);
+            if let Some(ref session_id) = session_id {
+                url = format!("{}?session_id={}", url, takusu_types::url_encode(session_id));
+            }
             let body = Versioned {
                 version: API_VERSION,
                 value: capability,
             };
             let response = this
                 .client
-                .post(format!("{}/api/agent/v1/actions", this.base_url))
+                .post(url)
                 .header(header::AUTHORIZATION, this.bearer()?)
                 .json(&body)
                 .send()
@@ -212,6 +227,37 @@ impl DesktopTransport for HttpTransport {
                 .json::<Versioned<Presentation>>()
                 .await
                 .map(|v| v.value)
+                .map_err(|e| DesktopError::Transport(e.to_string()))
+        })
+    }
+
+    fn create_session(
+        &self,
+    ) -> Pin<Box<dyn Future<Output = Result<String, DesktopError>> + Send + '_>> {
+        let this = self.clone();
+        Box::pin(async move {
+            let body = Versioned {
+                version: API_VERSION,
+                value: CreateSessionRequest::default(),
+            };
+            let response = this
+                .client
+                .post(format!("{}/api/agent/v1/sessions", this.base_url))
+                .header(header::AUTHORIZATION, this.bearer()?)
+                .json(&body)
+                .send()
+                .await
+                .map_err(|e| DesktopError::Transport(e.to_string()))?;
+            if !response.status().is_success() {
+                return Err(DesktopError::Transport(format!(
+                    "create session failed: {}",
+                    response.status()
+                )));
+            }
+            response
+                .json::<Versioned<CreateSessionResponse>>()
+                .await
+                .map(|v| v.value.session_id)
                 .map_err(|e| DesktopError::Transport(e.to_string()))
         })
     }

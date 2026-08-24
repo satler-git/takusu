@@ -87,7 +87,11 @@ impl ContactPolicyState {
         suppress_until: Option<Timestamp>,
     ) -> Self {
         let mut proactive = 0;
-        let mut ignored = 0;
+        let mut state = Self {
+            proactive_check_in_count_today: 0,
+            ignored_check_in_count_today: 0,
+            suppress_until: None,
+        };
 
         for row in committed_today {
             if row.created_at < today_start || row.created_at > today_end {
@@ -96,19 +100,15 @@ impl ContactPolicyState {
             if row.kind.is_some_and(is_proactive_check_in) {
                 proactive += 1;
                 if row.ignored {
-                    ignored += 1;
+                    state.mark_ignored(row.created_at);
                 }
             }
         }
 
         // If suppression is in the past, drop it.
-        let suppress_until = suppress_until.filter(|t| *t > now);
-
-        Self {
-            proactive_check_in_count_today: proactive,
-            ignored_check_in_count_today: ignored,
-            suppress_until,
-        }
+        state.suppress_until = suppress_until.filter(|t| *t > now);
+        state.proactive_check_in_count_today = proactive;
+        state
     }
 
     /// Whether an active suppression window covers `now`.
@@ -116,8 +116,8 @@ impl ContactPolicyState {
         self.suppress_until.is_some_and(|t| t > now)
     }
 
-    /// Record that a proactive check-in was suppressed or otherwise ignored
-    /// by the user. This drives the frequency-decay rule that lowers the
+    /// Record that a proactive check-in was delivered but ignored by the user
+    /// (no response). This drives the frequency-decay rule that lowers the
     /// check-in cadence after repeated unresponsive contacts.
     pub fn mark_ignored(&mut self, _now: Timestamp) {
         self.ignored_check_in_count_today += 1;
@@ -221,11 +221,11 @@ pub fn filter_events(
 
         // Scheduled notifications and emergency/high-urgency events bypass the
         // daily cap, frequency decay, and explicit timed suppression.
-        // Explicit "ほっといて" suppression applies only to proactive check-ins.
+        // Explicit "ほっといて" suppression applies only to non-urgent
+        // proactive check-ins.
         let urgent = matches!(event.urgency, Urgency::Emergency | Urgency::High);
 
         if suppressed && is_check_in && !urgent {
-            state.mark_ignored(now);
             suppressed_ids.push(event_id.clone());
             suppression_reasons.insert(event_id, SuppressionReason::Suppressed);
             continue;
@@ -271,8 +271,9 @@ pub fn delivery_mode_for(
         return DeliveryMode::DeferQuietHours;
     }
 
-    // Explicit timed suppression drops only proactive check-ins. Scheduled
-    // notifications and high-urgency/emergency events bypass suppression.
+    // Explicit timed suppression drops only non-urgent proactive check-ins.
+    // Scheduled notifications and high-urgency/emergency events bypass
+    // suppression.
     let urgent = matches!(event.urgency, Urgency::Emergency | Urgency::High);
     let is_check_in = is_proactive_check_in(event.kind);
     if state.is_suppressed(now) && is_check_in && !urgent {
@@ -281,18 +282,18 @@ pub fn delivery_mode_for(
 
     // Scheduled notifications are always delivered as a notification. High-
     // priority alerts are also delivered as a notification unless the device
-    // has both proactive speech permission and a private output channel.
+    // can speak proactively and has either a private output channel or an
+    // ongoing voice conversation.
     let is_scheduled = is_scheduled_notification(event.kind);
     let can_speak = policy.can_speak_proactively
         && (policy.private_output || policy.ongoing_voice_conversation);
-    let can_speak_private = policy.can_speak_proactively && policy.private_output;
 
     if is_scheduled {
         return DeliveryMode::Notify;
     }
 
     if event.urgency == Urgency::High {
-        if can_speak_private {
+        if can_speak {
             return DeliveryMode::Speak;
         }
         return DeliveryMode::Notify;

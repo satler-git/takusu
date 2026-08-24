@@ -428,7 +428,7 @@ pub struct CreateSessionResponse {
     pub session_id: String,
 }
 
-#[derive(Debug, Clone, Default, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CreateSessionRequest {
     #[serde(default)]
     pub permissions: Option<crate::Permissions>,
