@@ -49,7 +49,11 @@ struct CoverageConfirmArgs {
     #[schemars(with = "Option<String>")]
     why: Option<String>,
     /// Optional proposal id. Set the same value as the rest of the batch so the coverage confirmation is approved and committed together with the related changes.
-    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_trimmed_optional")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_trimmed_optional"
+    )]
     #[schemars(with = "Option<String>")]
     proposal_id: Option<String>,
     #[serde(default)]
@@ -158,7 +162,10 @@ impl TypedTool for CoverageConfirm {
         exec_args.insert("end_at".into(), Value::String(args.end_at));
         exec_args.insert("timezone".into(), Value::String(args.timezone));
         exec_args.insert("source".into(), Value::String(source.clone()));
-        exec_args.insert("calendar_health".into(), Value::String(calendar_health.clone()));
+        exec_args.insert(
+            "calendar_health".into(),
+            Value::String(calendar_health.clone()),
+        );
 
         let display_args = exec_args.clone();
         let description = format!("coverage confirmation ({source}) from {start_at} to {end_at}");

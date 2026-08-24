@@ -57,14 +57,13 @@ async fn run() -> Result<(), DesktopError> {
     let state = DesktopState::new(config.clone());
 
     // Real transport: HTTP to takusu-local agent routes.
-    let transport: Arc<dyn DesktopTransport + Send + Sync> =
-        if use_mock {
-            Arc::new(MockTransport::new(
-                takusu_agent::surface::SurfaceStateMachine::new().snapshot(),
-            ))
-        } else {
-            Arc::new(HttpTransport::new(&config.local_url, &config.token))
-        };
+    let transport: Arc<dyn DesktopTransport + Send + Sync> = if use_mock {
+        Arc::new(MockTransport::new(
+            takusu_agent::surface::SurfaceStateMachine::new().snapshot(),
+        ))
+    } else {
+        Arc::new(HttpTransport::new(&config.local_url, &config.token))
+    };
 
     // Register this host as the desktop device (WI-11). Re-registering is
     // idempotent, so a daemon restart updates the name without clearing state.

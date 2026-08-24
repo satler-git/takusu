@@ -10,15 +10,15 @@ use std::sync::{Arc, Mutex, RwLock};
 
 type OnChange = Arc<Mutex<Option<Arc<dyn Fn() + Send + Sync>>>>;
 
-use takusu_agent::{Presentation, SurfaceEvent, SurfaceSnapshot, SurfaceState};
 #[cfg(feature = "audio-device")]
 use takusu_agent::TurnEvent;
+use takusu_agent::{Presentation, SurfaceEvent, SurfaceSnapshot, SurfaceState};
 
 use crate::config::Config;
 use crate::presentation::{DesktopAction, DesktopPresentation};
 
 #[cfg(feature = "audio-device")]
-use crate::audio::{spawn_voice_session, VoiceSessionHandle};
+use crate::audio::{VoiceSessionHandle, spawn_voice_session};
 
 /// Errors the daemon can surface to the user.
 #[derive(Debug, thiserror::Error)]
@@ -290,8 +290,7 @@ impl DesktopState {
         if let Err(error) = spawn_voice_session(self.clone(), self.config.clone()) {
             tracing::error!(error=%error, "failed to start voice session");
             let machine = takusu_agent::SurfaceStateMachine::new();
-            let snapshot =
-                machine.apply_turn_event(&TurnEvent::Error(error.to_string()));
+            let snapshot = machine.apply_turn_event(&TurnEvent::Error(error.to_string()));
             self.update_surface(SurfaceEvent::StateChanged(snapshot));
         }
     }

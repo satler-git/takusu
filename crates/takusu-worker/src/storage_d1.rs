@@ -10,10 +10,10 @@ use std::collections::HashMap;
 
 use takusu_contracts::storage::StorageResult;
 use takusu_contracts::{
-    CoverageConfirmationRow, EstimatorBand, EstimatorResult, EstimatorStateRow, EvaluationEstimator,
-    EvaluationTaskProgress, HabitRow, HabitStepRow, MemoryKindCounts, MemoryRow, ScheduleRow,
-    SettleResponse, SettingsRow, SkillRow, StorageError, TaskRow, UnsettledIntervalRow,
-    WorkSessionRow,
+    CoverageConfirmationRow, EstimatorBand, EstimatorResult, EstimatorStateRow,
+    EvaluationEstimator, EvaluationTaskProgress, HabitRow, HabitStepRow, MemoryKindCounts,
+    MemoryRow, ScheduleRow, SettingsRow, SettleResponse, SkillRow, StorageError, TaskRow,
+    UnsettledIntervalRow, WorkSessionRow,
 };
 use takusu_types::estimator::{
     DurationDistribution, InterventionBand, effective_distribution, next_crossing_time,
@@ -1148,9 +1148,8 @@ pub(super) async fn check_settle_idempotency(
                 "idempotency key reused with different request".into(),
             ));
         }
-        let value: SettleResponse = serde_json::from_str(&row.response_json).map_err(|e| {
-            StorageError::Internal(format!("corrupt idempotency response: {e}"))
-        })?;
+        let value: SettleResponse = serde_json::from_str(&row.response_json)
+            .map_err(|e| StorageError::Internal(format!("corrupt idempotency response: {e}")))?;
         return Ok(Some(value));
     }
     Ok(None)
@@ -1189,22 +1188,14 @@ pub(super) async fn find_settled_by_operation_id(
     let stmt = database.prepare(
         "SELECT id, start_at, end_at, classification, source, created_at, settled_at, operation_id FROM unsettled_intervals WHERE operation_id = ?1 AND settled_at IS NOT NULL",
     );
-    let interval: Option<UnsettledIntervalRow> = d1_first(
-        &stmt
-            .bind(&[JsValue::from_str(op_id)])
-            .map_err(d1_err)?,
-    )
-    .await?;
+    let interval: Option<UnsettledIntervalRow> =
+        d1_first(&stmt.bind(&[JsValue::from_str(op_id)]).map_err(d1_err)?).await?;
 
     let stmt = database.prepare(
         "SELECT id, start_at, end_at, timezone, source, schedule_revision, calendar_health, created_at, settled_at, operation_id FROM coverage_confirmations WHERE operation_id = ?1 AND settled_at IS NOT NULL",
     );
-    let confirmation: Option<CoverageConfirmationRow> = d1_first(
-        &stmt
-            .bind(&[JsValue::from_str(op_id)])
-            .map_err(d1_err)?,
-    )
-    .await?;
+    let confirmation: Option<CoverageConfirmationRow> =
+        d1_first(&stmt.bind(&[JsValue::from_str(op_id)]).map_err(d1_err)?).await?;
 
     if let (Some(interval), Some(confirmation)) = (interval, confirmation) {
         let schedule = d1_first::<ScheduleRow>(&database.prepare(SCHEDULE_SELECT))

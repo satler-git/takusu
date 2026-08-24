@@ -462,13 +462,15 @@ impl AgentSession {
         let current_idx = intake_stage_index(current.stage);
         let new_idx = intake_stage_index(state.stage);
         if current.stage != IntakeStage::NotStarted && new_idx < current_idx {
-            return Err(AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
-                "stage",
-                format!(
-                    "intake stage cannot move backwards from {:?} to {:?}",
-                    current.stage, state.stage
+            return Err(AgentError::Tool(ToolError::InvalidArgs(
+                InvalidArgsError::new(
+                    "stage",
+                    format!(
+                        "intake stage cannot move backwards from {:?} to {:?}",
+                        current.stage, state.stage
+                    ),
                 ),
-            ))));
+            )));
         }
         *self.intake_state.lock()? = state;
         Ok(())
@@ -482,13 +484,15 @@ impl AgentSession {
         let current_idx = intake_stage_index(current.stage);
         let new_idx = intake_stage_index(incoming.stage);
         if current.stage != IntakeStage::NotStarted && new_idx < current_idx {
-            return Err(AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
-                "stage",
-                format!(
-                    "intake stage cannot move backwards from {:?} to {:?}",
-                    current.stage, incoming.stage
+            return Err(AgentError::Tool(ToolError::InvalidArgs(
+                InvalidArgsError::new(
+                    "stage",
+                    format!(
+                        "intake stage cannot move backwards from {:?} to {:?}",
+                        current.stage, incoming.stage
+                    ),
                 ),
-            ))));
+            )));
         }
 
         // Decide whether the incoming state is a full update (has proposal or

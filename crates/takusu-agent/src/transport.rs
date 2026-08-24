@@ -165,8 +165,7 @@ pub struct AgentApiState {
     surface: SurfaceStateMachine,
     /// Pending postpone reasons for delay quick actions that arrived while no
     /// agent session was active. Drained into the next created or resumed session.
-    pending_postpone_reasons:
-        Mutex<Vec<crate::tools::comments::PendingPostponeReason>>,
+    pending_postpone_reasons: Mutex<Vec<crate::tools::comments::PendingPostponeReason>>,
 }
 
 impl AgentApiState {
