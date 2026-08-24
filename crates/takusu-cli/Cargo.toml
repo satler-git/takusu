@@ -29,6 +29,7 @@ pulldown-cmark = { workspace = true }
 takusu-local-lib = { workspace = true, features = ["sqlite"] }
 takusu-local = { workspace = true }
 takusu-agent = { workspace = true }
+takusu-audio = { workspace = true, features = ["clap"] }
 takusu-client = { workspace = true }
 takusu-types = { workspace = true, features = ["clap"] }
 takusu-contracts = { workspace = true }
