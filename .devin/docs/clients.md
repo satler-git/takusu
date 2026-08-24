@@ -43,6 +43,9 @@ schedule operations are flat top-level verbs; lower-frequency domains are
   - Agent: `agent ["text"] [--yes] [--allow <perm>]... [--deny <perm>]...
     [--continue] [--new]`, `agent config {show, set <key> <value>}`,
     `agent allow <key>`, `agent deny <key>`, `agent stats [--clear]`
+  - Speaker: `speaker enroll --name <name> <audio.wav>...`,
+    `speaker verify --name <name> <audio.wav>`, `speaker delete --name <name>`,
+    `speaker list`
   - Top level: `tui`, `web [--bind addr]`, `mcp`
 
 ### Agent

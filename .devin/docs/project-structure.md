@@ -51,7 +51,7 @@ takusu/
 │   │       ├── sherpa.rs    #   Sherpa-ONNX local ASR
 │   │       ├── hush.rs      #   Hush ONNX denoiser
 │   │       └── tts.rs       #   TextToSpeech trait and shared TTS types
-│   ├── takusu-audio-cli/     # CLI for audio recording, transcription, and denoising
+│   ├── takusu-audio-cli/     # Experimental/test CLI for audio recording, transcription, and denoising
 │   │   └── src/main.rs      #   STT via Sherpa-ONNX
 │   ├── takusu-client/         # HTTP client library for takusu REST API
 │   │   └── src/lib.rs         #   Client, all request/response types

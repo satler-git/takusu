@@ -8,6 +8,8 @@ mod licenses;
 #[cfg(feature = "mcp")]
 mod mcp;
 mod server;
+#[cfg(feature = "audio-device")]
+mod speaker;
 mod task_ref;
 
 use clap::{Args, CommandFactory, Parser, Subcommand};
@@ -232,6 +234,13 @@ enum Commands {
 
     /// Agent assistant.
     Agent(AgentArgs),
+
+    /// Speaker voiceprint enrollment and verification.
+    #[cfg(feature = "audio-device")]
+    Speaker {
+        #[command(subcommand)]
+        command: speaker::SpeakerCommands,
+    },
 
     /// MCP server over stdio.
     #[cfg(feature = "mcp")]
@@ -1399,6 +1408,8 @@ async fn run(
         Commands::Config { command } => run_config(command, app.as_ref(), cfg).await?,
         Commands::System { command } => run_system(app.as_ref(), command).await?,
         Commands::Agent(args) => run_agent(app, args, plain).await?,
+        #[cfg(feature = "audio-device")]
+        Commands::Speaker { command } => speaker::run_speaker(command).await?,
         #[cfg(feature = "mcp")]
         Commands::Mcp => mcp::run(app).await?,
         Commands::Tui => {
