@@ -47,6 +47,18 @@ pub trait Endpoint: Send {
     fn reset(&mut self);
 }
 
+impl<E: Endpoint + ?Sized> Endpoint for Box<E> {
+    fn push(&mut self, samples: &[f32]) -> Option<VadEvent> {
+        (**self).push(samples)
+    }
+    fn has_speech(&self) -> bool {
+        (**self).has_speech()
+    }
+    fn reset(&mut self) {
+        (**self).reset()
+    }
+}
+
 impl<S: VoiceActivity + Send> Endpoint for VadEndpoint<S> {
     fn push(&mut self, samples: &[f32]) -> Option<VadEvent> {
         VadEndpoint::push(self, samples)
