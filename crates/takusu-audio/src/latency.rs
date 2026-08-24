@@ -136,6 +136,10 @@ impl LatencyBudget {
             ),
             (
                 LatencyCheckpoint::VadEndpoint,
+                LatencyCheckpoint::FirstTtsAudio,
+            ),
+            (
+                LatencyCheckpoint::VadEndpoint,
                 LatencyCheckpoint::PlaybackStart,
             ),
         ];

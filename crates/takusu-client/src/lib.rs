@@ -1344,13 +1344,16 @@ impl Client {
     pub async fn create_coverage_confirmation(
         &self,
         body: &CreateCoverageConfirmation,
+        operation_id: Option<&str>,
     ) -> Result<CoverageConfirmationRow, ClientError> {
-        let resp = self
+        let mut req = self
             .request(reqwest::Method::POST, "/api/coverage/confirmations")
             .await
-            .json(body)
-            .send()
-            .await?;
+            .json(body);
+        if let Some(op_id) = operation_id {
+            req = req.header("Idempotency-Key", op_id);
+        }
+        let resp = req.send().await?;
         let resp = Self::handle_response(resp).await?;
         Ok(resp.json().await?)
     }

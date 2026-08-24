@@ -237,7 +237,7 @@ fn is_voice_compound_task_op(op: ChangeOperation, target: TargetKind) -> bool {
 
     matches!(
         op,
-        Start | Pause | Undo | Progress | Complete | Create | Update | Move | Snooze | Split
+        Start | Pause | Undo | Progress | Complete | Create | Update | Move | Snooze
     )
 }
 

@@ -163,6 +163,10 @@ pub struct AgentApiState {
     planner_state_tx: broadcast::Sender<PlannerEvent>,
     /// Device-scoped surface state shared by every local surface.
     surface: SurfaceStateMachine,
+    /// Pending postpone reasons for delay quick actions that arrived while no
+    /// agent session was active. Drained into the next created or resumed session.
+    pending_postpone_reasons:
+        Mutex<Vec<crate::tools::comments::PendingPostponeReason>>,
 }
 
 impl AgentApiState {
@@ -200,11 +204,40 @@ impl AgentApiState {
             planner_client,
             planner_state_tx,
             surface: SurfaceStateMachine::new(),
+            pending_postpone_reasons: Mutex::new(Vec::new()),
         }
     }
 
     fn session(&self, id: &str) -> Option<Arc<AgentSession>> {
         self.sessions.lock().ok()?.get(id).cloned()
+    }
+
+    /// Enqueue a postpone reason when no agent session owns the quick action.
+    fn enqueue_pending_postpone_reason(
+        &self,
+        reason: crate::tools::comments::PendingPostponeReason,
+    ) {
+        let mut queue = self
+            .pending_postpone_reasons
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        crate::tools::comments::enqueue_postpone_reason(&mut queue, reason);
+    }
+
+    /// Drain any globally-queued postpone reasons into a newly-available session.
+    fn drain_pending_postpone_reasons(&self, session: &AgentSession) {
+        let mut queue = self
+            .pending_postpone_reasons
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        for reason in queue.drain(..) {
+            if let Err(error) = session.enqueue_pending_postpone_reason(reason) {
+                tracing::warn!(
+                    error = %error,
+                    "failed to drain pending postpone reason into session"
+                );
+            }
+        }
     }
 
     /// Returns the device-scoped state shared by all local surfaces.
@@ -675,6 +708,8 @@ pub struct ApprovalResultDto {
     pub approved: bool,
     pub changes: Vec<crate::ChangeReceipt>,
     pub schedule_dirty: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub presentation: Option<crate::Presentation>,
 }
 
 impl From<ApprovalResult> for ApprovalResultDto {
@@ -684,6 +719,7 @@ impl From<ApprovalResult> for ApprovalResultDto {
             approved: result.approved,
             changes: result.changes,
             schedule_dirty: result.schedule_dirty,
+            presentation: result.presentation,
         }
     }
 }
@@ -937,6 +973,19 @@ async fn authorize_action(
             let already_consumed = record
                 .as_ref()
                 .is_some_and(|r| r.try_lock().map(|g| g.consumed).unwrap_or(false));
+
+            // Non-immediate quick actions require a session to own the pending
+            // approval. Without a session the ChangeProposal cannot be resolved,
+            // so reject the request before the capability is consumed.
+            if query.session_id.is_none()
+                && matches!(
+                    presentation,
+                    crate::presentation::Presentation::ChangeProposal(_)
+                )
+            {
+                return StatusCode::BAD_REQUEST.into_response();
+            }
+
             if let Some(ref session_id) = query.session_id
                 && let crate::presentation::Presentation::ChangeProposal(ref request) = presentation
                 && !already_consumed
@@ -969,12 +1018,12 @@ async fn authorize_action(
             }
 
             // WI-17: one-time postpone reason hook for delay actions that
-            // exceed the short-snooze threshold.
+            // exceed the short-snooze threshold. If the quick action was not
+            // tied to an active session, queue the reason globally so the next
+            // session can ask it.
             if action == QuickAction::Delay
                 && let Some(minutes) = body.value.snooze_minutes
                 && crate::contact_policy::should_ask_postpone_reason(minutes)
-                && let Some(session_id) = query.session_id.as_ref()
-                && let Some(session) = state.session(session_id)
             {
                 match state.planner_client.get_task(&body.value.task_id).await {
                     Ok(task) => {
@@ -985,12 +1034,25 @@ async fn authorize_action(
                             snooze_minutes: minutes,
                             delivered: false,
                         };
-                        if let Err(error) = session.enqueue_pending_postpone_reason(pending) {
-                            tracing::warn!(
-                                error = %error,
-                                session_id = %session_id,
-                                "failed to enqueue postpone reason"
-                            );
+                        if let Some(session_id) = query.session_id.as_ref() {
+                            if let Some(session) = state.session(session_id) {
+                                if let Err(error) = session.enqueue_pending_postpone_reason(pending)
+                                {
+                                    tracing::warn!(
+                                        error = %error,
+                                        session_id = %session_id,
+                                        "failed to enqueue postpone reason"
+                                    );
+                                }
+                            } else {
+                                tracing::warn!(
+                                    session_id = %session_id,
+                                    "session not found for delay postpone reason; enqueueing globally"
+                                );
+                                state.enqueue_pending_postpone_reason(pending);
+                            }
+                        } else {
+                            state.enqueue_pending_postpone_reason(pending);
                         }
                     }
                     Err(error) => {
@@ -1152,7 +1214,8 @@ async fn create_session(
         Ok(guard) => guard,
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     };
-    sessions.insert(id.clone(), session);
+    sessions.insert(id.clone(), Arc::clone(&session));
+    state.drain_pending_postpone_reasons(&session);
     tracing::info!(session_id = %id, "agent session created via API");
     Json(Versioned {
         version: API_VERSION,
@@ -1255,8 +1318,9 @@ async fn resume_session(
     {
         return StatusCode::CONFLICT.into_response();
     }
-    sessions.insert(session_id.clone(), session);
+    sessions.insert(session_id.clone(), Arc::clone(&session));
     drop(sessions);
+    state.drain_pending_postpone_reasons(&session);
     if has_pending_approval {
         let operation_id = state.surface.begin_operation(Some(session_id.clone()));
         state.surface.set_waiting_for_approval(operation_id);

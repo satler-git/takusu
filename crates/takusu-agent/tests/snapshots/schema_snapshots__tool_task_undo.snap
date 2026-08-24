@@ -1,0 +1,26 @@
+---
+source: crates/takusu-agent/tests/schema_snapshots.rs
+assertion_line: 51
+expression: def
+---
+{
+  "function": {
+    "description": "Propose undoing the most recent start/pause work session for a task. If task_ref is omitted, asks for clarification. Requires approval before writing.",
+    "name": "task_undo",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "proposal_id": {
+          "description": "Optional proposal id. Set the same value across multiple related tool calls to group them into a single proposal for review.",
+          "type": "string"
+        },
+        "task_ref": {
+          "description": "Task reference such as #42 or h1#3. Omit if the user did not specify a task; a focused clarification will be returned.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "type": "function"
+}

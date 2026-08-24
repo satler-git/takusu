@@ -291,6 +291,7 @@ async fn resolve_approval(
         approved: false,
         changes: vec![],
         schedule_dirty: false,
+        presentation: None,
     })
 }
 

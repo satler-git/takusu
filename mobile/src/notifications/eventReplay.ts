@@ -165,7 +165,14 @@ export async function replayPlannerEvents(
 
     switch (mode) {
       case 'suppress': {
-        await agentClient.updatePlannerEventState(event.id, 'ignored');
+        try {
+          await agentClient.updatePlannerEventState(event.id, 'ignored');
+        } catch (error) {
+          console.warn(
+            'failed to mark suppressed planner event as ignored',
+            error,
+          );
+        }
         continue;
       }
       case 'defer_quiet_hours': {

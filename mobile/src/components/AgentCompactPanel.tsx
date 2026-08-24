@@ -563,7 +563,21 @@ function AgentCompactPanelImpl({
       if (!agentClient || loading) return;
       setLoading(true);
       try {
-        const presentation = await agentClient.quickAction(request);
+        let sid = pendingSessionRef.current;
+        if (!sid) {
+          sid = await agentClient.createSession();
+          pendingSessionRef.current = sid;
+          setSessionId(sid);
+        }
+        const presentation = await agentClient.quickAction(request, sid);
+        if (presentation.type === 'change_proposal') {
+          const pending = await agentClient.getApproval(sid);
+          if (pending) {
+            setApproval(pending);
+            setResult(null);
+            return;
+          }
+        }
         setResult(presentation);
         await quickAction?.onSuccess();
       } catch (e) {
@@ -637,6 +651,8 @@ function AgentCompactPanelImpl({
     setTurnError(null);
     setTurnPresentation(null);
     setApproval(null);
+    setSessionId(null);
+    pendingSessionRef.current = null;
     onClose();
   }, [onClose]);
 
@@ -717,22 +733,64 @@ function AgentCompactPanelImpl({
         }
 
         setApproval(null);
-        setTurnPresentation(null);
-        setTurnText(approve ? '承認しました' : '拒否しました');
+        if (isSurface) {
+          setTurnPresentation(
+            approve ? (resolution.presentation ?? null) : null,
+          );
+          setTurnText(approve ? '承認しました' : '拒否しました');
+        } else {
+          setResult(
+            approve
+              ? (resolution.presentation ?? {
+                  type: 'text',
+                  text: '承認しました',
+                })
+              : null,
+          );
+          if (approve) {
+            await quickAction?.onSuccess();
+          }
+        }
       } catch (e) {
         showError(e, decodeError(e));
       } finally {
         setApprovalBusy(false);
       }
     },
-    [agentClient, sessionId, approval, approvalBusy, sessionPermissions],
+    [
+      agentClient,
+      sessionId,
+      approval,
+      approvalBusy,
+      sessionPermissions,
+      isSurface,
+      quickAction,
+    ],
   );
 
   const handlePresentationAction = useCallback(
     async (capability: ActionCapability) => {
       if (!agentClient) return;
+      const sid = isSurface
+        ? sessionId
+        : (pendingSessionRef.current ?? undefined);
       try {
-        const presentation = await agentClient.authorizeAction(capability);
+        const presentation = await agentClient.authorizeAction(
+          capability,
+          sid ?? undefined,
+        );
+        if (presentation.type === 'change_proposal' && sid) {
+          const pending = await agentClient.getApproval(sid);
+          if (pending) {
+            setApproval(pending);
+            if (isSurface) {
+              setTurnPresentation(null);
+            } else {
+              setResult(null);
+            }
+            return;
+          }
+        }
         if (isSurface) {
           setTurnPresentation(presentation);
         } else {
@@ -743,7 +801,7 @@ function AgentCompactPanelImpl({
         showError(e, decodeError(e));
       }
     },
-    [agentClient, isSurface, quickAction],
+    [agentClient, isSurface, quickAction, sessionId],
   );
 
   const title = useMemo(() => {
@@ -770,6 +828,30 @@ function AgentCompactPanelImpl({
   }, [isSurface, transcript, quickAction?.taskReference]);
 
   const renderQuickActionBody = () => {
+    if (approval && sessionId) {
+      return (
+        <View style={styles.body}>
+          <ApprovalPanel
+            approval={approval}
+            busy={approvalBusy}
+            client={agentClient ?? undefined}
+            colors={colors}
+            onResolve={(decisions, granted, persist) => {
+              handleApprove(true, decisions, granted, persist);
+            }}
+            permissions={sessionPermissions}
+          />
+          <PressableScale
+            style={[styles.action, { backgroundColor: colors.surface }]}
+            onPress={() => handleApprove(false)}
+            disabled={approvalBusy}
+          >
+            <Text style={styles.actionText}>拒否</Text>
+          </PressableScale>
+        </View>
+      );
+    }
+
     if (result) {
       return (
         <View style={styles.body}>

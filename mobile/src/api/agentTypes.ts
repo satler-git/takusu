@@ -40,6 +40,8 @@ export interface ApprovalResult {
   approved: boolean;
   changes: ChangeReceipt[];
   schedule_dirty: boolean;
+  /** Typed presentation derived from the executed changes, when available. */
+  presentation?: Presentation;
 }
 
 export type IntakeStage =

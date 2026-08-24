@@ -326,8 +326,11 @@ impl TakusuApp {
         let settings = self.get_settings_or_default().await?;
         let quiet_hours = in_quiet_hours(&settings, &tz, now);
         let policy = takusu_agent::contact_policy::SpeechPolicy {
+            // `can_speak_proactively` is the physical ability to emit proactive
+            // speech, not the privacy gate. The privacy gate is applied by
+            // `delivery_mode_for` using `private_output || ongoing_voice_conversation`.
             can_speak_proactively: matches!(device.platform, DevicePlatform::Desktop)
-                || (device.audio_service_running && device.private_output_route),
+                || device.audio_service_running,
             quiet_hours,
             private_output: device.private_output_route
                 || matches!(device.platform, DevicePlatform::Desktop),
@@ -554,13 +557,20 @@ fn in_quiet_hours(
 ) -> bool {
     let zoned = now.0.to_zoned(tz.clone());
     let date = zoned.date();
-    let Some((start, end)) = sleep_zoned_window(settings, tz, date) else {
-        return false;
-    };
     let now_sec = now.as_second();
-    let start_sec = start.timestamp().as_second();
-    let end_sec = end.timestamp().as_second();
-    now_sec >= start_sec && now_sec < end_sec
+    // Sleep windows that cross midnight may start on the previous day, so test
+    // both today's window and yesterday's window.
+    let yesterday = date.yesterday().ok();
+    for candidate in [Some(date), yesterday].into_iter().flatten() {
+        if let Some((start, end)) = sleep_zoned_window(settings, tz, candidate) {
+            let start_sec = start.timestamp().as_second();
+            let end_sec = end.timestamp().as_second();
+            if now_sec >= start_sec && now_sec < end_sec {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 fn ledger_row_to_planner_event(row: &EventLedgerRow) -> Result<PlannerEvent, AppError> {
