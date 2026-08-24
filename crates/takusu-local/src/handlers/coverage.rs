@@ -31,6 +31,13 @@ pub async fn create_unsettled_interval(
     Ok(Json(interval))
 }
 
+pub async fn list_unsettled_intervals(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<takusu_contracts::UnsettledIntervalRow>>, HttpError> {
+    let intervals = state.app.list_unsettled_intervals().await?;
+    Ok(Json(intervals))
+}
+
 pub async fn settle(
     State(state): State<AppState>,
     headers: HeaderMap,

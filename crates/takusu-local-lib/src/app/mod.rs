@@ -394,6 +394,13 @@ impl TakusuApp {
             .map_err(storage_to_app)
     }
 
+    pub async fn list_unsettled_intervals(
+        &self,
+    ) -> Result<Vec<takusu_contracts::UnsettledIntervalRow>, AppError> {
+        let evaluation = self.storage.get_coverage_evaluation().await.map_err(storage_to_app)?;
+        Ok(evaluation.unsettled_intervals)
+    }
+
     /// Atomically settle an interval and replace the schedule (WI-18).
     pub async fn settle(&self, request: &SettleRequest) -> Result<SettleResponse, AppError> {
         request.validate()?;

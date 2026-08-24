@@ -238,6 +238,8 @@ pub enum ToolName {
     GetHabit,
     #[strum(serialize = "get_schedule")]
     GetSchedule,
+    #[strum(serialize = "list_unsettled_intervals")]
+    ListUnsettledIntervals,
     #[strum(serialize = "habit_scheduled_spans")]
     HabitScheduledSpans,
     #[strum(serialize = "get_settings")]

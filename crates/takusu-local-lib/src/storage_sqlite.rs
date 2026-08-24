@@ -76,6 +76,7 @@ const MIGRATION_034: &str = include_str!("../migrations/034_coverage.sql");
 const MIGRATION_035: &str = include_str!("../migrations/035_devices.sql");
 const MIGRATION_036: &str = include_str!("../migrations/036_devices.sql");
 const MIGRATION_037: &str = include_str!("../migrations/037_device_contact_suppress.sql");
+const MIGRATION_038: &str = include_str!("../migrations/038_settle_operations.sql");
 
 mod work_session;
 
@@ -566,6 +567,9 @@ impl SqliteStorage {
         if !has_contact_suppress {
             sqlx::raw_sql(MIGRATION_037).execute(&pool).await?;
         }
+
+        // Migration 038: idempotency receipts for settlement operations.
+        sqlx::raw_sql(MIGRATION_038).execute(&pool).await?;
 
         Ok(Self { pool, jwt_secret })
     }
@@ -2845,6 +2849,18 @@ impl Storage for SqliteStorage {
         let mut tx = self.pool.begin().await.map_err(map_err)?;
         let now = takusu_types::now_rfc3339();
 
+        // Idempotency: a retry with the same operation_id must return the
+        // same response without writing a second interval or confirmation.
+        let payload = serde_json::to_string(request)
+            .map_err(|e| StorageError::Io(format!("serialize settle request: {e}")))?;
+        let request_hash = settle_request_hash(&payload, request.operation_id.as_deref());
+        if let Some(op_id) = request.operation_id.as_deref()
+            && let Some(stored) =
+                Self::check_settle_idempotency(&mut *tx, op_id, &request_hash).await?
+        {
+            return Ok(stored);
+        }
+
         // 1. Record the settled interval.
         let interval_id = if let Some(id) = request.interval_id.as_deref() {
             let result = sqlx::query(
@@ -2946,19 +2962,17 @@ impl Storage for SqliteStorage {
         .await
         .map_err(map_err)?;
 
-        tx.commit().await.map_err(map_err)?;
-
         let interval: UnsettledIntervalRow = sqlx::query_as::<_, UnsettledIntervalRow>(
             "SELECT id, start_at, end_at, classification, source, created_at, settled_at, operation_id FROM unsettled_intervals WHERE id = ?",
         )
         .bind(&interval_id)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut *tx)
         .await
         .map_err(map_err)?;
 
         let schedule: ScheduleRow =
             sqlx::query_as::<_, ScheduleRow>("SELECT * FROM schedules WHERE id = 'active'")
-                .fetch_one(&self.pool)
+                .fetch_one(&mut *tx)
                 .await
                 .map_err(map_err)?;
 
@@ -2966,15 +2980,22 @@ impl Storage for SqliteStorage {
             "SELECT id, start_at, end_at, timezone, source, schedule_revision, calendar_health, created_at, settled_at, operation_id FROM coverage_confirmations WHERE id = ?",
         )
         .bind(&confirmation_id)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut *tx)
         .await
         .map_err(map_err)?;
 
-        Ok(SettleResponse {
+        let response = SettleResponse {
             interval,
             schedule,
             confirmation,
-        })
+        };
+
+        if let Some(op_id) = request.operation_id.as_deref() {
+            Self::record_settle_operation(&mut *tx, op_id, &request_hash, &response).await?;
+        }
+
+        tx.commit().await.map_err(map_err)?;
+        Ok(response)
     }
 
     async fn record_move_idempotency(
@@ -3433,6 +3454,68 @@ impl SqliteStorage {
         .map_err(map_err)?;
         Ok(())
     }
+
+    async fn check_settle_idempotency<'c, E>(
+        executor: E,
+        operation_id: &str,
+        request_hash: &str,
+    ) -> StorageResult<Option<SettleResponse>>
+    where
+        E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
+    {
+        #[derive(sqlx::FromRow)]
+        struct OpRow {
+            request_hash: String,
+            response_json: String,
+        }
+        let row: Option<OpRow> = sqlx::query_as(
+            "SELECT request_hash, response_json FROM settle_operations WHERE operation_id = ?",
+        )
+        .bind(operation_id)
+        .fetch_optional(executor)
+        .await
+        .map_err(map_err)?;
+
+        if let Some(row) = row {
+            if row.request_hash != request_hash {
+                return Err(StorageError::Conflict(
+                    "idempotency key reused with different request".into(),
+                ));
+            }
+            let value: SettleResponse = serde_json::from_str(&row.response_json).map_err(|e| {
+                StorageError::Internal(format!("corrupt idempotency response: {e}"))
+            })?;
+            return Ok(Some(value));
+        }
+        Ok(None)
+    }
+
+    async fn record_settle_operation<'c, E>(
+        executor: E,
+        operation_id: &str,
+        request_hash: &str,
+        value: &SettleResponse,
+    ) -> StorageResult<()>
+    where
+        E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
+    {
+        let response_json = serde_json::to_string(value)
+            .map_err(|e| StorageError::Internal(format!("serialize idempotency response: {e}")))?;
+        sqlx::query(
+            "INSERT INTO settle_operations (operation_id, request_hash, response_json, created_at) VALUES (?, ?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))",
+        )
+        .bind(operation_id)
+        .bind(request_hash)
+        .bind(response_json)
+        .execute(executor)
+        .await
+        .map_err(map_err)?;
+        Ok(())
+    }
+}
+
+fn settle_request_hash(payload: &str, operation_id: Option<&str>) -> String {
+    crate::auth::hash_token(&format!("{}:{}", payload, operation_id.unwrap_or("")))
 }
 
 fn memory_request_hash(payload: &str, operation_id: Option<&str>) -> String {
