@@ -65,6 +65,7 @@ import {
   AgentClient,
   AgentApiError,
   AbortError,
+  formatPresentation,
   type AgentTurnResult,
 } from '@/src/api/agentClient';
 import type {
@@ -2588,7 +2589,12 @@ export function AgentView({
       );
       setApproval(null);
       if (result.approved) {
-        showTopToast('変更を適用しました');
+        showTopToast(
+          result.presentation
+            ? formatPresentation(result.presentation)
+            : '変更を適用しました',
+          { type: 'success' },
+        );
       }
       if (!result.approved) {
         setMessages((current) => {

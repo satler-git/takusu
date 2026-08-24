@@ -185,7 +185,8 @@ export type WorkTransitionKind =
   | 'progress'
   | 'complete'
   | 'delay'
-  | 'split';
+  | 'split'
+  | 'undo';
 
 export interface WorkTransition {
   kind: WorkTransitionKind;
@@ -458,7 +459,8 @@ function isValidWorkTransitionKind(v: unknown): v is WorkTransitionKind {
     v === 'progress' ||
     v === 'complete' ||
     v === 'delay' ||
-    v === 'split'
+    v === 'split' ||
+    v === 'undo'
   );
 }
 
@@ -486,7 +488,8 @@ function isValidQuickAction(v: unknown): v is QuickAction {
     v === 'pause' ||
     v === 'progress' ||
     v === 'complete' ||
-    v === 'delay'
+    v === 'delay' ||
+    v === 'undo'
   );
 }
 
@@ -890,7 +893,13 @@ export type InputPath =
   | 'ambient_wake_word'
   | 'plain_text';
 
-export type QuickAction = 'start' | 'pause' | 'progress' | 'complete' | 'delay';
+export type QuickAction =
+  | 'start'
+  | 'pause'
+  | 'progress'
+  | 'complete'
+  | 'delay'
+  | 'undo';
 
 export interface ActionCapability {
   id: string;

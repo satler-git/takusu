@@ -2038,7 +2038,10 @@ export function ApprovalPanel({
             <View
               style={[
                 styles.inferredBox,
-                { borderColor: colors.gray, backgroundColor: colors.surfaceTint },
+                {
+                  borderColor: colors.gray,
+                  backgroundColor: colors.surfaceTint,
+                },
               ]}
             >
               <Text style={[styles.inferredTitle, { color: colors.gray }]}>
@@ -2049,8 +2052,8 @@ export function ApprovalPanel({
                   key={`inferred-${index}`}
                   style={[styles.inferredText, { color: colors.gray }]}
                 >
-                  {inferredFieldLabel(field.field)}: {formatInferredValue(field.value)} —{' '}
-                  {field.reason}
+                  {inferredFieldLabel(field.field)}:{' '}
+                  {formatInferredValue(field.value)} — {field.reason}
                 </Text>
               ))}
             </View>

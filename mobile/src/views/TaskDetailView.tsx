@@ -23,7 +23,7 @@ import {
 } from 'react-native-paper';
 import { Slider } from '@expo/ui/community/slider';
 import { useServer } from '@/src/api/ServerProvider';
-import { AgentClient } from '@/src/api/agentClient';
+import { AgentClient, formatPresentation } from '@/src/api/agentClient';
 import { undoRedo } from '@/src/api/undoRedo';
 import { showError, logError } from '@/src/api/errors';
 import { parseDepends, parseSchedule } from '@/src/api/types';
@@ -45,6 +45,7 @@ import {
   type ColorSet,
 } from '@/src/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTopToast } from '@/src/components/TopToast';
 import { DateTimePickerModal } from '@/src/components/DateTimePickerModal';
 import { haptic } from '@/src/components/haptics';
 import { PressableScale } from '@/src/components/PressableScale';
@@ -652,6 +653,7 @@ export function TaskDetailView() {
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const iconColor = useMemo(() => notificationColorForTheme(theme), [theme]);
   const insets = useSafeAreaInsets();
+  const { showTopToast } = useTopToast();
   const agentClient = useMemo<AgentClient | null>(() => {
     const baseUrl = client?.baseUrl;
     if (!baseUrl) return null;
@@ -1130,12 +1132,13 @@ export function TaskDetailView() {
     if (!client || !task || !agentClient) return;
     const prevStatus = task.status;
     try {
-      await agentClient.quickAction({
+      const result = await agentClient.executeQuickAction({
         task_id: task.id,
         action: 'start',
         device_id: 'mobile',
         input_path: 'screen_capability',
       });
+      showTopToast(formatPresentation(result), { type: 'success' });
     } catch (e) {
       showError(e, 'タスクの開始に失敗');
       return;
@@ -1158,7 +1161,7 @@ export function TaskDetailView() {
         const currentAgent = agentClientRef.current;
         if (!currentAgent) return;
         try {
-          await currentAgent.quickAction({
+          await currentAgent.executeQuickAction({
             task_id: task.id,
             action: 'pause',
             device_id: 'mobile',
@@ -1181,7 +1184,7 @@ export function TaskDetailView() {
         const currentAgent = agentClientRef.current;
         if (!currentAgent) return;
         try {
-          await currentAgent.quickAction({
+          await currentAgent.executeQuickAction({
             task_id: task.id,
             action: 'start',
             device_id: 'mobile',
@@ -1205,7 +1208,7 @@ export function TaskDetailView() {
         // Record progress first, then pause. If pause fails after a
         // successful record, the progress is retained and the session remains
         // open; the user is shown the error and can retry pausing.
-        await agentClient.quickAction({
+        await agentClient.executeQuickAction({
           task_id: task.id,
           action: 'progress',
           device_id: 'mobile',
@@ -1220,12 +1223,13 @@ export function TaskDetailView() {
       }
     }
     try {
-      await agentClient.quickAction({
+      const result = await agentClient.executeQuickAction({
         task_id: task.id,
         action: 'pause',
         device_id: 'mobile',
         input_path: 'screen_capability',
       });
+      showTopToast(formatPresentation(result), { type: 'success' });
     } catch (e) {
       showError(e, 'タスクの一時停止に失敗');
       return;
@@ -1241,7 +1245,7 @@ export function TaskDetailView() {
         const currentAgent = agentClientRef.current;
         if (!currentAgent) return;
         try {
-          await currentAgent.quickAction({
+          await currentAgent.executeQuickAction({
             task_id: task.id,
             action: 'start',
             device_id: 'mobile',
@@ -1268,7 +1272,7 @@ export function TaskDetailView() {
         if (!currentAgent) return;
         if (payload) {
           try {
-            await currentAgent.quickAction({
+            await currentAgent.executeQuickAction({
               task_id: task.id,
               action: 'progress',
               device_id: 'mobile',
@@ -1283,7 +1287,7 @@ export function TaskDetailView() {
           }
         }
         try {
-          await currentAgent.quickAction({
+          await currentAgent.executeQuickAction({
             task_id: task.id,
             action: 'pause',
             device_id: 'mobile',
@@ -1313,13 +1317,14 @@ export function TaskDetailView() {
     let usedQuickAction = false;
     try {
       if (openSession && task.status === 'in_progress') {
-        await agentClient.quickAction({
+        const result = await agentClient.executeQuickAction({
           task_id: task.id,
           action: 'complete',
           device_id: 'mobile',
           input_path: 'screen_capability',
         });
         usedQuickAction = true;
+        showTopToast(formatPresentation(result), { type: 'success' });
       } else {
         // Scheduled/pending tasks completed without an open session have no
         // in-progress capability to consume; fall back to a direct status update.
@@ -1360,7 +1365,7 @@ export function TaskDetailView() {
           if (usedQuickAction) {
             const currentAgent = agentClientRef.current;
             if (!currentAgent) return;
-            await currentAgent.quickAction({
+            await currentAgent.executeQuickAction({
               task_id: task.id,
               action: 'complete',
               device_id: 'mobile',
@@ -1384,7 +1389,7 @@ export function TaskDetailView() {
   async function recordProgress(payload: ProgressPayload) {
     if (!client || !task || !agentClient) return;
     try {
-      await agentClient.quickAction({
+      const result = await agentClient.executeQuickAction({
         task_id: task.id,
         action: 'progress',
         device_id: 'mobile',
@@ -1393,6 +1398,7 @@ export function TaskDetailView() {
         quantity_total: payload.quantityTotal,
         note: payload.note,
       });
+      showTopToast(formatPresentation(result), { type: 'success' });
     } catch (e) {
       showError(e, '進捗の記録に失敗');
       return;
