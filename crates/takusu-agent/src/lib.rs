@@ -799,7 +799,9 @@ impl AgentSession {
         F: FnMut(TurnEvent),
         G: FnMut(String),
     {
-        self.run_turn_stream_with_input(user_text, InputPath::PlainText, emit, tts_emit)
+        // Backwards compatibility: the public text entry point continues to
+        // emit TTS blocks so existing callers (CLI tests, etc.) keep working.
+        self.run_turn_stream_with_input(user_text, InputPath::PlainText, emit, tts_emit, true)
             .await
     }
 
@@ -809,6 +811,7 @@ impl AgentSession {
         input_path: InputPath,
         emit: F,
         tts_emit: G,
+        auto_speak: bool,
     ) -> Result<TurnResult, AgentError>
     where
         F: FnMut(TurnEvent),
@@ -826,8 +829,16 @@ impl AgentSession {
         let mut local = self.history.lock()?.clone();
         local.push(llm::Message::User(user_text.to_string()));
 
-        self.run_from_local_stream(system, system_estimate, local, input_path, emit, tts_emit)
-            .await
+        self.run_from_local_stream(
+            system,
+            system_estimate,
+            local,
+            input_path,
+            emit,
+            tts_emit,
+            auto_speak,
+        )
+        .await
     }
 
     /// Edits an existing user turn (by 0-based user-message index), truncates
@@ -843,6 +854,7 @@ impl AgentSession {
         user_text: &str,
         emit: F,
         tts_emit: G,
+        auto_speak: bool,
     ) -> Result<TurnResult, AgentError>
     where
         F: FnMut(TurnEvent),
@@ -885,10 +897,12 @@ impl AgentSession {
             InputPath::PlainText,
             emit,
             tts_emit,
+            auto_speak,
         )
         .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn run_from_local_stream<F, G>(
         &self,
         system: llm::Message,
@@ -897,11 +911,19 @@ impl AgentSession {
         input_path: InputPath,
         mut emit: F,
         mut tts_emit: G,
+        auto_speak: bool,
     ) -> Result<TurnResult, AgentError>
     where
         F: FnMut(TurnEvent),
         G: FnMut(String),
     {
+        // Only voice-origin turns emit TTS blocks; text/background turns
+        // follow the reactive private-channel rules (WI-12).
+        let mut tts_emit = |block: String| {
+            if auto_speak {
+                tts_emit(block);
+            }
+        };
         let mut changes = Vec::new();
         let mut proposed_changes: Vec<ProposedChange> = Vec::new();
         let mut inferred_fields: Vec<InferredField> = Vec::new();
@@ -2157,7 +2179,7 @@ mod tests {
         assert_eq!(first.text, "first");
 
         let second = agent
-            .edit_turn_stream(0, "goodbye", |_| {}, |_| {})
+            .edit_turn_stream(0, "goodbye", |_| {}, |_| {}, false)
             .await
             .unwrap();
         assert_eq!(second.text, "edited");
@@ -2182,7 +2204,7 @@ mod tests {
         };
 
         let agent = make_agent(AgentConfig::default(), registry, mock);
-        let result = agent.edit_turn_stream(0, "x", |_| {}, |_| {}).await;
+        let result = agent.edit_turn_stream(0, "x", |_| {}, |_| {}, false).await;
         assert!(matches!(
             result,
             Err(AgentError::Tool(ToolError::InvalidArgs(_)))

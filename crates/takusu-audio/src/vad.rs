@@ -262,7 +262,10 @@ impl SileroEndpoint {
             provider: None,
             debug: false,
         };
-        let detector = sherpa_onnx::VoiceActivityDetector::create(&config, 30.0)
+        // The internal sample buffer must be at least `max_speech_duration`
+        // so long utterances are not truncated (WI-12).
+        let buffer_size_in_seconds = config.silero_vad.max_speech_duration;
+        let detector = sherpa_onnx::VoiceActivityDetector::create(&config, buffer_size_in_seconds)
             .ok_or_else(|| crate::stt::SttError::Other("failed to create Silero VAD".into()))?;
         Ok(Self {
             detector,

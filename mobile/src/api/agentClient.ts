@@ -271,11 +271,17 @@ export class AgentClient {
     idempotencyKey: string,
     onEvent: (event: AgentStreamEvent) => void,
     signal?: AbortSignal,
+    autoSpeak = false,
   ): Promise<AgentTurnResult> {
     const url = `${this.baseUrl}/api/agent/v1/sessions/${encodeURIComponent(sessionId)}/turns/stream`;
     return this.streamRequest(
       url,
-      { version: 1, text, idempotency_key: idempotencyKey },
+      {
+        version: 1,
+        text,
+        idempotency_key: idempotencyKey,
+        auto_speak: autoSpeak,
+      },
       onEvent,
       signal,
     );
@@ -288,11 +294,17 @@ export class AgentClient {
     idempotencyKey: string,
     onEvent: (event: AgentStreamEvent) => void,
     signal?: AbortSignal,
+    autoSpeak = false,
   ): Promise<AgentTurnResult> {
     const url = `${this.baseUrl}/api/agent/v1/sessions/${encodeURIComponent(sessionId)}/turns/${turnIndex}/edit/stream`;
     return this.streamRequest(
       url,
-      { version: 1, text, idempotency_key: idempotencyKey },
+      {
+        version: 1,
+        text,
+        idempotency_key: idempotencyKey,
+        auto_speak: autoSpeak,
+      },
       onEvent,
       signal,
     );
