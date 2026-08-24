@@ -29,11 +29,11 @@ use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 use takusu_client::{
-    Client, CreateCoverageConfirmation, CreateHabit, CreateHabitScheduledSpan, CreateMemory,
-    CreateSkill, CreateTask, CoverageConfirmationRow, HabitDetail, HabitRow, MoveEntry,
-    RecordWorkSessionProgress, SaveScheduleRequest, ScheduleEntry, SettleRequest, SplitTask,
-    StartWorkSession, TaskRow, UndoWorkSession, UndoWorkSessionResult, UpdateHabit, UpdateMemory,
-    UpdateSkill, UpdateTask,
+    Client, CreateComment, CreateCoverageConfirmation, CreateHabit, CreateHabitScheduledSpan,
+    CreateMemory, CreateSkill, CreateTask, CoverageConfirmationRow, HabitDetail, HabitRow,
+    MoveEntry, RecordWorkSessionProgress, SaveScheduleRequest, ScheduleEntry, SettleRequest,
+    SplitTask, StartWorkSession, TaskRow, UndoWorkSession, UndoWorkSessionResult, UpdateHabit,
+    UpdateMemory, UpdateSkill, UpdateTask,
 };
 use takusu_types::Timestamp;
 
@@ -1156,7 +1156,7 @@ impl ChangeHandler for ScheduleSettle {
                 end_at: args.end_at,
                 classification: args.classification.clone(),
                 timezone: args.timezone.clone(),
-                schedule_entries,
+                schedule_entries: schedule_entries.clone(),
                 source: if args.source.is_empty() {
                     "manual".into()
                 } else {
@@ -1170,6 +1170,48 @@ impl ChangeHandler for ScheduleSettle {
                 operation_id: ctx.operation_id.map(ToOwned::to_owned),
             };
             let response = ctx.client().settle(&request).await.map_err(other_err)?;
+
+            // WI-18: record the settlement reason as agent comments on the
+            // affected tasks so the decision is visible in the task timeline.
+            if !schedule_entries.is_empty() {
+                let reason = ctx
+                    .change
+                    .after
+                    .as_ref()
+                    .and_then(|after| after.get("why"))
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty())
+                    .map(ToOwned::to_owned)
+                    .unwrap_or_else(|| {
+                        format!(
+                            "{}から{}まで{}として精算しました。",
+                            args.start_at, args.end_at, args.classification
+                        )
+                    });
+                let comment_body = CreateComment {
+                    content: format!("{reason}（スケジュールを再調整）"),
+                };
+                let seen: std::collections::HashSet<_> = schedule_entries
+                    .iter()
+                    .map(|e| e.task_id.clone())
+                    .collect();
+                for task_id in seen {
+                    let op_id = ctx.operation_id.map(|op| format!("{op}:comment:{task_id}"));
+                    if let Err(error) = ctx
+                        .client()
+                        .create_agent_comment(&task_id, &comment_body, op_id.as_deref())
+                        .await
+                    {
+                        tracing::warn!(
+                            session_id = %ctx.session.session_id,
+                            %task_id,
+                            %error,
+                            "failed to record settlement comment"
+                        );
+                    }
+                }
+            }
+
             Ok(ExecutionOutcome {
                 result_id: response.interval.id.clone(),
                 before: None,

@@ -3272,6 +3272,23 @@ impl Storage for D1Storage {
         let now = now_rfc3339();
         let start_at = request.start_at.to_string();
         let end_at = request.end_at.to_string();
+
+        // Idempotency: a retry with the same operation_id must return the same
+        // response without creating a second interval or confirmation.
+        let request_payload = serde_json::to_string(request)
+            .map_err(|e| StorageError::Io(format!("serialize settle request: {e}")))?;
+        let request_hash = settle_request_hash(&request_payload, request.operation_id.as_deref());
+        if let Some(op_id) = request.operation_id.as_deref() {
+            if let Some(stored) =
+                check_settle_idempotency(&self.db, op_id, &request_hash).await?
+            {
+                return Ok(stored);
+            }
+            if let Some(stored) = find_settled_by_operation_id(&self.db, op_id).await? {
+                return Ok(stored);
+            }
+        }
+
         let mut stmts: Vec<worker::D1PreparedStatement> = Vec::new();
 
         let interval_id = if let Some(id) = request.interval_id.as_deref() {
@@ -3426,11 +3443,17 @@ impl Storage for D1Storage {
             .await?
             .ok_or_else(|| not_found("coverage confirmation not found"))?;
 
-        Ok(SettleResponse {
+        let response = SettleResponse {
             interval,
             schedule,
             confirmation,
-        })
+        };
+
+        if let Some(op_id) = request.operation_id.as_deref() {
+            record_settle_operation(&self.db, op_id, &request_hash, &response).await?;
+        }
+
+        Ok(response)
     }
 
     async fn settle_unsettled_interval(

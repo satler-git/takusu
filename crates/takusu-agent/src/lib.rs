@@ -1393,7 +1393,7 @@ impl AgentSession {
             ### ツール検索
             - tool_search: 頻繁でないツールをキーワードで検索する。必要なツールが現在のツール一覧にない場合は、まず `tool_search` を呼んでから結果に含まれたツールを呼ぶ。
               探索語にはツール名や目的を含めてください（例: 'memory save', 'skill list', 'task progress', 'reschedule schedule', 'move task', 'similar task', 'expand rrule'）。
-              他にも以下のようなツールは `tool_search` で発見できます：スキル操作（skills_list / skills_read / skills_propose_add / skills_propose_edit）、記憶書き込み（memory_save / memory_update / memory_delete）、進捗操作（task_start / task_pause / task_progress / task_complete / task_split / task_undo）、見積もり参照（similar_tasks）、タスク移動（move_task）、スケジュール生成（generate_schedule / reschedule / propose_settlement）、習慣 scheduled span 変更（habit_scheduled_spans）、RRULE 展開（expand_rrule）、設定取得（get_settings）。
+              他にも以下のようなツールは `tool_search` で発見できます：スキル操作（skills_list / skills_read / skills_propose_add / skills_propose_edit）、記憶書き込み（memory_save / memory_update / memory_delete）、進捗操作（task_start / task_pause / task_progress / task_complete / task_split / task_undo）、見積もり参照（similar_tasks）、タスク移動（move_task）、スケジュール生成（generate_schedule / reschedule / propose_settlement）、未精算区間一覧（list_unsettled_intervals）、習慣 scheduled span 変更（habit_scheduled_spans）、RRULE 展開（expand_rrule）、設定取得（get_settings）。
 
             ## Proposal / 承認フロー（最重要）
             - `create_task` / `update_task` / `delete_task` / `move_task` / `task_start` / `task_pause` / `task_progress` / `task_complete` / `task_split` / `task_undo` / `create_habit` / `update_habit` / `delete_habit` / `habit_scheduled_spans`（`action=create` / `action=delete`） / `generate_schedule` / `reschedule` / `coverage_confirm` / `propose_settlement` / `skills_propose_add` / `skills_propose_edit` / `memory_save` / `memory_update` / `memory_delete` を呼ぶと、システムは自動的に承認要求（Proposal）を生成します。
@@ -1410,10 +1410,11 @@ impl AgentSession {
             - セッションは resumable です。クライアントが保存した snapshot から再開できます。
 
             ## 精算 (settlement / WI-18)
-            - ユーザーが過去の予定外時間を告白した場合（例: 「9時から12時までゲームしてた」「予定がずれた、お昼寝してた」）、`propose_settlement` を使って精算提案を作成してください。
-            - 呼ぶ前に、影響を受ける作業を把握し、必要に応じて `preview_schedule` ではなく `propose_settlement` 内の `mode=range` / `from=interval_end` / `until=今日の終わり` で残りのスケジュールをプレビューしてください。`propose_settlement` 自身がプレビューを含むので、通常は追加の `preview_schedule` は不要です。
-            - 引数: `start_at` / `end_at`（精算する時間帯）、`classification`（その時間の使途、例: game, rest, chore, unclassified）、`timezone`（指定がなければ設定タイムゾーン）。既存の `unsettled_interval` を精算する場合は `interval_id` を指定してください。
-            - 精算が承認されると、未精算区間が記録され、当日の coverage 確認が新しい schedule revision で作成され、残りのスケジュールに反映されます。承認後、影響を受けたタスクがあれば `add_comment` でその経緯を残すことも検討してください。
+            - ユーザーが過去の予定外時間を告白した場合（例: 「9時から12時までゲームしてた」「予定がずれた、お昼寝してた」)、`propose_settlement` を使って精算提案を作成してください。
+            - 精算したい時間帯が既存の未精算区間（`unsettled_interval`）と一致する場合は、まず `list_unsettled_intervals` で候補を確認し、該当する `interval_id` を `propose_settlement` に指定してください。
+            - `propose_settlement` の `mode` / `from` / `until` は省略可能です。省略した場合、`mode` は `range`、`from` は `end_at`、`until` は今日の終わりに default します。
+            - 引数: `start_at` / `end_at`（精算する時間帯）、`classification`（その時間の使途、例: game, rest, chore, unclassified）、`timezone`（指定がなければ設定タイムゾーン）、任意の `interval_id`（既存の未精算区間を更新する場合）。
+            - 精算が承認されると、未精算区間が記録され、当日の coverage 確認が新しい schedule revision で作成され、残りのスケジュールに反映されます。承認後、影響を受けたタスクがあれば `add_comment` でその経緯を残してください。
 
             ## 行動指針
             1. 調査してから行動してください。タスク・習慣・スケジュールの変更を提案する前は、必ず関連する情報を取得してください。
