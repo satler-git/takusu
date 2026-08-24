@@ -49,10 +49,20 @@ pub trait DesktopTransport: Send + Sync {
 
     /// Authorize an immediate action via its server-issued capability and return
     /// the resulting presentation (e.g. a work-transition result).
+    ///
+    /// `session_id` is required for quick actions that resolve to a
+    /// `ChangeProposal`, such as long delays.
     fn authorize_action(
         &self,
         capability: &ActionCapability,
+        session_id: Option<&str>,
     ) -> Pin<Box<dyn Future<Output = Result<Presentation, DesktopError>> + Send + '_>>;
+
+    /// Create a new agent session. Sessions are required for non-immediate
+    /// quick actions that resolve to a `ChangeProposal`.
+    fn create_session(
+        &self,
+    ) -> Pin<Box<dyn Future<Output = Result<String, DesktopError>> + Send + '_>>;
 
     /// Mint a capability and authorize it in one call.
     fn quick_action(
@@ -62,7 +72,7 @@ pub trait DesktopTransport: Send + Sync {
         let request = request.clone();
         Box::pin(async move {
             let capability = self.mint_action_capability(&request).await?;
-            self.authorize_action(&capability).await
+            self.authorize_action(&capability, None).await
         })
     }
 
@@ -219,6 +229,7 @@ impl DesktopTransport for MockTransport {
     fn authorize_action(
         &self,
         capability: &ActionCapability,
+        _session_id: Option<&str>,
     ) -> Pin<Box<dyn Future<Output = Result<Presentation, DesktopError>> + Send + '_>> {
         if let Ok(mut guard) = self.authorized.lock() {
             guard.push(capability.id.clone());
@@ -229,6 +240,12 @@ impl DesktopTransport for MockTransport {
                 text: format!("authorized {}", action),
             })
         })
+    }
+
+    fn create_session(
+        &self,
+    ) -> Pin<Box<dyn Future<Output = Result<String, DesktopError>> + Send + '_>> {
+        Box::pin(async { Ok("mock-session".into()) })
     }
 
     fn register_device(

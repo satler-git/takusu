@@ -52,7 +52,7 @@ pub async fn execute_quick_action(
     }
 
     if let Some(cap) = &action.capability {
-        return transport.authorize_action(cap).await;
+        return transport.authorize_action(cap, None).await;
     }
 
     if let (Some(task_id), Some(action_name)) =

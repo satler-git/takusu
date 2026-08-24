@@ -180,7 +180,7 @@ pub async fn route_notification_action(
                 .is_some_and(|c| c.id == parsed.capability_id)
         }) {
             if let Some(cap) = &action.capability {
-                let _presentation = transport.authorize_action(cap).await?;
+                let _presentation = transport.authorize_action(cap, None).await?;
                 if let Some(event_id) = cap.event_id.as_deref() {
                     transport
                         .update_planner_event_state(
