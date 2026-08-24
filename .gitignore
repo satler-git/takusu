@@ -27,3 +27,8 @@ opencode.json
 crates/takusu-android/generated/
 
 *.log
+
+# Workspace-local build configuration and shared target symlink.
+# These are created per workspace and should not be committed.
+/.cargo/config.toml
+/target

@@ -123,7 +123,7 @@ export async function handleActionButtonResponse(
 
     haptic.medium();
     try {
-      await agentClient.authorizeAction(capabilityAction.capability);
+      await agentClient.executeAuthorizeAction(capabilityAction.capability);
       if (eventId) {
         await agentClient.updatePlannerEventState(eventId, 'resolved');
       }
@@ -150,7 +150,7 @@ export async function handleActionButtonResponse(
     const taskTitle = title.replace(/^実行中: /, '') || 'タスク';
     try {
       if (actionId === ACTION_DONE && agentClient) {
-        await agentClient.quickAction({
+        await agentClient.executeQuickAction({
           task_id: taskId,
           action: 'complete',
           device_id: 'mobile',
@@ -185,7 +185,7 @@ async function handleLegacyStart(
   haptic.medium();
   try {
     if (agentClient) {
-      await agentClient.quickAction({
+      await agentClient.executeQuickAction({
         task_id: taskId,
         action: 'start',
         device_id: 'mobile',

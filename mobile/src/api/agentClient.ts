@@ -22,6 +22,7 @@ import type {
   SurfaceSnapshot,
   TurnEvent,
   UserInputAnswer,
+  WorkTransitionKind,
 } from './agentTypes';
 import {
   decodePresentation,
@@ -483,11 +484,15 @@ export class AgentClient {
     if (proposals !== undefined) {
       body.proposals = proposals;
     }
-    return this.request<ApprovalResult>(
+    const result = await this.request<ApprovalResult>(
       'POST',
       `/api/agent/v1/sessions/${encodeURIComponent(sessionId)}/approvals/${encodeURIComponent(approvalId)}`,
       body,
     );
+    if (result?.presentation) {
+      result.presentation = decodePresentation(result.presentation);
+    }
+    return result;
   }
 
   async submitUserInput(
@@ -779,6 +784,80 @@ export class AgentClient {
     return this.authorizeAction(capability, sessionId);
   }
 
+  /// Execute a quick action that may resolve to a `ChangeProposal`. Creates a
+  /// one-off agent session, passes it to `quickAction`, and if the server
+  /// returns a proposal it is approved automatically and the resulting
+  /// presentation is returned. This is the right path for direct UI triggers
+  /// (task cards, buttons, notification actions) where the user has already
+  /// signaled intent, so the approval should not be silently dropped.
+  async executeQuickAction(request: CapabilityRequest): Promise<Presentation> {
+    const sessionId = await this.createSession();
+    try {
+      const presentation = await this.quickAction(request, sessionId);
+      if (presentation.type === 'change_proposal') {
+        const pending = await this.getApproval(sessionId);
+        const approvalId = pending?.id ?? presentation.id;
+        const resolution = await this.resolveApproval(
+          sessionId,
+          approvalId,
+          true,
+          `quick-action-${Date.now()}`,
+        );
+        if (!resolution.approved) {
+          throw new Error('クイックアクションを承認できませんでした');
+        }
+        return (
+          resolution.presentation ?? {
+            type: 'text',
+            text: '承認しました。',
+          }
+        );
+      }
+      return presentation;
+    } finally {
+      // Clean up the one-off session used for this quick action.
+      await this.deleteSession(sessionId).catch(() => {
+        // Ignore cleanup errors; the action has already completed.
+      });
+    }
+  }
+
+  /// Authorize a pre-minted capability, creating a one-off session and
+  /// auto-resolving any non-immediate `ChangeProposal` the same way as
+  /// `executeQuickAction`.
+  async executeAuthorizeAction(
+    capability: ActionCapability,
+  ): Promise<Presentation> {
+    const sessionId = await this.createSession();
+    try {
+      const presentation = await this.authorizeAction(capability, sessionId);
+      if (presentation.type === 'change_proposal') {
+        const pending = await this.getApproval(sessionId);
+        const approvalId = pending?.id ?? presentation.id;
+        const resolution = await this.resolveApproval(
+          sessionId,
+          approvalId,
+          true,
+          `quick-capability-${Date.now()}`,
+        );
+        if (!resolution.approved) {
+          throw new Error('クイックアクションを承認できませんでした');
+        }
+        return (
+          resolution.presentation ?? {
+            type: 'text',
+            text: '承認しました。',
+          }
+        );
+      }
+      return presentation;
+    } finally {
+      await this.deleteSession(sessionId).catch(() => {
+        // Ignore cleanup errors; the action has already completed.
+      });
+    }
+  }
+
   async evaluatePlannerEvents(
     deviceId = 'mobile',
   ): Promise<EventEvaluationResult> {
@@ -883,5 +962,42 @@ export class AgentClient {
       },
       onEvent,
     );
+  }
+}
+
+const WORK_TRANSITION_LABELS: Record<WorkTransitionKind, string> = {
+  start: '開始',
+  pause: '一時停止',
+  progress: '進捗',
+  complete: '完了',
+  delay: '延期',
+  split: '分割',
+  undo: '元に戻す',
+};
+
+/// Render a short, toast-friendly string for a server-side presentation.
+export function formatPresentation(presentation: Presentation): string {
+  switch (presentation.type) {
+    case 'work_transition':
+      return `${WORK_TRANSITION_LABELS[presentation.kind]}: ${presentation.title} ${presentation.reference}${presentation.detail ? ` · ${presentation.detail}` : ''}`;
+    case 'current_task':
+      return `${presentation.title} ${presentation.reference}`;
+    case 'schedule_summary':
+      return presentation.next
+        ? `次: ${presentation.next.title}${presentation.next.start_at ? ` ${presentation.next.start_at}` : ''}`
+        : 'スケジュールを更新しました';
+    case 'progress_summary':
+      return `完了 ${presentation.done} / 進行中 ${presentation.in_progress} / 予定 ${presentation.scheduled}`;
+    case 'schedule_alert':
+      return presentation.message;
+    case 'check_in':
+      return presentation.question;
+    case 'change_proposal':
+      return presentation.why || '承認が必要です';
+    case 'clarification':
+      return presentation.message;
+    case 'text':
+    default:
+      return presentation.text || '完了しました';
   }
 }

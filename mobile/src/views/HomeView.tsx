@@ -23,11 +23,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useServer, DEFAULT_PORT } from '@/src/api/ServerProvider';
 import { TakusuClient } from '@/src/api/client';
 import { undoRedo } from '@/src/api/undoRedo';
-import { AgentClient } from '@/src/api/agentClient';
+import { AgentClient, formatPresentation } from '@/src/api/agentClient';
 import type {
   TaskCard as TaskCardPresentation,
   WorkState,
   CoverageState,
+  Presentation,
 } from '@/src/api/agentTypes';
 import { showError, logError } from '@/src/api/errors';
 import { formatTimeWindow } from '@/src/utils/time';
@@ -1174,12 +1175,13 @@ export function HomeView() {
       if (!currentTask || quickActionLoading) return;
       setQuickActionLoading(true);
       try {
-        await agentClient.quickAction({
+        const result = await agentClient.executeQuickAction({
           task_id: currentTask.id,
           action,
           device_id: 'mobile',
           input_path: 'screen_capability',
         });
+        showTopToast(formatPresentation(result), { type: 'success' });
         await refresh();
       } catch (e) {
         showError(
@@ -1190,11 +1192,13 @@ export function HomeView() {
         setQuickActionLoading(false);
       }
     },
-    [agentClient, currentTask, quickActionLoading, refresh],
+    [agentClient, currentTask, quickActionLoading, refresh, showTopToast],
   );
 
   // Generic capability-authorized action for any task. Prefer this over direct
   // takusu-client calls for start/pause/progress/complete quick actions.
+  // Returns the server presentation so callers can surface it instead of
+  // silently dropping a change-proposal result.
   const runTaskAction = useCallback(
     async (
       taskId: string,
@@ -1204,10 +1208,10 @@ export function HomeView() {
         quantity_total?: number;
         note?: string;
       },
-    ) => {
+    ): Promise<Presentation> => {
       const ac = agentClientRef.current;
       if (!ac) throw new Error('agent client not ready');
-      await ac.quickAction({
+      return ac.executeQuickAction({
         task_id: taskId,
         action,
         device_id: 'mobile',
