@@ -8635,6 +8635,7 @@ dependencies = [
  "aide",
  "async-trait",
  "axum",
+ "bytes",
  "clap",
  "config",
  "futures-util",

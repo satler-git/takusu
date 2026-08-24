@@ -12,6 +12,65 @@ pub struct AudioConfig {
     /// adapter will load a speaker embedding model and verify utterances
     /// against enrolled voiceprints.
     pub speaker: Option<SpeakerConfig>,
+    /// Conversation-polish settings (WI-19): barge-in, AEC, and latency budget.
+    pub barge_in: BargeInConfig,
+    pub aec: takusu_audio::AecConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct BargeInConfig {
+    /// Whether to listen for voice interruptions during assistant TTS.
+    #[serde(default = "default_barge_in_enabled")]
+    pub enabled: bool,
+    /// Whether to use the software NLMS echo canceller. When `false` the
+    /// adapter relies on a platform-provided AEC or falls back to tap-to-stop.
+    #[serde(default = "default_barge_in_use_aec")]
+    pub use_aec: bool,
+    /// Time to wait after TTS starts before barge-in can fire, in milliseconds,
+    /// to avoid transients.
+    #[serde(default = "default_barge_in_warm_up_ms")]
+    pub warm_up_ms: u64,
+    /// Estimated playback-to-microphone delay in milliseconds. The TTS
+    /// reference is delayed by this amount so the AEC sees the echo at the
+    /// same time as the microphone signal.
+    #[serde(default = "default_barge_in_reference_delay_ms")]
+    pub reference_delay_ms: u64,
+    /// Whether to record and log latency checkpoints for each turn.
+    #[serde(default = "default_barge_in_latency")]
+    pub record_latency: bool,
+}
+
+impl Default for BargeInConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_barge_in_enabled(),
+            use_aec: default_barge_in_use_aec(),
+            warm_up_ms: default_barge_in_warm_up_ms(),
+            reference_delay_ms: default_barge_in_reference_delay_ms(),
+            record_latency: default_barge_in_latency(),
+        }
+    }
+}
+
+fn default_barge_in_enabled() -> bool {
+    false
+}
+
+fn default_barge_in_use_aec() -> bool {
+    true
+}
+
+fn default_barge_in_warm_up_ms() -> u64 {
+    300
+}
+
+fn default_barge_in_reference_delay_ms() -> u64 {
+    0
+}
+
+fn default_barge_in_latency() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
