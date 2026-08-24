@@ -29,6 +29,37 @@ import { formatDuration } from '@/src/utils/duration';
 
 const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土'];
 
+function formatInferredValue(value: unknown): string {
+  if (value === null || value === undefined) {
+    return '-';
+  }
+  if (typeof value === 'string') {
+    return value;
+  }
+  return JSON.stringify(value);
+}
+
+function inferredFieldLabel(field: string): string {
+  switch (field) {
+    case 'title':
+      return 'タイトル';
+    case 'quantity_total':
+      return '数量';
+    case 'quantity_unit':
+      return '単位';
+    case 'avg_minutes':
+      return '見積もり時間';
+    case 'sigma_minutes':
+      return '標準偏差';
+    case 'end_at':
+      return '期限';
+    case 'start_at':
+      return '開始時間';
+    default:
+      return field;
+  }
+}
+
 const makeStyles = (colors: ColorSet) =>
   StyleSheet.create({
     panel: {
@@ -169,6 +200,20 @@ const makeStyles = (colors: ColorSet) =>
       borderRadius: 8,
       padding: 10,
       gap: 4,
+    },
+    inferredBox: {
+      borderWidth: 1,
+      borderRadius: 8,
+      padding: 10,
+      gap: 4,
+    },
+    inferredTitle: {
+      fontSize: 12,
+      fontWeight: '700',
+    },
+    inferredText: {
+      fontSize: 12,
+      lineHeight: 18,
     },
     actions: { flexDirection: 'row', gap: 12 },
     pager: {
@@ -1974,6 +2019,28 @@ export function ApprovalPanel({
               {approval.warnings.map((warning) => (
                 <Text key={warning} style={{ color: colors.warning }}>
                   注意: {warning}
+                </Text>
+              ))}
+            </View>
+          )}
+
+          {approval.inferred_fields.length > 0 && (
+            <View
+              style={[
+                styles.inferredBox,
+                { borderColor: colors.gray, backgroundColor: colors.surfaceTint },
+              ]}
+            >
+              <Text style={[styles.inferredTitle, { color: colors.gray }]}>
+                推定した項目
+              </Text>
+              {approval.inferred_fields.map((field, index) => (
+                <Text
+                  key={`inferred-${index}`}
+                  style={[styles.inferredText, { color: colors.gray }]}
+                >
+                  {inferredFieldLabel(field.field)}: {formatInferredValue(field.value)} —{' '}
+                  {field.reason}
                 </Text>
               ))}
             </View>
