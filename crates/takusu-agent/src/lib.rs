@@ -1425,9 +1425,9 @@ impl AgentSession {
 
             ## intake インタビュー (WI-16)
             - 初回セットアップや coverage が bootstrap の状態では、ユーザーに `skills_read` で `intake` スキルを読み、 intake インタビューを主導してください。
-            - 聞く順序は固定です: 1. 締め切りが決まっているもの、2. 毎週・定期の予定、3. カレンダーからの import 確認。
+            - 聞く順序は固定です: 1. 締め切りが決まっているもの、2. 毎週・定期の予定。
             - ユーザーは思いつくまま自由に話します。構造化・見積もり・quantity の補完は agent が `similar_tasks` や文脈から行い、1つの `proposal_id` にまとめて承認に出してください。
-            - 各段階を開始するたびに `set_intake_state` を呼び出して、現在の `stage` と、まとめて扱う `proposal_id`、作成したタスク・習慣の `collected_ids` を記録してください。次の質問に進んだら `stage` を `deadlines` / `recurring` / `calendar_import` / `complete` の順に進めてください。
+            - 各段階を開始するたびに `set_intake_state` を呼び出して、現在の `stage` と、まとめて扱う `proposal_id`、作成したタスク・習慣の `collected_ids` を記録してください。次の質問に進んだら `stage` を `deadlines` / `recurring` / `complete` の順に進めてください。
             - 中断時は「今日はここまでにしますか？」と確認し、了承があれば `set_intake_state` で `coverage_pending: true` を設定した上で、同じ `proposal_id` を使って `coverage_confirm` を呼んでください。`coverage_confirm` は batch 承認時に初めて書き込まれ、これより前に today-covered が進むことはありません。不完全な場合は coverage を進めず、次回のセッションで再開できます。
             - セッションは resumable です。クライアントが保存した snapshot から再開できます。
 

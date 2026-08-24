@@ -48,7 +48,6 @@ export type IntakeStage =
   | 'not_started'
   | 'deadlines'
   | 'recurring'
-  | 'calendar_import'
   | 'complete';
 
 export interface IntakeState {

@@ -19,8 +19,6 @@ pub enum IntakeStage {
     Deadlines,
     /// Collecting recurring commitments.
     Recurring,
-    /// Confirming calendar import.
-    CalendarImport,
     /// The user paused or finished the interview.
     Complete,
 }
@@ -31,8 +29,7 @@ pub fn intake_stage_index(stage: IntakeStage) -> u8 {
         IntakeStage::NotStarted => 0,
         IntakeStage::Deadlines => 1,
         IntakeStage::Recurring => 2,
-        IntakeStage::CalendarImport => 3,
-        IntakeStage::Complete => 4,
+        IntakeStage::Complete => 3,
     }
 }
 
@@ -42,7 +39,6 @@ pub fn intake_stage_label(stage: IntakeStage) -> &'static str {
         IntakeStage::NotStarted => "未開始",
         IntakeStage::Deadlines => "締め切り収集中",
         IntakeStage::Recurring => "定期予定収集中",
-        IntakeStage::CalendarImport => "カレンダー取り込み確認",
         IntakeStage::Complete => "完了",
     }
 }
@@ -69,8 +65,7 @@ impl IntakeState {
         self.stage = match self.stage {
             IntakeStage::NotStarted => IntakeStage::Deadlines,
             IntakeStage::Deadlines => IntakeStage::Recurring,
-            IntakeStage::Recurring => IntakeStage::CalendarImport,
-            IntakeStage::CalendarImport | IntakeStage::Complete => IntakeStage::Complete,
+            IntakeStage::Recurring | IntakeStage::Complete => IntakeStage::Complete,
         };
     }
 }
@@ -96,8 +91,6 @@ mod tests {
         state.advance();
         assert_eq!(state.stage, IntakeStage::Recurring);
         state.advance();
-        assert_eq!(state.stage, IntakeStage::CalendarImport);
-        state.advance();
         assert_eq!(state.stage, IntakeStage::Complete);
         state.advance();
         assert_eq!(state.stage, IntakeStage::Complete);
@@ -105,8 +98,8 @@ mod tests {
 
     #[test]
     fn serde_uses_snake_case_for_stages() {
-        let json = serde_json::to_string(&IntakeStage::CalendarImport).unwrap();
-        assert_eq!(json, "\"calendar_import\"");
+        let json = serde_json::to_string(&IntakeStage::Complete).unwrap();
+        assert_eq!(json, "\"complete\"");
         let stage: IntakeStage = serde_json::from_str("\"not_started\"").unwrap();
         assert_eq!(stage, IntakeStage::NotStarted);
     }
