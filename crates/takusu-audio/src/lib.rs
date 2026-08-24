@@ -1,8 +1,9 @@
+pub mod aec;
 pub mod cartesia;
 pub mod fish;
 mod http;
+pub mod latency;
 pub mod models;
-pub mod speaker;
 #[cfg(feature = "record")]
 pub mod play;
 #[cfg(feature = "record")]
@@ -10,6 +11,7 @@ pub mod record;
 #[cfg(feature = "record")]
 pub mod record_streaming;
 pub mod secrets;
+pub mod speaker;
 pub mod stt;
 pub mod tts;
 pub mod tts_normalize;
@@ -27,25 +29,28 @@ pub use hush::Hush;
 #[cfg(feature = "sherpa")]
 pub use sherpa::{OfflineAsrStream, SherpaOnnxAsr, SherpaOnnxAsrConfig, SherpaOnnxStreamingAsr};
 
+pub use aec::{Aec, AecConfig, AecEffectiveness, BargeInDetector, NlmsAec, NoOpAec, evaluate_aec};
 pub use cartesia::{
     CartesiaContainer, CartesiaEmotion, CartesiaEncoding, CartesiaGenerationConfig,
     CartesiaOutputFormat, CartesiaSonic, CartesiaSonicConfig,
 };
 pub use fish::{FishAudio, FishAudioConfig};
+pub use latency::{LatencyBudget, LatencyCheckpoint};
 pub use models::{
     DownloadProgress, DownloadStage, ModelCache, ModelError, ModelRegistry, ModelSpec,
     ProgressCallback,
 };
-pub use speaker::{
-    DEFAULT_SPEAKER_MODEL_ID, DEFAULT_VERIFY_THRESHOLD, MIN_SPEAKER_AUDIO_SECONDS, SpeakerConfig, SpeakerError, VerificationResult,
-};
-#[cfg(feature = "sherpa")]
-pub use speaker::{SpeakerEmbeddingMatch, SpeakerVerifier};
 #[cfg(feature = "record")]
 pub use record::{RecordConfig, RecorderError, record};
 #[cfg(feature = "record")]
 pub use record_streaming::StreamingRecorder;
 pub use secrets::{ApiKey, EndpointUrl, EndpointUrlError};
+pub use speaker::{
+    DEFAULT_SPEAKER_MODEL_ID, DEFAULT_VERIFY_THRESHOLD, MIN_SPEAKER_AUDIO_SECONDS, SpeakerConfig,
+    SpeakerError, VerificationResult,
+};
+#[cfg(feature = "sherpa")]
+pub use speaker::{SpeakerEmbeddingMatch, SpeakerVerifier};
 pub use stt::{
     AsrStream, ExecutionProvider, SherpaOnnxModel, SpeechToText, StreamingSpeechToText, SttBackend,
     SttError, SttRuntimeConfig,

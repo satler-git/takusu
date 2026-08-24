@@ -443,7 +443,7 @@ impl Resampler {
     }
 }
 
-fn decode_pcm_chunk(
+pub fn decode_pcm_chunk(
     buf: &mut BytesMut,
     format: &StreamedAudioFormat,
     out: &mut Vec<f32>,

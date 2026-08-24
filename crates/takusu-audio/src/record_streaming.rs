@@ -22,7 +22,13 @@ const CHUNK_MS: u64 = 160;
 /// Handle to an in-progress streaming recording.
 pub struct StreamingRecorder {
     stop: Arc<AtomicBool>,
-    handle: JoinHandle<Result<(), RecorderError>>,
+    handle: Option<JoinHandle<Result<(), RecorderError>>>,
+}
+
+impl Drop for StreamingRecorder {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Relaxed);
+    }
 }
 
 impl StreamingRecorder {
@@ -177,7 +183,13 @@ impl StreamingRecorder {
             Ok(())
         });
 
-        Ok((Self { stop, handle }, rx))
+        Ok((
+            Self {
+                stop,
+                handle: Some(handle),
+            },
+            rx,
+        ))
     }
 
     /// Request the recording to stop at the next poll.
@@ -186,8 +198,10 @@ impl StreamingRecorder {
     }
 
     /// Wait for the recording thread to finish.
-    pub fn join(self) -> Result<(), RecorderError> {
+    pub fn join(mut self) -> Result<(), RecorderError> {
         self.handle
+            .take()
+            .expect("handle present")
             .join()
             .map_err(|_| RecorderError::Cpal("recording thread panicked".to_string()))?
     }
