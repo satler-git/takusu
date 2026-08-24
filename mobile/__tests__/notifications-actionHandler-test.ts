@@ -234,17 +234,17 @@ describe('handleActionButtonResponse', () => {
     );
   });
 
-  it('routes legacy START through agentClient.quickAction when available', async () => {
-    const quickAction = jest.fn().mockResolvedValue(undefined);
+  it('routes legacy START through agentClient.executeQuickAction when available', async () => {
+    const executeQuickAction = jest.fn().mockResolvedValue(undefined);
     const response = makeResponse(ACTION_START);
     const result = await handleActionButtonResponse(response, {
       client: makeClient(),
-      agentClient: { quickAction } as any,
+      agentClient: { executeQuickAction } as any,
       inProgressNotifications: false,
       haptic,
     });
     expect(result).toBe(true);
-    expect(quickAction).toHaveBeenCalledWith({
+    expect(executeQuickAction).toHaveBeenCalledWith({
       task_id: 'task-1',
       action: 'start',
       device_id: 'mobile',
@@ -253,17 +253,17 @@ describe('handleActionButtonResponse', () => {
     expect(mockUpdateTask).not.toHaveBeenCalled();
   });
 
-  it('routes DONE through agentClient.quickAction when available', async () => {
-    const quickAction = jest.fn().mockResolvedValue(undefined);
+  it('routes DONE through agentClient.executeQuickAction when available', async () => {
+    const executeQuickAction = jest.fn().mockResolvedValue(undefined);
     const response = makeResponse(ACTION_DONE);
     const result = await handleActionButtonResponse(response, {
       client: makeClient(),
-      agentClient: { quickAction } as any,
+      agentClient: { executeQuickAction } as any,
       inProgressNotifications: true,
       haptic,
     });
     expect(result).toBe(true);
-    expect(quickAction).toHaveBeenCalledWith({
+    expect(executeQuickAction).toHaveBeenCalledWith({
       task_id: 'task-1',
       action: 'complete',
       device_id: 'mobile',
