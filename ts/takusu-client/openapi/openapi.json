@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "takusu API",
-    "version": "0.20260823.1"
+    "version": "0.20260824.1"
   },
   "servers": [
     {
