@@ -23,7 +23,7 @@ use std::str::FromStr;
 use crate::ApprovalRequest;
 use crate::UserInputAnswer;
 use crate::approval::DEFAULT_APPROVAL_WHY;
-use crate::tool::{ChangeOperation, TargetKind, ToolOutput};
+use crate::tool::{ChangeOperation, ChangeReceipt, Target, TargetKind, ToolOutput};
 
 /// A non-empty wrapper for a group of choices or actions.
 ///
@@ -457,6 +457,43 @@ impl Presentation {
         }
     }
 
+    /// Build a presentation from executed change receipts.
+    ///
+    /// Maps the first task-level work transition receipt to a
+    /// [`Presentation::WorkTransition`] so voice approval and quick-action
+    /// resolutions can surface a typed card instead of falling back to free-form
+    /// text.
+    pub fn from_change_receipts(receipts: &[ChangeReceipt]) -> Option<Presentation> {
+        for receipt in receipts {
+            if receipt.target.target_type != TargetKind::Task {
+                continue;
+            }
+            let kind = match receipt.operation {
+                ChangeOperation::Start => WorkTransitionKind::Start,
+                ChangeOperation::Pause => WorkTransitionKind::Pause,
+                ChangeOperation::Progress => WorkTransitionKind::Progress,
+                ChangeOperation::Complete => WorkTransitionKind::Complete,
+                ChangeOperation::Snooze | ChangeOperation::Move => WorkTransitionKind::Delay,
+                ChangeOperation::Split => WorkTransitionKind::Split,
+                ChangeOperation::Undo => WorkTransitionKind::Undo,
+                _ => continue,
+            };
+            let after_or_before = receipt.after.as_ref().or(receipt.before.as_ref());
+            let (title, reference) = title_and_reference(after_or_before);
+            if title == "タスク" && reference.is_empty() {
+                continue;
+            }
+            let detail = work_transition_detail(receipt.operation, after_or_before);
+            return Some(Presentation::WorkTransition(WorkTransition {
+                kind,
+                title,
+                reference,
+                detail,
+            }));
+        }
+        None
+    }
+
     /// Build a presentation from a tool call's output, mapping the known
     /// tool shapes onto the typed model.
     ///
@@ -465,26 +502,35 @@ impl Presentation {
     /// [`ApprovalRequest`] becomes [`Presentation::ChangeProposal`]).
     pub fn from_tool_output(name: &str, output: &ToolOutput) -> Option<Presentation> {
         match name {
-            "task_start" | "task_pause" | "task_progress" | "task_complete" | "task_split" => {
+            "task_start"
+            | "task_pause"
+            | "task_progress"
+            | "task_complete"
+            | "task_split"
+            | "task_undo"
+            | "move_task" => {
                 // The progress mutation tools produce a WorkTransition when a
                 // task is given; when task_ref is omitted they instead return a
                 // focused_clarification with an empty proposed_changes (WI-1).
                 if let Some(change) = output.proposed_changes.first() {
-                    let (title, reference) = title_and_reference(change.after.as_ref());
                     let kind = match change.operation {
                         ChangeOperation::Start => WorkTransitionKind::Start,
                         ChangeOperation::Pause => WorkTransitionKind::Pause,
-                        ChangeOperation::Snooze => WorkTransitionKind::Delay,
+                        ChangeOperation::Snooze | ChangeOperation::Move => WorkTransitionKind::Delay,
                         ChangeOperation::Progress => WorkTransitionKind::Progress,
                         ChangeOperation::Complete => WorkTransitionKind::Complete,
                         ChangeOperation::Split => WorkTransitionKind::Split,
+                        ChangeOperation::Undo => WorkTransitionKind::Undo,
                         _ => return None,
                     };
+                    let (title, reference) =
+                        extract_title_reference(change.after.as_ref(), &change.target, &change.description);
+                    let detail = work_transition_detail(change.operation, change.after.as_ref());
                     Some(Presentation::WorkTransition(WorkTransition {
                         kind,
                         title,
                         reference,
-                        detail: change.description.clone(),
+                        detail,
                     }))
                 } else {
                     focused_clarification(output)
@@ -546,6 +592,59 @@ fn title_and_reference(after: Option<&Value>) -> (String, String) {
         .map(|s| s.to_string())
         .unwrap_or_default();
     (title, reference)
+}
+
+/// Extract a title and reference from a proposed change, falling back to the
+/// description and target display id when the `after` value is sparse.
+fn extract_title_reference(
+    after: Option<&Value>,
+    target: &Target,
+    description: &str,
+) -> (String, String) {
+    let (title, reference) = title_and_reference(after);
+    if title != "タスク" {
+        return (title, reference);
+    }
+    let title = parse_title_from_description(description).unwrap_or_else(|| "タスク".to_string());
+    let reference = if !reference.is_empty() {
+        reference
+    } else if !target.display_id.is_empty() {
+        target.display_id.clone()
+    } else {
+        String::new()
+    };
+    (title, reference)
+}
+
+/// Parse a task title from a Japanese description such as
+/// "「レポート」を開始" or "「レポート」を 09:00 に移動".
+fn parse_title_from_description(description: &str) -> Option<String> {
+    description
+        .split_once('「')
+        .and_then(|(_, after)| after.split_once('」').map(|(t, _)| t.to_string()))
+}
+
+/// Build the `detail` field for a [`WorkTransition`] from the operation and
+/// the resulting task state.
+fn work_transition_detail(operation: ChangeOperation, after: Option<&Value>) -> String {
+    match operation {
+        ChangeOperation::Progress => {
+            let Some(after) = after else { return String::new() };
+            let done = after.get("quantity_done").and_then(Value::as_i64);
+            let total = after.get("quantity_total").and_then(Value::as_i64);
+            match (done, total) {
+                (Some(done), Some(total)) if total > 0 => format!("{done} / {total}"),
+                (Some(done), _) if done > 0 => done.to_string(),
+                _ => String::new(),
+            }
+        }
+        ChangeOperation::Snooze | ChangeOperation::Move => after
+            .and_then(|v| v.get("start_at").and_then(Value::as_str))
+            .filter(|s| !s.is_empty())
+            .map(format_datetime_for_voice)
+            .unwrap_or_default(),
+        _ => String::new(),
+    }
 }
 
 /// Map get_schedule / preview_schedule output to a [`ScheduleSummary`]. Only

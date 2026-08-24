@@ -116,7 +116,9 @@ impl ContactPolicyState {
         self.suppress_until.is_some_and(|t| t > now)
     }
 
-    /// Record that a proactive check-in was just delivered and was ignored.
+    /// Record that a proactive check-in was suppressed or otherwise ignored
+    /// by the user. This drives the frequency-decay rule that lowers the
+    /// check-in cadence after repeated unresponsive contacts.
     pub fn mark_ignored(&mut self, _now: Timestamp) {
         self.ignored_check_in_count_today += 1;
     }
@@ -216,14 +218,14 @@ pub fn filter_events(
         let event_id = event.id.clone();
         let kind = event.kind;
         let is_check_in = is_proactive_check_in(kind);
-        let is_scheduled = is_scheduled_notification(kind);
 
         // Scheduled notifications and emergency/high-urgency events bypass the
-        // daily cap and frequency decay. They still respect explicit user
-        // suppression from the device state.
+        // daily cap, frequency decay, and explicit timed suppression.
+        // Explicit "ほっといて" suppression applies only to proactive check-ins.
         let urgent = matches!(event.urgency, Urgency::Emergency | Urgency::High);
 
-        if suppressed && !urgent && !is_scheduled {
+        if suppressed && is_check_in && !urgent {
+            state.mark_ignored(now);
             suppressed_ids.push(event_id.clone());
             suppression_reasons.insert(event_id, SuppressionReason::Suppressed);
             continue;
@@ -269,8 +271,11 @@ pub fn delivery_mode_for(
         return DeliveryMode::DeferQuietHours;
     }
 
-    // Explicit timed suppression drops proactive check-ins.
-    if state.is_suppressed(now) && event.urgency != Urgency::Emergency {
+    // Explicit timed suppression drops only proactive check-ins. Scheduled
+    // notifications and high-urgency/emergency events bypass suppression.
+    let urgent = matches!(event.urgency, Urgency::Emergency | Urgency::High);
+    let is_check_in = is_proactive_check_in(event.kind);
+    if state.is_suppressed(now) && is_check_in && !urgent {
         return DeliveryMode::Suppress;
     }
 

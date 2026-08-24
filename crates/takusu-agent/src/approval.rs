@@ -7,6 +7,7 @@
 //! which either executes the changes or records the denial in history.
 
 use serde_json::Value;
+use takusu_client::{SaveScheduleRequest, ScheduleEntry, ScheduleRow};
 
 use crate::change_executor;
 use crate::llm;
@@ -203,6 +204,7 @@ impl AgentSession {
                 approved: false,
                 changes: Vec::new(),
                 schedule_dirty: *self.schedule_dirty.lock()?,
+                presentation: None,
             });
         }
 
@@ -214,19 +216,47 @@ impl AgentSession {
 
     pub(crate) async fn execute_approved_changes(
         &self,
-        request: ApprovalRequest,
+        mut request: ApprovalRequest,
         denied_changes: Vec<ProposedChange>,
         auto: bool,
     ) -> Result<ApprovalResult, AgentError> {
         tracing::info!(session_id = %self.session_id, approval_id = %request.id, count = request.changes.len(), auto, "executing approved changes");
+
+        // Reorder so coverage confirmations execute last. This guarantees that
+        // a batch containing `generate_schedule` / `reschedule` commits the
+        // schedule before `coverage_confirm` records a confirmation, so the
+        // confirmation is stamped with the new schedule revision (WI-16).
+        {
+            let (non_coverage, coverage): (Vec<_>, Vec<_>) = request
+                .changes
+                .into_iter()
+                .partition(|c| c.target.kind != TargetKind::Coverage);
+            request.changes = non_coverage.into_iter().chain(coverage).collect();
+        }
+
         let changes_for_message = request.changes.clone();
         let schedule_commit = request.changes.iter().any(|change| {
             change.target.kind == TargetKind::Schedule
                 && matches!(
                     change.operation,
-                    ChangeOperation::Generate | ChangeOperation::Reschedule
+                    ChangeOperation::Generate | ChangeOperation::Reschedule | ChangeOperation::Settle
                 )
         });
+
+        // If the batch may replace the schedule, snapshot it so we can restore
+        // on partial failure (WI-16).
+        let before_schedule: Option<ScheduleRow> = if schedule_commit {
+            match self.client().get_schedule().await {
+                Ok(row) => Some(row),
+                Err(e) => {
+                    tracing::warn!(session_id = %self.session_id, %e, "failed to snapshot schedule before batch; rollback will not be able to restore it");
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
         let mut receipts = Vec::new();
         let mut schedule_dirty = *self.schedule_dirty.lock()?;
         let mut execution_error = None;
@@ -248,25 +278,27 @@ impl AgentSession {
                 }
             }
         }
-        // WI-3: queue a check-in for every task completion that overran beyond
-        // 1σ and actually executed, even if a later change in the same
-        // approval failed. The completed task's actuals are already saved, so
-        // its check-in must not be lost to the subsequent error.
-        self.record_completion_check_ins(&receipts)?;
-        // Drop check-ins for tasks deleted in this approval so prompt notes
-        // never reference a now-nonexistent task.
-        self.clear_check_ins_for_deleted_tasks(&receipts)?;
-        // WI-17: one-time postpone reason hook for approved long snoozes/moves.
-        let executed = &request.changes[..receipts.len()];
-        if let Err(error) = self.record_postpone_reasons_from_changes(executed).await {
-            tracing::warn!(session_id = %self.session_id, %error, "failed to record postpone reasons from approved changes");
-        }
-        if schedule_commit && execution_error.is_none() {
-            schedule_dirty = false;
-        }
-        *self.schedule_dirty.lock()? = schedule_dirty;
-        let system_estimate = self.last_system_estimate.lock()?.unwrap_or(0);
+
         if let Some((change, e)) = execution_error {
+            let executed = &request.changes[..receipts.len()];
+            // WI-3: completed tasks before the failure are already saved, so
+            // their overrun check-ins must not be lost. Do this before rolling
+            // back the partially committed creates.
+            self.record_completion_check_ins(&receipts)?;
+            // Drop check-ins for tasks deleted before the failure.
+            self.clear_check_ins_for_deleted_tasks(&receipts)?;
+            // WI-17: long snooze/move reasons for operations that succeeded.
+            if let Err(error) = self.record_postpone_reasons_from_changes(executed).await {
+                tracing::warn!(session_id = %self.session_id, %error, "failed to record postpone reasons from approved changes");
+            }
+            if let Err(rollback_err) = self
+                .compensate_failed_batch(&request, &receipts, before_schedule.as_ref())
+                .await
+            {
+                tracing::error!(session_id = %self.session_id, %rollback_err, "rollback after partial approval failure failed");
+            }
+
+            let system_estimate = self.last_system_estimate.lock()?.unwrap_or(0);
             let error_message = if auto {
                 format!(
                     "自動承認された変更の適用中にエラーが発生しました: {}\n- {}",
@@ -284,17 +316,35 @@ impl AgentSession {
             tracing::error!(session_id = %self.session_id, approval_id = %request.id, error = %e, "approved change failed");
             return Err(e);
         }
+
+        // Success path: post-processing and intake state updates.
+        self.record_completion_check_ins(&receipts)?;
+        self.clear_check_ins_for_deleted_tasks(&receipts)?;
+        let executed = &request.changes[..receipts.len()];
+        if let Err(error) = self.record_postpone_reasons_from_changes(executed).await {
+            tracing::warn!(session_id = %self.session_id, %error, "failed to record postpone reasons from approved changes");
+        }
+        if schedule_commit {
+            schedule_dirty = false;
+        }
+        *self.schedule_dirty.lock()? = schedule_dirty;
+        self.update_intake_state_from_batch(&request, &receipts).await?;
+
+        let system_estimate = self.last_system_estimate.lock()?.unwrap_or(0);
         let resolution_message =
             Self::build_approval_resolution_message(&changes_for_message, &denied_changes, auto);
         let mut local = self.history.lock()?.clone();
         local.push(llm::Message::User(resolution_message));
         self.replace_history(local, None, system_estimate)?;
         tracing::info!(session_id = %self.session_id, approval_id = %request.id, count = receipts.len(), "approved changes executed");
+        let presentation = crate::Presentation::from_change_receipts(&receipts)
+            .or_else(|| Some(crate::Presentation::Text { text: "承認しました。".into() }));
         Ok(ApprovalResult {
             id: request.id,
             approved: true,
             changes: receipts,
             schedule_dirty,
+            presentation,
         })
     }
 
@@ -361,6 +411,127 @@ impl AgentSession {
             target_revision,
             ..Default::default()
         })
+    }
+
+    /// Best-effort rollback for a partially failed approval batch (WI-16).
+    ///
+    /// Deletes newly created tasks/habits and, if the batch contained a schedule
+    /// replacement, restores the previous schedule. Coverage confirmations and
+    /// operations other than creates cannot be rolled back by this path.
+    async fn compensate_failed_batch(
+        &self,
+        request: &ApprovalRequest,
+        receipts: &[ChangeReceipt],
+        before_schedule: Option<&ScheduleRow>,
+    ) -> Result<(), AgentError> {
+        for (change, receipt) in request.changes.iter().zip(receipts) {
+            match (change.target.kind, change.operation) {
+                (TargetKind::Task, ChangeOperation::Create) => {
+                    if let Err(e) = self.client().delete_task(&receipt.target.target_id).await {
+                        tracing::warn!(
+                            session_id = %self.session_id,
+                            %e,
+                            "rollback: failed to delete created task {} (may already be gone)",
+                            receipt.target.target_id
+                        );
+                    }
+                }
+                (TargetKind::Habit, ChangeOperation::Create) => {
+                    if let Err(e) = self.client().delete_habit(&receipt.target.target_id).await {
+                        tracing::warn!(
+                            session_id = %self.session_id,
+                            %e,
+                            "rollback: failed to delete created habit {} (may already be gone)",
+                            receipt.target.target_id
+                        );
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        if let Some(before) = before_schedule {
+            let entries = before.schedule.0.clone();
+            let mark_scheduled_task_ids = entries
+                .iter()
+                .map(|e: &ScheduleEntry| e.task_id.clone())
+                .collect();
+            let horizon_task_ids = before.horizon_task_ids.0.clone();
+            let restore = SaveScheduleRequest {
+                entries,
+                mark_scheduled_task_ids,
+                horizon_task_ids,
+            };
+            if let Err(e) = self.client().replace_schedule(&restore).await {
+                tracing::warn!(
+                    session_id = %self.session_id,
+                    %e,
+                    "rollback: failed to restore previous schedule"
+                );
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Update `IntakeState` after a successful batch (WI-16).
+    ///
+    /// - Adds display ids of newly created tasks/habits that belong to the
+    ///   current intake proposal to `collected_ids`.
+    /// - Clears `coverage_pending` if a coverage confirmation in the same batch
+    ///   was committed.
+    async fn update_intake_state_from_batch(
+        &self,
+        request: &ApprovalRequest,
+        receipts: &[ChangeReceipt],
+    ) -> Result<(), AgentError> {
+        let mut state = self.get_intake_state()?;
+        let mut coverage_committed = false;
+
+        for (change, receipt) in request.changes.iter().zip(receipts) {
+            if change.target.kind == TargetKind::Coverage
+                && change.operation == ChangeOperation::Confirm
+            {
+                coverage_committed = true;
+                continue;
+            }
+
+            let matches_intake = state
+                .proposal_id
+                .as_deref()
+                .zip(change.proposal_id.as_deref())
+                .is_some_and(|(a, b)| a == b);
+            if !matches_intake {
+                continue;
+            }
+            if change.operation != ChangeOperation::Create {
+                continue;
+            }
+
+            let display_id = receipt
+                .after
+                .as_ref()
+                .and_then(|v| v.as_object())
+                .and_then(|obj| obj.get("display_id"))
+                .and_then(|v| v.as_i64());
+            if let Some(id) = display_id {
+                let id_str = match change.target.kind {
+                    TargetKind::Task => format!("#{id}"),
+                    TargetKind::Habit => format!("h{id}"),
+                    _ => id.to_string(),
+                };
+                if !state.collected_ids.contains(&id_str) {
+                    state.collected_ids.push(id_str);
+                }
+            }
+        }
+
+        if coverage_committed {
+            state.coverage_pending = false;
+        }
+
+        self.set_intake_state(state)?;
+        Ok(())
     }
 
     /// Queue one-time postpone-reason check-ins for approved snoozes/moves that

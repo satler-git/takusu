@@ -609,6 +609,9 @@ fn valid_event_transition(from: EventDeliveryState, to: EventDeliveryState) -> b
                 EventDeliveryState::Delivered
             ) | (
                 EventDeliveryState::PendingDelivery,
+                EventDeliveryState::Ignored
+            ) | (
+                EventDeliveryState::PendingDelivery,
                 EventDeliveryState::DeferredQuietHours
             ) | (
                 EventDeliveryState::DeferredQuietHours,

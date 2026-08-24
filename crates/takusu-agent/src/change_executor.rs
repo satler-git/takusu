@@ -29,10 +29,11 @@ use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 use takusu_client::{
-    Client, CreateHabit, CreateHabitScheduledSpan, CreateMemory, CreateSkill, CreateTask,
-    HabitDetail, MoveEntry, RecordWorkSessionProgress, SaveScheduleRequest, ScheduleEntry,
-    SettleRequest, SplitTask, StartWorkSession, UndoWorkSession, UndoWorkSessionResult,
-    UpdateHabit, UpdateMemory, UpdateSkill, UpdateTask,
+    Client, CreateCoverageConfirmation, CreateHabit, CreateHabitScheduledSpan, CreateMemory,
+    CreateSkill, CreateTask, CoverageConfirmationRow, HabitDetail, HabitRow, MoveEntry,
+    RecordWorkSessionProgress, SaveScheduleRequest, ScheduleEntry, SettleRequest, SplitTask,
+    StartWorkSession, TaskRow, UndoWorkSession, UndoWorkSessionResult, UpdateHabit, UpdateMemory,
+    UpdateSkill, UpdateTask,
 };
 use takusu_types::Timestamp;
 
@@ -177,9 +178,11 @@ where
     T: ChangeHandler,
 {
     async fn fetch_target(&self, ctx: &FetchContext<'_>) -> Result<TargetInfo, AgentError> {
-        // `Create` and `Schedule` never address an existing row.
-        if matches!(ctx.change.operation, ChangeOperation::Create)
-            || ctx.change.target.kind == TargetKind::Schedule
+        // `Create`, `Confirm`, and `Schedule` never address an existing row.
+        if matches!(
+            ctx.change.operation,
+            ChangeOperation::Create | ChangeOperation::Confirm
+        ) || ctx.change.target.kind == TargetKind::Schedule
         {
             return Ok(TargetInfo::default());
         }
@@ -253,6 +256,8 @@ async fn fetch_target_for_kind(ctx: &FetchContext<'_>) -> Result<TargetInfo, Age
         // `Comment` never travels through the proposal pipeline; `add_comment`
         // writes immediately outside the approval boundary. Kept exhaustive.
         TargetKind::Comment => Ok(TargetInfo::default()),
+        // `Coverage` creates a new confirmation record and never addresses a row.
+        TargetKind::Coverage => Ok(TargetInfo::default()),
     }
 }
 
@@ -378,11 +383,11 @@ impl ChangeHandler for TaskCreate {
         args: &'a Self::Args,
     ) -> impl Future<Output = Result<ExecutionOutcome, AgentError>> + Send {
         async move {
-            let id = ctx.client().create_task(args).await.map_err(other_err)?.id;
+            let created: TaskRow = ctx.client().create_task(args).await.map_err(other_err)?;
             Ok(ExecutionOutcome {
-                result_id: id,
+                result_id: created.id.clone(),
                 before: None,
-                after: None,
+                after: to_after(&created)?,
                 target_revision: None,
             })
         }
@@ -755,16 +760,16 @@ impl ChangeHandler for HabitCreate {
         args: &'a Self::Args,
     ) -> impl Future<Output = Result<ExecutionOutcome, AgentError>> + Send {
         async move {
-            let id = ctx.client().create_habit(args).await.map_err(other_err)?.id;
+            let created: HabitRow = ctx.client().create_habit(args).await.map_err(other_err)?;
             if let Some(steps) = ctx.steps_value.clone() {
                 ctx.session
-                    .replace_habit_steps_from_input(&id, steps, &[])
+                    .replace_habit_steps_from_input(&created.id, steps, &[])
                     .await?;
             }
             Ok(ExecutionOutcome {
-                result_id: id,
+                result_id: created.id.clone(),
                 before: None,
-                after: None,
+                after: to_after(&created)?,
                 target_revision: None,
             })
         }
@@ -1175,6 +1180,93 @@ impl ChangeHandler for ScheduleSettle {
     }
 }
 
+// --- Coverage arms -----------------------------------------------------------
+
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+struct CoverageConfirmArgs {
+    start_at: String,
+    end_at: String,
+    timezone: String,
+    #[serde(default = "default_coverage_source")]
+    source: String,
+    #[serde(default = "default_calendar_health")]
+    calendar_health: String,
+}
+
+fn default_coverage_source() -> String {
+    "intake_complete".into()
+}
+
+fn default_calendar_health() -> String {
+    "ok".into()
+}
+
+struct CoverageConfirm;
+impl ChangeHandler for CoverageConfirm {
+    type Args = CoverageConfirmArgs;
+
+    fn deserialize_args(args: &Value) -> Result<Self::Args, AgentError> {
+        serde_json::from_value(args.clone()).map_err(invalid_args)
+    }
+
+    fn execute_typed<'a>(
+        &'a self,
+        ctx: &ChangeContext<'a>,
+        args: &'a Self::Args,
+    ) -> impl Future<Output = Result<ExecutionOutcome, AgentError>> + Send {
+        async move {
+            let start_at: Timestamp = args.start_at.parse().map_err(|_| {
+                AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
+                    "start_at",
+                    "invalid timestamp",
+                )))
+            })?;
+            let end_at: Timestamp = args.end_at.parse().map_err(|_| {
+                AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
+                    "end_at",
+                    "invalid timestamp",
+                )))
+            })?;
+            if start_at > end_at {
+                return Err(AgentError::Tool(ToolError::InvalidArgs(
+                    InvalidArgsError::new("end_at", "end_at must not be before start_at"),
+                )));
+            }
+
+            // Fetch the schedule revision at execution time, so a batch that
+            // also contains `generate_schedule`/`reschedule` records coverage
+            // against the new revision (WI-16).
+            let schedule_revision = ctx
+                .client()
+                .get_schedule_revision()
+                .await
+                .map_err(other_err)?;
+
+            let body = CreateCoverageConfirmation {
+                start_at,
+                end_at,
+                timezone: args.timezone.clone(),
+                source: args.source.clone(),
+                schedule_revision,
+                calendar_health: args.calendar_health.clone(),
+                operation_id: None,
+            };
+            let row: CoverageConfirmationRow = ctx
+                .client()
+                .create_coverage_confirmation(&body, ctx.operation_id)
+                .await
+                .map_err(other_err)?;
+            Ok(ExecutionOutcome {
+                result_id: row.id.clone(),
+                before: None,
+                after: to_after(&row)?,
+                target_revision: Some(row.schedule_revision),
+            })
+        }
+    }
+}
+
 // --- dispatch ----------------------------------------------------------------
 
 /// Resolve the executor for a `(kind, operation)` pair.
@@ -1186,7 +1278,7 @@ pub(crate) fn dispatch(
     kind: TargetKind,
     operation: ChangeOperation,
 ) -> Option<&'static dyn ChangeExecutor> {
-    use TargetKind::{Habit, Memory, Schedule, Skill, Task};
+    use TargetKind::{Coverage, Habit, Memory, Schedule, Skill, Task};
     match (kind, operation) {
         (Task, ChangeOperation::Create) => Some(&TaskCreate),
         (Task, ChangeOperation::Update) => Some(&TaskUpdate),
@@ -1213,6 +1305,7 @@ pub(crate) fn dispatch(
             Some(&ScheduleGenerate)
         }
         (Schedule, ChangeOperation::Settle) => Some(&ScheduleSettle),
+        (Coverage, ChangeOperation::Confirm) => Some(&CoverageConfirm),
         _ => None,
     }
 }

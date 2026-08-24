@@ -205,6 +205,7 @@ pub fn default_output_config() -> Result<cpal::SupportedStreamConfig, PlayError>
 pub async fn play_stream(
     mut stream: TtsStream,
     format: StreamedAudioFormat,
+    cancel: Arc<AtomicBool>,
 ) -> Result<(), PlayError> {
     let host = cpal::default_host();
     let device = host
@@ -282,7 +283,23 @@ pub async fn play_stream(
     );
     let mut pending = BytesMut::new();
     let mut chunk_samples = Vec::new();
-    while let Some(chunk) = stream.next().await {
+    loop {
+        let chunk = tokio::select! {
+            chunk = stream.next() => chunk,
+            _ = async {
+                while !cancel.load(Ordering::Acquire) {
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                }
+            } => {
+                // Cancel requested: stop feeding the stream and signal the
+                // cpal thread that playback has ended.
+                stream_ended.store(true, Ordering::Release);
+                return Ok(());
+            }
+        };
+        let Some(chunk) = chunk else {
+            break;
+        };
         let chunk = chunk?;
         pending.extend_from_slice(&chunk);
         decode_pcm_chunk(&mut pending, &format, &mut chunk_samples)?;

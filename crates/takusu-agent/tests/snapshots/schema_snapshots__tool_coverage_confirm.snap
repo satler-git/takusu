@@ -4,7 +4,7 @@ expression: def
 ---
 {
   "function": {
-    "description": "Record a coverage confirmation for a local time interval. Use this after an intake or capture flow when the user has confirmed what happened during a period. Does not require approval; it is an immediate write.",
+    "description": "Create a coverage confirmation proposal for a local time interval. Use this after an intake or capture flow when the user has confirmed what happened during a period. The confirmation is written only when the batch is approved, so it is committed together with the related tasks/habits and schedule changes.",
     "name": "coverage_confirm",
     "parameters": {
       "additionalProperties": false,
@@ -47,6 +47,10 @@ expression: def
             "type": "object"
           },
           "type": "array"
+        },
+        "proposal_id": {
+          "description": "Optional proposal id. Set the same value across the coverage confirmation and the related create/update/schedule calls so they are approved as one batch.",
+          "type": "string"
         },
         "source": {
           "description": "Why the confirmation is being recorded.",

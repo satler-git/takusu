@@ -58,6 +58,21 @@ pub enum AudioError {
     Other(String),
 }
 
+impl AudioError {
+    /// Whether the error is likely transient and the session can keep listening.
+    pub fn is_recoverable(&self) -> bool {
+        matches!(
+            self,
+            Self::Timeout
+                | Self::Record(_)
+                | Self::Transcribe(_)
+                | Self::Tts(_)
+                | Self::Play(_)
+                | Self::Other(_)
+        )
+    }
+}
+
 // Generic `From` so audio call sites can write `.read()?` / `.lock()?`
 // directly against `Result<_, AudioError>`. See `AgentError` for rationale.
 impl<G> From<std::sync::PoisonError<G>> for AudioError {
@@ -154,7 +169,7 @@ pub struct AudioAdapter {
     /// Latency budget for the current/resident voice turn. Collected per turn
     /// and reported when the turn finishes. `Arc` so spawned TTS tasks can
     /// record checkpoints without borrowing `self`.
-    latency: Arc<Mutex<LatencyBudget>>,
+    latency: Arc<tokio::sync::Mutex<LatencyBudget>>,
 }
 
 impl AudioAdapter {
@@ -184,7 +199,7 @@ impl AudioAdapter {
             endpoint: Some(endpoint),
             speaker_verifier,
             last_captured_samples: Vec::new(),
-            latency: Arc::new(Mutex::new(LatencyBudget::new())),
+            latency: Arc::new(tokio::sync::Mutex::new(LatencyBudget::new())),
         })
     }
 
@@ -357,7 +372,7 @@ impl AudioAdapter {
         }
 
         self.reconfigure_if_needed().await?;
-        self.reset_latency();
+        self.latency.lock().await.reset();
 
         let language = self.last_audio.stt.language.clone();
         let mut asr_stream = self
@@ -421,7 +436,8 @@ impl AudioAdapter {
                                 &latency,
                                 record_latency,
                                 LatencyCheckpoint::VadEndpoint,
-                            );
+                            )
+                            .await;
                             recorder.stop();
                             break;
                         }
@@ -455,7 +471,7 @@ impl AudioAdapter {
             .finish()
             .await
             .map_err(|e| AudioError::Transcribe(e.to_string()))?;
-        Self::record_latency_shared(&latency, record_latency, LatencyCheckpoint::AsrFinal);
+        Self::record_latency_shared(&latency, record_latency, LatencyCheckpoint::AsrFinal).await;
         if text.trim().is_empty() {
             Ok(None)
         } else {
@@ -474,10 +490,13 @@ impl AudioAdapter {
     ) -> Result<(TurnResult, Option<String>), AgentError> {
         // Reset the tap-to-stop flag for this turn.
         self.stop_tts.store(false, Ordering::Relaxed);
-        self.record_latency(LatencyCheckpoint::LlmStart);
 
         let no_tts_this_turn = !speak || self.last_audio.tts.mute;
         let barge_in_enabled = !no_tts_this_turn && self.last_audio.barge_in.enabled;
+        let record_latency = self.last_audio.barge_in.record_latency;
+
+        Self::record_latency_shared(&self.latency, record_latency, LatencyCheckpoint::LlmStart)
+            .await;
 
         let (tts_tx, tts_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
         let (audio_tx, mut audio_rx) = tokio::sync::mpsc::channel::<TtsStream>(3);
@@ -491,14 +510,14 @@ impl AudioAdapter {
         let stop_tts_play = Arc::clone(&stop_tts);
         let stop_tts_barge = Arc::clone(&stop_tts);
         let latency = Arc::clone(&self.latency);
-        let latency_synth = Arc::clone(&latency);
         let latency_play = Arc::clone(&latency);
-        let record_latency = self.last_audio.barge_in.record_latency;
+        let first_tts_text = Arc::new(AtomicBool::new(true));
+        let first_tts_audio = Arc::new(AtomicBool::new(true));
         let reference_tx_play = reference_tx.clone();
 
         enum TurnTaskResult {
             TtsDone,
-            BargeIn(Option<String>),
+            BargeIn(Option<String>, Vec<f32>),
         }
 
         let tts_synth = async move {
@@ -508,22 +527,11 @@ impl AudioAdapter {
 
             use futures_util::StreamExt;
 
-            let mut first_text = true;
             let stream = futures_util::stream::unfold(tts_rx, |mut rx| async move {
                 rx.recv().await.map(|block| (block, rx))
             })
             .filter(|block| std::future::ready(!block.trim().is_empty()))
             .map(move |block| {
-                if first_text {
-                    first_text = false;
-                    if record_latency {
-                        Self::record_latency_shared(
-                            &latency_synth,
-                            record_latency,
-                            LatencyCheckpoint::FirstTtsText,
-                        );
-                    }
-                }
                 let tts = Arc::clone(&tts);
                 let voice_id = Arc::clone(&voice_id);
                 let tts_language = Arc::clone(&tts_language);
@@ -570,22 +578,27 @@ impl AudioAdapter {
                             &latency_play,
                             record_latency,
                             LatencyCheckpoint::PlaybackStart,
-                        );
+                        )
+                        .await;
                     }
                 }
 
                 // Record FirstTtsAudio when the first audio chunk actually
                 // arrives from the TTS stream.
                 let latency_for_first_audio = Arc::clone(&latency_play);
-                let mut first_audio = true;
+                let first_audio = Arc::clone(&first_tts_audio);
                 let stream = stream.inspect(move |res| {
-                    if record_latency && first_audio && res.is_ok() {
-                        first_audio = false;
-                        Self::record_latency_shared(
-                            &latency_for_first_audio,
-                            record_latency,
-                            LatencyCheckpoint::FirstTtsAudio,
-                        );
+                    if record_latency && first_audio.load(Ordering::Relaxed) && res.is_ok() {
+                        first_audio.store(false, Ordering::Relaxed);
+                        let latency = Arc::clone(&latency_for_first_audio);
+                        tokio::spawn(async move {
+                            Self::record_latency_shared(
+                                &latency,
+                                true,
+                                LatencyCheckpoint::FirstTtsAudio,
+                            )
+                            .await;
+                        });
                     }
                 });
                 let stream: TtsStream = Box::pin(stream);
@@ -595,11 +608,18 @@ impl AudioAdapter {
                         stream,
                         tts_format,
                         reference_tx_play.clone(),
+                        Arc::clone(&stop_tts_play),
                         Duration::from_secs(120),
                     )
                     .await?;
                 } else {
-                    play_stream_with_timeout(stream, tts_format, Duration::from_secs(120)).await?;
+                    play_stream_with_timeout(
+                        stream,
+                        tts_format,
+                        Arc::clone(&stop_tts_play),
+                        Duration::from_secs(120),
+                    )
+                    .await?;
                 }
             }
             Ok(TurnTaskResult::TtsDone)
@@ -609,53 +629,80 @@ impl AudioAdapter {
         set.spawn(tts_synth);
         set.spawn(tts_play);
 
+        // If barge-in is enabled, start the listener before the agent turn
+        // begins so the microphone is open and the AEC reference buffer is
+        // already being filled by the time TTS playback starts.
+        if barge_in_enabled {
+            let stop = self.stop.clone();
+            let stt = Arc::clone(&self.stt);
+            let audio = self.last_audio.clone();
+            set.spawn(async move {
+                let (text, samples) =
+                    Self::barge_in_loop(reference_rx, stop_tts_barge, stop, stt, audio).await?;
+                Ok(TurnTaskResult::BargeIn(text, samples))
+            });
+        }
+
         // The turn event callback may be called from a spawned task, so move
         // the cloned event sink into the closure instead of borrowing `self`.
         if !no_tts_this_turn {
             self.audio_callback(AudioCallback::Speaking);
         }
         let on_event = self.on_event.clone();
-        let result = match self
-            .session
-            .run_turn_stream_with_input(
+        let llm_timeout = Duration::from_secs(50);
+        let latency_for_first_text = Arc::clone(&latency);
+        let record_latency_for_first_text = record_latency;
+        let tts_tx_for_callback = tts_tx.clone();
+        let result = match tokio::time::timeout(
+            llm_timeout,
+            self.session.run_turn_stream_with_input(
                 text,
                 input_path,
                 move |event| Self::emit_with(&on_event, event),
-                |block| {
+                move |block| {
                     if !no_tts_this_turn {
-                        let _ = tts_tx.send(block);
+                        if first_tts_text.load(Ordering::Relaxed) {
+                            first_tts_text.store(false, Ordering::Relaxed);
+                            if record_latency_for_first_text {
+                                let latency = Arc::clone(&latency_for_first_text);
+                                tokio::spawn(async move {
+                                    Self::record_latency_shared(
+                                        &latency,
+                                        true,
+                                        LatencyCheckpoint::FirstTtsText,
+                                    )
+                                    .await;
+                                });
+                            }
+                        }
+                        let _ = tts_tx_for_callback.send(block);
                     }
                 },
-            )
-            .await
+            ),
+        )
+        .await
         {
-            Ok(result) => result,
-            Err(e) => {
+            Ok(Ok(result)) => result,
+            Ok(Err(e)) => {
                 drop(tts_tx);
                 drop(set);
                 return Err(e);
+            }
+            Err(_) => {
+                drop(tts_tx);
+                drop(set);
+                return Err(AgentError::Audio(AudioError::Timeout));
             }
         };
 
         // Drop the text sender so the synthesizer exits after the final block.
         drop(tts_tx);
 
-        // If barge-in is enabled, start the listener as soon as the agent turn
-        // has produced its text and race it with the remaining TTS playback.
-        if barge_in_enabled {
-            let stop = self.stop.clone();
-            let stt = Arc::clone(&self.stt);
-            let audio = self.last_audio.clone();
-            set.spawn(async move {
-                Ok(TurnTaskResult::BargeIn(
-                    Self::barge_in_loop(reference_rx, stop_tts_barge, stop, stt, audio).await?,
-                ))
-            });
-        }
-
         let mut barge_in: Option<String> = None;
         let mut barge_done = !barge_in_enabled;
         let mut tts_done = 0;
+        let mut barge_in_samples = Vec::new();
+        let mut turn_err = None;
         while let Some(res) = set.join_next().await {
             match res {
                 Ok(Ok(TurnTaskResult::TtsDone)) => {
@@ -664,34 +711,57 @@ impl AudioAdapter {
                         break;
                     }
                 }
-                Ok(Ok(TurnTaskResult::BargeIn(Some(text)))) => {
+                Ok(Ok(TurnTaskResult::BargeIn(Some(text), samples))) => {
                     barge_in = Some(text);
+                    barge_in_samples = samples;
                     break;
                 }
-                Ok(Ok(TurnTaskResult::BargeIn(None))) => {
+                Ok(Ok(TurnTaskResult::BargeIn(None, samples))) => {
                     barge_done = true;
+                    barge_in_samples = samples;
                     if tts_done == 2 {
                         break;
                     }
                 }
                 Ok(Err(e)) => {
-                    return Err(AgentError::Audio(e));
+                    turn_err = Some(AgentError::Audio(e));
+                    break;
                 }
                 Err(e) => {
-                    return Err(AgentError::Audio(AudioError::Play(format!(
+                    turn_err = Some(AgentError::Audio(AudioError::Play(format!(
                         "turn task panicked: {e}"
                     ))));
+                    break;
                 }
             }
         }
+
+        // Abort any remaining tasks. The barge-in task may have already set
+        // stop_tts to stop playback; set it again defensively.
+        self.stop_tts.store(true, Ordering::Relaxed);
         drop(set);
+
+        if !barge_in_samples.is_empty() {
+            self.last_captured_samples = barge_in_samples;
+        }
 
         if !no_tts_this_turn {
             self.audio_callback(AudioCallback::PlaybackFinished);
-            self.record_latency(LatencyCheckpoint::PlaybackFinished);
-            if let Some(report) = self.report_latency() {
+            Self::record_latency_shared(
+                &self.latency,
+                record_latency,
+                LatencyCheckpoint::PlaybackFinished,
+            )
+            .await;
+            if record_latency {
+                let budget = self.latency.lock().await;
+                let report = budget.report();
                 tracing::info!(latency = %report, "turn latency");
             }
+        }
+
+        if let Some(e) = turn_err {
+            return Err(e);
         }
 
         Ok((result, barge_in))
@@ -732,13 +802,19 @@ impl AudioAdapter {
                         .resolve_approval(&request.id, true, None)
                         .await
                         .map_err(|e| AudioError::Other(e.to_string()))?;
-                    if approved.approved {
-                        result.text = "承認しました。".to_string();
-                        result.changes = approved.changes;
-                    }
+                    result.changes = approved.changes;
                     result.schedule_dirty |= approved.schedule_dirty;
                     result.approval_request = None;
-                    result.presentation = None;
+                    result.presentation = approved.presentation.clone().or_else(|| {
+                        Some(crate::presentation::Presentation::Text {
+                            text: "承認しました。".into(),
+                        })
+                    });
+                    result.text = match &result.presentation {
+                        Some(p) => format!("承認しました。{}", p.voice_template()),
+                        None => "承認しました。".to_string(),
+                    };
+                    self.speak_text(&result.text).await?;
                 }
                 Some(false) | None => {
                     result.text =
@@ -746,13 +822,15 @@ impl AudioAdapter {
                     result.presentation = Some(crate::presentation::Presentation::ChangeProposal(
                         result.approval_request.clone().unwrap(),
                     ));
+                    self.speak_text(&result.text).await?;
                 }
             }
             return Ok(());
         }
 
         // VoiceConfirmed: read back and capture yes/no.
-        let readback = self.build_voice_readback(request);
+        let readback =
+            crate::presentation::Presentation::ChangeProposal(request.clone()).voice_template();
         match self.voice_confirm_loop(&readback).await? {
             Some(confirmed) => {
                 let approved = self
@@ -761,15 +839,29 @@ impl AudioAdapter {
                     .await
                     .map_err(|e| AudioError::Other(e.to_string()))?;
                 if approved.approved {
-                    result.text = format!("{}。承認しました。", readback);
                     result.changes = approved.changes;
+                    result.schedule_dirty |= approved.schedule_dirty;
+                    result.approval_request = None;
+                    result.presentation = approved.presentation.clone().or_else(|| {
+                        Some(crate::presentation::Presentation::Text {
+                            text: "承認しました。".into(),
+                        })
+                    });
+                    result.text = match &result.presentation {
+                        Some(p) => format!("承認しました。{}", p.voice_template()),
+                        None => "承認しました。".to_string(),
+                    };
+                    self.speak_text(&result.text).await?;
                 } else {
-                    result.text = format!("{}。キャンセルしました。", readback);
+                    result.text = "キャンセルしました。".to_string();
                     result.changes = Vec::new();
+                    result.schedule_dirty |= approved.schedule_dirty;
+                    result.approval_request = None;
+                    result.presentation = Some(crate::presentation::Presentation::Text {
+                        text: result.text.clone(),
+                    });
+                    self.speak_text(&result.text).await?;
                 }
-                result.schedule_dirty |= approved.schedule_dirty;
-                result.approval_request = None;
-                result.presentation = None;
             }
             None => {
                 // Fall back to screen; keep the approval request and surface it.
@@ -805,24 +897,6 @@ impl AudioAdapter {
         }
     }
 
-    /// Build a short Japanese readback for a voice-confirmation prompt.
-    fn build_voice_readback(&self, request: &crate::ApprovalRequest) -> String {
-        let mut summary = String::new();
-        for change in &request.changes {
-            summary.push_str(&change.description);
-            if !summary.ends_with('。') {
-                summary.push('。');
-            }
-        }
-        if request.why.is_empty() {
-            format!("{}よろしいですか", summary)
-        } else if request.why.ends_with('。') {
-            format!("{}{}よろしいですか", summary, request.why)
-        } else {
-            format!("{}{}。よろしいですか", summary, request.why)
-        }
-    }
-
     /// Speak a prompt, then capture and classify yes/no answers up to
     /// `MAX_VOICE_CONFIRM_ATTEMPTS`. Returns `Some(true)` for an affirmative
     /// answer, `Some(false)` for a negative one, and `None` when the answer is
@@ -834,17 +908,25 @@ impl AudioAdapter {
         const MAX_ATTEMPTS: usize = 3;
 
         for attempt in 0..MAX_ATTEMPTS {
+            if self.is_stopped() {
+                return Ok(None);
+            }
+
             self.speak_text(prompt).await?;
+
+            if self.is_stopped() {
+                return Ok(None);
+            }
 
             let (_stop_tx, stop_rx) = tokio::sync::mpsc::channel(1);
             let Some(text) = self.capture_utterance(stop_rx).await? else {
                 continue;
             };
 
-            let trimmed = text.trim().to_lowercase();
-            let answer = if AFFIRMATIVE.iter().any(|w| trimmed == *w) {
+            let normalized = Self::normalize_voice_answer(&text);
+            let answer = if AFFIRMATIVE.iter().any(|w| normalized == *w) {
                 Some(true)
-            } else if NEGATIVE.iter().any(|w| trimmed == *w) {
+            } else if NEGATIVE.iter().any(|w| normalized == *w) {
                 Some(false)
             } else {
                 None
@@ -876,6 +958,9 @@ impl AudioAdapter {
 
     /// Synthesize and play a single text block for voice interaction.
     async fn speak_text(&mut self, text: &str) -> Result<(), AudioError> {
+        if self.is_stopped() {
+            return Ok(());
+        }
         if self.last_audio.tts.mute {
             return Ok(());
         }
@@ -889,9 +974,21 @@ impl AudioAdapter {
             Duration::from_secs(120),
         )
         .await?;
-        play_stream_with_timeout(stream, self.tts_format, Duration::from_secs(120)).await?;
+        let cancel = Arc::new(AtomicBool::new(false));
+        play_stream_with_timeout(stream, self.tts_format, cancel, Duration::from_secs(120)).await?;
         self.audio_callback(AudioCallback::PlaybackFinished);
         Ok(())
+    }
+
+    fn is_stopped(&self) -> bool {
+        *self.stop.borrow()
+    }
+
+    fn normalize_voice_answer(text: &str) -> String {
+        text.trim().to_lowercase().replace(
+            |c: char| c.is_ascii_punctuation() || " 。、！？".contains(c),
+            "",
+        )
     }
 
     async fn reconfigure_if_needed(&mut self) -> Result<(), AudioError> {
@@ -950,38 +1047,16 @@ impl AudioAdapter {
         Ok((stt, tts, voice_id, speed, tts_format))
     }
 
-    fn record_latency(&self, checkpoint: LatencyCheckpoint) {
-        Self::record_latency_shared(
-            &self.latency,
-            self.last_audio.barge_in.record_latency,
-            checkpoint,
-        );
-    }
-
-    fn record_latency_shared(
-        latency: &Arc<Mutex<LatencyBudget>>,
+    async fn record_latency_shared(
+        latency: &Arc<tokio::sync::Mutex<LatencyBudget>>,
         record: bool,
         checkpoint: LatencyCheckpoint,
     ) {
         if !record {
             return;
         }
-        if let Ok(mut budget) = latency.lock() {
-            budget.record(checkpoint);
-        }
-    }
-
-    fn report_latency(&self) -> Option<String> {
-        if !self.last_audio.barge_in.record_latency {
-            return None;
-        }
-        self.latency.lock().ok().map(|b| b.report())
-    }
-
-    fn reset_latency(&self) {
-        if let Ok(mut budget) = self.latency.lock() {
-            budget.reset();
-        }
+        let mut budget = latency.lock().await;
+        budget.record(checkpoint);
     }
 
     async fn build_speaker_verifier(
@@ -1127,7 +1202,7 @@ impl AudioAdapter {
         mut stop: tokio::sync::watch::Receiver<bool>,
         stt: Arc<dyn StreamingSpeechToText>,
         audio: AudioConfig,
-    ) -> Result<Option<String>, AudioError> {
+    ) -> Result<(Option<String>, Vec<f32>), AudioError> {
         // A cloned watch receiver is initialized with the current value, so
         // changed() would miss a stop signal that was already sent. Mark the
         // current value as unseen so changed() fires immediately if stop is true.
@@ -1155,7 +1230,38 @@ impl AudioAdapter {
             Box::new(NoOpAec)
         };
 
-        let endpoint = takusu_audio::default_endpoint_async().await;
+        // When the AEC is not active, fall back to tap-to-stop if configured:
+        // detect a loud utterance and stop TTS playback, but do not feed the
+        // microphone into ASR because the assistant's own voice is still in the
+        // signal.
+        let use_aec = audio.barge_in.use_aec;
+        let tap_to_stop = !use_aec && audio.barge_in.tap_to_stop;
+        let endpoint: Box<dyn takusu_audio::Endpoint> = if use_aec {
+            Box::new(takusu_audio::default_endpoint_async().await)
+        } else if tap_to_stop {
+            Box::new(takusu_audio::VadEndpoint::new(
+                takusu_audio::EnergyVad::new(0.05),
+                SHERPA_SAMPLE_RATE,
+                takusu_audio::VadEndpointConfig {
+                    min_speech: Duration::from_millis(50),
+                    max_silence: Duration::from_millis(200),
+                    ..Default::default()
+                },
+            ))
+        } else {
+            // Neither AEC nor tap-to-stop: keep the same shape but use a quiet
+            // threshold so barge-in is effectively disabled.
+            Box::new(takusu_audio::VadEndpoint::new(
+                takusu_audio::EnergyVad::new(0.05),
+                SHERPA_SAMPLE_RATE,
+                takusu_audio::VadEndpointConfig {
+                    min_speech: Duration::from_millis(50),
+                    max_silence: Duration::from_millis(200),
+                    ..Default::default()
+                },
+            ))
+        };
+
         let warm_up = Duration::from_millis(audio.barge_in.warm_up_ms);
         let mut detector = BargeInDetector::new(endpoint, warm_up);
         detector.start();
@@ -1170,8 +1276,10 @@ impl AudioAdapter {
         let mut ref_buf = Vec::new();
         let mut residual = Vec::new();
         let mut ref_consumed = 0usize;
+        let mut ref_initialized = false;
         let mut capturing = false;
         let mut reference_closed = false;
+        let mut barge_in_samples = Vec::new();
 
         loop {
             tokio::select! {
@@ -1197,6 +1305,17 @@ impl AudioAdapter {
                 let capture = mic_buf[..FRAME_SIZE].to_vec();
                 mic_buf.drain(..FRAME_SIZE);
 
+                if !ref_initialized {
+                    ref_initialized = true;
+                    // play_stream_with_reference may have already queued
+                    // reference samples before the microphone opened. Start
+                    // consuming from the end of the buffer so the first
+                    // microphone frame aligns with the most recent reference
+                    // frame, accounting for the playback-to-mic delay.
+                    let ref_lead_samples = ref_buf.len().saturating_sub(ref_delay_samples);
+                    ref_consumed = ref_lead_samples / FRAME_SIZE;
+                }
+
                 let ref_consumed_samples = ref_consumed * FRAME_SIZE;
                 let ref_start = ref_consumed_samples.saturating_sub(ref_delay_samples);
                 let mut reference = vec![0.0f32; FRAME_SIZE];
@@ -1214,6 +1333,13 @@ impl AudioAdapter {
                         VadEvent::SpeechStart if !capturing => {
                             capturing = true;
                             stop_tts.store(true, Ordering::Relaxed);
+                            if tap_to_stop {
+                                // Tap-to-stop: the user touched the
+                                // microphone while the assistant was speaking.
+                                // Stop playback and do not try to transcribe.
+                                recorder.stop();
+                                break;
+                            }
                         }
                         VadEvent::SpeechEnd if capturing => {
                             recorder.stop();
@@ -1223,8 +1349,9 @@ impl AudioAdapter {
                     }
                 }
 
-                if capturing {
+                if capturing && use_aec && !tap_to_stop {
                     asr_stream.accept_waveform(&normalize(&residual, 0.1));
+                    barge_in_samples.extend_from_slice(&residual);
                 }
 
                 // When TTS has ended and we have processed the last samples
@@ -1246,15 +1373,22 @@ impl AudioAdapter {
             .map_err(|e| AudioError::Record(format!("barge-in recorder join task failed: {e}")))?
             .map_err(|e| AudioError::Record(format!("barge-in recorder thread panicked: {e}")))?;
 
+        if tap_to_stop || barge_in_samples.is_empty() {
+            return Ok((None, Vec::new()));
+        }
+
         let text = asr_stream
             .finish()
             .await
             .map_err(|e| AudioError::Transcribe(e.to_string()))?;
-        Ok(if text.trim().is_empty() {
-            None
-        } else {
-            Some(text)
-        })
+        Ok((
+            if text.trim().is_empty() {
+                None
+            } else {
+                Some(text)
+            },
+            barge_in_samples,
+        ))
     }
 }
 
@@ -1434,9 +1568,10 @@ async fn synthesize_stream_with_timeout(
 async fn play_stream_with_timeout(
     stream: TtsStream,
     format: StreamedAudioFormat,
+    cancel: Arc<AtomicBool>,
     timeout: Duration,
 ) -> Result<(), AudioError> {
-    tokio::time::timeout(timeout, play_stream(stream, format))
+    tokio::time::timeout(timeout, play_stream(stream, format, cancel))
         .await
         .map_err(|_| AudioError::Timeout)?
         .map_err(|e| AudioError::Play(e.to_string()))
@@ -1474,6 +1609,7 @@ async fn play_stream_with_reference(
     mut stream: TtsStream,
     format: StreamedAudioFormat,
     reference_tx: tokio::sync::mpsc::UnboundedSender<Vec<f32>>,
+    cancel: Arc<AtomicBool>,
     timeout: Duration,
 ) -> Result<(), AudioError> {
     tokio::time::timeout(timeout, async {
@@ -1483,8 +1619,23 @@ async fn play_stream_with_reference(
         let mut pending = BytesMut::new();
         let mut decoded = Vec::new();
 
+        let cancel_for_decoder = Arc::clone(&cancel);
         let decoder = tokio::spawn(async move {
-            while let Some(chunk) = stream.next().await {
+            loop {
+                if cancel_for_decoder.load(Ordering::Acquire) {
+                    break;
+                }
+                let chunk = tokio::select! {
+                    chunk = stream.next() => chunk,
+                    _ = async {
+                        while !cancel_for_decoder.load(Ordering::Acquire) {
+                            tokio::time::sleep(Duration::from_millis(20)).await;
+                        }
+                    } => break,
+                };
+                let Some(chunk) = chunk else {
+                    break;
+                };
                 match chunk {
                     Ok(bytes) => {
                         if let Some(reference) =
@@ -1506,7 +1657,7 @@ async fn play_stream_with_reference(
             }
         });
 
-        play_stream(playback_stream, format)
+        play_stream(playback_stream, format, Arc::clone(&cancel))
             .await
             .map_err(|e| AudioError::Play(e.to_string()))?;
         // Stop the decoder if playback finishes early (e.g. barge-in).

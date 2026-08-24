@@ -25,6 +25,28 @@ pub enum IntakeStage {
     Complete,
 }
 
+/// Numeric ordering for the fixed intake interview stages.
+pub fn intake_stage_index(stage: IntakeStage) -> u8 {
+    match stage {
+        IntakeStage::NotStarted => 0,
+        IntakeStage::Deadlines => 1,
+        IntakeStage::Recurring => 2,
+        IntakeStage::CalendarImport => 3,
+        IntakeStage::Complete => 4,
+    }
+}
+
+/// Human-readable label for an intake stage.
+pub fn intake_stage_label(stage: IntakeStage) -> &'static str {
+    match stage {
+        IntakeStage::NotStarted => "未開始",
+        IntakeStage::Deadlines => "締め切り収集中",
+        IntakeStage::Recurring => "定期予定収集中",
+        IntakeStage::CalendarImport => "カレンダー取り込み確認",
+        IntakeStage::Complete => "完了",
+    }
+}
+
 /// Saved state for an interruptible intake interview.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(default)]
