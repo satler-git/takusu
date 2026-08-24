@@ -49,6 +49,9 @@ pub(super) fn register_read_tools(
         client: client.clone(),
         tz_cache: tz_cache.clone(),
     })));
+    registry.register(Box::new(crate::tool::Typed(ListUnsettledIntervals {
+        client: client.clone(),
+    })));
     registry.register(Box::new(crate::tool::Typed(GetSettings {
         client: client.clone(),
     })));
@@ -893,6 +896,44 @@ fn validate_scheduled_span_dates(start: &str, end: &str) -> Result<(), ToolError
         )));
     }
     Ok(())
+}
+
+// ── ListUnsettledIntervals ──────────────────────────────────────────────
+
+pub(super) struct ListUnsettledIntervals {
+    pub(super) client: Client,
+}
+
+/// Arguments for [`ListUnsettledIntervals`] (no parameters).
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub(super) struct ListUnsettledIntervalsArgs {}
+
+#[async_trait]
+impl TypedTool for ListUnsettledIntervals {
+    type Params = ListUnsettledIntervalsArgs;
+
+    fn name(&self) -> &'static str {
+        ToolName::ListUnsettledIntervals.into()
+    }
+    fn description(&self) -> &'static str {
+        "List unsettled time intervals that have not been settled yet. Use this before propose_settlement to find an existing interval_id to update."
+    }
+    fn exposure(&self) -> ToolExposure {
+        ToolExposure::Deferred
+    }
+
+    async fn call_typed(&self, _args: Self::Params) -> Result<ToolOutput, ToolError> {
+        let intervals = self
+            .client
+            .list_unsettled_intervals()
+            .await
+            .map_err(client_error)?;
+        Ok(ToolOutput {
+            content: serde_json::to_string(&intervals).unwrap(),
+            ..Default::default()
+        })
+    }
 }
 
 // ── GetSettings ─────────────────────────────────────────────────────────

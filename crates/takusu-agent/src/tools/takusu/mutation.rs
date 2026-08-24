@@ -1538,7 +1538,7 @@ impl MutationSpec for ProposeSettlement {
     type Args = ProposeSettlementArgs;
 
     const NAME: ToolName = ToolName::ProposeSettlement;
-    const DESCRIPTION: &'static str = "Create a settlement proposal. Calling this tool generates a pending approval request; it does not write immediately. Use when the user reports off-plan time that should be recorded and the remainder of the day should be replanned.";
+    const DESCRIPTION: &'static str = "Create a settlement proposal. Calling this tool generates a pending approval request; it does not write immediately. Use when the user reports off-plan time that should be recorded and the remainder of the day should be replanned. If the interval matches an existing unsettled interval, pass its interval_id to update it. mode/from/until are optional and default to range, end_at, and end of today respectively.";
     const OPERATION: ChangeOperation = ChangeOperation::Settle;
     const TARGET_TYPE: TargetKind = TargetKind::Schedule;
 

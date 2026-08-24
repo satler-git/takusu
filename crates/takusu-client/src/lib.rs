@@ -1372,6 +1372,17 @@ impl Client {
         Ok(resp.json().await?)
     }
 
+    /// List unsettled intervals that have not been resolved yet (WI-18).
+    pub async fn list_unsettled_intervals(&self) -> Result<Vec<UnsettledIntervalRow>, ClientError> {
+        let resp = self
+            .request(reqwest::Method::GET, "/api/coverage/unsettled-intervals")
+            .await
+            .send()
+            .await?;
+        let resp = Self::handle_response(resp).await?;
+        Ok(resp.json().await?)
+    }
+
     /// Atomically settle an interval and replace the schedule (WI-18).
     pub async fn settle(&self, body: &SettleRequest) -> Result<SettleResponse, ClientError> {
         let resp = self

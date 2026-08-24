@@ -10,9 +10,10 @@ use std::collections::HashMap;
 
 use takusu_contracts::storage::StorageResult;
 use takusu_contracts::{
-    EstimatorBand, EstimatorResult, EstimatorStateRow, EvaluationEstimator, EvaluationTaskProgress,
-    HabitRow, HabitStepRow, MemoryKindCounts, MemoryRow, ScheduleRow, SettingsRow, SkillRow,
-    StorageError, TaskRow, WorkSessionRow,
+    CoverageConfirmationRow, EstimatorBand, EstimatorResult, EstimatorStateRow, EvaluationEstimator,
+    EvaluationTaskProgress, HabitRow, HabitStepRow, MemoryKindCounts, MemoryRow, ScheduleRow,
+    SettleResponse, SettingsRow, SkillRow, StorageError, TaskRow, UnsettledIntervalRow,
+    WorkSessionRow,
 };
 use takusu_types::estimator::{
     DurationDistribution, InterventionBand, effective_distribution, next_crossing_time,
@@ -1115,6 +1116,105 @@ pub(super) async fn check_comment_idempotency(
             ));
         }
         return Ok(Some(row.response_json));
+    }
+    Ok(None)
+}
+
+// ── Settlement idempotency (WI-18) ─────────────────────────────────────
+
+pub(super) fn settle_request_hash(payload: &str, operation_id: Option<&str>) -> String {
+    crate::util::hash_token(&format!("{}:{}", payload, operation_id.unwrap_or("")))
+}
+
+#[derive(serde::Deserialize)]
+pub(super) struct SettleOpRow {
+    pub(super) request_hash: String,
+    pub(super) response_json: String,
+}
+
+pub(super) async fn check_settle_idempotency(
+    database: &D1Database,
+    op_id: &str,
+    expected_hash: &str,
+) -> StorageResult<Option<SettleResponse>> {
+    let stmt = database.prepare(
+        "SELECT request_hash, response_json FROM settle_operations WHERE operation_id = ?1",
+    );
+    let rows: Vec<SettleOpRow> =
+        d1_all(&stmt.bind(&[JsValue::from_str(op_id)]).map_err(d1_err)?).await?;
+    if let Some(row) = rows.into_iter().next() {
+        if row.request_hash != expected_hash {
+            return Err(StorageError::Conflict(
+                "idempotency key reused with different request".into(),
+            ));
+        }
+        let value: SettleResponse = serde_json::from_str(&row.response_json).map_err(|e| {
+            StorageError::Internal(format!("corrupt idempotency response: {e}"))
+        })?;
+        return Ok(Some(value));
+    }
+    Ok(None)
+}
+
+pub(super) async fn record_settle_operation(
+    database: &D1Database,
+    op_id: &str,
+    request_hash: &str,
+    value: &SettleResponse,
+) -> StorageResult<()> {
+    let response_json = serde_json::to_string(value)
+        .map_err(|e| StorageError::Internal(format!("serialize idempotency response: {e}")))?;
+    let stmt = database.prepare(
+        "INSERT INTO settle_operations (operation_id, request_hash, response_json, created_at) VALUES (?1, ?2, ?3, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))",
+    );
+    stmt.bind(&[
+        JsValue::from_str(op_id),
+        JsValue::from_str(request_hash),
+        JsValue::from_str(&response_json),
+    ])
+    .map_err(d1_err)?
+    .run()
+    .await
+    .map_err(d1_err)?;
+    Ok(())
+}
+
+/// Fallback idempotency check for `settle` when the dedicated
+/// `settle_operations` row is missing but the actual interval and confirmation
+/// rows were already committed by a previous successful batch.
+pub(super) async fn find_settled_by_operation_id(
+    database: &D1Database,
+    op_id: &str,
+) -> StorageResult<Option<SettleResponse>> {
+    let stmt = database.prepare(
+        "SELECT id, start_at, end_at, classification, source, created_at, settled_at, operation_id FROM unsettled_intervals WHERE operation_id = ?1 AND settled_at IS NOT NULL",
+    );
+    let interval: Option<UnsettledIntervalRow> = d1_first(
+        &stmt
+            .bind(&[JsValue::from_str(op_id)])
+            .map_err(d1_err)?,
+    )
+    .await?;
+
+    let stmt = database.prepare(
+        "SELECT id, start_at, end_at, timezone, source, schedule_revision, calendar_health, created_at, settled_at, operation_id FROM coverage_confirmations WHERE operation_id = ?1 AND settled_at IS NOT NULL",
+    );
+    let confirmation: Option<CoverageConfirmationRow> = d1_first(
+        &stmt
+            .bind(&[JsValue::from_str(op_id)])
+            .map_err(d1_err)?,
+    )
+    .await?;
+
+    if let (Some(interval), Some(confirmation)) = (interval, confirmation) {
+        let schedule = d1_first::<ScheduleRow>(&database.prepare(SCHEDULE_SELECT))
+            .await?
+            .ok_or_else(|| not_found("schedule not found after settle"))?;
+        return Ok(Some(SettleResponse {
+            interval,
+            schedule,
+            confirmation,
+        }));
     }
     Ok(None)
 }
