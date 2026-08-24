@@ -38,8 +38,11 @@ pub trait Aec: Send {
 /// Configuration for the software NLMS echo canceller.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct AecConfig {
-    /// Length of the adaptive filter in samples. At 16 kHz, 160 samples is
-    /// 10 ms of tail, which covers a typical loudspeaker-to-microphone delay.
+    /// Length of the adaptive filter in samples. At 16 kHz, 1600 samples is
+    /// 100 ms of tail, which covers a realistic loudspeaker-to-microphone echo
+    /// tail including a small amount of room reverberation. Increase this if
+    /// the device is in a reverberant space; decrease it if CPU is limited and
+    /// the environment is known to have a very short tail.
     pub filter_len: usize,
     /// Step size (mu). Larger values adapt faster but can diverge.
     pub step_size: f32,
@@ -55,7 +58,7 @@ pub struct AecConfig {
 impl Default for AecConfig {
     fn default() -> Self {
         Self {
-            filter_len: 160,
+            filter_len: 1600,
             step_size: 0.08,
             delta: 1e-10,
             warm_up_frames: 16,
@@ -473,5 +476,49 @@ mod tests {
 
         let result = evaluate_aec(&mut aec, &reference, &echo, &speech, frame_size);
         assert!(result.is_usable());
+    }
+
+    #[test]
+    fn aec_default_filter_len_is_realistic() {
+        let config = AecConfig::default();
+        assert!(
+            config.filter_len >= 800,
+            "expected realistic default filter_len, got {}",
+            config.filter_len
+        );
+    }
+
+    #[test]
+    fn nlms_aec_default_config_reduces_synthetic_echo() {
+        let mut aec = NlmsAec::new(AecConfig::default());
+
+        let frames = 200;
+        let frame_size = 160;
+        let mut reference = vec![0.0f32; frames * frame_size];
+        let mut echo = vec![0.0f32; frames * frame_size];
+        let mut speech = vec![0.0f32; frames * frame_size];
+
+        for i in 0..frames * frame_size {
+            let t = i as f32 / SHERPA_SAMPLE_RATE as f32;
+            reference[i] = 0.3 * (2.0 * std::f32::consts::PI * 440.0 * t).sin();
+            if i >= 16 {
+                echo[i] = 0.15 * reference[i - 16];
+            }
+            if i % (frame_size * 4) < frame_size * 2 {
+                speech[i] = 0.05 * (2.0 * std::f32::consts::PI * 1000.0 * t).sin();
+            }
+        }
+
+        let result = evaluate_aec(&mut aec, &reference, &echo, &speech, frame_size);
+        assert!(
+            result.echo_reduction_db > 3.0,
+            "expected some echo reduction with default config, got {} dB",
+            result.echo_reduction_db
+        );
+        assert!(
+            result.speech_retention > 0.5,
+            "expected most speech to survive with default config, got {}",
+            result.speech_retention
+        );
     }
 }

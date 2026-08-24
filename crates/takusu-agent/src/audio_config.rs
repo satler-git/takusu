@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use takusu_audio::{
-    ExecutionProvider, SHERPA_SAMPLE_RATE, SherpaOnnxModel, SpeakerConfig, SttBackend, TtsBackend,
+    DEFAULT_ENERGY_THRESHOLD, ExecutionProvider, SHERPA_SAMPLE_RATE, SherpaOnnxModel,
+    SpeakerConfig, SttBackend, TtsBackend,
 };
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -15,6 +16,8 @@ pub struct AudioConfig {
     /// Conversation-polish settings (WI-19): barge-in, AEC, and latency budget.
     pub barge_in: BargeInConfig,
     pub aec: takusu_audio::AecConfig,
+    /// Voice-activity-detection settings for the energy fallback.
+    pub vad: VadConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -193,4 +196,25 @@ fn default_tts_language() -> String {
 }
 fn default_tts_sample_rate() -> u32 {
     44100
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct VadConfig {
+    /// RMS energy threshold for the fallback energy VAD. A frame is voiced
+    /// when its RMS is at or above this value in the `[-1, 1]` sample range.
+    #[serde(default = "default_vad_energy_threshold")]
+    pub energy_threshold: f32,
+}
+
+impl Default for VadConfig {
+    fn default() -> Self {
+        Self {
+            energy_threshold: default_vad_energy_threshold(),
+        }
+    }
+}
+
+fn default_vad_energy_threshold() -> f32 {
+    DEFAULT_ENERGY_THRESHOLD
 }

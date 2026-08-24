@@ -1667,6 +1667,7 @@ interface components$1 {
             approved: boolean;
             changes: components$1['schemas']['ChangeReceipt'][];
             id: string;
+            presentation?: components$1['schemas']['Presentation'] | null;
             schedule_dirty: boolean;
         };
         /** @enum {string} */
@@ -1721,7 +1722,7 @@ interface components$1 {
          * @description Operation kind for a proposed or applied change.
          * @enum {string}
          */
-        ChangeOperation: 'create' | 'update' | 'delete' | 'generate' | 'reschedule' | 'move' | 'start' | 'pause' | 'snooze' | 'progress' | 'complete' | 'split' | 'undo' | 'create_scheduled_span' | 'delete_scheduled_span' | 'settle';
+        ChangeOperation: 'create' | 'update' | 'delete' | 'generate' | 'reschedule' | 'move' | 'start' | 'pause' | 'snooze' | 'progress' | 'complete' | 'split' | 'undo' | 'create_scheduled_span' | 'delete_scheduled_span' | 'settle' | 'confirm';
         /** @description Flattened target fields inside `ChangeReceipt`. */
         ChangeReceipt: {
             after?: unknown;
@@ -1755,6 +1756,12 @@ interface components$1 {
             session_id: string;
         };
         EditTurnRequest: {
+            /**
+             * @description Whether the client wants TTS blocks to be emitted for the edited turn.
+             *     Voice surfaces set this to `true`; plain text surfaces leave it `false`.
+             * @default false
+             */
+            auto_speak: boolean;
             idempotency_key?: string | null;
             text: string;
         };
@@ -2172,7 +2179,7 @@ interface components$1 {
          * @description Target kind for a proposed or applied change.
          * @enum {string}
          */
-        TargetKind: 'task' | 'habit' | 'skill' | 'memory' | 'schedule' | 'comment';
+        TargetKind: 'task' | 'habit' | 'skill' | 'memory' | 'schedule' | 'comment' | 'coverage';
         /**
          * @description Coverage authority attached to a current-task card.
          *
@@ -2254,6 +2261,12 @@ interface components$1 {
             type: 'Done';
         };
         TurnRequest: {
+            /**
+             * @description Whether the client wants TTS blocks to be emitted for this turn.
+             *     Voice surfaces set this to `true`; plain text surfaces leave it `false`.
+             * @default false
+             */
+            auto_speak: boolean;
             idempotency_key?: string | null;
             text: string;
         };

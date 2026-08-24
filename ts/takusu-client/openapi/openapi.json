@@ -12129,6 +12129,118 @@
       }
     },
     "/coverage/unsettled-intervals": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/UnsettledIntervalRow"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "ErrorMessage",
+                  "description": "JSON body returned by all error responses.",
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          }
+        }
+      },
       "post": {
         "requestBody": {
           "description": "Request body for recording an unsettled interval (WI-10 / WI-18).",
@@ -18380,6 +18492,16 @@
           "id": {
             "type": "string"
           },
+          "presentation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Presentation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "schedule_dirty": {
             "type": "boolean"
           }
@@ -18489,7 +18611,8 @@
           "undo",
           "create_scheduled_span",
           "delete_scheduled_span",
-          "settle"
+          "settle",
+          "confirm"
         ]
       },
       "ChangeReceipt": {
@@ -18569,6 +18692,11 @@
       "EditTurnRequest": {
         "type": "object",
         "properties": {
+          "auto_speak": {
+            "description": "Whether the client wants TTS blocks to be emitted for the edited turn.\nVoice surfaces set this to `true`; plain text surfaces leave it `false`.",
+            "type": "boolean",
+            "default": false
+          },
           "idempotency_key": {
             "type": ["string", "null"]
           },
@@ -19531,7 +19659,15 @@
       "TargetKind": {
         "description": "Target kind for a proposed or applied change.",
         "type": "string",
-        "enum": ["task", "habit", "skill", "memory", "schedule", "comment"]
+        "enum": [
+          "task",
+          "habit",
+          "skill",
+          "memory",
+          "schedule",
+          "comment",
+          "coverage"
+        ]
       },
       "TaskAuthority": {
         "description": "Coverage authority attached to a current-task card.\n\nUntil WI-10 derives it from observed coverage state, cards default to\n[`TaskAuthority::Candidate`] (the safe side of the coverage invariant).",
@@ -19761,6 +19897,11 @@
       "TurnRequest": {
         "type": "object",
         "properties": {
+          "auto_speak": {
+            "description": "Whether the client wants TTS blocks to be emitted for this turn.\nVoice surfaces set this to `true`; plain text surfaces leave it `false`.",
+            "type": "boolean",
+            "default": false
+          },
           "idempotency_key": {
             "type": ["string", "null"]
           },

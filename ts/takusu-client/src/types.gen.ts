@@ -9278,7 +9278,80 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    get?: never;
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['UnsettledIntervalRow'][];
+          };
+        };
+        /** @description Error */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+        /** @description Error */
+        500: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              message: string;
+            };
+          };
+        };
+      };
+    };
     put?: never;
     post: {
       parameters: {
@@ -12707,6 +12780,7 @@ export interface components {
       approved: boolean;
       changes: components['schemas']['ChangeReceipt'][];
       id: string;
+      presentation?: components['schemas']['Presentation'] | null;
       schedule_dirty: boolean;
     };
     /** @enum {string} */
@@ -12781,7 +12855,8 @@ export interface components {
       | 'undo'
       | 'create_scheduled_span'
       | 'delete_scheduled_span'
-      | 'settle';
+      | 'settle'
+      | 'confirm';
     /** @description Flattened target fields inside `ChangeReceipt`. */
     ChangeReceipt: {
       after?: unknown;
@@ -12815,6 +12890,12 @@ export interface components {
       session_id: string;
     };
     EditTurnRequest: {
+      /**
+       * @description Whether the client wants TTS blocks to be emitted for the edited turn.
+       *     Voice surfaces set this to `true`; plain text surfaces leave it `false`.
+       * @default false
+       */
+      auto_speak: boolean;
       idempotency_key?: string | null;
       text: string;
     };
@@ -13272,7 +13353,14 @@ export interface components {
      * @description Target kind for a proposed or applied change.
      * @enum {string}
      */
-    TargetKind: 'task' | 'habit' | 'skill' | 'memory' | 'schedule' | 'comment';
+    TargetKind:
+      | 'task'
+      | 'habit'
+      | 'skill'
+      | 'memory'
+      | 'schedule'
+      | 'comment'
+      | 'coverage';
     /**
      * @description Coverage authority attached to a current-task card.
      *
@@ -13361,6 +13449,12 @@ export interface components {
           type: 'Done';
         };
     TurnRequest: {
+      /**
+       * @description Whether the client wants TTS blocks to be emitted for this turn.
+       *     Voice surfaces set this to `true`; plain text surfaces leave it `false`.
+       * @default false
+       */
+      auto_speak: boolean;
       idempotency_key?: string | null;
       text: string;
     };

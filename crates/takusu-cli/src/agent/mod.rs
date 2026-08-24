@@ -63,11 +63,13 @@ pub async fn run(args: AgentRunArgs) -> Result<(), AppError> {
             let mut output = String::new();
             let mut last_asr = false;
             let (_stop_tx, stop_rx) = tokio::sync::watch::channel(false);
+            let machine = takusu_agent::SurfaceStateMachine::new();
             let outcome = takusu_agent::runner::run_voice_session(
                 Arc::clone(&session),
                 takusu_agent::InputOrigin::Voice,
                 takusu_agent::VoiceSessionConfig::default(),
                 stop_rx,
+                &machine,
                 move |event| emit_stream_event(event, true, &mut output, &mut last_asr),
                 |_callback| {},
             )

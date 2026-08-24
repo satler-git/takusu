@@ -1,0 +1,17 @@
+---
+source: crates/takusu-agent/tests/schema_snapshots.rs
+assertion_line: 51
+expression: def
+---
+{
+  "function": {
+    "description": "List unsettled time intervals that have not been settled yet. Use this before propose_settlement to find an existing interval_id to update.",
+    "name": "list_unsettled_intervals",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "type": "function"
+}

@@ -71,6 +71,14 @@ impl<S: VoiceActivity + Send> Endpoint for VadEndpoint<S> {
     }
 }
 
+/// Default RMS energy threshold for the fallback [`EnergyVad`].
+///
+/// 0.02 is a safer starting point than the previous 0.01 for raw microphone
+/// levels: it is high enough to ignore typical quiet-room ambient noise while
+/// still catching normal spoken input. Tune it through `VadEndpointConfig` or
+/// `AudioConfig` for quiet mics or noisy environments.
+pub const DEFAULT_ENERGY_THRESHOLD: f32 = 0.02;
+
 /// Configuration for [`VadEndpoint`].
 #[derive(Debug, Clone)]
 pub struct VadEndpointConfig {
@@ -82,6 +90,11 @@ pub struct VadEndpointConfig {
     /// Absolute cap on a single utterance; a `SpeechEnd` is forced after this
     /// much active time regardless of whether speech is still present.
     pub max_speech: Duration,
+    /// RMS energy threshold used by the `EnergyVad` fallback. A frame is
+    /// considered voiced when its RMS is at or above this value in the `[-1, 1]`
+    /// sample range. Tunable so the same endpointing logic works on quiet and
+    /// noisy microphones.
+    pub energy_threshold: f32,
 }
 
 impl Default for VadEndpointConfig {
@@ -90,6 +103,7 @@ impl Default for VadEndpointConfig {
             min_speech: Duration::from_millis(120),
             max_silence: Duration::from_millis(500),
             max_speech: Duration::from_secs(60),
+            energy_threshold: DEFAULT_ENERGY_THRESHOLD,
         }
     }
 }
@@ -205,11 +219,10 @@ impl EnergyVad {
 
 impl Default for EnergyVad {
     fn default() -> Self {
-        // TODO(WI-12): this threshold assumes raw microphone levels. When
-        // `normalize_audio` is false the RMS may sit well below 0.01 on quiet
-        // mics and ambient noise may sit well above it. Validate on real
-        // hardware and consider making it configurable.
-        Self::new(0.01)
+        // The default is now configurable through `VadEndpointConfig` (and
+        // `AudioConfig` in the agent). The constant here is the fallback when
+        // `EnergyVad` is constructed directly.
+        Self::new(DEFAULT_ENERGY_THRESHOLD)
     }
 }
 
@@ -337,22 +350,47 @@ pub fn silero_endpoint_from_cache(min_silence: f32) -> Option<SileroEndpoint> {
     }
 }
 
-/// The default endpointing backend: Silero when its model is present and
-/// loadable, otherwise the raw-energy `VadEndpoint<EnergyVad>` fallback.
+/// Build the default endpointing backend with a concrete `VadEndpointConfig`.
 ///
-/// This is the single construction point used by the recording loops so both
-/// the agent and the CLI agree on which detector is active.
-pub fn default_endpoint() -> Box<dyn Endpoint> {
+/// Silero is used when its model is present and loadable; otherwise the
+/// raw-energy `VadEndpoint<EnergyVad>` fallback is created with the configured
+/// `energy_threshold`.
+pub fn default_endpoint_with_config(config: VadEndpointConfig) -> Box<dyn Endpoint> {
     #[cfg(feature = "sherpa")]
     if let Some(silero) = silero_endpoint_from_cache(0.5) {
         return Box::new(silero);
     }
     eprintln!("using energy VAD endpointing");
     Box::new(VadEndpoint::new(
-        EnergyVad::default(),
+        EnergyVad::new(config.energy_threshold),
         SHERPA_SAMPLE_RATE,
-        VadEndpointConfig::default(),
+        config,
     ))
+}
+
+/// The default endpointing backend: Silero when its model is present and
+/// loadable, otherwise the raw-energy `VadEndpoint<EnergyVad>` fallback.
+///
+/// This is the single construction point used by the recording loops so both
+/// the agent and the CLI agree on which detector is active.
+pub fn default_endpoint() -> Box<dyn Endpoint> {
+    default_endpoint_with_config(VadEndpointConfig::default())
+}
+
+/// Async wrapper over [`default_endpoint_with_config`] that performs the
+/// (blocking) model download / load on a blocking thread so it can be awaited
+/// from an async context without violating tokio's blocking rules.
+#[cfg(feature = "record")]
+pub async fn default_endpoint_async_with_config(config: VadEndpointConfig) -> Box<dyn Endpoint> {
+    tokio::task::spawn_blocking(move || default_endpoint_with_config(config))
+        .await
+        .unwrap_or_else(|_| {
+            Box::new(VadEndpoint::new(
+                EnergyVad::new(DEFAULT_ENERGY_THRESHOLD),
+                SHERPA_SAMPLE_RATE,
+                VadEndpointConfig::default(),
+            ))
+        })
 }
 
 /// Async wrapper over [`default_endpoint`] that performs the (blocking) model
@@ -360,15 +398,7 @@ pub fn default_endpoint() -> Box<dyn Endpoint> {
 /// context without violating tokio's blocking rules.
 #[cfg(feature = "record")]
 pub async fn default_endpoint_async() -> Box<dyn Endpoint> {
-    tokio::task::spawn_blocking(default_endpoint)
-        .await
-        .unwrap_or_else(|_| {
-            Box::new(VadEndpoint::new(
-                EnergyVad::default(),
-                SHERPA_SAMPLE_RATE,
-                VadEndpointConfig::default(),
-            ))
-        })
+    default_endpoint_async_with_config(VadEndpointConfig::default()).await
 }
 
 #[cfg(test)]
@@ -484,6 +514,7 @@ mod tests {
             min_speech: Duration::from_millis(120),
             max_silence: Duration::from_secs(100),
             max_speech: Duration::from_millis(200),
+            energy_threshold: DEFAULT_ENERGY_THRESHOLD,
         };
         let mut endpoint =
             VadEndpoint::new(Scripted::new(vec![true; 10]), SHERPA_SAMPLE_RATE, config);
@@ -555,6 +586,32 @@ mod tests {
         }
         assert!(seen_end, "silence tail must end the utterance");
         assert!(!endpoint.has_speech());
+    }
+
+    #[test]
+    fn energy_vad_default_threshold_is_safer() {
+        let config = VadEndpointConfig::default();
+        assert_eq!(config.energy_threshold, DEFAULT_ENERGY_THRESHOLD);
+
+        let mut vad = EnergyVad::default();
+        // Just above the default threshold should be voiced.
+        let above = config.energy_threshold * 1.5;
+        assert!(vad.voiced(&[above; 160]));
+        // Just below the default threshold should not be voiced.
+        let below = config.energy_threshold * 0.5;
+        assert!(!vad.voiced(&[below; 160]));
+    }
+
+    #[test]
+    fn energy_vad_threshold_is_configurable() {
+        let high = 0.5;
+        let low = 0.01;
+
+        let mut high_vad = EnergyVad::new(high);
+        assert!(!high_vad.voiced(&[0.1; 160]));
+
+        let mut low_vad = EnergyVad::new(low);
+        assert!(low_vad.voiced(&[0.05; 160]));
     }
 
     /// Sherpa-gated: the Silero model downloads (~600 KB, network on first
