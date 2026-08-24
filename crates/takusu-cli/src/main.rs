@@ -1143,6 +1143,9 @@ enum AgentSubCommands {
     #[command(subcommand)]
     Config(AgentConfigCommands),
 
+    /// List available models from the configured LLM provider.
+    Models,
+
     /// Allow a permission persistently.
     Allow { key: String },
 
@@ -1274,6 +1277,15 @@ fn main() {
                 }
                 _ => {}
             },
+            Commands::Agent(args) => {
+                if let Some(AgentSubCommands::Models) = args.command {
+                    if let Err(e) = agent::list_models().await {
+                        eprintln!("Error: {e}");
+                        process::exit(1);
+                    }
+                    return;
+                }
+            }
             _ => {}
         }
 
@@ -2990,6 +3002,9 @@ async fn run_agent(app: Arc<TakusuApp>, args: AgentArgs, plain: bool) -> Result<
                 AgentConfigCommands::Show => agent::config_show()?,
                 AgentConfigCommands::Set { key, value } => agent::config_set(&key, &value)?,
             },
+            AgentSubCommands::Models => {
+                unreachable!("agent models subcommand is handled before run()")
+            }
             AgentSubCommands::Allow { key } => agent::permissions_set(&key, "true")?,
             AgentSubCommands::Deny { key } => agent::permissions_set(&key, "false")?,
             AgentSubCommands::Stats(args) => agent::stats(args.clear)?,

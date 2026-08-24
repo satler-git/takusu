@@ -654,6 +654,25 @@ fn agent_config_path() -> PathBuf {
     path
 }
 
+pub async fn list_models() -> Result<(), AppError> {
+    let config = AgentConfig::load()
+        .map_err(|e| AppError::Internal(format!("failed to load agent config: {e}")))?;
+    let client = takusu_agent::llm::build_llm_client(&config.llm)
+        .map_err(|e| AppError::Internal(format!("failed to build llm client: {e}")))?;
+    let models = client
+        .list_models()
+        .await
+        .map_err(|e| agent_err(AgentError::Llm(e)))?;
+    if models.is_empty() {
+        println!("(no models)");
+    } else {
+        for model in models {
+            println!("{model}");
+        }
+    }
+    Ok(())
+}
+
 pub fn config_show() -> Result<(), AppError> {
     let mut cfg = AgentConfig::load()
         .map_err(|e| AppError::Internal(format!("failed to load agent config: {e}")))?;

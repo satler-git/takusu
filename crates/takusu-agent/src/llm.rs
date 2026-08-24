@@ -384,6 +384,16 @@ pub trait LlmClient: Send + Sync {
             "streaming not supported by this client".into(),
         ))
     }
+
+    /// Fetch the list of model IDs available from this provider.
+    ///
+    /// The default implementation returns an error so provider-specific clients
+    /// can opt in without breaking custom test doubles.
+    async fn list_models(&self) -> Result<Vec<String>, LlmError> {
+        Err(LlmError::Request(
+            "model listing not supported by this client".into(),
+        ))
+    }
 }
 
 #[async_trait]
@@ -403,6 +413,10 @@ impl<T: LlmClient + ?Sized> LlmClient for Arc<T> {
     ) -> Result<Pin<Box<dyn Stream<Item = Result<LlmStreamEvent, LlmError>> + Send>>, LlmError>
     {
         (**self).chat_stream(messages, tools).await
+    }
+
+    async fn list_models(&self) -> Result<Vec<String>, LlmError> {
+        (**self).list_models().await
     }
 }
 
@@ -643,6 +657,10 @@ impl LlmClient for OpenAIClient {
                 Err(e) => return Err(e),
             }
         }
+    }
+
+    async fn list_models(&self) -> Result<Vec<String>, LlmError> {
+        OpenAIClient::list_models(self).await
     }
 }
 
