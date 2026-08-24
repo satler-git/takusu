@@ -175,7 +175,7 @@
                       "ics"
                     ])
                   )
-                  || (lib.hasSuffix ".md" base && parent == "skills")
+                  || (lib.hasSuffix ".md" base && isInCrates && (parent == "skills" || parent == "src"))
                   || isInWebDist;
               in
               if type == "directory" then
