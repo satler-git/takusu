@@ -4,7 +4,7 @@ expression: def
 ---
 {
   "function": {
-    "description": "Propose deleting a memory. Generates an approval request; does not write immediately.",
+    "description": "Propose deleting a memory.",
     "name": "memory_delete",
     "parameters": {
       "additionalProperties": false,

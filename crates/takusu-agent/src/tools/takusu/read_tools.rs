@@ -651,7 +651,7 @@ impl TypedTool for HabitScheduledSpans {
     }
 
     fn description(&self) -> &'static str {
-        "List, create, or delete scheduled spans for a habit. The effect of a span depends on the habit's active flag: for active habits it is a pause period, for disabled habits it is an activation window. action=list returns existing spans; action=create and action=delete generate approval proposals."
+        "List, create, or delete scheduled spans for a habit. For active habits a span is a pause period; for disabled habits it is an activation window. Use action=list to inspect spans and action=create or action=delete to propose changes."
     }
 
     fn exposure(&self) -> ToolExposure {

@@ -4,7 +4,7 @@ expression: def
 ---
 {
   "function": {
-    "description": "Create a schedule generation proposal. Calling this tool generates a pending approval request; it does not write immediately.",
+    "description": "Create a schedule generation proposal.",
     "name": "generate_schedule",
     "parameters": {
       "additionalProperties": false,

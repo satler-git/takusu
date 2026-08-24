@@ -4,7 +4,7 @@ expression: def
 ---
 {
   "function": {
-    "description": "Create a recurring habit update proposal. Calling this tool generates a pending approval request; it does not write immediately.",
+    "description": "Create a recurring habit update proposal.",
     "name": "update_habit",
     "parameters": {
       "additionalProperties": false,

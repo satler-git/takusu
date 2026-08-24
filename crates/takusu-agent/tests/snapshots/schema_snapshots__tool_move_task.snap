@@ -4,7 +4,7 @@ expression: def
 ---
 {
   "function": {
-    "description": "Propose moving a scheduled task to a new start time. The task can also be marked fixed (default true). Generates a pending approval request; it does not write immediately.",
+    "description": "Propose moving a scheduled task to a new start time. The task can also be marked fixed (default true).",
     "name": "move_task",
     "parameters": {
       "additionalProperties": false,

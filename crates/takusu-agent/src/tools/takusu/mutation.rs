@@ -477,7 +477,7 @@ impl MutationSpec for CreateTask {
     type Args = CreateTaskArgs;
 
     const NAME: ToolName = ToolName::CreateTask;
-    const DESCRIPTION: &'static str = "Create a task proposal. Calling this tool generates a pending approval request; it does not write immediately. For one-utterance capture, fill title, quantity (quantity_total / quantity_unit), estimate (avg_minutes / sigma_minutes), end_at, and optional start_at from similar_tasks, memory, and context. Record the rationale in inferred_fields. For example, \"演習30題追加。金曜まで\".";
+    const DESCRIPTION: &'static str = "Create a task proposal. For one-utterance capture, fill title, quantity (quantity_total / quantity_unit), estimate (avg_minutes / sigma_minutes), end_at, and optional start_at from similar_tasks, memory, and context. Record the rationale in inferred_fields. For example, \"演習30題追加。金曜まで\".";
     const OPERATION: ChangeOperation = ChangeOperation::Create;
     const TARGET_TYPE: TargetKind = TargetKind::Task;
 
@@ -608,7 +608,7 @@ impl MutationSpec for UpdateTask {
     type Args = UpdateTaskArgs;
 
     const NAME: ToolName = ToolName::UpdateTask;
-    const DESCRIPTION: &'static str = "Create a task update proposal. Calling this tool generates a pending approval request; it does not write immediately.";
+    const DESCRIPTION: &'static str = "Create a task update proposal.";
     const OPERATION: ChangeOperation = ChangeOperation::Update;
     const TARGET_TYPE: TargetKind = TargetKind::Task;
 
@@ -701,7 +701,7 @@ impl MutationSpec for DeleteTask {
     type Args = DeleteTaskArgs;
 
     const NAME: ToolName = ToolName::DeleteTask;
-    const DESCRIPTION: &'static str = "Create a task deletion proposal. Calling this tool generates a pending approval request; it does not write immediately.";
+    const DESCRIPTION: &'static str = "Create a task deletion proposal.";
     const OPERATION: ChangeOperation = ChangeOperation::Delete;
     const TARGET_TYPE: TargetKind = TargetKind::Task;
 
@@ -822,7 +822,7 @@ impl MutationSpec for CreateHabit {
     type Args = CreateHabitArgs;
 
     const NAME: ToolName = ToolName::CreateHabit;
-    const DESCRIPTION: &'static str = "Create a recurring habit proposal. Calling this tool generates a pending approval request; it does not write immediately.";
+    const DESCRIPTION: &'static str = "Create a recurring habit proposal.";
     const OPERATION: ChangeOperation = ChangeOperation::Create;
     const TARGET_TYPE: TargetKind = TargetKind::Habit;
 
@@ -941,7 +941,7 @@ impl MutationSpec for UpdateHabit {
     type Args = UpdateHabitArgs;
 
     const NAME: ToolName = ToolName::UpdateHabit;
-    const DESCRIPTION: &'static str = "Create a recurring habit update proposal. Calling this tool generates a pending approval request; it does not write immediately.";
+    const DESCRIPTION: &'static str = "Create a recurring habit update proposal.";
     const OPERATION: ChangeOperation = ChangeOperation::Update;
     const TARGET_TYPE: TargetKind = TargetKind::Habit;
 
@@ -1013,7 +1013,7 @@ impl MutationSpec for DeleteHabit {
     type Args = DeleteHabitArgs;
 
     const NAME: ToolName = ToolName::DeleteHabit;
-    const DESCRIPTION: &'static str = "Create a recurring habit deletion proposal. Calling this tool generates a pending approval request; it does not write immediately.";
+    const DESCRIPTION: &'static str = "Create a recurring habit deletion proposal.";
     const OPERATION: ChangeOperation = ChangeOperation::Delete;
     const TARGET_TYPE: TargetKind = TargetKind::Habit;
 
@@ -1085,7 +1085,7 @@ impl MutationSpec for GenerateSchedule {
     type Args = GenerateScheduleArgs;
 
     const NAME: ToolName = ToolName::GenerateSchedule;
-    const DESCRIPTION: &'static str = "Create a schedule generation proposal. Calling this tool generates a pending approval request; it does not write immediately.";
+    const DESCRIPTION: &'static str = "Create a schedule generation proposal.";
     const OPERATION: ChangeOperation = ChangeOperation::Generate;
     const TARGET_TYPE: TargetKind = TargetKind::Schedule;
 
@@ -1178,7 +1178,7 @@ impl MutationSpec for Reschedule {
     type Args = RescheduleArgs;
 
     const NAME: ToolName = ToolName::Reschedule;
-    const DESCRIPTION: &'static str = "Create a partial reschedule proposal. Calling this tool generates a pending approval request; it does not write immediately.";
+    const DESCRIPTION: &'static str = "Create a partial reschedule proposal.";
     const OPERATION: ChangeOperation = ChangeOperation::Reschedule;
     const TARGET_TYPE: TargetKind = TargetKind::Schedule;
 
@@ -1263,7 +1263,7 @@ impl TypedTool for MoveTaskTool {
     }
 
     fn description(&self) -> &'static str {
-        "Propose moving a scheduled task to a new start time. The task can also be marked fixed (default true). Generates a pending approval request; it does not write immediately."
+        "Propose moving a scheduled task to a new start time. The task can also be marked fixed (default true)."
     }
 
     fn exposure(&self) -> ToolExposure {
@@ -1538,7 +1538,7 @@ impl MutationSpec for ProposeSettlement {
     type Args = ProposeSettlementArgs;
 
     const NAME: ToolName = ToolName::ProposeSettlement;
-    const DESCRIPTION: &'static str = "Create a settlement proposal. Calling this tool generates a pending approval request; it does not write immediately. Use when the user reports off-plan time that should be recorded and the remainder of the day should be replanned. If the interval matches an existing unsettled interval, pass its interval_id to update it. mode/from/until are optional and default to range, end_at, and end of today respectively.";
+    const DESCRIPTION: &'static str = "Create a settlement proposal. Use when the user reports off-plan time that should be recorded and the remainder of the day should be replanned. If the interval matches an existing unsettled interval, pass its interval_id to update it. mode/from/until are optional and default to range, end_at, and end of today respectively.";
     const OPERATION: ChangeOperation = ChangeOperation::Settle;
     const TARGET_TYPE: TargetKind = TargetKind::Schedule;
 

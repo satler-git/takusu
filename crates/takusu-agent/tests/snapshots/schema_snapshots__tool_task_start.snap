@@ -4,7 +4,7 @@ expression: def
 ---
 {
   "function": {
-    "description": "Propose starting work on a task. Creates an open work session and sets the task status to in_progress. If task_ref is omitted, asks for clarification. Requires approval before writing.",
+    "description": "Propose starting work on a task. Creates an open work session and sets the task status to in_progress. If task_ref is omitted, asks for clarification.",
     "name": "task_start",
     "parameters": {
       "additionalProperties": false,

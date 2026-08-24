@@ -4,7 +4,7 @@ expression: def
 ---
 {
   "function": {
-    "description": "Propose completing a task. Closes the open work session and records the total active time. If task_ref is omitted, asks for clarification. Requires approval before writing.",
+    "description": "Propose completing a task. Closes the open work session and records the total active time. If task_ref is omitted, asks for clarification.",
     "name": "task_complete",
     "parameters": {
       "additionalProperties": false,

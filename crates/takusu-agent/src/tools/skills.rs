@@ -345,7 +345,7 @@ impl TypedTool for SkillsProposeAdd {
     }
 
     fn description(&self) -> &'static str {
-        "Propose adding a new skill. Requires user approval before it is written."
+        "Propose adding a new skill."
     }
 
     fn exposure(&self) -> ToolExposure {
@@ -466,7 +466,7 @@ impl TypedTool for SkillsProposeEdit {
     }
 
     fn description(&self) -> &'static str {
-        "Propose editing an existing skill. Requires user approval before it is written."
+        "Propose editing an existing skill."
     }
 
     fn exposure(&self) -> ToolExposure {
