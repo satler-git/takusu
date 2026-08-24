@@ -252,6 +252,18 @@ export function ResidentAgentButton({
   const snapshotRef = useRef(snapshot);
   snapshotRef.current = snapshot;
 
+  // If the idle timeout or an explicit stop ends the session while the
+  // microphone is open, stop recording so the user is not left holding the
+  // button with no active session.
+  useEffect(() => {
+    if (!sessionActive && recording.value) {
+      recording.value = false;
+      setIsRecording(false);
+      setEndpointingEnabled(false);
+      stopAndTranscribe().catch(() => {});
+    }
+  }, [sessionActive, recording.value, setIsRecording]);
+
   const openAgent = useCallback(() => {
     if (pathname === '/agent') return;
     if (agentClient) {
@@ -487,6 +499,11 @@ export function ResidentAgentButton({
     // The surface turn has finished; keep the panel open so the user can read
     // the result, but clear the transcript so a new turn can start.
     setSurfaceTranscript('');
+    // Do not re-arm the microphone while the user is reviewing an approval
+    // request; the next utterance could overwrite the pending approval.
+    if (snapshotRef.current?.state === 'waiting_for_approval') {
+      return;
+    }
     // A continuous voice session re-arms the microphone after each turn so the
     // user can keep talking (multi-turn continuation).
     if (sessionActive) {

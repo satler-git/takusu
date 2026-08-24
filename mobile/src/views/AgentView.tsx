@@ -1291,6 +1291,7 @@ export function AgentView({
   const ttsQueueRef = useRef<string[]>([]);
   const ttsProcessingRef = useRef(false);
   const ttsBlockReceivedRef = useRef(false);
+  const autoSpeakRef = useRef(false);
   const ttsPromiseRef = useRef<Promise<void>>(Promise.resolve());
   const viewOffset = useSharedValue(0);
   const animatedStyle = useAnimatedStyle(() => ({
@@ -1932,8 +1933,10 @@ export function AgentView({
             attempt === 0 ? initialTurnId : retryTurnId,
             onEvent,
             signal,
+            false,
           ),
         session,
+        false,
       );
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
@@ -1993,6 +1996,7 @@ export function AgentView({
               initialTurnId,
               onEvent,
               signal,
+              false,
             );
           }
           return client.runTurnStream(
@@ -2001,9 +2005,11 @@ export function AgentView({
             retryTurnId,
             onEvent,
             signal,
+            false,
           );
         },
         session,
+        false,
       );
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
@@ -2021,12 +2027,14 @@ export function AgentView({
       attempt: number,
     ) => Promise<AgentTurnResult>,
     initialSessionId: string,
+    autoSpeak = false,
   ) {
     setBusy(true);
     let currentSessionId = initialSessionId;
     ttsQueueRef.current = [];
     ttsProcessingRef.current = false;
     ttsBlockReceivedRef.current = false;
+    autoSpeakRef.current = autoSpeak;
     ttsPromiseRef.current = Promise.resolve();
 
     const finish = async () => {
@@ -2043,6 +2051,9 @@ export function AgentView({
 
     const handleStreamEvent = (event: AgentStreamEvent) => {
       if (event.type === 'TtsBlock') {
+        if (!autoSpeakRef.current) {
+          return;
+        }
         // TtsBlock values are already filtered by the Rust TtsQueue.
         handleTtsBlock(event.data, false);
         return;
@@ -2233,10 +2244,10 @@ export function AgentView({
         setIntakeState(result.intake_state);
         intakeStateRef.current = result.intake_state;
       }
-      // If the server did not emit any TtsBlock events (e.g. an older agent
-      // version), fall back to synthesizing the full final text once.
-      // The final text from an older server is raw, so filter it here.
-      if (!ttsBlockReceivedRef.current) {
+      // Only voice-origin turns auto-speak. If the server did not emit any
+      // TtsBlock events (e.g. an older agent version), fall back to
+      // synthesizing the full final text once for voice turns.
+      if (autoSpeakRef.current && !ttsBlockReceivedRef.current) {
         handleTtsBlock(result.text, true);
       }
       await ttsPromiseRef.current;

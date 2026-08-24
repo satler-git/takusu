@@ -653,45 +653,58 @@ impl AudioAdapter {
         let latency_for_first_text = Arc::clone(&latency);
         let record_latency_for_first_text = record_latency;
         let tts_tx_for_callback = tts_tx.clone();
-        let result = match tokio::time::timeout(
-            llm_timeout,
-            self.session.run_turn_stream_with_input(
-                text,
-                input_path,
-                move |event| Self::emit_with(&on_event, event),
-                move |block| {
-                    if !no_tts_this_turn {
-                        if first_tts_text.load(Ordering::Relaxed) {
-                            first_tts_text.store(false, Ordering::Relaxed);
-                            if record_latency_for_first_text {
-                                let latency = Arc::clone(&latency_for_first_text);
-                                tokio::spawn(async move {
-                                    Self::record_latency_shared(
-                                        &latency,
-                                        true,
-                                        LatencyCheckpoint::FirstTtsText,
-                                    )
-                                    .await;
-                                });
+
+        // Stop requests (from VoiceSessionHandle / surface) cancel the LLM/TTS
+        // wait instead of letting the turn run to completion (WI-12).
+        let mut stop = self.stop.clone();
+        stop.mark_changed();
+
+        let result = tokio::select! {
+            result = tokio::time::timeout(
+                llm_timeout,
+                self.session.run_turn_stream_with_input(
+                    text,
+                    input_path,
+                    move |event| Self::emit_with(&on_event, event),
+                    move |block| {
+                        if !no_tts_this_turn {
+                            if first_tts_text.load(Ordering::Relaxed) {
+                                first_tts_text.store(false, Ordering::Relaxed);
+                                if record_latency_for_first_text {
+                                    let latency = Arc::clone(&latency_for_first_text);
+                                    tokio::spawn(async move {
+                                        Self::record_latency_shared(
+                                            &latency,
+                                            true,
+                                            LatencyCheckpoint::FirstTtsText,
+                                        )
+                                        .await;
+                                    });
+                                }
                             }
+                            let _ = tts_tx_for_callback.send(block);
                         }
-                        let _ = tts_tx_for_callback.send(block);
-                    }
-                },
-            ),
-        )
-        .await
-        {
-            Ok(Ok(result)) => result,
-            Ok(Err(e)) => {
+                    },
+                    !no_tts_this_turn,
+                ),
+            ) => match result {
+                Ok(Ok(result)) => result,
+                Ok(Err(e)) => {
+                    drop(tts_tx);
+                    drop(set);
+                    return Err(e);
+                }
+                Err(_) => {
+                    drop(tts_tx);
+                    drop(set);
+                    return Err(AgentError::Audio(AudioError::Timeout));
+                }
+            },
+            _ = stop.changed() => {
                 drop(tts_tx);
+                self.stop_tts.store(true, Ordering::Relaxed);
                 drop(set);
-                return Err(e);
-            }
-            Err(_) => {
-                drop(tts_tx);
-                drop(set);
-                return Err(AgentError::Audio(AudioError::Timeout));
+                return Err(AgentError::Audio(AudioError::UserCancelled));
             }
         };
 
@@ -703,7 +716,20 @@ impl AudioAdapter {
         let mut tts_done = 0;
         let mut barge_in_samples = Vec::new();
         let mut turn_err = None;
-        while let Some(res) = set.join_next().await {
+
+        // Re-arm the stop watch for the TTS/barge-in tail of the turn.
+        let mut stop = self.stop.clone();
+        stop.mark_changed();
+
+        loop {
+            let res = tokio::select! {
+                res = set.join_next() => res,
+                _ = stop.changed() => {
+                    self.stop_tts.store(true, Ordering::Relaxed);
+                    continue;
+                }
+            };
+            let Some(res) = res else { break; };
             match res {
                 Ok(Ok(TurnTaskResult::TtsDone)) => {
                     tts_done += 1;
@@ -779,6 +805,10 @@ impl AudioAdapter {
         result: &mut TurnResult,
         input_path: InputPath,
     ) -> Result<(), AudioError> {
+        if self.is_stopped() {
+            return Err(AudioError::UserCancelled);
+        }
+
         let Some(request) = result.approval_request.as_ref() else {
             return Ok(());
         };
@@ -964,18 +994,40 @@ impl AudioAdapter {
         if self.last_audio.tts.mute {
             return Ok(());
         }
+
+        let mut stop = self.stop.clone();
+        stop.mark_changed();
+
         self.audio_callback(AudioCallback::Speaking);
-        let stream = synthesize_stream_with_timeout(
-            self.tts.as_ref(),
-            text,
-            &self.tts_voice_id,
-            &self.last_audio.tts.language,
-            self.tts_speed,
-            Duration::from_secs(120),
-        )
-        .await?;
-        let cancel = Arc::new(AtomicBool::new(false));
-        play_stream_with_timeout(stream, self.tts_format, cancel, Duration::from_secs(120)).await?;
+        let stream = tokio::select! {
+            stream = synthesize_stream_with_timeout(
+                self.tts.as_ref(),
+                text,
+                &self.tts_voice_id,
+                &self.last_audio.tts.language,
+                self.tts_speed,
+                Duration::from_secs(120),
+            ) => stream?,
+            _ = stop.changed() => return Err(AudioError::UserCancelled),
+        };
+
+        let mut stop = self.stop.clone();
+        stop.mark_changed();
+        tokio::select! {
+            result = play_stream_with_timeout(
+                stream,
+                self.tts_format,
+                Arc::clone(&self.stop_tts),
+                Duration::from_secs(120),
+            ) => {
+                result?;
+            }
+            _ = stop.changed() => {
+                self.stop_tts.store(true, Ordering::Relaxed);
+                return Err(AudioError::UserCancelled);
+            }
+        }
+
         self.audio_callback(AudioCallback::PlaybackFinished);
         Ok(())
     }
@@ -1416,6 +1468,9 @@ impl VoiceSessionIo for AudioAdapter {
         // resolve it. Wait instead of failing so the session can continue once
         // the user resolves the approval.
         while self.session.pending_approval().is_some() {
+            if *self.stop.borrow() {
+                return Err(VoiceSessionError::UserCancelled);
+            }
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
 
@@ -1423,12 +1478,26 @@ impl VoiceSessionIo for AudioAdapter {
             .await
             .map_err(AgentError::Audio)?;
 
-        let (mut result, barge_in) = self
+        if *self.stop.borrow() {
+            return Err(VoiceSessionError::UserCancelled);
+        }
+
+        let (mut result, barge_in) = match self
             .run_agent_turn(text, origin.auto_speaks(), input_path)
-            .await?;
+            .await
+        {
+            Ok(r) => r,
+            Err(AgentError::Audio(AudioError::UserCancelled)) => {
+                return Err(VoiceSessionError::UserCancelled);
+            }
+            Err(e) => return Err(VoiceSessionError::Agent(e.to_string())),
+        };
         self.resolve_voice_approval(&mut result, input_path)
             .await
-            .map_err(AgentError::Audio)?;
+            .map_err(|e: AudioError| match e {
+                AudioError::UserCancelled => VoiceSessionError::UserCancelled,
+                _ => VoiceSessionError::Agent(AgentError::Audio(e).to_string()),
+            })?;
 
         Ok(ProcessedTurn { result, barge_in })
     }
