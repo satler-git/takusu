@@ -96,8 +96,14 @@ impl TakusuApp {
             .get_device(device_id)
             .await
             .map_err(storage_to_app)?;
+        // `can_speak_proactively` is the physical ability to emit proactive
+        // speech. The private-channel / ongoing-conversation privacy gate is
+        // applied by `delivery_mode_for`, not here.
         Ok(SpeechCapability {
-            can_speak_proactively: device.audio_service_running && device.private_output_route,
+            can_speak_proactively: matches!(
+                device.platform,
+                takusu_contracts::DevicePlatform::Desktop
+            ) || device.audio_service_running,
         })
     }
 }

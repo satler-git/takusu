@@ -85,10 +85,11 @@ pub async fn resident(_req: worker::Request, env: Env, id: &str) -> Result<Respo
 pub async fn speech(_req: worker::Request, env: Env, id: &str) -> Result<Response, WorkerError> {
     let store = storage(&env)?;
     let row = store.get_device(id).await?;
-    // Desktop is treated as always physically able to speak proactively; the
-    // privacy/private-output gate is a separate layer applied by the client.
+    // Desktop is treated as always physically able to speak proactively.
+    // On Android the physical ability is whether the audio service is running;
+    // the privacy/private-output gate is a separate layer applied by the client.
     let can_speak_proactively = matches!(row.platform, takusu_contracts::DevicePlatform::Desktop)
-        || (row.audio_service_running && row.private_output_route);
+        || row.audio_service_running;
     let capability = takusu_contracts::SpeechCapability {
         can_speak_proactively,
     };

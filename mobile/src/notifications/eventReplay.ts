@@ -148,6 +148,7 @@ export async function replayPlannerEvents(
   const events = await agentClient.listPlannerEvents(deviceId);
   const color = await getNotificationIconColor();
   for (const event of events) {
+    if (!event.id) continue;
     if (
       event.delivery_state !== 'pending_delivery' &&
       event.delivery_state !== 'deferred_quiet_hours'
