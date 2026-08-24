@@ -14,6 +14,7 @@
 //! implements that same rule so fixtures are shared with the mobile client.
 
 use std::borrow::Cow;
+use std::collections::{HashMap, HashSet};
 
 use serde::de::Error as _;
 use serde::{Deserialize, Deserializer, Serialize, de::DeserializeOwned};
@@ -23,7 +24,7 @@ use std::str::FromStr;
 use crate::ApprovalRequest;
 use crate::UserInputAnswer;
 use crate::approval::DEFAULT_APPROVAL_WHY;
-use crate::tool::{ChangeOperation, ChangeReceipt, Target, TargetKind, ToolOutput};
+use crate::tool::{ChangeOperation, ChangeReceipt, InferredField, Target, TargetKind, ToolOutput};
 
 /// A non-empty wrapper for a group of choices or actions.
 ///
@@ -848,6 +849,14 @@ fn build_change_proposal_readback(request: &ApprovalRequest) -> String {
         }
     }
 
+    let inferred_summary = inferred_fields_summary(&request.inferred_fields);
+    if !inferred_summary.is_empty() {
+        if !body.is_empty() && !body.ends_with('。') {
+            body.push('。');
+        }
+        body.push_str(&inferred_summary);
+    }
+
     if body.is_empty() {
         body = request.why.clone();
     }
@@ -858,6 +867,39 @@ fn build_change_proposal_readback(request: &ApprovalRequest) -> String {
         body.pop();
     }
     format!("{}。よろしいですか", body)
+}
+
+/// Translate an inferred field name into a user-facing Japanese label.
+fn inferred_field_label(field: &str) -> &str {
+    match field {
+        "title" => "タイトル",
+        "quantity_total" => "数量",
+        "quantity_unit" => "単位",
+        "avg_minutes" => "見積もり時間",
+        "sigma_minutes" => "標準偏差",
+        "end_at" => "期限",
+        "start_at" => "開始時間",
+        _ => field,
+    }
+}
+
+/// Summarize inferred fields for voice readback.
+///
+/// Returns an empty string when no fields were inferred, so callers can
+/// safely append it without adding noise to the readback.
+fn inferred_fields_summary(fields: &[InferredField]) -> String {
+    let parts: Vec<String> = fields
+        .iter()
+        .filter(|f| !f.reason.trim().is_empty())
+        .map(|f| {
+            let reason = f.reason.trim_end_matches('。');
+            format!("{}は{}", inferred_field_label(&f.field), reason)
+        })
+        .collect();
+    if parts.is_empty() {
+        return String::new();
+    }
+    format!("なお、{}。", parts.join("、"))
 }
 
 /// Format a stored/absolute datetime string for voice readback.
@@ -984,7 +1026,26 @@ fn describe_schedule_impact(
     let preview = after
         .get("_preview")
         .or_else(|| after.get("_preview_entries"));
-    if let Some(Value::Array(entries)) = preview.as_ref().and_then(|p| p.get("entries"))
+    let entries = preview.as_ref().and_then(|p| p.get("entries"));
+
+    let mut ref_to_title: HashMap<&str, &str> = HashMap::new();
+    if let Some(Value::Array(entries)) = entries {
+        for e in entries {
+            let reference = e
+                .get("reference")
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty());
+            let title = e
+                .get("title")
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty());
+            if let (Some(r), Some(t)) = (reference, title) {
+                ref_to_title.insert(r, t);
+            }
+        }
+    }
+
+    if let Some(Value::Array(entries)) = entries
         && !entries.is_empty()
     {
         let first = entries
@@ -1000,11 +1061,17 @@ fn describe_schedule_impact(
     if let Some(Value::Array(displaced)) =
         preview.as_ref().and_then(|p| p.get("displaced_task_ids"))
     {
-        let titles: Vec<&str> = displaced
-            .iter()
-            .filter_map(|v| v.as_str())
-            .filter(|s| !s.is_empty() && *s != "unknown" && !s.starts_with("unknown "))
-            .collect();
+        let mut seen = HashSet::new();
+        let mut titles = Vec::new();
+        for r in displaced.iter().filter_map(|v| v.as_str()) {
+            if r.is_empty() || r == "unknown" || r.starts_with("unknown ") {
+                continue;
+            }
+            let title = ref_to_title.get(r).copied().unwrap_or("unknown task");
+            if seen.insert(title) {
+                titles.push(title);
+            }
+        }
         if !titles.is_empty() {
             summary = format!("{summary}。{}がずれます", titles.join("、"));
         }
@@ -1060,7 +1127,7 @@ fn strfmt(template: &str, arg: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tool::{ChangeOperation, ProposedChange, Target, TargetKind};
+    use crate::tool::{ChangeOperation, InferredField, ProposedChange, Target, TargetKind};
     use serde_json::json;
 
     fn action(label: &str) -> Action {
@@ -1511,9 +1578,10 @@ mod tests {
                     after: Some(json!({
                         "_preview": {
                             "entries": [
-                                {"title": "歯医者", "start_at": "12:40", "end_at": "13:40"},
+                                {"reference": "#next", "title": "歯医者", "start_at": "12:40", "end_at": "13:40"},
+                                {"reference": "#3", "title": "昼食", "start_at": "12:00", "end_at": "12:30"},
                             ],
-                            "displaced_task_ids": ["#3 昼食"],
+                            "displaced_task_ids": ["#3"],
                         },
                     })),
                     ..Default::default()
@@ -1669,8 +1737,11 @@ mod tests {
                     description: "スケジュールを生成".into(),
                     after: Some(json!({
                         "_preview": {
-                            "entries": [{"title": "歯医者"}],
-                            "displaced_task_ids": ["unknown", "#3 昼食", "unknown task"],
+                            "entries": [
+                                {"reference": "#next", "title": "歯医者"},
+                                {"reference": "#3", "title": "昼食"},
+                            ],
+                            "displaced_task_ids": ["unknown", "#3", "unknown task"],
                         },
                     })),
                     ..Default::default()
@@ -1688,6 +1759,52 @@ mod tests {
         assert!(
             !template.contains("unknown"),
             "unknown displaced task should be omitted: {template}"
+        );
+    }
+
+    #[test]
+    fn capture_readback_includes_inferred_fields() {
+        let request = ApprovalRequest {
+            id: "approval-8".into(),
+            why: "過去の演習実績から推定".into(),
+            changes: vec![ProposedChange {
+                operation: ChangeOperation::Create,
+                target: Target::new(TargetKind::Task, "#next"),
+                description: "「演習30題追加」を作成".into(),
+                after: Some(json!({
+                    "title": "演習30題追加",
+                    "avg_minutes": 45,
+                    "quantity_total": 30,
+                    "quantity_unit": "題",
+                    "end_at": "2026-08-28T23:59",
+                })),
+                ..Default::default()
+            }],
+            inferred_fields: vec![
+                InferredField {
+                    field: "end_at".into(),
+                    value: json!("2026-08-28T23:59"),
+                    reason: "「金曜まで」との発話から推定".into(),
+                },
+                InferredField {
+                    field: "quantity_total".into(),
+                    value: json!(30),
+                    reason: "「30題追加」との発話から推定".into(),
+                },
+            ],
+            warnings: vec![],
+            expires_at: jiff::Timestamp::now(),
+        };
+        let template = Presentation::ChangeProposal(request).voice_template();
+        assert!(template.contains("演習30題追加"));
+        assert!(template.contains("期限"));
+        assert!(
+            template.contains("期限は「金曜まで」との発話から推定"),
+            "inferred deadline reason should be read: {template}"
+        );
+        assert!(
+            template.contains("数量は「30題追加」との発話から推定"),
+            "inferred quantity reason should be read: {template}"
         );
     }
 }
