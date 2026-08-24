@@ -530,6 +530,7 @@ function AgentCompactPanelImpl({
             }
           },
           abort.signal,
+          true,
         );
       } catch (e) {
         if (abort.signal.aborted) return;

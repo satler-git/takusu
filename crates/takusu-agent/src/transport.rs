@@ -609,12 +609,20 @@ pub struct UpdateSessionSettings {
 pub struct TurnRequest {
     pub text: String,
     pub idempotency_key: Option<String>,
+    /// Whether the client wants TTS blocks to be emitted for this turn.
+    /// Voice surfaces set this to `true`; plain text surfaces leave it `false`.
+    #[serde(default)]
+    pub auto_speak: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct EditTurnRequest {
     pub text: String,
     pub idempotency_key: Option<String>,
+    /// Whether the client wants TTS blocks to be emitted for the edited turn.
+    /// Voice surfaces set this to `true`; plain text surfaces leave it `false`.
+    #[serde(default)]
+    pub auto_speak: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
@@ -1495,12 +1503,18 @@ async fn run_turn_stream(
             _ = tx_closed.closed() => {
                 state2.surface.finish_operation(operation_id);
             }
-            result = session2.run_turn_stream(&text, |event| {
-                state2.surface.apply_turn_event_for(operation_id, &event);
-                let _ = tx.send(StreamEvent::Turn(event));
-            }, |block| {
-                let _ = tx.send(StreamEvent::TtsBlock(block));
-            }) => {
+            result = session2.run_turn_stream_with_input(
+                &text,
+                InputPath::PlainText,
+                |event| {
+                    state2.surface.apply_turn_event_for(operation_id, &event);
+                    let _ = tx.send(StreamEvent::Turn(event));
+                },
+                |block| {
+                    let _ = tx.send(StreamEvent::TtsBlock(block));
+                },
+                body.value.auto_speak,
+            ) => {
                 match result {
                     Ok(result) => {
                         state2.surface.apply_turn_event_for(
@@ -1597,12 +1611,18 @@ async fn edit_turn_stream(
             _ = tx_closed.closed() => {
                 state2.surface.finish_operation(operation_id);
             }
-            result = session2.edit_turn_stream(turn_index, &text, |event| {
-                state2.surface.apply_turn_event_for(operation_id, &event);
-                let _ = tx.send(StreamEvent::Turn(event));
-            }, |block| {
-                let _ = tx.send(StreamEvent::TtsBlock(block));
-            }) => {
+            result = session2.edit_turn_stream(
+                turn_index,
+                &text,
+                |event| {
+                    state2.surface.apply_turn_event_for(operation_id, &event);
+                    let _ = tx.send(StreamEvent::Turn(event));
+                },
+                |block| {
+                    let _ = tx.send(StreamEvent::TtsBlock(block));
+                },
+                body.value.auto_speak,
+            ) => {
                 match result {
                     Ok(result) => {
                         state2.surface.apply_turn_event_for(
@@ -2390,6 +2410,7 @@ mod tests {
             value: TurnRequest {
                 text: "world".into(),
                 idempotency_key: None,
+                auto_speak: false,
             },
         };
         let res = run_turn(
