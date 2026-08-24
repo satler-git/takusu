@@ -4,7 +4,7 @@ expression: def
 ---
 {
   "function": {
-    "description": "Create a task deletion proposal. Calling this tool generates a pending approval request; it does not write immediately.",
+    "description": "Create a task deletion proposal.",
     "name": "delete_task",
     "parameters": {
       "additionalProperties": false,

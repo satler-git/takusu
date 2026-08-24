@@ -311,7 +311,7 @@ impl TypedTool for MemorySave {
         ToolName::MemorySave.into()
     }
     fn description(&self) -> &'static str {
-        "Propose saving a memory (proper noun or fact). Generates an approval request; does not write immediately."
+        "Propose saving a memory (proper noun or fact)."
     }
     fn exposure(&self) -> ToolExposure {
         ToolExposure::Deferred
@@ -440,7 +440,7 @@ impl TypedTool for MemoryUpdate {
         ToolName::MemoryUpdate.into()
     }
     fn description(&self) -> &'static str {
-        "Propose updating a memory's content. Generates an approval request; does not write immediately."
+        "Propose updating a memory's content."
     }
     fn exposure(&self) -> ToolExposure {
         ToolExposure::Deferred
@@ -540,7 +540,7 @@ impl TypedTool for MemoryDelete {
         ToolName::MemoryDelete.into()
     }
     fn description(&self) -> &'static str {
-        "Propose deleting a memory. Generates an approval request; does not write immediately."
+        "Propose deleting a memory."
     }
     fn exposure(&self) -> ToolExposure {
         ToolExposure::Deferred

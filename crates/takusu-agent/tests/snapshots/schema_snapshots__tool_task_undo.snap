@@ -1,11 +1,10 @@
 ---
 source: crates/takusu-agent/tests/schema_snapshots.rs
-assertion_line: 51
 expression: def
 ---
 {
   "function": {
-    "description": "Propose undoing the most recent start/pause work session for a task. If task_ref is omitted, asks for clarification. Requires approval before writing.",
+    "description": "Propose undoing the most recent start/pause work session for a task. If task_ref is omitted, asks for clarification.",
     "name": "task_undo",
     "parameters": {
       "additionalProperties": false,

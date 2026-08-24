@@ -4,7 +4,7 @@ expression: def
 ---
 {
   "function": {
-    "description": "Propose updating a memory's content. Generates an approval request; does not write immediately.",
+    "description": "Propose updating a memory's content.",
     "name": "memory_update",
     "parameters": {
       "additionalProperties": false,

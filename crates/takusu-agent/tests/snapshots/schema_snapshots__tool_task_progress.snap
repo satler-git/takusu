@@ -4,7 +4,7 @@ expression: def
 ---
 {
   "function": {
-    "description": "Propose recording cumulative progress on a task. Updates quantity_done and may update the estimate. A lower quantity is treated as a correction, not a speed observation. Does not implicitly close the work session; use task_complete to finish. If task_ref is omitted, asks for clarification. Requires approval before writing.",
+    "description": "Propose recording cumulative progress on a task. Updates quantity_done and may update the estimate. A lower quantity is treated as a correction, not a speed observation. Does not implicitly close the work session; use task_complete to finish. If task_ref is omitted, asks for clarification.",
     "name": "task_progress",
     "parameters": {
       "additionalProperties": false,

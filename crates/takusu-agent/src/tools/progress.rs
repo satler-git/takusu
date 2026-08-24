@@ -273,7 +273,7 @@ impl TypedTool for TaskStart {
     }
 
     fn description(&self) -> &'static str {
-        "Propose starting work on a task. Creates an open work session and sets the task status to in_progress. If task_ref is omitted, asks for clarification. Requires approval before writing."
+        "Propose starting work on a task. Creates an open work session and sets the task status to in_progress. If task_ref is omitted, asks for clarification."
     }
 
     fn exposure(&self) -> ToolExposure {
@@ -370,7 +370,7 @@ impl TypedTool for TaskPause {
     }
 
     fn description(&self) -> &'static str {
-        "Propose pausing work on a task. Closes the open work session and records active minutes. If task_ref is omitted, asks for clarification. Requires approval before writing."
+        "Propose pausing work on a task. Closes the open work session and records active minutes. If task_ref is omitted, asks for clarification."
     }
 
     fn exposure(&self) -> ToolExposure {
@@ -468,7 +468,7 @@ impl TypedTool for TaskProgress {
     }
 
     fn description(&self) -> &'static str {
-        "Propose recording cumulative progress on a task. Updates quantity_done and may update the estimate. A lower quantity is treated as a correction, not a speed observation. Does not implicitly close the work session; use task_complete to finish. If task_ref is omitted, asks for clarification. Requires approval before writing."
+        "Propose recording cumulative progress on a task. Updates quantity_done and may update the estimate. A lower quantity is treated as a correction, not a speed observation. Does not implicitly close the work session; use task_complete to finish. If task_ref is omitted, asks for clarification."
     }
 
     fn exposure(&self) -> ToolExposure {
@@ -665,7 +665,7 @@ impl TypedTool for TaskComplete {
     }
 
     fn description(&self) -> &'static str {
-        "Propose completing a task. Closes the open work session and records the total active time. If task_ref is omitted, asks for clarification. Requires approval before writing."
+        "Propose completing a task. Closes the open work session and records the total active time. If task_ref is omitted, asks for clarification."
     }
 
     fn exposure(&self) -> ToolExposure {
@@ -827,7 +827,7 @@ impl TypedTool for TaskSplit {
     }
 
     fn description(&self) -> &'static str {
-        "Propose splitting a task into an original (retained quantity) and a new remainder task. Preserves history and optionally sets a dependency. If task_ref is omitted, asks for clarification. Requires approval before writing."
+        "Propose splitting a task into an original (retained quantity) and a new remainder task. Preserves history and optionally sets a dependency. If task_ref is omitted, asks for clarification."
     }
 
     fn exposure(&self) -> ToolExposure {
@@ -1026,7 +1026,7 @@ impl TypedTool for TaskUndo {
     }
 
     fn description(&self) -> &'static str {
-        "Propose undoing the most recent start/pause work session for a task. If task_ref is omitted, asks for clarification. Requires approval before writing."
+        "Propose undoing the most recent start/pause work session for a task. If task_ref is omitted, asks for clarification."
     }
 
     fn exposure(&self) -> ToolExposure {

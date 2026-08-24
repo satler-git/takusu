@@ -4,7 +4,7 @@ expression: def
 ---
 {
   "function": {
-    "description": "Propose splitting a task into an original (retained quantity) and a new remainder task. Preserves history and optionally sets a dependency. If task_ref is omitted, asks for clarification. Requires approval before writing.",
+    "description": "Propose splitting a task into an original (retained quantity) and a new remainder task. Preserves history and optionally sets a dependency. If task_ref is omitted, asks for clarification.",
     "name": "task_split",
     "parameters": {
       "additionalProperties": false,

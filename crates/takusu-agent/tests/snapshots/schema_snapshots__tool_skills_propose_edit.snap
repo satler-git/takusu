@@ -4,7 +4,7 @@ expression: def
 ---
 {
   "function": {
-    "description": "Propose editing an existing skill. Requires user approval before it is written.",
+    "description": "Propose editing an existing skill.",
     "name": "skills_propose_edit",
     "parameters": {
       "additionalProperties": false,

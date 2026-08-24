@@ -4,7 +4,7 @@ expression: def
 ---
 {
   "function": {
-    "description": "Propose saving a memory (proper noun or fact). Generates an approval request; does not write immediately.",
+    "description": "Propose saving a memory (proper noun or fact).",
     "name": "memory_save",
     "parameters": {
       "additionalProperties": false,
