@@ -43,11 +43,6 @@ expression: def
               "type": "string"
             },
             {
-              "const": "calendar_import",
-              "description": "Confirming calendar import.",
-              "type": "string"
-            },
-            {
               "const": "complete",
               "description": "The user paused or finished the interview.",
               "type": "string"
