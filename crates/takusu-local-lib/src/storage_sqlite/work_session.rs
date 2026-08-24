@@ -565,9 +565,8 @@ pub(crate) async fn pause_work_session(
         {
             let active_minutes = session_minutes(&session);
             if active_minutes > 0 {
-                let quantity_fraction = (session.quantity_done.get() as f64
-                    / total.get() as f64)
-                    .min(1.0);
+                let quantity_fraction =
+                    (session.quantity_done.get() as f64 / total.get() as f64).min(1.0);
                 record_estimator_observation(
                     &mut tx,
                     &task,
@@ -1328,8 +1327,11 @@ pub(crate) async fn undo_work_session(
 
     let mut tx = storage.pool().begin().await.map_err(map_err)?;
     if let Some(op_id) = operation_id
-        && let Some(stored) = super::SqliteStorage::check_progress_idempotency::<_,
-            UndoWorkSessionResult>(&mut *tx, op_id, &request_hash).await?
+        && let Some(stored) = super::SqliteStorage::check_progress_idempotency::<
+            _,
+            UndoWorkSessionResult,
+        >(&mut *tx, op_id, &request_hash)
+        .await?
     {
         return stored;
     }
@@ -1341,7 +1343,9 @@ pub(crate) async fn undo_work_session(
         .fetch_one(&mut *tx)
         .await
         .map_err(|e| match e {
-            sqlx::Error::RowNotFound => StorageError::NotFound(format!("task {} not found", body.task_id)),
+            sqlx::Error::RowNotFound => {
+                StorageError::NotFound(format!("task {} not found", body.task_id))
+            }
             other => StorageError::Internal(other.to_string()),
         })?;
 
@@ -1364,9 +1368,7 @@ pub(crate) async fn undo_work_session(
         None => {
             // Start-undo: delete the recently-created open session.
             if now.as_second() - session.created_at.as_second() > 60 {
-                return Err(StorageError::BadRequest(
-                    "start undo window expired".into(),
-                ));
+                return Err(StorageError::BadRequest("start undo window expired".into()));
             }
 
             sqlx::query("DELETE FROM work_sessions WHERE id = ?")
@@ -1394,9 +1396,7 @@ pub(crate) async fn undo_work_session(
         Some(ended_at) => {
             // Pause-undo: reopen the recently-closed session.
             if now.as_second() - ended_at.as_second() > 60 {
-                return Err(StorageError::BadRequest(
-                    "pause undo window expired".into(),
-                ));
+                return Err(StorageError::BadRequest("pause undo window expired".into()));
             }
 
             sqlx::query("UPDATE work_sessions SET ended_at = NULL WHERE id = ?")

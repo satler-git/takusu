@@ -397,7 +397,11 @@ impl TakusuApp {
     pub async fn list_unsettled_intervals(
         &self,
     ) -> Result<Vec<takusu_contracts::UnsettledIntervalRow>, AppError> {
-        let evaluation = self.storage.get_coverage_evaluation().await.map_err(storage_to_app)?;
+        let evaluation = self
+            .storage
+            .get_coverage_evaluation()
+            .await
+            .map_err(storage_to_app)?;
         Ok(evaluation.unsettled_intervals)
     }
 

@@ -745,7 +745,9 @@ impl AudioAdapter {
                     continue;
                 }
             };
-            let Some(res) = res else { break; };
+            let Some(res) = res else {
+                break;
+            };
             match res {
                 Ok(Ok(TurnTaskResult::TtsDone)) => {
                     tts_done += 1;
@@ -1077,7 +1079,8 @@ impl AudioAdapter {
                 energy_threshold: current.vad.energy_threshold,
                 ..Default::default()
             };
-            self.endpoint = Some(takusu_audio::default_endpoint_async_with_config(vad_config).await);
+            self.endpoint =
+                Some(takusu_audio::default_endpoint_async_with_config(vad_config).await);
         }
 
         self.stt = stt;

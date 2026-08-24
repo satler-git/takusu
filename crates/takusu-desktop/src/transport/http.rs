@@ -16,7 +16,9 @@ use reqwest::header::{self, HeaderValue};
 use serde::Deserialize;
 use takusu_agent::capability::{ActionCapability, CapabilityRequest};
 use takusu_agent::events::EvaluationResult;
-use takusu_agent::transport::{API_VERSION, CreateSessionRequest, CreateSessionResponse, SurfaceCommandRequest, Versioned};
+use takusu_agent::transport::{
+    API_VERSION, CreateSessionRequest, CreateSessionResponse, SurfaceCommandRequest, Versioned,
+};
 use takusu_agent::{
     DeliveryMode, Presentation, SurfaceCommand, SurfaceCommandResponse, SurfaceEvent,
     SurfaceSnapshot,
@@ -203,7 +205,11 @@ impl DesktopTransport for HttpTransport {
             }
             let mut url = format!("{}/api/agent/v1/actions", this.base_url);
             if let Some(ref session_id) = session_id {
-                url = format!("{}?session_id={}", url, takusu_types::url_encode(session_id));
+                url = format!(
+                    "{}?session_id={}",
+                    url,
+                    takusu_types::url_encode(session_id)
+                );
             }
             let body = Versioned {
                 version: API_VERSION,

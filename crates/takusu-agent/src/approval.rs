@@ -239,7 +239,9 @@ impl AgentSession {
             change.target.kind == TargetKind::Schedule
                 && matches!(
                     change.operation,
-                    ChangeOperation::Generate | ChangeOperation::Reschedule | ChangeOperation::Settle
+                    ChangeOperation::Generate
+                        | ChangeOperation::Reschedule
+                        | ChangeOperation::Settle
                 )
         });
 
@@ -328,7 +330,8 @@ impl AgentSession {
             schedule_dirty = false;
         }
         *self.schedule_dirty.lock()? = schedule_dirty;
-        self.update_intake_state_from_batch(&request, &receipts).await?;
+        self.update_intake_state_from_batch(&request, &receipts)
+            .await?;
 
         let system_estimate = self.last_system_estimate.lock()?.unwrap_or(0);
         let resolution_message =
@@ -337,8 +340,11 @@ impl AgentSession {
         local.push(llm::Message::User(resolution_message));
         self.replace_history(local, None, system_estimate)?;
         tracing::info!(session_id = %self.session_id, approval_id = %request.id, count = receipts.len(), "approved changes executed");
-        let presentation = crate::Presentation::from_change_receipts(&receipts)
-            .or_else(|| Some(crate::Presentation::Text { text: "承認しました。".into() }));
+        let presentation = crate::Presentation::from_change_receipts(&receipts).or_else(|| {
+            Some(crate::Presentation::Text {
+                text: "承認しました。".into(),
+            })
+        });
         Ok(ApprovalResult {
             id: request.id,
             approved: true,
@@ -544,7 +550,10 @@ impl AgentSession {
             if change.target.kind != TargetKind::Task {
                 continue;
             }
-            if !matches!(change.operation, ChangeOperation::Move | ChangeOperation::Snooze) {
+            if !matches!(
+                change.operation,
+                ChangeOperation::Move | ChangeOperation::Snooze
+            ) {
                 continue;
             }
             let Some(args) = &change.arguments else {

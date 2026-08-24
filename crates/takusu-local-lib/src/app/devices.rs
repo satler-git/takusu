@@ -46,10 +46,9 @@ impl TakusuApp {
     /// Extend the device's contact suppression window by `minutes` from now.
     pub async fn suppress_device(&self, id: &str, minutes: i64) -> Result<DeviceRow, AppError> {
         let now = Timestamp::from(jiff::Timestamp::now());
-        let until = Timestamp::from_second(
-            now.as_second().saturating_add(minutes.saturating_mul(60)),
-        )
-        .unwrap_or(now);
+        let until =
+            Timestamp::from_second(now.as_second().saturating_add(minutes.saturating_mul(60)))
+                .unwrap_or(now);
         let body = UpdateDevice {
             contact_suppress_until: Some(until),
             ..Default::default()

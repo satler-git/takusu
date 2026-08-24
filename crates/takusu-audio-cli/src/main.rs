@@ -802,12 +802,10 @@ async fn run_speaker(command: SpeakerCommands) {
             }
 
             let refs: Vec<&[f32]> = samples.iter().map(|v| v.as_slice()).collect();
-            verifier
-                .enroll_list(&name, &refs)
-                .unwrap_or_else(|e| {
-                    eprintln!("Enrollment failed: {e}");
-                    std::process::exit(1);
-                });
+            verifier.enroll_list(&name, &refs).unwrap_or_else(|e| {
+                eprintln!("Enrollment failed: {e}");
+                std::process::exit(1);
+            });
             println!("Enrolled speaker: {name}");
         }
 
@@ -923,12 +921,10 @@ async fn load_speaker_verifier(
 
     let model_dir = match model_dir {
         Some(path) => path,
-        None => cache
-            .ensure(DEFAULT_SPEAKER_MODEL_ID)
-            .unwrap_or_else(|e| {
-                eprintln!("Model download error: {e}");
-                std::process::exit(1);
-            }),
+        None => cache.ensure(DEFAULT_SPEAKER_MODEL_ID).unwrap_or_else(|e| {
+            eprintln!("Model download error: {e}");
+            std::process::exit(1);
+        }),
     };
     let model_path = model_dir.join("model.onnx");
 

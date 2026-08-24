@@ -26,4 +26,4 @@ pub use state::{DesktopError, DesktopState};
 pub use transport::{DesktopTransport, MockTransport};
 
 #[cfg(feature = "audio-device")]
-pub use audio::{spawn_voice_session, voice_loop_with_surface, VoiceSessionHandle};
+pub use audio::{VoiceSessionHandle, spawn_voice_session, voice_loop_with_surface};

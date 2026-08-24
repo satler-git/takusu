@@ -607,23 +607,21 @@ fn build_contact_policy_state(
 ) -> takusu_agent::contact_policy::ContactPolicyState {
     let summaries: Vec<takusu_agent::contact_policy::CommittedContactSummary> = ledger
         .iter()
-        .map(
-            |row| {
-                let kind = match row.kind.parse() {
-                    Ok(kind) => Some(kind),
-                    Err(error) => {
-                        tracing::warn!(event_id = %row.id, %error, "failed to parse event kind");
-                        None
-                    }
-                };
-                takusu_agent::contact_policy::CommittedContactSummary {
-                    event_id: row.id.clone(),
-                    kind,
-                    created_at: row.created_at,
-                    ignored: row.delivery_state == EventDeliveryState::Ignored,
+        .map(|row| {
+            let kind = match row.kind.parse() {
+                Ok(kind) => Some(kind),
+                Err(error) => {
+                    tracing::warn!(event_id = %row.id, %error, "failed to parse event kind");
+                    None
                 }
-            },
-        )
+            };
+            takusu_agent::contact_policy::CommittedContactSummary {
+                event_id: row.id.clone(),
+                kind,
+                created_at: row.created_at,
+                ignored: row.delivery_state == EventDeliveryState::Ignored,
+            }
+        })
         .collect();
     takusu_agent::contact_policy::ContactPolicyState::from_ledger(
         &summaries,

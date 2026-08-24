@@ -23,23 +23,14 @@ pub struct SpeakerVerifyResult {
 #[uniffi::export]
 impl MobileSpeaker {
     #[uniffi::constructor]
-    pub fn new(
-        model_dir: String,
-        voice_dir: String,
-        threshold: f32,
-    ) -> Result<Self, TakusuError> {
+    pub fn new(model_dir: String, voice_dir: String, threshold: f32) -> Result<Self, TakusuError> {
         let model_dir = PathBuf::from(model_dir);
         let voice_dir = PathBuf::from(voice_dir);
-        let model_path = model_dir
-            .join(DEFAULT_SPEAKER_MODEL_ID)
-            .join("model.onnx");
+        let model_path = model_dir.join(DEFAULT_SPEAKER_MODEL_ID).join("model.onnx");
 
         if !model_path.is_file() {
             return Err(TakusuError::Model {
-                detail: format!(
-                    "speaker model not found at {}",
-                    model_path.display()
-                ),
+                detail: format!("speaker model not found at {}", model_path.display()),
             });
         }
 
@@ -59,7 +50,9 @@ impl MobileSpeaker {
 
     /// Enroll a single 16 kHz mono f32 utterance for `name`.
     pub fn enroll(&self, name: String, samples: Vec<f32>) -> Result<(), TakusuError> {
-        self.verifier.enroll(&name, &samples).map_err(map_speaker_error)
+        self.verifier
+            .enroll(&name, &samples)
+            .map_err(map_speaker_error)
     }
 
     /// Enroll from multiple 16 kHz mono f32 utterances, averaging embeddings.
@@ -75,8 +68,15 @@ impl MobileSpeaker {
     }
 
     /// Verify a single 16 kHz mono f32 utterance against `name`.
-    pub fn verify(&self, name: String, samples: Vec<f32>) -> Result<SpeakerVerifyResult, TakusuError> {
-        let result = self.verifier.verify(&name, &samples).map_err(map_speaker_error)?;
+    pub fn verify(
+        &self,
+        name: String,
+        samples: Vec<f32>,
+    ) -> Result<SpeakerVerifyResult, TakusuError> {
+        let result = self
+            .verifier
+            .verify(&name, &samples)
+            .map_err(map_speaker_error)?;
         Ok(SpeakerVerifyResult {
             score: result.score,
             accepted: result.accepted,

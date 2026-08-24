@@ -771,7 +771,10 @@ mod tests {
 
         let response = machine.command_for(Some(operation_id), SurfaceCommand::StopTts);
         assert!(response.accepted);
-        assert!(called.load(Ordering::Relaxed), "StopTts callback should fire");
+        assert!(
+            called.load(Ordering::Relaxed),
+            "StopTts callback should fire"
+        );
     }
 
     #[tokio::test(flavor = "multi_thread")]

@@ -3279,9 +3279,7 @@ impl Storage for D1Storage {
             .map_err(|e| StorageError::Io(format!("serialize settle request: {e}")))?;
         let request_hash = settle_request_hash(&request_payload, request.operation_id.as_deref());
         if let Some(op_id) = request.operation_id.as_deref() {
-            if let Some(stored) =
-                check_settle_idempotency(&self.db, op_id, &request_hash).await?
-            {
+            if let Some(stored) = check_settle_idempotency(&self.db, op_id, &request_hash).await? {
                 return Ok(stored);
             }
             if let Some(stored) = find_settled_by_operation_id(&self.db, op_id).await? {

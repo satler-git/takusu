@@ -134,9 +134,11 @@ pub enum SpeakerError {
 }
 
 #[cfg(feature = "sherpa")]
-use sherpa_onnx::{SpeakerEmbeddingExtractor, SpeakerEmbeddingExtractorConfig, SpeakerEmbeddingManager};
-#[cfg(feature = "sherpa")]
 pub use sherpa_onnx::SpeakerEmbeddingMatch;
+#[cfg(feature = "sherpa")]
+use sherpa_onnx::{
+    SpeakerEmbeddingExtractor, SpeakerEmbeddingExtractorConfig, SpeakerEmbeddingManager,
+};
 
 /// On-disk representation of a single enrolled speaker embedding.
 #[cfg(feature = "sherpa")]
@@ -181,7 +183,9 @@ fn validate_speaker_name(name: &str) -> Result<(), SpeakerError> {
             "speaker name must not be '{name}'"
         )));
     }
-    if name.bytes().any(|b| b == b'/' || b == b'\\' || b == b'\0' || b < 0x20)
+    if name
+        .bytes()
+        .any(|b| b == b'/' || b == b'\\' || b == b'\0' || b < 0x20)
     {
         return Err(SpeakerError::InvalidName(format!(
             "speaker name contains path separator or control character: {name}"
@@ -217,7 +221,9 @@ impl SpeakerVerifier {
     ) -> Result<Self, SpeakerError> {
         let model_path = model_path.as_ref();
         if !model_path.exists() {
-            return Err(SpeakerError::ModelNotFound(model_path.display().to_string()));
+            return Err(SpeakerError::ModelNotFound(
+                model_path.display().to_string(),
+            ));
         }
 
         let extractor_config = SpeakerEmbeddingExtractorConfig {
@@ -257,7 +263,11 @@ impl SpeakerVerifier {
     }
 
     /// Extract an embedding from audio at an explicit sample rate.
-    pub fn extract_with_rate(&self, samples: &[f32], sample_rate: i32) -> Result<Vec<f32>, SpeakerError> {
+    pub fn extract_with_rate(
+        &self,
+        samples: &[f32],
+        sample_rate: i32,
+    ) -> Result<Vec<f32>, SpeakerError> {
         let min_samples = (MIN_SPEAKER_AUDIO_SECONDS * sample_rate as f32) as usize;
         if samples.len() < min_samples {
             return Err(SpeakerError::InputTooShort);
@@ -313,9 +323,7 @@ impl SpeakerVerifier {
 
         let embedding = self.extract(samples)?;
         let num_speakers = self.manager.num_speakers();
-        let matches = self
-            .manager
-            .get_best_matches(&embedding, 0.0, num_speakers);
+        let matches = self.manager.get_best_matches(&embedding, 0.0, num_speakers);
 
         let matched = matches.into_iter().find(|m| m.name == name);
         let score = matched.map_or(-1.0, |m| m.score);
@@ -423,9 +431,8 @@ impl SpeakerVerifier {
         std::fs::create_dir_all(voice_dir)?;
         let path = voiceprint_path(voice_dir, name);
         let stored = StoredVoiceprint::new(embedding.to_vec());
-        let json = serde_json::to_string_pretty(&stored).map_err(|e| {
-            SpeakerError::Persist(format!("failed to serialize voiceprint: {e}"))
-        })?;
+        let json = serde_json::to_string_pretty(&stored)
+            .map_err(|e| SpeakerError::Persist(format!("failed to serialize voiceprint: {e}")))?;
         std::fs::write(&path, json)?;
         Ok(())
     }

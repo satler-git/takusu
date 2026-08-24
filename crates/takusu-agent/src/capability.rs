@@ -24,9 +24,9 @@ use takusu_client::{
 };
 use takusu_types::{Quantity, QuantityError, TaskStatus, Timestamp};
 
+use crate::approval_layers::classify;
 use crate::presentation::{Presentation, WorkTransition, WorkTransitionKind};
 use crate::tool::{ChangeOperation, ProposedChange, Target, TargetKind};
-use crate::approval_layers::classify;
 
 /// Default lifetime of a quick-action capability.
 pub const CAPABILITY_TTL_MINUTES: i64 = 5;

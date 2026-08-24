@@ -31,7 +31,9 @@ use crate::tool::{ChangeOperation, ProposedChange, TargetKind};
 pub const MAX_SHORT_SNOOZE_MINUTES: i64 = 30;
 
 /// The four approval layers, ordered from least to most restrictive.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, schemars::JsonSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum ApprovalLayer {
     Immediate,
@@ -201,7 +203,9 @@ fn is_short_snooze(change: &ProposedChange) -> bool {
         .and_then(|s| s.parse::<jiff::Timestamp>().ok())
     {
         let now = jiff::Timestamp::now();
-        if start_at > now && let Ok(minutes) = (start_at - now).total(jiff::Unit::Minute) {
+        if start_at > now
+            && let Ok(minutes) = (start_at - now).total(jiff::Unit::Minute)
+        {
             return minutes > 0.0 && minutes <= MAX_SHORT_SNOOZE_MINUTES as f64;
         }
     }
@@ -219,13 +223,16 @@ fn is_voice_confirmed_single_task_op(op: ChangeOperation, target: TargetKind) ->
     matches!(op, Progress | Complete | Create | Update)
 }
 
-fn is_long_move_or_snooze(op: ChangeOperation, target: TargetKind, change: &ProposedChange) -> bool {
+fn is_long_move_or_snooze(
+    op: ChangeOperation,
+    target: TargetKind,
+    change: &ProposedChange,
+) -> bool {
     if target != TargetKind::Task {
         return false;
     }
 
-    matches!(op, ChangeOperation::Move | ChangeOperation::Snooze)
-        && !is_short_snooze(change)
+    matches!(op, ChangeOperation::Move | ChangeOperation::Snooze) && !is_short_snooze(change)
 }
 
 fn is_voice_compound_task_op(op: ChangeOperation, target: TargetKind) -> bool {
@@ -300,7 +307,10 @@ mod tests {
     #[test]
     fn progress_from_explicit_voice_session_is_voice_confirmed() {
         assert_eq!(
-            classify(&change(ChangeOperation::Progress), InputPath::ExplicitVoiceSession),
+            classify(
+                &change(ChangeOperation::Progress),
+                InputPath::ExplicitVoiceSession
+            ),
             ApprovalLayer::VoiceConfirmed
         );
     }
@@ -308,7 +318,10 @@ mod tests {
     #[test]
     fn progress_from_screen_capability_is_screen_required() {
         assert_eq!(
-            classify(&change(ChangeOperation::Progress), InputPath::ScreenCapability),
+            classify(
+                &change(ChangeOperation::Progress),
+                InputPath::ScreenCapability
+            ),
             ApprovalLayer::ScreenRequired
         );
     }
@@ -368,7 +381,10 @@ mod tests {
     #[test]
     fn undo_from_explicit_voice_is_immediate() {
         assert_eq!(
-            classify(&change(ChangeOperation::Undo), InputPath::ExplicitVoiceSession),
+            classify(
+                &change(ChangeOperation::Undo),
+                InputPath::ExplicitVoiceSession
+            ),
             ApprovalLayer::Immediate
         );
     }

@@ -503,13 +503,8 @@ impl Presentation {
     /// [`ApprovalRequest`] becomes [`Presentation::ChangeProposal`]).
     pub fn from_tool_output(name: &str, output: &ToolOutput) -> Option<Presentation> {
         match name {
-            "task_start"
-            | "task_pause"
-            | "task_progress"
-            | "task_complete"
-            | "task_split"
-            | "task_undo"
-            | "move_task" => {
+            "task_start" | "task_pause" | "task_progress" | "task_complete" | "task_split"
+            | "task_undo" | "move_task" => {
                 // The progress mutation tools produce a WorkTransition when a
                 // task is given; when task_ref is omitted they instead return a
                 // focused_clarification with an empty proposed_changes (WI-1).
@@ -517,15 +512,20 @@ impl Presentation {
                     let kind = match change.operation {
                         ChangeOperation::Start => WorkTransitionKind::Start,
                         ChangeOperation::Pause => WorkTransitionKind::Pause,
-                        ChangeOperation::Snooze | ChangeOperation::Move => WorkTransitionKind::Delay,
+                        ChangeOperation::Snooze | ChangeOperation::Move => {
+                            WorkTransitionKind::Delay
+                        }
                         ChangeOperation::Progress => WorkTransitionKind::Progress,
                         ChangeOperation::Complete => WorkTransitionKind::Complete,
                         ChangeOperation::Split => WorkTransitionKind::Split,
                         ChangeOperation::Undo => WorkTransitionKind::Undo,
                         _ => return None,
                     };
-                    let (title, reference) =
-                        extract_title_reference(change.after.as_ref(), &change.target, &change.description);
+                    let (title, reference) = extract_title_reference(
+                        change.after.as_ref(),
+                        &change.target,
+                        &change.description,
+                    );
                     let detail = work_transition_detail(change.operation, change.after.as_ref());
                     Some(Presentation::WorkTransition(WorkTransition {
                         kind,
@@ -630,7 +630,9 @@ fn parse_title_from_description(description: &str) -> Option<String> {
 fn work_transition_detail(operation: ChangeOperation, after: Option<&Value>) -> String {
     match operation {
         ChangeOperation::Progress => {
-            let Some(after) = after else { return String::new() };
+            let Some(after) = after else {
+                return String::new();
+            };
             let done = after.get("quantity_done").and_then(Value::as_i64);
             let total = after.get("quantity_total").and_then(Value::as_i64);
             match (done, total) {

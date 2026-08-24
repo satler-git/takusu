@@ -29,8 +29,8 @@ use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 use takusu_client::{
-    Client, CreateComment, CreateCoverageConfirmation, CreateHabit, CreateHabitScheduledSpan,
-    CreateMemory, CreateSkill, CreateTask, CoverageConfirmationRow, HabitDetail, HabitRow,
+    Client, CoverageConfirmationRow, CreateComment, CreateCoverageConfirmation, CreateHabit,
+    CreateHabitScheduledSpan, CreateMemory, CreateSkill, CreateTask, HabitDetail, HabitRow,
     MoveEntry, RecordWorkSessionProgress, SaveScheduleRequest, ScheduleEntry, SettleRequest,
     SplitTask, StartWorkSession, TaskRow, UndoWorkSession, UndoWorkSessionResult, UpdateHabit,
     UpdateMemory, UpdateSkill, UpdateTask,
@@ -1191,10 +1191,8 @@ impl ChangeHandler for ScheduleSettle {
                 let comment_body = CreateComment {
                     content: format!("{reason}（スケジュールを再調整）"),
                 };
-                let seen: std::collections::HashSet<_> = schedule_entries
-                    .iter()
-                    .map(|e| e.task_id.clone())
-                    .collect();
+                let seen: std::collections::HashSet<_> =
+                    schedule_entries.iter().map(|e| e.task_id.clone()).collect();
                 for task_id in seen {
                     let op_id = ctx.operation_id.map(|op| format!("{op}:comment:{task_id}"));
                     if let Err(error) = ctx
