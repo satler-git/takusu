@@ -57,7 +57,7 @@ pub use contact_policy::{
     delivery_mode_for, filter_events, is_proactive_check_in, is_scheduled_notification,
     postpone_reason_check_in, should_ask_postpone_reason,
 };
-pub use intake::{IntakeStage, IntakeState};
+pub use intake::{IntakeStage, IntakeState, intake_stage_index, intake_stage_label};
 pub use tool::{
     ChangeOperation, ChangeReceipt, InferredField, InvalidArgsError, OpenAITool,
     OpenAIToolFunction, ProposalContent, ProposedChange, ReceiptTarget, Target, TargetKind, Tool,
@@ -196,6 +196,9 @@ pub struct ApprovalResult {
     pub approved: bool,
     pub changes: Vec<ChangeReceipt>,
     pub schedule_dirty: bool,
+    /// Typed presentation derived from the executed changes (WI-14).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub presentation: Option<Presentation>,
 }
 
 #[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
@@ -453,10 +456,62 @@ impl AgentSession {
         Ok(self.intake_state.lock()?.clone())
     }
 
-    /// Set the resumable intake interview state.
+    /// Set the resumable intake interview state, validating fixed stage order.
     pub fn set_intake_state(&self, state: IntakeState) -> Result<(), AgentError> {
+        let current = self.get_intake_state()?;
+        let current_idx = intake_stage_index(current.stage);
+        let new_idx = intake_stage_index(state.stage);
+        if current.stage != IntakeStage::NotStarted && new_idx < current_idx {
+            return Err(AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
+                "stage",
+                format!(
+                    "intake stage cannot move backwards from {:?} to {:?}",
+                    current.stage, state.stage
+                ),
+            ))));
+        }
         *self.intake_state.lock()? = state;
         Ok(())
+    }
+
+    /// Merge an incoming intake state (from a tool output) with the current
+    /// one, preserving accumulated `collected_ids` and `proposal_id` if the
+    /// tool did not supply them (WI-16).
+    pub(crate) fn merge_intake_state(&self, incoming: IntakeState) -> Result<(), AgentError> {
+        let mut current = self.get_intake_state()?;
+        let current_idx = intake_stage_index(current.stage);
+        let new_idx = intake_stage_index(incoming.stage);
+        if current.stage != IntakeStage::NotStarted && new_idx < current_idx {
+            return Err(AgentError::Tool(ToolError::InvalidArgs(InvalidArgsError::new(
+                "stage",
+                format!(
+                    "intake stage cannot move backwards from {:?} to {:?}",
+                    current.stage, incoming.stage
+                ),
+            ))));
+        }
+
+        // Decide whether the incoming state is a full update (has proposal or
+        // collected ids) before moving the fields.
+        let has_proposal = incoming.proposal_id.is_some();
+        let has_collected = !incoming.collected_ids.is_empty();
+
+        if has_proposal {
+            current.proposal_id = incoming.proposal_id;
+        }
+        if has_collected {
+            current.collected_ids = incoming.collected_ids;
+        }
+        // coverage_pending is an explicit flag the tool may toggle on or off.
+        // Take the incoming value when it is true or when the update also
+        // contains a proposal / collected ids. A bare stage-only update does
+        // not clear an earlier `coverage_pending`.
+        if incoming.coverage_pending || has_proposal || has_collected {
+            current.coverage_pending = incoming.coverage_pending;
+        }
+        current.stage = incoming.stage;
+
+        self.set_intake_state(current)
     }
 
     pub fn set_injected_memory_ids(
@@ -1089,7 +1144,7 @@ impl AgentSession {
                         proposed_changes.extend(output.proposed_changes);
                         inferred_fields.extend(output.inferred_fields);
                         if let Some(state) = output.intake_state {
-                            self.set_intake_state(state)?;
+                            self.merge_intake_state(state)?;
                         }
                         self.clear_check_ins_from_receipts(&output.changes)?;
                         self.clear_postpone_reasons_from_receipts(&output.changes)?;
@@ -1240,6 +1295,29 @@ impl AgentSession {
         ))
     }
 
+    /// Build the system-prompt section for the current intake interview state.
+    fn intake_state_prompt_section(&self) -> Result<String, AgentError> {
+        let state = self.get_intake_state()?;
+        if state.stage == IntakeStage::NotStarted {
+            return Ok(String::new());
+        }
+        let proposal = state.proposal_id.as_deref().unwrap_or("未設定");
+        let collected = if state.collected_ids.is_empty() {
+            "なし".into()
+        } else {
+            state.collected_ids.join(", ")
+        };
+        let coverage = if state.coverage_pending {
+            "（coverage 確認待ち）"
+        } else {
+            ""
+        };
+        Ok(format!(
+            "## 進行中の intake インタビュー\n- 現在の段階: {stage}\n- まとめ提案 id: {proposal}\n- これまでに作成した id: {collected}\n- coverage 保留中: {coverage}\n\n",
+            stage = intake_stage_label(state.stage)
+        ))
+    }
+
     async fn build_system_prompt(&self) -> Result<String, AgentError> {
         let tz = self.load_server_timezone().await;
         let now = jiff::Timestamp::now()
@@ -1256,6 +1334,7 @@ impl AgentSession {
             .unwrap_or_default();
         let check_in_section = self.check_in_prompt_section()?;
         let postpone_reason_section = self.postpone_reason_prompt_section()?;
+        let intake_state_section = self.intake_state_prompt_section()?;
 
         let prompt = format!(
             r####"## 役割
@@ -1273,6 +1352,7 @@ impl AgentSession {
             {summary_section}
             {check_in_section}
             {postpone_reason_section}
+            {intake_state_section}
             ## 使用可能なスキル
             {skills}
 
@@ -1304,6 +1384,7 @@ impl AgentSession {
             - create_habit: 習慣作成の提案を生成
             - update_habit: 習慣更新の提案を生成
             - delete_habit: 習慣削除の提案を生成
+            - coverage_confirm: 今日の coverage 確認を提案として生成。batch 承認時に初めて書き込まれる
 
             ### コメント / 覚書（承認不要で即時書き込み）
             - add_comment: タスクのタイムラインに時系列の覚書（コメント）を追記する。承認なしで即時保存され、ユーザーに可視化され、ユーザーが削除できる。超過理由や定性コンテキストを残すために使い、タスクの現在の仕様（spec）を書く場所ではない。
@@ -1312,10 +1393,10 @@ impl AgentSession {
             ### ツール検索
             - tool_search: 頻繁でないツールをキーワードで検索する。必要なツールが現在のツール一覧にない場合は、まず `tool_search` を呼んでから結果に含まれたツールを呼ぶ。
               探索語にはツール名や目的を含めてください（例: 'memory save', 'skill list', 'task progress', 'reschedule schedule', 'move task', 'similar task', 'expand rrule'）。
-              他にも以下のようなツールは `tool_search` で発見できます：スキル操作（skills_list / skills_read / skills_propose_add / skills_propose_edit）、記憶書き込み（memory_save / memory_update / memory_delete）、進捗操作（task_start / task_pause / task_progress / task_complete / task_split）、見積もり参照（similar_tasks）、タスク移動（move_task）、スケジュール生成（generate_schedule / reschedule / propose_settlement）、習慣 scheduled span 変更（habit_scheduled_spans）、RRULE 展開（expand_rrule）、設定取得（get_settings）。
+              他にも以下のようなツールは `tool_search` で発見できます：スキル操作（skills_list / skills_read / skills_propose_add / skills_propose_edit）、記憶書き込み（memory_save / memory_update / memory_delete）、進捗操作（task_start / task_pause / task_progress / task_complete / task_split / task_undo）、見積もり参照（similar_tasks）、タスク移動（move_task）、スケジュール生成（generate_schedule / reschedule / propose_settlement）、習慣 scheduled span 変更（habit_scheduled_spans）、RRULE 展開（expand_rrule）、設定取得（get_settings）。
 
             ## Proposal / 承認フロー（最重要）
-            - `create_task` / `update_task` / `delete_task` / `move_task` / `task_start` / `task_pause` / `task_progress` / `task_complete` / `task_split` / `create_habit` / `update_habit` / `delete_habit` / `habit_scheduled_spans`（`action=create` / `action=delete`） / `generate_schedule` / `reschedule` / `propose_settlement` / `skills_propose_add` / `skills_propose_edit` / `memory_save` / `memory_update` / `memory_delete` を呼ぶと、システムは自動的に承認要求（Proposal）を生成します。
+            - `create_task` / `update_task` / `delete_task` / `move_task` / `task_start` / `task_pause` / `task_progress` / `task_complete` / `task_split` / `task_undo` / `create_habit` / `update_habit` / `delete_habit` / `habit_scheduled_spans`（`action=create` / `action=delete`） / `generate_schedule` / `reschedule` / `coverage_confirm` / `propose_settlement` / `skills_propose_add` / `skills_propose_edit` / `memory_save` / `memory_update` / `memory_delete` を呼ぶと、システムは自動的に承認要求（Proposal）を生成します。
             - これらのツールを呼ぶこと自体が「変更を提案する」行為です。ツールを呼ぶ前に「～してもよいですか？」と口頭でユーザーに確認を挟まないでください。
             - 情報が揃っていれば躊躇せずツールを呼び出し、最後に変更内容とその理由を提示してください。ユーザーは Proposal を承認または否認できます。否認なら何も書き換わりません。
             - 関連する複数の変更を 1 つの Proposal としてまとめたい場合、各変更ツールの `proposal_id` 引数に同じ値を指定してください（例： `"1"` など任意の文字列）。同じ `proposal_id` を持つ変更はユーザーに 1 ページでまとめて表示され、まとめて承認・否認されます。無関係な変更は別の `proposal_id` を使って分けてください。`proposal_id` を指定しない場合は、そのツール呼び出しが 1 つの独立した Proposal になります。
@@ -1325,7 +1406,7 @@ impl AgentSession {
             - 聞く順序は固定です: 1. 締め切りが決まっているもの、2. 毎週・定期の予定、3. カレンダーからの import 確認。
             - ユーザーは思いつくまま自由に話します。構造化・見積もり・quantity の補完は agent が `similar_tasks` や文脈から行い、1つの `proposal_id` にまとめて承認に出してください。
             - 各段階を開始するたびに `set_intake_state` を呼び出して、現在の `stage` と、まとめて扱う `proposal_id`、作成したタスク・習慣の `collected_ids` を記録してください。次の質問に進んだら `stage` を `deadlines` / `recurring` / `calendar_import` / `complete` の順に進めてください。
-            - 中断時は「今日はここまでにしますか？」と確認し、了承があれば `coverage_confirm` を使って今日の coverage を `intake_complete` として記録してください。不完全な場合は coverage を進めず、次回のセッションで再開できます。
+            - 中断時は「今日はここまでにしますか？」と確認し、了承があれば `set_intake_state` で `coverage_pending: true` を設定した上で、同じ `proposal_id` を使って `coverage_confirm` を呼んでください。`coverage_confirm` は batch 承認時に初めて書き込まれ、これより前に today-covered が進むことはありません。不完全な場合は coverage を進めず、次回のセッションで再開できます。
             - セッションは resumable です。クライアントが保存した snapshot から再開できます。
 
             ## 精算 (settlement / WI-18)
@@ -1347,7 +1428,7 @@ impl AgentSession {
             10. ツールの存在を忘れないでください。応答前に、必要な情報を取得するためのツールがないか簡潔に確認し、適切なツールを順番に呼び出してください。
             11. 複雑なタスクでは、推論のステップを簡潔に整理してから行動してください。
             12. `inferred_fields` には、明らかな単位換算（例：「1時間」→ 60 分）や現在日時から補完した値は含めないでください。不自然な推定やユーザーにとって分かりにくい推論だけを記載してください。
-            13. 進捗操作（task_start / task_pause / task_progress / task_complete / task_split）は `tool_search` で見つけてから呼び出してください。ユーザーが対象タスクを明示していない場合（例：「着手した」「完了した」だけ）は、task_ref を省略してそのままツールを呼び出してください。候補が複数あればシステムが選択肢を返すので、勝手に対象を決めずにユーザーに確認してください。
+            13. 進捗操作（task_start / task_pause / task_progress / task_complete / task_split / task_undo）は `tool_search` で見つけてから呼び出してください。ユーザーが対象タスクを明示していない場合（例：「着手した」「完了した」だけ）は、task_ref を省略してそのままツールを呼び出してください。候補が複数あればシステムが選択肢を返すので、勝手に対象を決めずにユーザーに確認してください。
             14. `task_complete` を提案する際、ユーザーがそのターンで超過理由（例：「思ったより手間取った」「途中で呼び出された」）をすでに述べている場合は、その理由を完成 Proposal と一緒に `add_comment` でそのタスクに記録してください。理由が述べられていない場合は先回りして尋ねず、何も記録してはいけません。完了が承認された後の見積もり超過（1σ 超）へのチェックインはシステムが「完了タスクの振り返り（確認待ち）」として案内します。
 
             ## 応答のルール

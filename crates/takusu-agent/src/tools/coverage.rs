@@ -2,22 +2,20 @@ use async_trait::async_trait;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use takusu_client::Client;
 use takusu_types::Timestamp;
 
-use crate::tools::{ToolContext, ToolModule, client_error};
+use crate::tools::{ToolContext, ToolModule};
 use crate::{
-    InferredField, InvalidArgsError, ToolError, ToolExposure, ToolName, ToolOutput, ToolRegistry,
-    TypedTool, deserialize_trimmed_optional, deserialize_trimmed_required, inferred_fields_schema,
+    ChangeOperation, InferredField, InvalidArgsError, ProposalContent, ProposedChange, Target,
+    TargetKind, ToolError, ToolExposure, ToolName, ToolOutput, ToolRegistry, TypedTool,
+    deserialize_trimmed_optional, deserialize_trimmed_required, inferred_fields_schema,
 };
 
 pub struct CoverageModule;
 
 impl ToolModule for CoverageModule {
-    fn register(&self, registry: &mut ToolRegistry, ctx: &ToolContext) {
-        registry.register(Box::new(crate::tool::Typed(CoverageConfirm {
-            client: ctx.client.clone(),
-        })));
+    fn register(&self, registry: &mut ToolRegistry, _ctx: &ToolContext) {
+        registry.register(Box::new(crate::tool::Typed(CoverageConfirm)));
     }
 }
 
@@ -50,15 +48,17 @@ struct CoverageConfirmArgs {
     #[serde(default, deserialize_with = "deserialize_trimmed_optional")]
     #[schemars(with = "Option<String>")]
     why: Option<String>,
+    /// Optional proposal id. Set the same value as the rest of the batch so the coverage confirmation is approved and committed together with the related changes.
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_trimmed_optional")]
+    #[schemars(with = "Option<String>")]
+    proposal_id: Option<String>,
     #[serde(default)]
     inferred_fields: Vec<InferredField>,
     #[serde(default)]
     warnings: Vec<String>,
 }
 
-struct CoverageConfirm {
-    client: Client,
-}
+struct CoverageConfirm;
 
 #[async_trait]
 impl TypedTool for CoverageConfirm {
@@ -69,7 +69,7 @@ impl TypedTool for CoverageConfirm {
     }
 
     fn description(&self) -> &'static str {
-        "Record a coverage confirmation for a local time interval. Use this after an intake or capture flow when the user has confirmed what happened during a period. Does not require approval; it is an immediate write."
+        "Create a coverage confirmation proposal for a local time interval. Use this after an intake or capture flow when the user has confirmed what happened during a period. The confirmation is written only when the batch is approved, so it is committed together with the related tasks/habits and schedule changes."
     }
 
     fn exposure(&self) -> ToolExposure {
@@ -112,6 +112,12 @@ impl TypedTool for CoverageConfirm {
                 );
                 health.insert("enum".into(), json!(["ok", "stale", "error"]));
             }
+            if let Some(proposal_id) = props.get_mut("proposal_id").and_then(Value::as_object_mut) {
+                proposal_id.insert(
+                    "description".into(),
+                    "Optional proposal id. Set the same value across the coverage confirmation and the related create/update/schedule calls so they are approved as one batch.".into(),
+                );
+            }
         }
         schema
     }
@@ -143,30 +149,35 @@ impl TypedTool for CoverageConfirm {
                 "end_at must not be before start_at",
             )));
         }
-        let schedule_revision = self
-            .client
-            .get_schedule_revision()
-            .await
-            .map_err(client_error)?;
-        let body = takusu_client::CreateCoverageConfirmation {
-            start_at,
-            end_at,
-            timezone: args.timezone,
-            source: args.source.unwrap_or_else(|| "intake_complete".into()),
-            schedule_revision,
-            calendar_health: args.calendar_health.unwrap_or_else(|| "ok".into()),
-            operation_id: None,
+
+        let source = args.source.unwrap_or_else(|| "intake_complete".into());
+        let calendar_health = args.calendar_health.unwrap_or_else(|| "ok".into());
+
+        let mut exec_args = serde_json::Map::new();
+        exec_args.insert("start_at".into(), Value::String(args.start_at));
+        exec_args.insert("end_at".into(), Value::String(args.end_at));
+        exec_args.insert("timezone".into(), Value::String(args.timezone));
+        exec_args.insert("source".into(), Value::String(source.clone()));
+        exec_args.insert("calendar_health".into(), Value::String(calendar_health.clone()));
+
+        let display_args = exec_args.clone();
+        let description = format!("coverage confirmation ({source}) from {start_at} to {end_at}");
+        let proposal = ProposedChange {
+            operation: ChangeOperation::Confirm,
+            target: Target::new(TargetKind::Coverage, ""),
+            description,
+            before: None,
+            after: Some(Value::Object(display_args)),
+            arguments: Some(Value::Object(exec_args)),
+            observed_updated_at: None,
+            proposal_id: args.proposal_id,
         };
-        let row = self
-            .client
-            .create_coverage_confirmation(&body)
-            .await
-            .map_err(client_error)?;
+
         Ok(ToolOutput {
-            content: serde_json::to_string(&row).unwrap_or_default(),
+            content: ProposalContent::new(&proposal.target).to_json_string(),
             why: args.why,
             warnings: args.warnings,
-            proposed_changes: Vec::new(),
+            proposed_changes: vec![proposal],
             inferred_fields: args.inferred_fields,
             schedule_dirty: false,
             ..Default::default()
@@ -180,17 +191,13 @@ mod tests {
 
     #[test]
     fn coverage_confirm_name_matches_tool_name() {
-        let tool = CoverageConfirm {
-            client: Client::new("http://localhost", ""),
-        };
+        let tool = CoverageConfirm;
         assert_eq!(tool.name(), "coverage_confirm");
     }
 
     #[test]
     fn schema_does_not_expose_schedule_revision() {
-        let tool = CoverageConfirm {
-            client: Client::new("http://localhost", ""),
-        };
+        let tool = CoverageConfirm;
         let schema = tool.parameters_schema();
         let props = schema
             .get("properties")
@@ -201,9 +208,7 @@ mod tests {
 
     #[test]
     fn validate_args_rejects_invalid_calendar_health() {
-        let tool = CoverageConfirm {
-            client: Client::new("http://localhost", ""),
-        };
+        let tool = CoverageConfirm;
         let mut args = CoverageConfirmArgs {
             start_at: "2026-01-01T00:00:00Z".into(),
             end_at: "2026-01-01T01:00:00Z".into(),
@@ -211,6 +216,7 @@ mod tests {
             source: None,
             calendar_health: Some("broken".into()),
             why: None,
+            proposal_id: None,
             inferred_fields: Vec::new(),
             warnings: Vec::new(),
         };
@@ -227,9 +233,7 @@ mod tests {
 
     #[tokio::test]
     async fn call_typed_rejects_swapped_interval() {
-        let tool = CoverageConfirm {
-            client: Client::new("http://localhost", ""),
-        };
+        let tool = CoverageConfirm;
         let args = CoverageConfirmArgs {
             start_at: "2026-01-01T02:00:00Z".into(),
             end_at: "2026-01-01T01:00:00Z".into(),
@@ -237,6 +241,7 @@ mod tests {
             source: None,
             calendar_health: None,
             why: None,
+            proposal_id: None,
             inferred_fields: Vec::new(),
             warnings: Vec::new(),
         };
@@ -244,5 +249,27 @@ mod tests {
             tool.call_typed(args).await,
             Err(ToolError::InvalidArgs(_))
         ));
+    }
+
+    #[tokio::test]
+    async fn call_typed_returns_coverage_proposal() {
+        let tool = CoverageConfirm;
+        let args = CoverageConfirmArgs {
+            start_at: "2026-01-01T00:00:00Z".into(),
+            end_at: "2026-01-01T01:00:00Z".into(),
+            timezone: "Asia/Tokyo".into(),
+            source: None,
+            calendar_health: None,
+            why: Some("batch intake coverage".into()),
+            proposal_id: Some("p1".into()),
+            inferred_fields: Vec::new(),
+            warnings: Vec::new(),
+        };
+        let output = tool.call_typed(args).await.unwrap();
+        assert_eq!(output.proposed_changes.len(), 1);
+        let change = &output.proposed_changes[0];
+        assert_eq!(change.operation, ChangeOperation::Confirm);
+        assert_eq!(change.target.kind, TargetKind::Coverage);
+        assert_eq!(change.proposal_id.as_deref(), Some("p1"));
     }
 }

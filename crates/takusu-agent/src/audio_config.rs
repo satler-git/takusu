@@ -36,6 +36,11 @@ pub struct BargeInConfig {
     /// same time as the microphone signal.
     #[serde(default = "default_barge_in_reference_delay_ms")]
     pub reference_delay_ms: u64,
+    /// Whether to fall back to tap-to-stop when AEC is not in use. When true
+    /// and `use_aec` is false, a loud utterance during assistant TTS will stop
+    /// playback but will not be transcribed as a barge-in.
+    #[serde(default = "default_barge_in_tap_to_stop")]
+    pub tap_to_stop: bool,
     /// Whether to record and log latency checkpoints for each turn.
     #[serde(default = "default_barge_in_latency")]
     pub record_latency: bool,
@@ -48,6 +53,7 @@ impl Default for BargeInConfig {
             use_aec: default_barge_in_use_aec(),
             warm_up_ms: default_barge_in_warm_up_ms(),
             reference_delay_ms: default_barge_in_reference_delay_ms(),
+            tap_to_stop: default_barge_in_tap_to_stop(),
             record_latency: default_barge_in_latency(),
         }
     }
@@ -67,6 +73,10 @@ fn default_barge_in_warm_up_ms() -> u64 {
 
 fn default_barge_in_reference_delay_ms() -> u64 {
     0
+}
+
+fn default_barge_in_tap_to_stop() -> bool {
+    true
 }
 
 fn default_barge_in_latency() -> bool {

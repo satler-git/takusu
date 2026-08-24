@@ -31,6 +31,8 @@ use crate::{AgentError, TurnResult};
 pub enum InputOrigin {
     /// The user spoke the utterance (session started by voice).
     Voice,
+    /// An always-listening wake word triggered this turn.
+    Ambient,
     /// The user typed it into the open session.
     Text,
     /// A reactive event is being handled inside the session.
@@ -43,7 +45,7 @@ impl InputOrigin {
     /// Only voice-origin turns auto-speak inside a session. Text and
     /// background turns surface through the ordinary notification path.
     pub fn auto_speaks(self) -> bool {
-        matches!(self, InputOrigin::Voice)
+        matches!(self, InputOrigin::Voice | InputOrigin::Ambient)
     }
 }
 
@@ -66,7 +68,7 @@ impl VoiceSessionError {
     /// Whether the error is recoverable: the session can keep listening instead
     /// of exiting.
     pub fn is_recoverable(&self) -> bool {
-        matches!(self, Self::Timeout)
+        matches!(self, Self::Timeout | Self::Capture(_) | Self::Agent(_))
     }
 }
 
@@ -125,9 +127,13 @@ pub struct VoiceSessionConfig {
     /// How long the loop may wait for a new utterance (and between turns)
     /// before exiting on its own.
     pub idle_timeout: Duration,
-    /// Maximum time a single turn (capture or process) may take before the
-    /// session treats it as a timeout and recovers.
+    /// Maximum time a single capture may take before the session treats it as a
+    /// timeout and recovers.
     pub turn_timeout: Duration,
+    /// Maximum time a single process (agent turn + TTS playback) may take.
+    /// This is longer than `turn_timeout` so long assistant replies do not trip
+    /// the per-turn deadline.
+    pub process_timeout: Duration,
     /// How many consecutive recoverable errors are allowed before the session
     /// gives up and returns [`SessionOutcome::Failed`].
     pub max_consecutive_errors: usize,
@@ -138,6 +144,7 @@ impl Default for VoiceSessionConfig {
         Self {
             idle_timeout: Duration::from_secs(30),
             turn_timeout: Duration::from_secs(60),
+            process_timeout: Duration::from_secs(300),
             max_consecutive_errors: 3,
         }
     }
@@ -187,37 +194,46 @@ impl VoiceSession {
         tokio::pin!(idle);
 
         let turn_timeout = self.config.turn_timeout;
+        let process_timeout = self.config.process_timeout;
         let mut consecutive_errors = 0usize;
         let mut barge_in: Option<String> = None;
 
         loop {
             let turn = async {
+                // Capture must finish within the short turn timeout.
                 let text = match barge_in.take() {
                     Some(text) => text,
-                    None => match io.capture(self.origin).await {
-                        Ok(Some(text)) => text,
-                        Ok(None) => return Ok(None),
-                        Err(VoiceSessionError::UserCancelled) => {
+                    None => match tokio::time::timeout(turn_timeout, io.capture(self.origin)).await
+                    {
+                        Ok(Ok(Some(text))) => text,
+                        Ok(Ok(None)) => return Ok(None),
+                        Ok(Err(VoiceSessionError::UserCancelled)) => {
                             return Err(VoiceSessionError::UserCancelled);
                         }
-                        Err(e) => return Err(e),
+                        Ok(Err(e)) => return Err(e),
+                        Err(_) => return Err(VoiceSessionError::Timeout),
                     },
                 };
 
-                io.process(&text, self.origin, self.input_path)
-                    .await
-                    .map(Some)
+                // Process (agent turn + TTS playback) gets a longer budget so
+                // long assistant replies are not killed mid-playback.
+                match tokio::time::timeout(
+                    process_timeout,
+                    io.process(&text, self.origin, self.input_path),
+                )
+                .await
+                {
+                    Ok(Ok(processed)) => Ok(Some(processed)),
+                    Ok(Err(e)) => Err(e),
+                    Err(_) => Err(VoiceSessionError::Timeout),
+                }
             };
 
             tokio::select! {
                 _ = &mut idle => {
                     return SessionOutcome::IdleTimeout;
                 }
-                timed = tokio::time::timeout(turn_timeout, turn) => {
-                    let result = match timed {
-                        Ok(inner) => inner,
-                        Err(_) => Err(VoiceSessionError::Timeout),
-                    };
+                result = turn => {
                     match result {
                         Ok(None) => {
                             // No speech this attempt; yield so the idle timer
@@ -334,8 +350,9 @@ mod tests {
     }
 
     #[test]
-    fn auto_speaks_only_for_voice_origin() {
+    fn auto_speaks_for_voice_and_ambient_origins() {
         assert!(InputOrigin::Voice.auto_speaks());
+        assert!(InputOrigin::Ambient.auto_speaks());
         assert!(!InputOrigin::Text.auto_speaks());
         assert!(!InputOrigin::Background.auto_speaks());
     }
@@ -486,6 +503,7 @@ mod tests {
         let session = VoiceSession::new(
             VoiceSessionConfig {
                 idle_timeout: Duration::from_secs(60),
+                max_consecutive_errors: 1,
                 ..Default::default()
             },
             InputOrigin::Voice,
@@ -503,6 +521,7 @@ mod tests {
             VoiceSessionConfig {
                 idle_timeout: Duration::from_millis(180),
                 turn_timeout: Duration::from_millis(100),
+                process_timeout: Duration::from_millis(150),
                 max_consecutive_errors: 5,
             },
             InputOrigin::Voice,

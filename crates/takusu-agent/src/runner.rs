@@ -87,6 +87,7 @@ where
     use crate::voice_session::VoiceSession;
     let input_path = match origin {
         crate::voice_session::InputOrigin::Voice => InputPath::ExplicitVoiceSession,
+        crate::voice_session::InputOrigin::Ambient => InputPath::AmbientWakeWord,
         crate::voice_session::InputOrigin::Text => InputPath::PlainText,
         crate::voice_session::InputOrigin::Background => InputPath::NotificationCapability,
     };

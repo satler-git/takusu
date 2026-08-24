@@ -741,10 +741,16 @@ export class AgentClient {
     );
   }
 
-  async authorizeAction(capability: ActionCapability): Promise<Presentation> {
+  async authorizeAction(
+    capability: ActionCapability,
+    sessionId?: string,
+  ): Promise<Presentation> {
+    const query = sessionId
+      ? `?session_id=${encodeURIComponent(sessionId)}`
+      : '';
     const raw = await this.request<Presentation>(
       'POST',
-      '/api/agent/v1/actions',
+      `/api/agent/v1/actions${query}`,
       {
         version: 1,
         ...capability,
@@ -753,9 +759,12 @@ export class AgentClient {
     return decodePresentation(raw);
   }
 
-  async quickAction(request: CapabilityRequest): Promise<Presentation> {
+  async quickAction(
+    request: CapabilityRequest,
+    sessionId?: string,
+  ): Promise<Presentation> {
     const capability = await this.mintCapability(request);
-    return this.authorizeAction(capability);
+    return this.authorizeAction(capability, sessionId);
   }
 
   async evaluatePlannerEvents(

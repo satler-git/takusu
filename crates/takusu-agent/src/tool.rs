@@ -209,6 +209,8 @@ pub enum ToolName {
     TaskComplete,
     #[strum(serialize = "task_split")]
     TaskSplit,
+    #[strum(serialize = "task_undo")]
+    TaskUndo,
 
     #[strum(serialize = "memory_search")]
     MemorySearch,
@@ -289,6 +291,7 @@ enum_label! {
         CreateScheduledSpan = "create_scheduled_span",
         DeleteScheduledSpan = "delete_scheduled_span",
         Settle = "settle",
+        Confirm = "confirm",
     }
 }
 
@@ -301,6 +304,7 @@ enum_label! {
         Memory = "memory",
         Schedule = "schedule",
         Comment = "comment",
+        Coverage = "coverage",
     }
 }
 

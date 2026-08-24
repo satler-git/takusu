@@ -7,6 +7,7 @@
 //! `takusu-agent` audio runtime (cpal/sherpa) for this crate.
 
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
 use takusu_agent::{
@@ -183,10 +184,14 @@ pub async fn speak_presentation(presentation: &Presentation) -> Result<(), Deskt
         channels: 1,
         pcm_format: PcmFormat::I16,
     };
-    tokio::time::timeout(Duration::from_secs(120), play_stream(stream, format))
-        .await
-        .map_err(|_| DesktopError::Transport("tts playback timed out".into()))?
-        .map_err(|e| DesktopError::Transport(format!("tts playback failed: {e}")))?;
+    let cancel = Arc::new(AtomicBool::new(false));
+    tokio::time::timeout(
+        Duration::from_secs(120),
+        play_stream(stream, format, cancel),
+    )
+    .await
+    .map_err(|_| DesktopError::Transport("tts playback timed out".into()))?
+    .map_err(|e| DesktopError::Transport(format!("tts playback failed: {e}")))?;
 
     Ok(())
 }

@@ -39,6 +39,10 @@ impl ToolModule for ProgressModule {
             client: ctx.client.clone(),
             tz_cache: ctx.tz_cache.clone(),
         })));
+        registry.register(Box::new(crate::tool::Typed(TaskUndo {
+            client: ctx.client.clone(),
+            tz_cache: ctx.tz_cache.clone(),
+        })));
     }
 }
 
@@ -987,6 +991,97 @@ impl TypedTool for TaskSplit {
             Vec::new(),
             content_extra,
             Some(task.updated_at.to_string()),
+            true,
+            args.proposal_id,
+        ))
+    }
+}
+
+struct TaskUndo {
+    client: Client,
+    tz_cache: TimeZoneCache,
+}
+
+/// Arguments for [`TaskUndo`].
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct TaskUndoArgs {
+    /// Task reference such as #42 or h1#3. Omit if the user did not specify a task; a focused clarification will be returned.
+    #[serde(default, deserialize_with = "deserialize_trimmed_optional")]
+    #[schemars(with = "Option<String>")]
+    task_ref: Option<String>,
+    /// Optional proposal id. Set the same value across multiple related tool calls to group them into a single proposal for review.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<String>")]
+    proposal_id: Option<String>,
+}
+
+#[async_trait]
+impl TypedTool for TaskUndo {
+    type Params = TaskUndoArgs;
+
+    fn name(&self) -> &'static str {
+        ToolName::TaskUndo.into()
+    }
+
+    fn description(&self) -> &'static str {
+        "Propose undoing the most recent start/pause work session for a task. If task_ref is omitted, asks for clarification. Requires approval before writing."
+    }
+
+    fn exposure(&self) -> ToolExposure {
+        ToolExposure::Deferred
+    }
+
+    async fn call_typed(&self, args: Self::Params) -> Result<ToolOutput, ToolError> {
+        let task_ref = args.task_ref.map(|s| strip_leading_hash(&s).to_string());
+        let tz = server_timezone(&self.tz_cache).await;
+
+        let (task, ctx) = match task_ref {
+            Some(ref r) => resolve_task(&self.client, r).await?,
+            None => {
+                let (tasks, _habits, ctx) = load_task_context(&self.client).await?;
+                let candidates: Vec<TaskRow> = tasks
+                    .into_iter()
+                    .filter(|t| {
+                        t.status == TaskStatus::InProgress || t.status == TaskStatus::Scheduled
+                    })
+                    .collect();
+                return Ok(focused_clarification(
+                    "元に戻す",
+                    "作業中・予定",
+                    &candidates,
+                    &ctx,
+                ));
+            }
+        };
+        let display_ref = ctx.reference(&task);
+        if task.status == TaskStatus::Completed || task.status == TaskStatus::Skipped {
+            return Err(ToolError::InvalidArgs(InvalidArgsError::new(
+                "task_ref",
+                format!("cannot undo a {} task", task.status),
+            )));
+        }
+
+        let before = task_json(&task, &ctx, Some(&tz));
+        let after = before.clone();
+
+        let execution_args = json!({
+            "task_ref": display_ref.trim_start_matches('#'),
+        });
+        let observed = Some(task.updated_at.to_string());
+
+        Ok(progress_output(
+            ChangeOperation::Undo,
+            &Target::new(TargetKind::Task, display_ref.as_str()),
+            &format!("「{}」の作業を元に戻す", task.title),
+            &format!("「{}」の作業状態を元に戻します", task.title),
+            before,
+            after,
+            execution_args,
+            Vec::new(),
+            serde_json::Map::new(),
+            observed,
             true,
             args.proposal_id,
         ))
