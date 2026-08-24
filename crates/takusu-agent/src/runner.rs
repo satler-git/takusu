@@ -68,6 +68,10 @@ where
 /// idle timeout fired. `on_turn_event` lets a surface forward `TurnEvent`s to
 /// the shared `SurfaceStateMachine`; `on_audio_callback` does the same for
 /// `AudioCallback`s.
+///
+/// `machine` receives the surface state for the session. Its `StopTts` callback
+/// is wired to the adapter's TTS stop flag so tray/mobile actions can stop
+/// playback mid-turn.
 #[cfg(feature = "audio-device")]
 #[allow(clippy::needless_pass_by_value)]
 pub async fn run_voice_session<E, A>(
@@ -75,6 +79,7 @@ pub async fn run_voice_session<E, A>(
     origin: crate::voice_session::InputOrigin,
     config: crate::voice_session::VoiceSessionConfig,
     stop: tokio::sync::watch::Receiver<bool>,
+    machine: &crate::surface::SurfaceStateMachine,
     on_turn_event: E,
     on_audio_callback: A,
 ) -> Result<crate::voice_session::SessionOutcome, AgentError>
@@ -99,6 +104,7 @@ where
         .with_events(on_turn_event)
         .with_audio_callback(on_audio_callback)
         .with_stop_signal(stop);
+    machine.on_stop_tts(adapter.stop_tts_callback());
     Ok(VoiceSession::new(config, origin, input_path)
         .run(&mut adapter)
         .await)

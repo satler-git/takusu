@@ -180,7 +180,11 @@ impl AudioAdapter {
             config.audio.clone()
         };
         let (stt, tts, voice_id, speed, tts_format) = Self::build_audio(&audio).await?;
-        let endpoint = takusu_audio::default_endpoint_async().await;
+        let vad_config = takusu_audio::VadEndpointConfig {
+            energy_threshold: audio.vad.energy_threshold,
+            ..Default::default()
+        };
+        let endpoint = takusu_audio::default_endpoint_async_with_config(vad_config).await;
         let speaker_verifier = Self::build_speaker_verifier(audio.speaker.as_ref()).await?;
         let (stop_tx, stop) = tokio::sync::watch::channel(false);
         Ok(Self {
@@ -263,11 +267,23 @@ impl AudioAdapter {
     }
 
     /// Request that any in-progress TTS playback stop at the next block.
-    //
-    // TODO(WI-12): wire this to `SurfaceCommand::StopTts` so tray/mobile
-    // surfaces can stop the assistant's speech mid-turn.
+    ///
+    /// Surfaces register this as a callback on [`crate::surface::SurfaceStateMachine`]
+    /// via [`Self::stop_tts_callback`] so tray/mobile surfaces can stop the
+    /// assistant's speech mid-turn.
     pub fn stop_tts_signal(&self) {
         self.stop_tts.store(true, Ordering::Relaxed);
+    }
+
+    /// Return a `'static'` closure that calls [`Self::stop_tts_signal`].
+    ///
+    /// The closure captures only the shared `stop_tts` flag, so it can be stored
+    /// in the surface state machine without borrowing the adapter.
+    pub fn stop_tts_callback(&self) -> Box<dyn Fn() + Send + 'static> {
+        let stop_tts = Arc::clone(&self.stop_tts);
+        Box::new(move || {
+            stop_tts.store(true, Ordering::Relaxed);
+        })
     }
 
     /// Run the push-to-talk loop until interrupted or an unrecoverable error.
@@ -1053,6 +1069,17 @@ impl AudioAdapter {
         }
         let (stt, tts, voice_id, speed, tts_format) = Self::build_audio(&current).await?;
         let speaker_verifier = Self::build_speaker_verifier(current.speaker.as_ref()).await?;
+
+        // Rebuild the cached VAD endpoint if the energy threshold changed, so
+        // runtime config edits take effect on the next utterance.
+        if current.vad.energy_threshold != self.last_audio.vad.energy_threshold {
+            let vad_config = takusu_audio::VadEndpointConfig {
+                energy_threshold: current.vad.energy_threshold,
+                ..Default::default()
+            };
+            self.endpoint = Some(takusu_audio::default_endpoint_async_with_config(vad_config).await);
+        }
+
         self.stt = stt;
         self.tts = tts;
         self.tts_voice_id = voice_id;
@@ -1288,29 +1315,27 @@ impl AudioAdapter {
         // signal.
         let use_aec = audio.barge_in.use_aec;
         let tap_to_stop = !use_aec && audio.barge_in.tap_to_stop;
+        let vad_config = takusu_audio::VadEndpointConfig {
+            energy_threshold: audio.vad.energy_threshold,
+            min_speech: Duration::from_millis(50),
+            max_silence: Duration::from_millis(200),
+            ..Default::default()
+        };
         let endpoint: Box<dyn takusu_audio::Endpoint> = if use_aec {
-            Box::new(takusu_audio::default_endpoint_async().await)
+            Box::new(takusu_audio::default_endpoint_async_with_config(vad_config).await)
         } else if tap_to_stop {
             Box::new(takusu_audio::VadEndpoint::new(
-                takusu_audio::EnergyVad::new(0.05),
+                takusu_audio::EnergyVad::new(audio.vad.energy_threshold),
                 SHERPA_SAMPLE_RATE,
-                takusu_audio::VadEndpointConfig {
-                    min_speech: Duration::from_millis(50),
-                    max_silence: Duration::from_millis(200),
-                    ..Default::default()
-                },
+                vad_config,
             ))
         } else {
             // Neither AEC nor tap-to-stop: keep the same shape but use a quiet
             // threshold so barge-in is effectively disabled.
             Box::new(takusu_audio::VadEndpoint::new(
-                takusu_audio::EnergyVad::new(0.05),
+                takusu_audio::EnergyVad::new(audio.vad.energy_threshold),
                 SHERPA_SAMPLE_RATE,
-                takusu_audio::VadEndpointConfig {
-                    min_speech: Duration::from_millis(50),
-                    max_silence: Duration::from_millis(200),
-                    ..Default::default()
-                },
+                vad_config,
             ))
         };
 

@@ -58,11 +58,12 @@ pub use stt::{
 pub use tts::{TextToSpeech, TtsBackend, TtsConfig, TtsError, TtsOptions, TtsRequest, TtsStream};
 pub use tts_normalize::normalize_for_tts;
 pub use vad::{
-    Endpoint, EnergyVad, VadEndpoint, VadEndpointConfig, VadEvent, VoiceActivity, default_endpoint,
+    DEFAULT_ENERGY_THRESHOLD, Endpoint, EnergyVad, VadEndpoint, VadEndpointConfig, VadEvent,
+    VoiceActivity, default_endpoint, default_endpoint_with_config,
 };
 
 #[cfg(feature = "record")]
-pub use vad::default_endpoint_async;
+pub use vad::{default_endpoint_async, default_endpoint_async_with_config};
 
 #[cfg(feature = "sherpa")]
 pub use vad::{SileroEndpoint, silero_endpoint_from_cache};

@@ -56,14 +56,16 @@ where
 {
     let on_state = Arc::new(std::sync::Mutex::new(on_state_changed));
     let on_state_for_audio = Arc::clone(&on_state);
+    let machine_for_turn = machine.clone();
     let machine_for_audio = machine.clone();
     takusu_agent::runner::run_voice_session(
         session,
         origin,
         takusu_agent::VoiceSessionConfig::default(),
         stop,
+        &machine,
         move |event| {
-            let snapshot = machine.apply_turn_event(&event);
+            let snapshot = machine_for_turn.apply_turn_event(&event);
             if let Ok(mut guard) = on_state.lock() {
                 guard(snapshot);
             }

@@ -71,6 +71,42 @@ pub enum AudioCallback {
 /// Backwards-compatible name for callers that model callbacks as events.
 pub type AudioEvent = AudioCallback;
 
+/// Callback fired when [`SurfaceCommand::StopTts`] is accepted.
+///
+/// Surfaces register this to stop the assistant's in-progress TTS playback
+/// without cancelling the whole turn.
+type StopTtsFn = Box<dyn Fn() + Send + 'static>;
+
+struct StopTtsCallback {
+    f: std::sync::Mutex<Option<StopTtsFn>>,
+}
+
+impl std::fmt::Debug for StopTtsCallback {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StopTtsCallback").finish_non_exhaustive()
+    }
+}
+
+impl StopTtsCallback {
+    fn new() -> Self {
+        Self {
+            f: std::sync::Mutex::new(None),
+        }
+    }
+
+    fn set<F: Fn() + Send + 'static>(&self, f: F) {
+        *self.f.lock().unwrap_or_else(|e| e.into_inner()) = Some(Box::new(f));
+    }
+
+    fn call(&self) {
+        if let Ok(mut guard) = self.f.lock()
+            && let Some(f) = guard.as_mut()
+        {
+            f();
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum SurfaceCommand {
@@ -110,6 +146,7 @@ struct SurfaceStateData {
 struct SurfaceStateInner {
     state: Mutex<SurfaceStateData>,
     events: broadcast::Sender<SurfaceEvent>,
+    on_stop_tts: StopTtsCallback,
 }
 
 #[derive(Debug, Clone)]
@@ -138,6 +175,7 @@ impl SurfaceStateMachine {
                     next_operation_id: 0,
                 }),
                 events,
+                on_stop_tts: StopTtsCallback::new(),
             }),
         }
     }
@@ -153,6 +191,18 @@ impl SurfaceStateMachine {
 
     pub fn subscribe(&self) -> broadcast::Receiver<SurfaceEvent> {
         self.inner.events.subscribe()
+    }
+
+    /// Register a callback to run when a [`SurfaceCommand::StopTts`] is accepted.
+    ///
+    /// The callback should stop the assistant's in-progress TTS playback. It is
+    /// stored behind the same `Arc` as the state, so it is shared by all clones
+    /// of this state machine.
+    pub fn on_stop_tts<F>(&self, f: F)
+    where
+        F: Fn() + Send + 'static,
+    {
+        self.inner.on_stop_tts.set(f);
     }
 
     /// Start a new device-local operation and return its opaque operation id.
@@ -399,6 +449,7 @@ impl SurfaceStateMachine {
                     data.active = false;
                     data.owner = None;
                 }
+                self.inner.on_stop_tts.call();
             }
             SurfaceCommand::OpenPanel
             | SurfaceCommand::OpenApproval
@@ -474,6 +525,8 @@ impl SurfaceStateMachine {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::time::Duration;
 
     use super::*;
@@ -702,6 +755,23 @@ mod tests {
         assert!(response.accepted);
         machine.apply_turn_event_for(operation_id, &TurnEvent::Done(Box::new(done_result())));
         assert_eq!(machine.snapshot().state, SurfaceState::Idle);
+    }
+
+    #[test]
+    fn stop_tts_invokes_registered_callback() {
+        let machine = SurfaceStateMachine::new();
+        let operation_id = machine.begin_operation(Some("turn".into()));
+        machine.apply_audio_callback_for(operation_id, AudioCallback::Speaking);
+
+        let called = Arc::new(AtomicBool::new(false));
+        let called_for_cb = Arc::clone(&called);
+        machine.on_stop_tts(move || {
+            called_for_cb.store(true, Ordering::Relaxed);
+        });
+
+        let response = machine.command_for(Some(operation_id), SurfaceCommand::StopTts);
+        assert!(response.accepted);
+        assert!(called.load(Ordering::Relaxed), "StopTts callback should fire");
     }
 
     #[tokio::test(flavor = "multi_thread")]
