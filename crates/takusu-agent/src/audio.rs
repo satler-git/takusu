@@ -971,14 +971,34 @@ impl AudioAdapter {
                 continue;
             };
 
-            let normalized = Self::normalize_voice_answer(&text);
-            let answer = if AFFIRMATIVE.iter().any(|w| normalized == *w) {
-                Some(true)
-            } else if NEGATIVE.iter().any(|w| normalized == *w) {
-                Some(false)
-            } else {
-                None
+            let normalized = crate::normalize_voice_answer(&text);
+            let is_affirmative = AFFIRMATIVE.iter().any(|w| normalized == *w);
+            let is_negative = NEGATIVE.iter().any(|w| normalized == *w);
+            let mut answer = match (is_affirmative, is_negative) {
+                (true, false) => Some(true),
+                (false, true) => Some(false),
+                _ => None,
             };
+
+            // If the closed vocabulary did not fire, ask the LLM to interpret the
+            // natural/extended answer. This keeps the fast path for crisp yes/no
+            // while allowing "はい、お願いします" to pass and "はい、けど" to be rejected.
+            if answer.is_none() {
+                match tokio::time::timeout(
+                    Duration::from_secs(10),
+                    self.session.classify_voice_confirmation(&text, prompt),
+                )
+                .await
+                {
+                    Ok(Ok(classification)) => answer = classification,
+                    Ok(Err(e)) => {
+                        tracing::warn!(error = %e, "voice confirmation LLM classification failed");
+                    }
+                    Err(_) => {
+                        tracing::warn!("voice confirmation LLM classification timed out");
+                    }
+                }
+            }
 
             // Both yes and no must pass speaker verification to prevent a third
             // party from spoofing an approval or a cancellation.
@@ -1052,13 +1072,6 @@ impl AudioAdapter {
 
     fn is_stopped(&self) -> bool {
         *self.stop.borrow()
-    }
-
-    fn normalize_voice_answer(text: &str) -> String {
-        text.trim().to_lowercase().replace(
-            |c: char| c.is_ascii_punctuation() || " 。、！？".contains(c),
-            "",
-        )
     }
 
     async fn reconfigure_if_needed(&mut self) -> Result<(), AudioError> {
