@@ -45,6 +45,21 @@ pub struct DesktopConfig {
     /// Bearer token for the local API. If empty, the daemon reads
     /// `TAKUSU_TOKEN` or the file from `TAKUSU_TOKEN_FILE`.
     pub token: String,
+    /// Ambient-listening opt-in and wake-word evaluation log.
+    pub ambient: DesktopAmbientConfig,
+}
+
+/// Desktop-specific ambient settings (WI-21). The wake-word model and backend
+/// live in the shared agent audio config; this section controls whether the
+/// daemon starts listening on launch and where it writes the evaluation log.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DesktopAmbientConfig {
+    /// Start ambient listening when the daemon launches. The user must also
+    /// enable `audio.ambient.enabled` in the agent config.
+    pub auto_start: bool,
+    /// Path to the wake-word evaluation log. Empty uses the XDG state dir.
+    pub log_path: String,
 }
 
 /// Top-level fields shared with `takusu-cli`.
@@ -89,6 +104,7 @@ pub struct Config {
     pub workers_token: String,
     pub root_token: String,
     pub jwt_secret: String,
+    pub ambient: DesktopAmbientConfig,
 }
 
 impl Default for Config {
@@ -104,6 +120,7 @@ impl Default for Config {
             workers_token: String::new(),
             root_token: String::new(),
             jwt_secret: String::new(),
+            ambient: DesktopAmbientConfig::default(),
         }
     }
 }
@@ -159,6 +176,12 @@ impl Config {
             desktop.token = token;
         } else if let Some(token) = env_file("TAKUSU_TOKEN_FILE")? {
             desktop.token = token;
+        }
+        if let Ok(v) = std::env::var("TAKUSU_DESKTOP_AMBIENT_AUTO_START") {
+            desktop.ambient.auto_start = matches!(v.as_str(), "1" | "true" | "yes");
+        }
+        if let Ok(v) = std::env::var("TAKUSU_DESKTOP_AMBIENT_LOG_PATH") {
+            desktop.ambient.log_path = v;
         }
 
         // Storage precedence:
@@ -229,7 +252,35 @@ impl Config {
             workers_token,
             root_token,
             jwt_secret,
+            ambient: desktop.ambient.clone(),
         })
+    }
+
+    /// Resolved path for the ambient wake-word evaluation log.
+    ///
+    /// Empty paths resolve to `state_dir/data_dir/home_dir/takusu/ambient-wake.log`.
+    /// Relative explicit paths resolve against the same private base so they do
+    /// not accidentally land in a world-readable working directory.
+    pub fn ambient_log_path(&self) -> Result<PathBuf, ConfigError> {
+        let base = dirs::state_dir()
+            .or_else(dirs::data_dir)
+            .or_else(dirs::home_dir)
+            .ok_or_else(|| {
+                ConfigError::Io(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "no state, data, or home directory available for ambient log",
+                ))
+            })?;
+
+        if self.ambient.log_path.is_empty() {
+            return Ok(base.join("takusu").join("ambient-wake.log"));
+        }
+
+        let path = PathBuf::from(&self.ambient.log_path);
+        if path.is_absolute() {
+            return Ok(path);
+        }
+        Ok(base.join("takusu").join(path))
     }
 
     /// Path to the shared config file.

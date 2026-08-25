@@ -5,14 +5,15 @@
 //! host and replayed here through the event ledger.
 
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::time::Duration;
 
 use futures_util::StreamExt;
-use takusu_agent::{DeliveryMode, SurfaceCommand, SurfaceEvent, SurfaceState};
+use takusu_agent::{AgentConfig, DeliveryMode, SurfaceCommand, SurfaceEvent, SurfaceState};
 use takusu_contracts::EventDeliveryState;
 
 #[cfg(feature = "audio-device")]
-use takusu_desktop::audio::speak_presentation;
+use takusu_desktop::audio::{spawn_ambient_session, speak_presentation};
 use tracing_subscriber::{EnvFilter, fmt};
 
 use takusu_desktop::config::Config;
@@ -56,6 +57,23 @@ async fn run() -> Result<(), DesktopError> {
 
     let state = DesktopState::new(config.clone());
 
+    // Load the shared agent config once. The wake word is shown in the
+    // persistent ambient notification, and `auto_start` needs the ambient
+    // opt-in switch without loading the file twice.
+    let agent_config = match AgentConfig::load() {
+        Ok(mut cfg) => {
+            cfg.server.url = config.local_url.clone();
+            cfg.server.token = config.token.clone();
+            cfg
+        }
+        Err(error) => {
+            tracing::warn!(error=%error, "failed to load agent config; using defaults for ambient notification");
+            let mut cfg = AgentConfig::default();
+            cfg.server.url = config.local_url.clone();
+            cfg.server.token = config.token.clone();
+            cfg
+        }
+    };
     // Real transport: HTTP to takusu-local agent routes.
     let transport: Arc<dyn DesktopTransport + Send + Sync> = if use_mock {
         Arc::new(MockTransport::new(
@@ -78,9 +96,15 @@ async fn run() -> Result<(), DesktopError> {
     let listener_proxy = proxy.clone();
     let listener_state = Arc::clone(&notification_state);
     let listener_transport = Arc::clone(&transport);
+    let listener_state_for_stop = state.clone();
     tokio::spawn(async move {
-        if let Err(e) =
-            notify::run_action_listener(&listener_proxy, listener_state, listener_transport).await
+        if let Err(e) = notify::run_action_listener(
+            &listener_proxy,
+            listener_state,
+            listener_transport,
+            move || listener_state_for_stop.stop_ambient_session(),
+        )
+        .await
         {
             tracing::error!(error=%e, "notification action listener failed");
         }
@@ -90,9 +114,80 @@ async fn run() -> Result<(), DesktopError> {
 
     let state_for_popover = state.clone();
     let popover_for_callback = popover.clone();
+    let state_for_notification = state.clone();
+    let proxy_for_notification = proxy.clone();
+    let ns_for_notification = Arc::clone(&notification_state);
+    let transport_for_notification = Arc::clone(&transport);
+    let ambient_notification_id: Arc<Mutex<Option<u32>>> = Arc::new(Mutex::new(None));
     state.set_on_change(move || {
         show_popover_for_state(&state_for_popover, &popover_for_callback);
+
+        // Keep the ambient listening indicator notification in sync with the
+        // tray. The notification is persistent and offers an immediate stop.
+        let active = state_for_notification.ambient_active();
+        let mut id = ambient_notification_id.lock().unwrap();
+        match (active, *id) {
+            (true, None) => {
+                let ambient_id = Arc::clone(&ambient_notification_id);
+                let proxy = proxy_for_notification.clone();
+                let ns = Arc::clone(&ns_for_notification);
+                let transport = Arc::clone(&transport_for_notification);
+                let state = state_for_notification.clone();
+                tokio::spawn(async move {
+                    let wake_word = state.ambient_wake_word();
+                    let notification = notify::ambient_notification(&wake_word);
+                    match notify::show(&proxy, &ns, transport.as_ref(), &notification).await {
+                        Ok(shown_id) => {
+                            if state.ambient_active() {
+                                if let Ok(mut g) = ambient_id.lock() {
+                                    *g = Some(shown_id);
+                                }
+                            } else {
+                                // Stopped before the show completed; close it.
+                                let _ = notify::close(&proxy, shown_id).await;
+                            }
+                        }
+                        Err(error) => {
+                            tracing::warn!(error=%error, "failed to show ambient notification");
+                        }
+                    }
+                });
+            }
+            (false, Some(shown_id)) => {
+                *id = None;
+                let proxy = proxy_for_notification.clone();
+                tokio::spawn(async move {
+                    if let Err(error) = notify::close(&proxy, shown_id).await {
+                        tracing::warn!(error=%error, notification_id=shown_id, "failed to close ambient notification");
+                    }
+                });
+            }
+            _ => {}
+        }
     });
+
+    // Auto-start ambient listening if the user opted in both in the desktop
+    // config and in the agent audio config. A failed start surfaces as an
+    // error state in the tray/popover so the user can correct the config.
+    // `agent_config` is already loaded above, so this branch does not parse
+    // the file again.
+    #[cfg(feature = "audio-device")]
+    {
+        if config.ambient.auto_start && agent_config.audio.ambient.enabled {
+            if let Err(error) = spawn_ambient_session(state.clone(), config.clone(), &agent_config)
+            {
+                tracing::error!(error=%error, "failed to auto-start ambient session");
+            }
+        } else if config.ambient.auto_start {
+            tracing::info!(
+                "desktop.ambient.auto_start is true but audio.ambient.enabled is false; not starting ambient"
+            );
+        }
+    }
+    #[cfg(not(feature = "audio-device"))]
+    if config.ambient.auto_start && agent_config.audio.ambient.enabled {
+        tracing::warn!("audio-device feature is disabled; cannot auto-start ambient listening");
+    }
 
     let initial_next_eval_at =
         replay_events(transport.as_ref(), &state, &notification_state, &proxy).await?;

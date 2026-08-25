@@ -393,6 +393,7 @@ impl WindowController {
                                     });
                                 }
 
+                                let state = *state;
                                 let title_ss: gpui::SharedString = title.clone().into();
                                 let detail_ss: Option<gpui::SharedString> = detail.map(Into::into);
                                 let (background, text_color) = theme_colors(theme);
@@ -425,7 +426,7 @@ impl WindowController {
                                         text_color,
                                         actions,
                                         voice_button,
-                                        state: *state,
+                                        state,
                                         transport: Arc::clone(&thread_transport),
                                         runtime: thread_runtime.clone(),
                                     })
