@@ -1516,6 +1516,66 @@ impl AgentSession {
         }
         Ok(index)
     }
+
+    /// Classify a spoken voice confirmation answer as yes, no, or ambiguous.
+    ///
+    /// This is used as a fallback when the closed-vocabulary exact match in
+    /// `AudioAdapter::voice_confirm_loop` does not fire, so that natural
+    /// answers like "はい、お願いします" can still be understood without losing
+    /// the safety of rejecting hesitation/qualification as ambiguous.
+    pub(crate) async fn classify_voice_confirmation(
+        &self,
+        text: &str,
+        prompt: &str,
+    ) -> Result<Option<bool>, AgentError> {
+        let messages = vec![
+            crate::llm::Message::System(
+                "You are a strict voice-confirmation classifier for Japanese. \
+                 The user was just read a proposal and asked to approve or reject it with a single answer.\n\n\
+                 Classify the user's spoken answer as exactly one of: yes, no, or ambiguous.\n\n\
+                 Rules:\n\
+                 - \"yes\" for clear approval or agreement (e.g. はい, うん, OK, yes, お願いします, おう)\n\
+                 - \"no\" for clear rejection or cancellation (e.g. いいえ, いや, no, やめて, キャンセル)\n\
+                 - \"ambiguous\" for hesitation, qualification, contradictory statements, or anything unclear (e.g. うーん, はいけど, いや、そうじゃなくて, 待って, yes but)\n\n\
+                 Output only one word: yes, no, or ambiguous. No explanation."
+                    .to_string(),
+            ),
+            crate::llm::Message::User(format!(
+                "Proposal:\n{prompt}\n\nUser answer:\n{text}\n\nOutput only: yes / no / ambiguous"
+            )),
+        ];
+        let llm = self.llm.read()?.clone();
+        let response = llm.chat(&messages, &[]).await.map_err(AgentError::Llm)?;
+        match response.content {
+            crate::llm::LlmResponseContent::Text(text) => Ok(parse_voice_confirmation(&text)),
+            crate::llm::LlmResponseContent::ToolCalls { text, .. } => Ok(text
+                .as_deref()
+                .map(parse_voice_confirmation)
+                .unwrap_or_default()),
+        }
+    }
+}
+
+pub(crate) fn normalize_voice_answer(text: &str) -> String {
+    text.trim().to_lowercase().replace(
+        |c: char| c.is_ascii_punctuation() || " 。、！？…「」".contains(c),
+        "",
+    )
+}
+
+fn parse_voice_confirmation(text: &str) -> Option<bool> {
+    let normalized = normalize_voice_answer(text);
+    let first = normalized.split_whitespace().next().unwrap_or_default();
+    match first {
+        "yes" | "はい" | "うん" | "ok" | "おう" | "はーい" | "お願いします" | "おねがいします" => {
+            Some(true)
+        }
+        "no" | "いいえ" | "いや" | "やだ" | "キャンセル" | "やめて" | "止めて" => {
+            Some(false)
+        }
+        // "ambiguous", "unknown", "maybe", "曖昧", or unparseable output are all treated as ambiguous.
+        _ => None,
+    }
 }
 
 #[cfg(test)]
