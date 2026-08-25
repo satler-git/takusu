@@ -259,6 +259,7 @@ impl SileroEndpoint {
         model: &Path,
         sample_rate: i32,
         min_silence: f32,
+        max_speech: f32,
     ) -> Result<Self, crate::stt::SttError> {
         let config = sherpa_onnx::VadModelConfig {
             silero_vad: sherpa_onnx::SileroVadModelConfig {
@@ -267,7 +268,7 @@ impl SileroEndpoint {
                 min_silence_duration: min_silence,
                 min_speech_duration: 0.25,
                 window_size: 512,
-                max_speech_duration: 60.0,
+                max_speech_duration: max_speech,
             },
             ten_vad: Default::default(),
             sample_rate,
@@ -325,10 +326,8 @@ impl Endpoint for SileroEndpoint {
 
 /// Build an utterance endpoint using the sherpa Silero model from the model
 /// cache when available, else the energy fallback.
-///
-/// `min_silence` is the post-speech tail in seconds for the Silero detector.
 #[cfg(feature = "sherpa")]
-pub fn silero_endpoint_from_cache(min_silence: f32) -> Option<SileroEndpoint> {
+pub fn silero_endpoint_from_cache(config: &VadEndpointConfig) -> Option<SileroEndpoint> {
     use crate::ModelCache;
     let cache = ModelCache::default_dir().ok()?;
     let model = match cache.ensure_silero_vad() {
@@ -338,7 +337,12 @@ pub fn silero_endpoint_from_cache(min_silence: f32) -> Option<SileroEndpoint> {
             return None;
         }
     };
-    match SileroEndpoint::new(&model, SHERPA_SAMPLE_RATE as i32, min_silence) {
+    match SileroEndpoint::new(
+        &model,
+        SHERPA_SAMPLE_RATE as i32,
+        config.max_silence.as_secs_f32(),
+        config.max_speech.as_secs_f32(),
+    ) {
         Ok(endpoint) => {
             eprintln!("using Silero VAD endpointing");
             Some(endpoint)
@@ -357,7 +361,7 @@ pub fn silero_endpoint_from_cache(min_silence: f32) -> Option<SileroEndpoint> {
 /// `energy_threshold`.
 pub fn default_endpoint_with_config(config: VadEndpointConfig) -> Box<dyn Endpoint> {
     #[cfg(feature = "sherpa")]
-    if let Some(silero) = silero_endpoint_from_cache(0.5) {
+    if let Some(silero) = silero_endpoint_from_cache(&config) {
         return Box::new(silero);
     }
     eprintln!("using energy VAD endpointing");
@@ -626,7 +630,7 @@ mod tests {
         let model = cache
             .ensure_silero_vad()
             .expect("download silero model from cache");
-        let mut endpoint = SileroEndpoint::new(&model, SHERPA_SAMPLE_RATE as i32, 0.5)
+        let mut endpoint = SileroEndpoint::new(&model, SHERPA_SAMPLE_RATE as i32, 0.5, 60.0)
             .expect("construct Silero endpoint");
         // Feeding silence must not panic and must not open an utterance.
         for _ in 0..20 {

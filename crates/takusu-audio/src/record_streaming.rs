@@ -17,7 +17,7 @@ use tokio::sync::mpsc::{UnboundedReceiver, unbounded_channel};
 use crate::record::{RecordConfig, RecorderError};
 use crate::wav::{I16_MAX_F32, SHERPA_SAMPLE_RATE, mix_to_mono, normalize, resample};
 
-const CHUNK_MS: u64 = 160;
+pub(crate) const CHUNK_MS: u64 = 160;
 
 /// Handle to an in-progress streaming recording.
 pub struct StreamingRecorder {

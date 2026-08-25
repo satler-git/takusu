@@ -1,7 +1,9 @@
 pub mod aec;
+pub mod ambient;
 pub mod cartesia;
 pub mod fish;
 mod http;
+pub mod kws;
 pub mod latency;
 pub mod models;
 #[cfg(feature = "record")]
@@ -12,6 +14,7 @@ pub mod record;
 pub mod record_streaming;
 pub mod secrets;
 pub mod speaker;
+pub mod stream_asr;
 pub mod stt;
 pub mod tts;
 pub mod tts_normalize;
@@ -30,11 +33,17 @@ pub use hush::Hush;
 pub use sherpa::{OfflineAsrStream, SherpaOnnxAsr, SherpaOnnxAsrConfig, SherpaOnnxStreamingAsr};
 
 pub use aec::{Aec, AecConfig, AecEffectiveness, BargeInDetector, NlmsAec, NoOpAec, evaluate_aec};
+#[cfg(any(feature = "record", test))]
+pub use ambient::AmbientPipeline;
+pub use ambient::{AmbientConfig, AmbientError, AmbientResult, WakeWordBackend};
 pub use cartesia::{
     CartesiaContainer, CartesiaEmotion, CartesiaEncoding, CartesiaGenerationConfig,
     CartesiaOutputFormat, CartesiaSonic, CartesiaSonicConfig,
 };
 pub use fish::{FishAudio, FishAudioConfig};
+#[cfg(feature = "sherpa")]
+pub use kws::SherpaKws;
+pub use kws::{AsrTextMatch, DEFAULT_KWS_MODEL_ID, KwsConfig, KwsError, WakeWordDetector};
 pub use latency::{LatencyBudget, LatencyCheckpoint};
 pub use models::{
     DownloadProgress, DownloadStage, ModelCache, ModelError, ModelRegistry, ModelSpec,
@@ -51,6 +60,7 @@ pub use speaker::{
 };
 #[cfg(feature = "sherpa")]
 pub use speaker::{SpeakerEmbeddingMatch, SpeakerVerifier};
+pub use stream_asr::{StreamAsrError, StreamingAsrSession};
 pub use stt::{
     AsrStream, ExecutionProvider, SherpaOnnxModel, SpeechToText, StreamingSpeechToText, SttBackend,
     SttError, SttRuntimeConfig,
