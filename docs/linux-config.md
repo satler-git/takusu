@@ -74,10 +74,6 @@ local_url = ""
 # ローカル API 用 Bearer トークン
 # 空の場合は TAKUSU_TOKEN または TAKUSU_TOKEN_FILE から読みます
 token = ""
-
-# デスクトップ専用のタイムゾーン
-# 未指定時はトップレベルの tz、さらに未指定ならシステム TZ を使います
-tz = "Asia/Tokyo"
 ```
 
 ### 主要な共有キーの既定値

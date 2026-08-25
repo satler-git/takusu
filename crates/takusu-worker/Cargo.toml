@@ -28,6 +28,7 @@ wasm-logger = "0.2"
 console_error_panic_hook = "0.1"
 async-trait.workspace = true
 takusu-types = { workspace = true, features = ["js"] }
+percent-encoding = "2"
 
 [dev-dependencies]
 tempfile = "3"
