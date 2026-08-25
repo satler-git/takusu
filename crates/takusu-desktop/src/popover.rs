@@ -190,7 +190,7 @@ enum WindowCommand {
         theme: crate::config::Theme,
         actions: Vec<DesktopAction>,
         voice_button: bool,
-        state: DesktopState,
+        state: Box<DesktopState>,
     },
     Hide,
 }
@@ -393,6 +393,7 @@ impl WindowController {
                                     });
                                 }
 
+                                let state = *state;
                                 let title_ss: gpui::SharedString = title.clone().into();
                                 let detail_ss: Option<gpui::SharedString> = detail.map(Into::into);
                                 let (background, text_color) = theme_colors(theme);
@@ -425,7 +426,7 @@ impl WindowController {
                                         text_color,
                                         actions,
                                         voice_button,
-                                        state: state.clone(),
+                                        state,
                                         transport: Arc::clone(&thread_transport),
                                         runtime: thread_runtime.clone(),
                                     })
@@ -466,7 +467,7 @@ impl WindowController {
             theme: state.theme(),
             actions: request.actions,
             voice_button: request.voice_button,
-            state: state.clone(),
+            state: Box::new(state.clone()),
         };
 
         if let Ok(guard) = self.sender.lock()

@@ -72,6 +72,8 @@ pub trait Notifications {
 
     #[zbus(signal)]
     fn notification_closed(&self, id: u32, reason: u32) -> zbus::Result<()>;
+
+    fn close_notification(&self, id: u32) -> zbus::Result<()>;
 }
 
 /// Persistent ID → action mapping so action invocations can be routed.
@@ -164,6 +166,30 @@ pub async fn show(
     Ok(id)
 }
 
+/// Close a previously shown notification.
+pub async fn close(proxy: &NotificationsProxy<'static>, id: u32) -> Result<(), DesktopError> {
+    proxy
+        .close_notification(id)
+        .await
+        .map_err(|e| DesktopError::Notification(e.to_string()))
+}
+
+/// Persistent notification shown while ambient listening is active.
+pub fn ambient_notification(wake_word: impl AsRef<str>) -> DesktopNotification {
+    let wake_word = wake_word.as_ref();
+    DesktopNotification {
+        id: 0,
+        title: "takusu — 常時Listen中".into(),
+        body: format!("マイクで「{wake_word}」を待っています。タップして停止。"),
+        actions: vec![NotificationAction {
+            key: "ambient-stop".into(),
+            label: "停止".into(),
+            kind: ActionKind::Immediate,
+            capability: None,
+        }],
+    }
+}
+
 /// Route a single notification action to the transport.
 pub async fn route_notification_action(
     state: &std::sync::Mutex<NotificationState>,
@@ -239,11 +265,18 @@ pub async fn route_notification_action(
 }
 
 /// Listen for `ActionInvoked` and route to the transport.
-pub async fn run_action_listener(
+///
+/// `on_ambient_stop` is called for the `ambient-stop` notification key, which
+/// is a local action and not a server capability.
+pub async fn run_action_listener<F>(
     proxy: &NotificationsProxy<'static>,
     state: Arc<std::sync::Mutex<NotificationState>>,
     transport: Arc<dyn DesktopTransport + Send + Sync>,
-) -> Result<(), DesktopError> {
+    on_ambient_stop: F,
+) -> Result<(), DesktopError>
+where
+    F: Fn() + Send + Sync + 'static,
+{
     let mut action_stream = proxy
         .receive_action_invoked()
         .await
@@ -253,11 +286,15 @@ pub async fn run_action_listener(
         let args = signal
             .args()
             .map_err(|e| DesktopError::Notification(e.to_string()))?;
+        let action_key = args.action_key();
+        if *action_key == "ambient-stop" {
+            on_ambient_stop();
+            continue;
+        }
         if let Err(e) =
-            route_notification_action(&state, transport.as_ref(), *args.id(), args.action_key())
-                .await
+            route_notification_action(&state, transport.as_ref(), *args.id(), action_key).await
         {
-            tracing::warn!(error=%e, notification_id=args.id(), action_key=args.action_key(), "failed to route notification action");
+            tracing::warn!(error=%e, notification_id=args.id(), action_key=action_key, "failed to route notification action");
         }
     }
 

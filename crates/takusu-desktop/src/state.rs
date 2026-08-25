@@ -11,14 +11,16 @@ use std::sync::{Arc, Mutex, RwLock};
 type OnChange = Arc<Mutex<Option<Arc<dyn Fn() + Send + Sync>>>>;
 
 #[cfg(feature = "audio-device")]
-use takusu_agent::TurnEvent;
+use takusu_agent::{AgentConfig, TurnEvent};
 use takusu_agent::{Presentation, SurfaceEvent, SurfaceSnapshot, SurfaceState};
 
 use crate::config::Config;
 use crate::presentation::{DesktopAction, DesktopPresentation};
 
 #[cfg(feature = "audio-device")]
-use crate::audio::{VoiceSessionHandle, spawn_voice_session};
+use crate::audio::{
+    AmbientSessionHandle, VoiceSessionHandle, spawn_ambient_session, spawn_voice_session,
+};
 
 /// Errors the daemon can surface to the user.
 #[derive(Debug, thiserror::Error)]
@@ -114,9 +116,18 @@ pub struct DesktopState {
     #[allow(dead_code)]
     config: Config,
     voice_invite: Arc<AtomicBool>,
+    ambient_active: Arc<AtomicBool>,
+    /// Wake word currently used by the ambient session, shown in notifications.
+    ambient_wake_word: Arc<Mutex<String>>,
     on_change: OnChange,
     #[cfg(feature = "audio-device")]
     voice: Arc<Mutex<Option<VoiceSessionHandle>>>,
+    #[cfg(feature = "audio-device")]
+    ambient: Arc<Mutex<Option<AmbientSessionHandle>>>,
+    #[cfg(feature = "audio-device")]
+    ambient_starting: Arc<AtomicBool>,
+    #[cfg(feature = "audio-device")]
+    ambient_stop_requested: Arc<AtomicBool>,
 }
 
 impl DesktopState {
@@ -128,9 +139,17 @@ impl DesktopState {
             })),
             config,
             voice_invite: Arc::new(AtomicBool::new(false)),
+            ambient_active: Arc::new(AtomicBool::new(false)),
+            ambient_wake_word: Arc::new(Mutex::new("たくす".into())),
             on_change: Arc::new(Mutex::new(None)),
             #[cfg(feature = "audio-device")]
             voice: Arc::new(Mutex::new(None)),
+            #[cfg(feature = "audio-device")]
+            ambient: Arc::new(Mutex::new(None)),
+            #[cfg(feature = "audio-device")]
+            ambient_starting: Arc::new(AtomicBool::new(false)),
+            #[cfg(feature = "audio-device")]
+            ambient_stop_requested: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -287,7 +306,22 @@ impl DesktopState {
         if self.voice_session_active() {
             return;
         }
-        if let Err(error) = spawn_voice_session(self.clone(), self.config.clone()) {
+        let agent_config = match AgentConfig::load() {
+            Ok(mut cfg) => {
+                cfg.server.url = self.config.local_url.clone();
+                cfg.server.token = self.config.token.clone();
+                cfg
+            }
+            Err(error) => {
+                tracing::error!(error=%error, "failed to load agent config");
+                let machine = takusu_agent::SurfaceStateMachine::new();
+                let snapshot =
+                    machine.apply_turn_event(&TurnEvent::Error(format!("agent config: {error}")));
+                self.update_surface(SurfaceEvent::StateChanged(snapshot));
+                return;
+            }
+        };
+        if let Err(error) = spawn_voice_session(self.clone(), self.config.clone(), &agent_config) {
             tracing::error!(error=%error, "failed to start voice session");
             let machine = takusu_agent::SurfaceStateMachine::new();
             let snapshot = machine.apply_turn_event(&TurnEvent::Error(error.to_string()));
@@ -314,4 +348,135 @@ impl DesktopState {
     /// No-op placeholder when the `audio-device` feature is disabled.
     #[cfg(not(feature = "audio-device"))]
     pub fn stop_voice_session(&self) {}
+
+    /// Whether ambient listening is currently active.
+    pub fn ambient_active(&self) -> bool {
+        self.ambient_active.load(Ordering::Relaxed)
+    }
+
+    /// Set the ambient active flag and notify listeners.
+    pub fn set_ambient_active(&self, active: bool) {
+        self.ambient_active.store(active, Ordering::Relaxed);
+        self.notify_change();
+    }
+
+    /// Wake word for the current or next ambient session.
+    pub fn ambient_wake_word(&self) -> String {
+        self.ambient_wake_word
+            .lock()
+            .map(|g| g.clone())
+            .unwrap_or_else(|_| "たくす".into())
+    }
+
+    #[cfg(feature = "audio-device")]
+    pub(crate) fn set_ambient_wake_word(&self, word: impl Into<String>) {
+        if let Ok(mut guard) = self.ambient_wake_word.lock() {
+            *guard = word.into();
+        }
+    }
+
+    /// Whether an ambient session is currently running.
+    #[cfg(feature = "audio-device")]
+    pub fn ambient_session_active(&self) -> bool {
+        self.ambient.lock().ok().is_some_and(|g| g.is_some())
+    }
+
+    /// Always false when the `audio-device` feature is disabled.
+    #[cfg(not(feature = "audio-device"))]
+    pub fn ambient_session_active(&self) -> bool {
+        false
+    }
+
+    #[cfg(feature = "audio-device")]
+    pub(crate) fn set_ambient_handle(&self, handle: Option<AmbientSessionHandle>) {
+        if let Ok(mut guard) = self.ambient.lock() {
+            *guard = handle;
+        }
+        self.notify_change();
+    }
+
+    /// Whether an ambient session is in the process of starting.
+    #[cfg(feature = "audio-device")]
+    pub(crate) fn ambient_starting(&self) -> bool {
+        self.ambient_starting.load(Ordering::Relaxed)
+    }
+
+    #[cfg(feature = "audio-device")]
+    pub(crate) fn set_ambient_starting(&self, starting: bool) {
+        self.ambient_starting.store(starting, Ordering::Relaxed);
+    }
+
+    /// Whether the user requested a stop while ambient was still starting.
+    #[cfg(feature = "audio-device")]
+    pub(crate) fn ambient_stop_requested(&self) -> bool {
+        self.ambient_stop_requested.load(Ordering::Relaxed)
+    }
+
+    #[cfg(feature = "audio-device")]
+    pub(crate) fn set_ambient_stop_requested(&self, requested: bool) {
+        self.ambient_stop_requested
+            .store(requested, Ordering::Relaxed);
+    }
+
+    /// Start an ambient listening session from the desktop surface.
+    #[cfg(feature = "audio-device")]
+    pub fn start_ambient_session(&self) {
+        if self.ambient_session_active() || self.ambient_starting() {
+            return;
+        }
+        self.set_ambient_starting(true);
+        self.set_ambient_stop_requested(false);
+
+        let agent_config = match AgentConfig::load() {
+            Ok(mut cfg) => {
+                cfg.server.url = self.config.local_url.clone();
+                cfg.server.token = self.config.token.clone();
+                cfg
+            }
+            Err(error) => {
+                tracing::error!(error=%error, "failed to load agent config");
+                let machine = takusu_agent::SurfaceStateMachine::new();
+                let snapshot =
+                    machine.apply_turn_event(&TurnEvent::Error(format!("agent config: {error}")));
+                self.update_surface(SurfaceEvent::StateChanged(snapshot));
+                self.set_ambient_starting(false);
+                return;
+            }
+        };
+        if let Err(error) = spawn_ambient_session(self.clone(), self.config.clone(), &agent_config)
+        {
+            tracing::error!(error=%error, "failed to start ambient session");
+            let machine = takusu_agent::SurfaceStateMachine::new();
+            let snapshot = machine.apply_turn_event(&TurnEvent::Error(error.to_string()));
+            self.update_surface(SurfaceEvent::StateChanged(snapshot));
+            self.set_ambient_starting(false);
+            self.set_ambient_stop_requested(false);
+        }
+    }
+
+    /// No-op placeholder when the `audio-device` feature is disabled.
+    #[cfg(not(feature = "audio-device"))]
+    pub fn start_ambient_session(&self) {
+        tracing::warn!("audio-device feature is disabled; ambient listening is unavailable");
+    }
+
+    /// Stop the ambient listening session.
+    #[cfg(feature = "audio-device")]
+    pub fn stop_ambient_session(&self) {
+        if self.ambient_starting() {
+            self.set_ambient_stop_requested(true);
+        }
+        if let Ok(mut guard) = self.ambient.lock()
+            && let Some(handle) = guard.take()
+        {
+            handle.stop();
+        }
+        self.set_ambient_active(false);
+    }
+
+    /// No-op placeholder when the `audio-device` feature is disabled.
+    #[cfg(not(feature = "audio-device"))]
+    pub fn stop_ambient_session(&self) {
+        self.set_ambient_active(false);
+    }
 }
