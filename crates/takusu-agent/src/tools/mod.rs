@@ -1,3 +1,4 @@
+pub mod capture;
 pub mod comments;
 pub mod coverage;
 pub mod day_details;

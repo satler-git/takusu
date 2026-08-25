@@ -127,10 +127,12 @@ function formatTime(iso?: string): string {
 function CompactPresentationView({
   presentation,
   onAction,
+  onPanel,
   onClarify,
 }: {
   presentation: Presentation;
   onAction?: (capability: ActionCapability) => void;
+  onPanel?: (choice: string) => void;
   onClarify?: (choice: string) => void;
 }) {
   const { colors } = useTheme();
@@ -204,30 +206,40 @@ function CompactPresentationView({
         </View>
       );
     case 'check_in': {
-      const ActionButton = (action: Action) => (
-        <PressableScale
-          key={action.id}
-          style={[
-            styles.action,
-            action.kind === 'immediate' ? styles.primaryAction : null,
-          ]}
-          onPress={() => {
-            if (action.kind === 'immediate' && action.capability && onAction) {
-              onAction(action.capability);
-            }
-          }}
-          disabled={action.kind !== 'immediate' || !action.capability}
-        >
-          <Text
-            style={[
-              styles.actionText,
-              action.kind === 'immediate' ? styles.primaryActionText : null,
-            ]}
+      const ActionButton = (action: Action) => {
+        const hasActionCapability =
+          action.kind === 'immediate' && action.capability && onAction;
+        const isPanelChoice = action.kind === 'panel' && onPanel;
+        const enabled = hasActionCapability || isPanelChoice;
+        const isPrimary = action.kind === 'immediate' && action.capability;
+        return (
+          <PressableScale
+            key={action.id}
+            style={[styles.action, isPrimary ? styles.primaryAction : null]}
+            onPress={() => {
+              if (
+                action.kind === 'immediate' &&
+                action.capability &&
+                onAction
+              ) {
+                onAction(action.capability);
+              } else if (action.kind === 'panel' && onPanel) {
+                onPanel(action.label);
+              }
+            }}
+            disabled={!enabled}
           >
-            {action.label}
-          </Text>
-        </PressableScale>
-      );
+            <Text
+              style={[
+                styles.actionText,
+                isPrimary ? styles.primaryActionText : null,
+              ]}
+            >
+              {action.label}
+            </Text>
+          </PressableScale>
+        );
+      };
       return (
         <View style={styles.result}>
           <Text style={styles.resultTitle}>{presentation.question}</Text>
@@ -844,6 +856,68 @@ function AgentCompactPanelImpl({
     [agentClient, isSurface, quickAction, sessionId],
   );
 
+  const handlePanelAction = useCallback(
+    async (choice: string) => {
+      if (!agentClient) return;
+      if (isSurface ? surfaceBusy : loading) return;
+
+      if (isSurface) {
+        setSurfaceBusy(true);
+        setTurnText('');
+        setTurnError(null);
+        setTurnPresentation(null);
+        setApproval(null);
+      } else {
+        setLoading(true);
+        setResult(null);
+        setApproval(null);
+      }
+
+      try {
+        let sid = sessionId ?? pendingSessionRef.current;
+        if (!sid) {
+          sid = await agentClient.createSession();
+          pendingSessionRef.current = sid;
+          setSessionId(sid);
+        }
+        const turnResult = await agentClient.runTurn(
+          sid,
+          choice,
+          `compact-panel-${Date.now()}`,
+          'screen',
+        );
+        if (turnResult.approval_request) {
+          setApproval(turnResult.approval_request);
+        } else if (isSurface) {
+          setTurnText(turnResult.text);
+          setTurnPresentation(
+            turnResult.presentation ?? {
+              type: 'text',
+              text: turnResult.text,
+            },
+          );
+        } else {
+          setResult(
+            turnResult.presentation ?? {
+              type: 'text',
+              text: turnResult.text,
+            },
+          );
+          await quickAction?.onSuccess();
+        }
+      } catch (e) {
+        showError(e, decodeError(e));
+      } finally {
+        if (isSurface) {
+          setSurfaceBusy(false);
+        } else {
+          setLoading(false);
+        }
+      }
+    },
+    [agentClient, isSurface, sessionId, surfaceBusy, loading, quickAction],
+  );
+
   const title = useMemo(() => {
     if (isSurface) {
       return stateLabel(surfaceSnapshot ?? null);
@@ -897,7 +971,9 @@ function AgentCompactPanelImpl({
         <View style={styles.body}>
           <CompactPresentationView
             presentation={result}
-            onAction={handlePresentationAction}
+            onAction={loading ? undefined : handlePresentationAction}
+            onPanel={loading ? undefined : handlePanelAction}
+            onClarify={loading ? undefined : handlePanelAction}
           />
         </View>
       );
@@ -1019,7 +1095,9 @@ function AgentCompactPanelImpl({
         <View style={styles.body}>
           <CompactPresentationView
             presentation={turnPresentation}
-            onAction={handlePresentationAction}
+            onAction={surfaceBusy ? undefined : handlePresentationAction}
+            onPanel={surfaceBusy ? undefined : handlePanelAction}
+            onClarify={surfaceBusy ? undefined : handlePanelAction}
           />
         </View>
       );

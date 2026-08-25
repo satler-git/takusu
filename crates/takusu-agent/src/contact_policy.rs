@@ -426,6 +426,20 @@ mod tests {
     }
 
     #[test]
+    fn unclassified_gap_honors_suppression_window() {
+        let mut state = ContactPolicyState::default();
+        state.suppress_for(ts(0), SUPPRESSION_MINUTES);
+        let events = vec![event(
+            PlannerEventKind::UnclassifiedGapContinued,
+            Urgency::Normal,
+            "gap-suppressed",
+        )];
+        let result = filter_events(events, &mut state, ts(SUPPRESSION_MINUTES * 60 - 1));
+        assert!(result.committed.is_empty());
+        assert_eq!(result.suppressed_ids, vec!["gap-suppressed".to_string()]);
+    }
+
+    #[test]
     fn ignored_decay_suppresses_non_urgent_check_ins() {
         let mut state = ContactPolicyState {
             ignored_check_in_count_today: IGNORED_DECAY_THRESHOLD,

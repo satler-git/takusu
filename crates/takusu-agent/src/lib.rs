@@ -2587,6 +2587,8 @@ mod tests {
         assert!(index.contains("Run a weekly review"));
         assert!(index.contains("search-qualifiers"));
         assert!(index.contains("Task and memory search qualifier syntax reference."));
+        assert!(index.contains("capture"));
+        assert!(index.contains("Register a one-off, recurring, free-time, or routine outcome"));
     }
 
     #[test]
