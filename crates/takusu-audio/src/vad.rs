@@ -324,12 +324,24 @@ impl Endpoint for SileroEndpoint {
     }
 }
 
-/// Build an utterance endpoint using the sherpa Silero model from the model
-/// cache when available, else the energy fallback.
+/// Build an utterance endpoint using the sherpa Silero model from the default
+/// model cache when available, else the energy fallback.
 #[cfg(feature = "sherpa")]
 pub fn silero_endpoint_from_cache(config: &VadEndpointConfig) -> Option<SileroEndpoint> {
     use crate::ModelCache;
     let cache = ModelCache::default_dir().ok()?;
+    silero_endpoint_from_cache_with_dir(config, cache.cache_dir())
+}
+
+/// Build an utterance endpoint using the sherpa Silero model from an explicit
+/// cache directory.
+#[cfg(feature = "sherpa")]
+pub fn silero_endpoint_from_cache_with_dir(
+    config: &VadEndpointConfig,
+    cache_dir: &Path,
+) -> Option<SileroEndpoint> {
+    use crate::ModelCache;
+    let cache = ModelCache::new(cache_dir);
     let model = match cache.ensure_silero_vad() {
         Ok(model) => model,
         Err(error) => {
@@ -364,12 +376,30 @@ pub fn default_endpoint_with_config(config: VadEndpointConfig) -> Box<dyn Endpoi
     if let Some(silero) = silero_endpoint_from_cache(&config) {
         return Box::new(silero);
     }
+    default_energy_endpoint(config)
+}
+
+fn default_energy_endpoint(config: VadEndpointConfig) -> Box<dyn Endpoint> {
     eprintln!("using energy VAD endpointing");
     Box::new(VadEndpoint::new(
         EnergyVad::new(config.energy_threshold),
         SHERPA_SAMPLE_RATE,
         config,
     ))
+}
+
+/// Build the default endpointing backend with an explicit model cache
+/// directory. Used on Android where the model cache lives in the app's
+/// `noBackupFilesDir` rather than the desktop default.
+#[cfg(feature = "sherpa")]
+pub fn default_endpoint_with_config_and_cache_dir(
+    config: VadEndpointConfig,
+    cache_dir: &Path,
+) -> Box<dyn Endpoint> {
+    if let Some(silero) = silero_endpoint_from_cache_with_dir(&config, cache_dir) {
+        return Box::new(silero);
+    }
+    default_energy_endpoint(config)
 }
 
 /// The default endpointing backend: Silero when its model is present and
@@ -384,7 +414,7 @@ pub fn default_endpoint() -> Box<dyn Endpoint> {
 /// Async wrapper over [`default_endpoint_with_config`] that performs the
 /// (blocking) model download / load on a blocking thread so it can be awaited
 /// from an async context without violating tokio's blocking rules.
-#[cfg(feature = "record")]
+#[cfg(any(feature = "record", feature = "sherpa"))]
 pub async fn default_endpoint_async_with_config(config: VadEndpointConfig) -> Box<dyn Endpoint> {
     tokio::task::spawn_blocking(move || default_endpoint_with_config(config))
         .await
@@ -400,7 +430,7 @@ pub async fn default_endpoint_async_with_config(config: VadEndpointConfig) -> Bo
 /// Async wrapper over [`default_endpoint`] that performs the (blocking) model
 /// download / load on a blocking thread so it can be awaited from an async
 /// context without violating tokio's blocking rules.
-#[cfg(feature = "record")]
+#[cfg(any(feature = "record", feature = "sherpa"))]
 pub async fn default_endpoint_async() -> Box<dyn Endpoint> {
     default_endpoint_async_with_config(VadEndpointConfig::default()).await
 }

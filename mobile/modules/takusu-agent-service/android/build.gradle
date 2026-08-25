@@ -1,0 +1,37 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'expo.modules.takusuagentservice'
+version = '0.1.0'
+
+android {
+  namespace "expo.modules.takusuagentservice"
+  defaultConfig {
+    versionCode 1
+    versionName "0.1.0"
+  }
+  lintOptions {
+    abortOnError false
+  }
+  sourceSets {
+    main {
+      java.srcDirs += ['src/main/java']
+    }
+  }
+}
+
+dependencies {
+  // UniFFI Takusu bindings and .so packaging live in the existing takusu-server module.
+  implementation project(':takusu-server')
+
+  // Notification, ContextCompat, and foreground service helpers.
+  implementation 'androidx.core:core-ktx:1.15.0'
+
+  // UniFFI-generated Kotlin bindings use JNA for FFI.
+  implementation 'net.java.dev.jna:jna:5.16.0@aar'
+
+  testImplementation 'junit:junit:4.13.2'
+  testImplementation 'org.robolectric:robolectric:4.14.1'
+}

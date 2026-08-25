@@ -1324,6 +1324,13 @@
       "source": "icon"
     },
     {
+      "fg": "brand",
+      "bg": "pressed",
+      "file": "views/AgentSettingsView.tsx",
+      "kind": "parent-child",
+      "source": "icon"
+    },
+    {
       "fg": "black",
       "bg": "surface",
       "file": "views/AgentView.tsx",
@@ -2250,5 +2257,5 @@
       "source": "icon"
     }
   ],
-  "generatedAt": "2026-08-24T14:35:43.824Z"
+  "generatedAt": "2026-08-26T13:23:36.061Z"
 }

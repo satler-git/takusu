@@ -15,6 +15,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use unicode_normalization::UnicodeNormalization;
 
 use crate::stt::{AsrStream, ExecutionProvider, StreamingSpeechToText};
 use crate::wav::{SHERPA_SAMPLE_RATE, normalize};
@@ -44,11 +45,14 @@ pub struct KwsConfig {
     pub model_id: String,
     /// Inlined keywords, one per line, tokenized for the model.
     /// Example for the WenetSpeech BPE model:
-    /// `▁T A K U S U :1.0 #0.25 @takusu`.
-    /// Must be set when using `WakeWordBackend::SherpaKws`.
+    /// `t a k u s u @たくす`.
+    /// When empty, `keyword` is tokenized automatically.
     pub keywords_buf: String,
     /// Path to a keywords file. If both are set, `keywords_buf` wins.
     pub keywords_file: String,
+    /// The original keyword phrase. When `keywords_buf` is empty this is
+    /// romanized and tokenized against the model's tokens file.
+    pub keyword: String,
     /// Trigger threshold for each keyword (0..1); passed to sherpa-onnx.
     pub threshold: f32,
     /// Boosting score applied to keyword tokens.
@@ -85,7 +89,7 @@ impl KwsConfig {
 
     /// True if the configuration can be used to load a sherpa-onnx spotter.
     pub fn is_sherpa(&self) -> bool {
-        !self.model_id.is_empty() && !self.keywords_buf.is_empty()
+        !self.model_id.is_empty() && (!self.keywords_buf.is_empty() || !self.keyword.is_empty())
     }
 }
 
@@ -166,12 +170,13 @@ impl AsrTextMatch {
         &self.last_text
     }
 
-    /// Normalize text for matching: keep only letters/digits and whitespace,
-    /// lowercase, and collapse runs of whitespace to a single space.
+    /// Normalize text for matching: NFC-Unicode-normalize, keep only
+    /// letters/digits and whitespace, lowercase, and collapse runs of
+    /// whitespace to a single space.
     pub(crate) fn normalize(text: &str) -> String {
         let mut out = String::with_capacity(text.len());
         let mut pending_space = false;
-        for c in text.chars() {
+        for c in text.nfc() {
             if c.is_alphanumeric() {
                 if pending_space {
                     out.push(' ');
@@ -343,15 +348,18 @@ impl SherpaKws {
         ks_config.keywords_score = config.score;
         ks_config.keywords_threshold = config.threshold;
 
-        if !config.keywords_buf.is_empty() {
-            ks_config.keywords_buf = Some(config.keywords_buf.clone());
+        let keywords_buf = if !config.keywords_buf.is_empty() {
+            config.keywords_buf.clone()
         } else if !config.keywords_file.is_empty() {
-            ks_config.keywords_file = Some(config.keywords_file.clone());
+            config.keywords_file.clone()
+        } else if !config.keyword.is_empty() {
+            tokenize_keyword_for_model(&config.keyword, &tokens)?
         } else {
             return Err(KwsError::InvalidKeywords(
-                "keywords_buf or keywords_file must be set".into(),
+                "keywords_buf, keywords_file, or keyword must be set".into(),
             ));
-        }
+        };
+        ks_config.keywords_buf = Some(keywords_buf);
 
         let spotter = KeywordSpotter::create(&ks_config).ok_or(KwsError::CreateFailed)?;
         let stream = spotter.create_stream();
@@ -372,6 +380,88 @@ impl SherpaKws {
     pub fn model_dir(&self) -> PathBuf {
         PathBuf::from(&self.inner.config.model_dir)
     }
+}
+
+/// Convert a user-facing keyword into a space-separated token sequence for the
+/// sherpa-onnx KWS model, using the model's `tokens.txt` as the vocabulary.
+///
+/// Japanese kana is romanized so that "たくす" becomes "t a k u s u", which
+/// the Chinese/English WenetSpeech model can detect by its pronunciation.
+/// Latin keywords are tokenized directly; unsupported characters become `<unk>`.
+#[cfg(feature = "sherpa")]
+fn tokenize_keyword_for_model(keyword: &str, tokens_path: &Path) -> Result<String, KwsError> {
+    let content = std::fs::read_to_string(tokens_path)
+        .map_err(|e| KwsError::ModelFileMissing(format!("failed to read tokens.txt: {e}")))?;
+
+    let mut token_set: Vec<String> = content
+        .lines()
+        .filter_map(|line| {
+            let mut parts = line.split_whitespace();
+            let token = parts.next()?;
+            // Do not match special meta tokens; they cannot be decoded from audio.
+            if token.starts_with('<') && token.ends_with('>') {
+                None
+            } else {
+                Some(token.to_string())
+            }
+        })
+        .collect();
+    // Longest-match first so multichar pinyin like "sh" wins over "s" + "h".
+    token_set.sort_by(|a, b| b.len().cmp(&a.len()).then(a.cmp(b)));
+
+    let has_kana = keyword
+        .chars()
+        .any(|c| ('\u{3040}'..='\u{309F}').contains(&c) || ('\u{30A0}'..='\u{30FF}').contains(&c));
+
+    let romanized = if has_kana {
+        use romkan::Romkan;
+        keyword.to_romaji()
+    } else {
+        keyword.to_string()
+    };
+
+    // Keep only letters/digits from the romanized form; drop spaces and
+    // apostrophes (e.g. "kon'nichiwa") before tokenizing.
+    let romanized: String = romanized
+        .to_lowercase()
+        .chars()
+        .filter(|c| c.is_alphanumeric())
+        .collect();
+
+    let mut buf = String::new();
+    let mut i = 0;
+    while i < romanized.len() {
+        let rest = &romanized[i..];
+        let mut matched = false;
+        for token in &token_set {
+            if rest.starts_with(token) {
+                if !buf.is_empty() {
+                    buf.push(' ');
+                }
+                buf.push_str(token);
+                i += token.len();
+                matched = true;
+                break;
+            }
+        }
+        if !matched {
+            // Skip one codepoint and substitute the model's unknown token.
+            if !buf.is_empty() {
+                buf.push(' ');
+            }
+            buf.push_str("<unk>");
+            let step = romanized[i..].chars().next().map_or(1, |c| c.len_utf8());
+            i += step;
+        }
+    }
+
+    if buf.is_empty() || buf.contains("<unk>") {
+        return Err(KwsError::InvalidKeywords(format!(
+            "could not tokenize keyword '{keyword}' for KWS model"
+        )));
+    }
+
+    Ok(format!("{buf} @{keyword}"))
 }
 
 #[cfg(feature = "sherpa")]
@@ -554,5 +644,29 @@ mod tests {
         assert!(det.push(&[]).await.unwrap());
         det.reset().await.unwrap();
         assert!(!det.push(&[]).await.unwrap());
+    }
+
+    #[cfg(feature = "sherpa")]
+    #[test]
+    fn tokenize_keyword_romanizes_japanese() {
+        use std::io::Write;
+
+        let mut tmp = std::env::temp_dir();
+        tmp.push("takusu-kws-tokens.txt");
+        let mut file = std::fs::File::create(&tmp).unwrap();
+        // Vocabulary subset matching the WenetSpeech pinyin/letter tokens.
+        for (i, token) in ["a", "k", "s", "t", "u", "<unk>", "<sos/eos>"]
+            .iter()
+            .enumerate()
+        {
+            writeln!(file, "{token} {i}").unwrap();
+        }
+
+        assert_eq!(
+            tokenize_keyword_for_model("たくす", &tmp).unwrap(),
+            "t a k u s u @たくす"
+        );
+
+        std::fs::remove_file(&tmp).unwrap();
     }
 }

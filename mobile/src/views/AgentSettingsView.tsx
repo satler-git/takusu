@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -37,6 +38,7 @@ import {
   loadAsrModel,
   saveAsrModel,
 } from '@/src/utils/voice';
+import { useAmbient } from '@/src/hooks/useAmbient';
 import { LlmModelEditor } from '@/src/components/settings/LlmModelEditor';
 import { TtsProviderEditor } from '@/src/components/settings/TtsProviderEditor';
 
@@ -223,7 +225,13 @@ const makeStyles = (colors: ColorSet) =>
 export function AgentSettingsView() {
   const colors = useColors();
   const styles = useMemo(() => makeStyles(colors), [colors]);
-  const { client, pushAgentConfig } = useServer();
+  const { client, pushAgentConfig, workersUrl, workersToken } = useServer();
+  const {
+    enabled: ambientEnabled,
+    running: ambientRunning,
+    processing: ambientProcessing,
+    toggle: toggleAmbient,
+  } = useAmbient();
   const { showTopToast } = useTopToast();
 
   const [llmProviders, setLlmProviders] = useState<LlmProvider[]>([]);
@@ -1400,6 +1408,55 @@ export function AgentSettingsView() {
           }
           saving={saving}
         />
+      )}
+
+      {Platform.OS === 'android' && (
+        <>
+          <Text style={[styles.heading, { color: colors.black }]}>Listen</Text>
+          <View style={[styles.row, { borderColor: colors.separator }]}>
+            <Pressable
+              onPress={async () => {
+                if (!workersUrl || !workersToken) {
+                  showTopToast('Planner serverの設定が必要です');
+                  return;
+                }
+                try {
+                  await toggleAmbient({ workersUrl, rootToken: workersToken });
+                } catch (e) {
+                  void showError(e, 'Listen の切り替え失敗');
+                }
+              }}
+              disabled={!workersUrl || !workersToken || ambientProcessing}
+              style={({ pressed }) => [
+                styles.rowMain,
+                pressed && styles.rowMainPressed,
+              ]}
+            >
+              <Ionicons
+                name={ambientRunning ? 'mic' : 'mic-off'}
+                size={22}
+                color={ambientRunning ? colors.brand : colors.gray}
+              />
+              <View style={styles.rowText}>
+                <Text style={{ color: colors.black, fontWeight: '600' }}>
+                  常時聞き取り
+                </Text>
+                <Text style={{ color: colors.gray, fontSize: 12 }}>
+                  {ambientProcessing
+                    ? '切り替え中...'
+                    : ambientRunning
+                      ? '実行中'
+                      : ambientEnabled
+                        ? '有効（停止中）'
+                        : '停止中'}
+                </Text>
+              </View>
+              {ambientProcessing && (
+                <ActivityIndicator size="small" color={colors.brand} />
+              )}
+            </Pressable>
+          </View>
+        </>
       )}
 
       <Text style={[styles.heading, { color: colors.black }]}>

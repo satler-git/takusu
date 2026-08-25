@@ -251,6 +251,9 @@ class TakusuAudioModule : Module() {
 
             // VAD endpointing: downloads the Silero model (first run) and stops
             // recording ~0.5 s after speech ends instead of requiring a tap.
+// `Coroutine { _: Any? -> ... }` selects the single-argument
+            // `Coroutine` overload so the compiler can disambiguate the
+            // zero-argument `AsyncFunction` from the no-argument overload.
             AsyncFunction("startRecordingWithEndpointing") Coroutine { _: Any? ->
                 ensureVad()
                 val instance = AudioRecorder()
@@ -475,6 +478,8 @@ class TakusuAudioModule : Module() {
                 true
             }
 
+            // `Coroutine { _: Any? -> ... }` is the required zero-argument
+            // `AsyncFunction` pattern; see `startRecordingWithEndpointing` above.
             AsyncFunction("getAvailableVoices") Coroutine { _: Any? ->
                 val context =
                     appContext.reactContext

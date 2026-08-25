@@ -1,5 +1,6 @@
 uniffi::setup_scaffolding!();
 
+pub mod ambient;
 mod audio;
 mod log_buffer;
 mod model;

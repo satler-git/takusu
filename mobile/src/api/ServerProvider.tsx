@@ -33,6 +33,7 @@ import {
 } from './settingsStore';
 import { APP_THEMES, type AppTheme } from '@/src/theme';
 import { undoRedo, DEFAULT_MAX_HISTORY } from './undoRedo';
+import { useAmbient } from '@/src/hooks/useAmbient';
 
 interface ServerState {
   ready: boolean;
@@ -143,6 +144,12 @@ export function ServerProvider({ children }: { children: ReactNode }) {
     notifications: {} as NotificationSettings,
     restarting: false,
   });
+
+  const {
+    enabled: ambientEnabled,
+    running: ambientRunning,
+    start: startAmbient,
+  } = useAmbient();
 
   const startServer = useCallback(
     async (
@@ -358,6 +365,36 @@ export function ServerProvider({ children }: { children: ReactNode }) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Resume the ambient foreground service when the server is ready and the
+  // user has previously enabled it. The service persists across the app being
+  // backgrounded, and the boot receiver posts a re-arm notification if it is
+  // killed.
+  useEffect(() => {
+    if (!state.ready || !state.workersUrl || !state.workersToken) return;
+    if (!ambientEnabled || ambientRunning) return;
+    startAmbient(
+      {
+        workersUrl: state.workersUrl,
+        rootToken: state.workersToken,
+      },
+      // Auto-resume must not pop permission dialogs while the user is doing
+      // something else; the manual toggle in AgentSettingsView requests them.
+      { requestPermissions: false },
+    ).catch((error) => {
+      // The user may have revoked the microphone permission; a manual
+      // toggle in AgentSettingsView will surface the error. Log it for
+      // debugging.
+      console.warn('auto-resume ambient failed:', error);
+    });
+  }, [
+    state.ready,
+    state.workersUrl,
+    state.workersToken,
+    ambientEnabled,
+    ambientRunning,
+    startAmbient,
+  ]);
 
   const pushAgentConfig = useCallback(async () => {
     if (!state.ready || !state.workersToken || !state.client) {

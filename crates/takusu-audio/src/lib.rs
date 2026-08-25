@@ -21,6 +21,11 @@ pub mod tts_normalize;
 pub mod vad;
 pub mod wav;
 
+/// Fixed chunk duration used by the streaming recorder and the ambient
+/// pipeline's pre-speech buffer. Shared here so it is not redefined in
+/// `record_streaming` and `ambient`.
+pub(crate) const CHUNK_MS: u64 = 160;
+
 #[cfg(feature = "hush")]
 pub mod hush;
 
@@ -33,7 +38,7 @@ pub use hush::Hush;
 pub use sherpa::{OfflineAsrStream, SherpaOnnxAsr, SherpaOnnxAsrConfig, SherpaOnnxStreamingAsr};
 
 pub use aec::{Aec, AecConfig, AecEffectiveness, BargeInDetector, NlmsAec, NoOpAec, evaluate_aec};
-#[cfg(any(feature = "record", test))]
+#[cfg(any(feature = "record", feature = "sherpa", test))]
 pub use ambient::AmbientPipeline;
 pub use ambient::{AmbientConfig, AmbientError, AmbientResult, WakeWordBackend};
 pub use cartesia::{
@@ -72,7 +77,10 @@ pub use vad::{
     VoiceActivity, default_endpoint, default_endpoint_with_config,
 };
 
-#[cfg(feature = "record")]
+#[cfg(feature = "sherpa")]
+pub use vad::default_endpoint_with_config_and_cache_dir;
+
+#[cfg(any(feature = "record", feature = "sherpa"))]
 pub use vad::{default_endpoint_async, default_endpoint_async_with_config};
 
 #[cfg(feature = "sherpa")]

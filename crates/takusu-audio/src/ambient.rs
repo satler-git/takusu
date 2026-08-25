@@ -13,27 +13,34 @@ use crate::stream_asr::StreamAsrError;
 use crate::stt::SttError;
 use crate::wav::SHERPA_SAMPLE_RATE;
 
-#[cfg(any(feature = "record", test))]
+#[cfg(any(feature = "record", feature = "sherpa", test))]
+use unicode_segmentation::UnicodeSegmentation;
+
+#[cfg(any(feature = "record", feature = "sherpa", test))]
 use std::collections::VecDeque;
-#[cfg(any(feature = "record", test))]
+#[cfg(any(feature = "record", feature = "sherpa", test))]
+use std::future::Future;
+#[cfg(any(feature = "record", feature = "sherpa", test))]
 use std::sync::Arc;
 #[cfg(any(feature = "record", test))]
 use std::time::Duration;
 
-#[cfg(any(feature = "record", test))]
-use tokio::sync::mpsc::UnboundedReceiver;
-#[cfg(any(feature = "record", test))]
+#[cfg(any(feature = "record", feature = "sherpa", test))]
+use tokio::sync::mpsc::{Receiver as BoundedPcmReceiver, UnboundedReceiver};
+#[cfg(any(feature = "record", feature = "sherpa", test))]
 use tokio::sync::watch;
 
-#[cfg(any(feature = "record", test))]
+#[cfg(any(feature = "record", feature = "sherpa", test))]
+use crate::CHUNK_MS;
+#[cfg(any(feature = "record", feature = "sherpa", test))]
 use crate::Endpoint;
-#[cfg(any(feature = "record", test))]
+#[cfg(any(feature = "record", feature = "sherpa", test))]
 use crate::kws::{AsrTextMatch, WakeWordDetector};
-#[cfg(any(feature = "record", test))]
+#[cfg(any(feature = "record", feature = "sherpa", test))]
 use crate::stream_asr::StreamingAsrSession;
-#[cfg(any(feature = "record", test))]
+#[cfg(any(feature = "record", feature = "sherpa", test))]
 use crate::stt::StreamingSpeechToText;
-#[cfg(any(feature = "record", test))]
+#[cfg(any(feature = "record", feature = "sherpa", test))]
 use crate::vad::VadEvent;
 #[cfg(feature = "record")]
 use crate::{RecordConfig, RecorderError, StreamingRecorder};
@@ -73,13 +80,11 @@ pub struct AmbientResult {
 pub enum WakeWordBackend {
     /// Match the wake phrase in a streaming ASR partial transcript.
     /// Heavier, but language-agnostic.
-    #[default]
     AsrTextMatch,
     /// Use a tiny sherpa-onnx transducer keyword spotter.
-    /// Requires a tokenized keyword string in `kws.keywords_buf` and the
-    /// `sherpa` feature. `KwsConfig::for_wenetspeech` leaves `keywords_buf`
-    /// empty by default, so callers must populate it before selecting this
-    /// backend.
+    /// `KwsConfig::keyword` is romanized and tokenized automatically; set
+    /// `keywords_buf` explicitly to override the tokenization.
+    #[default]
     SherpaKws,
 }
 
@@ -115,7 +120,7 @@ impl Default for AmbientConfig {
         Self {
             enabled: false,
             wake_word: "たくす".into(),
-            wake_word_backend: WakeWordBackend::AsrTextMatch,
+            wake_word_backend: WakeWordBackend::SherpaKws,
             kws: KwsConfig::for_wenetspeech(),
             asr_language: "ja".into(),
             max_utterance_seconds: 60,
@@ -126,9 +131,21 @@ impl Default for AmbientConfig {
     }
 }
 
+/// Try to load the sherpa-onnx keyword spotter off the async runtime thread.
+#[cfg(feature = "sherpa")]
+async fn try_load_sherpa_kws(
+    config: &crate::kws::KwsConfig,
+) -> Result<crate::kws::SherpaKws, AmbientError> {
+    let config = config.clone();
+    tokio::task::spawn_blocking(move || crate::kws::SherpaKws::new(&config))
+        .await
+        .map_err(|e| crate::kws::KwsError::Other(e.to_string().into()))?
+        .map_err(Into::into)
+}
+
 /// State machine for one ambient capture loop.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg(any(feature = "record", test))]
+#[cfg(any(feature = "record", feature = "sherpa", test))]
 enum AmbientState {
     /// Waiting for any speech; pre-speech chunks roll through a short buffer.
     WaitingForSpeech,
@@ -139,7 +156,7 @@ enum AmbientState {
 }
 
 /// The shared ambient gate pipeline.
-#[cfg(any(feature = "record", test))]
+#[cfg(any(feature = "record", feature = "sherpa", test))]
 pub struct AmbientPipeline<'a> {
     config: AmbientConfig,
     endpoint: &'a mut (dyn Endpoint + 'a),
@@ -148,18 +165,45 @@ pub struct AmbientPipeline<'a> {
     stop: watch::Receiver<bool>,
 }
 
-#[cfg(any(feature = "record", test))]
+/// A stream of PCM chunks that the gate can drive. Implemented by both the
+/// unbounded and bounded tokio receivers so `run_with_chunks` stays generic.
+#[cfg(any(feature = "record", feature = "sherpa", test))]
+pub trait AmbientChunkSource {
+    fn recv(&mut self) -> impl Future<Output = Option<Vec<f32>>> + '_;
+}
+
+#[cfg(any(feature = "record", feature = "sherpa", test))]
+impl AmbientChunkSource for UnboundedReceiver<Vec<f32>> {
+    fn recv(&mut self) -> impl Future<Output = Option<Vec<f32>>> + '_ {
+        UnboundedReceiver::recv(self)
+    }
+}
+
+#[cfg(any(feature = "record", feature = "sherpa", test))]
+impl AmbientChunkSource for BoundedPcmReceiver<Vec<f32>> {
+    fn recv(&mut self) -> impl Future<Output = Option<Vec<f32>>> + '_ {
+        BoundedPcmReceiver::recv(self)
+    }
+}
+
+#[cfg(any(feature = "record", feature = "sherpa", test))]
 impl<'a> AmbientPipeline<'a> {
     /// Assemble a pipeline with the given endpoint and ASR backend.
     ///
     /// The endpoint should not normalize audio (the VAD must see raw levels).
     /// The ASR feed is normalized inside the pipeline.
     pub async fn new(
-        config: AmbientConfig,
+        mut config: AmbientConfig,
         endpoint: &'a mut (dyn Endpoint + 'a),
         asr: Arc<dyn StreamingSpeechToText>,
         stop: watch::Receiver<bool>,
     ) -> Result<Self, AmbientError> {
+        // Pass the human-readable wake word to the KWS config so the model can
+        // tokenize it when no explicit keywords_buf is provided.
+        if config.kws.keyword.is_empty() && !config.wake_word.is_empty() {
+            config.kws.keyword = config.wake_word.clone();
+        }
+
         let wake: Box<dyn WakeWordDetector> = match config.wake_word_backend {
             WakeWordBackend::AsrTextMatch => {
                 let detector =
@@ -167,19 +211,29 @@ impl<'a> AmbientPipeline<'a> {
                 Box::new(detector)
             }
             #[cfg(feature = "sherpa")]
-            WakeWordBackend::SherpaKws => {
-                let kws_config = config.kws.clone();
-                let detector =
-                    tokio::task::spawn_blocking(move || crate::kws::SherpaKws::new(&kws_config))
-                        .await
-                        .map_err(|e| KwsError::Other(e.to_string().into()))??;
-                Box::new(detector)
-            }
+            WakeWordBackend::SherpaKws => match try_load_sherpa_kws(&config.kws).await {
+                Ok(detector) => Box::new(detector),
+                Err(error) => {
+                    tracing::warn!(
+                        %error,
+                        wake_word = %config.wake_word,
+                        "sherpa-kws load failed, falling back to streaming asr wake word"
+                    );
+                    let detector =
+                        AsrTextMatch::new(asr.clone(), &config.wake_word, &config.asr_language)
+                            .await?;
+                    Box::new(detector)
+                }
+            },
             #[cfg(not(feature = "sherpa"))]
             WakeWordBackend::SherpaKws => {
-                return Err(
-                    KwsError::Other("sherpa KWS requires the `sherpa` feature".into()).into(),
+                tracing::warn!(
+                    wake_word = %config.wake_word,
+                    "sherpa feature disabled, falling back to streaming asr wake word"
                 );
+                let detector =
+                    AsrTextMatch::new(asr.clone(), &config.wake_word, &config.asr_language).await?;
+                Box::new(detector)
             }
         };
 
@@ -215,11 +269,13 @@ impl<'a> AmbientPipeline<'a> {
         result
     }
 
-    /// Run the pipeline on an existing chunk receiver. Used by tests and by
-    /// `run()` to enable testing without a real microphone.
-    pub async fn run_with_chunks(
+    /// Run the pipeline on an existing chunk receiver. Used by tests, by
+    /// `run()`, and by the Android foreground service. Any receiver with a
+    /// `recv` future works, so both unbounded (desktop recorder, tests) and
+    /// bounded (Android) chunk sources can feed the same gate logic.
+    pub async fn run_with_chunks<R: AmbientChunkSource>(
         &mut self,
-        mut chunk_rx: UnboundedReceiver<Vec<f32>>,
+        mut chunk_rx: R,
     ) -> Result<Option<AmbientResult>, AmbientError> {
         self.endpoint.reset();
         self.wake.reset().await?;
@@ -234,6 +290,9 @@ impl<'a> AmbientPipeline<'a> {
         let mut state = AmbientState::WaitingForSpeech;
         // Short rolling buffer of raw chunks before SpeechStart.
         let mut pre_speech: VecDeque<Vec<f32>> = VecDeque::new();
+        // Running total of samples in `pre_speech` so we can cap the buffer
+        // without re-summing on every chunk.
+        let mut pre_speech_samples: u64 = 0;
         // Raw chunks accumulated after SpeechStart and before the wake word.
         let mut post_speech: Vec<Vec<f32>> = Vec::new();
         // Index into `post_speech` of the first chunk not yet fed to the wake
@@ -247,11 +306,14 @@ impl<'a> AmbientPipeline<'a> {
         // misconfigured or very small `pre_speech_buffer_ms` does not leave
         // the buffer permanently empty (`CHUNK_MS` is the recorder's fixed
         // chunk duration).
-        let pre_speech_ms = self
-            .config
-            .pre_speech_buffer_ms
-            .max(crate::record_streaming::CHUNK_MS);
+        let pre_speech_ms = self.config.pre_speech_buffer_ms.max(CHUNK_MS);
         let max_pre_samples = self.config.sample_rate as u64 * pre_speech_ms / 1000;
+
+        // Total samples in the current speech segment, used to enforce
+        // `max_utterance_seconds` and cap memory growth.
+        let max_utterance_samples =
+            self.config.max_utterance_seconds * self.config.sample_rate as u64;
+        let mut utterance_samples: u64 = 0;
 
         loop {
             tokio::select! {
@@ -275,15 +337,23 @@ impl<'a> AmbientPipeline<'a> {
                             state = AmbientState::ListeningForWake;
                             post_speech.clear();
                             wake_pushed = 0;
+                            let chunk_len = chunk.len() as u64;
                             post_speech.extend(pre_speech.drain(..));
                             post_speech.push(chunk);
+                            // The pre-speech buffer was drained into
+                            // `post_speech`; account for it once and reset the
+                            // running counter.
+                            utterance_samples = pre_speech_samples + chunk_len;
+                            pre_speech_samples = 0;
                             self.wake.reset().await?;
                         }
                         Some(VadEvent::SpeechEnd) => match state {
                             AmbientState::WaitingForSpeech | AmbientState::ListeningForWake => {
                                 pre_speech.clear();
+                                pre_speech_samples = 0;
                                 post_speech.clear();
                                 wake_pushed = 0;
+                                utterance_samples = 0;
                                 self.wake.reset().await?;
                                 state = AmbientState::WaitingForSpeech;
                             }
@@ -301,13 +371,49 @@ impl<'a> AmbientPipeline<'a> {
                         },
                         None => match state {
                             AmbientState::WaitingForSpeech => {
-                                push_with_cap(&mut pre_speech, chunk, max_pre_samples);
+                                push_with_cap(
+                                    &mut pre_speech,
+                                    &mut pre_speech_samples,
+                                    chunk,
+                                    max_pre_samples,
+                                );
                             }
                             AmbientState::ListeningForWake => {
+                                utterance_samples += chunk.len() as u64;
                                 post_speech.push(chunk);
                             }
-                            AmbientState::CapturingCommand => {}
+                            AmbientState::CapturingCommand => {
+                                utterance_samples += chunk.len() as u64;
+                                // `session.feed` borrows; `chunk` is not moved.
+                                // (fed above in the pre-match `if` block)
+                            }
                         },
+                    }
+
+                    // Enforce the per-utterance duration limit. Discard long
+                    // false positives that never triggered the wake word; for
+                    // an active command, finalize the ASR with what we have.
+                    if utterance_samples >= max_utterance_samples {
+                        match asr_session.take() {
+                            Some(session) => {
+                                let (text, samples) = session.finish().await?;
+                                let keyword = self
+                                    .wake
+                                    .last_keyword()
+                                    .unwrap_or(&self.config.wake_word);
+                                let text = strip_wake_word(&text, keyword);
+                                return Ok(Some(AmbientResult { text, samples }));
+                            }
+                            None => {
+                                pre_speech.clear();
+                                pre_speech_samples = 0;
+                                post_speech.clear();
+                                wake_pushed = 0;
+                                utterance_samples = 0;
+                                self.wake.reset().await?;
+                                state = AmbientState::WaitingForSpeech;
+                            }
+                        }
                     }
 
                     if state == AmbientState::ListeningForWake {
@@ -317,6 +423,7 @@ impl<'a> AmbientPipeline<'a> {
                                 let mut session = StreamingAsrSession::new(
                                     self.asr.clone(),
                                     &self.config.asr_language,
+                                    self.config.verify_speaker,
                                 )
                                 .await?;
                                 for c in &post_speech {
@@ -353,15 +460,20 @@ impl<'a> AmbientPipeline<'a> {
     }
 }
 
-#[cfg(any(feature = "record", test))]
-fn push_with_cap(buffer: &mut VecDeque<Vec<f32>>, chunk: Vec<f32>, max_samples: u64) {
+#[cfg(any(feature = "record", feature = "sherpa", test))]
+fn push_with_cap(
+    buffer: &mut VecDeque<Vec<f32>>,
+    total: &mut u64,
+    chunk: Vec<f32>,
+    max_samples: u64,
+) {
+    *total += chunk.len() as u64;
     buffer.push_back(chunk);
-    let mut total: u64 = buffer.iter().map(|c| c.len() as u64).sum();
-    while total > max_samples {
+    while *total > max_samples {
         let Some(front) = buffer.pop_front() else {
             break;
         };
-        total -= front.len() as u64;
+        *total -= front.len() as u64;
     }
 }
 
@@ -369,7 +481,11 @@ fn push_with_cap(buffer: &mut VecDeque<Vec<f32>>, chunk: Vec<f32>, max_samples: 
 /// an ASR transcript. The match is done on normalized text, but the split is
 /// applied to the original string so the rest of the command keeps its
 /// capitalization and punctuation.
-#[cfg(any(feature = "record", test))]
+///
+/// The match is anchored to the start of the transcript (after any leading
+/// punctuation) and stops at the first word boundary, so "abc" does not match
+/// a subsequence like "aXbXc".
+#[cfg(any(feature = "record", feature = "sherpa", test))]
 fn strip_wake_word(text: &str, wake: &str) -> String {
     if text.is_empty() || wake.is_empty() {
         return text.to_string();
@@ -380,41 +496,68 @@ fn strip_wake_word(text: &str, wake: &str) -> String {
         return text.to_string();
     }
 
-    let mut wake_chars = normalized_wake.chars().peekable();
-    let mut split_at = None;
-    let mut byte_pos = 0;
+    // Build a normalized copy of `text` one grapheme at a time, keeping a map
+    // from each normalized byte position to the byte position in the original
+    // string. This lets us find the split point in the original text even when
+    // normalization changes the number of characters (e.g. ß -> ss).
+    let mut normalized_text = String::with_capacity(text.len());
+    let mut byte_positions: Vec<usize> = Vec::with_capacity(text.len());
+    let mut byte_start = 0;
+    let mut pending_space = false;
 
-    for c in text.chars() {
-        if c.is_whitespace() || !c.is_alphanumeric() {
-            // normalize drops these, so skip them but keep the byte offset
-            // so a split can happen right after the wake word.
-            byte_pos += c.len_utf8();
+    for grapheme in text.graphemes(true) {
+        let byte_end = byte_start + grapheme.len();
+        let g_normalized = AsrTextMatch::normalize(grapheme);
+
+        if g_normalized.is_empty() {
+            if !normalized_text.is_empty() {
+                pending_space = true;
+            }
+            byte_start = byte_end;
             continue;
         }
 
-        for lc in c.to_lowercase() {
-            if wake_chars.peek() == Some(&lc) {
-                wake_chars.next();
-            }
-            if wake_chars.peek().is_none() {
-                split_at = Some(byte_pos + c.len_utf8());
-                break;
-            }
+        if pending_space {
+            normalized_text.push(' ');
+            byte_positions.push(byte_start);
+            pending_space = false;
         }
 
-        if split_at.is_some() {
-            break;
+        // Using `byte_end` for every char means multi-char expansions (e.g.
+        // ligatures) remove the whole grapheme in the original string.
+        normalized_text.push_str(&g_normalized);
+        for _ in g_normalized.chars() {
+            byte_positions.push(byte_end);
         }
-        byte_pos += c.len_utf8();
+
+        byte_start = byte_end;
     }
 
-    if wake_chars.peek().is_some() {
-        // The wake word was not found at the start of the transcript.
+    // The wake word must be a prefix of the normalized text and must be
+    // followed by a word boundary (end of string or a space).
+    if !normalized_text.starts_with(&normalized_wake) {
+        return text.to_string();
+    }
+    let wake_bytes = normalized_wake.len();
+    if wake_bytes < normalized_text.len() && !normalized_text[wake_bytes..].starts_with(' ') {
         return text.to_string();
     }
 
-    let rest = &text[split_at.unwrap_or(text.len())..];
-    rest.trim_start().to_string()
+    let wake_char_count = normalized_wake.chars().count();
+    let mut split_at = *byte_positions
+        .get(wake_char_count.saturating_sub(1))
+        .unwrap_or(&0);
+
+    // Skip any trailing separators (punctuation, whitespace) after the wake word.
+    for grapheme in text[split_at..].graphemes(true) {
+        if AsrTextMatch::normalize(grapheme).is_empty() {
+            split_at += grapheme.len();
+        } else {
+            break;
+        }
+    }
+
+    text[split_at..].trim_start().to_string()
 }
 
 #[cfg(test)]
@@ -568,5 +711,105 @@ mod tests {
 
         let result = pipeline.run_with_chunks(rx).await.unwrap();
         assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn max_utterance_seconds_discards_long_false_positive() {
+        // One second of audio should be enough to trigger the per-utterance
+        // limit and discard the buffer before the wake word fires.
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        tx.send(vec![0.5; 16000]).unwrap();
+        tx.send(vec![0.0; 16000]).unwrap();
+        drop(tx);
+
+        let config = AmbientConfig {
+            max_utterance_seconds: 1,
+            pre_speech_buffer_ms: 0,
+            ..Default::default()
+        };
+
+        let mut endpoint = ScriptedEndpoint {
+            next_start: Some(1),
+            next_end: None,
+            ..Default::default()
+        };
+        let mut pipeline = AmbientPipeline {
+            config,
+            endpoint: &mut endpoint,
+            wake: Box::new(ScriptedWake {
+                fire_at: 10,
+                seen: 0,
+            }),
+            asr: Arc::new(MockStt {
+                text: "nope".into(),
+            }),
+            stop: watch::channel(false).1,
+        };
+
+        let result = pipeline.run_with_chunks(rx).await.unwrap();
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn max_utterance_seconds_finalizes_active_command() {
+        // A wake word on the first chunk, then a second chunk, should trigger
+        // the limit while capturing and finalize the ASR result.
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        tx.send(vec![0.5; 8000]).unwrap();
+        tx.send(vec![0.5; 8000]).unwrap();
+        drop(tx);
+
+        let config = AmbientConfig {
+            max_utterance_seconds: 1,
+            pre_speech_buffer_ms: 0,
+            ..Default::default()
+        };
+
+        let mut endpoint = ScriptedEndpoint {
+            next_start: Some(1),
+            next_end: None,
+            ..Default::default()
+        };
+        let mut pipeline = AmbientPipeline {
+            config,
+            endpoint: &mut endpoint,
+            wake: Box::new(ScriptedWake {
+                fire_at: 1,
+                seen: 0,
+            }),
+            asr: Arc::new(MockStt {
+                text: "hello world".into(),
+            }),
+            stop: watch::channel(false).1,
+        };
+
+        let result = pipeline.run_with_chunks(rx).await.unwrap().unwrap();
+        assert_eq!(result.text, "hello world");
+        assert_eq!(result.samples.len(), 16000);
+    }
+
+    #[test]
+    fn strip_wake_word_handles_combining_marks() {
+        // "e" + COMBINING ACUTE ACCENT should be treated as a single grapheme
+        // and removed in full when it matches the wake word.
+        let text = "\u{00e9} turn on the lights";
+        let wake = "\u{00e9}";
+        assert_eq!(strip_wake_word(text, wake), "turn on the lights");
+    }
+
+    #[test]
+    fn strip_wake_word_handles_esszet() {
+        // U+00DF normalizes to itself (Rust lowercasing does not expand it),
+        // so it must still match the wake word "ß".
+        let text = "\u{00df} please";
+        let wake = "\u{00df}";
+        assert_eq!(strip_wake_word(text, wake), "please");
+    }
+
+    #[test]
+    fn strip_wake_word_does_not_match_subsequence() {
+        // The wake word must be a contiguous prefix, not scattered characters.
+        assert_eq!(strip_wake_word("aXbXc", "abc"), "aXbXc");
+        assert_eq!(strip_wake_word("たXくXす", "たくす"), "たXくXす");
     }
 }
