@@ -92,9 +92,8 @@ where
     use crate::voice_session::VoiceSession;
     let input_path = match origin {
         crate::voice_session::InputOrigin::Voice => InputPath::ExplicitVoiceSession,
-        // Phase 4: the runner maps ambient origins to the correct input path,
-        // but the wake-word capture pipeline that produces `Ambient` origins is
-        // not wired yet.
+        // Phase 4: ambient wake-word capture is wired through AudioAdapter and
+        // routed to the ambient-immediate approval layer.
         crate::voice_session::InputOrigin::Ambient => InputPath::AmbientWakeWord,
         crate::voice_session::InputOrigin::Text => InputPath::PlainText,
         crate::voice_session::InputOrigin::Background => InputPath::NotificationCapability,

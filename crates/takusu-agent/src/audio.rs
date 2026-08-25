@@ -18,12 +18,12 @@ use takusu_audio::play::{
     PcmFormat, PlayError, StreamedAudioFormat, decode_pcm_chunk, play_stream,
 };
 use takusu_audio::{
-    Aec, BargeInDetector, CartesiaSonic, CartesiaSonicConfig, DEFAULT_SPEAKER_MODEL_ID, FishAudio,
-    FishAudioConfig, LatencyBudget, LatencyCheckpoint, MIN_SPEAKER_AUDIO_SECONDS, ModelCache,
-    NlmsAec, NoOpAec, RecordConfig, SHERPA_SAMPLE_RATE, SpeakerConfig, SpeakerEmbeddingMatch,
-    SpeakerVerifier, StreamingRecorder, StreamingSpeechToText, TextToSpeech, TtsBackend, TtsError,
-    TtsOptions, TtsRequest, TtsStream, VadEvent, VerificationResult, mix_to_mono, normalize,
-    normalize_for_tts, resample,
+    Aec, AmbientError, AmbientPipeline, AmbientResult, BargeInDetector, CartesiaSonic,
+    CartesiaSonicConfig, DEFAULT_SPEAKER_MODEL_ID, FishAudio, FishAudioConfig, LatencyBudget,
+    LatencyCheckpoint, MIN_SPEAKER_AUDIO_SECONDS, ModelCache, NlmsAec, NoOpAec, RecordConfig,
+    SHERPA_SAMPLE_RATE, SpeakerConfig, SpeakerEmbeddingMatch, SpeakerVerifier, StreamingRecorder,
+    StreamingSpeechToText, TextToSpeech, TtsBackend, TtsError, TtsOptions, TtsRequest, TtsStream,
+    VadEvent, VerificationResult, mix_to_mono, normalize, normalize_for_tts, resample,
 };
 use thiserror::Error;
 
@@ -159,6 +159,10 @@ pub struct AudioAdapter {
     /// across every utterance instead of rebuilding the Silero detector each
     /// turn.
     endpoint: Option<Box<dyn takusu_audio::Endpoint>>,
+    /// Cached VAD endpoint for ambient listening, built with
+    /// `audio.ambient.max_utterance_seconds` as its speech cap. Lazily created
+    /// on the first ambient capture.
+    ambient_endpoint: Option<Box<dyn takusu_audio::Endpoint>>,
     /// Optional speaker embedding verifier for voiceprint enrollment and
     /// verification. Shared so `&self` methods can run verification.
     speaker_verifier: Option<Arc<SpeakerVerifier>>,
@@ -201,6 +205,7 @@ impl AudioAdapter {
             on_event: None,
             on_audio_callback: None,
             endpoint: Some(endpoint),
+            ambient_endpoint: None,
             speaker_verifier,
             last_captured_samples: Vec::new(),
             latency: Arc::new(tokio::sync::Mutex::new(LatencyBudget::new())),
@@ -493,6 +498,80 @@ impl AudioAdapter {
         } else {
             Ok(Some(text))
         }
+    }
+
+    /// Map an ambient-pipeline error to the agent's audio error space.
+    fn ambient_to_audio_error(e: AmbientError) -> AudioError {
+        tracing::error!(error = %e, "ambient pipeline failed");
+        match e {
+            AmbientError::Cancelled => AudioError::UserCancelled,
+            AmbientError::Record(_) => AudioError::Record(format!("{e}")),
+            AmbientError::Asr(_) | AmbientError::Stt(_) => AudioError::Transcribe(format!("{e}")),
+            AmbientError::Wake(_) => AudioError::Other(format!("ambient pipeline failed: {e}")),
+        }
+    }
+
+    /// Capture one ambient utterance: wait for the configured wake word, then
+    /// stream the full command to ASR. Returns `None` when the wake word does
+    /// not fire or the pipeline is cancelled.
+    async fn capture_ambient(&mut self) -> Result<Option<String>, AudioError> {
+        if *self.stop.borrow() {
+            return Err(AudioError::UserCancelled);
+        }
+
+        self.reconfigure_if_needed().await?;
+
+        if !self.last_audio.ambient.enabled {
+            return Err(AudioError::Other("ambient listening is not enabled".into()));
+        }
+
+        self.latency.lock().await.reset();
+        self.last_captured_samples.clear();
+        self.audio_callback(AudioCallback::Listening);
+
+        // Snapshot the callback sink so we can emit the Transcribing state
+        // while `AmbientPipeline` holds a mutable borrow on `self`.
+        let on_audio_callback = self.on_audio_callback.clone();
+
+        let audio = self.last_audio.clone();
+        if self.ambient_endpoint.is_none() {
+            let vad_config = takusu_audio::VadEndpointConfig {
+                energy_threshold: audio.vad.energy_threshold,
+                max_speech: Duration::from_secs(audio.ambient.max_utterance_seconds),
+                ..Default::default()
+            };
+            self.ambient_endpoint =
+                Some(takusu_audio::default_endpoint_async_with_config(vad_config).await);
+        }
+
+        let stop = self.stop.clone();
+        let endpoint = self
+            .ambient_endpoint
+            .as_mut()
+            .ok_or_else(|| AudioError::Other("ambient VAD endpoint not initialized".into()))?;
+        let mut pipeline = AmbientPipeline::new(
+            audio.ambient.clone(),
+            &mut **endpoint,
+            self.stt.clone(),
+            stop,
+        )
+        .await
+        .map_err(Self::ambient_to_audio_error)?;
+
+        Self::audio_callback_with(&on_audio_callback, AudioCallback::Transcribing);
+
+        let result = pipeline.run().await.map_err(Self::ambient_to_audio_error)?;
+
+        let Some(AmbientResult { text, samples }) = result else {
+            return Ok(None);
+        };
+
+        self.last_captured_samples = samples;
+        if text.trim().is_empty() {
+            return Ok(None);
+        }
+        self.emit(TurnEvent::AsrText(text.clone()));
+        Ok(Some(text))
     }
 
     /// Run one agent turn from `text` on the given `input_path`, streaming TTS
@@ -841,9 +920,14 @@ impl AudioAdapter {
 
         if layer.is_ambient_immediate() {
             // The wake-word was already captured before this turn. Verify the
-            // speaker and either execute immediately or leave the approval on
-            // the surface for manual confirmation.
-            match self.verify_last_captured_speaker() {
+            // speaker (if configured) and either execute immediately or leave
+            // the approval on the surface for manual confirmation.
+            let verified = if self.last_audio.ambient.verify_speaker {
+                self.verify_last_captured_speaker()
+            } else {
+                Some(true)
+            };
+            match verified {
                 Some(true) => {
                     let approved = self
                         .session
@@ -1094,6 +1178,14 @@ impl AudioAdapter {
             };
             self.endpoint =
                 Some(takusu_audio::default_endpoint_async_with_config(vad_config).await);
+        }
+
+        // Drop the cached ambient endpoint so it is rebuilt with the latest
+        // max utterance length / energy threshold on the next capture.
+        if current.ambient.max_utterance_seconds != self.last_audio.ambient.max_utterance_seconds
+            || current.vad.energy_threshold != self.last_audio.vad.energy_threshold
+        {
+            self.ambient_endpoint = None;
         }
 
         self.stt = stt;
@@ -1487,11 +1579,22 @@ impl AudioAdapter {
 
 #[async_trait::async_trait]
 impl VoiceSessionIo for AudioAdapter {
-    async fn capture(&mut self, _origin: InputOrigin) -> Result<Option<String>, VoiceSessionError> {
-        // A never-signalled stop channel: the voice session uses the watch
-        // receiver for out-of-band stop requests instead.
-        let (_stop_tx, stop_rx) = tokio::sync::mpsc::channel(1);
-        self.capture_utterance(stop_rx).await.map_err(|e| match e {
+    async fn capture(&mut self, origin: InputOrigin) -> Result<Option<String>, VoiceSessionError> {
+        if *self.stop.borrow() {
+            return Err(VoiceSessionError::UserCancelled);
+        }
+
+        let result = match origin {
+            InputOrigin::Ambient => self.capture_ambient().await,
+            _ => {
+                // A never-signalled stop channel: the voice session uses the
+                // watch receiver for out-of-band stop requests instead.
+                let (_stop_tx, stop_rx) = tokio::sync::mpsc::channel(1);
+                self.capture_utterance(stop_rx).await
+            }
+        };
+
+        result.map_err(|e| match e {
             AudioError::UserCancelled => VoiceSessionError::UserCancelled,
             _ => VoiceSessionError::Capture(e.to_string()),
         })

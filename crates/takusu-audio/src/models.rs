@@ -20,6 +20,7 @@ const SHERPA_SENSE_VOICE_URL: &str = "https://github.com/k2-fsa/sherpa-onnx/rele
 const SHERPA_PARAKEET_CTC_JA_URL: &str = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet-tdt_ctc-0.6b-ja-35000-int8.tar.bz2";
 const SHERPA_NEMOTRON_JA_URL: &str = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-560ms-int8-2026-06-11.tar.bz2";
 const SHERPA_SPEAKER_CAMPPLUS_ZH_EN_URL: &str = "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx";
+const SHERPA_KWS_WENETSPEECH_URL: &str = "https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/sherpa-onnx-kws-zipformer-wenetspeech-3.3M-2024-01-01.tar.bz2";
 const SILERO_VAD_URL: &str =
     "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx";
 
@@ -131,13 +132,25 @@ const SHERPA_SPEAKER_CAMPPLUS_ZH_EN_SPEC: ModelSpec = ModelSpec {
     expected_size: Some(28_281_164),
 };
 
-const ALL_MODELS: [ModelSpec; 6] = [
+const SHERPA_KWS_WENETSPEECH_SPEC: ModelSpec = ModelSpec {
+    id: "sherpa-kws-zipformer-wenetspeech-3.3m",
+    url: SHERPA_KWS_WENETSPEECH_URL,
+    format: ArchiveFormat::TarBz2,
+    single_file: None,
+    // The archive contains multiple encoder/decoder/joiner variants; the KWS
+    // loader discovers the concrete files at runtime. Only tokens.txt is fixed.
+    expected_files: &["tokens.txt"],
+    expected_size: None,
+};
+
+const ALL_MODELS: [ModelSpec; 7] = [
     HUSH_SPEC,
     SHERPA_SENSE_VOICE_SPEC,
     SHERPA_PARAKEET_CTC_JA_SPEC,
     SHERPA_NEMOTRON_JA_SPEC,
     SILERO_VAD_SPEC,
     SHERPA_SPEAKER_CAMPPLUS_ZH_EN_SPEC,
+    SHERPA_KWS_WENETSPEECH_SPEC,
 ];
 
 /// Known downloadable models.
@@ -174,6 +187,12 @@ impl ModelRegistry {
     /// (single `.onnx`, ~28 MB).
     pub const fn sherpa_speaker_campplus_zh_en() -> ModelSpec {
         SHERPA_SPEAKER_CAMPPLUS_ZH_EN_SPEC
+    }
+
+    /// sherpa-onnx Zipformer keyword spotting (WenetSpeech, Chinese-English
+    /// transducer, ~31 MB).
+    pub const fn sherpa_kws_wenetspeech() -> ModelSpec {
+        SHERPA_KWS_WENETSPEECH_SPEC
     }
 
     /// All known models.
