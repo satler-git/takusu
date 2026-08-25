@@ -332,7 +332,8 @@ pub fn evaluate_events(snapshot: &EvaluationSnapshot) -> EvaluationResult {
                 if gap.end_at <= snapshot.now {
                     continue;
                 }
-                let threshold_at = add_minutes(gap.start_at, UNCLASSIFIED_GAP_THRESHOLD_MINUTES);
+                let threshold_at =
+                    add_minutes(gap.start_at, UNCLASSIFIED_GAP_THRESHOLD_MINUTES).min(gap.end_at);
                 if threshold_at > snapshot.now {
                     next_eval_at = earlier(next_eval_at, threshold_at);
                 } else {
@@ -429,6 +430,7 @@ pub fn evaluate_events(snapshot: &EvaluationSnapshot) -> EvaluationResult {
                     format!("「{}」が未完了のまま残っています", task.title),
                     "精算して組み直す",
                     "そのまま今日にずらす",
+                    ActionKind::Immediate,
                 )),
                 Urgency::High,
                 snapshot.now,
@@ -540,6 +542,7 @@ fn task_start_event(
             format!("「{}」の開始時刻です", task.title),
             "着手",
             "10分後にずらす",
+            ActionKind::Immediate,
         )),
         Urgency::Normal,
         boundary,
@@ -568,6 +571,7 @@ fn non_start_event(
             format!("「{}」は開始時刻を過ぎています", task.title),
             "今から着手",
             "10分後にずらす",
+            ActionKind::Immediate,
         )),
         Urgency::Normal,
         boundary,
@@ -608,7 +612,12 @@ fn distribution_event(
             canonical_boundary,
             observation_kind,
         ),
-        Presentation::CheckIn(check_in(question, "進捗を記録", "組み直す")),
+        Presentation::CheckIn(check_in(
+            question,
+            "進捗を記録",
+            "組み直す",
+            ActionKind::Immediate,
+        )),
         if band == InterventionBand::Replan {
             Urgency::High
         } else {
@@ -660,6 +669,7 @@ fn routine_start_event(snapshot: &EvaluationSnapshot, gap: &EvaluationGap) -> Op
             format!("「{}」の開始時刻です", title),
             "着手",
             "10分後にずらす",
+            ActionKind::Immediate,
         )),
         Urgency::Normal,
         gap.start_at,
@@ -671,7 +681,8 @@ fn gap_event(
     gap: &EvaluationGap,
     boundary: Timestamp,
 ) -> PlannerEvent {
-    let identity = gap.identity.as_deref().unwrap_or("");
+    let fallback = format!("{}..{}", gap.start_at, gap.end_at);
+    let identity = gap.identity.as_deref().unwrap_or(fallback.as_str());
     simple_event(
         snapshot,
         PlannerEventKind::UnclassifiedGapContinued,
@@ -686,9 +697,10 @@ fn gap_event(
             "gap",
         ),
         Presentation::CheckIn(check_in(
-            "予定に空白が続いています。今なにしてますか".into(),
+            "今なにしてる？".into(),
             "今回の活動を記録",
             "自由時間として残す",
+            ActionKind::Panel,
         )),
         Urgency::Normal,
         boundary,
@@ -718,6 +730,7 @@ fn deadline_event(
             format!("「{}」は期限に間に合わない見込みです", task.title),
             "このまま続ける",
             "後ろの予定をずらす",
+            ActionKind::Immediate,
         )),
         Urgency::High,
         snapshot.now,
@@ -750,13 +763,18 @@ fn simple_event(
     }
 }
 
-fn check_in(question: String, act_label: &str, shift_label: &str) -> CheckInCard {
+fn check_in(
+    question: String,
+    act_label: &str,
+    shift_label: &str,
+    act_kind: ActionKind,
+) -> CheckInCard {
     let act = ActionGroup {
         title: "行動".into(),
         actions: NonEmptyVec::new(vec![Action {
             id: "act".into(),
             label: act_label.into(),
-            kind: ActionKind::Immediate,
+            kind: act_kind,
             capability: None,
         }])
         .expect("one action is non-empty"),
@@ -1060,6 +1078,147 @@ mod tests {
                 .count(),
             1
         );
+    }
+
+    #[test]
+    fn unclassified_gap_does_not_fire_before_threshold() {
+        let mut snapshot = snapshot();
+        // 9_000 start, 30 min = 1_800 sec threshold, so 10_800 is the boundary.
+        snapshot.now = timestamp(10_700);
+        snapshot.gaps = vec![EvaluationGap {
+            start_at: timestamp(9_000),
+            end_at: timestamp(20_000),
+            kind: GapKind::Unclassified,
+            identity: Some("gap-1".into()),
+        }];
+        let result = evaluate_events(&snapshot);
+        assert!(
+            result
+                .due_events
+                .iter()
+                .all(|event| event.kind != PlannerEventKind::UnclassifiedGapContinued),
+            "gap should not fire before UNCLASSIFIED_GAP_THRESHOLD_MINUTES"
+        );
+        assert_eq!(
+            result.next_eval_at,
+            Some(timestamp(10_800)),
+            "next eval should be at the threshold"
+        );
+    }
+
+    #[test]
+    fn non_unclassified_gap_kinds_do_not_fire() {
+        let mut snapshot = snapshot();
+        snapshot.now = timestamp(12_000);
+        for kind in [GapKind::FreeTime, GapKind::Buffer, GapKind::Routine] {
+            let mut s = snapshot.clone();
+            s.gaps = vec![EvaluationGap {
+                start_at: timestamp(9_000),
+                end_at: timestamp(20_000),
+                kind,
+                identity: None,
+            }];
+            let result = evaluate_events(&s);
+            assert!(
+                result
+                    .due_events
+                    .iter()
+                    .all(|event| event.kind != PlannerEventKind::UnclassifiedGapContinued),
+                "{:?} gaps must not trigger an unclassified gap check-in",
+                kind
+            );
+        }
+    }
+
+    #[test]
+    fn unclassified_gap_event_id_falls_back_to_canonical_interval() {
+        let mut snapshot = snapshot();
+        snapshot.now = timestamp(12_000);
+        // Two unclassified gaps with the same start_at but no identity. The
+        // canonical start..end interval must keep their event ids distinct.
+        snapshot.gaps = vec![
+            EvaluationGap {
+                start_at: timestamp(9_000),
+                end_at: timestamp(15_000),
+                kind: GapKind::Unclassified,
+                identity: None,
+            },
+            EvaluationGap {
+                start_at: timestamp(9_000),
+                end_at: timestamp(20_000),
+                kind: GapKind::Unclassified,
+                identity: None,
+            },
+        ];
+        let result = evaluate_events(&snapshot);
+        let events: Vec<_> = result
+            .due_events
+            .iter()
+            .filter(|event| event.kind == PlannerEventKind::UnclassifiedGapContinued)
+            .collect();
+        assert_eq!(events.len(), 2);
+        assert_ne!(events[0].id, events[1].id);
+    }
+
+    #[test]
+    fn unclassified_gap_next_eval_capped_at_end() {
+        let mut snapshot = snapshot();
+        // 9_000 start, 1_000 second gap. The 30-minute threshold (10_800) is
+        // past the gap end, so next eval is capped to the gap end and the gap
+        // does not fire before it ends.
+        snapshot.now = timestamp(9_300);
+        snapshot.gaps = vec![EvaluationGap {
+            start_at: timestamp(9_000),
+            end_at: timestamp(10_000),
+            kind: GapKind::Unclassified,
+            identity: None,
+        }];
+        let result = evaluate_events(&snapshot);
+        assert!(
+            result
+                .due_events
+                .iter()
+                .all(|event| event.kind != PlannerEventKind::UnclassifiedGapContinued)
+        );
+        assert_eq!(result.next_eval_at, Some(timestamp(10_000)));
+    }
+
+    #[test]
+    fn unclassified_gap_check_in_asks_the_question() {
+        let mut snapshot = snapshot();
+        snapshot.now = timestamp(12_000);
+        snapshot.gaps = vec![EvaluationGap {
+            start_at: timestamp(9_000),
+            end_at: timestamp(20_000),
+            kind: GapKind::Unclassified,
+            identity: Some("gap-1".into()),
+        }];
+        let result = evaluate_events(&snapshot);
+        let gap_event = result
+            .due_events
+            .into_iter()
+            .find(|event| event.kind == PlannerEventKind::UnclassifiedGapContinued)
+            .expect("unclassified gap should fire");
+        if let Presentation::CheckIn(card) = gap_event.presentation {
+            assert!(
+                card.question.contains("今なにしてる"),
+                "question: {}",
+                card.question
+            );
+            assert!(
+                card.act.actions.iter().any(|a| a.id == "act"),
+                "act group should contain the answer action"
+            );
+            assert!(
+                card.shift.actions.iter().any(|a| a.id == "shift"),
+                "shift group should contain the free-time action"
+            );
+        } else {
+            panic!(
+                "expected a CheckIn presentation, got {:?}",
+                gap_event.presentation
+            );
+        }
     }
 
     #[test]

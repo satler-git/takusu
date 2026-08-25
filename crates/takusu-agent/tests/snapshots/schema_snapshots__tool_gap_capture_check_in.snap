@@ -1,0 +1,24 @@
+---
+source: crates/takusu-agent/tests/schema_snapshots.rs
+expression: def
+---
+{
+  "function": {
+    "description": "Present a CheckInCard with one-off, recurring, free-time, and routine outcomes for an unclassified gap capture. Use when the user has described an activity during an unclassified gap and the classification is not yet clear. The `activity` is the user's free-form description. After this tool, wait for the user to choose one of the four options and then call the matching capture tool in the next turn.",
+    "name": "gap_capture_check_in",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "activity": {
+          "description": "The user's free-form description of the activity during the unclassified gap.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "activity"
+      ],
+      "type": "object"
+    }
+  },
+  "type": "function"
+}

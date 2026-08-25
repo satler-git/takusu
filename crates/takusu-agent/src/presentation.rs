@@ -54,6 +54,10 @@ impl<T> NonEmptyVec<T> {
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
+
+    pub fn iter(&self) -> std::slice::Iter<'_, T> {
+        self.0.iter()
+    }
 }
 
 impl<T: Serialize> Serialize for NonEmptyVec<T> {
@@ -329,6 +333,18 @@ impl ActionGroup {
     }
 }
 
+/// Kind of a check-in, used to pick the right voice template and client
+/// behavior without relying on action label heuristics.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CheckInKind {
+    /// Generic act/shift check-in.
+    #[default]
+    Default,
+    /// Classification card for an unclassified gap capture.
+    GapCapture,
+}
+
 /// A one-round-trip check-in that always offers 「行動」 and 「ズラす」.
 ///
 /// The non-empty wrapper on both action groups makes a card without either
@@ -341,6 +357,11 @@ pub struct CheckInCard {
     pub act: ActionGroup,
     /// 「ズラす」 group.
     pub shift: ActionGroup,
+    /// Internal hint for voice rendering and client formatting. Not part of
+    /// the wire contract and always defaulted to `Default`.
+    #[serde(default, skip)]
+    #[schemars(skip)]
+    pub kind: CheckInKind,
 }
 
 impl CheckInCard {
@@ -356,15 +377,70 @@ impl CheckInCard {
             question: question.into(),
             act,
             shift,
+            kind: CheckInKind::Default,
         })
     }
 
     fn voice_template(&self) -> String {
-        format!(
-            "{} どうしますか。行動するか、ずらすかを選んでください",
-            self.question
-        )
+        match self.kind {
+            CheckInKind::GapCapture => self.question.clone(),
+            CheckInKind::Default => format!(
+                "{} どうしますか。行動するか、ずらすかを選んでください",
+                self.question
+            ),
+        }
     }
+}
+
+/// Build the classification check-in for an unclassified gap capture.
+///
+/// The user has already answered "今なにしてる？" with an activity. When the
+/// answer does not determine whether the activity is one-off, recurring, free
+/// time, or routine, present these four options as 行動 and ズラす groups.
+pub fn gap_capture_check_in(activity: &str) -> CheckInCard {
+    let question = format!(
+        "「{}」を、今回だけ、毎週、自由時間、ルーティンのどれとして登録しますか",
+        activity
+    );
+    let act = ActionGroup::new(
+        "行動",
+        vec![
+            Action {
+                id: "one_off".into(),
+                label: "今回だけ".into(),
+                kind: ActionKind::Panel,
+                capability: None,
+            },
+            Action {
+                id: "recurring".into(),
+                label: "毎週".into(),
+                kind: ActionKind::Panel,
+                capability: None,
+            },
+        ],
+    )
+    .expect("act group has actions");
+    let shift = ActionGroup::new(
+        "ズラす",
+        vec![
+            Action {
+                id: "free_time".into(),
+                label: "自由時間".into(),
+                kind: ActionKind::Panel,
+                capability: None,
+            },
+            Action {
+                id: "routine".into(),
+                label: "ルーティン".into(),
+                kind: ActionKind::Panel,
+                capability: None,
+            },
+        ],
+    )
+    .expect("shift group has actions");
+    let mut card = CheckInCard::new(question, act, shift).expect("both groups are non-empty");
+    card.kind = CheckInKind::GapCapture;
+    card
 }
 
 /// A focused clarification question instead of a full interview.
@@ -540,9 +616,20 @@ impl Presentation {
             "get_schedule" | "preview_schedule" => schedule_summary(output),
             "list_tasks" | "get_task" => progress_summary_from_tasks(output),
             "correct_asr" => correct_asr_clarification(output),
+            "gap_capture_check_in" => gap_capture_check_in_from_tool_output(output),
             _ => None,
         }
     }
+}
+
+/// Map the `gap_capture_check_in` tool output to a [`Presentation::CheckIn`].
+///
+/// The tool returns a small JSON payload with the user's free-form activity
+/// description. The presentation layer turns it into a classification card.
+fn gap_capture_check_in_from_tool_output(output: &ToolOutput) -> Option<Presentation> {
+    let value: Value = serde_json::from_str(&output.content).ok()?;
+    let activity = value.get("activity")?.as_str()?;
+    Some(Presentation::CheckIn(gap_capture_check_in(activity)))
 }
 
 /// Map a progress tool's `focused_clarification` output (task_ref omitted) to
@@ -1394,6 +1481,61 @@ mod tests {
     fn check_in_template_includes_question() {
         let p = Presentation::CheckIn(check_in_card());
         assert!(p.voice_template().contains("続けますか?"));
+    }
+
+    #[test]
+    fn gap_capture_check_in_offers_the_four_outcomes() {
+        let card = gap_capture_check_in("バイトの引き継ぎ資料つくってる");
+        assert!(card.question.contains("今回だけ"));
+        assert!(card.question.contains("毎週"));
+        assert!(card.question.contains("自由時間"));
+        assert!(card.question.contains("ルーティン"));
+        assert!(
+            card.act
+                .actions
+                .iter()
+                .any(|a| a.id == "one_off" && a.label == "今回だけ")
+        );
+        assert!(
+            card.act
+                .actions
+                .iter()
+                .any(|a| a.id == "recurring" && a.label == "毎週")
+        );
+        assert!(
+            card.shift
+                .actions
+                .iter()
+                .any(|a| a.id == "free_time" && a.label == "自由時間")
+        );
+        assert!(
+            card.shift
+                .actions
+                .iter()
+                .any(|a| a.id == "routine" && a.label == "ルーティン")
+        );
+    }
+
+    #[test]
+    fn gap_capture_check_in_voice_template_uses_question_only() {
+        let card = gap_capture_check_in("バイトの引き継ぎ資料");
+        let template = Presentation::CheckIn(card).voice_template();
+        assert!(template.contains("今回だけ"));
+        assert!(!template.contains("行動するか"));
+        assert!(!template.contains("ずらすか"));
+    }
+
+    #[test]
+    fn gap_capture_check_in_tool_output_maps_to_presentation() {
+        let output = ToolOutput {
+            content: r#"{"activity":"バイトの引き継ぎ資料つくってる"}"#.into(),
+            ..Default::default()
+        };
+        let presentation =
+            Presentation::from_tool_output("gap_capture_check_in", &output).expect("maps");
+        assert!(
+            matches!(presentation, Presentation::CheckIn(card) if card.question.contains("毎週"))
+        );
     }
 
     #[test]

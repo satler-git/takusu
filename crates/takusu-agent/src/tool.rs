@@ -270,6 +270,8 @@ pub enum ToolName {
     CoverageConfirm,
     #[strum(serialize = "propose_settlement")]
     ProposeSettlement,
+    #[strum(serialize = "gap_capture_check_in")]
+    GapCaptureCheckIn,
     #[strum(serialize = "set_intake_state")]
     SetIntakeState,
 }
