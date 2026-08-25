@@ -36,7 +36,7 @@ impl AndroidVad {
     #[uniffi::constructor]
     pub fn new(model_path: String) -> Result<Self, TakusuError> {
         let endpoint =
-            SileroEndpoint::new(Path::new(&model_path), 16_000, 0.5).map_err(|error| {
+            SileroEndpoint::new(Path::new(&model_path), 16_000, 0.5, 60.0).map_err(|error| {
                 TakusuError::Model {
                     detail: error.to_string(),
                 }

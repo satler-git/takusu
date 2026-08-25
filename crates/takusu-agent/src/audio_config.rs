@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use takusu_audio::{
-    DEFAULT_ENERGY_THRESHOLD, ExecutionProvider, SHERPA_SAMPLE_RATE, SherpaOnnxModel,
-    SpeakerConfig, SttBackend, TtsBackend,
+    AmbientConfig, DEFAULT_ENERGY_THRESHOLD, ExecutionProvider, SHERPA_SAMPLE_RATE,
+    SherpaOnnxModel, SpeakerConfig, SttBackend, TtsBackend,
 };
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -18,6 +18,9 @@ pub struct AudioConfig {
     pub aec: takusu_audio::AecConfig,
     /// Voice-activity-detection settings for the energy fallback.
     pub vad: VadConfig,
+    /// Ambient listening gate (WI-20): opt-in continuous VAD → wake word →
+    /// ASR pipeline.
+    pub ambient: AmbientConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
