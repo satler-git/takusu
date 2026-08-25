@@ -546,6 +546,7 @@ export function ResidentAgentButton({
     () => ({
       transcript: surfaceTranscript,
       sessionId: surfaceSessionId,
+      inputPath: 'voice' as const,
       onComplete: onPanelComplete,
     }),
     [surfaceTranscript, surfaceSessionId, onPanelComplete],

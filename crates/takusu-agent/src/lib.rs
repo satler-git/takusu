@@ -22,6 +22,8 @@ pub mod transport;
 pub use transport::ResumeSessionRequest as SessionSnapshot;
 pub mod tts_queue;
 pub mod user_input;
+#[cfg(feature = "audio-device")]
+pub mod voice_confirm;
 pub mod voice_session;
 
 pub(crate) mod notification;
@@ -864,6 +866,30 @@ impl AgentSession {
         F: FnMut(TurnEvent),
         G: FnMut(String),
     {
+        self.edit_turn_stream_with_input(
+            turn_index,
+            user_text,
+            InputPath::PlainText,
+            emit,
+            tts_emit,
+            auto_speak,
+        )
+        .await
+    }
+
+    pub async fn edit_turn_stream_with_input<F, G>(
+        &self,
+        turn_index: usize,
+        user_text: &str,
+        input_path: InputPath,
+        emit: F,
+        tts_emit: G,
+        auto_speak: bool,
+    ) -> Result<TurnResult, AgentError>
+    where
+        F: FnMut(TurnEvent),
+        G: FnMut(String),
+    {
         let _guard = self.turn_lock.lock().await;
         tracing::info!(session_id = %self.session_id, turn_index, text_len = user_text.len(), "agent edit turn stream started");
         self.clear_discovered_tools()?;
@@ -898,7 +924,7 @@ impl AgentSession {
             system,
             system_estimate,
             local,
-            InputPath::PlainText,
+            input_path,
             emit,
             tts_emit,
             auto_speak,

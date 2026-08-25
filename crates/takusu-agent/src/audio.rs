@@ -1141,7 +1141,7 @@ impl AudioAdapter {
         budget.record(checkpoint);
     }
 
-    async fn build_speaker_verifier(
+    pub(crate) async fn build_speaker_verifier(
         speaker: Option<&SpeakerConfig>,
     ) -> Result<Option<Arc<SpeakerVerifier>>, AudioError> {
         let Some(config) = speaker else {
@@ -1545,7 +1545,7 @@ fn default_voice_dir() -> PathBuf {
     PathBuf::from("takusu").join("voiceprint")
 }
 
-fn build_stt(config: &SttConfig) -> Result<Arc<dyn StreamingSpeechToText>, AudioError> {
+pub(crate) fn build_stt(config: &SttConfig) -> Result<Arc<dyn StreamingSpeechToText>, AudioError> {
     let runtime_config = takusu_audio::SttRuntimeConfig {
         backend: config.backend,
         model: config.model,

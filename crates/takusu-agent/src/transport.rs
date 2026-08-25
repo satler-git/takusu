@@ -38,6 +38,32 @@ use takusu_client::Client;
 pub const API_VERSION: u8 = 1;
 
 const MAX_SESSIONS: usize = 64;
+
+/// Parse a kebab-case Sherpa ONNX model name from a settings update into the
+/// typed enum value, leaving the current value unchanged on failure.
+fn parse_sherpa_onnx_model(s: &str) -> Option<takusu_audio::SherpaOnnxModel> {
+    serde_json::from_value(serde_json::Value::String(s.to_string())).ok()
+}
+
+/// Parse the `input_path` string sent by a client into a typed `InputPath`.
+///
+/// The wire format accepts both the compact aliases the mobile app sends
+/// (`voice`, `screen`, etc.) and the snake_case values used by generated
+/// OpenAPI clients (`explicit_voice_session`, etc.). Unknown or missing
+/// values fall back to `PlainText` with a warning so the approval layer does
+/// not silently misclassify a turn.
+fn parse_input_path(input_path: Option<&str>) -> crate::capability::InputPath {
+    match input_path {
+        None => crate::capability::InputPath::PlainText,
+        Some(s) => match s.parse::<crate::capability::InputPath>() {
+            Ok(path) => path,
+            Err(_) => {
+                tracing::warn!(input_path = %s, "unknown input path, falling back to plain_text");
+                crate::capability::InputPath::PlainText
+            }
+        },
+    }
+}
 const MAX_TURN_RESULTS: usize = 256;
 const MAX_APPROVAL_RESULTS: usize = 256;
 
@@ -150,6 +176,16 @@ where
     }
 }
 
+#[cfg(feature = "audio-device")]
+type VoiceConfirmCache = Arc<
+    RwLock<
+        Option<(
+            crate::audio_config::AudioConfig,
+            Arc<crate::voice_confirm::VoiceConfirmService>,
+        )>,
+    >,
+>;
+
 pub struct AgentApiState {
     pub token: Arc<RwLock<Arc<str>>>,
     pub factory: Arc<dyn SessionFactory>,
@@ -166,6 +202,10 @@ pub struct AgentApiState {
     /// Pending postpone reasons for delay quick actions that arrived while no
     /// agent session was active. Drained into the next created or resumed session.
     pending_postpone_reasons: Mutex<Vec<crate::tools::comments::PendingPostponeReason>>,
+    /// Cached STT/speaker service for server-side voice approval confirmation.
+    /// Rebuilt when `AudioConfig` changes.
+    #[cfg(feature = "audio-device")]
+    voice_confirm: VoiceConfirmCache,
 }
 
 impl AgentApiState {
@@ -204,11 +244,48 @@ impl AgentApiState {
             planner_state_tx,
             surface: SurfaceStateMachine::new(),
             pending_postpone_reasons: Mutex::new(Vec::new()),
+            #[cfg(feature = "audio-device")]
+            voice_confirm: Arc::new(RwLock::new(None)),
         }
     }
 
     fn session(&self, id: &str) -> Option<Arc<AgentSession>> {
         self.sessions.lock().ok()?.get(id).cloned()
+    }
+
+    #[cfg(feature = "audio-device")]
+    async fn voice_confirm(
+        &self,
+    ) -> Result<Arc<crate::voice_confirm::VoiceConfirmService>, AgentError> {
+        let config = self.config.read().await.audio.clone();
+        {
+            let cached = self.voice_confirm.read().await;
+            if let Some((cached_config, service)) = cached.as_ref()
+                && cached_config == &config
+            {
+                return Ok(Arc::clone(service));
+            }
+        }
+
+        let service = crate::voice_confirm::VoiceConfirmService::from_config(&config)
+            .await
+            .map_err(|e| {
+                AgentError::Audio(crate::audio::AudioError::Other(format!(
+                    "failed to build voice confirm service: {e}"
+                )))
+            })?;
+        let service = Arc::new(service);
+        let mut cached = self.voice_confirm.write().await;
+        *cached = Some((config, Arc::clone(&service)));
+        Ok(service)
+    }
+
+    #[cfg(feature = "audio-device")]
+    fn invalidate_voice_confirm(&self) {
+        // Sync lock is fine here; this is only called from update_settings.
+        if let Ok(mut cached) = self.voice_confirm.try_write() {
+            *cached = None;
+        }
     }
 
     /// Enqueue a postpone reason when no agent session owns the quick action.
@@ -612,6 +689,11 @@ pub struct TurnRequest {
     /// Voice surfaces set this to `true`; plain text surfaces leave it `false`.
     #[serde(default)]
     pub auto_speak: bool,
+    /// Trusted input path for this turn. Mobile and desktop voice surfaces set
+    /// this to `voice` so the approval layer can classify proposals correctly.
+    /// Unknown or missing values fall back to `plain_text`.
+    #[serde(default)]
+    pub input_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
@@ -622,6 +704,10 @@ pub struct EditTurnRequest {
     /// Voice surfaces set this to `true`; plain text surfaces leave it `false`.
     #[serde(default)]
     pub auto_speak: bool,
+    /// Trusted input path for this turn. Unknown or missing values fall back to
+    /// `plain_text`.
+    #[serde(default)]
+    pub input_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
@@ -664,8 +750,31 @@ pub struct UpdateAgentTtsSettings {
 }
 
 #[derive(Debug, Clone, Default, Deserialize, schemars::JsonSchema)]
+pub struct UpdateAgentSttSettings {
+    pub backend: Option<String>,
+    pub language: Option<String>,
+    pub model_dir: Option<String>,
+    pub model: Option<String>,
+    pub use_itn: Option<bool>,
+    pub num_threads: Option<i32>,
+    pub provider: Option<String>,
+    pub sample_rate: Option<i32>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, schemars::JsonSchema)]
+pub struct UpdateAgentSpeakerSettings {
+    pub model_id: Option<String>,
+    pub num_threads: Option<i32>,
+    pub provider: Option<String>,
+    pub verify_threshold: Option<f32>,
+    pub voice_dir: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, schemars::JsonSchema)]
 pub struct UpdateAgentAudioSettings {
+    pub stt: Option<UpdateAgentSttSettings>,
     pub tts: Option<UpdateAgentTtsSettings>,
+    pub speaker: Option<UpdateAgentSpeakerSettings>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, schemars::JsonSchema)]
@@ -709,6 +818,22 @@ pub struct UserInputResolutionRequest {
     pub answers: Vec<UserInputAnswer>,
 }
 
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+pub struct VoiceApprovalRequest {
+    pub input_path: String,
+    pub samples: Vec<i16>,
+}
+
+#[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
+pub struct VoiceApprovalResponse {
+    pub decision: String,
+    pub transcript: String,
+    pub score: f32,
+    pub accepted: bool,
+    pub speaker: Option<String>,
+    pub prompt: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ApprovalResultDto {
     pub id: String,
@@ -745,7 +870,7 @@ pub struct HealthResponse {
 }
 
 pub fn router(state: Arc<AgentApiState>) -> Router {
-    Router::new()
+    let router = Router::new()
         .route("/health", get(health))
         .route("/events", get(planner_events))
         .route("/notifications/start-time", get(start_time_notifications))
@@ -781,8 +906,15 @@ pub fn router(state: Arc<AgentApiState>) -> Router {
         )
         .route("/sessions/{id}", delete(delete_session))
         .route("/stats/tools", get(get_tool_stats))
-        .route("/stats/tools", delete(clear_tool_stats))
-        .with_state(state)
+        .route("/stats/tools", delete(clear_tool_stats));
+
+    #[cfg(feature = "audio-device")]
+    let router = router.route(
+        "/sessions/{id}/approvals/{approval_id}/voice",
+        post(confirm_voice_approval),
+    );
+
+    router.with_state(state)
 }
 
 async fn health(State(state): State<Arc<AgentApiState>>, headers: HeaderMap) -> Response {
@@ -1137,29 +1269,77 @@ async fn update_settings(
             new_config.llm.permissions = permissions;
         }
     }
-    if let Some(audio) = body.value.audio
-        && let Some(tts) = audio.tts
-    {
-        if let Some(backend) = tts.backend {
-            new_config.audio.tts.backend = backend;
+    if let Some(audio) = body.value.audio {
+        if let Some(stt) = audio.stt {
+            if let Some(backend) = stt.backend {
+                new_config.audio.stt.backend =
+                    backend.parse().unwrap_or(new_config.audio.stt.backend);
+            }
+            if let Some(language) = stt.language {
+                new_config.audio.stt.language = language;
+            }
+            if let Some(model_dir) = stt.model_dir {
+                new_config.audio.stt.model_dir = model_dir;
+            }
+            if let Some(model) = stt.model {
+                new_config.audio.stt.model =
+                    parse_sherpa_onnx_model(&model).unwrap_or(new_config.audio.stt.model);
+            }
+            if let Some(use_itn) = stt.use_itn {
+                new_config.audio.stt.use_itn = use_itn;
+            }
+            if let Some(num_threads) = stt.num_threads {
+                new_config.audio.stt.num_threads = num_threads;
+            }
+            if let Some(provider) = stt.provider {
+                new_config.audio.stt.provider =
+                    provider.parse().unwrap_or(new_config.audio.stt.provider);
+            }
+            if let Some(sample_rate) = stt.sample_rate {
+                new_config.audio.stt.sample_rate = sample_rate;
+            }
         }
-        if let Some(api_key) = tts.api_key {
-            new_config.audio.tts.api_key = api_key;
+        if let Some(tts) = audio.tts {
+            if let Some(backend) = tts.backend {
+                new_config.audio.tts.backend = backend;
+            }
+            if let Some(api_key) = tts.api_key {
+                new_config.audio.tts.api_key = api_key;
+            }
+            if let Some(voice_id) = tts.voice_id {
+                new_config.audio.tts.voice_id = voice_id;
+            }
+            if let Some(language) = tts.language {
+                new_config.audio.tts.language = language;
+            }
+            if let Some(sample_rate) = tts.sample_rate {
+                new_config.audio.tts.sample_rate = sample_rate;
+            }
+            if let Some(model) = tts.model {
+                new_config.audio.tts.model = model;
+            }
+            if let Some(speed) = tts.speed {
+                new_config.audio.tts.speed = Some(speed);
+            }
         }
-        if let Some(voice_id) = tts.voice_id {
-            new_config.audio.tts.voice_id = voice_id;
-        }
-        if let Some(language) = tts.language {
-            new_config.audio.tts.language = language;
-        }
-        if let Some(sample_rate) = tts.sample_rate {
-            new_config.audio.tts.sample_rate = sample_rate;
-        }
-        if let Some(model) = tts.model {
-            new_config.audio.tts.model = model;
-        }
-        if let Some(speed) = tts.speed {
-            new_config.audio.tts.speed = Some(speed);
+        if let Some(speaker) = audio.speaker {
+            let mut new_speaker = new_config.audio.speaker.take().unwrap_or_default();
+            if let Some(model_id) = speaker.model_id {
+                new_speaker.model_id = model_id;
+            }
+            if let Some(num_threads) = speaker.num_threads {
+                new_speaker.num_threads = num_threads;
+            }
+            if let Some(provider) = speaker.provider {
+                new_speaker.provider = provider.parse().unwrap_or(new_speaker.provider);
+            }
+            if let Some(verify_threshold) = speaker.verify_threshold {
+                new_speaker.verify_threshold = verify_threshold;
+            }
+            if let Some(voice_dir) = speaker.voice_dir {
+                new_speaker.voice_dir = Some(voice_dir);
+            }
+            new_config.audio.speaker = Some(new_speaker);
         }
     }
 
@@ -1169,6 +1349,9 @@ async fn update_settings(
     };
 
     *state.config.write().await = new_config.clone();
+
+    #[cfg(feature = "audio-device")]
+    state.invalidate_voice_confirm();
 
     let sessions: Vec<_> = state
         .sessions
@@ -1372,7 +1555,11 @@ async fn run_turn(
     state
         .surface
         .apply_turn_event_for(operation_id, &TurnEvent::Thinking(String::new()));
-    let result = match session.run_turn(&body.value.text).await {
+    let input_path = parse_input_path(body.value.input_path.as_deref());
+    let result = match session
+        .run_turn_with_input(&body.value.text, input_path)
+        .await
+    {
         Ok(result) => {
             state
                 .surface
@@ -1486,6 +1673,7 @@ async fn run_turn_stream(
             .keep_alive(KeepAlive::default())
             .into_response();
     }
+    let input_path = parse_input_path(body.value.input_path.as_deref());
     let operation_id = state.surface.begin_operation(Some(id.clone()));
     state
         .surface
@@ -1504,7 +1692,7 @@ async fn run_turn_stream(
             }
             result = session2.run_turn_stream_with_input(
                 &text,
-                InputPath::PlainText,
+                input_path,
                 |event| {
                     state2.surface.apply_turn_event_for(operation_id, &event);
                     let _ = tx.send(StreamEvent::Turn(event));
@@ -1594,6 +1782,7 @@ async fn edit_turn_stream(
             .keep_alive(KeepAlive::default())
             .into_response();
     }
+    let input_path = parse_input_path(body.value.input_path.as_deref());
     let operation_id = state.surface.begin_operation(Some(id.clone()));
     state
         .surface
@@ -1610,9 +1799,10 @@ async fn edit_turn_stream(
             _ = tx_closed.closed() => {
                 state2.surface.finish_operation(operation_id);
             }
-            result = session2.edit_turn_stream(
+            result = session2.edit_turn_stream_with_input(
                 turn_index,
                 &text,
+                input_path,
                 |event| {
                     state2.surface.apply_turn_event_for(operation_id, &event);
                     let _ = tx.send(StreamEvent::Turn(event));
@@ -1814,6 +2004,85 @@ async fn resolve_approval(
     Json(Versioned {
         version: API_VERSION,
         value: result,
+    })
+    .into_response()
+}
+
+#[cfg(feature = "audio-device")]
+async fn confirm_voice_approval(
+    State(state): State<Arc<AgentApiState>>,
+    Path((id, approval_id)): Path<(String, String)>,
+    headers: HeaderMap,
+    Json(body): Json<Versioned<VoiceApprovalRequest>>,
+) -> Response {
+    if let Err(status) = auth_token(&state, &headers).await {
+        return status.into_response();
+    }
+    if body.version != API_VERSION {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    let Some(session) = state.session(&id) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let Some(request) = session.pending_approval() else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    if request.id != approval_id {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    let input_path = parse_input_path(Some(&body.value.input_path));
+    let layer = crate::approval_layers::classify_set(&request.changes, input_path);
+    if !layer.requires_voice_confirmation() {
+        return StatusCode::CONFLICT.into_response();
+    }
+
+    let service = match state.voice_confirm().await {
+        Ok(service) => service,
+        Err(error) => {
+            tracing::error!(%error, "failed to build voice confirm service");
+            return agent_error(error);
+        }
+    };
+
+    let samples: Vec<f32> = body
+        .value
+        .samples
+        .iter()
+        .map(|&s| {
+            if s < 0 {
+                s as f32 / 32768.0
+            } else if s > 0 {
+                s as f32 / 32767.0
+            } else {
+                0.0
+            }
+        })
+        .collect();
+
+    let confirm = match service.confirm(&samples).await {
+        Ok(result) => result,
+        Err(error) => {
+            tracing::error!(%error, "voice confirmation failed");
+            return agent_error(AgentError::Audio(error));
+        }
+    };
+
+    let decision = match confirm.decision {
+        crate::voice_confirm::VoiceDecision::Approve => "approve",
+        crate::voice_confirm::VoiceDecision::Deny => "deny",
+        crate::voice_confirm::VoiceDecision::Undecided => "undecided",
+    };
+
+    Json(Versioned {
+        version: API_VERSION,
+        value: VoiceApprovalResponse {
+            decision: decision.to_string(),
+            transcript: confirm.transcript,
+            score: confirm.score,
+            accepted: confirm.accepted,
+            speaker: confirm.speaker,
+            prompt: confirm.prompt,
+        },
     })
     .into_response()
 }
@@ -2275,6 +2544,7 @@ mod tests {
                         sample_rate: Some(48000),
                         ..Default::default()
                     }),
+                    ..Default::default()
                 }),
             },
         };
@@ -2410,6 +2680,7 @@ mod tests {
                 text: "world".into(),
                 idempotency_key: None,
                 auto_speak: false,
+                input_path: None,
             },
         };
         let res = run_turn(

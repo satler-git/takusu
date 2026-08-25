@@ -1763,6 +1763,12 @@ interface components$1 {
              */
             auto_speak: boolean;
             idempotency_key?: string | null;
+            /**
+             * @description Trusted input path for this turn. Unknown or missing values fall back to
+             *     `plain_text`.
+             * @default null
+             */
+            input_path: string | null;
             text: string;
         };
         /** @description Default error body returned by agent endpoints. */
@@ -2268,6 +2274,13 @@ interface components$1 {
              */
             auto_speak: boolean;
             idempotency_key?: string | null;
+            /**
+             * @description Trusted input path for this turn. Mobile and desktop voice surfaces set
+             *     this to `voice` so the approval layer can classify proposals correctly.
+             *     Unknown or missing values fall back to `plain_text`.
+             * @default null
+             */
+            input_path: string | null;
             text: string;
         };
         TurnResult: {
@@ -2292,6 +2305,8 @@ interface components$1 {
             text: string;
         };
         UpdateAgentAudioSettings: {
+            speaker?: components$1['schemas']['UpdateAgentSpeakerSettings'] | null;
+            stt?: components$1['schemas']['UpdateAgentSttSettings'] | null;
             tts?: components$1['schemas']['UpdateAgentTtsSettings'] | null;
         };
         UpdateAgentLlmSettings: {
@@ -2304,6 +2319,27 @@ interface components$1 {
         UpdateAgentSettings: {
             audio?: components$1['schemas']['UpdateAgentAudioSettings'] | null;
             llm?: components$1['schemas']['UpdateAgentLlmSettings'] | null;
+        };
+        UpdateAgentSpeakerSettings: {
+            model_id?: string | null;
+            /** Format: int32 */
+            num_threads?: number | null;
+            provider?: string | null;
+            /** Format: float */
+            verify_threshold?: number | null;
+            voice_dir?: string | null;
+        };
+        UpdateAgentSttSettings: {
+            backend?: string | null;
+            language?: string | null;
+            model?: string | null;
+            model_dir?: string | null;
+            /** Format: int32 */
+            num_threads?: number | null;
+            provider?: string | null;
+            /** Format: int32 */
+            sample_rate?: number | null;
+            use_itn?: boolean | null;
         };
         UpdateAgentTtsSettings: {
             api_key?: string | null;
@@ -2327,6 +2363,19 @@ interface components$1 {
         };
         UserInputResolutionRequest: {
             answers: components$1['schemas']['UserInputAnswer'][];
+        };
+        VoiceApprovalRequest: {
+            input_path: string;
+            samples: number[];
+        };
+        VoiceApprovalResponse: {
+            accepted: boolean;
+            decision: string;
+            prompt?: string | null;
+            /** Format: float */
+            score: number;
+            speaker?: string | null;
+            transcript: string;
         };
         /**
          * @description State of a task's work session shown on a card.

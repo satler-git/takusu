@@ -123,6 +123,23 @@ class TakusuAudioModule : Module() {
         }
     }
 
+    private suspend fun ensureVad() {
+        val dir =
+            cacheDir
+                ?: throw CodedException("ERR_AUDIO_CONFIG", "React context is not available", null)
+        if (vad == null) {
+            val modelDir =
+                withIoContext {
+                    uniffi.takusu_android.downloadModel(
+                        dir.absolutePath,
+                        "silero-vad",
+                        "${dir.absolutePath}/silero-vad-status.json",
+                    )
+                }
+            vad = AndroidVad("$modelDir/silero_vad.onnx")
+        }
+    }
+
     private fun completeAllPendingTtsCompletions(result: Boolean) {
         val iterator = pendingTtsCompletions.iterator()
         while (iterator.hasNext()) {
@@ -230,25 +247,8 @@ class TakusuAudioModule : Module() {
 
             // VAD endpointing: downloads the Silero model (first run) and stops
             // recording ~0.5 s after speech ends instead of requiring a tap.
-            AsyncFunction("startRecordingWithEndpointing").Coroutine<Unit> {
-                val dir =
-                    cacheDir
-                        ?: throw CodedException(
-                            "ERR_AUDIO_CONFIG",
-                            "React context is not available",
-                            null,
-                        )
-                if (vad == null) {
-                    val modelDir =
-                        withIoContext {
-                            uniffi.takusu_android.downloadModel(
-                                dir.absolutePath,
-                                "silero-vad",
-                                "${dir.absolutePath}/silero-vad-status.json",
-                            )
-                        }
-                    vad = AndroidVad("$modelDir/silero_vad.onnx")
-                }
+            AsyncFunction("startRecordingWithEndpointing") Coroutine {
+                ensureVad()
                 val instance = AudioRecorder()
                 instance.setVadEndpointing(vad)
                 instance.start()
@@ -270,6 +270,21 @@ class TakusuAudioModule : Module() {
                     val samples = activeRecorder.stop()
                     instance.transcribePcm(samples)
                 }
+            }
+
+            AsyncFunction("stopAndGetPcm") {
+                val activeRecorder =
+                    recorder
+                        ?: throw CodedException("ERR_NOT_RECORDING", "Recording is not active", null)
+                recorder = null
+                if (activeRecorder.isStreaming()) {
+                    throw CodedException(
+                        "ERR_NOT_RECORDING",
+                        "Recording is in streaming mode; stopAndGetPcm only works for raw PCM capture",
+                        null,
+                    )
+                }
+                activeRecorder.stop()
             }
 
             AsyncFunction("synthesizeAndPlay") Coroutine { text: String ->

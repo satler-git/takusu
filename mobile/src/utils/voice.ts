@@ -6,6 +6,8 @@ import {
   loadTtsMuted,
 } from '@/src/api/settingsStore';
 import TakusuAudioModule from '@/modules/takusu-server/src/TakusuAudioModule';
+import type { AgentClient } from '@/src/api/agentClient';
+import type { ApprovalRequest } from '@/src/api/agentTypes';
 
 const ASR_MODEL_KEY = 'takusu.agent.asrModel';
 
@@ -180,6 +182,60 @@ class VoiceBridge {
     if (this.current) listener(this.current);
     return () => this.listeners.delete(listener);
   }
+}
+
+/// Confirm a proposal by voice through the local agent server.
+///
+/// The client is responsible only for TTS playback and raw PCM capture; STT,
+/// speaker verification, and yes/no classification are handled by the server
+/// (`takusu-agent::voice_confirm`). This keeps mobile and desktop approval
+/// behavior identical.
+///
+/// Throws when audio is not configured or the server cannot resolve the
+/// approval. Callers should catch and fall back to screen approval.
+export async function confirmVoiceApproval(
+  agentClient: AgentClient,
+  sessionId: string,
+  approval: ApprovalRequest,
+  inputPath: string,
+  maxAttempts = 3,
+): Promise<'approve' | 'deny' | 'undecided'> {
+  await ensureAudioConfigured();
+  await TakusuAudioModule.stopPlayback();
+
+  // Initial prompt is the approval reason; the server will supply a retry
+  // prompt when the answer is ambiguous.
+  let prompt =
+    approval.why || '以下の変更を承認しますか？はいかいいえで答えてください。';
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    if (prompt.trim().length > 0) {
+      await TakusuAudioModule.synthesizeAndPlay(prompt);
+    }
+
+    await TakusuAudioModule.startRecordingWithEndpointing();
+    const samples = await TakusuAudioModule.stopAndGetPcm();
+    if (samples.length === 0) {
+      throw new Error('音声が録音されませんでした');
+    }
+
+    const result = await agentClient.confirmVoiceApproval(
+      sessionId,
+      approval.id,
+      inputPath,
+      samples,
+    );
+
+    if (result.decision === 'approve' || result.decision === 'deny') {
+      return result.decision;
+    }
+
+    prompt =
+      result.prompt ||
+      'もう一度お答えください。はい、または、いいえ、でお答えください。';
+  }
+
+  return 'undecided';
 }
 
 export const voiceBridge = new VoiceBridge();
