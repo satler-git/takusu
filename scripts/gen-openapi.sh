@@ -27,7 +27,7 @@ echo "==> Generating local OpenAPI spec"
 cargo run -p takusu-local --bin generate-openapi -- -o "$LOCAL_SPEC"
 
 echo "==> Generating agent OpenAPI spec"
-cargo run -p takusu-agent --bin generate-openapi --no-default-features --features openapi -- -o "$AGENT_SPEC"
+cargo run -p takusu-agent --bin generate-openapi --no-default-features --features openapi,audio-device -- -o "$AGENT_SPEC"
 
 echo "==> Merging specs into $SPEC"
 node ts/takusu-client/scripts/merge-openapi.mjs "$LOCAL_SPEC" "$AGENT_SPEC" "$SPEC"

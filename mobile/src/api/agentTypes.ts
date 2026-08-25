@@ -44,6 +44,15 @@ export interface ApprovalResult {
   presentation?: Presentation;
 }
 
+export interface VoiceApprovalResult {
+  decision: 'approve' | 'deny' | 'undecided';
+  transcript: string;
+  score: number;
+  accepted: boolean;
+  speaker?: string;
+  prompt?: string;
+}
+
 export type IntakeStage =
   | 'not_started'
   | 'deadlines'

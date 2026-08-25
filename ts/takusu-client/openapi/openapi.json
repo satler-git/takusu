@@ -14148,6 +14148,102 @@
         }
       }
     },
+    "/agent/v1/sessions/{id}/approvals/{approval_id}/voice": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "version": {
+                        "type": "integer",
+                        "maximum": 255,
+                        "minimum": 0
+                      }
+                    },
+                    "required": ["version"]
+                  },
+                  {
+                    "$ref": "#/components/schemas/VoiceApprovalRequest"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "version": {
+                          "type": "integer",
+                          "maximum": 255,
+                          "minimum": 0
+                        }
+                      },
+                      "required": ["version"]
+                    },
+                    {
+                      "$ref": "#/components/schemas/VoiceApprovalResponse"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Failed to parse the request body as JSON",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Expected request with `Content-Type: application/json`",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Failed to deserialize the JSON body into the target type",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Default error body returned by agent endpoints.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/agent/v1/sessions/{id}": {
       "delete": {
         "responses": {
@@ -18700,6 +18796,11 @@
           "idempotency_key": {
             "type": ["string", "null"]
           },
+          "input_path": {
+            "description": "Trusted input path for this turn. Unknown or missing values fall back to\n`plain_text`.",
+            "type": ["string", "null"],
+            "default": null
+          },
           "text": {
             "type": "string"
           }
@@ -19900,6 +20001,11 @@
           "idempotency_key": {
             "type": ["string", "null"]
           },
+          "input_path": {
+            "description": "Trusted input path for this turn. Mobile and desktop voice surfaces set\nthis to `voice` so the approval layer can classify proposals correctly.\nUnknown or missing values fall back to `plain_text`.",
+            "type": ["string", "null"],
+            "default": null
+          },
           "text": {
             "type": "string"
           }
@@ -20007,6 +20113,26 @@
       "UpdateAgentAudioSettings": {
         "type": "object",
         "properties": {
+          "speaker": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UpdateAgentSpeakerSettings"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "stt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UpdateAgentSttSettings"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "tts": {
             "anyOf": [
               {
@@ -20075,6 +20201,59 @@
                 "type": "null"
               }
             ]
+          }
+        }
+      },
+      "UpdateAgentSpeakerSettings": {
+        "type": "object",
+        "properties": {
+          "model_id": {
+            "type": ["string", "null"]
+          },
+          "num_threads": {
+            "type": ["integer", "null"],
+            "format": "int32"
+          },
+          "provider": {
+            "type": ["string", "null"]
+          },
+          "verify_threshold": {
+            "type": ["number", "null"],
+            "format": "float"
+          },
+          "voice_dir": {
+            "type": ["string", "null"]
+          }
+        }
+      },
+      "UpdateAgentSttSettings": {
+        "type": "object",
+        "properties": {
+          "backend": {
+            "type": ["string", "null"]
+          },
+          "language": {
+            "type": ["string", "null"]
+          },
+          "model": {
+            "type": ["string", "null"]
+          },
+          "model_dir": {
+            "type": ["string", "null"]
+          },
+          "num_threads": {
+            "type": ["integer", "null"],
+            "format": "int32"
+          },
+          "provider": {
+            "type": ["string", "null"]
+          },
+          "sample_rate": {
+            "type": ["integer", "null"],
+            "format": "int32"
+          },
+          "use_itn": {
+            "type": ["boolean", "null"]
           }
         }
       },
@@ -20152,6 +20331,49 @@
           }
         },
         "required": ["answers"]
+      },
+      "VoiceApprovalRequest": {
+        "type": "object",
+        "properties": {
+          "input_path": {
+            "type": "string"
+          },
+          "samples": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int16",
+              "maximum": 32767,
+              "minimum": -32768
+            }
+          }
+        },
+        "required": ["input_path", "samples"]
+      },
+      "VoiceApprovalResponse": {
+        "type": "object",
+        "properties": {
+          "accepted": {
+            "type": "boolean"
+          },
+          "decision": {
+            "type": "string"
+          },
+          "prompt": {
+            "type": ["string", "null"]
+          },
+          "score": {
+            "type": "number",
+            "format": "float"
+          },
+          "speaker": {
+            "type": ["string", "null"]
+          },
+          "transcript": {
+            "type": "string"
+          }
+        },
+        "required": ["decision", "transcript", "score", "accepted"]
       },
       "WorkState": {
         "description": "State of a task's work session shown on a card.",

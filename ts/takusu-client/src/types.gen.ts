@@ -10985,6 +10985,84 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/agent/v1/sessions/{id}/approvals/{approval_id}/voice': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          'application/json': {
+            version: number;
+          } & components['schemas']['VoiceApprovalRequest'];
+        };
+      };
+      responses: {
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': {
+              version: number;
+            } & components['schemas']['VoiceApprovalResponse'];
+          };
+        };
+        /** @description Failed to parse the request body as JSON */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Expected request with `Content-Type: application/json` */
+        415: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Failed to deserialize the JSON body into the target type */
+        422: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'text/plain': string;
+          };
+        };
+        /** @description Default error body returned by agent endpoints. */
+        default: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['ErrorResponse'];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/agent/v1/sessions/{id}': {
     parameters: {
       query?: never;
@@ -12897,6 +12975,12 @@ export interface components {
        */
       auto_speak: boolean;
       idempotency_key?: string | null;
+      /**
+       * @description Trusted input path for this turn. Unknown or missing values fall back to
+       *     `plain_text`.
+       * @default null
+       */
+      input_path: string | null;
       text: string;
     };
     /** @description Default error body returned by agent endpoints. */
@@ -13451,6 +13535,13 @@ export interface components {
        */
       auto_speak: boolean;
       idempotency_key?: string | null;
+      /**
+       * @description Trusted input path for this turn. Mobile and desktop voice surfaces set
+       *     this to `voice` so the approval layer can classify proposals correctly.
+       *     Unknown or missing values fall back to `plain_text`.
+       * @default null
+       */
+      input_path: string | null;
       text: string;
     };
     TurnResult: {
@@ -13475,6 +13566,8 @@ export interface components {
       text: string;
     };
     UpdateAgentAudioSettings: {
+      speaker?: components['schemas']['UpdateAgentSpeakerSettings'] | null;
+      stt?: components['schemas']['UpdateAgentSttSettings'] | null;
       tts?: components['schemas']['UpdateAgentTtsSettings'] | null;
     };
     UpdateAgentLlmSettings: {
@@ -13487,6 +13580,27 @@ export interface components {
     UpdateAgentSettings: {
       audio?: components['schemas']['UpdateAgentAudioSettings'] | null;
       llm?: components['schemas']['UpdateAgentLlmSettings'] | null;
+    };
+    UpdateAgentSpeakerSettings: {
+      model_id?: string | null;
+      /** Format: int32 */
+      num_threads?: number | null;
+      provider?: string | null;
+      /** Format: float */
+      verify_threshold?: number | null;
+      voice_dir?: string | null;
+    };
+    UpdateAgentSttSettings: {
+      backend?: string | null;
+      language?: string | null;
+      model?: string | null;
+      model_dir?: string | null;
+      /** Format: int32 */
+      num_threads?: number | null;
+      provider?: string | null;
+      /** Format: int32 */
+      sample_rate?: number | null;
+      use_itn?: boolean | null;
     };
     UpdateAgentTtsSettings: {
       api_key?: string | null;
@@ -13510,6 +13624,19 @@ export interface components {
     };
     UserInputResolutionRequest: {
       answers: components['schemas']['UserInputAnswer'][];
+    };
+    VoiceApprovalRequest: {
+      input_path: string;
+      samples: number[];
+    };
+    VoiceApprovalResponse: {
+      accepted: boolean;
+      decision: string;
+      prompt?: string | null;
+      /** Format: float */
+      score: number;
+      speaker?: string | null;
+      transcript: string;
     };
     /**
      * @description State of a task's work session shown on a card.

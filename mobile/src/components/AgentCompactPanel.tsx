@@ -15,7 +15,7 @@ import { useTheme, type ColorSet } from '@/src/theme';
 import { AgentClient, AgentApiError } from '@/src/api/agentClient';
 import { showError } from '@/src/api/errors';
 import TakusuAudioModule from '@/modules/takusu-server/src/TakusuAudioModule';
-import { ensureAudioConfigured } from '@/src/utils/voice';
+import { confirmVoiceApproval, ensureAudioConfigured } from '@/src/utils/voice';
 import {
   loadSettings,
   saveAgentProviders,
@@ -47,6 +47,8 @@ interface SurfaceSpec {
   transcript?: string;
   /** Optional existing session to resume. */
   sessionId?: string;
+  /** Trusted input path for this turn. Voice surfaces should pass `voice`. */
+  inputPath?: 'voice' | 'screen' | 'notification' | 'ambient' | 'plain_text';
   /** Called when the surface turn finishes, whether approved or not. */
   onComplete?: () => void;
 }
@@ -392,6 +394,8 @@ function AgentCompactPanelImpl({
   const [sessionPermissions, setSessionPermissions] = useState<PermissionsMap>(
     {},
   );
+  const [voiceConfirming, setVoiceConfirming] = useState(false);
+  const voiceApprovalAttemptedRef = useRef(false);
 
   const abortRef = useRef<AbortController | null>(null);
   const pendingSessionRef = useRef<string | null>(null);
@@ -433,6 +437,7 @@ function AgentCompactPanelImpl({
     setTurnPresentation(null);
     setApproval(null);
     setSurfaceBusy(true);
+    voiceApprovalAttemptedRef.current = false;
 
     const abort = new AbortController();
     abortRef.current = abort;
@@ -531,6 +536,7 @@ function AgentCompactPanelImpl({
           },
           abort.signal,
           true,
+          spec.inputPath,
         );
       } catch (e) {
         if (abort.signal.aborted) return;
@@ -660,7 +666,7 @@ function AgentCompactPanelImpl({
   const handleApprove = useCallback(
     async (
       approve: boolean,
-      decisions: ProposalDecision[] = [],
+      decisions?: ProposalDecision[],
       grantedPermissions?: PermissionsMap,
       persistToProvider?: boolean,
     ) => {
@@ -769,6 +775,39 @@ function AgentCompactPanelImpl({
     ],
   );
 
+  // When a voice surface turn reaches an approval, attempt to confirm it by
+  // voice: read the proposal, capture the user's yes/no, and verify the
+  // speaker. If anything fails, the user can still approve on screen.
+  useEffect(() => {
+    if (!isSurface || !approval || !sessionId || !agentClient || !surfaceProp)
+      return;
+    if (surfaceProp.inputPath !== 'voice') return;
+    if (voiceApprovalAttemptedRef.current) return;
+
+    const attempt = async () => {
+      voiceApprovalAttemptedRef.current = true;
+      setVoiceConfirming(true);
+      try {
+        const decision = await confirmVoiceApproval(
+          agentClient,
+          sessionId,
+          approval,
+          surfaceProp.inputPath ?? 'voice',
+        );
+        if (decision === 'approve') {
+          await handleApprove(true);
+        } else if (decision === 'deny') {
+          await handleApprove(false);
+        }
+      } catch (e) {
+        console.error('voice approval confirmation failed:', e);
+      } finally {
+        setVoiceConfirming(false);
+      }
+    };
+    void attempt();
+  }, [isSurface, approval, sessionId, agentClient, surfaceProp, handleApprove]);
+
   const handlePresentationAction = useCallback(
     async (capability: ActionCapability) => {
       if (!agentClient) return;
@@ -834,7 +873,7 @@ function AgentCompactPanelImpl({
         <View style={styles.body}>
           <ApprovalPanel
             approval={approval}
-            busy={approvalBusy}
+            busy={approvalBusy || voiceConfirming}
             client={agentClient ?? undefined}
             colors={colors}
             onResolve={(decisions, granted, persist) => {
@@ -956,7 +995,7 @@ function AgentCompactPanelImpl({
         <View style={styles.body}>
           <ApprovalPanel
             approval={approval}
-            busy={approvalBusy}
+            busy={approvalBusy || voiceConfirming}
             client={agentClient ?? undefined}
             colors={colors}
             onResolve={(decisions, granted, persist) => {

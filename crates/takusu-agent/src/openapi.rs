@@ -35,6 +35,7 @@ use crate::transport::{
     HealthResponse, PlannerEvent, ResumeSessionRequest, ResumeSessionResponse, RevertRequest,
     SseEvent, SurfaceAudioRequest, SurfaceCommandRequest, TurnRequest, TurnResultDto,
     UpdateAgentSettings, UpdateSessionSettings, UserInputResolutionRequest, Versioned,
+    VoiceApprovalRequest, VoiceApprovalResponse,
 };
 
 /// Generic `{ "ok": true }` body used by several agent endpoints.
@@ -302,6 +303,22 @@ async fn resolve_user_input(
     versioned(OkResponse { ok: true })
 }
 
+async fn confirm_voice_approval(
+    Path((_id, _approval_id)): Path<(String, String)>,
+    Json(_): Json<Versioned<VoiceApprovalRequest>>,
+) -> Json<Versioned<VoiceApprovalResponse>> {
+    versioned(VoiceApprovalResponse {
+        decision: "undecided".to_string(),
+        transcript: String::new(),
+        score: -1.0,
+        accepted: false,
+        speaker: None,
+        prompt: Some(
+            "もう一度お答えください。はい、または、いいえ、でお答えください。".to_string(),
+        ),
+    })
+}
+
 async fn delete_session(Path(_id): Path<String>) -> NoContent {
     NoContent
 }
@@ -402,6 +419,10 @@ fn build_api_router(open_api: &mut OpenApi) -> axum::Router {
             "/agent/v1/sessions/{id}/tool-calls/{call_id}/user-input",
             api::post(resolve_user_input),
         )
+        .api_route(
+            "/agent/v1/sessions/{id}/approvals/{approval_id}/voice",
+            api::post(confirm_voice_approval),
+        )
         .api_route("/agent/v1/sessions/{id}", api::delete(delete_session))
         .api_route("/agent/v1/stats/tools", api::get(get_tool_stats))
         .api_route("/agent/v1/stats/tools", api::delete(clear_tool_stats))
@@ -448,6 +469,7 @@ mod tests {
         assert!(paths.contains_key("/agent/v1/surface/audio"));
         assert!(paths.contains_key("/agent/v1/sessions"));
         assert!(paths.contains_key("/agent/v1/sessions/{id}/turns/stream"));
+        assert!(paths.contains_key("/agent/v1/sessions/{id}/approvals/{approval_id}/voice"));
     }
 
     #[test]

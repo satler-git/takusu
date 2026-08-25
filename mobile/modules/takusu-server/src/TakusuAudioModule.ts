@@ -40,6 +40,7 @@ interface TakusuAudioModuleType extends NativeModule {
   startRecording(): Promise<boolean>;
   startRecordingWithEndpointing(): Promise<boolean>;
   stopAndTranscribe(): Promise<string>;
+  stopAndGetPcm(): Promise<number[]>;
   synthesizeAndPlay(text: string): Promise<boolean>;
   synthesizeToFile(text: string): Promise<string>;
   playFile(path: string): Promise<boolean>;

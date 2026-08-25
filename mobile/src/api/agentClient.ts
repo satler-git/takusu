@@ -22,6 +22,7 @@ import type {
   SurfaceSnapshot,
   TurnEvent,
   UserInputAnswer,
+  VoiceApprovalResult,
   WorkTransitionKind,
 } from './agentTypes';
 import {
@@ -254,11 +255,20 @@ export class AgentClient {
     sessionId: string,
     text: string,
     idempotencyKey: string,
+    inputPath?: string,
   ): Promise<AgentTurnResult> {
+    const body: Record<string, unknown> = {
+      version: 1,
+      text,
+      idempotency_key: idempotencyKey,
+    };
+    if (inputPath) {
+      body.input_path = inputPath;
+    }
     const result = await this.request<AgentTurnResult>(
       'POST',
       `/api/agent/v1/sessions/${encodeURIComponent(sessionId)}/turns`,
-      { version: 1, text, idempotency_key: idempotencyKey },
+      body,
     );
     if (result?.presentation) {
       result.presentation = decodePresentation(result.presentation);
@@ -273,19 +283,19 @@ export class AgentClient {
     onEvent: (event: AgentStreamEvent) => void,
     signal?: AbortSignal,
     autoSpeak = false,
+    inputPath?: string,
   ): Promise<AgentTurnResult> {
     const url = `${this.baseUrl}/api/agent/v1/sessions/${encodeURIComponent(sessionId)}/turns/stream`;
-    return this.streamRequest(
-      url,
-      {
-        version: 1,
-        text,
-        idempotency_key: idempotencyKey,
-        auto_speak: autoSpeak,
-      },
-      onEvent,
-      signal,
-    );
+    const body: Record<string, unknown> = {
+      version: 1,
+      text,
+      idempotency_key: idempotencyKey,
+      auto_speak: autoSpeak,
+    };
+    if (inputPath) {
+      body.input_path = inputPath;
+    }
+    return this.streamRequest(url, body, onEvent, signal);
   }
 
   editTurnStream(
@@ -296,19 +306,19 @@ export class AgentClient {
     onEvent: (event: AgentStreamEvent) => void,
     signal?: AbortSignal,
     autoSpeak = false,
+    inputPath?: string,
   ): Promise<AgentTurnResult> {
     const url = `${this.baseUrl}/api/agent/v1/sessions/${encodeURIComponent(sessionId)}/turns/${turnIndex}/edit/stream`;
-    return this.streamRequest(
-      url,
-      {
-        version: 1,
-        text,
-        idempotency_key: idempotencyKey,
-        auto_speak: autoSpeak,
-      },
-      onEvent,
-      signal,
-    );
+    const body: Record<string, unknown> = {
+      version: 1,
+      text,
+      idempotency_key: idempotencyKey,
+      auto_speak: autoSpeak,
+    };
+    if (inputPath) {
+      body.input_path = inputPath;
+    }
+    return this.streamRequest(url, body, onEvent, signal);
   }
 
   async revertTurn(
@@ -493,6 +503,23 @@ export class AgentClient {
       result.presentation = decodePresentation(result.presentation);
     }
     return result;
+  }
+
+  async confirmVoiceApproval(
+    sessionId: string,
+    approvalId: string,
+    inputPath: string,
+    samples: number[],
+  ): Promise<VoiceApprovalResult> {
+    return this.request<VoiceApprovalResult>(
+      'POST',
+      `/api/agent/v1/sessions/${encodeURIComponent(sessionId)}/approvals/${encodeURIComponent(approvalId)}/voice`,
+      {
+        version: 1,
+        input_path: inputPath,
+        samples,
+      },
+    );
   }
 
   async submitUserInput(
