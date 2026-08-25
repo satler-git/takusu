@@ -5,10 +5,13 @@
 //! (`~/.cache/takusu/models` by default) and Android (when given the app's
 //! cache directory from the Kotlin layer).
 
+use std::collections::HashMap;
 use std::fs;
 use std::io::{self, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, LazyLock, Mutex};
+use std::time::Duration;
 
 use bzip2::read::BzDecoder;
 use flate2::read::GzDecoder;
@@ -23,6 +26,12 @@ const SHERPA_SPEAKER_CAMPPLUS_ZH_EN_URL: &str = "https://github.com/k2-fsa/sherp
 const SHERPA_KWS_WENETSPEECH_URL: &str = "https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/sherpa-onnx-kws-zipformer-wenetspeech-3.3M-2024-01-01.tar.bz2";
 const SILERO_VAD_URL: &str =
     "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx";
+
+/// Per-model download lock. Serialized `ensure` calls for the same model id
+/// prevent concurrent downloads from writing to the same temporary files and
+/// extracting into the same target directory.
+static MODEL_DOWNLOAD_LOCKS: LazyLock<Mutex<HashMap<String, Arc<Mutex<()>>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 /// Archive compression used by a model bundle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -224,6 +233,8 @@ pub enum ModelError {
     Extract(String),
     #[error("missing expected files after extraction: {0}")]
     MissingFiles(String),
+    #[error("model download cancelled")]
+    Cancelled,
 }
 
 /// Cache for downloaded model bundles.
@@ -238,6 +249,11 @@ impl ModelCache {
         Self {
             cache_dir: cache_dir.as_ref().to_path_buf(),
         }
+    }
+
+    /// The cache directory used by this instance.
+    pub fn cache_dir(&self) -> &Path {
+        &self.cache_dir
     }
 
     /// Create a cache at the default desktop location.
@@ -273,7 +289,7 @@ impl ModelCache {
     ///
     /// Returns the path to the extracted model directory.
     pub fn ensure(&self, id: &str) -> Result<PathBuf, ModelError> {
-        self.ensure_with_progress(id, None)
+        self.ensure_with_cancel(id, None)
     }
 
     /// Ensure a model is available while reporting throttled preparation progress.
@@ -282,6 +298,29 @@ impl ModelCache {
         id: &str,
         progress: Option<ProgressCallback>,
     ) -> Result<PathBuf, ModelError> {
+        self.ensure_with_progress_and_cancel(id, progress, None)
+    }
+
+    /// Ensure a model is available with an optional cancellation token.
+    ///
+    /// When `cancel` is set to `true`, the download stops at the next safe
+    /// boundary and returns [`ModelError::Cancelled`]. Calls for the same model
+    /// are serialized so concurrent attempts do not corrupt the cache.
+    pub fn ensure_with_cancel(
+        &self,
+        id: &str,
+        cancel: Option<Arc<AtomicBool>>,
+    ) -> Result<PathBuf, ModelError> {
+        self.ensure_with_progress_and_cancel(id, None, cancel)
+    }
+
+    /// Internal implementation with progress and cancellation support.
+    fn ensure_with_progress_and_cancel(
+        &self,
+        id: &str,
+        progress: Option<ProgressCallback>,
+        cancel: Option<Arc<AtomicBool>>,
+    ) -> Result<PathBuf, ModelError> {
         let spec = ModelRegistry::find(id).ok_or(ModelError::UnknownModel(id.to_string()))?;
         let model_dir = self.cache_dir.join(spec.id);
         if model_dir.is_dir()
@@ -289,7 +328,28 @@ impl ModelCache {
         {
             return Ok(model_dir);
         }
-        self.download_and_extract(&spec, progress)?;
+
+        // Serialize per-model downloads. The lock is created lazily and kept
+        // for the process lifetime.
+        let lock = {
+            let mut locks = MODEL_DOWNLOAD_LOCKS
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            locks
+                .entry(id.to_string())
+                .or_insert_with(|| Arc::new(Mutex::new(())))
+                .clone()
+        };
+        let _guard = lock.lock().unwrap_or_else(|error| error.into_inner());
+
+        // Another caller may have finished while we were waiting.
+        if model_dir.is_dir()
+            && has_expected_files(&model_dir, spec.expected_files, spec.expected_size)
+        {
+            return Ok(model_dir);
+        }
+
+        self.download_and_extract(&spec, progress, cancel.as_deref())?;
         if !has_expected_files(&model_dir, spec.expected_files, spec.expected_size) {
             return Err(ModelError::MissingFiles(model_dir.display().to_string()));
         }
@@ -308,10 +368,24 @@ impl ModelCache {
     ) -> Result<PathBuf, ModelError> {
         let spec = ModelRegistry::find(id).ok_or(ModelError::UnknownModel(id.to_string()))?;
         let model_dir = self.cache_dir.join(spec.id);
+
+        // Force re-downloads are also serialized so a concurrent `ensure` does
+        // not see a partially removed directory.
+        let lock = {
+            let mut locks = MODEL_DOWNLOAD_LOCKS
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            locks
+                .entry(id.to_string())
+                .or_insert_with(|| Arc::new(Mutex::new(())))
+                .clone()
+        };
+        let _guard = lock.lock().unwrap_or_else(|error| error.into_inner());
+
         if model_dir.is_dir() {
             fs::remove_dir_all(&model_dir)?;
         }
-        self.download_and_extract(&spec, progress)?;
+        self.download_and_extract(&spec, progress, None)?;
         Ok(model_dir)
     }
 
@@ -319,6 +393,7 @@ impl ModelCache {
         &self,
         spec: &ModelSpec,
         progress: Option<ProgressCallback>,
+        cancel: Option<&AtomicBool>,
     ) -> Result<(), ModelError> {
         let model_dir = self.cache_dir.join(spec.id);
         fs::create_dir_all(&model_dir)?;
@@ -330,7 +405,12 @@ impl ModelCache {
         let client = reqwest::blocking::Client::builder()
             .use_rustls_tls()
             .tls_certs_only(certs)
-            .timeout(std::time::Duration::from_secs(600))
+            // Keep a generous total deadline so first-run models can finish on
+            // slow mobile networks, but check the cancellation token in the read
+            // loop so an aborted `start()` does not continue for the full
+            // duration.
+            .timeout(Duration::from_secs(600))
+            .connect_timeout(Duration::from_secs(60))
             .build()?;
         let request = client.get(spec.url);
         let mut response = request.send()?;
@@ -355,6 +435,11 @@ impl ModelCache {
             }
             let mut file = fs::File::create(&tmp_path)?;
             loop {
+                if cancel.is_some_and(|c| c.load(Ordering::Acquire)) {
+                    drop(file);
+                    fs::remove_file(&tmp_path)?;
+                    return Err(ModelError::Cancelled);
+                }
                 let read = response.read(&mut buffer)?;
                 if read == 0 {
                     break;
@@ -382,6 +467,11 @@ impl ModelCache {
                 });
             }
 
+            if cancel.is_some_and(|c| c.load(Ordering::Acquire)) {
+                fs::remove_file(&tmp_path)?;
+                return Err(ModelError::Cancelled);
+            }
+
             fs::rename(&tmp_path, &final_path)?;
             if let Some(callback) = &progress {
                 callback(DownloadProgress {
@@ -403,6 +493,11 @@ impl ModelCache {
         }
         let mut file = fs::File::create(&tmp_archive_path)?;
         loop {
+            if cancel.is_some_and(|c| c.load(Ordering::Acquire)) {
+                drop(file);
+                fs::remove_file(&tmp_archive_path)?;
+                return Err(ModelError::Cancelled);
+            }
             let read = response.read(&mut buffer)?;
             if read == 0 {
                 break;
@@ -428,6 +523,11 @@ impl ModelCache {
                 expected,
                 actual: downloaded_bytes,
             });
+        }
+
+        if cancel.is_some_and(|c| c.load(Ordering::Acquire)) {
+            fs::remove_file(&tmp_archive_path)?;
+            return Err(ModelError::Cancelled);
         }
 
         fs::rename(&tmp_archive_path, &archive_path)?;

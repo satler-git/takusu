@@ -32,13 +32,19 @@ pub struct StreamingAsrSession {
     /// Raw (un-normalized) samples accumulated since session start.
     raw: Vec<f32>,
     finished: bool,
+    keep_raw: bool,
 }
 
 impl StreamingAsrSession {
     /// Start a new streaming ASR session for `language`.
+    ///
+    /// When `keep_raw` is `false` the session does not retain raw samples,
+    /// which avoids the memory and FFI copy cost when speaker verification
+    /// is not required.
     pub async fn new(
         stt: Arc<dyn StreamingSpeechToText>,
         language: &str,
+        keep_raw: bool,
     ) -> Result<Self, StreamAsrError> {
         let stream = stt
             .start_stream(language)
@@ -48,17 +54,21 @@ impl StreamingAsrSession {
             stream,
             raw: Vec::new(),
             finished: false,
+            keep_raw,
         })
     }
 
     /// Feed a chunk of f32 PCM samples (typically 16 kHz mono).
     ///
-    /// Keeps the raw copy and feeds a normalized copy to the ASR stream.
+    /// Keeps the raw copy (only when `keep_raw` is `true`) and feeds a
+    /// normalized copy to the ASR stream.
     pub fn feed(&mut self, samples: &[f32]) {
         if self.finished {
             return;
         }
-        self.raw.extend_from_slice(samples);
+        if self.keep_raw {
+            self.raw.extend_from_slice(samples);
+        }
         self.stream
             .accept_waveform(&normalize(samples, ASR_TARGET_RMS));
     }
@@ -135,11 +145,27 @@ mod tests {
         let stt: Arc<dyn StreamingSpeechToText> = Arc::new(MockStt {
             final_text: "hello world".into(),
         });
-        let mut session = StreamingAsrSession::new(stt, "ja").await.unwrap();
+        let mut session = StreamingAsrSession::new(stt, "ja", true).await.unwrap();
         session.feed(&[0.1, 0.2, 0.3]);
         session.feed(&[0.4, 0.5]);
         let (text, raw) = session.finish().await.unwrap();
         assert_eq!(text, "hello world");
         assert_eq!(raw, vec![0.1, 0.2, 0.3, 0.4, 0.5]);
+    }
+
+    #[tokio::test]
+    async fn session_keeps_raw_false() {
+        let stt: Arc<dyn StreamingSpeechToText> = Arc::new(MockStt {
+            final_text: "hello world".into(),
+        });
+        let mut session = StreamingAsrSession::new(stt, "ja", false).await.unwrap();
+        session.feed(&[0.1, 0.2, 0.3]);
+        session.feed(&[0.4, 0.5]);
+        let (text, raw) = session.finish().await.unwrap();
+        assert_eq!(text, "hello world");
+        assert!(
+            raw.is_empty(),
+            "raw samples should be empty when keep_raw is false"
+        );
     }
 }

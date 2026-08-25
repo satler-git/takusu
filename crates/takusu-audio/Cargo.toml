@@ -34,7 +34,9 @@ tokio = { workspace = true, optional = true }
 
 tar = "0.4"
 flate2 = "1"
-bzip2 = "0.4"
+bzip2 = { version = "0.4", features = ["static"] }
+unicode-segmentation = "1.13.3"
+unicode-normalization = "0.1.25"
 
 bytes = "1"
 futures-util = "0.3"
@@ -44,6 +46,7 @@ hound = "3.5"
 
 lindera = { version = "=4.0.0", features = ["embed-ipadic"] }
 regex = "1.12"
+romkan = "0.2.2"
 tracing = { workspace = true }
 
 # ONNX pipeline for hush denoiser (Android-ready)

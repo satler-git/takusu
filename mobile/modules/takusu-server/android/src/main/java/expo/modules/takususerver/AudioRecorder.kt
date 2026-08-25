@@ -54,33 +54,53 @@ class AudioRecorder {
             transcript = null
             error = null
 
-            streamingAudio?.startStreamingAsr(language)
-
             vad?.reset()
             synchronized(this) {
                 samples = ShortArray(maxSamples)
                 samplesCount = 0
             }
 
-            val minimumBuffer =
-                AudioRecord.getMinBufferSize(
-                    SAMPLE_RATE,
-                    AudioFormat.CHANNEL_IN_MONO,
-                    AudioFormat.ENCODING_PCM_16BIT,
-                )
-            check(minimumBuffer > 0) { "microphone is unavailable" }
-            val audioRecord =
-                AudioRecord(
-                    MediaRecorder.AudioSource.VOICE_RECOGNITION,
-                    SAMPLE_RATE,
-                    AudioFormat.CHANNEL_IN_MONO,
-                    AudioFormat.ENCODING_PCM_16BIT,
-                    minimumBuffer * 2,
-                )
+            var acquired = false
             var success = false
+            val releasedByThread = AtomicBoolean(false)
             try {
+                // The microphone, AudioRecord, and ASR session are all created
+                // inside this try so every failure path releases them exactly
+                // once. `acquired` is tracked separately: `release()` on the
+                // shared coordinator must never run unless we own the jam.
+                acquired = MicrophoneCoordinator.tryAcquire()
+                if (!acquired) {
+                    throw CodedException(
+                        "ERR_MICROPHONE_BUSY",
+                        "マイクは他の機能で使用中です",
+                        null,
+                    )
+                }
+
+                val minimumBuffer =
+                    AudioRecord.getMinBufferSize(
+                        SAMPLE_RATE,
+                        AudioFormat.CHANNEL_IN_MONO,
+                        AudioFormat.ENCODING_PCM_16BIT,
+                    )
+                check(minimumBuffer > 0) { "microphone is unavailable" }
+
+                val audioRecord =
+                    AudioRecord(
+                        MediaRecorder.AudioSource.VOICE_RECOGNITION,
+                        SAMPLE_RATE,
+                        AudioFormat.CHANNEL_IN_MONO,
+                        AudioFormat.ENCODING_PCM_16BIT,
+                        minimumBuffer * 2,
+                    )
                 check(audioRecord.state == AudioRecord.STATE_INITIALIZED) { "failed to initialize microphone" }
                 recorder = audioRecord
+
+                // Start the streaming ASR session only after the microphone is
+                // available, so a busy-mic failure above does not leave an
+                // orphan session running.
+                streamingAudio?.startStreamingAsr(language)
+
                 val t =
                     Thread {
                         val buffer = ShortArray(minimumBuffer)
@@ -146,6 +166,8 @@ class AudioRecorder {
                                     }
                                 }
                             }
+                        } catch (e: Throwable) {
+                            error = e
                         } finally {
                             try {
                                 audioRecord.stop()
@@ -154,6 +176,8 @@ class AudioRecorder {
                                 // was never started.
                             }
                             audioRecord.release()
+                            MicrophoneCoordinator.release()
+                            releasedByThread.set(true)
                         }
                     }
                 thread = t
@@ -165,14 +189,24 @@ class AudioRecorder {
                 if (!success) {
                     running.set(false)
                     val t = thread
+                    val record = recorder
                     thread = null
                     recorder = null
+
                     if (t != null && t.isAlive) {
                         t.join()
-                    } else {
+                    } else if (!releasedByThread.get()) {
+                        // The recording thread never ran (or started but its
+                        // finally has not released yet); the sole releaser in
+                        // the running case is `t`, so only clean up when we
+                        // still own the resources.
                         try {
-                            audioRecord.release()
+                            record?.release()
                         } catch (_: Exception) {
+                            // Ignore.
+                        }
+                        if (acquired) {
+                            MicrophoneCoordinator.release()
                         }
                     }
                 }
@@ -188,6 +222,7 @@ class AudioRecorder {
                 recorder = null
                 started = false
                 check(!streaming) { "called stop() on a streaming recorder" }
+                MicrophoneCoordinator.release()
                 samples.copyOf(samplesCount).asList()
             } else {
                 emptyList()
@@ -203,11 +238,12 @@ class AudioRecorder {
                 recorder = null
                 started = false
                 check(streaming) { "called stopStreaming() on a non-streaming recorder" }
+                MicrophoneCoordinator.release()
                 val cause = error
                 if (cause != null) {
                     throw CodedException(
                         "ERR_STREAMING_ASR",
-                        "Streaming ASR failed: ${cause.message}",
+                        "音声認識に失敗しました: ${cause.message}",
                         cause,
                     )
                 }
