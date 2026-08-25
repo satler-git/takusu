@@ -92,6 +92,9 @@ impl Tray for TakusuTray {
     }
 
     fn title(&self) -> String {
+        if self.state.ambient_session_active() {
+            return "takusu — 常時Listen中".into();
+        }
         self.state
             .snapshot()
             .map(|v| v.title())
@@ -99,6 +102,9 @@ impl Tray for TakusuTray {
     }
 
     fn icon_name(&self) -> String {
+        if self.state.ambient_session_active() {
+            return "takusu-tray-listening".into();
+        }
         self.state
             .snapshot()
             .map(|v| icon_name_for_state(v.state()).into())
@@ -165,6 +171,33 @@ impl Tray for TakusuTray {
             items.push(
                 StandardItem {
                     label: "Voice session".into(),
+                    activate,
+                    ..Default::default()
+                }
+                .into(),
+            );
+
+            // Ambient listening (WI-21). Only enabled when the user has opted
+            // in via the agent audio config; the menu still shows it so the
+            // user can stop a running session even if the config is gone.
+            let state = self.state.clone();
+            let activate = Box::new(move |_this: &mut Self| {
+                if state.ambient_session_active() {
+                    state.stop_ambient_session();
+                } else {
+                    state.start_ambient_session();
+                }
+            });
+            let label = if self.state.ambient_session_active() {
+                "常時Listenを停止"
+            } else if self.state.ambient_starting() {
+                "常時Listen開始中..."
+            } else {
+                "常時Listenを開始"
+            };
+            items.push(
+                StandardItem {
+                    label: label.into(),
                     activate,
                     ..Default::default()
                 }
