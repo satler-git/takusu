@@ -190,7 +190,7 @@ enum WindowCommand {
         theme: crate::config::Theme,
         actions: Vec<DesktopAction>,
         voice_button: bool,
-        state: DesktopState,
+        state: Box<DesktopState>,
     },
     Hide,
 }
@@ -425,7 +425,7 @@ impl WindowController {
                                         text_color,
                                         actions,
                                         voice_button,
-                                        state: state.clone(),
+                                        state: *state,
                                         transport: Arc::clone(&thread_transport),
                                         runtime: thread_runtime.clone(),
                                     })
@@ -446,7 +446,7 @@ impl WindowController {
             });
         });
 
-        match init_rx.recv_timeout(Duration::from_secs(2)) {
+        match init_rx.recv_timeout(Duration::from_secs(30)) {
             Ok(sender) => Ok(Self {
                 sender: std::sync::Arc::new(std::sync::Mutex::new(sender)),
             }),
@@ -466,7 +466,7 @@ impl WindowController {
             theme: state.theme(),
             actions: request.actions,
             voice_button: request.voice_button,
-            state: state.clone(),
+            state: Box::new(state.clone()),
         };
 
         if let Ok(guard) = self.sender.lock()

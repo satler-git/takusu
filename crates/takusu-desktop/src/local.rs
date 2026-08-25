@@ -32,72 +32,28 @@ pub async fn start(config: &mut Config) -> Result<(), DesktopError> {
         ..LocalConfig::default()
     };
 
-    if let Ok(v) = std::env::var("TAKUSU_DB")
-        && !v.is_empty()
-    {
-        cfg.db = v;
-    } else {
+    cfg.storage = config.storage;
+
+    if config.db.is_empty() {
         let data_dir = dirs::state_dir()
             .or_else(dirs::data_dir)
             .ok_or_else(|| DesktopError::Transport("no user state or data directory".into()))?
             .join("takusu");
         cfg.db = format!("sqlite:{}", data_dir.join("takusu.db").display());
+    } else {
+        cfg.db = config.db.clone();
     }
 
-    if let Ok(v) = std::env::var("TAKUSU_STORAGE")
-        && !v.is_empty()
-    {
-        cfg.storage = v
-            .parse()
-            .map_err(|e| DesktopError::Transport(format!("invalid TAKUSU_STORAGE: {e}")))?;
-    }
+    cfg.worker_url = config.worker_url.clone();
+    cfg.jwt_secret = config.jwt_secret.clone();
 
-    if let Ok(v) = std::env::var("TAKUSU_WORKERS_URL")
-        && !v.is_empty()
-    {
-        cfg.worker_url = v;
-    } else if let Ok(v) = std::env::var("TAKUSU_WORKER_URL")
-        && !v.is_empty()
-    {
-        cfg.worker_url = v;
-    }
-
-    if let Ok(v) = std::env::var("TAKUSU_JWT_SECRET")
-        && !v.is_empty()
-    {
-        cfg.jwt_secret = v;
-    } else if let Ok(v) = std::env::var("TAKUSU_JWT_SECRET_FILE")
-        && !v.is_empty()
-    {
-        cfg.jwt_secret = std::fs::read_to_string(&v)
-            .map_err(|e| {
-                DesktopError::Transport(format!("failed to read TAKUSU_JWT_SECRET_FILE: {e}"))
-            })?
-            .trim()
-            .to_string();
-    }
-
-    let mut workers_token = String::new();
-    if let Ok(v) = std::env::var("TAKUSU_WORKERS_TOKEN")
-        && !v.is_empty()
-    {
-        workers_token = v;
-    } else if let Ok(v) = std::env::var("TAKUSU_WORKERS_TOKEN_FILE")
-        && !v.is_empty()
-    {
-        workers_token = std::fs::read_to_string(&v)
-            .map_err(|e| {
-                DesktopError::Transport(format!("failed to read TAKUSU_WORKERS_TOKEN_FILE: {e}"))
-            })?
-            .trim()
-            .to_string();
-    }
+    let workers_token = config.workers_token.clone();
 
     let storage: Arc<dyn Storage> = match cfg.storage {
         StorageKind::Sqlite => {
             if cfg.jwt_secret.is_empty() {
                 return Err(DesktopError::Transport(
-                    "TAKUSU_JWT_SECRET or TAKUSU_JWT_SECRET_FILE is required for the sqlite backend"
+                    "jwt_secret (or TAKUSU_JWT_SECRET / TAKUSU_JWT_SECRET_FILE) is required for the sqlite backend"
                         .into(),
                 ));
             }
@@ -110,12 +66,12 @@ pub async fn start(config: &mut Config) -> Result<(), DesktopError> {
             let workers_url = cfg.workers_url().to_string();
             if workers_url.is_empty() {
                 return Err(DesktopError::Transport(
-                    "TAKUSU_WORKERS_URL is required for the workers backend".into(),
+                    "worker_url (or TAKUSU_WORKERS_URL) is required for the workers backend".into(),
                 ));
             }
             if workers_token.is_empty() {
                 return Err(DesktopError::Transport(
-                    "TAKUSU_WORKERS_TOKEN or TAKUSU_WORKERS_TOKEN_FILE is required for the workers backend"
+                    "workers_token (or TAKUSU_WORKERS_TOKEN / TAKUSU_WORKERS_TOKEN_FILE) is required for the workers backend"
                         .into(),
                 ));
             }
@@ -137,13 +93,15 @@ pub async fn start(config: &mut Config) -> Result<(), DesktopError> {
     let local_url = format!("http://127.0.0.1:{port}");
 
     // Use the configured bearer token as the root token. If none is configured
-    // but a workers token is, reuse that token so other clients can connect with
-    // the same credential. Otherwise generate an ephemeral token.
+    // but a root or workers token is, reuse that token so other clients can
+    // connect with the same credential. Otherwise generate an ephemeral token.
     let root_token = if !config.token.is_empty() {
         config.token.clone()
+    } else if !config.root_token.is_empty() {
+        config.root_token.clone()
     } else if !workers_token.is_empty() {
         tracing::info!(
-            "TAKUSU_TOKEN is not set; using TAKUSU_WORKERS_TOKEN as the local root-token fallback"
+            "token is not set; using workers_token as the local root-token fallback"
         );
         workers_token
     } else {

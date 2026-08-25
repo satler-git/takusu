@@ -1,3 +1,4 @@
+use percent_encoding::percent_decode_str;
 use worker::{Cors, Env, Method, Request, Response};
 
 use crate::error::error_response;
@@ -74,6 +75,12 @@ fn apply_cors(env: &Env, mut resp: Response) -> worker::Result<Response> {
     Ok(resp)
 }
 
+/// Decode a percent-encoded URL path segment so IDs containing `:` or other
+/// `pchar` characters match the values stored in D1.
+fn decode_path(s: &str) -> String {
+    percent_decode_str(s).decode_utf8_lossy().into_owned()
+}
+
 async fn dispatch(req: Request, env: Env) -> Result<Response, crate::error::WorkerError> {
     let url = req.url()?;
     let path = url.path();
@@ -84,143 +91,221 @@ async fn dispatch(req: Request, env: Env) -> Result<Response, crate::error::Work
     }
 
     let api = path.strip_prefix("/api/").unwrap_or(path);
-    let segs: Vec<&str> = api.split('/').filter(|s| !s.is_empty()).collect();
+    let segs: Vec<String> = api
+        .split('/')
+        .filter(|s| !s.is_empty())
+        .map(decode_path)
+        .collect();
 
     if segs != ["auth", "verify"] {
         handlers::auth::require_auth(&req, &env).await?;
     }
 
     match (method.clone(), segs.as_slice()) {
-        (Method::Get, ["auth", "verify"]) => handlers::auth::verify(req, env).await,
-        (Method::Post, ["tokens"]) => handlers::tokens::create(req, env).await,
-        (Method::Get, ["tokens"]) => handlers::tokens::list(req, env).await,
-        (Method::Delete, ["tokens", id]) => handlers::tokens::revoke(req, env, id).await,
-        (Method::Get, ["tasks"]) => handlers::tasks::list(req, env).await,
-        (Method::Post, ["tasks"]) => handlers::tasks::create(req, env).await,
-        (Method::Get, ["tasks", "similar"]) => handlers::memory::similar_tasks(req, env).await,
-        (Method::Get, ["tasks", id]) => handlers::tasks::get(req, env, id).await,
-        (Method::Patch, ["tasks", id]) => handlers::tasks::update(req, env, id).await,
-        (Method::Put, ["tasks", id]) => handlers::tasks::replace(req, env, id).await,
-        (Method::Delete, ["tasks", id]) => handlers::tasks::delete(req, env, id).await,
-        (Method::Get, ["tasks", id, "progress"]) => {
+        (Method::Get, [a, b]) if a == "auth" && b == "verify" => {
+            handlers::auth::verify(req, env).await
+        }
+        (Method::Post, [a]) if a == "tokens" => handlers::tokens::create(req, env).await,
+        (Method::Get, [a]) if a == "tokens" => handlers::tokens::list(req, env).await,
+        (Method::Delete, [a, id]) if a == "tokens" => {
+            handlers::tokens::revoke(req, env, id).await
+        }
+        (Method::Get, [a]) if a == "tasks" => handlers::tasks::list(req, env).await,
+        (Method::Post, [a]) if a == "tasks" => handlers::tasks::create(req, env).await,
+        (Method::Get, [a, b]) if a == "tasks" && b == "similar" => {
+            handlers::memory::similar_tasks(req, env).await
+        }
+        (Method::Get, [a, id]) if a == "tasks" => handlers::tasks::get(req, env, id).await,
+        (Method::Patch, [a, id]) if a == "tasks" => {
+            handlers::tasks::update(req, env, id).await
+        }
+        (Method::Put, [a, id]) if a == "tasks" => {
+            handlers::tasks::replace(req, env, id).await
+        }
+        (Method::Delete, [a, id]) if a == "tasks" => {
+            handlers::tasks::delete(req, env, id).await
+        }
+        (Method::Get, [a, id, b]) if a == "tasks" && b == "progress" => {
             handlers::progress::get_task_progress(req, env, id).await
         }
-        (Method::Post, ["tasks", id, "split"]) => {
+        (Method::Post, [a, id, b]) if a == "tasks" && b == "split" => {
             handlers::progress::split_task(req, env, id).await
         }
-        (Method::Get, ["tasks", id, "comments"]) => handlers::comments::list(req, env, id).await,
-        (Method::Post, ["tasks", id, "comments"]) => {
+        (Method::Get, [a, id, b]) if a == "tasks" && b == "comments" => {
+            handlers::comments::list(req, env, id).await
+        }
+        (Method::Post, [a, id, b]) if a == "tasks" && b == "comments" => {
             handlers::comments::create_user(req, env, id).await
         }
-        (Method::Post, ["tasks", id, "comments", "agent"]) => {
+        (Method::Post, [a, id, b, c]) if a == "tasks" && b == "comments" && c == "agent" => {
             handlers::comments::create_agent(req, env, id).await
         }
-        (Method::Delete, ["comments", id]) => handlers::comments::delete(req, env, id).await,
-        (Method::Post, ["work-sessions"]) => {
+        (Method::Delete, [a, id]) if a == "comments" => {
+            handlers::comments::delete(req, env, id).await
+        }
+        (Method::Post, [a]) if a == "work-sessions" => {
             handlers::progress::create_work_session(req, env).await
         }
-        (Method::Get, ["work-sessions"]) => handlers::progress::list_work_sessions(req, env).await,
-        (Method::Post, ["work-sessions", "undo"]) => {
+        (Method::Get, [a]) if a == "work-sessions" => {
+            handlers::progress::list_work_sessions(req, env).await
+        }
+        (Method::Post, [a, b]) if a == "work-sessions" && b == "undo" => {
             handlers::progress::undo_work_session(req, env).await
         }
-        (Method::Get, ["work-sessions", id]) => {
+        (Method::Get, [a, id]) if a == "work-sessions" => {
             handlers::progress::get_work_session(req, env, id).await
         }
-        (Method::Post, ["work-sessions", id, "pause"]) => {
+        (Method::Post, [a, id, b]) if a == "work-sessions" && b == "pause" => {
             handlers::progress::pause_work_session(req, env, id).await
         }
-        (Method::Post, ["work-sessions", id, "complete"]) => {
+        (Method::Post, [a, id, b]) if a == "work-sessions" && b == "complete" => {
             handlers::progress::complete_work_session(req, env, id).await
         }
-        (Method::Post, ["work-sessions", id, "progress"]) => {
+        (Method::Post, [a, id, b]) if a == "work-sessions" && b == "progress" => {
             handlers::progress::record_work_session_progress(req, env, id).await
         }
-        (Method::Post, ["work-sessions", id, "attach"]) => {
+        (Method::Post, [a, id, b]) if a == "work-sessions" && b == "attach" => {
             handlers::progress::attach_work_session(req, env, id).await
         }
-        (Method::Post, ["work-sessions", id, "convert"]) => {
+        (Method::Post, [a, id, b]) if a == "work-sessions" && b == "convert" => {
             handlers::progress::convert_work_session(req, env, id).await
         }
-        (Method::Get, ["habits"]) => handlers::habits::list(req, env).await,
-        (Method::Post, ["habits"]) => handlers::habits::create(req, env).await,
-        (Method::Get, ["habits", "scheduled-spans"]) => {
+        (Method::Get, [a]) if a == "habits" => handlers::habits::list(req, env).await,
+        (Method::Post, [a]) if a == "habits" => handlers::habits::create(req, env).await,
+        (Method::Get, [a, b]) if a == "habits" && b == "scheduled-spans" => {
             handlers::habits::list_all_scheduled_spans(req, env).await
         }
-        (Method::Get, ["habits", "steps"]) => handlers::habits::list_all_steps(req, env).await,
-        (Method::Get, ["habits", id]) => handlers::habits::get(req, env, id).await,
-        (Method::Patch, ["habits", id]) => handlers::habits::update(req, env, id).await,
-        (Method::Put, ["habits", id]) => handlers::habits::replace(req, env, id).await,
-        (Method::Delete, ["habits", id]) => handlers::habits::delete(req, env, id).await,
-        (Method::Get, ["habits", id, "scheduled-spans"]) => {
+        (Method::Get, [a, b]) if a == "habits" && b == "steps" => {
+            handlers::habits::list_all_steps(req, env).await
+        }
+        (Method::Get, [a, id]) if a == "habits" => handlers::habits::get(req, env, id).await,
+        (Method::Patch, [a, id]) if a == "habits" => {
+            handlers::habits::update(req, env, id).await
+        }
+        (Method::Put, [a, id]) if a == "habits" => {
+            handlers::habits::replace(req, env, id).await
+        }
+        (Method::Delete, [a, id]) if a == "habits" => {
+            handlers::habits::delete(req, env, id).await
+        }
+        (Method::Get, [a, id, b]) if a == "habits" && b == "scheduled-spans" => {
             handlers::habits::list_scheduled_spans(req, env, id).await
         }
-        (Method::Post, ["habits", id, "scheduled-spans"]) => {
+        (Method::Post, [a, id, b]) if a == "habits" && b == "scheduled-spans" => {
             handlers::habits::create_scheduled_span(req, env, id).await
         }
-        (Method::Delete, ["habits", id, "scheduled-spans", span_id]) => {
+        (Method::Delete, [a, id, b, span_id])
+            if a == "habits" && b == "scheduled-spans" =>
+        {
             handlers::habits::delete_scheduled_span(req, env, id, span_id).await
         }
-        (Method::Get, ["habits", id, "steps"]) => handlers::habits::list_steps(req, env, id).await,
-        (Method::Put, ["habits", id, "steps"]) => {
+        (Method::Get, [a, id, b]) if a == "habits" && b == "steps" => {
+            handlers::habits::list_steps(req, env, id).await
+        }
+        (Method::Put, [a, id, b]) if a == "habits" && b == "steps" => {
             handlers::habits::replace_steps(req, env, id).await
         }
-        (Method::Post, ["habits", id, "estimate"]) => {
+        (Method::Post, [a, id, b]) if a == "habits" && b == "estimate" => {
             handlers::habits::apply_estimate(req, env, id).await
         }
-        (Method::Get, ["schedule"]) => handlers::schedule::get(req, env).await,
-        (Method::Post, ["schedule", "save"]) => handlers::schedule::save(req, env).await,
-        (Method::Delete, ["schedule"]) => handlers::schedule::clear(req, env).await,
-        (Method::Get, ["settings"]) => handlers::settings::get(req, env).await,
-        (Method::Put, ["settings"]) => handlers::settings::update(req, env).await,
-        (Method::Post, ["devices"]) => handlers::devices::create(req, env).await,
-        (Method::Get, ["devices"]) => handlers::devices::list(req, env).await,
-        (Method::Get, ["devices", id]) => handlers::devices::get(req, env, id).await,
-        (Method::Patch, ["devices", id]) => handlers::devices::update(req, env, id).await,
-        (Method::Delete, ["devices", id]) => handlers::devices::delete(req, env, id).await,
-        (Method::Post, ["devices", id, "heartbeat"]) => {
+        (Method::Get, [a]) if a == "schedule" => handlers::schedule::get(req, env).await,
+        (Method::Post, [a, b]) if a == "schedule" && b == "save" => {
+            handlers::schedule::save(req, env).await
+        }
+        (Method::Delete, [a]) if a == "schedule" => handlers::schedule::clear(req, env).await,
+        (Method::Get, [a]) if a == "settings" => handlers::settings::get(req, env).await,
+        (Method::Put, [a]) if a == "settings" => handlers::settings::update(req, env).await,
+        (Method::Post, [a]) if a == "devices" => handlers::devices::create(req, env).await,
+        (Method::Get, [a]) if a == "devices" => handlers::devices::list(req, env).await,
+        (Method::Get, [a, id]) if a == "devices" => handlers::devices::get(req, env, id).await,
+        (Method::Patch, [a, id]) if a == "devices" => {
+            handlers::devices::update(req, env, id).await
+        }
+        (Method::Delete, [a, id]) if a == "devices" => {
+            handlers::devices::delete(req, env, id).await
+        }
+        (Method::Post, [a, id, b]) if a == "devices" && b == "heartbeat" => {
             handlers::devices::heartbeat(req, env, id).await
         }
-        (Method::Post, ["devices", id, "lease"]) => handlers::devices::lease(req, env, id).await,
-        (Method::Get, ["devices", id, "resident"]) => {
+        (Method::Post, [a, id, b]) if a == "devices" && b == "lease" => {
+            handlers::devices::lease(req, env, id).await
+        }
+        (Method::Get, [a, id, b]) if a == "devices" && b == "resident" => {
             handlers::devices::resident(req, env, id).await
         }
-        (Method::Get, ["devices", id, "speech"]) => handlers::devices::speech(req, env, id).await,
-        (Method::Get, ["skills"]) => handlers::skills::list(req, env).await,
-        (Method::Post, ["skills"]) => handlers::skills::create(req, env).await,
-        (Method::Get, ["skills", id]) => handlers::skills::get(req, env, id).await,
-        (Method::Patch, ["skills", id]) => handlers::skills::update(req, env, id).await,
-        (Method::Delete, ["skills", id]) => handlers::skills::delete(req, env, id).await,
-        (Method::Post, ["memory"]) => handlers::memory::create(req, env).await,
-        (Method::Get, ["memory", "search"]) => handlers::memory::search(req, env).await,
-        (Method::Post, ["memory", "inject"]) => handlers::memory::inject(req, env).await,
-        (Method::Get, ["memory", id]) => handlers::memory::get(req, env, id).await,
-        (Method::Patch, ["memory", id]) => handlers::memory::update(req, env, id).await,
-        (Method::Delete, ["memory", id]) => handlers::memory::delete(req, env, id).await,
-        (Method::Get, ["events"]) => handlers::events::list(req, env).await,
-        (Method::Post, ["events"]) => handlers::events::insert(req, env).await,
-        (Method::Post, ["events", "commit"]) => handlers::events::commit(req, env).await,
-        (Method::Get, ["events", "revision"]) => handlers::events::revision(req, env).await,
-        (Method::Get, ["events", "snapshot"]) => handlers::events::snapshot(req, env).await,
-        (Method::Post, ["events", "evaluate"]) => handlers::events::evaluate(req, env).await,
-        (Method::Post, ["coverage", "confirmations"]) => {
+        (Method::Get, [a, id, b]) if a == "devices" && b == "speech" => {
+            handlers::devices::speech(req, env, id).await
+        }
+        (Method::Get, [a]) if a == "skills" => handlers::skills::list(req, env).await,
+        (Method::Post, [a]) if a == "skills" => handlers::skills::create(req, env).await,
+        (Method::Get, [a, id]) if a == "skills" => handlers::skills::get(req, env, id).await,
+        (Method::Patch, [a, id]) if a == "skills" => {
+            handlers::skills::update(req, env, id).await
+        }
+        (Method::Delete, [a, id]) if a == "skills" => {
+            handlers::skills::delete(req, env, id).await
+        }
+        (Method::Post, [a]) if a == "memory" => handlers::memory::create(req, env).await,
+        (Method::Get, [a, b]) if a == "memory" && b == "search" => {
+            handlers::memory::search(req, env).await
+        }
+        (Method::Post, [a, b]) if a == "memory" && b == "inject" => {
+            handlers::memory::inject(req, env).await
+        }
+        (Method::Get, [a, id]) if a == "memory" => handlers::memory::get(req, env, id).await,
+        (Method::Patch, [a, id]) if a == "memory" => {
+            handlers::memory::update(req, env, id).await
+        }
+        (Method::Delete, [a, id]) if a == "memory" => {
+            handlers::memory::delete(req, env, id).await
+        }
+        (Method::Get, [a]) if a == "events" => handlers::events::list(req, env).await,
+        (Method::Post, [a]) if a == "events" => handlers::events::insert(req, env).await,
+        (Method::Post, [a, b]) if a == "events" && b == "commit" => {
+            handlers::events::commit(req, env).await
+        }
+        (Method::Get, [a, b]) if a == "events" && b == "revision" => {
+            handlers::events::revision(req, env).await
+        }
+        (Method::Get, [a, b]) if a == "events" && b == "snapshot" => {
+            handlers::events::snapshot(req, env).await
+        }
+        (Method::Post, [a, b]) if a == "events" && b == "evaluate" => {
+            handlers::events::evaluate(req, env).await
+        }
+        (Method::Post, [a, b]) if a == "coverage" && b == "confirmations" => {
             handlers::coverage::create_confirmation(req, env).await
         }
-        (Method::Post, ["coverage", "unsettled-intervals"]) => {
+        (Method::Post, [a, b]) if a == "coverage" && b == "unsettled-intervals" => {
             handlers::coverage::create_unsettled_interval(req, env).await
         }
-        (Method::Post, ["coverage", "settle"]) => handlers::coverage::settle(req, env).await,
-        (Method::Post, ["events", id, "claim"]) => handlers::events::claim(req, env, id).await,
-        (Method::Post, ["events", id, "acknowledge"]) => {
+        (Method::Post, [a, b]) if a == "coverage" && b == "settle" => {
+            handlers::coverage::settle(req, env).await
+        }
+        (Method::Post, [a, id, b]) if a == "events" && b == "claim" => {
+            handlers::events::claim(req, env, id).await
+        }
+        (Method::Post, [a, id, b]) if a == "events" && b == "acknowledge" => {
             handlers::events::acknowledge(req, env, id).await
         }
-        (Method::Put, ["events", id, "state"]) => {
+        (Method::Put, [a, id, b]) if a == "events" && b == "state" => {
             handlers::events::update_state(req, env, id).await
         }
-        (Method::Get, ["sync", "settings"]) => handlers::sync::get_settings(req, env).await,
-        (Method::Put, ["sync", "settings"]) => handlers::sync::update_settings(req, env).await,
-        (Method::Get, ["sync", "mappings"]) => handlers::sync::list_mappings(req, env).await,
-        (Method::Post, ["sync", "mappings"]) => handlers::sync::upsert_mappings(req, env).await,
-        (Method::Delete, ["sync", "mappings"]) => handlers::sync::delete_mappings(req, env).await,
+        (Method::Get, [a, b]) if a == "sync" && b == "settings" => {
+            handlers::sync::get_settings(req, env).await
+        }
+        (Method::Put, [a, b]) if a == "sync" && b == "settings" => {
+            handlers::sync::update_settings(req, env).await
+        }
+        (Method::Get, [a, b]) if a == "sync" && b == "mappings" => {
+            handlers::sync::list_mappings(req, env).await
+        }
+        (Method::Post, [a, b]) if a == "sync" && b == "mappings" => {
+            handlers::sync::upsert_mappings(req, env).await
+        }
+        (Method::Delete, [a, b]) if a == "sync" && b == "mappings" => {
+            handlers::sync::delete_mappings(req, env).await
+        }
         _ => Err(crate::error::WorkerError::NotFound(format!(
             "{} {}",
             method, path

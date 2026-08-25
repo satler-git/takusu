@@ -9,6 +9,18 @@
 let
   cfg = config.services.takusu-desktop;
   tomlFormat = pkgs.formats.toml { };
+  hasSettings = cfg.settings != null;
+  # The dedicated `storage` and `dataDir` options are authoritative: they are
+  # always written into the generated TOML on top of any user-supplied
+  # `settings` so the file stays consistent with the rest of the module.
+  settingsToml =
+    (if hasSettings then cfg.settings else { })
+    // {
+      storage = cfg.storage;
+    }
+    // lib.optionalAttrs (cfg.storage == "sqlite") {
+      db = "sqlite:${cfg.dataDir}/takusu.db";
+    };
 in
 {
   options.services.takusu-desktop = {
@@ -40,8 +52,13 @@ in
       default = null;
       description = ''
         Contents of `~/.config/takusu/config.toml`. Use this for non-secret
-        settings such as `desktop.theme` or `tz`. When `null`, no config file
-        is generated.
+        settings such as `desktop.theme` or `desktop.local_url`. When `null`,
+        no config file is generated and the service relies on environment
+        variables.
+
+        Note that `storage` and `db` are always taken from the dedicated
+        `storage` and `dataDir` options; any `storage` or `db` keys placed
+        here are ignored.
 
         Secrets should not be placed here; use `tokenFile` and
         `jwtSecretFile` instead.
@@ -129,7 +146,11 @@ in
         Environment = lib.mapAttrsToList (name: value: "${name}=${toString value}") (
           {
             RUST_LOG = cfg.logLevel;
+          }
+          // lib.optionalAttrs (!hasSettings) {
             TAKUSU_STORAGE = cfg.storage;
+          }
+          // lib.optionalAttrs (!hasSettings && cfg.storage == "sqlite") {
             TAKUSU_DB = "sqlite:${cfg.dataDir}/takusu.db";
           }
           // lib.optionalAttrs (cfg.tokenFile != null) { TAKUSU_TOKEN_FILE = toString cfg.tokenFile; }
@@ -170,8 +191,8 @@ in
       };
     };
 
-    home.file.".config/takusu/config.toml" = lib.mkIf (cfg.settings != null) {
-      source = tomlFormat.generate "takusu-config.toml" cfg.settings;
+    home.file.".config/takusu/config.toml" = lib.mkIf hasSettings {
+      source = tomlFormat.generate "takusu-config.toml" settingsToml;
     };
   };
 }

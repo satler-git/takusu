@@ -141,6 +141,30 @@
                 chmod -R +w $out/lib
               '';
 
+          takusuDesktopRuntimeLibs = with pkgs; [
+            alsa-lib
+            fontconfig
+            freetype
+            glib
+            libpulseaudio
+            libxkbcommon
+            openblas
+            openssl
+            stdenv.cc.cc.lib
+            vulkan-headers
+            vulkan-loader
+            wayland
+            wayland-protocols
+            zlib
+            libxcb
+            libx11
+            libxcursor
+            libxrandr
+            libxi
+            libxinerama
+            libxscrnsaver
+          ];
+
           rootSrc = lib.cleanSource ./.;
           src = lib.cleanSourceWith {
             src = rootSrc;
@@ -250,6 +274,7 @@
               pkg-config
               cmake
               libclang
+              makeWrapper
             ];
             buildInputs =
               with pkgs;
@@ -257,12 +282,25 @@
                 alsa-lib
                 libpulseaudio
                 openblas
+                stdenv.cc.cc.lib
+                zlib
               ]
               ++ [ sherpaOnnxLinuxX64Shared ];
             LIBCLANG_PATH = "${pkgs.libclang.lib}/lib";
             OPENBLAS_PATH = "${pkgs.openblas}/lib";
             BLAS_INCLUDE_DIRS = "${pkgs.openblas.dev}/include";
             SHERPA_ONNX_LIB_DIR = "${sherpaOnnxLinuxX64Shared}/lib";
+            postInstall = ''
+              wrapProgram $out/bin/takusu \
+                --prefix LD_LIBRARY_PATH : "${lib.makeLibraryPath ([
+                  pkgs.stdenv.cc.cc.lib
+                  pkgs.openssl.out
+                  pkgs.openblas
+                  pkgs.zlib
+                  pkgs.alsa-lib
+                  pkgs.libpulseaudio
+                ] ++ [ sherpaOnnxLinuxX64Shared ])}"
+            '';
             meta.mainProgram = "takusu";
           };
 
@@ -314,27 +352,17 @@
               pkg-config
               cmake
               libclang
+              makeWrapper
             ];
-            buildInputs = with pkgs; [
-              fontconfig
-              freetype
-              glib
-              libxkbcommon
-              vulkan-headers
-              vulkan-loader
-              wayland
-              wayland-protocols
-              libxcb
-              libx11
-              libxcursor
-              libxrandr
-              libxi
-              libxinerama
-              libxscrnsaver
-            ];
+            buildInputs = takusuDesktopRuntimeLibs ++ [ sherpaOnnxLinuxX64Shared ];
             LIBCLANG_PATH = "${pkgs.libclang.lib}/lib";
+            OPENBLAS_PATH = "${pkgs.openblas}/lib";
+            BLAS_INCLUDE_DIRS = "${pkgs.openblas.dev}/include";
+            SHERPA_ONNX_LIB_DIR = "${sherpaOnnxLinuxX64Shared}/lib";
             meta.mainProgram = "takusu-desktop";
             postInstall = ''
+              wrapProgram $out/bin/takusu-desktop \
+                --prefix LD_LIBRARY_PATH : "${lib.makeLibraryPath (takusuDesktopRuntimeLibs ++ [ sherpaOnnxLinuxX64Shared ])}"
               mkdir -p $out/lib/systemd/user
               cp ${./crates/takusu-desktop/takusu-desktop.service} $out/lib/systemd/user/takusu-desktop.service
               substituteInPlace $out/lib/systemd/user/takusu-desktop.service \
@@ -591,6 +619,7 @@
               pkg-config
               cmake
               libclang
+              makeWrapper
             ];
             buildInputs =
               with pkgs;
@@ -598,12 +627,25 @@
                 alsa-lib
                 libpulseaudio
                 openblas
+                stdenv.cc.cc.lib
+                zlib
               ]
               ++ [ sherpaOnnxLinuxX64Shared ];
             LIBCLANG_PATH = "${pkgs.libclang.lib}/lib";
             OPENBLAS_PATH = "${pkgs.openblas}/lib";
             BLAS_INCLUDE_DIRS = "${pkgs.openblas.dev}/include";
             SHERPA_ONNX_LIB_DIR = "${sherpaOnnxLinuxX64Shared}/lib";
+            postInstall = ''
+              wrapProgram $out/bin/uniffi-bindgen \
+                --prefix LD_LIBRARY_PATH : "${lib.makeLibraryPath ([
+                  pkgs.stdenv.cc.cc.lib
+                  pkgs.openssl.out
+                  pkgs.openblas
+                  pkgs.zlib
+                  pkgs.alsa-lib
+                  pkgs.libpulseaudio
+                ] ++ [ sherpaOnnxLinuxX64Shared ])}"
+            '';
             doCheck = false;
           };
 
