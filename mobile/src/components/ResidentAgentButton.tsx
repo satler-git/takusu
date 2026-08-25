@@ -108,7 +108,7 @@ interface ButtonPosition {
 }
 
 interface ResidentAgentButtonProps {
-  /** Default bottom-center position; restored from AsyncStorage if saved. */
+  /** Override the default center position. A saved AsyncStorage position still takes precedence. */
   defaultPosition?: ButtonPosition;
 }
 
@@ -160,15 +160,16 @@ export function ResidentAgentButton({
     if (defaultPosition) return defaultPosition;
     return {
       x: (screenWidth - BUTTON_SIZE) / 2,
-      y: screenHeight - BUTTON_SIZE - insets.bottom - 16,
+      y: (screenHeight - BUTTON_SIZE) / 2,
     };
-  }, [defaultPosition, screenWidth, screenHeight, insets.bottom]);
+  }, [defaultPosition, screenWidth, screenHeight]);
 
   // Start off-screen; the default-position effect will move the button to a
-  // valid bottom-center (or saved) position once dimensions are known.
+  // valid center (or saved) position once dimensions are known.
   const buttonX = useSharedValue(-BUTTON_SIZE);
   const buttonY = useSharedValue(-BUTTON_SIZE);
   const needsDefaultPosition = useRef(true);
+  const positionRestored = useRef(false);
 
   useEffect(() => {
     minX.value = left + 8;
@@ -199,9 +200,13 @@ export function ResidentAgentButton({
     maxY,
   ]);
 
-  // Load saved position once on mount. If a saved position exists, restore it;
-  // otherwise the default-position effect below will place the button.
+  // Load the saved position once the screen dimensions are known. The restore
+  // happens at most once; any later dimension changes are handled by the
+  // boundary clamping effect above.
   useEffect(() => {
+    if (screenWidth <= 0 || screenHeight <= 0 || positionRestored.current)
+      return;
+    positionRestored.current = true;
     AsyncStorage.getItem(POSITION_KEY)
       .then((raw) => {
         if (!raw) return;
@@ -227,11 +232,10 @@ export function ResidentAgentButton({
         }
       })
       .catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [screenWidth, screenHeight, buttonX, buttonY, minX, maxX, minY, maxY]);
 
-  // Default position: bottom-center once we have a valid screen size. This
-  // also replaces any invalid -BUTTON_SIZE initial value from first render.
+  // Default position: center once we have a valid screen size. This also
+  // replaces any invalid -BUTTON_SIZE initial value from first render.
   useEffect(() => {
     if (!needsDefaultPosition.current) return;
     if (screenWidth <= 0 || screenHeight <= 0) return;
