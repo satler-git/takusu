@@ -9,6 +9,16 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 
 type OnChange = Arc<Mutex<Option<Arc<dyn Fn() + Send + Sync>>>>;
+type OnCue = Arc<Mutex<Option<Arc<dyn Fn(SurfaceCue) + Send + Sync>>>>;
+
+/// A short spoken announcement requested at a surface transition.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SurfaceCue {
+    /// Microphone capture started.
+    ListenStart,
+    /// Microphone capture ended.
+    ListenEnd,
+}
 
 #[cfg(feature = "audio-device")]
 use takusu_agent::TurnEvent;
@@ -19,6 +29,23 @@ use crate::presentation::{DesktopAction, DesktopPresentation};
 
 #[cfg(feature = "audio-device")]
 use crate::audio::{VoiceSessionHandle, spawn_voice_session};
+
+/// Map a surface state transition to a spoken cue, if any.
+fn cue_for_transition(
+    previous: Option<SurfaceState>,
+    next: Option<SurfaceState>,
+) -> Option<SurfaceCue> {
+    use SurfaceState::Listening;
+    match (previous, next) {
+        (Some(prev), Some(next)) if prev != Listening && next == Listening => {
+            Some(SurfaceCue::ListenStart)
+        }
+        (Some(prev), Some(next)) if prev == Listening && next != Listening => {
+            Some(SurfaceCue::ListenEnd)
+        }
+        _ => None,
+    }
+}
 
 /// Errors the daemon can surface to the user.
 #[derive(Debug, thiserror::Error)]
@@ -114,7 +141,11 @@ pub struct DesktopState {
     #[allow(dead_code)]
     config: Config,
     voice_invite: Arc<AtomicBool>,
+    /// Keep the compact panel open even when the surface is idle. Set by
+    /// panel/approval quick actions and cleared only by the close button.
+    panel_open: Arc<AtomicBool>,
     on_change: OnChange,
+    on_cue: OnCue,
     #[cfg(feature = "audio-device")]
     voice: Arc<Mutex<Option<VoiceSessionHandle>>>,
 }
@@ -128,7 +159,9 @@ impl DesktopState {
             })),
             config,
             voice_invite: Arc::new(AtomicBool::new(false)),
+            panel_open: Arc::new(AtomicBool::new(false)),
             on_change: Arc::new(Mutex::new(None)),
+            on_cue: Arc::new(Mutex::new(None)),
             #[cfg(feature = "audio-device")]
             voice: Arc::new(Mutex::new(None)),
         }
@@ -146,12 +179,42 @@ impl DesktopState {
     }
 
     pub fn update_surface(&self, event: SurfaceEvent) {
-        if let Ok(mut guard) = self.inner.write() {
-            match event {
-                SurfaceEvent::Snapshot(s) | SurfaceEvent::StateChanged(s) => guard.snapshot = s,
+        let cue = {
+            let previous = self.snapshot().map(|v| v.snapshot.state);
+            if let Ok(mut guard) = self.inner.write() {
+                let next = match event {
+                    SurfaceEvent::Snapshot(s) | SurfaceEvent::StateChanged(s) => {
+                        guard.snapshot = s;
+                        Some(guard.snapshot.state)
+                    }
+                };
+                cue_for_transition(previous, next)
+            } else {
+                None
             }
-        }
+        };
         self.notify_change();
+        if let Some(cue) = cue {
+            self.notify_cue(cue);
+        }
+    }
+
+    /// Register a callback invoked when a spoken-cue transition occurs.
+    pub fn set_on_cue<F>(&self, f: F)
+    where
+        F: Fn(SurfaceCue) + Send + Sync + 'static,
+    {
+        if let Ok(mut guard) = self.on_cue.lock() {
+            *guard = Some(Arc::new(f));
+        }
+    }
+
+    fn notify_cue(&self, cue: SurfaceCue) {
+        if let Ok(guard) = self.on_cue.lock()
+            && let Some(cb) = guard.as_ref()
+        {
+            cb(cue);
+        }
     }
 
     pub fn set_surface_presentation(&self, presentation: Option<Presentation>) {
@@ -261,6 +324,17 @@ impl DesktopState {
         self.voice_invite.load(Ordering::Relaxed)
     }
 
+    /// Keep the compact panel open even when the surface is idle.
+    pub fn set_panel_open(&self, open: bool) {
+        self.panel_open.store(open, Ordering::Relaxed);
+        self.notify_change();
+    }
+
+    /// Whether the compact panel should be forced open.
+    pub fn panel_open(&self) -> bool {
+        self.panel_open.load(Ordering::Relaxed)
+    }
+
     /// Whether a voice session is currently running.
     #[cfg(feature = "audio-device")]
     pub fn voice_session_active(&self) -> bool {
@@ -314,4 +388,30 @@ impl DesktopState {
     /// No-op placeholder when the `audio-device` feature is disabled.
     #[cfg(not(feature = "audio-device"))]
     pub fn stop_voice_session(&self) {}
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cue_for_transition_fires_on_listen_boundaries() {
+        use takusu_agent::SurfaceState;
+        let idle = SurfaceState::Idle;
+        let listening = SurfaceState::Listening;
+        let transcribing = SurfaceState::Transcribing;
+
+        assert_eq!(
+            cue_for_transition(Some(idle), Some(listening)),
+            Some(SurfaceCue::ListenStart)
+        );
+        assert_eq!(
+            cue_for_transition(Some(listening), Some(transcribing)),
+            Some(SurfaceCue::ListenEnd)
+        );
+        assert_eq!(cue_for_transition(Some(idle), Some(transcribing)), None);
+        assert_eq!(cue_for_transition(Some(listening), Some(listening)), None);
+        assert_eq!(cue_for_transition(None, Some(listening)), None);
+        assert_eq!(cue_for_transition(Some(listening), None), None);
+    }
 }

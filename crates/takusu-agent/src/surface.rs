@@ -411,27 +411,55 @@ impl SurfaceStateMachine {
         operation_id: Option<u64>,
         command: SurfaceCommand,
     ) -> SurfaceCommandResponse {
-        let expected = match command {
-            SurfaceCommand::ConfirmRecording => SurfaceState::Listening,
-            SurfaceCommand::OpenPanel => SurfaceState::Thinking,
-            SurfaceCommand::StopTts => SurfaceState::Speaking,
-            SurfaceCommand::OpenApproval => SurfaceState::WaitingForApproval,
-            SurfaceCommand::ShowRecovery => SurfaceState::Error,
-        };
         let mut data = self
             .inner
             .state
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        if !data.active
-            || operation_id
-                .is_some_and(|operation_id| data.snapshot.operation_id != Some(operation_id))
-            || data.snapshot.state != expected
-        {
+
+        let (accepted, reason) = match command {
+            // OpenPanel is a "reveal the compact panel" request. It is allowed
+            // from idle (no active turn) or while a turn is being presented.
+            SurfaceCommand::OpenPanel => {
+                let state_ok = matches!(
+                    (data.active, data.snapshot.state),
+                    (false, SurfaceState::Idle)
+                        | (
+                            true,
+                            SurfaceState::Idle
+                                | SurfaceState::Thinking
+                                | SurfaceState::WaitingForUser,
+                        )
+                );
+                let operation_ok = operation_id
+                    .is_none_or(|operation_id| data.snapshot.operation_id == Some(operation_id));
+                (
+                    state_ok && operation_ok,
+                    "command requires Idle, Thinking, or WaitingForUser state".to_string(),
+                )
+            }
+            _ => {
+                let expected = match command {
+                    SurfaceCommand::ConfirmRecording => SurfaceState::Listening,
+                    SurfaceCommand::OpenPanel => unreachable!(),
+                    SurfaceCommand::StopTts => SurfaceState::Speaking,
+                    SurfaceCommand::OpenApproval => SurfaceState::WaitingForApproval,
+                    SurfaceCommand::ShowRecovery => SurfaceState::Error,
+                };
+                let accepted = data.active
+                    && operation_id.is_none_or(|operation_id| {
+                        data.snapshot.operation_id == Some(operation_id)
+                    })
+                    && data.snapshot.state == expected;
+                (accepted, format!("command requires {expected:?} state"))
+            }
+        };
+
+        if !accepted {
             return SurfaceCommandResponse {
                 command,
                 accepted: false,
-                reason: Some(format!("command requires {expected:?} state")),
+                reason: Some(reason),
                 snapshot: data.snapshot.clone(),
             };
         }
@@ -671,28 +699,39 @@ mod tests {
             SurfaceState::Speaking,
             SurfaceState::Error,
         ];
-        let commands = [
-            (SurfaceCommand::ConfirmRecording, SurfaceState::Listening),
-            (SurfaceCommand::OpenPanel, SurfaceState::Thinking),
-            (SurfaceCommand::StopTts, SurfaceState::Speaking),
+        let commands: &[(SurfaceCommand, &[SurfaceState])] = &[
+            (SurfaceCommand::ConfirmRecording, &[SurfaceState::Listening]),
+            (
+                SurfaceCommand::OpenPanel,
+                &[
+                    SurfaceState::Idle,
+                    SurfaceState::Thinking,
+                    SurfaceState::WaitingForUser,
+                ],
+            ),
+            (SurfaceCommand::StopTts, &[SurfaceState::Speaking]),
             (
                 SurfaceCommand::OpenApproval,
-                SurfaceState::WaitingForApproval,
+                &[SurfaceState::WaitingForApproval],
             ),
-            (SurfaceCommand::ShowRecovery, SurfaceState::Error),
+            (SurfaceCommand::ShowRecovery, &[SurfaceState::Error]),
         ];
 
         for state in states {
-            for (command, expected_state) in commands {
+            for (command, expected_states) in commands {
                 let machine = machine_in(state);
                 let operation_id = machine.snapshot().operation_id;
-                let response = machine.command_for(operation_id, command);
-                assert_eq!(response.accepted, state == expected_state);
-                assert_eq!(response.command, command);
+                let response = machine.command_for(operation_id, *command);
+                let accepted = expected_states.contains(&state);
+                assert_eq!(
+                    response.accepted, accepted,
+                    "state={state:?}, command={command:?}"
+                );
+                assert_eq!(response.command, *command);
                 assert_eq!(
                     response.snapshot.state,
-                    if state == expected_state {
-                        match command {
+                    if accepted {
+                        match *command {
                             SurfaceCommand::ConfirmRecording => SurfaceState::Transcribing,
                             SurfaceCommand::StopTts => SurfaceState::Idle,
                             _ => state,

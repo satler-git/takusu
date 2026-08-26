@@ -62,6 +62,15 @@ pub struct AudioClip {
 }
 
 impl AudioClip {
+    /// Build a clip from already-decoded samples.
+    pub fn from_parts(samples: Vec<f32>, sample_rate: u32, channels: u16) -> Self {
+        Self {
+            samples,
+            sample_rate,
+            channels,
+        }
+    }
+
     /// Parse a WAV buffer and validate the format.
     ///
     /// Only 16-bit integer PCM, mono or stereo WAVs are supported.

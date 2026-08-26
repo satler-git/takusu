@@ -199,60 +199,37 @@ impl VoiceSession {
         let mut barge_in: Option<String> = None;
 
         loop {
-            let turn = async {
-                // Capture must finish within the short turn timeout.
-                let text = match barge_in.take() {
-                    Some(text) => text,
-                    None => match tokio::time::timeout(turn_timeout, io.capture(self.origin)).await
-                    {
-                        Ok(Ok(Some(text))) => text,
-                        Ok(Ok(None)) => return Ok(None),
-                        Ok(Err(VoiceSessionError::UserCancelled)) => {
-                            return Err(VoiceSessionError::UserCancelled);
-                        }
-                        Ok(Err(e)) => return Err(e),
-                        Err(_) => return Err(VoiceSessionError::Timeout),
-                    },
-                };
-
-                // Process (agent turn + TTS playback) gets a longer budget so
-                // long assistant replies are not killed mid-playback.
-                match tokio::time::timeout(
-                    process_timeout,
-                    io.process(&text, self.origin, self.input_path),
-                )
-                .await
-                {
-                    Ok(Ok(processed)) => Ok(Some(processed)),
+            // Capture waits under the idle timer. A pending barge-in from the
+            // previous turn skips capture and goes straight to process.
+            let captured = async {
+                if let Some(text) = barge_in.take() {
+                    return Ok(Some(text));
+                }
+                match tokio::time::timeout(turn_timeout, io.capture(self.origin)).await {
+                    Ok(Ok(Some(text))) => Ok(Some(text)),
+                    Ok(Ok(None)) => Ok(None),
+                    Ok(Err(VoiceSessionError::UserCancelled)) => {
+                        Err(VoiceSessionError::UserCancelled)
+                    }
                     Ok(Err(e)) => Err(e),
                     Err(_) => Err(VoiceSessionError::Timeout),
                 }
             };
 
-            tokio::select! {
+            let text = tokio::select! {
                 _ = &mut idle => {
                     return SessionOutcome::IdleTimeout;
                 }
-                result = turn => {
+                result = captured => {
                     match result {
+                        Ok(Some(text)) => text,
                         Ok(None) => {
                             // No speech this attempt; yield so the idle timer
                             // advances instead of busy-spinning on an always-
                             // ready capture future, then keep listening until
                             // the idle deadline fires.
                             tokio::task::yield_now().await;
-                        }
-                        Ok(Some(ProcessedTurn { result: _, barge_in: Some(text) })) => {
-                            consecutive_errors = 0;
-                            // Real activity resets the idle deadline.
-                            idle.as_mut().reset(tokio::time::Instant::now() + self.config.idle_timeout);
-                            barge_in = Some(text);
-                        }
-                        Ok(Some(ProcessedTurn { result: _, barge_in: None })) => {
-                            consecutive_errors = 0;
-                            // Real activity resets the idle deadline so the
-                            // session survives long conversations.
-                            idle.as_mut().reset(tokio::time::Instant::now() + self.config.idle_timeout);
+                            continue;
                         }
                         Err(VoiceSessionError::UserCancelled) => {
                             return SessionOutcome::UserExited;
@@ -262,12 +239,51 @@ impl VoiceSession {
                             if consecutive_errors >= self.config.max_consecutive_errors {
                                 return SessionOutcome::Failed;
                             }
+                            continue;
                         }
-                        Err(_) => {
-                            return SessionOutcome::Failed;
-                        }
+                        Err(_) => return SessionOutcome::Failed,
                     }
                 }
+            };
+
+            // Process (agent turn + TTS playback) runs outside the idle select
+            // so in-progress playback is never cut by the timeout. The idle
+            // deadline is only refreshed on a successful turn: a recoverable
+            // process failure leaves it pending, so the next capture select
+            // lets an already-elapsed idle fire and end the session.
+            let processed = match tokio::time::timeout(
+                process_timeout,
+                io.process(&text, self.origin, self.input_path),
+            )
+            .await
+            {
+                Ok(Ok(processed)) => processed,
+                Ok(Err(VoiceSessionError::UserCancelled)) => {
+                    return SessionOutcome::UserExited
+                }
+                Ok(Err(e)) if e.is_recoverable() => {
+                    consecutive_errors += 1;
+                    if consecutive_errors >= self.config.max_consecutive_errors {
+                        return SessionOutcome::Failed;
+                    }
+                    continue;
+                }
+                Ok(Err(_)) => return SessionOutcome::Failed,
+                Err(_) => {
+                    consecutive_errors += 1;
+                    if consecutive_errors >= self.config.max_consecutive_errors {
+                        return SessionOutcome::Failed;
+                    }
+                    continue;
+                }
+            };
+
+            consecutive_errors = 0;
+            // Real activity (a successful turn) resets the idle deadline so
+            // the session survives long conversations.
+            idle.as_mut().reset(tokio::time::Instant::now() + self.config.idle_timeout);
+            if let Some(text) = processed.barge_in {
+                barge_in = Some(text);
             }
         }
     }
@@ -557,6 +573,88 @@ mod tests {
             }
         }
         let mut io = SlowProcessIo;
+        let outcome = session.run(&mut io).await;
+        assert_eq!(outcome, SessionOutcome::IdleTimeout);
+    }
+
+    #[tokio::test]
+    async fn in_progress_playback_outlives_the_idle_window() {
+        // The idle timer must not end the session while a process (assistant
+        // TTS playback) is still running, even when that process takes longer
+        // than idle_timeout. The deadline only applies to waiting for the next
+        // utterance, not to finishing the current reply.
+        struct LongPlaybackIo;
+        #[async_trait::async_trait]
+        impl VoiceSessionIo for LongPlaybackIo {
+            async fn capture(
+                &mut self,
+                _o: InputOrigin,
+            ) -> Result<Option<String>, VoiceSessionError> {
+                Ok(Some("hello".into()))
+            }
+            async fn process(
+                &mut self,
+                _t: &str,
+                _o: InputOrigin,
+                _p: InputPath,
+            ) -> Result<ProcessedTurn, VoiceSessionError> {
+                // Longer than idle_timeout; must not be cut mid-playback.
+                tokio::time::sleep(Duration::from_millis(250)).await;
+                Ok(ProcessedTurn {
+                    result: TurnResult {
+                        text: String::new(),
+                        changes: Vec::new(),
+                        schedule_dirty: false,
+                        approval_request: None,
+                        presentation: None,
+                        intake_state: None,
+                    },
+                    barge_in: None,
+                })
+            }
+        }
+        struct FiniteIo {
+            playback_io: LongPlaybackIo,
+            captures: usize,
+        }
+        #[async_trait::async_trait]
+        impl VoiceSessionIo for FiniteIo {
+            async fn capture(
+                &mut self,
+                _o: InputOrigin,
+            ) -> Result<Option<String>, VoiceSessionError> {
+                self.captures += 1;
+                if self.captures > 1 {
+                    // After the long playback, go silent so the session can
+                    // reach the idle outcome on its own rather than looping.
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                    return Ok(None);
+                }
+                self.playback_io.capture(_o).await
+            }
+            async fn process(
+                &mut self,
+                _t: &str,
+                _o: InputOrigin,
+                _p: InputPath,
+            ) -> Result<ProcessedTurn, VoiceSessionError> {
+                self.playback_io.process(_t, _o, _p).await
+            }
+        }
+        let session = VoiceSession::new(
+            VoiceSessionConfig {
+                idle_timeout: Duration::from_millis(100),
+                turn_timeout: Duration::from_secs(1),
+                process_timeout: Duration::from_secs(1),
+                ..Default::default()
+            },
+            InputOrigin::Voice,
+            InputPath::ExplicitVoiceSession,
+        );
+        let mut io = FiniteIo {
+            playback_io: LongPlaybackIo,
+            captures: 0,
+        };
         let outcome = session.run(&mut io).await;
         assert_eq!(outcome, SessionOutcome::IdleTimeout);
     }

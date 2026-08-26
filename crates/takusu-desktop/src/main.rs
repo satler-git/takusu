@@ -12,6 +12,8 @@ use takusu_agent::{DeliveryMode, SurfaceCommand, SurfaceEvent, SurfaceState};
 use takusu_contracts::EventDeliveryState;
 
 #[cfg(feature = "audio-device")]
+use takusu_desktop::audio::speak_cue;
+#[cfg(feature = "audio-device")]
 use takusu_desktop::audio::speak_presentation;
 use tracing_subscriber::{EnvFilter, fmt};
 
@@ -78,9 +80,15 @@ async fn run() -> Result<(), DesktopError> {
     let listener_proxy = proxy.clone();
     let listener_state = Arc::clone(&notification_state);
     let listener_transport = Arc::clone(&transport);
+    let listener_desktop_state = state.clone();
     tokio::spawn(async move {
-        if let Err(e) =
-            notify::run_action_listener(&listener_proxy, listener_state, listener_transport).await
+        if let Err(e) = notify::run_action_listener(
+            &listener_proxy,
+            listener_state,
+            listener_transport,
+            Some(listener_desktop_state),
+        )
+        .await
         {
             tracing::error!(error=%e, "notification action listener failed");
         }
@@ -93,6 +101,23 @@ async fn run() -> Result<(), DesktopError> {
     state.set_on_change(move || {
         show_popover_for_state(&state_for_popover, &popover_for_callback);
     });
+
+    #[cfg(feature = "audio-device")]
+    {
+        // Announce listening start/end with the configured TTS cues.
+        let cue_state = state.clone();
+        state.set_on_cue(move |cue| {
+            let cue_state = cue_state.clone();
+            tokio::spawn(async move {
+                if cue_state.do_not_disturb() {
+                    return;
+                }
+                if let Err(error) = speak_cue(cue).await {
+                    tracing::warn!(?cue, error=%error, "listening cue failed");
+                }
+            });
+        });
+    }
 
     let initial_next_eval_at =
         replay_events(transport.as_ref(), &state, &notification_state, &proxy).await?;
@@ -377,11 +402,13 @@ fn show_popover_for_state(state: &DesktopState, popover: &Popover) {
     let detail = view.as_ref().and_then(|v| v.detail());
     let active = state.voice_session_active();
     let invited = state.consume_voice_invite();
+    let panel_open = state.panel_open();
 
     let show_voice_button = cfg!(feature = "audio-device") && (active || invited);
 
     if active
         || invited
+        || panel_open
         || matches!(
             snapshot.state,
             SurfaceState::Thinking
