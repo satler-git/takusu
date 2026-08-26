@@ -66,7 +66,7 @@ export function useAmbient() {
         localUrl: base.localUrl || localUrl,
         deviceId: base.deviceId || 'mobile',
         language: base.language || 'ja',
-        wakeWordBackend: base.wakeWordBackend || 'sherpa_kws',
+        wakeWordBackend: base.wakeWordBackend || 'asr_text_match',
       };
     },
     [],

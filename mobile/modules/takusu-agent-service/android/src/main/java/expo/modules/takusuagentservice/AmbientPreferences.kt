@@ -215,7 +215,7 @@ class AmbientPreferences(
         const val DEFAULT_ASR_MODEL = "sherpa-sense-voice-int8"
         const val DEFAULT_LANGUAGE = "ja"
         const val DEFAULT_DEVICE_ID = "mobile"
-        const val DEFAULT_WAKE_WORD_BACKEND = "sherpa_kws"
+        const val DEFAULT_WAKE_WORD_BACKEND = "asr_text_match"
 
         @Volatile
         private var cachedAesKey: SecretKey? = null

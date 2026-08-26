@@ -9,8 +9,12 @@ resident-agent ambient listening (WI-21). The implementation lives in
 Decide which wake-word gate to carry forward to the Android microphone service
 (WI-23) by measuring, on the user's actual Linux desktop:
 
-1. `WakeWordBackend::AsrTextMatch` — desktop-only streaming-ASR + text match.
-2. `WakeWordBackend::SherpaKws` — pretrained sherpa-onnx transducer KWS.
+1. `WakeWordBackend::AsrTextMatch` — streaming-ASR + text match. **The default**
+   since sherpa-onnx has no Japanese-capable keyword spotting model: the only
+   pretrained KWS models are Chinese/English, and multi-character Japanese
+   keywords do not fire even with the multilingual streaming zipformer.
+2. `WakeWordBackend::SherpaKws` — pretrained sherpa-onnx transducer KWS
+   (Chinese/English). Retained for evaluation and non-Japanese use.
 3. (Future) Custom keyword model (openWakeWord or similar), if the above two
    fail on the Japanese wake phrase.
 
@@ -23,7 +27,7 @@ Decide which wake-word gate to carry forward to the Android microphone service
    [audio.ambient]
    enabled = true
    wake_word = "たくす"
-   wake_word_backend = "asr_text_match"  # or "sherpa_kws"
+   wake_word_backend = "asr_text_match"  # default; "sherpa_kws" is experimental
    ```
 
 2. To start ambient when the daemon launches, set in `~/.config/takusu/config.toml`:
@@ -76,11 +80,21 @@ Fill this table after each multi-day run.
 | Backend | Wake word | Run days | Wake events | False fires | Misses | Notes |
 |--------|------------|----------|-------------|-------------|--------|-------|
 | `AsrTextMatch` | `たくす` | | | | | |
-| `SherpaKws` | `たくす` | | | | | |
 
 ## Open question update
 
 The open question in `doc/resident-agent.md` asks whether a pretrained KWS model
-works for the Japanese wake phrase. The evaluation above decides between
-`AsrTextMatch` and `SherpaKws`; if both fail, the next step is a custom keyword
-model.
+works for the Japanese wake phrase. As of the multilingual zipformer test
+(August 2026), the answer is **no**:
+
+- The only pretrained sherpa-onnx KWS models are Chinese/English
+  (WenetSpeech / GigaSpeech / zh-en 2025-12-20).
+- The multilingual streaming zipformer
+  (`streaming-zipformer-ar_en_id_ja_ru_th_vi_zh-2025-02-10`) transcribes
+  Japanese correctly as a streaming ASR, but the `KeywordSpotter` decoder does
+  not fire on multi-character Japanese keywords — only single-character
+  keywords ("風", "傘") trigger. It is also ~340 MB, not the "few MB" an
+  always-on KWS gate needs.
+- A Japanese wake word therefore uses `AsrTextMatch` by default. A custom
+  keyword model (openWakeWord or similar) remains the future step if the phone
+  power budget cannot tolerate streaming ASR during speech segments.
