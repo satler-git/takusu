@@ -25,7 +25,7 @@ class AmbientStartOptions : Record {
 
     @Field val language: String = "ja"
 
-    @Field val wakeWordBackend: String = "sherpa_kws"
+    @Field val wakeWordBackend: String = "asr_text_match"
 }
 
 class TakusuAgentServiceModule : Module() {

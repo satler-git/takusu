@@ -79,12 +79,16 @@ pub struct AmbientResult {
 #[serde(rename_all = "snake_case")]
 pub enum WakeWordBackend {
     /// Match the wake phrase in a streaming ASR partial transcript.
-    /// Heavier, but language-agnostic.
+    /// Heavier, but language-agnostic. The default: sherpa-onnx has no
+    /// Japanese-capable keyword-spotting model, so for a Japanese wake word
+    /// the ASR text match is the only backend that actually detects it.
+    #[default]
     AsrTextMatch,
     /// Use a tiny sherpa-onnx transducer keyword spotter.
     /// `KwsConfig::keyword` is romanized and tokenized automatically; set
     /// `keywords_buf` explicitly to override the tokenization.
-    #[default]
+    /// The pretrained KWS models are Chinese/English and are unreliable for
+    /// Japanese wake words.
     SherpaKws,
 }
 
@@ -120,7 +124,7 @@ impl Default for AmbientConfig {
         Self {
             enabled: false,
             wake_word: "たくす".into(),
-            wake_word_backend: WakeWordBackend::SherpaKws,
+            wake_word_backend: WakeWordBackend::AsrTextMatch,
             kws: KwsConfig::for_wenetspeech(),
             asr_language: "ja".into(),
             max_utterance_seconds: 60,

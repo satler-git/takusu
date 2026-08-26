@@ -34,11 +34,11 @@ fn try_lock_or_recover<T>(mutex: &Mutex<T>) -> Option<std::sync::MutexGuard<'_, 
     }
 }
 
-/// Parse a user-provided wake-word backend name, defaulting to Sherpa KWS.
+/// Parse a user-provided wake-word backend name, defaulting to ASR text match.
 fn parse_wake_word_backend(backend: Option<&str>) -> WakeWordBackend {
     match backend.map(str::trim) {
-        Some("asr_text_match") | Some("asr") => WakeWordBackend::AsrTextMatch,
-        _ => WakeWordBackend::SherpaKws,
+        Some("sherpa_kws") => WakeWordBackend::SherpaKws,
+        _ => WakeWordBackend::AsrTextMatch,
     }
 }
 
