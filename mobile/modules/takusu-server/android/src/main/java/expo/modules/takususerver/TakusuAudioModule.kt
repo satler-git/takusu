@@ -124,19 +124,23 @@ class TakusuAudioModule : Module() {
     }
 
     private suspend fun ensureVad() {
-        val dir =
-            cacheDir
+        val context =
+            appContext.reactContext
                 ?: throw CodedException("ERR_AUDIO_CONFIG", "React context is not available", null)
+        val dir = File(context.noBackupFilesDir, "takusu/models")
         if (vad == null) {
-            val modelDir =
+            val modelPath =
                 withIoContext {
-                    uniffi.takusu_android.downloadModel(
-                        dir.absolutePath,
-                        "silero-vad",
-                        "${dir.absolutePath}/silero-vad-status.json",
-                    )
+                    if (!uniffi.takusu_android.isModelCached(dir.absolutePath, "silero-vad")) {
+                        throw CodedException(
+                            "ERR_VAD_NOT_CACHED",
+                            "VAD model is not downloaded. Download it from Settings > Voice models.",
+                            null,
+                        )
+                    }
+                    "${dir.absolutePath}/silero-vad/silero_vad.onnx"
                 }
-            vad = AndroidVad("$modelDir/silero_vad.onnx")
+            vad = AndroidVad(modelPath)
         }
     }
 
@@ -247,7 +251,7 @@ class TakusuAudioModule : Module() {
 
             // VAD endpointing: downloads the Silero model (first run) and stops
             // recording ~0.5 s after speech ends instead of requiring a tap.
-            AsyncFunction("startRecordingWithEndpointing") Coroutine {
+            AsyncFunction("startRecordingWithEndpointing") Coroutine { _: Any? ->
                 ensureVad()
                 val instance = AudioRecorder()
                 instance.setVadEndpointing(vad)
@@ -608,7 +612,7 @@ class TakusuAudioModule : Module() {
                 true
             }
 
-            AsyncFunction("listSpeakers").Coroutine<Unit> {
+            AsyncFunction("listSpeakers") Coroutine { _: Any? ->
                 val verifier =
                     speaker
                         ?: throw CodedException("ERR_SPEAKER_CONFIG", "Speaker verifier is not configured", null)
