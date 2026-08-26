@@ -232,36 +232,38 @@ async fn load_speaker_verifier(
     provider: ExecutionProvider,
     verify_threshold: f32,
 ) -> Result<(SpeakerVerifier, PathBuf), AppError> {
-    let cache = tokio::task::spawn_blocking(|| {
-        ModelCache::default_dir().map_err(|e| format!("model cache error: {e}"))
+    // Model download uses reqwest::blocking, which builds and drops a tokio
+    // runtime internally. That is not allowed on an async worker thread, so
+    // do the whole cache/model setup on a blocking thread.
+    let result = tokio::task::spawn_blocking(move || {
+        let cache = ModelCache::default_dir()
+            .map_err(|e| AppError::Internal(format!("model cache error: {e}")))?;
+
+        let model_dir = match model_dir {
+            Some(path) => path,
+            None => cache
+                .ensure(DEFAULT_SPEAKER_MODEL_ID)
+                .map_err(|e| AppError::Internal(format!("model download error: {e}")))?,
+        };
+        let model_path = model_dir.join("model.onnx");
+
+        let config = SpeakerConfig {
+            model_id: DEFAULT_SPEAKER_MODEL_ID.to_string(),
+            num_threads,
+            provider,
+            verify_threshold,
+            voice_dir: None,
+        };
+
+        let verifier =
+            SpeakerVerifier::new(config, &model_path, Some(voice_dir)).map_err(speaker_error)?;
+
+        Ok::<_, AppError>((verifier, model_dir))
     })
     .await
-    .map_err(|e| AppError::Internal(format!("model cache task failed: {e}")))?
-    .map_err(AppError::Internal)?;
+    .map_err(|e| AppError::Internal(format!("speaker verifier task failed: {e}")))?;
 
-    let model_dir = match model_dir {
-        Some(path) => path,
-        None => cache
-            .ensure(DEFAULT_SPEAKER_MODEL_ID)
-            .map_err(|e| AppError::Internal(format!("model download error: {e}")))?,
-    };
-    let model_path = model_dir.join("model.onnx");
-
-    let config = SpeakerConfig {
-        model_id: DEFAULT_SPEAKER_MODEL_ID.to_string(),
-        num_threads,
-        provider,
-        verify_threshold,
-        voice_dir: None,
-    };
-
-    let verifier = tokio::task::spawn_blocking(move || {
-        SpeakerVerifier::new(config, &model_path, Some(voice_dir))
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("speaker verifier task failed: {e}")))?
-    .map_err(speaker_error)?;
-
+    let (verifier, model_dir) = result?;
     Ok((verifier, model_dir))
 }
 
