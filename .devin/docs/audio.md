@@ -7,6 +7,10 @@
 - `TtsRequest`, `TtsOptions`, `TtsConfig`, and `TtsError` are shared types
 - `play_stream` plays a raw `TtsStream` through the default output device so
   read-aloud can start before synthesis finishes
+- Concurrency: each TTS backend (Cartesia, Fish) bounds in-flight synthesis
+  requests to `max_concurrent` (default 2) with a semaphore and retries
+  transient HTTP 429 / 5xx failures with backoff. This keeps parallel block
+  synthesis below the provider's free-tier concurrency limit.
 - A new concrete backend will be added alongside `takusu-audio` STT backends
 
 ## Voiceprint / speaker recognition

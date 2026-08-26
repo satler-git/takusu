@@ -167,6 +167,10 @@ pub struct TtsConfig {
     pub speed: Option<f32>,
     #[serde(default)]
     pub mute: bool,
+    /// Maximum number of TTS synthesis requests allowed in flight. Must stay
+    /// at or below the provider's concurrency limit to avoid HTTP 429.
+    #[serde(default = "default_tts_max_concurrent")]
+    pub max_concurrent: usize,
 }
 
 impl Default for TtsConfig {
@@ -181,6 +185,7 @@ impl Default for TtsConfig {
             model: String::new(),
             speed: None,
             mute: false,
+            max_concurrent: default_tts_max_concurrent(),
         }
     }
 }
@@ -199,6 +204,9 @@ fn default_tts_language() -> String {
 }
 fn default_tts_sample_rate() -> u32 {
     44100
+}
+fn default_tts_max_concurrent() -> usize {
+    2
 }
 
 /// Spoken cues announced at selected surface transitions, synthesized via the
