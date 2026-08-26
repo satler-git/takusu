@@ -6,13 +6,20 @@
 
 use std::path::PathBuf;
 use std::pin::Pin;
+use std::sync::Arc;
+use std::time::Duration;
 
 use bytes::Bytes;
-use futures_util::Stream;
+use futures_util::{Stream, StreamExt};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 use crate::secrets::{ApiKey, EndpointUrl};
+
+/// Maximum number of synthesis requests we issue per retry attempt in the
+/// backends below.
+pub(crate) const MAX_TTS_ATTEMPTS: u32 = 3;
 
 /// TTS backend identifier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -94,6 +101,68 @@ pub enum TtsError {
 /// A stream of audio chunks produced by a TTS backend.
 pub type TtsStream = Pin<Box<dyn Stream<Item = Result<Bytes, TtsError>> + Send + 'static>>;
 
+/// Wrap a backend response stream so the concurrency-limit permit stays held
+/// until the stream is exhausted or dropped.
+///
+/// TTS APIs (Fish, Cartesia) count an HTTP request as "concurrent" for as long
+/// as the audio connection stays open, not just until headers arrive. Keeping
+/// the permit inside the stream closure is what actually bounds the number of
+/// in-flight synthesis jobs to `max_concurrent`.
+pub(crate) fn stream_with_permit<S>(
+    inner: S,
+    permit: OwnedSemaphorePermit,
+) -> TtsStream
+where
+    S: Stream<Item = Result<Bytes, reqwest::Error>> + Send + 'static,
+{
+    Box::pin(inner.map(move |item| {
+        // Referencing the permit forces the `move` closure to capture it, so it
+        // is released only when this stream wrapper is dropped.
+        let _permit = &permit;
+        item.map_err(TtsError::Http)
+    }))
+}
+
+/// Whether an API status code is worth retrying. Rate limiting (429) and
+/// server-side 5xx errors are transient; 4xx client errors are not.
+pub(crate) fn is_transient_tts_status(status: u16) -> bool {
+    matches!(status, 429 | 500..=599)
+}
+
+/// Delay before the next TTS retry. Honors the `Retry-After` header when the
+/// API provides it; otherwise backs off exponentially from a small base.
+pub(crate) fn tts_retry_delay(retry_after: Option<u64>, attempt: u32) -> Duration {
+    if let Some(secs) = retry_after {
+        return Duration::from_secs(secs);
+    }
+    let exp = attempt.saturating_sub(1).min(8);
+    Duration::from_millis(200 * u64::from(1u32 << exp))
+}
+
+/// Read the `Retry-After` header as a whole number of seconds, if present.
+pub(crate) fn parse_retry_after(headers: &reqwest::header::HeaderMap) -> Option<u64> {
+    headers
+        .get(reqwest::header::RETRY_AFTER)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse().ok())
+}
+
+/// Acquire a permit for a synthesis request, capped at `max_concurrent`
+/// in-flight jobs. The permit is returned so the caller can attach it to the
+/// response stream via [`stream_with_permit`].
+pub(crate) async fn acquire_permit(
+    semaphore: &Arc<Semaphore>,
+) -> Result<OwnedSemaphorePermit, TtsError> {
+    semaphore
+        .clone()
+        .acquire_owned()
+        .await
+        .map_err(|_| TtsError::Api {
+            status: 503,
+            message: "TTS concurrency limiter closed".to_string(),
+        })
+}
+
 #[async_trait::async_trait]
 pub trait TextToSpeech: Send + Sync {
     /// Synthesize the request into a chunked audio stream.
@@ -112,5 +181,62 @@ pub trait TextToSpeech: Send + Sync {
             audio.extend_from_slice(&chunk);
         }
         Ok(audio)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    use super::*;
+    use tokio::sync::Semaphore;
+
+    #[test]
+    fn retry_delay_classifies_transient_codes() {
+        assert!(is_transient_tts_status(429));
+        assert!(is_transient_tts_status(500));
+        assert!(is_transient_tts_status(503));
+        assert!(!is_transient_tts_status(400));
+        assert!(!is_transient_tts_status(401));
+        assert!(!is_transient_tts_status(404));
+    }
+
+    #[test]
+    fn retry_delay_honors_retry_after() {
+        assert_eq!(tts_retry_delay(Some(2), 1), Duration::from_secs(2));
+        assert_eq!(tts_retry_delay(Some(0), 3), Duration::from_secs(0));
+    }
+
+    #[test]
+    fn retry_delay_backs_off_exponentially() {
+        assert_eq!(tts_retry_delay(None, 1), Duration::from_millis(200));
+        assert_eq!(tts_retry_delay(None, 2), Duration::from_millis(400));
+        assert_eq!(tts_retry_delay(None, 3), Duration::from_millis(800));
+    }
+
+    #[test]
+    fn parse_retry_after_reads_seconds() {
+        let mut headers = reqwest::header::HeaderMap::new();
+        assert_eq!(parse_retry_after(&headers), None);
+        headers.insert(reqwest::header::RETRY_AFTER, "5".parse().unwrap());
+        assert_eq!(parse_retry_after(&headers), Some(5));
+        headers.insert(reqwest::header::RETRY_AFTER, "abc".parse().unwrap());
+        assert_eq!(parse_retry_after(&headers), None);
+    }
+
+    #[tokio::test]
+    async fn permit_is_released_after_stream_collected() {
+        let semaphore = Arc::new(Semaphore::new(1));
+        {
+            let permit = acquire_permit(&semaphore).await.unwrap();
+            let inner = futures_util::stream::iter(vec![Ok::<_, reqwest::Error>(Bytes::new())]);
+            let mut stream = stream_with_permit(inner, permit);
+            // While the stream lives, the single permit is taken.
+            assert_eq!(semaphore.available_permits(), 0);
+            while stream.next().await.is_some() {}
+        }
+        // Dropping the stream wrapper releases the permit.
+        assert_eq!(semaphore.available_permits(), 1);
     }
 }

@@ -7,9 +7,9 @@ repository.workspace = true
 
 [features]
 default = ["record"]
-record = ["dep:cpal", "dep:tokio"]
+record = ["dep:cpal"]
 hush = ["dep:ort", "dep:realfft", "dep:num-complex", "dep:ndarray"]
-sherpa = ["dep:sherpa-onnx", "dep:tokio"]
+sherpa = ["dep:sherpa-onnx"]
 clap = ["dep:clap"]
 
 [lints.rust]
@@ -30,7 +30,7 @@ reqwest = { version = "0.13", features = [
 webpki-root-certs = "1"
 
 cpal = { version = "0.18.1", optional = true }
-tokio = { workspace = true, optional = true }
+tokio = { workspace = true }
 
 tar = "0.4"
 flate2 = "1"

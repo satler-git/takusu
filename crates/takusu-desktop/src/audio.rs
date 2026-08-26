@@ -358,6 +358,7 @@ fn build_tts(config: &takusu_agent::audio_config::TtsConfig) -> TtsBuildResult {
             tts_config.language = Some(config.language.clone());
             tts_config.output_format.sample_rate = sample_rate;
             tts_config.mute = config.mute;
+            tts_config.max_concurrent = config.max_concurrent;
             Ok((
                 Arc::new(CartesiaSonic::new(tts_config)),
                 config.voice_id.clone(),
@@ -376,6 +377,7 @@ fn build_tts(config: &takusu_agent::audio_config::TtsConfig) -> TtsBuildResult {
             }
             tts_config.sample_rate = sample_rate;
             tts_config.mute = config.mute;
+            tts_config.max_concurrent = config.max_concurrent;
             Ok((
                 Arc::new(FishAudio::new(tts_config)),
                 config.voice_id.clone(),

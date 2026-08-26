@@ -4,17 +4,25 @@
 //! transcript. The response body is a stream of raw bytes (e.g. WAV) that is
 //! exposed as a [`TtsStream`](crate::tts::TtsStream).
 
-use futures_util::TryStreamExt;
+use std::sync::Arc;
+
 use serde::{Deserialize, Serialize};
 use takusu_types::enum_label;
+use tokio::sync::Semaphore;
 
 use crate::secrets::{ApiKey, EndpointUrl};
-use crate::tts::{TextToSpeech, TtsError, TtsRequest, TtsStream};
+use crate::tts::{
+    MAX_TTS_ATTEMPTS, TextToSpeech, TtsError, TtsRequest, TtsStream, acquire_permit,
+    is_transient_tts_status, parse_retry_after, stream_with_permit, tts_retry_delay,
+};
 
 const DEFAULT_URL: &str = "https://api.cartesia.ai/tts/bytes";
 const DEFAULT_VERSION: &str = "2026-03-01";
 const DEFAULT_MODEL_ID: &str = "sonic-3.5";
 const DEFAULT_VOICE_ID: &str = "db6b0ed5-d5d3-463d-ae85-518a07d3c2b4";
+/// Default cap on in-flight synthesis requests, kept at or below typical free
+/// tier limits so unrelated requests do not trip the provider's 429.
+const DEFAULT_MAX_CONCURRENT: usize = 2;
 
 enum_label! {
     /// Audio container format for Cartesia Sonic.
@@ -142,6 +150,10 @@ pub struct CartesiaSonicConfig {
     pub output_format: CartesiaOutputFormat,
     pub generation_config: Option<CartesiaGenerationConfig>,
     pub mute: bool,
+    /// Maximum number of synthesis requests allowed in flight. This must stay
+    /// below the provider's concurrency limit (typically 2 on the free tier) so
+    /// the agent's parallel block synthesis does not trip HTTP 429.
+    pub max_concurrent: usize,
 }
 
 impl Default for CartesiaSonicConfig {
@@ -156,6 +168,7 @@ impl Default for CartesiaSonicConfig {
             output_format: CartesiaOutputFormat::default(),
             generation_config: None,
             mute: false,
+            max_concurrent: DEFAULT_MAX_CONCURRENT,
         }
     }
 }
@@ -184,13 +197,20 @@ impl CartesiaSonicConfig {
 pub struct CartesiaSonic {
     client: reqwest::Client,
     config: CartesiaSonicConfig,
+    /// Bounds in-flight synthesis requests to `config.max_concurrent`.
+    concurrency: Arc<Semaphore>,
 }
 
 impl CartesiaSonic {
     /// Create a new client from the given config.
     pub fn new(config: CartesiaSonicConfig) -> Self {
         let client = crate::http::tls_client();
-        Self { client, config }
+        let concurrency = Arc::new(Semaphore::new(config.max_concurrent));
+        Self {
+            client,
+            config,
+            concurrency,
+        }
     }
 
     /// Create a new client from the environment, reading `CARTESIA_API_KEY`.
@@ -236,28 +256,47 @@ impl TextToSpeech for CartesiaSonic {
         };
 
         let json = serde_json::to_vec(&body)?;
-        let response = self
-            .client
-            .post(self.config.url.as_str())
-            .header("Authorization", format!("Bearer {}", self.config.api_key))
-            .header("Cartesia-Version", &self.config.version)
-            .header("Content-Type", "application/json")
-            .body(json)
-            .send()
-            .await?;
 
-        let status = response.status();
-        if !status.is_success() {
-            let body_text = response.text().await.unwrap_or_default();
-            let message = parse_error_message(&body_text);
-            return Err(TtsError::Api {
-                status: status.as_u16(),
-                message,
-            });
+        // Cap in-flight synthesis to stay under the provider's concurrency
+        // limit and retry transient failures (429 / 5xx) with backoff instead
+        // of failing the whole block.
+        let permit = acquire_permit(&self.concurrency).await?;
+        let mut attempt = 0u32;
+        loop {
+            attempt += 1;
+            let response = self
+                .client
+                .post(self.config.url.as_str())
+                .header("Authorization", format!("Bearer {}", self.config.api_key))
+                .header("Cartesia-Version", &self.config.version)
+                .header("Content-Type", "application/json")
+                .body(json.clone())
+                .send()
+                .await?;
+
+            let status = response.status();
+            if status.is_success() {
+                let stream = response.bytes_stream();
+                return Ok(stream_with_permit(stream, permit));
+            }
+
+            if !is_transient_tts_status(status.as_u16()) || attempt >= MAX_TTS_ATTEMPTS {
+                let body_text = response.text().await.unwrap_or_default();
+                let message = parse_error_message(&body_text);
+                return Err(TtsError::Api {
+                    status: status.as_u16(),
+                    message,
+                });
+            }
+
+            let retry_after = parse_retry_after(response.headers());
+            tracing::warn!(
+                status = %status,
+                attempt,
+                "cartesia tts rate limited; retrying after backoff"
+            );
+            tokio::time::sleep(tts_retry_delay(retry_after, attempt)).await;
         }
-
-        let stream = response.bytes_stream().map_err(TtsError::Http);
-        Ok(Box::pin(stream))
     }
 }
 

@@ -5,16 +5,24 @@
 //! in the JSON body. The endpoint returns raw audio bytes in the requested
 //! format (mp3, wav, pcm, opus) as a chunked stream.
 
-use futures_util::TryStreamExt;
+use std::sync::Arc;
+
 use serde::{Deserialize, Serialize};
+use tokio::sync::Semaphore;
 
 use crate::secrets::{ApiKey, EndpointUrl};
-use crate::tts::{TextToSpeech, TtsError, TtsRequest, TtsStream};
+use crate::tts::{
+    MAX_TTS_ATTEMPTS, TextToSpeech, TtsError, TtsRequest, TtsStream, acquire_permit,
+    is_transient_tts_status, parse_retry_after, stream_with_permit, tts_retry_delay,
+};
 
 const DEFAULT_URL: &str = "https://api.fish.audio/v1/tts";
 const DEFAULT_MODEL: &str = "s2.1-pro-free";
 const DEFAULT_VOICE_ID: &str = "";
 const DEFAULT_SAMPLE_RATE: u32 = 44100;
+/// Default cap on in-flight synthesis requests, kept at or below typical free
+/// tier limits so unrelated requests do not trip the provider's 429.
+const DEFAULT_MAX_CONCURRENT: usize = 2;
 
 /// Configuration for the Fish Audio TTS backend.
 #[derive(Debug, Clone)]
@@ -25,6 +33,10 @@ pub struct FishAudioConfig {
     pub voice_id: String,
     pub sample_rate: u32,
     pub mute: bool,
+    /// Maximum number of synthesis requests allowed in flight. This must stay
+    /// below the provider's concurrency limit (typically 2 on the free tier) so
+    /// the agent's parallel block synthesis does not trip HTTP 429.
+    pub max_concurrent: usize,
 }
 
 impl Default for FishAudioConfig {
@@ -36,6 +48,7 @@ impl Default for FishAudioConfig {
             voice_id: DEFAULT_VOICE_ID.to_string(),
             sample_rate: DEFAULT_SAMPLE_RATE,
             mute: false,
+            max_concurrent: DEFAULT_MAX_CONCURRENT,
         }
     }
 }
@@ -64,13 +77,20 @@ impl FishAudioConfig {
 pub struct FishAudio {
     client: reqwest::Client,
     config: FishAudioConfig,
+    /// Bounds in-flight synthesis requests to `config.max_concurrent`.
+    concurrency: Arc<Semaphore>,
 }
 
 impl FishAudio {
     /// Create a new client from the given config.
     pub fn new(config: FishAudioConfig) -> Self {
         let client = crate::http::tls_client();
-        Self { client, config }
+        let concurrency = Arc::new(Semaphore::new(config.max_concurrent));
+        Self {
+            client,
+            config,
+            concurrency,
+        }
     }
 
     /// Create a new client from the environment, reading `FISH_API_KEY`.
@@ -130,28 +150,47 @@ impl TextToSpeech for FishAudio {
         }
 
         let json = serde_json::to_vec(&body)?;
-        let response = self
-            .client
-            .post(self.config.url.as_str())
-            .header("Authorization", format!("Bearer {}", self.config.api_key))
-            .header("Content-Type", "application/json")
-            .header("model", model)
-            .body(json)
-            .send()
-            .await?;
 
-        let status = response.status();
-        if !status.is_success() {
-            let body_text = response.text().await.unwrap_or_default();
-            let message = parse_error_message(&body_text);
-            return Err(TtsError::Api {
-                status: status.as_u16(),
-                message,
-            });
+        // Cap in-flight synthesis to stay under the provider's concurrency
+        // limit and retry transient failures (429 / 5xx) with backoff instead
+        // of failing the whole block.
+        let permit = acquire_permit(&self.concurrency).await?;
+        let mut attempt = 0u32;
+        loop {
+            attempt += 1;
+            let response = self
+                .client
+                .post(self.config.url.as_str())
+                .header("Authorization", format!("Bearer {}", self.config.api_key))
+                .header("Content-Type", "application/json")
+                .header("model", model)
+                .body(json.clone())
+                .send()
+                .await?;
+
+            let status = response.status();
+            if status.is_success() {
+                let stream = response.bytes_stream();
+                return Ok(stream_with_permit(stream, permit));
+            }
+
+            if !is_transient_tts_status(status.as_u16()) || attempt >= MAX_TTS_ATTEMPTS {
+                let body_text = response.text().await.unwrap_or_default();
+                let message = parse_error_message(&body_text);
+                return Err(TtsError::Api {
+                    status: status.as_u16(),
+                    message,
+                });
+            }
+
+            let retry_after = parse_retry_after(response.headers());
+            tracing::warn!(
+                status = %status,
+                attempt,
+                "fish tts rate limited; retrying after backoff"
+            );
+            tokio::time::sleep(tts_retry_delay(retry_after, attempt)).await;
         }
-
-        let stream = response.bytes_stream().map_err(TtsError::Http);
-        Ok(Box::pin(stream))
     }
 }
 

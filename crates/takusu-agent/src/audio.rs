@@ -1618,6 +1618,7 @@ fn build_tts(config: &TtsConfig, api_sample_rate: u32) -> TtsBuildResult {
             tts_config.language = Some(config.language.clone());
             tts_config.output_format.sample_rate = api_sample_rate;
             tts_config.mute = config.mute;
+            tts_config.max_concurrent = config.max_concurrent;
             let voice_id = config.voice_id.clone();
             let speed = config.speed;
             Ok((
@@ -1643,6 +1644,7 @@ fn build_tts(config: &TtsConfig, api_sample_rate: u32) -> TtsBuildResult {
             }
             tts_config.sample_rate = api_sample_rate;
             tts_config.mute = config.mute;
+            tts_config.max_concurrent = config.max_concurrent;
             let voice_id = config.voice_id.clone();
             let speed = config.speed;
             Ok((
