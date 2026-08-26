@@ -563,17 +563,27 @@ impl AudioAdapter {
                     .await
                 }
             })
-            .buffered(3);
+            .buffered(3)
+            .enumerate();
 
             tokio::pin!(stream);
 
-            while let Some(stream) = stream.next().await {
+            while let Some((index, stream)) = stream.next().await {
                 if stop_tts.load(Ordering::Relaxed) {
+                    tracing::debug!(block = index, "tts synth aborted by stop");
                     break;
                 }
-                let stream = stream?;
-                if audio_tx.send(stream).await.is_err() {
-                    break;
+                match stream {
+                    Ok(stream) => {
+                        tracing::info!(block = index, "tts block synthesized");
+                        if audio_tx.send(stream).await.is_err() {
+                            break;
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!(block = index, error=%e, "tts block synthesis failed");
+                        return Err(e);
+                    }
                 }
             }
             Ok(TurnTaskResult::TtsDone)
@@ -583,10 +593,15 @@ impl AudioAdapter {
             use futures_util::StreamExt;
 
             let mut first_stream = true;
+            let mut block_index = 0usize;
             while let Some(stream) = audio_rx.recv().await {
+                let index = block_index;
+                block_index += 1;
                 if stop_tts_play.load(Ordering::Relaxed) {
+                    tracing::debug!(block = index, "tts playback aborted by stop");
                     break;
                 }
+                tracing::info!(block = index, "tts playback block started");
                 if first_stream {
                     first_stream = false;
                     if record_latency {
@@ -671,9 +686,11 @@ impl AudioAdapter {
         let tts_tx_for_callback = tts_tx.clone();
 
         // Stop requests (from VoiceSessionHandle / surface) cancel the LLM/TTS
-        // wait instead of letting the turn run to completion (WI-12).
+        // wait instead of letting the turn run to completion (WI-12). Mark the
+        // current stop value as already seen so a stale signal from a previous
+        // turn does not immediately cancel this one.
         let mut stop = self.stop.clone();
-        stop.mark_changed();
+        stop.mark_unchanged();
 
         let result = tokio::select! {
             result = tokio::time::timeout(
@@ -733,9 +750,11 @@ impl AudioAdapter {
         let mut barge_in_samples = Vec::new();
         let mut turn_err = None;
 
-        // Re-arm the stop watch for the TTS/barge-in tail of the turn.
+        // Re-arm the stop watch for the TTS/barge-in tail of the turn. Ignore
+        // a stop signal already consumed by the LLM wait so the tail starts
+        // playback unless a new stop arrives after this point.
         let mut stop = self.stop.clone();
-        stop.mark_changed();
+        stop.mark_unchanged();
 
         loop {
             let res = tokio::select! {
@@ -1034,7 +1053,7 @@ impl AudioAdapter {
         }
 
         let mut stop = self.stop.clone();
-        stop.mark_changed();
+        stop.mark_unchanged();
 
         self.audio_callback(AudioCallback::Speaking);
         let stream = tokio::select! {
@@ -1050,7 +1069,7 @@ impl AudioAdapter {
         };
 
         let mut stop = self.stop.clone();
-        stop.mark_changed();
+        stop.mark_unchanged();
         tokio::select! {
             result = play_stream_with_timeout(
                 stream,
@@ -1781,6 +1800,47 @@ async fn play_stream_with_reference(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn stop_watch_mark_changed_arms_immediate_fire_but_unchanged_waits() {
+        // A watch receiver only resolves changed() on a real send. Calling
+        // mark_changed() re-arms an immediate fire even without a new value,
+        // which would cancel a fresh turn instantly — the bug fixed here.
+        // mark_unchanged() keeps the receiver waiting for a real stop signal.
+        let (tx, rx) = tokio::sync::watch::channel(false);
+
+        // Fresh receiver waits for a real signal.
+        let mut fresh = rx.clone();
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(50), fresh.changed())
+                .await
+                .is_err()
+        );
+
+        // mark_changed() (the buggy form) arms an immediate fire.
+        let mut marked = rx.clone();
+        marked.mark_changed();
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(50), marked.changed())
+                .await
+                .is_ok()
+        );
+
+        // mark_unchanged() waits for a real signal and still receives it.
+        let mut rearmed = rx.clone();
+        rearmed.mark_unchanged();
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(50), rearmed.changed())
+                .await
+                .is_err()
+        );
+        let _ = tx.send(true);
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_secs(1), rearmed.changed())
+                .await
+                .is_ok()
+        );
+    }
 
     #[test]
     fn stt_config_defaults_to_sherpa() {

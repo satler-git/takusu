@@ -9,6 +9,9 @@ use takusu_audio::{
 pub struct AudioConfig {
     pub stt: SttConfig,
     pub tts: TtsConfig,
+    /// Short spoken cues announced at selected surface transitions
+    /// (for example a click-tone substitute when listening starts/ends).
+    pub cues: CueConfig,
     /// Optional speaker verification configuration. When `Some`, the audio
     /// adapter will load a speaker embedding model and verify utterances
     /// against enrolled voiceprints.
@@ -198,6 +201,43 @@ fn default_tts_sample_rate() -> u32 {
     44100
 }
 
+/// Spoken cues announced at selected surface transitions, synthesized via the
+/// configured TTS backend and cached so repeated announcements do not
+/// re-synthesize.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct CueConfig {
+    /// Whether to announce listening start/end cues at all.
+    #[serde(default = "default_cues_enabled")]
+    pub enabled: bool,
+    /// Spoken text announced when listening starts. Empty disables the cue.
+    #[serde(default = "default_cue_listen_start")]
+    pub listen_start: String,
+    /// Spoken text announced when listening ends. Empty disables the cue.
+    #[serde(default = "default_cue_listen_end")]
+    pub listen_end: String,
+}
+
+impl Default for CueConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_cues_enabled(),
+            listen_start: default_cue_listen_start(),
+            listen_end: default_cue_listen_end(),
+        }
+    }
+}
+
+fn default_cues_enabled() -> bool {
+    true
+}
+fn default_cue_listen_start() -> String {
+    "聞き取り開始".into()
+}
+fn default_cue_listen_end() -> String {
+    "聞き取り終了".into()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct VadConfig {
@@ -217,4 +257,30 @@ impl Default for VadConfig {
 
 fn default_vad_energy_threshold() -> f32 {
     DEFAULT_ENERGY_THRESHOLD
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cue_config_defaults_enable_announcements_and_provide_text() {
+        let cues = CueConfig::default();
+        assert!(cues.enabled);
+        assert!(!cues.listen_start.is_empty());
+        assert!(!cues.listen_end.is_empty());
+    }
+
+    #[test]
+    fn cue_config_serde_uses_defaults_for_missing_fields() {
+        let parsed: CueConfig = toml::from_str("").unwrap();
+        assert_eq!(parsed, CueConfig::default());
+
+        let full: CueConfig =
+            toml::from_str("enabled = true\nlisten_start = \"開始\"\nlisten_end = \"終了\"")
+                .unwrap();
+        assert!(full.enabled);
+        assert_eq!(full.listen_start, "開始");
+        assert_eq!(full.listen_end, "終了");
+    }
 }

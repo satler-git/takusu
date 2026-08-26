@@ -1,13 +1,13 @@
 //! Compact popover window.
 //!
-//! WI-7 specifies a real window rendered with GPUI. This module exposes a
-//! stable interface so the tray and notification code can request it; the
-//! current implementation falls back to the StatusNotifierItem menu (see
-//! `tray.rs`) because the build environment does not yet provide the GUI
-//! dependencies required for winit/egui/GPUI.
+//! WI-7 specifies a real window rendered with an immediate-mode UI. This
+//! module exposes a stable interface so the tray and notification code can
+//! request it. The current implementation uses `eframe` (winit + egui + wgpu)
+//! and falls back to the StatusNotifierItem menu (see `tray.rs`) when the
+//! window cannot be initialized.
 //!
-//! A GPUI or winit+egui implementation can be swapped in here without touching
-//! the daemon event loop.
+//! A real window or a menu fallback can be selected at runtime by setting
+//! `TAKUSU_DESKTOP_POPOVER=menu`.
 
 use std::fmt;
 use std::sync::Arc;
@@ -17,9 +17,6 @@ use crate::state::DesktopState;
 use crate::transport::DesktopTransport;
 #[cfg(target_os = "linux")]
 use takusu_agent::Presentation;
-
-#[cfg(target_os = "linux")]
-use gpui::prelude::*;
 
 /// A request to display the compact panel.
 #[derive(Debug, Clone, Default)]
@@ -49,7 +46,7 @@ pub enum Popover {
     /// Placeholder: the panel is shown via the tray menu fallback.
     #[default]
     MenuFallback,
-    /// A real compact window rendered with GPUI.
+    /// A real compact window rendered with eframe.
     Window(WindowController),
 }
 
@@ -63,7 +60,7 @@ impl fmt::Debug for Popover {
 }
 
 impl Popover {
-    /// Create a new popover. On Linux this attempts to start a GPUI-backed
+    /// Create a new popover. On Linux this attempts to start an eframe-backed
     /// window unless `TAKUSU_DESKTOP_POPOVER=menu` is set.
     pub fn new() -> Self {
         if std::env::var("TAKUSU_DESKTOP_POPOVER").as_deref() == Ok("menu") {
@@ -79,7 +76,7 @@ impl Popover {
             match WindowController::new(transport, runtime) {
                 Ok(ctrl) => Self::Window(ctrl),
                 Err(err) => {
-                    tracing::warn!(error = %err, "GPUI popover unavailable; using menu fallback");
+                    tracing::warn!(error = %err, "eframe popover unavailable; using menu fallback");
                     Self::MenuFallback
                 }
             }
@@ -87,7 +84,7 @@ impl Popover {
 
         #[cfg(not(target_os = "linux"))]
         {
-            tracing::warn!("GPUI popover is only available on Linux; using menu fallback");
+            tracing::warn!("eframe popover is only available on Linux; using menu fallback");
             Self::MenuFallback
         }
     }
@@ -104,7 +101,7 @@ impl Popover {
             match WindowController::new(transport, runtime) {
                 Ok(ctrl) => Self::Window(ctrl),
                 Err(err) => {
-                    tracing::warn!(error = %err, "GPUI popover unavailable; using menu fallback");
+                    tracing::warn!(error = %err, "eframe popover unavailable; using menu fallback");
                     Self::MenuFallback
                 }
             }
@@ -112,7 +109,7 @@ impl Popover {
 
         #[cfg(not(target_os = "linux"))]
         {
-            tracing::warn!("GPUI popover is only available on Linux; using menu fallback");
+            tracing::warn!("eframe popover is only available on Linux; using menu fallback");
             Self::MenuFallback
         }
     }
@@ -159,7 +156,7 @@ impl fmt::Debug for WindowController {
 impl WindowController {
     #[allow(clippy::unnecessary_wraps)]
     fn new(_transport: Arc<dyn DesktopTransport + Send + Sync>) -> Result<Self, String> {
-        Err("GPUI popover is only available on Linux".to_string())
+        Err("eframe popover is only available on Linux".to_string())
     }
 
     fn show(&self, _state: &DesktopState, _request: PopoverRequest) {}
@@ -169,9 +166,9 @@ impl WindowController {
 
 #[cfg(target_os = "linux")]
 #[derive(Clone)]
-#[doc(hidden)]
 pub struct WindowController {
-    sender: std::sync::Arc<std::sync::Mutex<futures_channel::mpsc::UnboundedSender<WindowCommand>>>,
+    sender: Arc<std::sync::Mutex<std::sync::mpsc::Sender<WindowCommand>>>,
+    ctx: eframe::egui::Context,
 }
 
 #[cfg(target_os = "linux")]
@@ -182,162 +179,12 @@ impl fmt::Debug for WindowController {
 }
 
 #[cfg(target_os = "linux")]
-#[derive(Clone)]
 enum WindowCommand {
     Show {
-        title: String,
-        detail: Option<String>,
-        theme: crate::config::Theme,
-        actions: Vec<DesktopAction>,
-        voice_button: bool,
         state: Box<DesktopState>,
+        request: PopoverRequest,
     },
     Hide,
-}
-
-#[cfg(target_os = "linux")]
-struct PopoverView {
-    title: gpui::SharedString,
-    detail: Option<gpui::SharedString>,
-    background: gpui::Hsla,
-    text_color: gpui::Hsla,
-    actions: Vec<DesktopAction>,
-    voice_button: bool,
-    state: DesktopState,
-    transport: Arc<dyn DesktopTransport + Send + Sync>,
-    runtime: tokio::runtime::Handle,
-}
-
-#[cfg(target_os = "linux")]
-impl gpui::Render for PopoverView {
-    fn render(
-        &mut self,
-        _window: &mut gpui::Window,
-        _cx: &mut gpui::Context<Self>,
-    ) -> impl gpui::IntoElement {
-        let mut action_children = Vec::new();
-        for action in &self.actions {
-            let runtime = self.runtime.clone();
-            let transport = self.transport.clone();
-            let action = action.clone();
-            let label: gpui::SharedString = action.label.clone().into();
-            action_children.push(
-                gpui::div()
-                    .child(label)
-                    .px_3()
-                    .py_1()
-                    .rounded_md()
-                    .border_1()
-                    .border_color(self.text_color)
-                    .cursor_pointer()
-                    .id(gpui::ElementId::Name(action.id.clone().into()))
-                    .on_click(move |_event, _window, _cx| {
-                        let transport = transport.clone();
-                        let action = action.clone();
-                        runtime.spawn(async move {
-                            match execute_quick_action(transport.as_ref(), &action).await {
-                                Ok(Presentation::Text { text }) => {
-                                    tracing::info!(
-                                        text = %text,
-                                        action_id = %action.id,
-                                        "popover quick action returned"
-                                    );
-                                }
-                                Ok(_) => {
-                                    tracing::info!(
-                                        action_id = %action.id,
-                                        "popover quick action returned"
-                                    );
-                                }
-                                Err(e) => {
-                                    tracing::warn!(
-                                        error = %e,
-                                        action_id = %action.id,
-                                        "popover quick action failed"
-                                    );
-                                }
-                            }
-                        });
-                    }),
-            );
-        }
-
-        if self.voice_button {
-            let state = self.state.clone();
-            let runtime = self.runtime.clone();
-            let label = if state.voice_session_active() {
-                "Stop voice session"
-            } else {
-                "Start voice session"
-            };
-            action_children.push(
-                gpui::div()
-                    .child(label)
-                    .px_3()
-                    .py_1()
-                    .rounded_md()
-                    .border_1()
-                    .border_color(self.text_color)
-                    .cursor_pointer()
-                    .id("voice-session")
-                    .on_click(move |_event, _window, _cx| {
-                        let state = state.clone();
-                        runtime.spawn(async move {
-                            if state.voice_session_active() {
-                                state.stop_voice_session();
-                            } else {
-                                state.set_voice_invite(true);
-                                state.start_voice_session();
-                            }
-                        });
-                    }),
-            );
-        }
-
-        gpui::div()
-            .flex()
-            .flex_col()
-            .justify_between()
-            .p_4()
-            .gap_2()
-            .bg(self.background)
-            .text_color(self.text_color)
-            .size_full()
-            .child(
-                gpui::div()
-                    .flex()
-                    .flex_col()
-                    .gap_2()
-                    .child(
-                        gpui::div()
-                            .child(self.title.clone())
-                            .text_xl()
-                            .font_weight(gpui::FontWeight::BOLD),
-                    )
-                    .when_some(self.detail.clone(), |this, detail| {
-                        this.child(gpui::div().child(detail).text_sm())
-                    }),
-            )
-            .child(
-                gpui::div()
-                    .flex()
-                    .flex_row()
-                    .gap_2()
-                    .children(action_children)
-                    .child(
-                        gpui::div()
-                            .child("閉じる")
-                            .px_3()
-                            .py_1()
-                            .rounded_md()
-                            .border_1()
-                            .border_color(self.text_color)
-                            .cursor_pointer()
-                            .id("close")
-                            .on_click(|_event, window, _cx| window.remove_window()),
-                    ),
-            )
-    }
 }
 
 #[cfg(target_os = "linux")]
@@ -351,140 +198,289 @@ impl WindowController {
         use std::time::Duration;
 
         let (init_tx, init_rx) =
-            mpsc::channel::<futures_channel::mpsc::UnboundedSender<WindowCommand>>();
+            mpsc::channel::<Result<(mpsc::Sender<WindowCommand>, eframe::egui::Context), String>>();
 
         let thread_transport = Arc::clone(&transport);
-        let thread_runtime = runtime.clone();
+        let thread_runtime = runtime;
 
         thread::spawn(move || {
-            let app = gpui::Application::new();
-            app.run(move |cx: &mut gpui::App| {
-                let (cmd_tx, mut cmd_rx) = futures_channel::mpsc::unbounded::<WindowCommand>();
+            let viewport = eframe::egui::ViewportBuilder::default()
+                .with_app_id("takusu.popup".to_string())
+                .with_title("takusu")
+                .with_inner_size(eframe::egui::vec2(360.0, 220.0))
+                .with_min_inner_size(eframe::egui::vec2(360.0, 220.0))
+                .with_max_inner_size(eframe::egui::vec2(360.0, 220.0))
+                .with_resizable(false)
+                .with_decorations(false)
+                .with_visible(false)
+                .with_active(false)
+                .with_position(eframe::egui::Pos2::new(100.0, 100.0))
+                .with_window_type(eframe::egui::viewport::X11WindowType::Notification)
+                .with_override_redirect(false);
 
-                if init_tx.send(cmd_tx).is_err() {
-                    return;
-                }
+            let native_options = eframe::NativeOptions {
+                viewport,
+                renderer: eframe::Renderer::Wgpu,
+                run_and_return: true,
+                event_loop_builder: Some(Box::new(|el| {
+                    use winit::platform::x11::EventLoopBuilderExtX11;
+                    // Force the X11 backend so egui can set
+                    // _NET_WM_WINDOW_TYPE_NOTIFICATION and avoid Wayland-specific
+                    // surface/swapchain timing bugs without mutating process env.
+                    let _ = el.with_x11();
+                    let _ = el.with_any_thread(true);
+                })),
+                ..Default::default()
+            };
 
-                cx.spawn(async move |cx: &mut gpui::AsyncApp| {
-                    use futures_util::StreamExt;
-
-                    let mut current: Option<gpui::WindowHandle<PopoverView>> = None;
-
-                    while let Some(cmd) = StreamExt::next(&mut cmd_rx).await {
-                        match cmd {
-                            WindowCommand::Hide => {
-                                if let Some(handle) = current.take() {
-                                    let _ = handle.update(cx, |_view, window, _cx| {
-                                        window.remove_window();
-                                    });
-                                }
-                            }
-                            WindowCommand::Show {
-                                title,
-                                detail,
-                                theme,
-                                actions,
-                                voice_button,
-                                state,
-                            } => {
-                                if let Some(handle) = current.take() {
-                                    let _ = handle.update(cx, |_view, window, _cx| {
-                                        window.remove_window();
-                                    });
-                                }
-
-                                let title_ss: gpui::SharedString = title.clone().into();
-                                let detail_ss: Option<gpui::SharedString> = detail.map(Into::into);
-                                let (background, text_color) = theme_colors(theme);
-
-                                let options = gpui::WindowOptions {
-                                    window_bounds: Some(gpui::WindowBounds::Windowed(
-                                        gpui::Bounds {
-                                            origin: gpui::point(gpui::px(100.0), gpui::px(100.0)),
-                                            size: gpui::size(gpui::px(360.0), gpui::px(220.0)),
-                                        },
-                                    )),
-                                    titlebar: Some(gpui::TitlebarOptions {
-                                        title: Some(title_ss.clone()),
-                                        ..Default::default()
-                                    }),
-                                    focus: true,
-                                    show: true,
-                                    kind: gpui::WindowKind::PopUp,
-                                    is_movable: false,
-                                    is_resizable: false,
-                                    is_minimizable: false,
-                                    ..Default::default()
-                                };
-
-                                match cx.open_window(options, |_window, app_cx| {
-                                    app_cx.new(|_cx| PopoverView {
-                                        title: title_ss,
-                                        detail: detail_ss,
-                                        background,
-                                        text_color,
-                                        actions,
-                                        voice_button,
-                                        state: *state,
-                                        transport: Arc::clone(&thread_transport),
-                                        runtime: thread_runtime.clone(),
-                                    })
-                                }) {
-                                    Ok(handle) => current = Some(handle),
-                                    Err(err) => {
-                                        tracing::warn!(
-                                            error = %err,
-                                            "failed to open GPUI popover window"
-                                        );
-                                    }
-                                }
-                            }
-                        }
+            let result = eframe::run_native(
+                "takusu popup",
+                native_options,
+                Box::new(|cc| {
+                    let installed = egui_system_fonts::set_with_presets(
+                        &cc.egui_ctx,
+                        [
+                            egui_system_fonts::FontPreset::Japanese,
+                            egui_system_fonts::FontPreset::Latin,
+                        ],
+                        egui_system_fonts::FontStyle::Sans,
+                    );
+                    if installed.is_empty() {
+                        tracing::warn!(
+                            "no system fonts matched; Japanese text may show as fallback glyphs"
+                        );
                     }
-                })
-                .detach();
-            });
+
+                    let (cmd_tx, cmd_rx) = mpsc::channel::<WindowCommand>();
+                    let ctx = cc.egui_ctx.clone();
+                    if init_tx.send(Ok((cmd_tx, ctx))).is_err() {
+                        let err: Box<dyn std::error::Error + Send + Sync + 'static> =
+                            Box::new(std::io::Error::other("popover init channel closed"));
+                        return Err(err);
+                    }
+
+                    Ok(Box::new(App::new(
+                        cmd_rx,
+                        Arc::clone(&thread_transport),
+                        thread_runtime.clone(),
+                    )) as Box<dyn eframe::App>)
+                }),
+            );
+
+            if let Err(err) = result {
+                let _ = init_tx.send(Err(format!("{err}")));
+                tracing::warn!(error = %err, "eframe event loop exited with an error");
+            }
         });
 
         match init_rx.recv_timeout(Duration::from_secs(30)) {
-            Ok(sender) => Ok(Self {
-                sender: std::sync::Arc::new(std::sync::Mutex::new(sender)),
+            Ok(Ok((sender, ctx))) => Ok(Self {
+                sender: Arc::new(std::sync::Mutex::new(sender)),
+                ctx,
             }),
+            Ok(Err(err)) => Err(err),
             Err(RecvTimeoutError::Timeout) => {
-                Err("GPUI popover did not initialize within 2 seconds".to_string())
+                Err("eframe popover did not initialize within 30 seconds".to_string())
             }
             Err(RecvTimeoutError::Disconnected) => {
-                Err("GPUI popover thread disconnected".to_string())
+                Err("eframe popover thread disconnected".to_string())
             }
         }
     }
 
     fn show(&self, state: &DesktopState, request: PopoverRequest) {
         let command = WindowCommand::Show {
-            title: request.title,
-            detail: request.detail,
-            theme: state.theme(),
-            actions: request.actions,
-            voice_button: request.voice_button,
             state: Box::new(state.clone()),
+            request,
         };
 
         if let Ok(guard) = self.sender.lock()
-            && let Err(err) = guard.unbounded_send(command)
+            && let Err(err) = guard.send(command)
         {
             tracing::warn!(error = %err, "failed to send popover show command");
+        } else {
+            self.ctx.request_repaint();
         }
     }
 
     fn hide(&self) {
-        if let Ok(guard) = self.sender.lock() {
-            let _ = guard.unbounded_send(WindowCommand::Hide);
+        if let Ok(guard) = self.sender.lock()
+            && let Err(err) = guard.send(WindowCommand::Hide)
+        {
+            tracing::warn!(error = %err, "failed to send popover hide command");
+        } else {
+            self.ctx.request_repaint();
         }
     }
 }
 
 #[cfg(target_os = "linux")]
-fn theme_colors(theme: crate::config::Theme) -> (gpui::Hsla, gpui::Hsla) {
+struct App {
+    cmd_rx: std::sync::mpsc::Receiver<WindowCommand>,
+    state: Option<Box<DesktopState>>,
+    request: Option<PopoverRequest>,
+    transport: Arc<dyn DesktopTransport + Send + Sync>,
+    runtime: tokio::runtime::Handle,
+    visible: bool,
+    position_dirty: bool,
+}
+
+#[cfg(target_os = "linux")]
+impl App {
+    fn new(
+        cmd_rx: std::sync::mpsc::Receiver<WindowCommand>,
+        transport: Arc<dyn DesktopTransport + Send + Sync>,
+        runtime: tokio::runtime::Handle,
+    ) -> Self {
+        Self {
+            cmd_rx,
+            state: None,
+            request: None,
+            transport,
+            runtime,
+            visible: false,
+            position_dirty: false,
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+impl eframe::App for App {
+    fn logic(&mut self, _ctx: &eframe::egui::Context, frame: &mut eframe::Frame) {
+        while let Ok(cmd) = self.cmd_rx.try_recv() {
+            match cmd {
+                WindowCommand::Show { state, request } => {
+                    self.state = Some(state);
+                    self.request = Some(request);
+                    self.visible = true;
+                    self.position_dirty = true;
+                }
+                WindowCommand::Hide => {
+                    self.visible = false;
+                }
+            }
+        }
+
+        if let Some(window) = frame.winit_window() {
+            window.set_visible(self.visible);
+            if self.visible && self.position_dirty {
+                // Apply the default placement once per show instead of every
+                // frame, so the user or compositor can move the panel and it
+                // stays where it was put.
+                window.set_outer_position(winit::dpi::PhysicalPosition::new(100, 100));
+                self.position_dirty = false;
+            }
+        }
+    }
+
+    fn ui(&mut self, ui: &mut eframe::egui::Ui, _frame: &mut eframe::Frame) {
+        if !self.visible {
+            return;
+        }
+
+        let Some(request) = self.request.as_ref() else {
+            return;
+        };
+
+        let theme = self
+            .state
+            .as_ref()
+            .map_or(crate::config::Theme::Dark, |s| s.theme());
+        let (background, text_color) = theme_colors(theme);
+
+        eframe::egui::CentralPanel::default()
+            .frame(eframe::egui::Frame::new().fill(background))
+            .show(ui, |ui| {
+                ui.visuals_mut().override_text_color = Some(text_color);
+
+                ui.with_layout(
+                    eframe::egui::Layout::bottom_up(eframe::egui::Align::Min),
+                    |ui| {
+                        ui.horizontal(|ui| {
+                            if request.voice_button
+                                && let Some(state) = &self.state
+                            {
+                                let voice_label = if state.voice_session_active() {
+                                    "Stop voice session"
+                                } else {
+                                    "Start voice session"
+                                };
+                                if ui.button(voice_label).clicked() {
+                                    let state = state.clone();
+                                    let runtime = self.runtime.clone();
+                                    drop(runtime.spawn(async move {
+                                        if state.voice_session_active() {
+                                            state.stop_voice_session();
+                                        } else {
+                                            state.set_voice_invite(true);
+                                            state.start_voice_session();
+                                        }
+                                    }));
+                                }
+                            }
+
+                            if ui.button("閉じる").clicked() {
+                                self.visible = false;
+                                if let Some(state) = &self.state {
+                                    state.set_panel_open(false);
+                                }
+                            }
+                        });
+
+                        ui.horizontal_wrapped(|ui| {
+                            for action in &request.actions {
+                                let action = action.clone();
+                                if ui.button(&action.label).clicked() {
+                                    let state = self.state.clone();
+                                    let transport = Arc::clone(&self.transport);
+                                    let runtime = self.runtime.clone();
+                                    drop(runtime.spawn(async move {
+                                        match execute_quick_action(
+                                            transport.as_ref(),
+                                            state.as_deref(),
+                                            &action,
+                                        )
+                                        .await
+                                        {
+                                            Ok(Presentation::Text { text }) => {
+                                                tracing::info!(
+                                                    text = %text,
+                                                    action_id = %action.id,
+                                                    "popover quick action returned"
+                                                );
+                                            }
+                                            Ok(_) => {
+                                                tracing::info!(
+                                                    action_id = %action.id,
+                                                    "popover quick action returned"
+                                                );
+                                            }
+                                            Err(error) => {
+                                                tracing::warn!(
+                                                    error = %error,
+                                                    action_id = %action.id,
+                                                    "popover quick action failed"
+                                                );
+                                            }
+                                        }
+                                    }));
+                                }
+                            }
+                        });
+
+                        if let Some(detail) = &request.detail {
+                            ui.label(detail);
+                        }
+
+                        ui.heading(&request.title);
+                    },
+                );
+            });
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn theme_colors(theme: crate::config::Theme) -> (eframe::egui::Color32, eframe::egui::Color32) {
     let (bg_hex, text_hex) = match theme {
         crate::config::Theme::Light => (0xffffff, 0x000000),
         crate::config::Theme::Dark => (0x1e1e2e, 0xcdd6f4),
@@ -492,9 +488,15 @@ fn theme_colors(theme: crate::config::Theme) -> (gpui::Hsla, gpui::Hsla) {
         crate::config::Theme::AuraSoftDark => (0x1f1b29, 0xe6e0f5),
     };
 
-    let background: gpui::Hsla = gpui::rgb(bg_hex).into();
-    let text: gpui::Hsla = gpui::rgb(text_hex).into();
-    (background, text)
+    let to_color = |hex: u32| {
+        eframe::egui::Color32::from_rgb(
+            ((hex >> 16) & 0xff) as u8,
+            ((hex >> 8) & 0xff) as u8,
+            (hex & 0xff) as u8,
+        )
+    };
+
+    (to_color(bg_hex), to_color(text_hex))
 }
 
 #[cfg(test)]

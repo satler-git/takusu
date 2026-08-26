@@ -12,13 +12,14 @@ use takusu_agent::{Presentation, SurfaceCommand};
 use takusu_contracts::EventLedgerRow;
 
 use crate::notify::{DesktopNotification, NotificationAction};
-use crate::state::DesktopError;
+use crate::state::{DesktopError, DesktopState};
 use crate::transport::DesktopTransport;
 
 /// Execute a desktop quick action, using an existing capability when available,
 /// minting a new screen capability on demand, or opening the surface panel.
 pub async fn execute_quick_action(
     transport: &dyn DesktopTransport,
+    desktop_state: Option<&DesktopState>,
     action: &DesktopAction,
 ) -> Result<Presentation, DesktopError> {
     match action.kind {
@@ -30,6 +31,10 @@ pub async fn execute_quick_action(
                     reason = ?response.reason,
                     "panel command not accepted"
                 );
+            } else if let Some(state) = desktop_state {
+                // Keep the compact panel visible even if the surface is idle, so
+                // the user can interact with the current presentation.
+                state.set_panel_open(true);
             }
             return Ok(Presentation::Text {
                 text: "panel opened".into(),
@@ -43,6 +48,10 @@ pub async fn execute_quick_action(
                     reason = ?response.reason,
                     "approval command not accepted"
                 );
+            } else if let Some(state) = desktop_state {
+                // Approval surfaces are shown by state, but ensure the panel is
+                // requested in case it was hidden.
+                state.set_panel_open(true);
             }
             return Ok(Presentation::Text {
                 text: "approval opened".into(),

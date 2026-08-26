@@ -137,6 +137,138 @@ pub fn spawn_voice_session(
     Ok(handle)
 }
 
+/// Synthesize and play a spoken cue, caching the synthesized audio on disk so
+/// repeated cues skip re-synthesis.
+///
+/// Reads the cue text and enable flag from the shared audio config. Returns
+/// `Ok(())` when cues are disabled or the requested cue has no text. Uses the
+/// same configured TTS backend as [`speak_presentation`]. The cache is keyed by
+/// normalized text plus the TTS identity, so changing voice/speed yields a
+/// fresh render.
+pub async fn speak_cue(cue: crate::state::SurfaceCue) -> Result<(), DesktopError> {
+    let config = AgentConfig::load()
+        .map_err(|e| DesktopError::Transport(format!("failed to load agent config: {e}")))?;
+    let cue_config = &config.audio.cues;
+    if !cue_config.enabled {
+        return Ok(());
+    }
+    let text = match cue {
+        crate::state::SurfaceCue::ListenStart => cue_config.listen_start.as_str(),
+        crate::state::SurfaceCue::ListenEnd => cue_config.listen_end.as_str(),
+    };
+    if text.trim().is_empty() {
+        return Ok(());
+    }
+    speak_text(&config, text).await
+}
+
+async fn speak_text(config: &AgentConfig, text: &str) -> Result<(), DesktopError> {
+    let tts_config = &config.audio.tts;
+    if tts_config.mute {
+        return Ok(());
+    }
+
+    let normalized = tokio::task::spawn_blocking({
+        let text = text.to_owned();
+        let language = tts_config.language.clone();
+        move || normalize_for_tts(&text, &language).into_owned()
+    })
+    .await
+    .map_err(|e| DesktopError::Transport(format!("tts normalization panicked: {e}")))?;
+
+    let (tts, voice_id, speed, sample_rate) = build_tts(tts_config)?;
+    let request = TtsRequest {
+        text: normalized.clone(),
+        voice: if voice_id.is_empty() {
+            None
+        } else {
+            Some(voice_id.clone())
+        },
+        reference_audio_path: None,
+        options: TtsOptions {
+            response_format: Some("pcm_s16le".into()),
+            speed,
+        },
+    };
+
+    // Cache key covers the rendered voice so a voice change busts the cache.
+    let cache_key = format!("{:x}", {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        normalized.hash(&mut hasher);
+        voice_id.hash(&mut hasher);
+        (speed.unwrap_or(1.0)).to_bits().hash(&mut hasher);
+        sample_rate.hash(&mut hasher);
+        hasher.finish()
+    });
+    let cache_dir = cue_cache_dir();
+    let cache_path = cache_dir.join(format!("{cache_key}.wav"));
+
+    let (samples, sample_rate);
+    if cache_path.exists() {
+        let bytes = std::fs::read(&cache_path)
+            .map_err(|e| DesktopError::Transport(format!("failed to read cue cache: {e}")))?;
+        let clip = takusu_audio::play::AudioClip::from_wav_bytes(&bytes).map_err(|e| {
+            DesktopError::Transport(format!("cue cache wav invalid ({cache_key}): {e}"))
+        })?;
+        samples = clip.samples().to_vec();
+        sample_rate = clip.sample_rate();
+    } else {
+        if let Err(e) = std::fs::create_dir_all(&cache_dir) {
+            tracing::warn!(error=%e, cache_dir=%cache_dir.display(), "failed to create cue cache dir");
+        }
+        let pcm = tts
+            .synthesize(&request)
+            .await
+            .map_err(|e| DesktopError::Transport(format!("cue synthesis failed: {e}")))?;
+        samples = pcm_to_f32(&pcm)?;
+        sample_rate = tts_sample_rate(tts_config)?;
+        if let Err(e) = takusu_audio::wav::write_wav(&cache_path, &samples, sample_rate) {
+            tracing::warn!(error=%e, "failed to write cue cache");
+        }
+    }
+
+    // Play on a blocking thread; cpal streams run to completion here.
+    tokio::task::spawn_blocking(move || {
+        let clip = takusu_audio::play::AudioClip::from_parts(samples, sample_rate, 1);
+        takusu_audio::play::play(&clip)
+    })
+    .await
+    .map_err(|e| DesktopError::Transport(format!("cue playback task panicked: {e}")))?
+    .map_err(|e| DesktopError::Transport(format!("cue playback failed: {e}")))?;
+
+    Ok(())
+}
+
+fn cue_cache_dir() -> std::path::PathBuf {
+    dirs::cache_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from(".cache"))
+        .join("takusu")
+        .join("tts-cues")
+}
+
+fn tts_sample_rate(config: &takusu_agent::audio_config::TtsConfig) -> Result<u32, DesktopError> {
+    if config.sample_rate == 0 {
+        Ok(44100)
+    } else {
+        Ok(config.sample_rate)
+    }
+}
+
+fn pcm_to_f32(pcm: &[u8]) -> Result<Vec<f32>, DesktopError> {
+    if !pcm.len().is_multiple_of(2) {
+        return Err(DesktopError::Transport(
+            "cue synthesis returned odd pcm byte count".into(),
+        ));
+    }
+    let mut samples = Vec::with_capacity(pcm.len() / 2);
+    for chunk in pcm.chunks_exact(2) {
+        let s = i16::from_le_bytes([chunk[0], chunk[1]]) as f32 / i16::MAX as f32;
+        samples.push(s);
+    }
+    Ok(samples)
+}
+
 /// Synthesize and play the voice template for a planner presentation.
 ///
 /// Loads the agent's audio configuration, builds the configured TTS backend,

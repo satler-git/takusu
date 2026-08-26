@@ -15,7 +15,7 @@ use takusu_agent::capability::ActionCapability;
 use takusu_agent::presentation::ActionKind;
 use zbus::Connection;
 
-use crate::state::DesktopError;
+use crate::state::{DesktopError, DesktopState};
 use crate::transport::DesktopTransport;
 
 /// Payload for a desktop notification.
@@ -168,6 +168,7 @@ pub async fn show(
 pub async fn route_notification_action(
     state: &std::sync::Mutex<NotificationState>,
     transport: &dyn DesktopTransport,
+    desktop_state: Option<&DesktopState>,
     notification_id: u32,
     action_key: &str,
 ) -> Result<(), DesktopError> {
@@ -211,6 +212,8 @@ pub async fn route_notification_action(
                         reason = ?response.reason,
                         "panel command not accepted"
                     );
+                } else if let Some(state) = desktop_state {
+                    state.set_panel_open(true);
                 }
             }
             ActionKind::Approval => {
@@ -221,6 +224,8 @@ pub async fn route_notification_action(
                         reason = ?response.reason,
                         "approval command not accepted"
                     );
+                } else if let Some(state) = desktop_state {
+                    state.set_panel_open(true);
                 }
             }
             ActionKind::Immediate => {
@@ -243,6 +248,7 @@ pub async fn run_action_listener(
     proxy: &NotificationsProxy<'static>,
     state: Arc<std::sync::Mutex<NotificationState>>,
     transport: Arc<dyn DesktopTransport + Send + Sync>,
+    desktop_state: Option<DesktopState>,
 ) -> Result<(), DesktopError> {
     let mut action_stream = proxy
         .receive_action_invoked()
@@ -253,9 +259,14 @@ pub async fn run_action_listener(
         let args = signal
             .args()
             .map_err(|e| DesktopError::Notification(e.to_string()))?;
-        if let Err(e) =
-            route_notification_action(&state, transport.as_ref(), *args.id(), args.action_key())
-                .await
+        if let Err(e) = route_notification_action(
+            &state,
+            transport.as_ref(),
+            desktop_state.as_ref(),
+            *args.id(),
+            args.action_key(),
+        )
+        .await
         {
             tracing::warn!(error=%e, notification_id=args.id(), action_key=args.action_key(), "failed to route notification action");
         }
@@ -330,7 +341,7 @@ mod tests {
         let transport = MockTransport::new(snapshot);
 
         let key = EncodedAction::encode(&cap.id, "今から始める");
-        route_notification_action(&state, &transport, 42, &key)
+        route_notification_action(&state, &transport, None, 42, &key)
             .await
             .unwrap();
 
@@ -355,11 +366,11 @@ mod tests {
         let transport = MockTransport::new(snapshot);
 
         // Unknown capability id.
-        route_notification_action(&state, &transport, 42, "cap-missing|foo")
+        route_notification_action(&state, &transport, None, 42, "cap-missing|foo")
             .await
             .unwrap();
         // Open action.
-        route_notification_action(&state, &transport, 42, "open")
+        route_notification_action(&state, &transport, None, 42, "open")
             .await
             .unwrap();
 

@@ -136,8 +136,9 @@ impl Tray for TakusuTray {
             // Quick actions from the current desktop presentation.
             for action in self.state.quick_actions() {
                 let transport = Arc::clone(&self.transport);
+                let state = self.state.clone();
                 let label = quick_action_label(&action);
-                let activate = quick_action_activate(action, transport);
+                let activate = quick_action_activate(action, transport, state);
                 items.push(
                     StandardItem {
                         label,
@@ -181,22 +182,31 @@ impl Tray for TakusuTray {
                 let state = state.clone();
                 let transport = Arc::clone(&transport);
                 tokio::spawn(async move {
-                    let command = match state
-                        .snapshot()
-                        .map(|v| v.state())
-                        .unwrap_or(SurfaceState::Idle)
-                    {
+                    let snapshot = state.snapshot();
+                    let has_presentation = snapshot
+                        .as_ref()
+                        .is_some_and(|v| v.current_presentation.is_some());
+                    let command = match snapshot.map(|v| v.state()).unwrap_or(SurfaceState::Idle) {
                         SurfaceState::Listening => Some(SurfaceCommand::ConfirmRecording),
                         SurfaceState::Thinking => Some(SurfaceCommand::OpenPanel),
                         SurfaceState::Speaking => Some(SurfaceCommand::StopTts),
                         SurfaceState::WaitingForApproval => Some(SurfaceCommand::OpenApproval),
                         SurfaceState::Error => Some(SurfaceCommand::ShowRecovery),
+                        SurfaceState::Idle if has_presentation => Some(SurfaceCommand::OpenPanel),
                         _ => None,
                     };
 
                     if let Some(command) = command {
-                        if let Err(e) = transport.send_command(command).await {
-                            tracing::warn!(error=%e, command=?command, "tray open command failed");
+                        match transport.send_command(command).await {
+                            Ok(response) if response.accepted => state.set_panel_open(true),
+                            Ok(response) => tracing::warn!(
+                                command = ?command,
+                                reason = ?response.reason,
+                                "tray open command not accepted"
+                            ),
+                            Err(e) => {
+                                tracing::warn!(error=%e, command=?command, "tray open command failed")
+                            }
                         }
                     }
                 });
@@ -259,12 +269,14 @@ fn quick_action_label(action: &DesktopAction) -> String {
 fn quick_action_activate(
     action: DesktopAction,
     transport: Arc<dyn DesktopTransport + Send + Sync>,
+    state: DesktopState,
 ) -> Box<dyn Fn(&mut TakusuTray) + Send> {
     Box::new(move |_this: &mut TakusuTray| {
         let transport = Arc::clone(&transport);
+        let state = state.clone();
         let action = action.clone();
         tokio::spawn(async move {
-            if let Err(e) = execute_quick_action(transport.as_ref(), &action).await {
+            if let Err(e) = execute_quick_action(transport.as_ref(), Some(&state), &action).await {
                 tracing::warn!(
                     error = %e,
                     action_id = %action.id,
