@@ -48,10 +48,12 @@ const ASR_MODELS = [
 
 type AsrModelId = (typeof ASR_MODELS)[number];
 
+const VAD_MODEL_ID = 'silero-vad';
 const SPEAKER_MODEL_ID = 'sherpa-speaker-campplus-zh-en';
 
 const MODEL_SIZES: Record<string, string> = {
   hush: '約8 MB',
+  [VAD_MODEL_ID]: '約0.6 MB',
   'sherpa-sense-voice-int8': '約160 MB',
   'sherpa-parakeet-ctc-ja-0.6b': '約470 MB',
   'sherpa-nemotron-ja-0.6b': '約470 MB',
@@ -60,6 +62,7 @@ const MODEL_SIZES: Record<string, string> = {
 
 const MODEL_NAMES: Record<string, string> = {
   hush: 'Hushノイズ除去',
+  [VAD_MODEL_ID]: 'VAD 発話区間検出',
   'sherpa-sense-voice-int8': 'SenseVoice音声認識',
   'sherpa-parakeet-ctc-ja-0.6b': 'Parakeet 日本語 CTC',
   'sherpa-nemotron-ja-0.6b': 'Nemotron ストリーミング',
@@ -1039,6 +1042,44 @@ export function AgentSettingsView() {
             {downloadingModels['hush']
               ? '準備中'
               : cachedModels['hush']
+                ? '準備済み'
+                : '未ダウンロード'}
+          </Text>
+        </Pressable>
+        <Pressable
+          onPress={() => promptModelDownload(VAD_MODEL_ID)}
+          disabled={
+            cachedModels[VAD_MODEL_ID] || downloadingModels[VAD_MODEL_ID]
+          }
+          style={({ pressed }) => [
+            styles.voiceModelRow,
+            { borderBottomColor: colors.separator },
+            pressed && styles.voiceModelRowPressed,
+          ]}
+        >
+          <View style={styles.voiceModelRowContent}>
+            <Ionicons
+              name={
+                cachedModels[VAD_MODEL_ID]
+                  ? 'checkmark-circle'
+                  : 'cloud-download-outline'
+              }
+              size={22}
+              color={cachedModels[VAD_MODEL_ID] ? colors.success : colors.gray}
+            />
+            <View style={styles.voiceModelText}>
+              <Text style={[styles.voiceModelName, { color: colors.black }]}>
+                {MODEL_NAMES[VAD_MODEL_ID]}
+              </Text>
+              <Text style={styles.voiceModelMeta}>
+                {MODEL_SIZES[VAD_MODEL_ID]}
+              </Text>
+            </View>
+          </View>
+          <Text style={styles.voiceModelStatus}>
+            {downloadingModels[VAD_MODEL_ID]
+              ? '準備中'
+              : cachedModels[VAD_MODEL_ID]
                 ? '準備済み'
                 : '未ダウンロード'}
           </Text>
