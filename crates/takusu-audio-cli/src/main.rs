@@ -906,38 +906,32 @@ async fn load_speaker_verifier(
     provider: ExecutionProvider,
     verify_threshold: f32,
 ) -> (SpeakerVerifier, PathBuf) {
-    let cache = tokio::task::spawn_blocking(|| {
-        takusu_audio::ModelCache::default_dir().map_err(|e| e.to_string())
-    })
-    .await
-    .unwrap_or_else(|e| {
-        eprintln!("Model cache task failed: {e}");
-        std::process::exit(1);
-    })
-    .unwrap_or_else(|e| {
-        eprintln!("Model cache error: {e}");
-        std::process::exit(1);
-    });
+    // Model download uses reqwest::blocking, which builds and drops a tokio
+    // runtime internally. That is not allowed on an async worker thread, so
+    // do the whole cache/model setup on a blocking thread.
+    tokio::task::spawn_blocking(move || {
+        let cache = takusu_audio::ModelCache::default_dir().map_err(|e| e.to_string())?;
 
-    let model_dir = match model_dir {
-        Some(path) => path,
-        None => cache.ensure(DEFAULT_SPEAKER_MODEL_ID).unwrap_or_else(|e| {
-            eprintln!("Model download error: {e}");
-            std::process::exit(1);
-        }),
-    };
-    let model_path = model_dir.join("model.onnx");
+        let model_dir = match model_dir {
+            Some(path) => path,
+            None => cache
+                .ensure(DEFAULT_SPEAKER_MODEL_ID)
+                .map_err(|e| e.to_string())?,
+        };
+        let model_path = model_dir.join("model.onnx");
 
-    let config = SpeakerConfig {
-        model_id: DEFAULT_SPEAKER_MODEL_ID.to_string(),
-        num_threads,
-        provider,
-        verify_threshold,
-        voice_dir: None,
-    };
+        let config = SpeakerConfig {
+            model_id: DEFAULT_SPEAKER_MODEL_ID.to_string(),
+            num_threads,
+            provider,
+            verify_threshold,
+            voice_dir: None,
+        };
 
-    let verifier = tokio::task::spawn_blocking(move || {
-        SpeakerVerifier::new(config, &model_path, Some(voice_dir)).map_err(|e| e.to_string())
+        let verifier = SpeakerVerifier::new(config, &model_path, Some(voice_dir))
+            .map_err(|e| e.to_string())?;
+
+        Ok::<_, String>((verifier, model_dir))
     })
     .await
     .unwrap_or_else(|e| {
@@ -947,7 +941,5 @@ async fn load_speaker_verifier(
     .unwrap_or_else(|e| {
         eprintln!("Speaker verifier error: {e}");
         std::process::exit(1);
-    });
-
-    (verifier, model_dir)
+    })
 }
